@@ -7,9 +7,12 @@ Requested on 2026-11-01 in
 The candidate is the 0.9.0 release commit: `main` through
 `96cff12be7ad9a902191739f4c0648e18a66f96a` plus the workspace version,
 lockfile, generated configuration contract, dated changelog section and this
-document. Its exact revision and tree are recorded here once it merges; every
-later step binds to them. The README install snippets keep the published
-0.8.1 until the 0.9.0 packages exist.
+document: revision `30928ad51b4a434546cf143f8e385a8746523172`, tree
+`e55a6c3f021643bd507a611c247f2781aaabbb83`, merged in
+[#150](https://github.com/aimalygin/xray-rust/pull/150). Every later step
+binds to them; documentation commits after it do not replace that identity.
+The README install snippets keep the published 0.8.1 until the 0.9.0 packages
+exist.
 
 ## Scope
 
@@ -64,6 +67,14 @@ The owner decided on 2026-11-01:
 A v0.8 archive does not satisfy the profile, and v0.8 owner decisions are
 historical records, not 0.9 decisions.
 
+On 2026-11-02 the owner limited performance to the 13 schema-4 metrics, with
+the full comparison against 0.8.1 planned for 0.9.1, and accepted the known
+limitations in the [0.9.0 decision record](releases/v0.9.0-owner-decisions.json):
+REALITY fingerprints without ML-KEM, SOCKS UDP relay ports on the server,
+Shadowsocks xchacha20-poly1305 at 59% of Xray-core throughput and the
+campaign-local harness fixes. Asked whether to release 0.9.0 with these
+limitations and publish the evidence, the owner answered “Да, публикуй”.
+
 ## Remaining work, in order
 
 1. ~~Extend the Apple and Android device fixtures and harnesses to the three
@@ -72,11 +83,19 @@ historical records, not 0.9 decisions.
    [v0.9 evidence collection](v09-release-evidence.md).
 2. ~~Bump the workspace to 0.9.0, date the changelog section and regenerate
    the configuration contract.~~ Done in the release commit.
-3. Pin that exact revision in `xray-rust-mobile`, synchronize the canonical
+3. ~~Pin that exact revision in `xray-rust-mobile`, synchronize the canonical
    adapters, header and tests, add the `v09` profile there, and pass both
-   repositories' CI.
+   repositories' CI.~~ Done in
+   [xray-rust-mobile#42](https://github.com/aimalygin/xray-rust-mobile/pull/42),
+   SDK candidate `9e030609c5734616cf79ee900abeaddfea0cfe0a`.
 4. Run full core release CI, collect the candidate-bound device and host
-   evidence, and pass `v09-release-evidence.yml` on that exact commit.
+   evidence, and pass `v09-release-evidence.yml` on that exact commit. Release
+   CI passed on the candidate
+   ([run 41445033781](https://github.com/aimalygin/xray-rust/actions/runs/41445033781)).
+   The device and host evidence is in the
+   [2026-11-02 report](device-results/2026-11-02-v090-candidate/README.md) and
+   the [archive record](releases/v0.9.0-device-evidence.json); the workflow
+   validation is pending.
 5. Verify and publish the annotated core tag, then the SDK tag, XCFramework,
    four-ABI AAR and Maven artifacts; resolve the published packages from clean
    external consumers.

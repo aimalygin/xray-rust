@@ -1,0 +1,96 @@
+{
+  "binarySha256": {
+    "candidate": "6e378c68d0326d631b44cab20a884128cec7e0918611018f3c6980de2cf4a77b",
+    "harness": "b12c70fc0d72ddfcef81a4ac6d643fd38e7d2d3fea2067a1b189383396166267",
+    "xray": "186ab2062fe347d513bfa41d4afebc1cd4c7f70e0675e523648eb34049f68ebb"
+  },
+  "candidate": {
+    "dirty": false,
+    "revision": "30928ad51b4a434546cf143f8e385a8746523172",
+    "tree": "e55a6c3f021643bd507a611c247f2781aaabbb83"
+  },
+  "clean": true,
+  "collectorSha256": "5f73517c4ee4a051a1a0d324b85f5347443539a230f5b25e3ba558a150f8191c",
+  "measurementGroups": {
+    "http": [
+      "http-basic",
+      "http-basic-tls"
+    ],
+    "shadowsocks-aead": [
+      "ss-aes128gcm",
+      "ss-aes256gcm",
+      "ss-chacha20",
+      "ss-xchacha20"
+    ],
+    "socks": [
+      "socks-auth"
+    ]
+  },
+  "profile": "release",
+  "referenceCommit": "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74",
+  "repeats": 5,
+  "runs": [
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793660973.0077682
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793660974.064438
+          }
+        ]
+      },
+      "case": "socks-auth-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.0075631141662598,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793660975.01812
+          }
+        ]
+      },
+      "case": "socks-auth-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 1,
+      "seconds": 0.19029998779296875,
+      "surviving_process_group": false,
+      "version": "xray"
+    }
+  ],
+  "scope": "single-flow loopback SOCKS ingress; v0.9 profiles; paired pinned Xray-core comparison",
+  "started": 1793660971.978688
+}

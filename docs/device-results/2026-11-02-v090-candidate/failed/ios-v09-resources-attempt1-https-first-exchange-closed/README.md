@@ -1,0 +1,1 @@
+iPhone v09 resources, attempt 1. SOCKS and HTTP passed; on http:tls the first TCP exchange was closed after 10 s and the fixture saw only the client's DNS CONNECT. It happened while two Android fixtures were starting on the same host. Not reproduced: the rerun ios-v09-resources passed 4/4.

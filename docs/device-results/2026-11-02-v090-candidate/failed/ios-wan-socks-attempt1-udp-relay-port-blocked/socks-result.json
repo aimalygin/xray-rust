@@ -1,0 +1,403 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 15,
+    "protocol" : "setup",
+    "time" : "2026-11-02T16:03:03Z"
+  },
+  {
+    "event" : "invalid-import-redaction",
+    "format" : "socks",
+    "protocol" : "socks",
+    "result" : "passed",
+    "time" : "2026-11-02T16:03:03Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T16:03:03Z"
+  },
+  {
+    "event" : "access-network",
+    "interface" : "wifi",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:04Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "socks:password",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:03:04Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi",
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:04Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:04Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:07Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "socks:password",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:03:07Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:07Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "socks:password",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:03:07Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "socks:password",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:03:08Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.1833442498464137,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T16:03:08Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:08Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.1630517083685845,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T16:03:09Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-0ef45ebd6a14.test",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:10Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "socks:password",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:03:12Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "socks:password",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:03:16Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "socks:password",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:03:16Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "socks:password",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:03:20Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "attempt" : 1,
+    "event" : "recovery-retry",
+    "protocol" : "socks:password",
+    "stage" : "wifi-baseline",
+    "time" : "2026-11-02T16:03:20Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:21Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.4235907499678433,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T16:03:22Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:22Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.2782742083072662,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T16:03:24Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-0ef45ebd6a14.test",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:24Z"
+  },
+  {
+    "attempt" : 2,
+    "event" : "recovery-retry",
+    "protocol" : "socks:password",
+    "stage" : "wifi-baseline",
+    "time" : "2026-11-02T16:03:34Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:35Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.4178602502215654,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T16:03:36Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:36Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.2775827082805336,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T16:03:38Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-0ef45ebd6a14.test",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:38Z"
+  },
+  {
+    "attempt" : 3,
+    "event" : "recovery-retry",
+    "protocol" : "socks:password",
+    "stage" : "wifi-baseline",
+    "time" : "2026-11-02T16:03:48Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:49Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.3882307501044124,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T16:03:50Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:50Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.2760069167707115,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T16:03:52Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-0ef45ebd6a14.test",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:52Z"
+  },
+  {
+    "code" : 0,
+    "domain" : "XrayProtocolDeviceProbe.Network",
+    "event" : "failure",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T16:03:52Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381644.0212210834"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381644.7645762917"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381648.8571902919"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381652.9647722084"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381653.1375638335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381657.204844"
+      }
+    ],
+    "protocol" : "socks:password",
+    "stage" : "failure",
+    "time" : "2026-11-02T16:03:52Z"
+  },
+  {
+    "cycle" : 0,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4130416,
+    "inboundPackets" : 712,
+    "outboundPackets" : 527,
+    "protocol" : "socks:password",
+    "rss" : 29949952,
+    "runtime" : "abaa5841-c019-4c7c-a66b-2a100d6a7cd7",
+    "stage" : "failure",
+    "tcp" : 1,
+    "threads" : 8,
+    "time" : "2026-11-02T16:03:52Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "complete",
+    "protocol" : "socks:password",
+    "result" : "failed",
+    "time" : "2026-11-02T16:03:53Z"
+  }
+]

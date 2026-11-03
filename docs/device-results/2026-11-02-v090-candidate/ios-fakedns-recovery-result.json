@@ -1,0 +1,1060 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 15,
+    "protocol" : "setup",
+    "time" : "2026-11-02T15:56:11Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:11Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "ip-on-demand",
+    "seconds" : 0.23231697082519531,
+    "time" : "2026-11-02T15:56:11Z"
+  },
+  {
+    "event" : "dns-fakeip-anchor",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:11Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:11Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.41160508338361979,
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:12Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:12Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.17211225000210106,
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:12Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-5baac96b35fe.test",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:12Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.2046277082990855,
+    "host" : "v07-probe-5baac96b35fe.test",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:12Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:12Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.059100833255797625,
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:12Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:13Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.095988958375528455,
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:13Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-fakeip-anchor",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:13Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381228.4366357084"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381228.54756175"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381228.9515906668"
+      }
+    ],
+    "protocol" : "ip-on-demand",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:56:13Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4245104,
+    "inboundPackets" : 212,
+    "outboundPackets" : 189,
+    "protocol" : "ip-on-demand",
+    "rss" : 29458432,
+    "runtime" : "ec1426f3-55dd-49f6-beff-5bf3f3ecddc2",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:56:13Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 1,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      6,
+      7,
+      8,
+      9
+    ],
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:13Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      6,
+      7,
+      8,
+      9
+    ],
+    "cycle" : 1,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "ip-on-demand",
+    "seconds" : 2.0692925835028291,
+    "time" : "2026-11-02T15:56:15Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381228.4366357084"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381228.54756175"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381228.9515906668"
+      }
+    ],
+    "protocol" : "ip-on-demand",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:56:15Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4195952,
+    "inboundPackets" : 212,
+    "outboundPackets" : 192,
+    "protocol" : "ip-on-demand",
+    "rss" : 29769728,
+    "runtime" : "ec1426f3-55dd-49f6-beff-5bf3f3ecddc2",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-02T15:56:15Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "dns-fakeip-anchor",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:15Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:15Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.12180875008925796,
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:15Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:15Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.23231070837937295,
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:15Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-5baac96b35fe.test",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:15Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.099424666725099087,
+    "host" : "v07-probe-5baac96b35fe.test",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:16Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:16Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.065142083447426558,
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:16Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:16Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.063051625154912472,
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:16Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-fakeip-anchor",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:16Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "traffic-after-close",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:16Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381228.4366357084"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381228.54756175"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381228.9515906668"
+      }
+    ],
+    "protocol" : "ip-on-demand",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:56:16Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4310640,
+    "inboundPackets" : 400,
+    "outboundPackets" : 362,
+    "protocol" : "ip-on-demand",
+    "rss" : 30031872,
+    "runtime" : "ec1426f3-55dd-49f6-beff-5bf3f3ecddc2",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:56:16Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 1,
+    "event" : "disconnected",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:16Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "connected",
+    "protocol" : "ip-on-demand",
+    "seconds" : 0.22424209117889404,
+    "time" : "2026-11-02T15:56:17Z"
+  },
+  {
+    "event" : "dns-fakeip-anchor",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:17Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:17Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.2709968334529549,
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:18Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:18Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.097691875183954835,
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:18Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-5baac96b35fe.test",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:18Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.11844166670925915,
+    "host" : "v07-probe-5baac96b35fe.test",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:18Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:18Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.17505937512032688,
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:19Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:19Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.060367666650563478,
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:19Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-fakeip-anchor",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:19Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381233.7358912916"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381235.0473008752"
+      }
+    ],
+    "protocol" : "ip-on-demand",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:56:19Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4605576,
+    "inboundPackets" : 221,
+    "outboundPackets" : 196,
+    "protocol" : "ip-on-demand",
+    "rss" : 29884416,
+    "runtime" : "fe9ae93a-d184-4348-a0c9-2e2335e52902",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:56:19Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 2,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      3,
+      7,
+      8,
+      9,
+      10
+    ],
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:19Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      3,
+      7,
+      8,
+      9,
+      10
+    ],
+    "cycle" : 2,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+      11
+    ],
+    "protocol" : "ip-on-demand",
+    "seconds" : 2.0470332915429026,
+    "time" : "2026-11-02T15:56:21Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381233.7358912916"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381235.0473008752"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381236.8891039167"
+      }
+    ],
+    "protocol" : "ip-on-demand",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:56:21Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4359816,
+    "inboundPackets" : 224,
+    "outboundPackets" : 199,
+    "protocol" : "ip-on-demand",
+    "rss" : 30146560,
+    "runtime" : "fe9ae93a-d184-4348-a0c9-2e2335e52902",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-02T15:56:21Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 1
+  },
+  {
+    "event" : "dns-fakeip-anchor",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:21Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:21Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.18010204168967903,
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:21Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:21Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.096195499878376722,
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:21Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-5baac96b35fe.test",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:21Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.10610433341935277,
+    "host" : "v07-probe-5baac96b35fe.test",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:22Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:22Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.13119658338837326,
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:22Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:22Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.062830499839037657,
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:22Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-fakeip-anchor",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:22Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "traffic-after-close",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:22Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381233.7358912916"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381235.0473008752"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381236.8891039167"
+      }
+    ],
+    "protocol" : "ip-on-demand",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:56:22Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4490888,
+    "inboundPackets" : 431,
+    "outboundPackets" : 391,
+    "protocol" : "ip-on-demand",
+    "rss" : 30326784,
+    "runtime" : "fe9ae93a-d184-4348-a0c9-2e2335e52902",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:56:22Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 2,
+    "event" : "disconnected",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:22Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "connected",
+    "protocol" : "ip-on-demand",
+    "seconds" : 0.21631503105163574,
+    "time" : "2026-11-02T15:56:23Z"
+  },
+  {
+    "event" : "dns-fakeip-anchor",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:23Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:23Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.23605649988166988,
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:23Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:23Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.23503954149782658,
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:23Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-5baac96b35fe.test",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:23Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.11455008340999484,
+    "host" : "v07-probe-5baac96b35fe.test",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:23Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:24Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.060703041730448604,
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:24Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:24Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.18600474996492267,
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:24Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-fakeip-anchor",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:24Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381239.75024925"
+      }
+    ],
+    "protocol" : "ip-on-demand",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:56:24Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4441712,
+    "inboundPackets" : 195,
+    "outboundPackets" : 175,
+    "protocol" : "ip-on-demand",
+    "rss" : 29425664,
+    "runtime" : "7345b24b-d8fd-4c3d-a9f1-fc82ddef9c6c",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:56:24Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 4
+  },
+  {
+    "cycle" : 3,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      3,
+      5,
+      6,
+      7,
+      8
+    ],
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:24Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      3,
+      5,
+      6,
+      7,
+      8
+    ],
+    "cycle" : 3,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+      9
+    ],
+    "protocol" : "ip-on-demand",
+    "seconds" : 2.1292809583246708,
+    "time" : "2026-11-02T15:56:26Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381239.75024925"
+      }
+    ],
+    "protocol" : "ip-on-demand",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:56:26Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4163184,
+    "inboundPackets" : 198,
+    "outboundPackets" : 178,
+    "protocol" : "ip-on-demand",
+    "rss" : 29835264,
+    "runtime" : "7345b24b-d8fd-4c3d-a9f1-fc82ddef9c6c",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 11,
+    "time" : "2026-11-02T15:56:26Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 1
+  },
+  {
+    "event" : "dns-fakeip-anchor",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:26Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:26Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.16689366661012173,
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:26Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:27Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.098003041697666049,
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:27Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-5baac96b35fe.test",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:27Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.098970083286985755,
+    "host" : "v07-probe-5baac96b35fe.test",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:27Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:27Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.16297283349558711,
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:27Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-02T15:56:27Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.057157166535034776,
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:27Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-fakeip-anchor",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:27Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "traffic-after-close",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:27Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1381239.75024925"
+      }
+    ],
+    "protocol" : "ip-on-demand",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:56:27Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4245104,
+    "inboundPackets" : 382,
+    "outboundPackets" : 348,
+    "protocol" : "ip-on-demand",
+    "rss" : 30015488,
+    "runtime" : "7345b24b-d8fd-4c3d-a9f1-fc82ddef9c6c",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:56:27Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 3,
+    "event" : "disconnected",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:28Z"
+  },
+  {
+    "event" : "complete",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-02T15:56:28Z"
+  }
+]

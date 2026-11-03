@@ -1,0 +1,20 @@
+{"hostTime": 1793630484.488724, "kind": "matrix-start", "caseCount": 1, "backends": ["file-descriptor", "packet-pump"]}
+{"hostTime": 1793630484.488864, "kind": "case-start", "case": "vless-reality", "backend": "file-descriptor", "udp": "echo"}
+{"hostTime": 1793630485.830827, "kind": "share-link-import", "case": "vless-reality", "backend": "file-descriptor", "passed": true}
+{"hostTime": 1793630487.018414, "kind": "running", "case": "vless-reality", "backend": "file-descriptor", "status": {"state": "running", "detail": null, "runtime-generation": "1", "fatal-tun-errors": "0"}}
+{"hostTime": 1793630491.848872, "kind": "traffic", "case": "vless-reality", "backend": "file-descriptor", "target": "ipv4", "udp": "echo", "transitions": ["ipv4-tcp", "ipv4-udp"], "status": {"running": "false", "http-failed": "0", "udp-failed": "0", "http-passed": "3", "udp-passed": "3"}}
+{"hostTime": 1793630496.603128, "kind": "traffic", "case": "vless-reality", "backend": "file-descriptor", "target": "ipv6", "udp": "echo", "transitions": ["ipv6-tcp", "ipv6-udp"], "status": {"running": "false", "http-failed": "0", "udp-failed": "0", "http-passed": "3", "udp-passed": "3"}}
+{"hostTime": 1793630501.33609, "kind": "traffic", "case": "vless-reality", "backend": "file-descriptor", "target": "domain", "udp": "echo", "transitions": ["domain-destination", "routed-dns"], "status": {"running": "false", "http-failed": "0", "udp-failed": "0", "http-passed": "3", "udp-passed": "3"}}
+{"hostTime": 1793630505.0511842, "kind": "close-recovery", "case": "vless-reality", "backend": "file-descriptor", "udp": "echo", "status": {"running": "false", "http-failed": "0", "udp-failed": "0", "http-passed": "2", "udp-passed": "2"}}
+{"hostTime": 1793630511.117436, "kind": "cancel-start-recovery", "case": "vless-reality", "backend": "file-descriptor", "udp": "echo", "status": {"running": "false", "http-failed": "0", "udp-failed": "0", "http-passed": "2", "udp-passed": "2"}}
+{"hostTime": 1793630511.4473338, "kind": "case-pass", "case": "vless-reality", "backend": "file-descriptor", "udp": "echo"}
+{"hostTime": 1793630514.285655, "kind": "case-start", "case": "vless-reality", "backend": "packet-pump", "udp": "echo"}
+{"hostTime": 1793630515.585681, "kind": "share-link-import", "case": "vless-reality", "backend": "packet-pump", "passed": true}
+{"hostTime": 1793630516.767701, "kind": "running", "case": "vless-reality", "backend": "packet-pump", "status": {"state": "running", "detail": null, "runtime-generation": "1", "fatal-tun-errors": "0"}}
+{"hostTime": 1793630521.617783, "kind": "traffic", "case": "vless-reality", "backend": "packet-pump", "target": "ipv4", "udp": "echo", "transitions": ["ipv4-tcp", "ipv4-udp"], "status": {"running": "false", "http-failed": "0", "udp-failed": "0", "http-passed": "3", "udp-passed": "3"}}
+{"hostTime": 1793630526.357546, "kind": "traffic", "case": "vless-reality", "backend": "packet-pump", "target": "ipv6", "udp": "echo", "transitions": ["ipv6-tcp", "ipv6-udp"], "status": {"running": "false", "http-failed": "0", "udp-failed": "0", "http-passed": "3", "udp-passed": "3"}}
+{"hostTime": 1793630531.789949, "kind": "traffic", "case": "vless-reality", "backend": "packet-pump", "target": "domain", "udp": "echo", "transitions": ["domain-destination", "routed-dns"], "status": {"running": "false", "http-failed": "0", "udp-failed": "0", "http-passed": "3", "udp-passed": "3"}}
+{"hostTime": 1793630535.4337122, "kind": "close-recovery", "case": "vless-reality", "backend": "packet-pump", "udp": "echo", "status": {"running": "false", "http-failed": "0", "udp-failed": "0", "http-passed": "2", "udp-passed": "2"}}
+{"hostTime": 1793630541.421398, "kind": "cancel-start-recovery", "case": "vless-reality", "backend": "packet-pump", "udp": "echo", "status": {"running": "false", "http-failed": "0", "udp-failed": "0", "http-passed": "2", "udp-passed": "2"}}
+{"hostTime": 1793630542.296507, "kind": "case-pass", "case": "vless-reality", "backend": "packet-pump", "udp": "echo"}
+{"hostTime": 1793630545.040734, "kind": "matrix-pass"}

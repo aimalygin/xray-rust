@@ -1,0 +1,762 @@
+{
+  "candidate": "30928ad51b4a434546cf143f8e385a8746523172",
+  "files": [
+    {
+      "path": "android-cancel-tcp/events.jsonl",
+      "sourcePath": "android-cancel-tcp/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "e8e7cbe311c395984af9e18fd1c5c176cf2ccb3e0b5431caabdfd846ae8ae6ca",
+      "publishedSHA256": "e8e7cbe311c395984af9e18fd1c5c176cf2ccb3e0b5431caabdfd846ae8ae6ca"
+    },
+    {
+      "path": "android-cancel-udp/events.jsonl",
+      "sourcePath": "android-cancel-udp/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "f44a42c49f439fdb4f2f73e4694a9f665abfd7385d0197378579c86571443cf3",
+      "publishedSHA256": "f44a42c49f439fdb4f2f73e4694a9f665abfd7385d0197378579c86571443cf3"
+    },
+    {
+      "path": "android-legacy-v09/events.jsonl",
+      "sourcePath": "android-legacy-v09/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "711b20a75bf7568fa46752430ee7e5c396c19814f49b64ad7177fbf1de6cdaae",
+      "publishedSHA256": "711b20a75bf7568fa46752430ee7e5c396c19814f49b64ad7177fbf1de6cdaae"
+    },
+    {
+      "path": "android-resources-a/events.jsonl",
+      "sourcePath": "android-resources-a/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "4ffb1d017cbb4dbd47ea9b431a4d000c818cebbb37232d7bc3588197a6f715e8",
+      "publishedSHA256": "4ffb1d017cbb4dbd47ea9b431a4d000c818cebbb37232d7bc3588197a6f715e8"
+    },
+    {
+      "path": "android-resources-b/events.jsonl",
+      "sourcePath": "android-resources-b/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "a8646914bbe47c6dad9f6fabf1cc9341312ae66aa3a3f1bd3f8874f3d0039bfb",
+      "publishedSHA256": "a8646914bbe47c6dad9f6fabf1cc9341312ae66aa3a3f1bd3f8874f3d0039bfb"
+    },
+    {
+      "path": "android-shared/events.jsonl",
+      "sourcePath": "android-shared/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "dcf491a6eaaa369699e0c768ac75a9acac9aae734b42f212ad23efd732f00e29",
+      "publishedSHA256": "dcf491a6eaaa369699e0c768ac75a9acac9aae734b42f212ad23efd732f00e29"
+    },
+    {
+      "path": "android-v09/events.jsonl",
+      "sourcePath": "android-v09/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "8564e6fa90863de07d335211936d90ccc55f0833dfcaedb91d781b7ea28c963f",
+      "publishedSHA256": "8564e6fa90863de07d335211936d90ccc55f0833dfcaedb91d781b7ea28c963f"
+    },
+    {
+      "path": "diagnostics/android-reality-warmup/README.txt",
+      "sourcePath": "diagnostics/android-reality-warmup/README.txt",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "045d6ca4875bb1409b45f6d390d4724099e3a1ad6f7a1c3c5f341c6e9455832b",
+      "publishedSHA256": "045d6ca4875bb1409b45f6d390d4724099e3a1ad6f7a1c3c5f341c6e9455832b"
+    },
+    {
+      "path": "diagnostics/android-reality-warmup/diag-reality-1/events.jsonl",
+      "sourcePath": "diagnostics/android-reality-warmup/diag-reality-1/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "5790ddb8a1ba7337d1415652fc8ac569c5df0a19dff4ef681722a61a4035386b",
+      "publishedSHA256": "5790ddb8a1ba7337d1415652fc8ac569c5df0a19dff4ef681722a61a4035386b"
+    },
+    {
+      "path": "diagnostics/android-reality-warmup/diag-reality-2/events.jsonl",
+      "sourcePath": "diagnostics/android-reality-warmup/diag-reality-2/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "e6e15001133f9ff04911993dac7abf55d13a9053d8f0568884ba3ddfb6227376",
+      "publishedSHA256": "e6e15001133f9ff04911993dac7abf55d13a9053d8f0568884ba3ddfb6227376"
+    },
+    {
+      "path": "diagnostics/android-reality-warmup/diag-reality-3/events.jsonl",
+      "sourcePath": "diagnostics/android-reality-warmup/diag-reality-3/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "f117cdde9bcbc477e8fd51c4edd2d0ba9505d18fc88ddf33496765f9bfd0d87f",
+      "publishedSHA256": "f117cdde9bcbc477e8fd51c4edd2d0ba9505d18fc88ddf33496765f9bfd0d87f"
+    },
+    {
+      "path": "diagnostics/android-reality-warmup/diag-reality-probeonly-1/events.jsonl",
+      "sourcePath": "diagnostics/android-reality-warmup/diag-reality-probeonly-1/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "bec0f4c616e913062c511f02ffed26622068e7e9ad58d862293bce158d260811",
+      "publishedSHA256": "bec0f4c616e913062c511f02ffed26622068e7e9ad58d862293bce158d260811"
+    },
+    {
+      "path": "diagnostics/android-reality-warmup/diag-reality-probeonly-2/events.jsonl",
+      "sourcePath": "diagnostics/android-reality-warmup/diag-reality-probeonly-2/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "89874ddf9702aaf925961420a8565cdca080a5e67ee52af0aa24c21aef3b830e",
+      "publishedSHA256": "89874ddf9702aaf925961420a8565cdca080a5e67ee52af0aa24c21aef3b830e"
+    },
+    {
+      "path": "diagnostics/android-reality-warmup/diag-reality-probeonly-3/events.jsonl",
+      "sourcePath": "diagnostics/android-reality-warmup/diag-reality-probeonly-3/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "8c00cfd9b5de4bbf839a2d703aefdac4fd78ed493989717d26d5d9608440a66d",
+      "publishedSHA256": "8c00cfd9b5de4bbf839a2d703aefdac4fd78ed493989717d26d5d9608440a66d"
+    },
+    {
+      "path": "diagnostics/android-reality-warmup/diag-reality-v081-1/events.jsonl",
+      "sourcePath": "diagnostics/android-reality-warmup/diag-reality-v081-1/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "3fc3bdc57d5d4b437de1b3798d9e4620f773596349e0d3c6eabf48e0238d86c2",
+      "publishedSHA256": "3fc3bdc57d5d4b437de1b3798d9e4620f773596349e0d3c6eabf48e0238d86c2"
+    },
+    {
+      "path": "diagnostics/android-reality-warmup/diag-reality-v081-2/events.jsonl",
+      "sourcePath": "diagnostics/android-reality-warmup/diag-reality-v081-2/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "00b0d75cfbbdb7b38639183ee2126dc2685cc702cbf507dabfb19b6c42158f28",
+      "publishedSHA256": "00b0d75cfbbdb7b38639183ee2126dc2685cc702cbf507dabfb19b6c42158f28"
+    },
+    {
+      "path": "diagnostics/android-reality-warmup/diag-reality-warm-1/events.jsonl",
+      "sourcePath": "diagnostics/android-reality-warmup/diag-reality-warm-1/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "f457462775b0ad865144c78bfdc2003e14d85c0906e9f335f09cb4fcc9dcef0a",
+      "publishedSHA256": "f457462775b0ad865144c78bfdc2003e14d85c0906e9f335f09cb4fcc9dcef0a"
+    },
+    {
+      "path": "diagnostics/android-reality-warmup/diag-reality-warm-2/events.jsonl",
+      "sourcePath": "diagnostics/android-reality-warmup/diag-reality-warm-2/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "13bdb65f595d8ca11e29bf28d894cc4430011a1e3e597037fc9dfa14f82c0007",
+      "publishedSHA256": "13bdb65f595d8ca11e29bf28d894cc4430011a1e3e597037fc9dfa14f82c0007"
+    },
+    {
+      "path": "diagnostics/android-reality-warmup/diag-reality-warm-3/events.jsonl",
+      "sourcePath": "diagnostics/android-reality-warmup/diag-reality-warm-3/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "77deed305f8ca60c60d38519153ba33f5d420c66129e03f5de16a3c6e195a852",
+      "publishedSHA256": "77deed305f8ca60c60d38519153ba33f5d420c66129e03f5de16a3c6e195a852"
+    },
+    {
+      "path": "diagnostics/android-reality-warmup/diag_probe_only_matrix.py",
+      "sourcePath": "diagnostics/android-reality-warmup/diag_probe_only_matrix.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "168eb9e7410963aefc3e8ce94072c06b8f348954e8a715a6d40ad0578eb61535",
+      "publishedSHA256": "168eb9e7410963aefc3e8ce94072c06b8f348954e8a715a6d40ad0578eb61535"
+    },
+    {
+      "path": "failed/android-cancel-udp-attempt1-collector-syntax/README.md",
+      "sourcePath": "failed/android-cancel-udp-attempt1-collector-syntax/README.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "312e42735bfc46b1adafba6252d169afac9fdcecefb50835cf37f44883ecda04",
+      "publishedSHA256": "312e42735bfc46b1adafba6252d169afac9fdcecefb50835cf37f44883ecda04"
+    },
+    {
+      "path": "failed/android-legacy-v09-attempt1-reality-http-timeout/README.md",
+      "sourcePath": "failed/android-legacy-v09-attempt1-reality-http-timeout/README.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "6255d747a4078f90ddc6cf718524e169780379193d51112f93462919018504e9",
+      "publishedSHA256": "6255d747a4078f90ddc6cf718524e169780379193d51112f93462919018504e9"
+    },
+    {
+      "path": "failed/android-legacy-v09-attempt1-reality-http-timeout/android-legacy-v09/events.jsonl",
+      "sourcePath": "failed/android-legacy-v09-attempt1-reality-http-timeout/android-legacy-v09/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "89b97df1ecd40a02c3a6fc6d3610f9d9f9a1a22c71312dfa869729216ddf1f76",
+      "publishedSHA256": "89b97df1ecd40a02c3a6fc6d3610f9d9f9a1a22c71312dfa869729216ddf1f76"
+    },
+    {
+      "path": "failed/android-shared-attempt1-bridge-loopback-only/README.md",
+      "sourcePath": "failed/android-shared-attempt1-bridge-loopback-only/README.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "e7d211c765f5d387ad068857db38b1958b612ca5557d8ff7672ef224105d64d8",
+      "publishedSHA256": "e7d211c765f5d387ad068857db38b1958b612ca5557d8ff7672ef224105d64d8"
+    },
+    {
+      "path": "failed/android-shared-attempt1-bridge-loopback-only/android-shared/events.jsonl",
+      "sourcePath": "failed/android-shared-attempt1-bridge-loopback-only/android-shared/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "9b9c109ab1b7321e26496399ef8449a395e0d2e4a090fcba117a4faea1db63c2",
+      "publishedSHA256": "9b9c109ab1b7321e26496399ef8449a395e0d2e4a090fcba117a4faea1db63c2"
+    },
+    {
+      "path": "failed/android-v09-attempt1-probe-permission/README.md",
+      "sourcePath": "failed/android-v09-attempt1-probe-permission/README.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "52b9ffffbd63dfd97df714c10a6dcb12c827e23dcacde91b2eec76c934f73425",
+      "publishedSHA256": "52b9ffffbd63dfd97df714c10a6dcb12c827e23dcacde91b2eec76c934f73425"
+    },
+    {
+      "path": "failed/android-v09-attempt1-probe-permission/android-v09/events.jsonl",
+      "sourcePath": "failed/android-v09-attempt1-probe-permission/android-v09/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "a6ddf431e326cdf015604175f4f844912e6a213cec6b9e755efb17651a7fdac3",
+      "publishedSHA256": "a6ddf431e326cdf015604175f4f844912e6a213cec6b9e755efb17651a7fdac3"
+    },
+    {
+      "path": "failed/ios-v09-resources-attempt1-https-first-exchange-closed/README.md",
+      "sourcePath": "failed/ios-v09-resources-attempt1-https-first-exchange-closed/README.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "53ee46afa7dcde840e449456db5b2be6417d14a54a3778a9444560b842bd5ba4",
+      "publishedSHA256": "53ee46afa7dcde840e449456db5b2be6417d14a54a3778a9444560b842bd5ba4"
+    },
+    {
+      "path": "failed/ios-v09-resources-attempt1-https-first-exchange-closed/ios-v09-resources/result.json",
+      "sourcePath": "failed/ios-v09-resources-attempt1-https-first-exchange-closed/ios-v09-resources/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "571ec43bfbe048def115e413c91ae58c13819ae0c8a12389193150a7113db611",
+      "publishedSHA256": "571ec43bfbe048def115e413c91ae58c13819ae0c8a12389193150a7113db611"
+    },
+    {
+      "path": "failed/ios-v09-smoke-attempt1-runner-args/README.md",
+      "sourcePath": "failed/ios-v09-smoke-attempt1-runner-args/README.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "1aae2dafafdb81ebf078b4b430b3093d9ce7be24fe139aeb36f8622b9e930383",
+      "publishedSHA256": "1aae2dafafdb81ebf078b4b430b3093d9ce7be24fe139aeb36f8622b9e930383"
+    },
+    {
+      "path": "failed/ios-v09-smoke-attempt2-http-no-active-flow/README.md",
+      "sourcePath": "failed/ios-v09-smoke-attempt2-http-no-active-flow/README.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "2d5529de681c9786e1f953e64d14452294ba48967161be876c46d50a5f9ff470",
+      "publishedSHA256": "2d5529de681c9786e1f953e64d14452294ba48967161be876c46d50a5f9ff470"
+    },
+    {
+      "path": "failed/ios-v09-smoke-attempt2-http-no-active-flow/ios-v09-smoke/result.json",
+      "sourcePath": "failed/ios-v09-smoke-attempt2-http-no-active-flow/ios-v09-smoke/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "98566c44c63f3996b043baa92db14373a72066b6ab35629dfdd7d94ad7cc0d3f",
+      "publishedSHA256": "98566c44c63f3996b043baa92db14373a72066b6ab35629dfdd7d94ad7cc0d3f"
+    },
+    {
+      "path": "failed/ios-v09-smoke-attempt3-http-held-flow-ended/README.md",
+      "sourcePath": "failed/ios-v09-smoke-attempt3-http-held-flow-ended/README.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "330479a078bfc2aa3a4a7e272a9131a843c1009446f44cb4ec205f4b05323545",
+      "publishedSHA256": "330479a078bfc2aa3a4a7e272a9131a843c1009446f44cb4ec205f4b05323545"
+    },
+    {
+      "path": "failed/ios-v09-smoke-attempt3-http-held-flow-ended/ios-v09-smoke/result.json",
+      "sourcePath": "failed/ios-v09-smoke-attempt3-http-held-flow-ended/ios-v09-smoke/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "eab968bce0ba000c2cffd5902a1945536f28d7e0b516d4d67f687f8d36559b74",
+      "publishedSHA256": "eab968bce0ba000c2cffd5902a1945536f28d7e0b516d4d67f687f8d36559b74"
+    },
+    {
+      "path": "failed/ios-wan-http-attempt1-lock-not-observed/README.md",
+      "sourcePath": "failed/ios-wan-http-attempt1-lock-not-observed/README.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "2e57176364ef621ed55860918493826d0a27394bcc42380e2c2b30a581af5b37",
+      "publishedSHA256": "2e57176364ef621ed55860918493826d0a27394bcc42380e2c2b30a581af5b37"
+    },
+    {
+      "path": "failed/ios-wan-http-attempt1-lock-not-observed/http-plan.json",
+      "sourcePath": "failed/ios-wan-http-attempt1-lock-not-observed/http-plan.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "26a332546a4b62439fb944ed90cbbde4bacde033308afd1d01b0fe8ce1af32ba",
+      "publishedSHA256": "26a332546a4b62439fb944ed90cbbde4bacde033308afd1d01b0fe8ce1af32ba"
+    },
+    {
+      "path": "failed/ios-wan-http-attempt1-lock-not-observed/http-result.json",
+      "sourcePath": "failed/ios-wan-http-attempt1-lock-not-observed/http-result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "2e0ab85c3c1c722c4b1c60cfb2dffc15f7e5f60664c3e9072bd0cbec1b77f913",
+      "publishedSHA256": "2e0ab85c3c1c722c4b1c60cfb2dffc15f7e5f60664c3e9072bd0cbec1b77f913"
+    },
+    {
+      "path": "failed/ios-wan-socks-attempt1-udp-relay-port-blocked/README.txt",
+      "sourcePath": "failed/ios-wan-socks-attempt1-udp-relay-port-blocked/README.txt",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "5df64504db7c1c0e90fdcb648d62fe8218ea795439dc5031bc0cf0312494ed8e",
+      "publishedSHA256": "5df64504db7c1c0e90fdcb648d62fe8218ea795439dc5031bc0cf0312494ed8e"
+    },
+    {
+      "path": "failed/ios-wan-socks-attempt1-udp-relay-port-blocked/socks-plan.json",
+      "sourcePath": "failed/ios-wan-socks-attempt1-udp-relay-port-blocked/socks-plan.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "e8c5a672f2a0deba8b20c66379abeb53c5a8267a12bb4891bfa3e7efb0cbf5e3",
+      "publishedSHA256": "e8c5a672f2a0deba8b20c66379abeb53c5a8267a12bb4891bfa3e7efb0cbf5e3"
+    },
+    {
+      "path": "failed/ios-wan-socks-attempt1-udp-relay-port-blocked/socks-result.json",
+      "sourcePath": "failed/ios-wan-socks-attempt1-udp-relay-port-blocked/socks-result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "f1318797b8af4640f9a01a106d1df2541c17fe50557653775db4f4b6db9018b3",
+      "publishedSHA256": "f1318797b8af4640f9a01a106d1df2541c17fe50557653775db4f4b6db9018b3"
+    },
+    {
+      "path": "failed/ios-wan-socks-attempt1-udp-relay-port-blocked/socks_udp_probe.py",
+      "sourcePath": "failed/ios-wan-socks-attempt1-udp-relay-port-blocked/socks_udp_probe.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "865ee19d228932c086fbed534222faa72e4942a7b3f9bb2d6f3c25958ae64ae7",
+      "publishedSHA256": "865ee19d228932c086fbed534222faa72e4942a7b3f9bb2d6f3c25958ae64ae7"
+    },
+    {
+      "path": "failed/ios-wan-socks-container-attempt1-cellular-udp/README.md",
+      "sourcePath": "failed/ios-wan-socks-container-attempt1-cellular-udp/README.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "7fff870ccab0097fc8bb6bbaaebf3be37fad324ffce98b72e6265cdcfbcd9c3a",
+      "publishedSHA256": "7fff870ccab0097fc8bb6bbaaebf3be37fad324ffce98b72e6265cdcfbcd9c3a"
+    },
+    {
+      "path": "failed/ios-wan-socks-container-attempt1-cellular-udp/socks-result.json",
+      "sourcePath": "failed/ios-wan-socks-container-attempt1-cellular-udp/socks-result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "d1b940138079a40add60b09c8f30fab4ce49aa0d80cbabd87d5d0a7797daa0d7",
+      "publishedSHA256": "d1b940138079a40add60b09c8f30fab4ce49aa0d80cbabd87d5d0a7797daa0d7"
+    },
+    {
+      "path": "failed/ios-wan-socks-container-attempt2-relay-port-exhaustion/README.md",
+      "sourcePath": "failed/ios-wan-socks-container-attempt2-relay-port-exhaustion/README.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "9ae2cc0d5317598e20e32ae2eb8d31ef9fb77f9050ac44f631f8d3274abe2f3b",
+      "publishedSHA256": "9ae2cc0d5317598e20e32ae2eb8d31ef9fb77f9050ac44f631f8d3274abe2f3b"
+    },
+    {
+      "path": "failed/ios-wan-socks-container-attempt2-relay-port-exhaustion/socks-plan.json",
+      "sourcePath": "failed/ios-wan-socks-container-attempt2-relay-port-exhaustion/socks-plan.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "019d3b8a8e23504f170fcefc041ac4b4e8eece358209f402e030dcd31b46e5f8",
+      "publishedSHA256": "019d3b8a8e23504f170fcefc041ac4b4e8eece358209f402e030dcd31b46e5f8"
+    },
+    {
+      "path": "failed/ios-wan-socks-container-attempt2-relay-port-exhaustion/socks-result.json",
+      "sourcePath": "failed/ios-wan-socks-container-attempt2-relay-port-exhaustion/socks-result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "71f885bf725941fa5c58fcef1ff6e6921aaab9f3dc1db4a34f7a888e035276c9",
+      "publishedSHA256": "71f885bf725941fa5c58fcef1ff6e6921aaab9f3dc1db4a34f7a888e035276c9"
+    },
+    {
+      "path": "failed/ios-wan-socks-container-attempt2-relay-port-exhaustion/socks_exhaust.py",
+      "sourcePath": "failed/ios-wan-socks-container-attempt2-relay-port-exhaustion/socks_exhaust.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "47ec78b1721c3a5abe5c4384e0901e6e7d33c263da81eb1ffc0481596115f9af",
+      "publishedSHA256": "47ec78b1721c3a5abe5c4384e0901e6e7d33c263da81eb1ffc0481596115f9af"
+    },
+    {
+      "path": "failed/performance-protocols-attempt1/README.md",
+      "sourcePath": "failed/performance-protocols-attempt1/README.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "07b971d3c1525f9744d70ae6982b7365ada304139c9624274471bc5b7c8272d5",
+      "publishedSHA256": "07b971d3c1525f9744d70ae6982b7365ada304139c9624274471bc5b7c8272d5"
+    },
+    {
+      "path": "failed/performance-protocols-attempt1/manifest.json",
+      "sourcePath": "failed/performance-protocols-attempt1/manifest.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "93e15308c5a9861873a299390aef0ab69adaf5b8df742a807ac6a2ef13b41fe0",
+      "publishedSHA256": "aa7617cfc4bbacd7726a909a4783578f99b10386a33151de98d00a4a16226c33"
+    },
+    {
+      "path": "failed/performance-protocols-attempt1/socks-auth-socks-full-duplex-1-candidate-1/result.json",
+      "sourcePath": "failed/performance-protocols-attempt1/socks-auth-socks-full-duplex-1-candidate-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "13d159c27ae6402dc1ba3b6cefeecd2d611868f1309b07c98c34490ea5c84bbb",
+      "publishedSHA256": "3dc85c97f28daa527aeab6c9a451e9a9c9004948a7ec94ad12dba2fb3195f1e1"
+    },
+    {
+      "path": "host-loopback/ciphers-v09.log",
+      "sourcePath": "host-loopback/ciphers-v09.log",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "1fc32a3285a4f2c793aa25a5f3ec736b1493ee49d99ef6fce0f04abda627ae61",
+      "publishedSHA256": "1fc32a3285a4f2c793aa25a5f3ec736b1493ee49d99ef6fce0f04abda627ae61"
+    },
+    {
+      "path": "host-loopback/legacy-v09.log",
+      "sourcePath": "host-loopback/legacy-v09.log",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "d49452e0a9da5d2f01d0ee6d0f2346afac7379abf1ebbea3ab1e154abe10fbf7",
+      "publishedSHA256": "d49452e0a9da5d2f01d0ee6d0f2346afac7379abf1ebbea3ab1e154abe10fbf7"
+    },
+    {
+      "path": "host-loopback/v09.log",
+      "sourcePath": "host-loopback/v09.log",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "1cabdfbd4867bedf7f813064948b793a0cca9358611bdafcba0afc388d9dfb16",
+      "publishedSHA256": "1cabdfbd4867bedf7f813064948b793a0cca9358611bdafcba0afc388d9dfb16"
+    },
+    {
+      "path": "ios-ciphers-v09-result.json",
+      "sourcePath": "ios-ciphers-v09/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "92212bf91eaf1438b1055a92c5cc33d1a82a2bd2342305d32900d84cf0791547",
+      "publishedSHA256": "92212bf91eaf1438b1055a92c5cc33d1a82a2bd2342305d32900d84cf0791547"
+    },
+    {
+      "path": "ios-fakedns-negative-result.json",
+      "sourcePath": "ios-fakedns-negative/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "497d4c92143f468cc1db0fe1a5c79192b83c9f7cdb471b9f0f1f91615b51469e",
+      "publishedSHA256": "497d4c92143f468cc1db0fe1a5c79192b83c9f7cdb471b9f0f1f91615b51469e"
+    },
+    {
+      "path": "ios-fakedns-recovery-result.json",
+      "sourcePath": "ios-fakedns-recovery/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "4ac9c88a674585a16090bf3cffbf6e1476f414219191093a4e179472b97a9b6f",
+      "publishedSHA256": "4ac9c88a674585a16090bf3cffbf6e1476f414219191093a4e179472b97a9b6f"
+    },
+    {
+      "path": "ios-legacy-v09-result.json",
+      "sourcePath": "ios-legacy-v09/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "a7f04b33bd2c57674341353b081ef2a90c19103541ef3053f31a187782fef562",
+      "publishedSHA256": "a7f04b33bd2c57674341353b081ef2a90c19103541ef3053f31a187782fef562"
+    },
+    {
+      "path": "ios-projection-file-descriptor-result.json",
+      "sourcePath": "ios-projection-file-descriptor/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "454422574f3a3608602449f29533607289b2c5b38c397a27f4dd44e53bdbc6a5",
+      "publishedSHA256": "454422574f3a3608602449f29533607289b2c5b38c397a27f4dd44e53bdbc6a5"
+    },
+    {
+      "path": "ios-projection-packet-pump-result.json",
+      "sourcePath": "ios-projection-packet-pump/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "5112857dc0efda6559330381e772e1850c5d3fe0438a671e83f9a8194d02c4f2",
+      "publishedSHA256": "5112857dc0efda6559330381e772e1850c5d3fe0438a671e83f9a8194d02c4f2"
+    },
+    {
+      "path": "ios-shared-result.json",
+      "sourcePath": "ios-shared/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "205f99f3a108e103814efc7c48297d3d73458092d19ab133cf57ed97ea820af0",
+      "publishedSHA256": "205f99f3a108e103814efc7c48297d3d73458092d19ab133cf57ed97ea820af0"
+    },
+    {
+      "path": "ios-v09-lifecycle-result.json",
+      "sourcePath": "ios-v09-lifecycle/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "0ab5b2ebfc76d4be1f93b8618ff258899f8c99c73ea19639d7c358fac260284b",
+      "publishedSHA256": "0ab5b2ebfc76d4be1f93b8618ff258899f8c99c73ea19639d7c358fac260284b"
+    },
+    {
+      "path": "ios-v09-resources-result.json",
+      "sourcePath": "ios-v09-resources/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "ef8f8264ed84c3cdea0c627d40ed8e57a85aba4f2240ba680369b6b28e43eb26",
+      "publishedSHA256": "ef8f8264ed84c3cdea0c627d40ed8e57a85aba4f2240ba680369b6b28e43eb26"
+    },
+    {
+      "path": "ios-v09-smoke-result.json",
+      "sourcePath": "ios-v09-smoke/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "542be3b5a498dea3cfc23c82fac06ddec3cb3c68b432f1c39890a24f5d3406b5",
+      "publishedSHA256": "542be3b5a498dea3cfc23c82fac06ddec3cb3c68b432f1c39890a24f5d3406b5"
+    },
+    {
+      "path": "ios-wan/http-plan.json",
+      "sourcePath": "ios-wan/http-plan.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "55c2e10ff67518378f9781d28aba8fe7a12ae8a8628a58223ccd19bd18b49e7c",
+      "publishedSHA256": "55c2e10ff67518378f9781d28aba8fe7a12ae8a8628a58223ccd19bd18b49e7c"
+    },
+    {
+      "path": "ios-wan/http-result.json",
+      "sourcePath": "ios-wan/http-result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "aec492c507816f5ac767ccc34e78612227d33783c07faa63cef9fa6706df01f7",
+      "publishedSHA256": "aec492c507816f5ac767ccc34e78612227d33783c07faa63cef9fa6706df01f7"
+    },
+    {
+      "path": "ios-wan/http-services-restored.json",
+      "sourcePath": "ios-wan/http-services-restored.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "bad33163f73a8b3276058a18e4d4ab9da499355f7ffb01c2bcfdad49a5dae6f4",
+      "publishedSHA256": "bad33163f73a8b3276058a18e4d4ab9da499355f7ffb01c2bcfdad49a5dae6f4"
+    },
+    {
+      "path": "ios-wan/https-plan.json",
+      "sourcePath": "ios-wan/https-plan.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "26d6e934441e01fa78fc09363834a03ecdd3cdb24e8e5ee1a398d5d0b85a3749",
+      "publishedSHA256": "26d6e934441e01fa78fc09363834a03ecdd3cdb24e8e5ee1a398d5d0b85a3749"
+    },
+    {
+      "path": "ios-wan/https-result.json",
+      "sourcePath": "ios-wan/https-result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "e6d08d4f21d636672c8f045343ec160cd63037fbc15857e6fa6fab49b14dc5f9",
+      "publishedSHA256": "e6d08d4f21d636672c8f045343ec160cd63037fbc15857e6fa6fab49b14dc5f9"
+    },
+    {
+      "path": "ios-wan/https-services-restored.json",
+      "sourcePath": "ios-wan/https-services-restored.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "9b96b6edf9ff26198dc3fe1be7bfc93fcae6c635b79dc4e30003e7c14499f7a2",
+      "publishedSHA256": "9b96b6edf9ff26198dc3fe1be7bfc93fcae6c635b79dc4e30003e7c14499f7a2"
+    },
+    {
+      "path": "ios-wan/services-after-cleanup.json",
+      "sourcePath": "ios-wan/services-after-cleanup.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "150c5b6c7eca3a2e2df890acc5093fc5db6b2772ce73cdcde9c161313030a2d1",
+      "publishedSHA256": "150c5b6c7eca3a2e2df890acc5093fc5db6b2772ce73cdcde9c161313030a2d1"
+    },
+    {
+      "path": "ios-wan/services-before.json",
+      "sourcePath": "ios-wan/services-before.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "13882b70690b51658ef787fdbfd082b2d1bee52dff7ad9301a67851f5fc04607",
+      "publishedSHA256": "13882b70690b51658ef787fdbfd082b2d1bee52dff7ad9301a67851f5fc04607"
+    },
+    {
+      "path": "ios-wan/shadowsocks-aead-plan.json",
+      "sourcePath": "ios-wan/shadowsocks-aead-plan.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "7e12423b1dd0e0565d9ff59b7484f035979f7c15cce1e8db693bd582ccaab705",
+      "publishedSHA256": "7e12423b1dd0e0565d9ff59b7484f035979f7c15cce1e8db693bd582ccaab705"
+    },
+    {
+      "path": "ios-wan/shadowsocks-aead-result.json",
+      "sourcePath": "ios-wan/shadowsocks-aead-result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "99fbdc97fac546334f30923cfe6818076aa858a6a0bb594452f2c6b2055c9d91",
+      "publishedSHA256": "99fbdc97fac546334f30923cfe6818076aa858a6a0bb594452f2c6b2055c9d91"
+    },
+    {
+      "path": "ios-wan/shadowsocks-aead-services-restored.json",
+      "sourcePath": "ios-wan/shadowsocks-aead-services-restored.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "e4adc674a24a5856595fb304adf3dae2acb7cede463ae9d914838d974f82c13a",
+      "publishedSHA256": "e4adc674a24a5856595fb304adf3dae2acb7cede463ae9d914838d974f82c13a"
+    },
+    {
+      "path": "ios-wan/socks-plan.json",
+      "sourcePath": "ios-wan/socks-plan.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "7ae2d10cf6162be0b992257f301564ad880f19694efd320eb7e76355c3da0490",
+      "publishedSHA256": "7ae2d10cf6162be0b992257f301564ad880f19694efd320eb7e76355c3da0490"
+    },
+    {
+      "path": "ios-wan/socks-result.json",
+      "sourcePath": "ios-wan/socks-result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "b7c72c5f87abd80e6f6a11501eaa51d176c800b3b3ce3aceb5889b873bf586f9",
+      "publishedSHA256": "b7c72c5f87abd80e6f6a11501eaa51d176c800b3b3ce3aceb5889b873bf586f9"
+    },
+    {
+      "path": "ios-wan/socks-services-restored.json",
+      "sourcePath": "ios-wan/socks-services-restored.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "150c5b6c7eca3a2e2df890acc5093fc5db6b2772ce73cdcde9c161313030a2d1",
+      "publishedSHA256": "150c5b6c7eca3a2e2df890acc5093fc5db6b2772ce73cdcde9c161313030a2d1"
+    },
+    {
+      "path": "performance-features/benchmark-raw.json",
+      "sourcePath": "performance-features/benchmark-raw.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "9a8eee0cc589a00d2414d824e3f7f3e3f595cb30450f22ac4ddb91d1b47560ac",
+      "publishedSHA256": "9a8eee0cc589a00d2414d824e3f7f3e3f595cb30450f22ac4ddb91d1b47560ac"
+    },
+    {
+      "path": "performance-features/build-manifest.json",
+      "sourcePath": "performance-features/build-manifest.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "f8e0778e83f2c37543b5e5a7d40e297cd315c1af4988abb310cb3590683f1b53",
+      "publishedSHA256": "f8e0778e83f2c37543b5e5a7d40e297cd315c1af4988abb310cb3590683f1b53"
+    },
+    {
+      "path": "performance-features/performance.json",
+      "sourcePath": "performance-features/performance.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "57fe77e5c4cd8453a3ae7f66681524b9ca5480f99aa5c4c514ad7b1672b5543f",
+      "publishedSHA256": "57fe77e5c4cd8453a3ae7f66681524b9ca5480f99aa5c4c514ad7b1672b5543f"
+    },
+    {
+      "path": "performance-protocols/benchmark-raw.json",
+      "sourcePath": "performance-protocols/benchmark-raw.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "2543160e127a0a96567e1880473ca03c1b26a161e712377cb555cace60b477ba",
+      "publishedSHA256": "c09d5d6a6c9b4e9e19d4be3b4a2b635983853596d1bb339962d878df36863252"
+    },
+    {
+      "path": "performance-protocols/manifest.json",
+      "sourcePath": "performance-protocols/manifest.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "58e316a0e8892f5fcf415133d4be196f7b6fec1b08d8034ab469a686cee9b943",
+      "publishedSHA256": "a0ef1a4ae523e7f9bad37f0b5b35726755d27b6a2f899b04e6e4452d39c3366d"
+    },
+    {
+      "path": "performance-protocols/protocol-comparisons.json",
+      "sourcePath": "performance-protocols/protocol-comparisons.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "837e33d0228d80c7e80731272b000eaf8b6bb166a56cf0cfe2b38c80b08df016",
+      "publishedSHA256": "837e33d0228d80c7e80731272b000eaf8b6bb166a56cf0cfe2b38c80b08df016"
+    },
+    {
+      "path": "tools/apply_ios_projection.py",
+      "sourcePath": "tools/apply_ios_projection.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "88fe83b41cddb5765efe7da04b5e20d6672b1f7326f10456ce1425319cf49361",
+      "publishedSHA256": "88fe83b41cddb5765efe7da04b5e20d6672b1f7326f10456ce1425319cf49361"
+    },
+    {
+      "path": "tools/assemble_v09.py",
+      "sourcePath": "tools/assemble_v09.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "da261012c4ca97a941998cd7484d38ef74bd053ff5e8dd46acf55a88ae77bab8",
+      "publishedSHA256": "748ee9133753b344c41da3ae2d020d3090bc103b7596d4ea184881a216f75067"
+    },
+    {
+      "path": "tools/bridge-src/bridge.go",
+      "sourcePath": "tools/bridge-src/bridge.go",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "a5168bcd4964bd196cde1067945a80d026b7f1d27a813c48783021962c636b59",
+      "publishedSHA256": "a5168bcd4964bd196cde1067945a80d026b7f1d27a813c48783021962c636b59"
+    },
+    {
+      "path": "tools/bridge-src/main.go",
+      "sourcePath": "tools/bridge-src/main.go",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "1d6e4e1efba22ae70cb24da277cd819175ced89ab90053a10ab529bab42c1ec2",
+      "publishedSHA256": "1d6e4e1efba22ae70cb24da277cd819175ced89ab90053a10ab529bab42c1ec2"
+    },
+    {
+      "path": "tools/collect_protocols_v09.py",
+      "sourcePath": "tools/collect_protocols_v09.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "46e55970e9846ff4c35399c6de757d3dae06cf341584335afe64eebd429bee76",
+      "publishedSHA256": "b0a9d22656cb386b9027a81a020769ebabdb35a46251144eff2a0ff21d8c6278"
+    },
+    {
+      "path": "tools/device_clock.py",
+      "sourcePath": "tools/device_clock.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "a97b61e2a5209deed7e7dfb9b9d1f2a694da263094b009405071e9ce3e0b6b09",
+      "publishedSHA256": "a97b61e2a5209deed7e7dfb9b9d1f2a694da263094b009405071e9ce3e0b6b09"
+    },
+    {
+      "path": "tools/download-bridge-lan-bind.patch",
+      "sourcePath": "tools/download-bridge-lan-bind.patch",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "d5c749423ff4811e0bd9b97b234bcfbb4f4164134211dbc0fc44565830982aef",
+      "publishedSHA256": "885b363f913bc6add1e4727f45e072138b71ee092e157afc72c2649903e20d8d"
+    },
+    {
+      "path": "tools/drive.py",
+      "sourcePath": "tools/drive.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "961651f21dfdc3cf0ec4ffa9469700580726df44fdfd7c767ca7c67419e335c2",
+      "publishedSHA256": "246efaa08ed447c54834251347c6dbcabb9c442703f7ac7825a5e9d3ebba1df6"
+    },
+    {
+      "path": "tools/fixture_container.py",
+      "sourcePath": "tools/fixture_container.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "000d079c71bb179dc06a14a7694669762c335dc8138a9b84d9edfd7bd63576af",
+      "publishedSHA256": "000d079c71bb179dc06a14a7694669762c335dc8138a9b84d9edfd7bd63576af"
+    },
+    {
+      "path": "tools/ios-probe-http-held-flow-and-fakedns.patch",
+      "sourcePath": "tools/ios-probe-http-held-flow-and-fakedns.patch",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "6d08f643d469d1b7e105dbd370d69ee505265fc08d233dcd725cc2de6329aeff",
+      "publishedSHA256": "6d08f643d469d1b7e105dbd370d69ee505265fc08d233dcd725cc2de6329aeff"
+    },
+    {
+      "path": "tools/ios-probe-http-held-flow.patch",
+      "sourcePath": "tools/ios-probe-http-held-flow.patch",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "eed59ac3984916dc31b54db1e01bad945a5c33bc5627023f3994be65d33c24a8",
+      "publishedSHA256": "eed59ac3984916dc31b54db1e01bad945a5c33bc5627023f3994be65d33c24a8"
+    },
+    {
+      "path": "tools/ios-projection-build.patch",
+      "sourcePath": "tools/ios-projection-build.patch",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "a5a60b468891396bfca7d5afc51c98cbb3eb31846bd612accbb5669566d8ec79",
+      "publishedSHA256": "a5a60b468891396bfca7d5afc51c98cbb3eb31846bd612accbb5669566d8ec79"
+    },
+    {
+      "path": "tools/local_cancel_v09.py",
+      "sourcePath": "tools/local_cancel_v09.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "ba3c4283eda5b804b40976687101f3b6755fc5ddcc3ade6321ebda25757a60be",
+      "publishedSHA256": "ba3c4283eda5b804b40976687101f3b6755fc5ddcc3ade6321ebda25757a60be"
+    },
+    {
+      "path": "tools/main-harness-src/PacketTunnelProvider.swift",
+      "sourcePath": "tools/main-harness-src/PacketTunnelProvider.swift",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "96c8ecdf8771942d659b675e41ceb69d43f980b432c300517ae1a30dada20d92",
+      "publishedSHA256": "96c8ecdf8771942d659b675e41ceb69d43f980b432c300517ae1a30dada20d92"
+    },
+    {
+      "path": "tools/main-harness-src/XrayProtocolDeviceProbe.swift",
+      "sourcePath": "tools/main-harness-src/XrayProtocolDeviceProbe.swift",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "7edbc0790d6ec6622c45d89f2245095ddc2ddda5e19747f016e899ea46ff4929",
+      "publishedSHA256": "7edbc0790d6ec6622c45d89f2245095ddc2ddda5e19747f016e899ea46ff4929"
+    },
+    {
+      "path": "tools/resources_v09.py",
+      "sourcePath": "tools/resources_v09.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "3fa6ff99fd7db12a0f4c6548e76241caf573e0393338503623e8945b0121e39e",
+      "publishedSHA256": "3fa6ff99fd7db12a0f4c6548e76241caf573e0393338503623e8945b0121e39e"
+    },
+    {
+      "path": "tools/run_android_shared.sh",
+      "sourcePath": "tools/run_android_shared.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "2f5b2714349f48819da511e80454ebdf112596e207900f220820b0610e546a4e",
+      "publishedSHA256": "7e1a34b13f1759adf20e03b747faf728870e14ce65ea48987e2faf18d32d886f"
+    },
+    {
+      "path": "tools/run_apple.sh",
+      "sourcePath": "tools/run_apple.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "078f7ab437d3c506d2fc0a50ff726c4f23a92f2385b1660e5c0363d4f6fa0c30",
+      "publishedSHA256": "052443d90b179192cae53e765204fa45523b00acde06d2f6d50eb2b7de787b9b"
+    },
+    {
+      "path": "tools/run_collector.sh",
+      "sourcePath": "tools/run_collector.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "8bd98dcd9a3b91e47fd6044fde7c14bcdb2586a2c49ea34652523019c674134e",
+      "publishedSHA256": "7a137b835523c8e65c11a2d8ae2b8054ee815450814b9e80511bddae57daa9f7"
+    },
+    {
+      "path": "tools/shared_android_v09.py",
+      "sourcePath": "tools/shared_android_v09.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "586d05cf57ffb8fc81298e1a01a8e15e1958e1d955c04f45eb54e2b3d9011ec9",
+      "publishedSHA256": "586d05cf57ffb8fc81298e1a01a8e15e1958e1d955c04f45eb54e2b3d9011ec9"
+    },
+    {
+      "path": "tools/shared_fixture_v09.py",
+      "sourcePath": "tools/shared_fixture_v09.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "ba58e12491a6884f8bb6523a9aeda25980b73b459ab07f4bab6ab8fb575253f0",
+      "publishedSHA256": "f4657a4b62a1becab1367b3e27c34ad9ad13b8e79ef86310726a81b15423be71"
+    },
+    {
+      "path": "tools/summarize_protocols_v09.py",
+      "sourcePath": "tools/summarize_protocols_v09.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "372d19f96eb8e2e0cd992d056a02d95e086e94b05034f92d2494e5c60eb44662",
+      "publishedSHA256": "372d19f96eb8e2e0cd992d056a02d95e086e94b05034f92d2494e5c60eb44662"
+    },
+    {
+      "path": "tools/udp_cancel_v09.py",
+      "sourcePath": "tools/udp_cancel_v09.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "5d5e65b31e8633eadf483db5b3b0697d4b26ab97e855e1fad34ddf2eb4179df3",
+      "publishedSHA256": "5d5e65b31e8633eadf483db5b3b0697d4b26ab97e855e1fad34ddf2eb4179df3"
+    },
+    {
+      "path": "tools/wan_v09.py",
+      "sourcePath": "tools/wan_v09.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "ce6f676d4150f560e80364ca686c0b92f9475de12c8e92df0c70e633d33600a5",
+      "publishedSHA256": "778f41b1a2bde52da54816012dee2f499f8a19ee0d1ceed32039a380c05a7aaa"
+    },
+    {
+      "path": "tools/worktree-before-perf.patch",
+      "sourcePath": "tools/worktree-before-perf.patch",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "6d08f643d469d1b7e105dbd370d69ee505265fc08d233dcd725cc2de6329aeff",
+      "publishedSHA256": "6d08f643d469d1b7e105dbd370d69ee505265fc08d233dcd725cc2de6329aeff"
+    }
+  ],
+  "scope": "sanitized exact-candidate measurements; original failures and diagnoses retained"
+}

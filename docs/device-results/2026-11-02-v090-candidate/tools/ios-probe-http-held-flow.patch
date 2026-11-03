@@ -1,0 +1,61 @@
+diff --git a/platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift b/platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift
+index 646bf17d..0c09a4f5 100644
+--- a/platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift
++++ b/platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift
+@@ -143,7 +143,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
+                           "seconds": Date().timeIntervalSince(started)])
+                     try await traffic(fixture)
+                     try await sample(cycle: cycle, stage: "after-traffic")
+-                    try await verifyConnectionClosure(cycle: cycle)
++                    try await closeActiveFlows(fixture, cycle: cycle)
+                     try await traffic(fixture)
+                     emit(["event": "traffic-after-close", "cycle": cycle, "result": "passed"])
+                     try await sample(cycle: cycle, stage: "after-recovery")
+@@ -434,7 +434,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
+         emit(["event": "lock-interval", "seconds": unlockedAt - signals.lockedAt!])
+         try await recover(fixture, stage: "after-unlock", since: unlockedAt)
+         try await sameRuntime(initial.runtimeIdentifier)
+-        try await verifyConnectionClosure(cycle: 1)
++        try await closeActiveFlows(fixture, cycle: 1)
+         try await controller.stop()
+         try await waitDisconnected()
+         emit(["event": "disconnected", "cycle": 1, "result": "passed"])
+@@ -563,6 +563,38 @@ private final class ProtocolDeviceProbe: ObservableObject {
+ 
+     }
+ 
++    /// An outbound without UDP (HTTP CONNECT) leaves no association open after
++    /// the traffic sweep, so hold one idle TCP echo flow for the close request
++    /// to cancel. The fixture echo drops a flow only after 10 s without data,
++    /// so the flow must end within 5 s of the close request to count.
++    private func closeActiveFlows(_ fixture: Fixture, cycle: Int) async throws {
++        guard !udpExpected else { return try await verifyConnectionClosure(cycle: cycle) }
++        let tcpPort = fixture.tcpPort
++        let held = Task { () -> (TimeInterval, Error?) in
++            do {
++                // One byte echoed, two awaited: the flow stays open and idle.
++                _ = try await ProbeExchange.run(host: "198.51.100.7", port: tcpPort,
++                                                request: Data([0x68]), tcpLength: 2, timeout: 20)
++                return (ProcessInfo.processInfo.systemUptime, nil)
++            } catch {
++                return (ProcessInfo.processInfo.systemUptime, error)
++            }
++        }
++        try await Task.sleep(nanoseconds: 1_000_000_000)
++        emit(["event": "held-tcp-flow", "cycle": cycle, "host": "198.51.100.7"])
++        let closeRequested = ProcessInfo.processInfo.systemUptime
++        try await verifyConnectionClosure(cycle: cycle)
++        let (endedAt, error) = await held.value
++        let seconds = endedAt - closeRequested
++        guard let error, seconds >= 0, seconds < 5 else {
++            emit(["event": "held-tcp-flow-survived", "cycle": cycle, "seconds": seconds])
++            throw Failure.retainedFlows
++        }
++        let detail = error as NSError
++        emit(["event": "held-tcp-flow-closed", "cycle": cycle, "result": "passed",
++              "domain": detail.domain, "code": detail.code, "seconds": seconds])
++    }
++
+     private func verifyConnectionClosure(cycle: Int, allowEmpty: Bool = false) async throws {
+         guard let requested = try await controller.protocolProbeConnectionIDs(close: true),
+               allowEmpty || !requested.isEmpty else { throw Failure.missingStats }

@@ -1,0 +1,26 @@
+--- <repo>/tools/xhttp-download-oracle/bridge.go	2026-09-07 22:54:05
++++ <repo>/target/release-090/campaign.noindex/tools/bridge-src/bridge.go	2026-11-02 09:40:00
+@@ -68,7 +68,13 @@
+ 		_ = http.NewResponseController(w).EnableFullDuplex()
+ 		proxy.ServeHTTP(w, r)
+ 	})
+-	listener, err := net.Listen("tcp", "127.0.0.1:0")
++	// Campaign patch: a device fixture reaches the bridge over the LAN, so
++	// listen on XRAY_FIXTURE_BIND (as shared-fixture.py passes) when set.
++	bind := os.Getenv("XRAY_FIXTURE_BIND")
++	if bind == "" {
++		bind = "127.0.0.1"
++	}
++	listener, err := net.Listen("tcp", net.JoinHostPort(bind, "0"))
+ 	if err != nil {
+ 		return err
+ 	}
+@@ -77,7 +83,7 @@
+ 	if err = http2.ConfigureServer(server, &http2.Server{}); err != nil {
+ 		return err
+ 	}
+-	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
++	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP(bind)})
+ 	if err != nil {
+ 		return err
+ 	}

@@ -1,0 +1,1 @@
+Android v09 matrix, attempt 1. The first launch of the newly installed probe package showed the notifications permission dialog, which swallowed the am start intents, so socks-password hit the status deadline with no traffic. The owner granted the permission and the matrix was rerun as android-v09 (14/14).

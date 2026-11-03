@@ -1,0 +1,1830 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 15,
+    "protocol" : "setup",
+    "time" : "2026-11-02T16:28:18Z"
+  },
+  {
+    "event" : "invalid-import-redaction",
+    "format" : "shadowsocks2022",
+    "protocol" : "shadowsocks-aead",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:18Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:18Z"
+  },
+  {
+    "event" : "access-network",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:18Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:18Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi",
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:18Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:18Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:18Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:20Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:21Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:21Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:21Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:21Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:21Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.75739983329549432,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:22Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:22Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.77089458331465721,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:23Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-a053ca31ebc7.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:23Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.92333558341488242,
+    "host" : "v07-probe-a053ca31ebc7.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:24Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:24Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.19850825006142259,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:24Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:24Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.23274024995043874,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:24Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:24Z"
+  },
+  {
+    "activeRecoverySeconds" : 3.1806680834852159,
+    "event" : "transition-recovered",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "retries" : 0,
+    "secondsSincePathOrUnlock" : 6.5101310834288597,
+    "stage" : "wifi-baseline",
+    "time" : "2026-11-02T16:28:24Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.0763371668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.1695283335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.3891105833"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "stage" : "wifi-baseline",
+    "time" : "2026-11-02T16:28:24Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4114032,
+    "inboundPackets" : 229,
+    "outboundPackets" : 193,
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "rss" : 29261824,
+    "runtime" : "48576ec4-aab5-4300-9cb3-c4b7d5fed847",
+    "stage" : "wifi-baseline",
+    "tcp" : 1,
+    "threads" : 10,
+    "time" : "2026-11-02T16:28:24Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "action" : "cellular",
+    "event" : "action-required",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:24Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:26Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:27Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:29Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:31Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:34Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:35Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:38Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "unavailable",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:41Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "access-network",
+    "interface" : "cellular",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:41Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:41Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:41Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:41Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.84006858337670565,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:42Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:42Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:42Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:42Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.77929124981164932,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:42Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-a053ca31ebc7.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:42Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.83787983329966664,
+    "host" : "v07-probe-a053ca31ebc7.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:43Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:43Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.24777420843020082,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:44Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:44Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.27894650003872812,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:44Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:44Z"
+  },
+  {
+    "activeRecoverySeconds" : 3.2793622501194477,
+    "event" : "transition-recovered",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "retries" : 0,
+    "secondsSincePathOrUnlock" : 3.362408374901861,
+    "stage" : "cellular",
+    "time" : "2026-11-02T16:28:44Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.0763371668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.1695283335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.3891105833"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383162.5725179168"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383163.565336125"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383165.8878610418"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383167.61806325"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383171.3901743751"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383171.889007375"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383175.5141878335"
+      },
+      {
+        "interface" : "",
+        "kind" : "offline",
+        "uptime" : "1383177.6149873333"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "1383177.7633828751"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "1383178.2841683752"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383178.8892608334"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "stage" : "cellular",
+    "time" : "2026-11-02T16:28:44Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4359792,
+    "inboundPackets" : 467,
+    "outboundPackets" : 401,
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "rss" : 30015488,
+    "runtime" : "48576ec4-aab5-4300-9cb3-c4b7d5fed847",
+    "stage" : "cellular",
+    "tcp" : 1,
+    "threads" : 10,
+    "time" : "2026-11-02T16:28:44Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 4
+  },
+  {
+    "action" : "wifi",
+    "event" : "action-required",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:44Z"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:49Z"
+  },
+  {
+    "event" : "access-network",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:49Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:49Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:49Z"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi",
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:49Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:50Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:50Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:50Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:50Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.80330262496136129,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:50Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:50Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:50Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:50Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:51Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:51Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.90979325002990663,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:51Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-a053ca31ebc7.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:51Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.75847058347426355,
+    "host" : "v07-probe-a053ca31ebc7.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:52Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:52Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.20355220837518573,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:52Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:52Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.19025254156440496,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:53Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:28:53Z"
+  },
+  {
+    "activeRecoverySeconds" : 3.3330950832460076,
+    "event" : "transition-recovered",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "retries" : 0,
+    "secondsSincePathOrUnlock" : 3.4174800834152848,
+    "stage" : "wifi",
+    "time" : "2026-11-02T16:28:53Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.0763371668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.1695283335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.3891105833"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383162.5725179168"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383163.565336125"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383165.8878610418"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383167.61806325"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383171.3901743751"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383171.889007375"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383175.5141878335"
+      },
+      {
+        "interface" : "",
+        "kind" : "offline",
+        "uptime" : "1383177.6149873333"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "1383177.7633828751"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "1383178.2841683752"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383178.8892608334"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383186.3753274584"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383186.513504375"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383186.6381565419"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383186.8891392918"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "1383187.5144451251"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383187.6506267085"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383187.904400375"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "1383188.0474810416"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "stage" : "wifi",
+    "time" : "2026-11-02T16:28:53Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4441712,
+    "inboundPackets" : 688,
+    "outboundPackets" : 589,
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "rss" : 30294016,
+    "runtime" : "48576ec4-aab5-4300-9cb3-c4b7d5fed847",
+    "stage" : "wifi",
+    "tcp" : 1,
+    "threads" : 9,
+    "time" : "2026-11-02T16:28:53Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 6
+  },
+  {
+    "action" : "lock-30-seconds",
+    "event" : "action-required",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:53Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:54Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi",
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:55Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:55Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "protected-data-unavailable",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:56Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:56Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:57Z"
+  },
+  {
+    "event" : "app-background",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:28:58Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:28:58Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:29:32Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "protected-data-available",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:29:33Z"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:29:33Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:29:33Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:29:33Z"
+  },
+  {
+    "event" : "lock-interval",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "seconds" : 36.553262708475813,
+    "time" : "2026-11-02T16:29:33Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:29:33Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.0994002083316445,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:29:34Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:29:35Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.76458816672675312,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:29:35Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-a053ca31ebc7.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:29:35Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:29:36Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.76058854162693024,
+    "host" : "v07-probe-a053ca31ebc7.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:29:36Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:29:36Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.21230995818041265,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:29:36Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:29:36Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.20808149990625679,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:29:37Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:29:37Z"
+  },
+  {
+    "activeRecoverySeconds" : 3.3421346666291356,
+    "event" : "transition-recovered",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "retries" : 0,
+    "secondsSincePathOrUnlock" : 4.1799232915509492,
+    "stage" : "after-unlock",
+    "time" : "2026-11-02T16:29:37Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.0763371668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.1695283335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.3891105833"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383162.5725179168"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383163.565336125"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383165.8878610418"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383167.61806325"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383171.3901743751"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383171.889007375"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383175.5141878335"
+      },
+      {
+        "interface" : "",
+        "kind" : "offline",
+        "uptime" : "1383177.6149873333"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "1383177.7633828751"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "1383178.2841683752"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383178.8892608334"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383186.3753274584"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383186.513504375"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383186.6381565419"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383186.8891392918"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "1383187.5144451251"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383187.6506267085"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383187.904400375"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "1383188.0474810416"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "1383190.88897725"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "1383191.4202597083"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383192.0143249584"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383192.3485662919"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383193.0511460418"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383194.864201375"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383195.0840745834"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383195.6370344167"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383197.3526227917"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383198.8963365417"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383202.360980625"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383206.0908660835"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383206.191285625"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383213.027197625"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383223.1395749585"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383228.6432365"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383232.3894905834"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383232.8935790001"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "stage" : "after-unlock",
+    "time" : "2026-11-02T16:29:37Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4392560,
+    "inboundPackets" : 940,
+    "outboundPackets" : 806,
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "rss" : 30507008,
+    "runtime" : "48576ec4-aab5-4300-9cb3-c4b7d5fed847",
+    "stage" : "after-unlock",
+    "tcp" : 1,
+    "threads" : 9,
+    "time" : "2026-11-02T16:29:37Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 6
+  },
+  {
+    "cycle" : 1,
+    "event" : "connection-close-request",
+    "ids" : [
+      11,
+      12,
+      18,
+      19,
+      22,
+      23,
+      24
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:29:37Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:29:38Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "closedIDs" : [
+      11,
+      12,
+      18,
+      19,
+      22,
+      23,
+      24
+    ],
+    "cycle" : 1,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "seconds" : 2.0487725832499564,
+    "time" : "2026-11-02T16:29:39Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.0763371668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.1695283335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383158.3891105833"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383162.5725179168"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383163.565336125"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383165.8878610418"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383167.61806325"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383171.3901743751"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383171.889007375"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383175.5141878335"
+      },
+      {
+        "interface" : "",
+        "kind" : "offline",
+        "uptime" : "1383177.6149873333"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "1383177.7633828751"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "1383178.2841683752"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383178.8892608334"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383186.3753274584"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383186.513504375"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383186.6381565419"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "1383186.8891392918"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "1383187.5144451251"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383187.6506267085"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383187.904400375"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "1383188.0474810416"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "1383190.88897725"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "1383191.4202597083"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383192.0143249584"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383192.3485662919"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383193.0511460418"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383194.864201375"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383195.0840745834"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383195.6370344167"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383197.3526227917"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383198.8963365417"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383202.360980625"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383206.0908660835"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383206.191285625"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383213.027197625"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383223.1395749585"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383228.6432365"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383232.3894905834"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383232.8935790001"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1383234.639932625"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "stage" : "after-close",
+    "time" : "2026-11-02T16:29:39Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4228720,
+    "inboundPackets" : 949,
+    "outboundPackets" : 816,
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "rss" : 30736384,
+    "runtime" : "48576ec4-aab5-4300-9cb3-c4b7d5fed847",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 9,
+    "time" : "2026-11-02T16:29:39Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "availableInterfaces" : [
+      "wifi",
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T16:29:39Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-02T16:29:39Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "cycle" : 1,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:29:39Z"
+  },
+  {
+    "event" : "complete",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T16:29:39Z"
+  }
+]

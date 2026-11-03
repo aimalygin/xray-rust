@@ -1,0 +1,22 @@
+{
+  "binarySha256": {
+    "bridge": "03d34680c0b81a7a72af61483a9071f2783735f829f1fc73f0f2353a211f7108",
+    "keys": "ed4d84815c37c854e9c14d1c0d9cd94138183f479860b3aefc987de3f9f08929",
+    "xray-core": "186ab2062fe347d513bfa41d4afebc1cd4c7f70e0675e523648eb34049f68ebb",
+    "xray-rust": "6e378c68d0326d631b44cab20a884128cec7e0918611018f3c6980de2cf4a77b"
+  },
+  "candidate": {
+    "commit": "30928ad51b4a434546cf143f8e385a8746523172",
+    "dirty": false,
+    "tree": "e55a6c3f021643bd507a611c247f2781aaabbb83"
+  },
+  "cargoLockSha256": "f640438a2a64bccd49279e6f3e72d60bebe145fe9eb46cabea544f0020c7c8a2",
+  "clean": true,
+  "go": "go version go1.27.3 darwin/arm64",
+  "harnessSha256": "01cac8a451f36288bb73b44a71009b998c7b8df4eb6f699fb095e68a5cd9c0a6",
+  "machine": "arm64",
+  "oracleCommit": "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74",
+  "platform": "macOS-27.2-arm64-arm-64bit",
+  "profile": "release",
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2"
+}

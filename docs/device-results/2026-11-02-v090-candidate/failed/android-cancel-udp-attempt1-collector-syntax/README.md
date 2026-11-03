@@ -1,0 +1,1 @@
+Android delayed-UDP cancellation, attempt 1 (2026-11-02). The collector failed to start: a comment in tools/udp_cancel_v09.py swallowed a closing bracket (SyntaxError). No device action ran and no events were written. Fixed and rerun as android-cancel-udp (8/8).

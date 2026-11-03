@@ -1,0 +1,1234 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 15,
+    "protocol" : "setup",
+    "time" : "2026-11-02T15:26:54Z"
+  },
+  {
+    "event" : "invalid-import-redaction",
+    "format" : "socks",
+    "protocol" : "socks",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:54Z"
+  },
+  {
+    "event" : "invalid-import-redaction",
+    "format" : "http",
+    "protocol" : "http",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:54Z"
+  },
+  {
+    "event" : "invalid-import-redaction",
+    "format" : "shadowsocks2022",
+    "protocol" : "shadowsocks-aead",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:54Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:54Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "socks:password",
+    "seconds" : 0.28718805313110352,
+    "time" : "2026-11-02T15:26:55Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:26:55Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.17465070844627917,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:55Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:26:55Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.12119879154488444,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:55Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-0e1edc48bad2.test",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:26:55Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.29467574995942414,
+    "host" : "v07-probe-0e1edc48bad2.test",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:55Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:26:56Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.087271250085905194,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:56Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:26:56Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.22446479159407318,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:56Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:56Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379471.798469"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379472.0294299168"
+      }
+    ],
+    "protocol" : "socks:password",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:26:56Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4556424,
+    "inboundPackets" : 225,
+    "outboundPackets" : 189,
+    "protocol" : "socks:password",
+    "rss" : 29655040,
+    "runtime" : "d4372895-a39b-4957-b7e2-16528b3bb4ea",
+    "stage" : "after-traffic",
+    "tcp" : 2,
+    "threads" : 11,
+    "time" : "2026-11-02T15:26:56Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 4
+  },
+  {
+    "cycle" : 1,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      6,
+      7,
+      8,
+      9
+    ],
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:26:56Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      6,
+      7,
+      8,
+      9
+    ],
+    "cycle" : 1,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+      10
+    ],
+    "protocol" : "socks:password",
+    "seconds" : 2.1424047083128244,
+    "time" : "2026-11-02T15:26:58Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379471.798469"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379472.0294299168"
+      }
+    ],
+    "protocol" : "socks:password",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:26:58Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4261512,
+    "inboundPackets" : 230,
+    "outboundPackets" : 195,
+    "protocol" : "socks:password",
+    "rss" : 29999104,
+    "runtime" : "d4372895-a39b-4957-b7e2-16528b3bb4ea",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 11,
+    "time" : "2026-11-02T15:26:58Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 1
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:26:58Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.23073904169723392,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:59Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:26:59Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.12310266657732427,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:59Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-0e1edc48bad2.test",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:26:59Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.25108441663905978,
+    "host" : "v07-probe-0e1edc48bad2.test",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:59Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:26:59Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.090959916589781642,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:59Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:26:59Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.093101999955251813,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:59Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:59Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "traffic-after-close",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:26:59Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379471.798469"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379472.0294299168"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379476.2054479583"
+      }
+    ],
+    "protocol" : "socks:password",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:26:59Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4441736,
+    "inboundPackets" : 417,
+    "outboundPackets" : 365,
+    "protocol" : "socks:password",
+    "rss" : 30228480,
+    "runtime" : "d4372895-a39b-4957-b7e2-16528b3bb4ea",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:26:59Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 1,
+    "event" : "disconnected",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:00Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "connected",
+    "protocol" : "socks:password",
+    "seconds" : 0.23751795291900635,
+    "time" : "2026-11-02T15:27:00Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:00Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.40222379169426858,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:01Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:01Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.14173324988223612,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:01Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-0e1edc48bad2.test",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:01Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.32789616659283638,
+    "host" : "v07-probe-0e1edc48bad2.test",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:01Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:01Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.095663958229124546,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:01Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:01Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.082973916782066226,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:02Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:02Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379477.2578280834"
+      }
+    ],
+    "protocol" : "socks:password",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:27:02Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4441736,
+    "inboundPackets" : 226,
+    "outboundPackets" : 191,
+    "protocol" : "socks:password",
+    "rss" : 29425664,
+    "runtime" : "a5367abe-fe55-4ad8-9bad-46ed4e941f47",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:27:02Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 2,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      5,
+      6,
+      7,
+      8
+    ],
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:02Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      5,
+      6,
+      7,
+      8
+    ],
+    "cycle" : 2,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+      9
+    ],
+    "protocol" : "socks:password",
+    "seconds" : 2.1422107084654272,
+    "time" : "2026-11-02T15:27:04Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379477.2578280834"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379478.8945953334"
+      }
+    ],
+    "protocol" : "socks:password",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:27:04Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4195976,
+    "inboundPackets" : 231,
+    "outboundPackets" : 198,
+    "protocol" : "socks:password",
+    "rss" : 29753344,
+    "runtime" : "a5367abe-fe55-4ad8-9bad-46ed4e941f47",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-02T15:27:04Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 1
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:04Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.14955687499605119,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:04Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:04Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.21117445826530457,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:04Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-0e1edc48bad2.test",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:04Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.12674341653473675,
+    "host" : "v07-probe-0e1edc48bad2.test",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:05Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:05Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.093281416455283761,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:05Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:05Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.14094054186716676,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:05Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:05Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "traffic-after-close",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:05Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379477.2578280834"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379478.8945953334"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379481.8972875"
+      }
+    ],
+    "protocol" : "socks:password",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:27:05Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4294280,
+    "inboundPackets" : 435,
+    "outboundPackets" : 369,
+    "protocol" : "socks:password",
+    "rss" : 29982720,
+    "runtime" : "a5367abe-fe55-4ad8-9bad-46ed4e941f47",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:27:05Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 2,
+    "event" : "disconnected",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:05Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "connected",
+    "protocol" : "socks:password",
+    "seconds" : 0.22712898254394531,
+    "time" : "2026-11-02T15:27:06Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:06Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.25516908336430788,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:06Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:06Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.11905341665260494,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:06Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-0e1edc48bad2.test",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:06Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.24462891649454832,
+    "host" : "v07-probe-0e1edc48bad2.test",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:07Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:07Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.081381000112742186,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:07Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:07Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.22958299983292818,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:07Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:07Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379482.7985235"
+      }
+    ],
+    "protocol" : "socks:password",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:27:07Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4474480,
+    "inboundPackets" : 219,
+    "outboundPackets" : 184,
+    "protocol" : "socks:password",
+    "rss" : 29458432,
+    "runtime" : "8821047e-6633-43b3-b439-897a3ca6ba5a",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:27:07Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 3,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      5,
+      6,
+      7,
+      8
+    ],
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:07Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      5,
+      6,
+      7,
+      8
+    ],
+    "cycle" : 3,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+      9
+    ],
+    "protocol" : "socks:password",
+    "seconds" : 2.1149417499545962,
+    "time" : "2026-11-02T15:27:09Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379482.7985235"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379485.2221432084"
+      }
+    ],
+    "protocol" : "socks:password",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:27:09Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4146800,
+    "inboundPackets" : 226,
+    "outboundPackets" : 191,
+    "protocol" : "socks:password",
+    "rss" : 29720576,
+    "runtime" : "8821047e-6633-43b3-b439-897a3ca6ba5a",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 11,
+    "time" : "2026-11-02T15:27:09Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 1
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:09Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.28460983326658607,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:10Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:10Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.13405504170805216,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:10Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-0e1edc48bad2.test",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:10Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.25697450013831258,
+    "host" : "v07-probe-0e1edc48bad2.test",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:10Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:10Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.081973874941468239,
+    "host" : "198.51.100.7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:10Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "time" : "2026-11-02T15:27:10Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.082227708306163549,
+    "host" : "2001:db8::7",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:10Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:10Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "traffic-after-close",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:10Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379482.7985235"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379485.2221432084"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379487.2882450002"
+      }
+    ],
+    "protocol" : "socks:password",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:27:10Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4245104,
+    "inboundPackets" : 417,
+    "outboundPackets" : 363,
+    "protocol" : "socks:password",
+    "rss" : 29917184,
+    "runtime" : "8821047e-6633-43b3-b439-897a3ca6ba5a",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:27:11Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 3,
+    "event" : "disconnected",
+    "protocol" : "socks:password",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:11Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "http:plain",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:11Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "http:plain",
+    "seconds" : 0.21317195892333984,
+    "time" : "2026-11-02T15:27:11Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "http:plain",
+    "time" : "2026-11-02T15:27:11Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.3590329999569803,
+    "host" : "198.51.100.7",
+    "protocol" : "http:plain",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:13Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "http:plain",
+    "time" : "2026-11-02T15:27:13Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.10835133329965174,
+    "host" : "2001:db8::7",
+    "protocol" : "http:plain",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:13Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-0e1edc48bad2.test",
+    "protocol" : "http:plain",
+    "time" : "2026-11-02T15:27:13Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.1247985833324492,
+    "host" : "v07-probe-0e1edc48bad2.test",
+    "protocol" : "http:plain",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:13Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-refusal-start",
+    "host" : "198.51.100.7",
+    "protocol" : "http:plain",
+    "time" : "2026-11-02T15:27:13Z"
+  },
+  {
+    "code" : 0,
+    "domain" : "XrayProtocolDeviceProbe.Network",
+    "event" : "udp-refused",
+    "exchangeSeconds" : 3.2282371250912547,
+    "host" : "198.51.100.7",
+    "protocol" : "http:plain",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:16Z",
+    "transition" : "ipv4-udp-refused"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-refusal-start",
+    "host" : "2001:db8::7",
+    "protocol" : "http:plain",
+    "time" : "2026-11-02T15:27:16Z"
+  },
+  {
+    "code" : 0,
+    "domain" : "XrayProtocolDeviceProbe.Network",
+    "event" : "udp-refused",
+    "exchangeSeconds" : 3.1305195833556354,
+    "host" : "2001:db8::7",
+    "protocol" : "http:plain",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:20Z",
+    "transition" : "ipv6-udp-refused"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "http:plain",
+    "result" : "passed",
+    "time" : "2026-11-02T15:27:20Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379488.3619190417"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379488.4432669585"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379493.9809614585"
+      }
+    ],
+    "protocol" : "http:plain",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:27:20Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4179592,
+    "inboundPackets" : 246,
+    "outboundPackets" : 218,
+    "protocol" : "http:plain",
+    "rss" : 29392896,
+    "runtime" : "1bef62b0-f7f3-420d-a794-2d305628d0f4",
+    "stage" : "after-traffic",
+    "tcp" : 0,
+    "threads" : 9,
+    "time" : "2026-11-02T15:27:20Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "cycle" : 1,
+    "event" : "held-tcp-flow",
+    "host" : "198.51.100.7",
+    "protocol" : "http:plain",
+    "time" : "2026-11-02T15:27:21Z"
+  },
+  {
+    "code" : 2,
+    "domain" : "XrayProtocolDeviceProbe",
+    "event" : "failure",
+    "protocol" : "http:plain",
+    "time" : "2026-11-02T15:27:21Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379488.3619190417"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379488.4432669585"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1379493.9809614585"
+      }
+    ],
+    "protocol" : "http:plain",
+    "stage" : "failure",
+    "time" : "2026-11-02T15:27:21Z"
+  },
+  {
+    "cycle" : 0,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4146824,
+    "inboundPackets" : 1099,
+    "outboundPackets" : 1013,
+    "protocol" : "http:plain",
+    "rss" : 29720576,
+    "runtime" : "1bef62b0-f7f3-420d-a794-2d305628d0f4",
+    "stage" : "failure",
+    "tcp" : 0,
+    "threads" : 9,
+    "time" : "2026-11-02T15:27:21Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "complete",
+    "protocol" : "http:plain",
+    "result" : "failed",
+    "time" : "2026-11-02T15:27:21Z"
+  }
+]

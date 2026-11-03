@@ -1,0 +1,1 @@
+iPhone v09 smoke, attempt 2. SOCKS passed; http:plain failed with missingStats (code 2) in the close check. The probe's verifyConnectionClosure needs a live flow, and HTTP has none at that point (UDP refused, TCP echo finished). Harness defect, not product.

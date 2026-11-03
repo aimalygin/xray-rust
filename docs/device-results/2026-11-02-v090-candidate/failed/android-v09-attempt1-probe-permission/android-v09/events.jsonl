@@ -1,0 +1,5 @@
+{"hostTime": 1793629213.084167, "kind": "matrix-start", "caseCount": 7, "backends": ["file-descriptor", "packet-pump"]}
+{"hostTime": 1793629213.084308, "kind": "case-start", "case": "socks-password", "backend": "file-descriptor", "udp": "echo"}
+{"hostTime": 1793629214.514079, "kind": "share-link-import", "case": "socks-password", "backend": "file-descriptor", "passed": true}
+{"hostTime": 1793629215.764111, "kind": "running", "case": "socks-password", "backend": "file-descriptor", "status": {"state": "running", "detail": null, "runtime-generation": "1", "fatal-tun-errors": "0"}}
+{"hostTime": 1793629244.034622, "kind": "case-fail", "case": "socks-password", "backend": "file-descriptor", "error": "status deadline: {\"running\": \"false\", \"http-failed\": \"0\", \"udp-failed\": \"0\", \"http-passed\": \"0\", \"udp-passed\": \"0\"}"}

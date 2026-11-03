@@ -1,0 +1,1 @@
+iPhone WAN HTTP, attempt 1. Wi-Fi to cellular to Wi-Fi recovered; at the lock step the phone was unlocked but XrayClient was not brought back to the foreground, so the probe stopped with transitionTimeout (code 6). Procedure fix: return to the app after unlocking. Rerun as ios-wan/http (passed).
