@@ -10,6 +10,17 @@ long-term supported release series.
 
 ## Unreleased
 
+- Shadowsocks: `xchacha20-poly1305` (AEAD-2017) and the UDP packets of
+  `2022-blake3-chacha20-poly1305` now run XChaCha20-Poly1305 as an HChaCha20
+  subkey over AWS-LC's ChaCha20-Poly1305 instead of the portable RustCrypto
+  AEAD. The wire bytes are unchanged (the draft-irtf-cfrg-xchacha-03 vector,
+  the pinned Go fixtures and a differential test against RustCrypto pass),
+  and on Apple M6 one 8 KiB record seals and opens at 2,241 instead of
+  1,167 MiB/s. Through a SOCKS inbound and a common Xray-core v26.10.21
+  server (single-flow full duplex, five rotated runs), `xchacha20-poly1305`
+  rose from 644 to 987 MiB/s, from 60% to 92% of the Xray-core client and
+  level with `chacha20-poly1305` (1,042 MiB/s); the 0.9.0 measurements had
+  recorded 59%.
 - TUN: configurable MTU (ABI 1.16, `TUN_MTU`, bit 29). `xray_core_set_tun_mtu`
   takes 1280..=9000 before config load and rejects other values instead of
   clamping; the default stays 1500 on every profile. The Kotlin and Swift

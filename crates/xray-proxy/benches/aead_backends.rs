@@ -2,10 +2,12 @@
 //! Run the built executable as: aead_backends [rustcrypto|aws-lc] [iterations].
 //! Each iteration seals and opens one 8 KiB record with a unique nonce. Contexts
 //! and the buffer are reused; both providers must recover the original bytes.
+//! XChaCha20 on AWS-LC derives an HChaCha20 subkey and a new context per
+//! record, as the Shadowsocks codecs do, because their nonces change it.
 //! Unoptimized `cargo test --all-targets` builds only run one smoke iteration.
 use aes_gcm::{aead::AeadInOut, Aes128Gcm, Aes256Gcm, KeyInit};
 use aws_lc_rs::aead::{self, Aad, LessSafeKey, Nonce, UnboundKey};
-use chacha20poly1305::ChaCha20Poly1305;
+use chacha20poly1305::{ChaCha20Poly1305, XChaCha20Poly1305};
 use std::{hint::black_box, time::Instant};
 
 fn rustcrypto<C: AeadInOut + KeyInit>(iterations: u64, key: &[u8]) -> f64 {
@@ -49,6 +51,63 @@ fn aws_lc(iterations: u64, algorithm: &'static aead::Algorithm, key: &[u8]) -> f
     seconds
 }
 
+fn rustcrypto_xchacha(iterations: u64) -> f64 {
+    let cipher = XChaCha20Poly1305::new_from_slice(&[7; 32]).unwrap();
+    let mut data = vec![0x5a; 8192];
+    data.reserve(16);
+    let started = Instant::now();
+    for i in 0..iterations {
+        let mut nonce = [0; 24];
+        nonce[..8].copy_from_slice(&i.to_le_bytes());
+        cipher
+            .encrypt_in_place((&nonce).into(), b"", &mut data)
+            .unwrap();
+        cipher
+            .decrypt_in_place((&nonce).into(), b"", &mut data)
+            .unwrap();
+        black_box(&mut data);
+    }
+    let seconds = started.elapsed().as_secs_f64();
+    assert_eq!(data, vec![0x5a; 8192]);
+    seconds
+}
+
+fn aws_lc_xchacha(iterations: u64) -> f64 {
+    let key = chacha20::Key::from([7; 32]);
+    let ietf = |nonce: &[u8; 24]| {
+        let input =
+            chacha20::cipher::array::Array::from(<[u8; 16]>::try_from(&nonce[..16]).unwrap());
+        let subkey: [u8; 32] = chacha20::hchacha::<chacha20::R20>(&key, &input).into();
+        let mut ietf_nonce = [0; 12];
+        ietf_nonce[4..].copy_from_slice(&nonce[16..]);
+        (
+            LessSafeKey::new(UnboundKey::new(&aead::CHACHA20_POLY1305, &subkey).unwrap()),
+            Nonce::assume_unique_for_key(ietf_nonce),
+        )
+    };
+    let mut data = vec![0x5a; 8192];
+    data.reserve(16);
+    let started = Instant::now();
+    for i in 0..iterations {
+        let mut nonce = [0; 24];
+        nonce[..8].copy_from_slice(&i.to_le_bytes());
+        let (cipher, ietf_nonce) = ietf(&nonce);
+        cipher
+            .seal_in_place_append_tag(ietf_nonce, Aad::empty(), &mut data)
+            .unwrap();
+        let (cipher, ietf_nonce) = ietf(&nonce);
+        let len = cipher
+            .open_in_place(ietf_nonce, Aad::empty(), &mut data)
+            .unwrap()
+            .len();
+        data.truncate(len);
+        black_box(&mut data);
+    }
+    let seconds = started.elapsed().as_secs_f64();
+    assert_eq!(data, vec![0x5a; 8192]);
+    seconds
+}
+
 fn main() {
     let args: Vec<_> = std::env::args().filter(|arg| arg != "--bench").collect();
     let backend = args.get(1).map(String::as_str).unwrap_or("all");
@@ -63,14 +122,16 @@ fn main() {
         if backend != "all" && backend != provider {
             continue;
         }
-        for algorithm in ["aes128", "aes256", "chacha20"] {
+        for algorithm in ["aes128", "aes256", "chacha20", "xchacha20"] {
             let seconds = match (provider, algorithm) {
                 ("rustcrypto", "aes128") => rustcrypto::<Aes128Gcm>(iterations, &[7; 16]),
                 ("rustcrypto", "aes256") => rustcrypto::<Aes256Gcm>(iterations, &[7; 32]),
                 ("rustcrypto", "chacha20") => rustcrypto::<ChaCha20Poly1305>(iterations, &[7; 32]),
                 ("aws-lc", "aes128") => aws_lc(iterations, &aead::AES_128_GCM, &[7; 16]),
                 ("aws-lc", "aes256") => aws_lc(iterations, &aead::AES_256_GCM, &[7; 32]),
+                ("rustcrypto", "xchacha20") => rustcrypto_xchacha(iterations),
                 ("aws-lc", "chacha20") => aws_lc(iterations, &aead::CHACHA20_POLY1305, &[7; 32]),
+                ("aws-lc", "xchacha20") => aws_lc_xchacha(iterations),
                 _ => unreachable!(),
             };
             println!(

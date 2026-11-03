@@ -12,10 +12,6 @@ use aws_lc_rs::{
     aead::{AES_128_GCM, AES_256_GCM, CHACHA20_POLY1305},
     hkdf::{KeyType, Salt, HKDF_SHA1_FOR_LEGACY_USE_ONLY},
 };
-use chacha20poly1305::{
-    aead::{AeadInOut, KeyInit},
-    Tag, XChaCha20Poly1305,
-};
 use md5::{Digest, Md5};
 use std::{fmt, io};
 use zeroize::{Zeroize, Zeroizing};
@@ -147,7 +143,7 @@ fn subkey(method: &Method, salt: &[u8]) -> Zeroizing<[u8; 32]> {
 
 enum Engine {
     Ietf(crate::aead::Key),
-    X(Box<XChaCha20Poly1305>),
+    X(crate::aead::XChaChaKey),
 }
 
 /// One direction's AEAD with Xray's counter nonce: little-endian, starting
@@ -170,9 +166,7 @@ impl Records {
             Cipher::ChaCha20Poly1305 => {
                 Engine::Ietf(crate::aead::Key::new(&CHACHA20_POLY1305, key))
             }
-            Cipher::XChaCha20Poly1305 => Engine::X(Box::new(
-                XChaCha20Poly1305::new_from_slice(key).expect("32-byte XChaCha20 key"),
-            )),
+            Cipher::XChaCha20Poly1305 => Engine::X(crate::aead::XChaChaKey::new(key)),
         };
         Self {
             engine,
@@ -204,19 +198,7 @@ impl Records {
         let nonce = self.next()?;
         match &self.engine {
             Engine::Ietf(key) => key.seal_from(nonce[..12].try_into().unwrap(), &[], bytes, start),
-            Engine::X(key) => {
-                match key.encrypt_inout_detached((&nonce).into(), &[], (&mut bytes[start..]).into())
-                {
-                    Ok(tag) => {
-                        bytes.extend_from_slice(&tag);
-                        Ok(())
-                    }
-                    Err(_) => {
-                        bytes[start..].zeroize();
-                        Err(invalid("AEAD encryption failed"))
-                    }
-                }
-            }
+            Engine::X(key) => key.seal_from(&nonce, &[], bytes, start),
         }
     }
     /// Authenticate and decrypt a sealed record in place; returns its length.
@@ -225,22 +207,7 @@ impl Records {
         let nonce = self.next()?;
         match &self.engine {
             Engine::Ietf(key) => key.open_slice(nonce[..12].try_into().unwrap(), &[], bytes),
-            Engine::X(key) => {
-                let Some(len) = bytes.len().checked_sub(TAG_LENGTH) else {
-                    bytes.zeroize();
-                    return Err(invalid("AEAD authentication failed"));
-                };
-                let (text, tag) = bytes.split_at_mut(len);
-                let tag = Tag::try_from(&*tag).expect("16-byte tag");
-                if key
-                    .decrypt_inout_detached((&nonce).into(), &[], text.into(), &tag)
-                    .is_err()
-                {
-                    bytes.zeroize();
-                    return Err(invalid("AEAD authentication failed"));
-                }
-                Ok(len)
-            }
+            Engine::X(key) => key.open_slice(&nonce, &[], bytes),
         }
     }
 }
