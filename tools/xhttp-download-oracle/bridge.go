@@ -1,5 +1,6 @@
 // Local TLS H1/H2/H3 frontends converging on one real Xray session namespace.
-// Test-only: all listeners bind loopback and keys live only in this process.
+// Test-only: listeners bind loopback unless XRAY_FIXTURE_BIND names a LAN address
+// for a device fixture, and keys live only in this process.
 package main
 
 import (
@@ -68,7 +69,14 @@ func bridge(backend string) error {
 		_ = http.NewResponseController(w).EnableFullDuplex()
 		proxy.ServeHTTP(w, r)
 	})
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	// A device fixture reaches the bridge over the LAN and passes its address.
+	bind := net.IPv4(127, 0, 0, 1)
+	if value := os.Getenv("XRAY_FIXTURE_BIND"); value != "" {
+		if bind = net.ParseIP(value); bind == nil {
+			return fmt.Errorf("XRAY_FIXTURE_BIND is not an IP address: %q", value)
+		}
+	}
+	listener, err := net.Listen("tcp", net.JoinHostPort(bind.String(), "0"))
 	if err != nil {
 		return err
 	}
@@ -77,7 +85,7 @@ func bridge(backend string) error {
 	if err = http2.ConfigureServer(server, &http2.Server{}); err != nil {
 		return err
 	}
-	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: bind})
 	if err != nil {
 		return err
 	}

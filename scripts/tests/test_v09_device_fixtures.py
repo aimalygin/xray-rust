@@ -4,10 +4,13 @@ import asyncio
 import base64
 import importlib.util
 import json
+import os
 from pathlib import Path
+import shlex
 import shutil
 import struct
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 from urllib.parse import unquote, urlsplit
@@ -345,12 +348,15 @@ class PinsAndPerformanceTests(unittest.TestCase):
 
 
 class AndroidDriverTests(unittest.TestCase):
-    def drive(self, cases, leak=False):
+    def drive(self, cases, leak=False, fixture_age=None):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
         with patch.object(android.fixture, "openssl", side_effect=fake_openssl):
             android.write_fixtures(root, "127.0.0.1", 1, 2, 3, protocol="v09", port=None, **KW)
+        if fixture_age is not None:
+            ready = time.time() - fixture_age
+            os.utime(root / "v07-probe.json", (ready, ready))
         environment = {"ANDROID_SERIAL": "emulator-0", "ADB": str(SCRIPTS / "tests/fixtures/fake-adb.py"),
                        "FAKE_ADB_STATE": str(root / "adb.json")}
         if leak:
@@ -395,6 +401,20 @@ class AndroidDriverTests(unittest.TestCase):
             self.assertNotIn(case["text"], arguments)
             settings = json.loads(case["configJSON"])["outbounds"][0]["settings"]
             self.assertNotIn(settings.get("pass", settings.get("password")), arguments)
+
+    def test_notifications_are_granted_and_a_fresh_fixture_warms_up_first(self):
+        events, state, _ = self.drive(["socks-password"])
+        commands = [shlex.split(argv[1]) for argv in state["argv"] if argv[0] == "shell"]
+        grants = [c for c in commands if c[:2] == ["pm", "grant"]]
+        self.assertEqual({c[2] for c in grants}, {"org.xrayrust.devicehost.v09", "org.xrayrust.deviceprobe.v09"})
+        self.assertTrue(all(c[3] == "android.permission.POST_NOTIFICATIONS" for c in grants))
+        first_start = next(i for i, c in enumerate(commands) if c[:2] == ["am", "start"])
+        self.assertLess(max(commands.index(c) for c in grants), first_start)
+        self.assertGreater(events[0]["warmupSeconds"], 5)
+
+    def test_a_fixture_older_than_the_warmup_starts_at_once(self):
+        events, _, _ = self.drive(["socks-password"], fixture_age=60)
+        self.assertEqual((events[0]["kind"], events[0]["warmupSeconds"]), ("matrix-start", 0))
 
     def test_an_answered_http_udp_probe_fails_the_case(self):
         with self.assertRaisesRegex(RuntimeError, "without UDP"):
