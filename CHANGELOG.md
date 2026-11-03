@@ -38,6 +38,11 @@ long-term supported release series.
   stats), and a TUN host gets an ICMP fragmentation-needed or packet-too-big
   with the path MTU, which senders that set DF (QUIC, PMTU discovery) follow. This already
   affected WireGuard outbounds at the default 1500-byte TUN.
+- DNS: a bare `"localhost"` or `"fakedns"` string in `dns.servers` (any case)
+  is now a configuration error, as the object form already was. Xray's
+  system-resolver and FakeDNS clients are not implemented, and these strings
+  used to parse as an ordinary UDP resolver on port 53. Explicit URLs such as
+  `tcp://localhost` and domains such as `localhost.example` still parse.
 
 ## 0.9.0 - 2026-11-01
 
