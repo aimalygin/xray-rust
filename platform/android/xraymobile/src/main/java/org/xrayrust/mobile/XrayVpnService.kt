@@ -413,7 +413,9 @@ open class XrayVpnService : VpnService() {
 
     /**
      * Starts asynchronously. A [startupProbe] runs before `Builder.establish()`, so its failure,
-     * timeout or cancellation leaves routes and DNS untouched; requires ABI 1.12.
+     * timeout or cancellation leaves routes and DNS untouched; requires ABI 1.12. [tunMtu] is
+     * given to both the interface and the core; a library without ABI 1.16 `TunMtu` runs both
+     * at [XrayTunInterface.MTU].
      */
     open fun startXrayTunnel(
         configJson: String,
@@ -654,6 +656,11 @@ open class XrayVpnService : VpnService() {
         super.onDestroy()
     }
 
+    /**
+     * Interface settings before the tunnel is established. The MTU set here is replaced: the
+     * service gives the interface the `tunMtu` of [startXrayTunnel], the value the core runs at,
+     * so pass a non-default MTU there rather than calling `setMtu` in an override.
+     */
     protected open fun buildTunnel(): Builder {
         val builder = Builder()
             .setSession("xray-rust")

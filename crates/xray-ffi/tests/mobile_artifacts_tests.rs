@@ -53,7 +53,6 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_core_cancel_outbound_probes",
         "xray_core_cancel_inflight_outbound_probes",
         "xray_core_set_tun_mtu",
-        "xray_core_set_tun_mtu",
         "XrayOutboundProbeFailureKind",
         "xray_core_start",
         "xray_core_stop",

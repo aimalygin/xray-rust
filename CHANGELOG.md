@@ -20,6 +20,10 @@ long-term supported release series.
   `settings.mtu` now gets a warning: the host, not the config, owns the MTU.
   Previously a host interface above 1500 lost every longer packet silently.
   See [TUN MTU](docs/ffi.md#tun-mtu).
+- Android: `XrayVpnService` now sets the interface MTU after `buildTunnel()`,
+  so an override's own `setMtu` is replaced by the `tunMtu` of
+  `startXrayTunnel` (1500 by default). A host that lowered the MTU in
+  `buildTunnel()`, for example to 1400, passes that value as `tunMtu` instead.
 - TUN: each TCP socket's receive buffer is `max(32 KiB, 4 × MSS)`, so kernel
   senders, which only send whole segments into the window, do not stall on a
   jumbo MTU. Unchanged up to MTU 8232; at 9000 it adds at most 768 KiB on
