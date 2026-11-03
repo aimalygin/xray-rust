@@ -112,8 +112,8 @@ const REALITY_FIXTURE_WARMUP: Duration = Duration::from_secs(8);
 /// network-dependent, so the fixed default may need adjusting per environment.
 const REALITY_FIXTURE_WARMUP_MS_ENV: &str = "XRAY_BENCH_REALITY_WARMUP_MS";
 const SING_BOX_BUILD_TAGS: &str = "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0";
-const XRAY_CORE_ORACLE_VERSION: &str = "26.10.21";
-const XRAY_CORE_ORACLE_REVISION: &str = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74";
+const XRAY_CORE_ORACLE_VERSION: &str = "26.10.31";
+const XRAY_CORE_ORACLE_REVISION: &str = "a4a3dff5b20c2faae567b742c172c7b95e75c083";
 const TCP_PROTOCOL: u8 = 6;
 const UDP_PROTOCOL: u8 = 17;
 const DARWIN_UTUN_HEADER_LEN: usize = 4;
@@ -1344,7 +1344,7 @@ impl Default for Phase2ProbeOptions {
 impl Default for RealityMatrixOptions {
     fn default() -> Self {
         Self {
-            // The pinned server fixture is v26.10.21, which refuses the
+            // The pinned server fixture is v26.10.31, which refuses the
             // X25519-only profiles; `--fingerprints` still selects them.
             fingerprints: XRAY_REALITY_HYBRID_FINGERPRINTS
                 .iter()
@@ -11995,7 +11995,7 @@ mod tests {
     #[test]
     fn xray_core_version_output_requires_the_pinned_release() {
         let binary = Path::new("/tmp/xray-core");
-        let pinned = "Xray 26.10.21 (Xray, Penetrates Everything.) 1b1647c (go1.27.3 darwin/arm64)\nA unified platform for anti-censorship.\n";
+        let pinned = "Xray 26.10.31 (Xray, Penetrates Everything.) a4a3dff (go1.27.3 darwin/arm64)\nA unified platform for anti-censorship.\n";
 
         assert!(validate_xray_core_version_output(binary, pinned, None).is_ok());
         assert!(
@@ -12005,14 +12005,14 @@ mod tests {
 
         let old = "Xray 26.5.9 (Xray, Penetrates Everything.) 1bdb488 (go1.27.3 darwin/arm64)\n";
         let error = validate_xray_core_version_output(binary, old, None).unwrap_err();
-        assert!(error.to_string().contains("requires Xray 26.10.21"));
+        assert!(error.to_string().contains("requires Xray 26.10.31"));
     }
 
     #[test]
     fn auto_built_xray_core_version_output_requires_the_pinned_revision() {
         let binary = Path::new("/tmp/xray-core");
         let wrong_revision =
-            "Xray 26.10.21 (Xray, Penetrates Everything.) deadbee (go1.27.3 darwin/arm64)\n";
+            "Xray 26.10.31 (Xray, Penetrates Everything.) deadbee (go1.27.3 darwin/arm64)\n";
 
         let error = validate_xray_core_version_output(
             binary,
@@ -12020,19 +12020,19 @@ mod tests {
             Some(XRAY_CORE_ORACLE_REVISION),
         )
         .unwrap_err();
-        assert!(error.to_string().contains("requires revision `1b1647c`"));
+        assert!(error.to_string().contains("requires revision `a4a3dff`"));
 
         // A caller-supplied official binary must report the pinned release,
         // but it may not carry the checkout's VCS build token.
         let custom =
-            "Xray 26.10.21 (Xray, Penetrates Everything.) Custom (go1.27.3 darwin/arm64)\n";
+            "Xray 26.10.31 (Xray, Penetrates Everything.) Custom (go1.27.3 darwin/arm64)\n";
         assert!(validate_xray_core_version_output(binary, custom, None).is_ok());
 
         // Go includes untracked checkout artifacts in its VCS dirty bit. The
         // auto-build path has already verified exact HEAD and no tracked or
         // staged edits, so this form is still the pinned source oracle.
         let untracked_dirty =
-            "Xray 26.10.21 (Xray, Penetrates Everything.) 1b1647c-dirty (go1.27.3 darwin/arm64)\n";
+            "Xray 26.10.31 (Xray, Penetrates Everything.) a4a3dff-dirty (go1.27.3 darwin/arm64)\n";
         assert!(validate_xray_core_version_output(
             binary,
             untracked_dirty,

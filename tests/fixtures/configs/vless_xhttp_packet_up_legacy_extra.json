@@ -20,7 +20,7 @@
       "settings": {
         "vnext": [
           {
-            "address": "192.0.2.20",
+            "address": "10.0.2.20",
             "port": 80,
             "users": [
               {

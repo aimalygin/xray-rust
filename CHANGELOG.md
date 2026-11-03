@@ -10,6 +10,27 @@ long-term supported release series.
 
 ## Unreleased
 
+- Compatibility reference moved to Xray-core v26.10.31
+  (`a4a3dff5b20c2faae567b742c172c7b95e75c083`, Go 1.27.3): CI, interop
+  guards, oracle modules, fixtures and the benchmark harness pin it. See the
+  [migration record](docs/xray-core-v26.10.31-migration.md).
+- VLESS without TLS or VLESS encryption, and Trojan without TLS, now accept
+  a server IP address only when it is private (10/8, 172.16/12, 192.168/16,
+  fc00::/7), loopback or link-local, as Xray-core v26.10.31 does. Addresses in
+  the shared (100.64.0.0/10), benchmarking (198.18.0.0/15), documentation,
+  reserved, multicast and unspecified ranges, which v26.10.21 also exempted,
+  are now a configuration error, and an imported link to one is refused.
+  `geoip:private` routing is unchanged.
+- XHTTP: `xhttpSettings.h2Params`, a server option added in v26.10.31, is
+  accepted and ignored, like `serverMaxHeaderBytes`. A v26.10.31 server
+  accepts `uplinkHTTPMethod: "OPTIONS"`, which the client already sent; a live
+  interop test now covers it.
+- Freedom `settings.fragment` parses with a deprecation warning pointing at
+  `streamSettings.finalmask.tcp`, as Xray-core v26.10.31 prints. Profile
+  imports never produce it.
+- Xray-core v26.10.31 turns MPTCP off on its listeners because of a Linux
+  kernel MPTCP vulnerability. xray-rust never enables MPTCP on its SOCKS,
+  HTTP or TPROXY listeners and does not accept `tcpMptcp`.
 - Shadowsocks: `xchacha20-poly1305` (AEAD-2017) and the UDP packets of
   `2022-blake3-chacha20-poly1305` now run XChaCha20-Poly1305 as an HChaCha20
   subkey over AWS-LC's ChaCha20-Poly1305 instead of the portable RustCrypto

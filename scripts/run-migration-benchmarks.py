@@ -24,7 +24,7 @@ spec = importlib.util.spec_from_file_location('comparison', ROOT / 'scripts/run-
 c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 b = c.bench
-REFERENCE = '1b1647cd9ddf0abc34b981d4611fc03bcac1ca74'
+REFERENCE = 'a4a3dff5b20c2faae567b742c172c7b95e75c083'
 VERSIONS = ('before', 'after')
 CARRIERS = ('vless-tls', 'reality-vision', 'ws', 'httpupgrade', 'grpc', 'xhttp-h1', 'xhttp-h2', 'xhttp-h3')
 PROFILES = (*c.PROFILES, *CARRIERS, 'hysteria2', 'wireguard', 'freedom')
@@ -304,7 +304,7 @@ def main():
                  'model': b.command(['sysctl', '-n', 'hw.model']), 'memory_bytes': int(b.command(['sysctl', '-n', 'hw.memsize'])),
                  'logical_cpus': os.cpu_count(), 'os': b.command(['sw_vers']), 'power': b.command(['pmset', '-g', 'batt']),
                  'thermal_start': b.command(['pmset', '-g', 'therm'])},
-        'started_unix': time.time(), 'scope': 'Rust before/after; common v26.10.21 server; local synthetic traffic; stock workers',
+        'started_unix': time.time(), 'scope': 'Rust before/after; common v26.10.31 server; local synthetic traffic; stock workers',
         'quality_policy': 'fail on compiler, observer/cleanup/protocol error, external process >=100% CPU or aggregate >=200%; retain failed blocks',
         'ordering': 'five adjacent AB/BA pairs per case; first position alternates across cases; no performance-based retries'}
     manifest['progress_policy'] = 'initial and >=20s between-pair pauses; token resume then 3s cooldown' if a.control_dir else 'no cooperative pauses'

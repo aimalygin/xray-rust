@@ -26,7 +26,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 # Recorded in manifests; the fixture verifies the binary against the same pin.
-REFERENCE = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
+REFERENCE = "a4a3dff5b20c2faae567b742c172c7b95e75c083"
 UUID = "00010203-0405-0607-0809-0a0b0c0d0e0f"
 
 

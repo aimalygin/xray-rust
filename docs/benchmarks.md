@@ -2,11 +2,12 @@
 
 The benchmark harness compares `xray-rust`, the cloned Xray-core, and sing-box under the same compatible local workloads. It is a process-level harness: each engine runs as a child process with an equivalent generated config, the workload sends validated traffic through SOCKS5, and the harness samples OS RSS/CPU counters while the process is alive.
 
-The active Xray-core oracle is `v26.10.21` at
-`1b1647cd9ddf0abc34b981d4611fc03bcac1ca74`. Auto-builds require that exact
+The active Xray-core oracle is `v26.10.31` at
+`a4a3dff5b20c2faae567b742c172c7b95e75c083`. Auto-builds require that exact
 checkout and reject source changes; caller-supplied binaries must report Xray
-`26.10.21` and are identified by their executable SHA-256. Published
-`v26.7.28` and `v26.5.9` groups retain their original inputs and results.
+`26.10.31` and are identified by their executable SHA-256. Published
+`v26.10.21`, `v26.7.28` and `v26.5.9` groups retain their original inputs and
+results.
 
 ## Paired before/after measurements
 

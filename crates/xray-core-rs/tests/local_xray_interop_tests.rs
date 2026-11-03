@@ -29,7 +29,7 @@ use xray_transport::{
 const TEST_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
 const TLS_SERVER_NAME: &str = "vless.test";
 const XRAY_CORE_EXPECTED_REVISION_ENV: &str = "XRAY_CORE_EXPECTED_REVISION";
-const PINNED_XRAY_CORE_REVISION: &str = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74";
+const PINNED_XRAY_CORE_REVISION: &str = "a4a3dff5b20c2faae567b742c172c7b95e75c083";
 // This external-origin legacy suite needs X25519MLKEM support. The hermetic
 // ML-DSA/Vision matrix uses its own local cover origin instead.
 const REALITY_SERVER_NAME: &str = "www.google.com";
@@ -2836,6 +2836,13 @@ async fn run_local_xray_xhttp_interop(case: XhttpInteropCase) {
     run_local_xray_xhttp_interop_with_noise(case, false).await;
 }
 async fn run_local_xray_xhttp_interop_with_noise(case: XhttpInteropCase, noise: bool) {
+    run_local_xray_xhttp_interop_with(case, noise, "POST").await;
+}
+async fn run_local_xray_xhttp_interop_with(
+    case: XhttpInteropCase,
+    noise: bool,
+    uplink_http_method: &str,
+) {
     let xray_checkout = resolve_xray_checkout();
     let (server_security, tls_alpn, client_security) = match case.security {
         XhttpInteropSecurity::H1None => (XrayInboundSecurity::None, None, StreamSecurity::None),
@@ -2901,6 +2908,10 @@ async fn run_local_xray_xhttp_interop_with_noise(case: XhttpInteropCase, noise: 
     .expect("start XHTTP Xray server timeout");
 
     let mut rust_config = rust_xhttp_core_config(xray.addr, client_security, case.mode);
+    let StreamTransport::Xhttp(xhttp) = &mut rust_config.outbounds[0].stream.transport else {
+        unreachable!("rust_xhttp_core_config builds an XHTTP outbound");
+    };
+    xhttp.uplink_http_method = uplink_http_method.to_owned();
     if noise {
         let raw = serde_json::json!({"outbounds":[{"protocol":"freedom","streamSettings":{"network":"xhttp","security":"tls","tlsSettings":{"serverName":"example.com","alpn":["h3"]},"finalmask":{"udp":[{"type":"noise","settings":{"noise":[{"type":"str","packet":"synthetic","delay":2},{"rand":"16-24","delay":1}]}}]}}}]});
         rust_config.outbounds[0].stream.udp_noise =
@@ -3889,6 +3900,35 @@ async fn udp_hop_xhttp_h3_keeps_a_flow_across_hops_to_xray() {
     })
     .await
     .expect("bounded XHTTP H3 UDP-hop interop");
+}
+
+/// Xray-core v26.10.31 stopped answering every OPTIONS request as a CORS
+/// preflight (XTLS/Xray-core#7290): one without
+/// `Access-Control-Request-Method` is an uplink, as any other non-GET method
+/// is. Earlier servers replied 200 without reading it, so this configuration
+/// carried no upload to them.
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary"]
+async fn xhttp_options_uplink_interop() {
+    for id in [
+        "h1-none-packet-up",
+        "h1-none-stream-up",
+        "h1-none-stream-one",
+        "h2-tls-packet-up",
+        "h3-tls-stream-up",
+    ] {
+        let case = *XHTTP_INTEROP_CASES
+            .iter()
+            .find(|case| case.id == id)
+            .unwrap();
+        eprintln!("running XHTTP OPTIONS uplink case={id}");
+        timeout(
+            Duration::from_secs(60),
+            run_local_xray_xhttp_interop_with(case, false, "OPTIONS"),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("XHTTP OPTIONS case {id} timed out: {error}"));
+    }
 }
 
 #[tokio::test]

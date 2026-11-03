@@ -13,12 +13,14 @@ The [configuration contract](config-compatibility.md) remains authoritative for
 accepted fields. This document records consequences, evidence, and follow-up
 checks; it does not expand the supported configuration surface.
 
-## v26.10.21 migration in progress
+## Reference revision
 
-The active oracle pin is now `1b1647cd9ddf0abc34b981d4611fc03bcac1ca74`
-(v26.10.21), built with Go 1.27.3. The dated main evidence below remains
-historical. See the [migration checklist](xray-core-v26.10.21-migration.md)
-for completion and pending checks.
+The active oracle pin is `a4a3dff5b20c2faae567b742c172c7b95e75c083`
+(v26.10.31), built with Go 1.27.3; see the
+[v26.10.31 migration record](xray-core-v26.10.31-migration.md). The
+[v26.10.21 migration](xray-core-v26.10.21-migration.md) introduced the REALITY
+and SS2022 changes described next. The dated main evidence below remains
+historical.
 
 REALITY draws `random`/`randomized` from the four hybrid profiles that the new
 server accepts. Explicit X25519-only and draft-Kyber profiles still parse and
@@ -260,7 +262,7 @@ Development ABI 1.14 additionally imports `http://` and `https://` proxy links
 through the shared Rust parser and Swift/Kotlin APIs. See the
 [URI subset, TCP DNS and capability guard](http-profile-import.md). This retains
 the HTTP/1.1 CONNECT runtime limits below. Imported profiles are exercised by
-`check-http-interop.sh` against the currently pinned Xray-core v26.10.21; HTTPS
+`check-http-interop.sh` against the currently pinned Xray-core v26.10.31; HTTPS
 trust/name failures are covered by the local TLS fixture.
 
 The [#79 proposal](https://github.com/aimalygin/xray-rust/issues/79#issuecomment-6400188060)

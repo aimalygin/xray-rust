@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Temporary echo fixture for the DEBUG-only Swift v0.7 device probe.
 
-Requires Xray-core v26.10.21, openssl, and either Go (to inspect its clean build
+Requires Xray-core v26.10.31, openssl, and either Go (to inspect its clean build
 identity) or an explicitly pinned binary SHA-256. Hash pinning alone does not
 verify upstream provenance. Creates a new private directory containing ephemeral
 credentials; removes those credentials when stopped. Never changes host routes.
@@ -27,7 +27,7 @@ import uuid
 from urllib.parse import quote
 
 
-REFERENCE = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
+REFERENCE = "a4a3dff5b20c2faae567b742c172c7b95e75c083"
 V08_PROTOCOLS = ("trojan", "shadowsocks2022", "vmess")
 V09_PROTOCOLS = ("socks", "http", "https", "shadowsocks-aead")
 SHADOWSOCKS_AEAD_METHOD = "aes-256-gcm"
@@ -46,7 +46,7 @@ def verify_reference(binary, expected_sha256=None):
     info = subprocess.check_output(["go", "version", "-m", str(binary)], text=True)
     fields = [line.strip() for line in info.splitlines()]
     if f"build\tvcs.revision={REFERENCE}" not in fields or "build\tvcs.modified=false" not in fields:
-        raise ValueError("reference must have the exact, clean v26.10.21 build identity")
+        raise ValueError("reference must have the exact, clean v26.10.31 build identity")
 
 
 class Echo(asyncio.DatagramProtocol):

@@ -12144,7 +12144,7 @@ fn httpupgrade_host_falls_back_past_tls_to_the_destination() {
                 "settings": {
                     "vnext": [
                         {
-                            "address": "203.0.113.10",
+                            "address": "10.0.113.10",
                             "port": 443,
                             "users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]
                         }
@@ -12167,8 +12167,8 @@ fn httpupgrade_host_falls_back_past_tls_to_the_destination() {
     };
     assert_eq!(upgrade.path, "/up");
     // No wsSettings.host and no TLS, so the destination address stands in --
-    // and never with a port.
-    assert_eq!(upgrade.host, "203.0.113.10");
+    // and never with a port. Plaintext VLESS needs a private server address.
+    assert_eq!(upgrade.host, "10.0.113.10");
 }
 
 #[path = "hysteria_runtime/support.rs"]

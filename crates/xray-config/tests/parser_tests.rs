@@ -4170,7 +4170,7 @@ fn plaintext_guard_uses_first_selected_vless_user() {
 fn plaintext_vless_accepts_xray_private_test_and_dotless_servers() {
     for address in [
         "10.42.0.1",
-        "192.0.2.10",
+        "169.254.0.10",
         "::1",
         "[::1]",
         "[ ::1 ]",
@@ -4197,6 +4197,11 @@ fn plaintext_vless_intentionally_rejects_public_legacy_vnext_servers() {
         "[2606:4700:4700::1111]",
         "proxy.example.com",
         "123",
+        // Exempt through v26.10.21; v26.10.31 keeps only Go's private,
+        // loopback and link-local addresses.
+        "192.0.2.10",
+        "100.64.0.10",
+        "198.18.0.10",
     ] {
         let raw = raw_with_stream_settings_and_address(
             address,
@@ -4957,6 +4962,7 @@ fn xhttp_full_v26_7_28_config_surface_is_normalized() {
              "scMaxEachPostBytes": "2000000-1000000",
              "scMinPostsIntervalMs": "20", "scMaxBufferedPosts": 31,
              "scStreamUpServerSecs": "90-120", "serverMaxHeaderBytes": 8192,
+             "h2Params": {"MaxConcurrentStreams": 100},
              "xmux": {
                "maxConnections": "4-2", "cMaxReuseTimes": 8,
                "hMaxRequestTimes": "50-60", "hMaxReusableSecs": 300,

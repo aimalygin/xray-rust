@@ -109,7 +109,7 @@ func main() {
 		lookups = append(lookups, map[string]any{"address": address, "peer": index})
 	}
 	result := map[string]any{
-		"reference":   "Xray-core v26.10.21 / 1b1647cd9ddf0abc34b981d4611fc03bcac1ca74",
+		"reference":   "Xray-core v26.10.31 / a4a3dff5b20c2faae567b742c172c7b95e75c083",
 		"scope":       "wire codecs and WireGuard allowed-IP lookup; no live network interop",
 		"tcpRequests": requests, "tcpResponses": responses,
 		"udp":  map[string]any{"wire": udpWire(message), "maxDatagramSize": 32, "fragments": fragments},

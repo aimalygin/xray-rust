@@ -16,14 +16,16 @@ use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::ops::{BitAnd, BitOr, Not};
 
-/// Xray-core's built-in private/reserved address set (`privateIPMatcher` in
-/// `common/geodata/consts.go`), in the same order.
+/// Xray-core's built-in private/reserved address set as of v26.10.21
+/// (`privateIPMatcher` in `common/geodata/consts.go`), in the same order.
 ///
 /// Routing uses it for `geoip:private` so no `geoip.dat` is needed; Xray reads
 /// that code from `geoip.dat`, whose common builds cover the same multicast,
-/// broadcast, unspecified, benchmarking and TEST-NET ranges. Xray itself uses
-/// this set for the plaintext-server exemption (`infra/conf/xray.go`) and
-/// freedom's default block-private rule.
+/// broadcast, unspecified, benchmarking and TEST-NET ranges. Xray-core
+/// v26.10.31 rewrote its own copy from the IANA special-purpose registries,
+/// but uses it only for freedom's default block-private rule on server
+/// inbounds, which xray-rust does not have; its plaintext-server exemption
+/// no longer uses this set either.
 pub const PRIVATE_NETWORKS: [Cidr; 18] = [
     Cidr::new_const(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8),
     Cidr::new_const(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)), 8),
