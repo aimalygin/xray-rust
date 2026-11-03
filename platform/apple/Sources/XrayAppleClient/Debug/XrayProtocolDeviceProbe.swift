@@ -50,6 +50,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
     private struct Profile: Decodable {
         let format: String
         let label: String?
+        let expectFakeDNS: Bool?
         let text: String
         let configJSON: String
         let serverAddress: String
@@ -75,6 +76,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
     private var rows: [[String: Any]] = []
     private var label = "setup"
     private var udpExpected = true
+    private var expectsFakeDNS = false
 
     func run(update: (String) -> Void) async {
         if ProcessInfo.processInfo.environment["XRAY_STARTUP_PROBE_DEVICE_CHECK"] == "1" {
@@ -105,6 +107,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
             for item in fixture.cases {
                 label = item.label ?? item.format
                 udpExpected = item.udp ?? true
+                expectsFakeDNS = item.expectFakeDNS ?? false
                 update("\(label): import and VPN startup")
                 // Exercise the actual Swift -> FFI -> Rust import on the device.
                 if item.format == "vless" {
@@ -143,7 +146,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
                           "seconds": Date().timeIntervalSince(started)])
                     try await traffic(fixture)
                     try await sample(cycle: cycle, stage: "after-traffic")
-                    try await verifyConnectionClosure(cycle: cycle)
+                    try await closeActiveFlows(fixture, cycle: cycle)
                     try await traffic(fixture)
                     emit(["event": "traffic-after-close", "cycle": cycle, "result": "passed"])
                     try await sample(cycle: cycle, stage: "after-recovery")
@@ -434,7 +437,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
         emit(["event": "lock-interval", "seconds": unlockedAt - signals.lockedAt!])
         try await recover(fixture, stage: "after-unlock", since: unlockedAt)
         try await sameRuntime(initial.runtimeIdentifier)
-        try await verifyConnectionClosure(cycle: 1)
+        try await closeActiveFlows(fixture, cycle: 1)
         try await controller.stop()
         try await waitDisconnected()
         emit(["event": "disconnected", "cycle": 1, "result": "passed"])
@@ -483,6 +486,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
             guard remaining > 0 else { throw Failure.transitionTimeout }
             return min(10, remaining)
         }
+        if expectsFakeDNS { try await dnsAnchor(fixture, timeout: try timeout()) }
         for host in ["198.51.100.7", "2001:db8::7", fixture.trafficHost] {
             let exchangeStarted = ProcessInfo.processInfo.systemUptime
             emit(["event": "tcp-start", "host": host])
@@ -534,15 +538,21 @@ private final class ProtocolDeviceProbe: ObservableObject {
                   "transition": "\(family)-udp",
                   "exchangeSeconds": ProcessInfo.processInfo.systemUptime - started])
         }
+        try await dnsAnchor(fixture, timeout: try timeout())
+    }
+
+    private func dnsAnchor(_ fixture: Fixture, timeout: TimeInterval) async throws {
         let id = UInt16.random(in: 1...UInt16.max)
         var query = Data([UInt8(id >> 8), UInt8(id & 255), 1, 0, 0, 1, 0, 0, 0, 0, 0, 0])
         for part in fixture.trafficHost.split(separator: ".") { query.append(UInt8(part.utf8.count)); query.append(contentsOf: part.utf8) }
         query.append(contentsOf: [0, 0, 1, 0, 1])
-        let reply = try await ProbeExchange.run(host: "198.18.0.1", port: 53, request: query, tcpLength: nil, timeout: try timeout())
+        let reply = try await ProbeExchange.run(host: "198.18.0.1", port: 53, request: query, tcpLength: nil, timeout: timeout)
         guard reply.count == query.count + 16, reply.prefix(2) == query.prefix(2),
-              reply[2] & 0x80 != 0, reply[3] & 15 == 0, reply[6] == 0, reply[7] == 1,
-              reply.suffix(4) == Data([198, 51, 100, 7]) else { throw Failure.mismatch }
-        emit(["event": "dns-anchor", "result": "passed"])
+              reply[2] & 0x80 != 0, reply[3] & 15 == 0, reply[6] == 0, reply[7] == 1 else { throw Failure.mismatch }
+        let address = reply.suffix(4)
+        guard expectsFakeDNS ? address.prefix(2) == Data([198, 19]) : address == Data([198, 51, 100, 7])
+        else { throw Failure.mismatch }
+        emit(["event": expectsFakeDNS ? "dns-fakeip-anchor" : "dns-anchor", "result": "passed"])
     }
 
     private func sample(cycle: Int, stage: String) async throws {
@@ -561,6 +571,38 @@ private final class ProtocolDeviceProbe: ObservableObject {
               "tunFDWriteLoopExits": stats.tunFdWriteLoopExits,
               "runtime": stats.runtimeIdentifier])
 
+    }
+
+    /// An outbound without UDP (HTTP CONNECT) leaves no association open after
+    /// the traffic sweep, so hold one idle TCP echo flow for the close request
+    /// to cancel. The fixture echo drops a flow only after 10 s without data,
+    /// so the flow must end within 5 s of the close request to count.
+    private func closeActiveFlows(_ fixture: Fixture, cycle: Int) async throws {
+        guard !udpExpected else { return try await verifyConnectionClosure(cycle: cycle) }
+        let tcpPort = fixture.tcpPort
+        let held = Task { () -> (TimeInterval, Error?) in
+            do {
+                // One byte echoed, two awaited: the flow stays open and idle.
+                _ = try await ProbeExchange.run(host: "198.51.100.7", port: tcpPort,
+                                                request: Data([0x68]), tcpLength: 2, timeout: 20)
+                return (ProcessInfo.processInfo.systemUptime, nil)
+            } catch {
+                return (ProcessInfo.processInfo.systemUptime, error)
+            }
+        }
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        emit(["event": "held-tcp-flow", "cycle": cycle, "host": "198.51.100.7"])
+        let closeRequested = ProcessInfo.processInfo.systemUptime
+        try await verifyConnectionClosure(cycle: cycle)
+        let (endedAt, error) = await held.value
+        let seconds = endedAt - closeRequested
+        guard let error, seconds >= 0, seconds < 5 else {
+            emit(["event": "held-tcp-flow-survived", "cycle": cycle, "seconds": seconds])
+            throw Failure.retainedFlows
+        }
+        let detail = error as NSError
+        emit(["event": "held-tcp-flow-closed", "cycle": cycle, "result": "passed",
+              "domain": detail.domain, "code": detail.code, "seconds": seconds])
     }
 
     private func verifyConnectionClosure(cycle: Int, allowEmpty: Bool = false) async throws {

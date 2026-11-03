@@ -22,10 +22,14 @@ decisions of 2026-11-01 recorded in `docs/v090-release.md` on that branch:
 
 The shared scenarios (`vless-encryption`, `ip-on-demand`,
 `xhttp-download-session`, `cancellation`, `host-adapter-projection`) are
-unchanged from v0.8. This change does not touch them; the 0.8.1 campaign's
-`shared-fixture.py` and projection patches in
+unchanged from v0.8. The 0.8.1 campaign's `shared-fixture.py` and projection
+patches in
 [device-results/2026-10-18-v081-candidate](device-results/2026-10-18-v081-candidate/README.md)
-show how they were collected.
+show how they were collected. Two things the 0.8.1 and 0.9.0 campaigns patched
+in locally are now in the tree: the XHTTP download bridge listens on
+`XRAY_FIXTURE_BIND` when the fixture passes it, so a phone reaches it over the
+LAN, and the Apple probe honours a case's `expectFakeDNS`, expecting a
+`198.19.0.0/16` answer (`dns-fakeip-anchor`) instead of the echo address.
 
 ## HTTP UDP: refusal as a negative control
 
@@ -118,7 +122,7 @@ are those whose label starts with `socks`, `http` or `shadowsocks-aead`.
 | `domain-destination` | smoke | `tcp` to the probe name, resolved through the tunnel |
 | `routed-dns` | smoke | `dns-anchor`: an A query to `198.18.0.1` answered through the proxy |
 | `start-stop` | smoke, three cycles; `--mode lifecycle` | `connected`/`disconnected`, `rapid-restart` |
-| `cancel-active-flow` | smoke | `connection-close-verified`, then `traffic-after-close`; local closure, not remote EOF |
+| `cancel-active-flow` | smoke | `connection-close-verified`, then `traffic-after-close`; local closure, not remote EOF. HTTP leaves no UDP association open, so the probe holds an idle TCP echo: `held-tcp-flow-closed` within 5 s of the close request |
 | `reconnect` | lifecycle | `startup-cancelled`, then traffic after restart |
 | `wifi-cellular-wifi` | `--mode transitions` on a WAN host | `transition-recovered` for `cellular` and `wifi`, same runtime |
 | `lock-wake` | the same transitions run, or `--mode lock-wake` | `lock-interval` ≥ 15 s, `transition-recovered` `after-unlock` |
@@ -136,6 +140,9 @@ Runs, per protocol unless noted:
    [ios-wan-manual.py](device-results/2026-10-18-v081-candidate/ios-wan-manual.py). SOCKS UDP
    crosses carrier NAT here for the first time; Xray-core's SOCKS inbound
    answers each datagram's observed source, not the port the client declares.
+   It also relays UDP through a fresh ephemeral port per association, so the
+   host firewall must pass the ephemeral UDP range, not only `--port`; the
+   0.9.0 run opened 32768–60999 for its duration.
 4. Legacy: `run-v08-apple-acceptance-fixture.py --suite legacy-v09`, smoke.
    REALITY's decoy handshake reaches `www.google.com:443`.
 
@@ -156,9 +163,13 @@ Build `:devicehost:assembleDebug :deviceprobe:assembleDebug` with
 ANDROID_SERIAL=<serial> python3 scripts/run-v09-android-device-matrix.py --fixture <dir>/v07-probe.json --work-dir <new-dir>
 ```
 
-For every case on both backends it imports the link, then the core JSON,
-connects, drives IPv4, IPv6 and domain traffic, closes connections and
-recovers, and rapid-stops and restarts. HTTP cases must see three refused UDP
+It first grants both apps `POST_NOTIFICATIONS`, whose first-launch dialog
+would swallow the next intents, and waits until the envelope is
+`--warmup-seconds` old (10 by default): REALITY's first decoy handshake
+otherwise times out the first `vless-reality` probe. For every case on both
+backends it imports the link, then the core JSON, connects, drives IPv4, IPv6
+and domain traffic, closes connections and recovers, and rapid-stops and
+restarts. HTTP cases must see three refused UDP
 probes and no answered one per step. Each `traffic` event lists the profile
 transition ids it evidences, such as `ipv4-tcp` and `ipv4-udp-refused`. With
 `invalidImports` it then runs the malformed-link controls: the import fails,

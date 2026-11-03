@@ -14,10 +14,13 @@ the envelope's ``invalidImports`` must be rejected with the stored profile
 ciphertext unchanged, the plaintext removed and the marker absent from the
 host's log (the 0.8 controls script, generalized).
 
-Links and configs reach the device through stdin into each app's private
-no-backup directory, never through shell arguments. Requires ANDROID_SERIAL;
-ADB defaults to ``adb``. Resource and cancellation runs stay separate, as in
-the 0.8.1 campaign; this driver produces functional transitions only.
+Before the first case it grants both apps POST_NOTIFICATIONS and waits until
+the fixture's envelope is ``--warmup-seconds`` old (10 by default), which the
+first REALITY probe needs. Links and configs reach the device through stdin
+into each app's private no-backup directory, never through shell arguments.
+Requires ANDROID_SERIAL; ADB defaults to ``adb``. Resource and cancellation
+runs stay separate, as in the 0.8.1 campaign; this driver produces functional
+transitions only.
 """
 import argparse
 import json
@@ -84,6 +87,13 @@ class Device:
         with self.events.open("a") as stream:
             stream.write(json.dumps(row) + "\n")
         print(json.dumps(row), flush=True)
+
+    def grant_notifications(self):
+        # Both apps ask for POST_NOTIFICATIONS on first launch, and the system
+        # dialog swallows the next ``am start`` intents. Android 12 and older
+        # have no such runtime permission, so a refused grant is expected there.
+        for package in self.components:
+            self.shell("pm", "grant", package, "android.permission.POST_NOTIFICATIONS", check=False)
 
     def install(self, case, link):
         name = "profile-import.pending" if link else "profile-config-import.pending"
@@ -208,6 +218,8 @@ def main():
     parser.add_argument("--work-dir", type=Path, required=True, help="new directory for events and logcat")
     parser.add_argument("--package-suffix", default=".v09", help="deviceGateApplicationIdSuffix of both apps")
     parser.add_argument("--case", action="append", help="limit to these caseIds, in fixture order")
+    parser.add_argument("--warmup-seconds", type=float, default=10,
+                        help="minimum age of the fixture's v07-probe.json before the first case")
     args = parser.parse_args()
     os.umask(0o077)
     envelope = json.loads(args.fixture.read_text())
@@ -218,7 +230,12 @@ def main():
     args.work_dir.mkdir(parents=True, exist_ok=False)
     device = Device(os.environ["ANDROID_SERIAL"], os.environ.get("ADB", "adb"), args.package_suffix,
                     args.work_dir / "events.jsonl")
-    device.emit("matrix-start", caseCount=len(cases), backends=list(BACKENDS))
+    device.grant_notifications()
+    # REALITY's first decoy handshake is slow: a matrix started right after
+    # the fixture is ready times out the first vless-reality probe.
+    warmup = max(0.0, args.fixture.stat().st_mtime + args.warmup_seconds - time.time())
+    time.sleep(warmup)
+    device.emit("matrix-start", caseCount=len(cases), backends=list(BACKENDS), warmupSeconds=round(warmup, 1))
     for case in cases:
         for backend in BACKENDS:
             try:
