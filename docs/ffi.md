@@ -309,6 +309,16 @@ latch above and does not cancel startup-probe preflights. Kotlin
 `cancelOutboundProbes()` and Swift `cancelOutboundProbes()` require minor 15
 and the capability.
 
+It is a shared call: it may overlap packet, statistics, snapshot, and other
+shared calls, including other probes, but not load/start/stop/free. Each
+in-flight call blocks its caller and holds at most one outbound connection, so
+hosts should run one heartbeat at a time. Do not call it from a thread that
+drives the core runtime, such as the socket-protect callback. The Swift
+`probeOutboundURL(_:timeoutMs:outboundTag:)` and Kotlin
+`probeOutboundUrl(url, timeoutMs, outboundTag)` methods check the capability,
+run under the adapters' data-path gate; lifecycle calls cancel probes before
+waiting for shared calls, and return typed results with the health failure kinds.
+
 ## TUN MTU
 
 ABI 1.16 adds `XRAY_FFI_CAPABILITY_TUN_MTU` (bit 29) and
@@ -316,7 +326,9 @@ ABI 1.16 adds `XRAY_FFI_CAPABILITY_TUN_MTU` (bit 29) and
 the MTU is a runtime option rather than Xray JSON: a tun inbound's
 `settings.mtu` is ignored with a parser warning. Set it before config load, in
 `1280..=9000`; any other value returns `INVALID_ARGUMENT` and keeps the previous
-one, with no clamping. The default stays 1500 on every profile.
+one, with no clamping, and a call after config load returns `RUNTIME_ERROR`.
+The default stays 1500 on every profile. It is a lifecycle call: it must not
+overlap any other call on the same handle.
 
 Give the interface the same value (`VpnService.Builder.setMtu`,
 `NEPacketTunnelNetworkSettings.mtu`). The core drops packets longer than its MTU
@@ -334,37 +346,29 @@ What grows with the MTU:
   Linux, Android and Darwin senders only put whole segments into the window.
   32 KiB already covers MTUs up to 8232; at 9000 it is 35 KiB, at most
   768 KiB more on the `Mobile` profile (256 flows) and 1.1 MiB on `MobilePlus`;
-- nothing else: the inbound and outbound packet queues keep their packet
-  depth and also hold at most `depth × 1500` bytes (at least one MTU), so a
-  jumbo MTU does not multiply their worst case. At 1500 or less the packet
-  count binds first, as before;
 - the DNS response cap (`MTU − 28` or `− 48`), still bounded by the client's
   EDNS size;
 - UDP datagrams the host may send. A connection-oriented UDP path carries less
   than a jumbo MTU allows: VLESS UDP (length-prefixed or XUDP, since Xray
   servers read a datagram into one 8 KiB buffer), Mux/XUDP and Trojan 8192
   bytes, native VMess 8094, and a WireGuard outbound its own tunnel MTU less
-  28/48 (1392 at the default 1420, already below a 1500-byte TUN). A larger datagram is dropped on its own, the
-  flow stays up, `udp_oversize_datagrams` counts it (Kotlin
-  `XrayTunStats.udpOversizeDatagrams`, Swift `udpOversizeDatagrams`), and the
-  host gets an ICMP "fragmentation needed" (IPv4) or "packet too big" (IPv6,
-  path MTU >= 1280) carrying the path MTU. Senders that set DF, such as QUIC
-  stacks and sockets with PMTU discovery, then shrink their datagrams. Others
-  may fragment the next ones locally, and the TUN stack does not reassemble
-  IPv4 fragments, so those datagrams stay lost, as before. SOCKS,
-  Shadowsocks 2022, Hysteria2 (which fragments) and freedom carry any datagram
-  of a 9000-byte TUN. Before ABI 1.16 such a datagram ended the whole UDP flow,
-  or, over length-prefixed VLESS, reached the target split in two.
+  28/48 (1392 at the default 1420, already below a 1500-byte TUN). A larger
+  datagram is dropped on its own, the flow stays up, `udp_oversize_datagrams`
+  counts it (Kotlin `XrayTunStats.udpOversizeDatagrams`, Swift
+  `udpOversizeDatagrams`), and the host gets an ICMP "fragmentation needed"
+  (IPv4) or "packet too big" (IPv6, path MTU >= 1280) carrying the path MTU.
+  Senders that set DF, such as QUIC stacks and sockets with PMTU discovery,
+  then shrink their datagrams. Others may fragment the next ones locally, and
+  the TUN stack does not reassemble IPv4 fragments, so those datagrams stay
+  lost, as before. SOCKS, Shadowsocks 2022, Hysteria2 (which fragments) and
+  freedom carry any datagram of a 9000-byte TUN. Before ABI 1.16 such a
+  datagram ended the whole UDP flow, or, over length-prefixed VLESS, reached
+  the target split in two.
 
-It is a shared call: it may overlap packet, statistics, snapshot, and other
-shared calls, including other probes, but not load/start/stop/free. Each
-in-flight call blocks its caller and holds at most one outbound connection, so
-hosts should run one heartbeat at a time. Do not call it from a thread that
-drives the core runtime, such as the socket-protect callback. The Swift
-`probeOutboundURL(_:timeoutMs:outboundTag:)` and Kotlin
-`probeOutboundUrl(url, timeoutMs, outboundTag)` methods check the capability,
-run under the adapters' data-path gate; lifecycle calls cancel probes before
-waiting for shared calls, and return typed results with the health failure kinds.
+The inbound and outbound packet queues do not grow: they keep their packet
+depth and also hold at most `depth × 1500` bytes (at least one MTU), so a jumbo
+MTU does not multiply their worst case. At 1500 or less the packet count binds
+first, as before.
 
 ## Routing-policy replacement
 
