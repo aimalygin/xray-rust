@@ -6,9 +6,11 @@ import java.io.File
 
 class XrayTunInterfaceTest {
     @Test
-    fun mtuMatchesTheCoreTunMtu() {
-        val coreMtu = rustConstant("crates/xray-core-rs/src/lib.rs", """const TUN_MTU: usize = (\d+);""")
-        assertEquals(coreMtu.toInt(), XrayTunInterface.MTU)
+    fun mtuBoundsMatchTheCoreTunMtu() {
+        val lib = "crates/xray-core-rs/src/lib.rs"
+        assertEquals(rustConstant(lib, """pub const DEFAULT: Self = Self\((\d+)\);""").toInt(), XrayTunInterface.MTU)
+        assertEquals(rustConstant(lib, """pub const MIN: u32 = (\d+);""").toInt(), XrayTunInterface.MIN_MTU)
+        assertEquals(rustConstant(lib, """pub const MAX: u32 = (\d+);""").toInt(), XrayTunInterface.MAX_MTU)
     }
 
     @Test

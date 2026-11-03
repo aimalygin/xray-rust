@@ -16,6 +16,7 @@ class XrayTunStatsTest {
         assertEquals(19L, stats.tcp443FirstByteDurationMsMax)
         assertEquals(20L, stats.tcpRemoteWrittenBytes)
         assertEquals(21L, stats.tcpRemoteReadBytes)
+        assertEquals(22L, stats.udpOversizeDatagrams)
     }
 
     @Test

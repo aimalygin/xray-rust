@@ -11,6 +11,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 pub use stream::ClientStream;
+
+/// The largest datagram one VMess packet record carries under every record
+/// mode: an 8 KiB record less the AEAD tag, the authenticated length field
+/// and the largest padding. A datagram is never split across records.
+pub const MAX_DATAGRAM_PAYLOAD: usize = 8192 - 16 - 18 - 64;
 use xray_routing::{Network, Target, TargetAddr};
 use zeroize::{Zeroize, Zeroizing};
 

@@ -65,7 +65,7 @@ artifact directory.
   [connection management](../../docs/ffi.md#connection-management)), seven
   typed TUN diagnostic queues,
   startup probe with a pre-start preflight (ABI 1.12), blocking on-demand
-  outbound probe (ABI 1.9) with in-flight cancellation (ABI 1.15), runtime profiles, DNS bootstrap policy, and socket
+  outbound probe (ABI 1.9) with in-flight cancellation (ABI 1.15), TUN MTU (ABI 1.16), runtime profiles, DNS bootstrap policy, and socket
   protection.
 - `XrayVlessUrlImporter`: fail-closed VLESS share-link conversion into a
   self-contained mobile TUN profile.
@@ -106,8 +106,12 @@ val tunnel = Builder()
     .establish()
 ```
 
-`XrayTunInterface.MTU` (1500) equals the core's TUN MTU: longer packets are
-dropped, so do not raise it. Pass `dnsAnchor = true` only when the config
+`XrayTunInterface.MTU` (1500) is the core's default TUN MTU. To run another
+value in `MIN_MTU..MAX_MTU` (1280..9000), take `XrayCore.supportedTunMtu(mtu)`
+and pass the result to both `applyXrayTunInterface(dnsAnchor, mtu)` and
+`XrayCore.create(..., tunMtu = mtu)`; it is 1500 on a library without the
+ABI 1.16 `TunMtu` capability. The core drops packets longer than its MTU, so
+the two must match ([TUN MTU](../../docs/ffi.md#tun-mtu)). Pass `dnsAnchor = true` only when the config
 enables `dns.fakeIp` or a non-empty `dns.servers` list; the core answers DNS at
 `XrayTunInterface.DNS_ANCHOR` (`198.18.0.1`) only then. The IPv4 and IPv6
 addresses are the reference service's choice and the core does not depend on

@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex as StdMutex;
 
 use bytes::Bytes;
@@ -13,6 +13,11 @@ const TCP_OPEN_ERROR_EVENT_CAPACITY: usize = 64;
 const UDP_SLOW_FLOW_EVENT_CAPACITY: usize = 64;
 const UDP_RESPONSE_GAP_EVENT_CAPACITY: usize = 64;
 const UDP_QUIC_BLOCKED_EVENT_CAPACITY: usize = 256;
+/// Bytes each queue slot may hold on average. A queue of `depth` packets
+/// holds at most `depth × 1500` bytes, as it did before the MTU could grow
+/// beyond 1500, so a jumbo MTU does not multiply its worst-case memory; at an
+/// MTU of 1500 or less the packet count binds first and nothing changes.
+const QUEUE_BYTES_PER_SLOT: usize = 1500;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TunConfig {
@@ -105,6 +110,9 @@ pub struct TunStats {
     pub tun_fd_read_loop_exits: u64,
     pub tun_fd_write_loop_exits: u64,
     pub tun_fd_transient_io_errors: u64,
+    /// UDP datagrams larger than the outbound path admits, dropped one by
+    /// one with an ICMP "packet too big" back to the host; the flow stays up.
+    pub udp_oversize_datagrams: u64,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -194,6 +202,8 @@ pub struct TunEndpoint {
     inbound_rx: Mutex<mpsc::Receiver<Bytes>>,
     outbound_tx: mpsc::Sender<Bytes>,
     outbound_rx: Mutex<mpsc::Receiver<Bytes>>,
+    inbound_queued_bytes: AtomicUsize,
+    outbound_queued_bytes: AtomicUsize,
     inbound_queue_depth: usize,
     outbound_queue_depth: usize,
     inbound_packets: AtomicU64,
@@ -209,6 +219,7 @@ pub struct TunEndpoint {
     tun_fd_read_loop_exits: AtomicU64,
     tun_fd_write_loop_exits: AtomicU64,
     tun_fd_transient_io_errors: AtomicU64,
+    udp_oversize_datagrams: AtomicU64,
     tcp_stack_to_remote_bytes: AtomicU64,
     tcp_remote_written_bytes: AtomicU64,
     tcp_remote_read_bytes: AtomicU64,
@@ -299,6 +310,8 @@ impl TunEndpoint {
             inbound_rx: Mutex::new(inbound_rx),
             outbound_tx,
             outbound_rx: Mutex::new(outbound_rx),
+            inbound_queued_bytes: AtomicUsize::new(0),
+            outbound_queued_bytes: AtomicUsize::new(0),
             inbound_queue_depth,
             outbound_queue_depth,
             inbound_packets: AtomicU64::new(0),
@@ -314,6 +327,7 @@ impl TunEndpoint {
             tun_fd_read_loop_exits: AtomicU64::new(0),
             tun_fd_write_loop_exits: AtomicU64::new(0),
             tun_fd_transient_io_errors: AtomicU64::new(0),
+            udp_oversize_datagrams: AtomicU64::new(0),
             tcp_stack_to_remote_bytes: AtomicU64::new(0),
             tcp_remote_written_bytes: AtomicU64::new(0),
             tcp_remote_read_bytes: AtomicU64::new(0),
@@ -388,11 +402,11 @@ impl TunEndpoint {
     }
 
     pub async fn poll_inbound(&self) -> Result<Bytes, TunError> {
-        self.poll_packet(&self.inbound_rx).await
+        self.poll_packet(Direction::Inbound).await
     }
 
     pub async fn try_poll_inbound(&self) -> Result<Option<Bytes>, TunError> {
-        self.try_poll_packet(&self.inbound_rx).await
+        self.try_poll_packet(Direction::Inbound).await
     }
 
     pub async fn push_outbound(&self, packet: Bytes) -> Result<(), TunError> {
@@ -400,11 +414,11 @@ impl TunEndpoint {
     }
 
     pub async fn poll_outbound(&self) -> Result<Bytes, TunError> {
-        self.poll_packet(&self.outbound_rx).await
+        self.poll_packet(Direction::Outbound).await
     }
 
     pub async fn try_poll_outbound(&self) -> Result<Option<Bytes>, TunError> {
-        self.try_poll_packet(&self.outbound_rx).await
+        self.try_poll_packet(Direction::Outbound).await
     }
 
     pub fn mtu(&self) -> usize {
@@ -441,7 +455,7 @@ impl TunEndpoint {
             if self.closed.load(Ordering::Acquire) {
                 match rx.try_recv() {
                     Ok(packet) => {
-                        packets.push(packet);
+                        packets.push(self.dequeued(Direction::Outbound, packet));
                         break;
                     }
                     Err(_) => return Err(TunError::QueueClosed),
@@ -451,7 +465,7 @@ impl TunEndpoint {
             tokio::select! {
                 packet = rx.recv() => match packet {
                     Some(packet) => {
-                        packets.push(packet);
+                        packets.push(self.dequeued(Direction::Outbound, packet));
                         break;
                     }
                     None => return Err(TunError::QueueClosed),
@@ -462,7 +476,7 @@ impl TunEndpoint {
 
         while packets.len() < max_packets {
             match rx.try_recv() {
-                Ok(packet) => packets.push(packet),
+                Ok(packet) => packets.push(self.dequeued(Direction::Outbound, packet)),
                 Err(_) => break,
             }
         }
@@ -576,6 +590,7 @@ impl TunEndpoint {
             tun_fd_read_loop_exits: self.tun_fd_read_loop_exits.load(Ordering::Relaxed),
             tun_fd_write_loop_exits: self.tun_fd_write_loop_exits.load(Ordering::Relaxed),
             tun_fd_transient_io_errors: self.tun_fd_transient_io_errors.load(Ordering::Relaxed),
+            udp_oversize_datagrams: self.udp_oversize_datagrams.load(Ordering::Relaxed),
         }
     }
 
@@ -926,6 +941,10 @@ impl TunEndpoint {
             .fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn record_udp_oversize_datagram(&self) {
+        self.udp_oversize_datagrams.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn record_udp_remote_write_error(&self) {
         self.udp_remote_write_errors.fetch_add(1, Ordering::Relaxed);
     }
@@ -965,10 +984,23 @@ impl TunEndpoint {
             });
         }
 
+        let (queued_bytes, depth) = self.queued_bytes(direction);
+        // Always room for one full packet, however shallow the queue.
+        let byte_limit = depth
+            .saturating_mul(QUEUE_BYTES_PER_SLOT)
+            .max(self.config.mtu);
+        if queued_bytes.fetch_add(len, Ordering::AcqRel) + len > byte_limit {
+            queued_bytes.fetch_sub(len, Ordering::AcqRel);
+            self.record_drop(direction);
+            return Err(TunError::QueueFull);
+        }
         let send_result = match direction {
             Direction::Inbound => self.inbound_tx.try_send(packet),
             Direction::Outbound => self.outbound_tx.try_send(packet),
         };
+        if send_result.is_err() {
+            queued_bytes.fetch_sub(len, Ordering::AcqRel);
+        }
 
         match send_result {
             Ok(()) => {
@@ -994,15 +1026,37 @@ impl TunEndpoint {
         }
     }
 
-    async fn poll_packet(&self, rx: &Mutex<mpsc::Receiver<Bytes>>) -> Result<Bytes, TunError> {
-        let mut rx = rx.lock().await;
+    fn receiver(&self, direction: Direction) -> &Mutex<mpsc::Receiver<Bytes>> {
+        match direction {
+            Direction::Inbound => &self.inbound_rx,
+            Direction::Outbound => &self.outbound_rx,
+        }
+    }
+
+    fn queued_bytes(&self, direction: Direction) -> (&AtomicUsize, usize) {
+        match direction {
+            Direction::Inbound => (&self.inbound_queued_bytes, self.inbound_queue_depth),
+            Direction::Outbound => (&self.outbound_queued_bytes, self.outbound_queue_depth),
+        }
+    }
+
+    /// Releases a received packet's bytes from its queue's byte budget.
+    fn dequeued(&self, direction: Direction, packet: Bytes) -> Bytes {
+        self.queued_bytes(direction)
+            .0
+            .fetch_sub(packet.len(), Ordering::AcqRel);
+        packet
+    }
+
+    async fn poll_packet(&self, direction: Direction) -> Result<Bytes, TunError> {
+        let mut rx = self.receiver(direction).lock().await;
 
         loop {
             let closed = self.closed_notify.notified();
 
             if self.closed.load(Ordering::Acquire) {
                 return match rx.try_recv() {
-                    Ok(packet) => Ok(packet),
+                    Ok(packet) => Ok(self.dequeued(direction, packet)),
                     Err(
                         mpsc::error::TryRecvError::Empty | mpsc::error::TryRecvError::Disconnected,
                     ) => Err(TunError::QueueClosed),
@@ -1010,22 +1064,23 @@ impl TunEndpoint {
             }
 
             tokio::select! {
-                packet = rx.recv() => return packet.ok_or(TunError::QueueClosed),
+                packet = rx.recv() => {
+                    return packet
+                        .map(|packet| self.dequeued(direction, packet))
+                        .ok_or(TunError::QueueClosed);
+                }
                 () = closed => {}
             }
         }
     }
 
-    async fn try_poll_packet(
-        &self,
-        rx: &Mutex<mpsc::Receiver<Bytes>>,
-    ) -> Result<Option<Bytes>, TunError> {
-        let Ok(mut rx) = rx.try_lock() else {
+    async fn try_poll_packet(&self, direction: Direction) -> Result<Option<Bytes>, TunError> {
+        let Ok(mut rx) = self.receiver(direction).try_lock() else {
             return Ok(None);
         };
 
         match rx.try_recv() {
-            Ok(packet) => Ok(Some(packet)),
+            Ok(packet) => Ok(Some(self.dequeued(direction, packet))),
             Err(mpsc::error::TryRecvError::Empty) if !self.closed.load(Ordering::Acquire) => {
                 Ok(None)
             }

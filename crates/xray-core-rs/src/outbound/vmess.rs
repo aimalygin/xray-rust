@@ -182,6 +182,12 @@ pub(crate) enum UdpSession {
     Xudp(super::xudp::Session),
 }
 impl UdpSession {
+    pub(super) fn max_payload(&self) -> usize {
+        match self {
+            Self::Native(_) => xray_proxy::vmess::MAX_DATAGRAM_PAYLOAD,
+            Self::Mux(_) | Self::Xudp(_) => xray_proxy::mux::MAX_PAYLOAD,
+        }
+    }
     pub(super) async fn send(&self, target: &Target, payload: &[u8]) -> Result<(), CoreError> {
         match self {
             Self::Native(s) => s.send(target, payload).await,

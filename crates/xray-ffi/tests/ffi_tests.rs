@@ -734,7 +734,8 @@ fn ffi_reports_exact_current_capabilities() {
         | xray_ffi::XRAY_FFI_CAPABILITY_STARTUP_PROBE_PREFLIGHT
         | xray_ffi::XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT
         | xray_ffi::XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT
-        | xray_ffi::XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL;
+        | xray_ffi::XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL
+        | xray_ffi::XRAY_FFI_CAPABILITY_TUN_MTU;
 
     assert_eq!(XRAY_FFI_CAPABILITIES, expected);
     assert_eq!(xray_ffi_capabilities(), expected);
@@ -2449,6 +2450,7 @@ fn ffi_tun_push_packet_updates_stats() {
     assert_eq!(stats.tun_fd_read_loop_exits, 0);
     assert_eq!(stats.tun_fd_write_loop_exits, 0);
     assert_eq!(stats.tun_fd_transient_io_errors, 0);
+    assert_eq!(stats.udp_oversize_datagrams, 0);
 
     unsafe {
         xray_core_free(core);
@@ -2482,11 +2484,12 @@ fn ffi_tun_stats_accepts_legacy_v1_prefix_without_overwriting_tail() {
         legacy_size,
         std::mem::offset_of!(XrayTunStats, tun_fd_read_loop_exits)
     );
-    assert_eq!(current_size, legacy_size + 3 * std::mem::size_of::<u64>());
+    // Three TUN-fd counters, then `udp_oversize_datagrams` (ABI 1.16).
+    assert_eq!(current_size, legacy_size + 4 * std::mem::size_of::<u64>());
     #[cfg(target_pointer_width = "64")]
     {
         assert_eq!(legacy_size, 560);
-        assert_eq!(current_size, 584);
+        assert_eq!(current_size, 592);
     }
 
     let mut guarded = GuardedLegacyXrayTunStats {

@@ -109,6 +109,19 @@ pub(crate) fn open_timed_out() -> CoreError {
     io::Error::new(io::ErrorKind::TimedOut, "outbound udp open timed out").into()
 }
 impl Session {
+    /// The largest datagram this session's path carries. A TUN with a jumbo
+    /// MTU admits datagrams beyond it, and they must not end the flow.
+    pub(crate) fn max_payload(&self) -> usize {
+        match self {
+            Self::VlessMux(_) => xray_proxy::mux::MAX_PAYLOAD,
+            Self::Trojan(_) => xray_proxy::trojan::MAX_UDP_PAYLOAD_LENGTH,
+            Self::Vmess(session) => session.max_payload(),
+            Self::Wireguard { session, .. } => session.max_payload(),
+            // SOCKS and Shadowsocks 2022 carry what fits one IP datagram, and
+            // Hysteria fragments a datagram across QUIC datagrams.
+            Self::Socks(_) | Self::Shadowsocks2022(_) | Self::Hysteria(_) => usize::MAX,
+        }
+    }
     pub(crate) async fn send(&self, target: &Target, payload: &[u8]) -> Result<(), CoreError> {
         match self {
             Self::VlessMux(session) => session.send(target, payload).await,
@@ -154,12 +167,26 @@ impl Session {
     }
 }
 
+/// Logs a datagram dropped because its outbound path cannot carry it.
+pub(crate) fn log_oversize_udp_datagram(
+    logger: &crate::RuntimeLogger,
+    inbound: &str,
+    len: usize,
+    max_payload: usize,
+) {
+    logger.debug(|| {
+        format!("Debug udpOversizeDatagram inbound={inbound} len={len} pathMax={max_payload}")
+    });
+}
+
 /// Shared flow loop; the inbound adapter owns shutdown/host-close cancellation.
+/// A datagram larger than the session's path is dropped on its own, as a
+/// router would, and handed to the adapter's `oversize` handler.
 #[expect(
     clippy::too_many_arguments,
     reason = "shared relay carries optional TUN telemetry and inbound delivery"
 )]
-pub(crate) async fn relay_udp<F, Fut>(
+pub(crate) async fn relay_udp<O, OFut, F, Fut>(
     session: Session,
     target: &Target,
     mut input: tokio::sync::mpsc::Receiver<bytes::Bytes>,
@@ -167,21 +194,33 @@ pub(crate) async fn relay_udp<F, Fut>(
     traffic: &crate::connection::ConnectionTraffic,
     idle: Duration,
     tun: Option<&xray_tun::TunEndpoint>,
+    mut oversize: O,
     mut deliver: F,
 ) -> Result<(), CoreError>
 where
+    O: FnMut(bytes::Bytes, usize) -> OFut,
+    OFut: Future<Output = ()>,
     F: FnMut(Target, bytes::Bytes) -> Fut,
     Fut: Future<Output = io::Result<()>>,
 {
-    session.send(target, &first).await.inspect_err(|_| {
-        if let Some(tun) = tun {
-            tun.record_udp_remote_write_error();
+    let max_payload = session.max_payload();
+    let send = async |payload: &bytes::Bytes, oversize: &mut O| -> Result<(), CoreError> {
+        if payload.len() > max_payload {
+            oversize(payload.clone(), max_payload).await;
+            return Ok(());
         }
-    })?;
-    if let Some(tun) = tun {
-        tun.record_udp_remote_written(first.len());
-    }
-    traffic.record_uplink(first.len() as u64);
+        session.send(target, payload).await.inspect_err(|_| {
+            if let Some(tun) = tun {
+                tun.record_udp_remote_write_error();
+            }
+        })?;
+        if let Some(tun) = tun {
+            tun.record_udp_remote_written(payload.len());
+        }
+        traffic.record_uplink(payload.len() as u64);
+        Ok(())
+    };
+    send(&first, &mut oversize).await?;
     let idle_deadline = tokio::time::sleep(idle);
     tokio::pin!(idle_deadline);
     loop {
@@ -189,9 +228,7 @@ where
             _ = &mut idle_deadline => break,
             payload = input.recv() => {
                 let Some(payload) = payload else { break; };
-                session.send(target, &payload).await.inspect_err(|_| { if let Some(tun) = tun { tun.record_udp_remote_write_error(); } })?;
-                if let Some(tun) = tun { tun.record_udp_remote_written(payload.len()); }
-                traffic.record_uplink(payload.len() as u64);
+                send(&payload, &mut oversize).await?;
                 idle_deadline.as_mut().reset(tokio::time::Instant::now() + idle);
             }
             packet = session.recv() => {

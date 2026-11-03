@@ -185,7 +185,7 @@ fn format_tun_stats_debug_lines(stats: &TunStats) -> Vec<String> {
             stats.udp_channel_dropped_packets
         ),
         format!(
-            "Debug stats udpRemote udpOpenEvents={} udpUDP443OpenEvents={} udpWrittenBytes={} udpReadBytes={} udpOpenErrors={} udpVisionUDP443Rejections={} udpWriteErrors={} udpReadErrors={} udpRemoteClosed={} udpQuicBlockedPackets={}",
+            "Debug stats udpRemote udpOpenEvents={} udpUDP443OpenEvents={} udpWrittenBytes={} udpReadBytes={} udpOpenErrors={} udpVisionUDP443Rejections={} udpWriteErrors={} udpReadErrors={} udpRemoteClosed={} udpQuicBlockedPackets={} udpOversizeDatagrams={}",
             stats.udp_remote_open_events,
             stats.udp_remote_udp443_open_events,
             stats.udp_remote_written_bytes,
@@ -195,7 +195,8 @@ fn format_tun_stats_debug_lines(stats: &TunStats) -> Vec<String> {
             stats.udp_remote_write_errors,
             stats.udp_remote_read_errors,
             stats.udp_remote_closed_events,
-            stats.udp_quic_blocked_packets
+            stats.udp_quic_blocked_packets,
+            stats.udp_oversize_datagrams
         ),
     ]
 }

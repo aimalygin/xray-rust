@@ -11,6 +11,20 @@ final class XrayPacketTunnelHostOptionsTests: XCTestCase {
             configuration(), hysteriaStreamLimits: { nil }, tunAdmissionOptions: { nil })
         XCTAssertNil(resolved.hysteriaStreamLimits)
         XCTAssertNil(resolved.tunAdmission)
+        XCTAssertEqual(resolved.tunMtu, .standard)
+    }
+
+    func testHostMtuReachesBothTheInterfaceAndTheCoreOptions() throws {
+        let jumbo = try XrayTunMtu(9_000)
+        let resolved = try XrayPacketTunnelProvider.resolvingHostOptions(
+            configuration(), hysteriaStreamLimits: { nil }, tunAdmissionOptions: { nil },
+            tunMtu: { jumbo })
+        XCTAssertEqual(resolved.tunMtu, jumbo)
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(resolved)
+        XCTAssertEqual(prepared.tunMtu, jumbo)
+        let settings = XrayPacketTunnelProvider.networkSettings(
+            resolvedDNSConfiguration: .localDNSAnchor, mtu: prepared.tunMtu)
+        XCTAssertEqual(settings.mtu?.uint32Value, 9_000)
     }
 
     func testHostOptionsAreCapturedOnceAndSurviveDNSPreparation() throws {

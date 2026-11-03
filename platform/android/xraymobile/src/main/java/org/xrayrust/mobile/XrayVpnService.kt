@@ -420,6 +420,7 @@ open class XrayVpnService : VpnService() {
         tunBackend: XrayTunBackend = DEFAULT_XRAY_TUN_BACKEND,
         tunRuntimeProfile: XrayTunRuntimeProfile = XrayTunRuntimeProfile.Default,
         startupProbe: XrayStartupProbeOptions? = null,
+        tunMtu: Int = XrayTunInterface.MTU,
     ) {
         val attempt = lifecycle.beginStart() ?: return
         val dnsBootstrapDeadline = AndroidDnsBootstrapDeadline(
@@ -435,6 +436,7 @@ open class XrayVpnService : VpnService() {
                         tunBackend = tunBackend,
                         tunRuntimeProfile = tunRuntimeProfile,
                         startupProbe = startupProbe,
+                        tunMtu = tunMtu,
                         dnsBootstrapDeadline = dnsBootstrapDeadline,
                     )
                 },
@@ -466,6 +468,7 @@ open class XrayVpnService : VpnService() {
         tunBackend: XrayTunBackend,
         tunRuntimeProfile: XrayTunRuntimeProfile,
         startupProbe: XrayStartupProbeOptions?,
+        tunMtu: Int,
         dnsBootstrapDeadline: AndroidDnsBootstrapDeadline,
     ): XrayTunnelStartOutcome {
         val prepareAndroidVpnConfig: (String) -> PreparedAndroidVpnConfig = { rawConfig ->
@@ -494,7 +497,9 @@ open class XrayVpnService : VpnService() {
                     geodataSearchDirectory = geodataSearchDirectory,
                 )
             }
-            val tunnelBuilder = buildTunnel()
+            // One value for the interface and the core, whatever buildTunnel() set.
+            val mtu = XrayCore.supportedTunMtu(tunMtu)
+            val tunnelBuilder = buildTunnel().setMtu(mtu)
             if (preparedConfig.usesLocalDnsAnchor) {
                 tunnelBuilder.addDnsServer(XrayTunInterface.DNS_ANCHOR)
             }
@@ -510,6 +515,7 @@ open class XrayVpnService : VpnService() {
                 dnsBootstrapMode = XrayDnsBootstrapMode.StaticOnly,
                 tunAdmission = tunAdmissionOptions(),
                 geodataSearchDirectory = geodataSearchDirectory,
+                tunMtu = mtu,
                 tunFileDescriptor = when (tunBackend) {
                     XrayTunBackend.PacketPump -> null
                     XrayTunBackend.FileDescriptor -> XrayTunFileDescriptor(
@@ -693,7 +699,7 @@ open class XrayVpnService : VpnService() {
     private fun readTunPackets(session: TunnelSession) {
         try {
             val input = FileInputStream(session.tunnel.fileDescriptor)
-            val packetBuffer = ByteArray(PACKET_BYTES)
+            val packetBuffer = ByteArray(session.core.tunMtu)
             val readable = StructPollfd().apply {
                 fd = session.tunnel.fileDescriptor
                 events = OsConstants.POLLIN.toShort()
@@ -748,15 +754,16 @@ open class XrayVpnService : VpnService() {
     private fun writeTunPackets(session: TunnelSession) {
         try {
             val output = FileOutputStream(session.tunnel.fileDescriptor)
-            val storage = ByteBuffer.allocateDirect(MAX_PACKETS_PER_POLL * PACKET_BYTES)
+            val packetBytes = session.core.tunMtu
+            val storage = ByteBuffer.allocateDirect(MAX_PACKETS_PER_POLL * packetBytes)
             val lengths = IntArray(MAX_PACKETS_PER_POLL)
-            val packetBuffer = ByteArray(PACKET_BYTES)
+            val packetBuffer = ByteArray(packetBytes)
 
             while (session.active.get() && !Thread.currentThread().isInterrupted) {
                 val packetCount = session.core.pollPacketsInto(
                     storage = storage,
                     lengths = lengths,
-                    maxPacketBytes = PACKET_BYTES,
+                    maxPacketBytes = packetBytes,
                     waitMilliseconds = POLL_WAIT_MILLISECONDS,
                 )
                 check(packetCount in 0..lengths.size) {
@@ -769,7 +776,7 @@ open class XrayVpnService : VpnService() {
                         return
                     }
                     val length = lengths[index]
-                    check(length in 1..PACKET_BYTES) {
+                    check(length in 1..packetBytes) {
                         "native packet length is outside the packet buffer"
                     }
                     storage.position(offset)
@@ -842,7 +849,6 @@ open class XrayVpnService : VpnService() {
     }
 
     private companion object {
-        const val PACKET_BYTES = XrayTunInterface.MTU
         const val MAX_PACKETS_PER_POLL = 64
         const val POLL_WAIT_MILLISECONDS = 250
         const val DNS_BOOTSTRAP_TIMEOUT_MILLISECONDS = 5_000L

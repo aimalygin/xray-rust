@@ -71,6 +71,8 @@ const DNS_RCODE_SERVFAIL: u16 = 2;
 pub(crate) const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
 pub(crate) const TUN_CLIENT_IPV4: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 2);
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
+/// IPv4 and TCP headers without options: the largest MSS a link MTU admits.
+const TCP_IPV4_HEADERS_LEN: usize = 40;
 const TUN_TCP_SNIFF_BUFFER_SIZE: usize = 8 * 1024;
 const TUN_TCP_SNIFF_TIMEOUT: Duration = Duration::from_millis(250);
 const STACK_EVENT_CHANNEL_DEPTH: usize = 64;
@@ -208,8 +210,9 @@ struct TunRuntimePolicy {
 const MOBILE_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
     tcp_remote: MOBILE_TCP_REMOTE_BUFFER_POLICY,
     tcp: TcpFlowBudgetPolicy {
-        // Every smoltcp TCP flow owns two fixed 32 KiB buffers. Pending opens
-        // also retain TLS state, so bound both dimensions independently.
+        // Every smoltcp TCP flow owns a 32 KiB send buffer and a receive
+        // buffer of max(32 KiB, 4 × MSS). Pending opens also retain TLS
+        // state, so bound both dimensions independently.
         max_active_flows: 256,
         max_pending_opens: 64,
     },
@@ -911,7 +914,7 @@ pub(crate) async fn serve_tun_endpoint(
     runtime_logger: RuntimeLogger,
     mut shutdown: watch::Receiver<bool>,
 ) {
-    let mut device = PacketDevice::new(1500);
+    let mut device = PacketDevice::new(tun.mtu());
     let mut iface_config = InterfaceConfig::new(HardwareAddress::Ip);
     iface_config.random_seed = DEFAULT_RANDOM_SEED;
     let mut iface = Interface::new(iface_config, &mut device, Instant::now());
@@ -2701,6 +2704,7 @@ fn read_socket_data_to_remote(
     flows: &mut HashMap<SocketHandle, TcpFlow>,
     flow_budget_state: &mut FlowBudgetState,
 ) {
+    let rx_buffer_size = tcp_rx_buffer_size(tun.mtu());
     flow_budget_state
         .tcp_upload
         .capacity_waiting
@@ -2728,7 +2732,7 @@ fn read_socket_data_to_remote(
             }
             let mut max_read = flow_budget_state
                 .available_upload_bytes()
-                .min(TCP_BUFFER_SIZE)
+                .min(rx_buffer_size)
                 .min(flow.upload_room());
             if max_read == 0 {
                 flow_budget_state
@@ -2739,7 +2743,7 @@ fn read_socket_data_to_remote(
                 // registration so already-freed capacity cannot be missed.
                 max_read = flow_budget_state
                     .available_upload_bytes()
-                    .min(TCP_BUFFER_SIZE)
+                    .min(rx_buffer_size)
                     .min(flow.upload_room());
             }
             if max_read == 0 {
@@ -5130,6 +5134,38 @@ async fn bridge_udp_vless_flow(
     }
 }
 
+/// The largest datagram a VLESS UDP stream relays intact. Xray servers read
+/// one into an 8 KiB buffer: a larger XUDP frame ends the stream
+/// (`common/mux/reader.go`), and a larger length-prefixed one leaves the
+/// server as several datagrams (`proxy/vless/encoding/addons.go`).
+pub(crate) const VLESS_UDP_MAX_PAYLOAD: usize = xray_proxy::mux::MAX_PAYLOAD;
+
+/// Drops one datagram that its outbound path cannot carry, as a router would,
+/// and sends the host the path MTU so a sender that sets DF (QUIC, PMTU
+/// discovery) shrinks its datagrams; the flow stays up.
+async fn reject_oversize_udp_datagram(
+    context: &TunRuntimeContext,
+    key: UdpFlowKey,
+    payload: &[u8],
+    max_payload: usize,
+) {
+    context.tun.record_udp_oversize_datagram();
+    crate::outbound::datagram::log_oversize_udp_datagram(
+        &context.runtime_logger,
+        "tun",
+        payload.len(),
+        max_payload,
+    );
+    if let Some(reply) = icmp_packet_too_big_reply(
+        key.client.into_endpoint(),
+        key.target.into_endpoint(),
+        payload,
+        max_payload,
+    ) {
+        let _ = context.tun.push_outbound(reply).await;
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn bridge_udp_vless_flow_loop<R, W, T>(
     key: UdpFlowKey,
@@ -5156,49 +5192,59 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
     let global_id = udp_flow_global_id(key);
     let mut sent_xudp_new = false;
     let first_payload_len = first_payload.len();
-    let frame = match framing {
-        VlessUdpFraming::LengthPrefixed => encode_udp_packet(&first_payload),
-        VlessUdpFraming::Xudp => {
-            sent_xudp_new = true;
-            encode_xudp_new_packet(&target, &first_payload, global_id)
+    // An oversize first datagram is dropped like any later one; the stream
+    // then opens with the next datagram that fits.
+    let frame = if first_payload_len > VLESS_UDP_MAX_PAYLOAD {
+        reject_oversize_udp_datagram(&context, key, &first_payload, VLESS_UDP_MAX_PAYLOAD).await;
+        None
+    } else {
+        let frame = match framing {
+            VlessUdpFraming::LengthPrefixed => encode_udp_packet(&first_payload),
+            VlessUdpFraming::Xudp => {
+                sent_xudp_new = true;
+                encode_xudp_new_packet(&target, &first_payload, global_id)
+            }
+        };
+        let Ok(frame) = frame else {
+            let _ = context
+                .stack_tx
+                .send(StackEvent::UdpClosed { key, generation })
+                .await;
+            return;
+        };
+        Some(frame)
+    };
+    if let Some(frame) = frame {
+        let first_write = tokio::select! {
+            biased;
+            () = wait_for_connection_close(&mut connection_close) => return,
+            result = remote_writer.write_all(&frame) => result,
+        };
+        if first_write.is_err() {
+            context.tun.record_udp_remote_write_error();
+            let _ = context
+                .stack_tx
+                .send(StackEvent::UdpClosed { key, generation })
+                .await;
+            return;
         }
-    };
-    let Ok(frame) = frame else {
-        let _ = context
-            .stack_tx
-            .send(StackEvent::UdpClosed { key, generation })
-            .await;
-        return;
-    };
-    let first_write = tokio::select! {
-        biased;
-        () = wait_for_connection_close(&mut connection_close) => return,
-        result = remote_writer.write_all(&frame) => result,
-    };
-    if first_write.is_err() {
-        context.tun.record_udp_remote_write_error();
-        let _ = context
-            .stack_tx
-            .send(StackEvent::UdpClosed { key, generation })
-            .await;
-        return;
+        let first_flush = tokio::select! {
+            biased;
+            () = wait_for_connection_close(&mut connection_close) => return,
+            result = remote_writer.flush() => result,
+        };
+        if first_flush.is_err() {
+            context.tun.record_udp_remote_write_error();
+            let _ = context
+                .stack_tx
+                .send(StackEvent::UdpClosed { key, generation })
+                .await;
+            return;
+        }
+        context.tun.record_udp_remote_written(first_payload_len);
+        traffic.record_uplink(first_payload_len as u64);
+        timing.record_written(first_payload_len);
     }
-    let first_flush = tokio::select! {
-        biased;
-        () = wait_for_connection_close(&mut connection_close) => return,
-        result = remote_writer.flush() => result,
-    };
-    if first_flush.is_err() {
-        context.tun.record_udp_remote_write_error();
-        let _ = context
-            .stack_tx
-            .send(StackEvent::UdpClosed { key, generation })
-            .await;
-        return;
-    }
-    context.tun.record_udp_remote_written(first_payload_len);
-    traffic.record_uplink(first_payload_len as u64);
-    timing.record_written(first_payload_len);
 
     loop {
         tokio::select! {
@@ -5217,6 +5263,11 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
                     break;
                 };
                 let payload_len = payload.len();
+                if payload_len > VLESS_UDP_MAX_PAYLOAD {
+                    reject_oversize_udp_datagram(&context, key, &payload, VLESS_UDP_MAX_PAYLOAD)
+                        .await;
+                    continue;
+                }
                 let frame = match framing {
                     VlessUdpFraming::LengthPrefixed => encode_udp_packet(&payload),
                     VlessUdpFraming::Xudp => {
@@ -5301,7 +5352,14 @@ fn admit_tcp_listener(
         return;
     }
 
-    add_tcp_listener(sockets, listeners, endpoint);
+    add_tcp_listener(sockets, listeners, endpoint, context.tun.mtu());
+}
+
+/// Receive buffer of a TUN TCP socket. Linux, Android and Darwin senders put
+/// only whole segments into the advertised window, so a window smaller than a
+/// few MSS stalls them on every burst; 32 KiB covers that up to MTU ~8232.
+fn tcp_rx_buffer_size(mtu: usize) -> usize {
+    TCP_BUFFER_SIZE.max(4 * mtu.saturating_sub(TCP_IPV4_HEADERS_LEN))
 }
 
 fn tcp_listener_capacity_available(
@@ -5316,9 +5374,10 @@ fn add_tcp_listener(
     sockets: &mut SocketSet<'static>,
     listeners: &mut HashMap<IpEndpoint, TcpListenerState>,
     endpoint: IpEndpoint,
+    mtu: usize,
 ) {
     let mut socket = tcp::Socket::new(
-        tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+        tcp::SocketBuffer::new(vec![0; tcp_rx_buffer_size(mtu)]),
         tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
     );
     socket.set_nagle_enabled(false);
@@ -5657,9 +5716,53 @@ fn icmp_echo_reply(packet: &[u8]) -> Option<Bytes> {
 
 fn icmp_port_unreachable_reply(packet: &[u8]) -> Option<Bytes> {
     match packet.first()? >> 4 {
-        4 => ipv4_icmp_port_unreachable_reply(packet),
-        6 => ipv6_icmp_port_unreachable_reply(packet),
+        4 => ipv4_icmp_udp_error(packet, IcmpUdpError::PortUnreachable),
+        6 => ipv6_icmp_udp_error(packet, IcmpUdpError::PortUnreachable),
         _ => None,
+    }
+}
+
+/// An ICMP error about a UDP datagram the host sent into the TUN.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IcmpUdpError {
+    PortUnreachable,
+    /// IPv4 "fragmentation needed" or IPv6 "packet too big" carrying the
+    /// largest IP packet the path admits.
+    PacketTooBig {
+        mtu: u32,
+    },
+}
+
+const IPV4_UDP_HEADERS_LEN: usize = 28;
+const IPV6_UDP_HEADERS_LEN: usize = 48;
+/// IPv6 hosts ignore a "packet too big" below the minimum link MTU (RFC 8021).
+const IPV6_MIN_MTU: u32 = 1280;
+/// The IPv4 minimum Linux keeps as a path MTU (`min_pmtu`).
+const IPV4_MIN_PMTU: u32 = 552;
+
+/// Rebuilds the datagram `client` sent to `target` and answers it with the
+/// path MTU that `max_payload` leaves. `None` when no host would honour it,
+/// and the datagram is still dropped.
+fn icmp_packet_too_big_reply(
+    client: IpEndpoint,
+    target: IpEndpoint,
+    payload: &[u8],
+    max_payload: usize,
+) -> Option<Bytes> {
+    let original = build_udp_packet(client, target, payload)?;
+    match client.addr {
+        IpAddress::Ipv4(_) => {
+            let mtu = u32::try_from(max_payload.checked_add(IPV4_UDP_HEADERS_LEN)?)
+                .ok()?
+                .min(u32::from(u16::MAX));
+            (mtu >= IPV4_MIN_PMTU)
+                .then(|| ipv4_icmp_udp_error(&original, IcmpUdpError::PacketTooBig { mtu }))?
+        }
+        IpAddress::Ipv6(_) => {
+            let mtu = u32::try_from(max_payload.checked_add(IPV6_UDP_HEADERS_LEN)?).ok()?;
+            (mtu >= IPV6_MIN_MTU)
+                .then(|| ipv6_icmp_udp_error(&original, IcmpUdpError::PacketTooBig { mtu }))?
+        }
     }
 }
 
@@ -5755,7 +5858,7 @@ fn ipv6_icmp_echo_reply(packet: &[u8]) -> Option<Bytes> {
     Some(Bytes::from(reply))
 }
 
-fn ipv4_icmp_port_unreachable_reply(packet: &[u8]) -> Option<Bytes> {
+fn ipv4_icmp_udp_error(packet: &[u8], error: IcmpUdpError) -> Option<Bytes> {
     if packet.len() < 28 {
         return None;
     }
@@ -5789,7 +5892,13 @@ fn ipv4_icmp_port_unreachable_reply(packet: &[u8]) -> Option<Bytes> {
     {
         let icmp = &mut reply[20..];
         icmp[0] = 3;
-        icmp[1] = 3;
+        match error {
+            IcmpUdpError::PortUnreachable => icmp[1] = 3,
+            IcmpUdpError::PacketTooBig { mtu } => {
+                icmp[1] = 4;
+                icmp[6..8].copy_from_slice(&(mtu as u16).to_be_bytes());
+            }
+        }
         icmp[8..].copy_from_slice(&packet[..quote_len]);
         let checksum = internet_checksum(icmp);
         icmp[2..4].copy_from_slice(&checksum.to_be_bytes());
@@ -5801,7 +5910,7 @@ fn ipv4_icmp_port_unreachable_reply(packet: &[u8]) -> Option<Bytes> {
     Some(Bytes::from(reply))
 }
 
-fn ipv6_icmp_port_unreachable_reply(packet: &[u8]) -> Option<Bytes> {
+fn ipv6_icmp_udp_error(packet: &[u8], error: IcmpUdpError) -> Option<Bytes> {
     if packet.len() < 48 || packet[6] != UDP_PROTOCOL {
         return None;
     }
@@ -5827,8 +5936,16 @@ fn ipv6_icmp_port_unreachable_reply(packet: &[u8]) -> Option<Bytes> {
 
     {
         let icmp = &mut reply[40..];
-        icmp[0] = 1;
-        icmp[1] = 4;
+        match error {
+            IcmpUdpError::PortUnreachable => {
+                icmp[0] = 1;
+                icmp[1] = 4;
+            }
+            IcmpUdpError::PacketTooBig { mtu } => {
+                icmp[0] = 2;
+                icmp[4..8].copy_from_slice(&mtu.to_be_bytes());
+            }
+        }
         icmp[8..].copy_from_slice(&packet[..quote_len]);
     }
 
@@ -7498,7 +7615,7 @@ mod tests {
         iface.set_any_ip(true);
         let mut sockets = SocketSet::new(Vec::new());
         let mut listeners = HashMap::new();
-        add_tcp_listener(&mut sockets, &mut listeners, endpoint);
+        add_tcp_listener(&mut sockets, &mut listeners, endpoint, 1500);
         let handle = listeners.get(&endpoint).unwrap().handle;
         let packet = |seq: u32, ack: u32, flags: u8, data: &[u8]| {
             Bytes::from(build_ipv4_tcp_packet(
@@ -7588,7 +7705,7 @@ mod tests {
         iface.set_any_ip(true);
         let mut sockets = SocketSet::new(Vec::new());
         let mut listeners = HashMap::new();
-        add_tcp_listener(&mut sockets, &mut listeners, endpoint);
+        add_tcp_listener(&mut sockets, &mut listeners, endpoint, 1500);
         let handle = listeners.get(&endpoint).unwrap().handle;
 
         device.push_inbound(Bytes::from(build_ipv4_tcp_packet(
@@ -8111,7 +8228,7 @@ mod tests {
         iface.set_any_ip(true);
         let mut sockets = SocketSet::new(Vec::new());
         let mut listeners = HashMap::new();
-        add_tcp_listener(&mut sockets, &mut listeners, endpoint);
+        add_tcp_listener(&mut sockets, &mut listeners, endpoint, 1500);
         let handle = listeners.get(&endpoint).unwrap().handle;
 
         device.push_inbound(Bytes::from(build_ipv4_tcp_packet(
@@ -8225,7 +8342,7 @@ mod tests {
         iface.set_any_ip(true);
         let mut sockets = SocketSet::new(Vec::new());
         let mut listeners = HashMap::new();
-        add_tcp_listener(&mut sockets, &mut listeners, endpoint);
+        add_tcp_listener(&mut sockets, &mut listeners, endpoint, 1500);
         let handle = listeners.get(&endpoint).unwrap().handle;
 
         device.push_inbound(Bytes::from(build_ipv4_tcp_packet(
@@ -8793,5 +8910,97 @@ mod tests {
 
         assert_eq!(endpoint.addr, IpAddress::Ipv4(Ipv4Addr::LOCALHOST));
         assert_eq!(endpoint.port, 8080);
+    }
+
+    #[test]
+    fn tcp_rx_buffer_holds_four_full_segments_at_every_mtu() {
+        assert_eq!(tcp_rx_buffer_size(1500), TCP_BUFFER_SIZE);
+        // 32 KiB alone covers four segments up to MTU 8232.
+        assert_eq!(tcp_rx_buffer_size(8232), TCP_BUFFER_SIZE);
+        assert_eq!(tcp_rx_buffer_size(9000), 4 * 8960);
+        for mtu in crate::TunMtu::MIN..=crate::TunMtu::MAX {
+            let mtu = mtu as usize;
+            let rx = tcp_rx_buffer_size(mtu);
+            assert!(rx >= TCP_BUFFER_SIZE);
+            assert!(rx >= 4 * (mtu - TCP_IPV4_HEADERS_LEN), "{mtu}");
+        }
+    }
+
+    #[test]
+    fn jumbo_mtu_rx_growth_stays_inside_the_phone_memory_budget() {
+        let jumbo = TunRuntimeOptions {
+            mtu: crate::TunMtu::new(crate::TunMtu::MAX).unwrap(),
+            ..TunRuntimeOptions::default()
+        };
+        let growth = tcp_rx_buffer_size(jumbo.mtu.get()) - TCP_BUFFER_SIZE;
+        for (profile, budget) in [
+            (TunRuntimeProfile::LowMemory, 512 * 1024),
+            (TunRuntimeProfile::Mobile, 1024 * 1024),
+            (TunRuntimeProfile::MobilePlus, 1536 * 1024),
+        ] {
+            let policy = tun_runtime_policy_for_options(TunRuntimeOptions { profile, ..jumbo });
+            let worst = policy.flows.tcp.max_active_flows * growth;
+            assert!(worst <= budget, "{profile:?}: {worst}");
+        }
+    }
+
+    fn assert_quotes_udp_datagram(quote: &[u8], client: IpEndpoint, target: IpEndpoint) {
+        let original = build_udp_packet(client, target, &[0; 8]).unwrap();
+        let header_len = if quote[0] >> 4 == 4 { 20 } else { 40 };
+        // Source/destination addresses and both ports identify the socket.
+        assert_eq!(quote[0] >> 4, original[0] >> 4);
+        let (addrs, ports) = if header_len == 20 {
+            (12..20, 20..24)
+        } else {
+            (8..40, 40..44)
+        };
+        assert_eq!(quote[addrs.clone()], original[addrs]);
+        assert_eq!(quote[ports.clone()], original[ports]);
+    }
+
+    #[test]
+    fn oversize_ipv4_datagram_gets_fragmentation_needed_with_the_path_mtu() {
+        use smoltcp::wire::{Icmpv4Packet, Ipv4Packet};
+        let client = IpEndpoint::new(IpAddress::v4(198, 18, 0, 2), 50_000);
+        let target = IpEndpoint::new(IpAddress::v4(203, 0, 113, 9), 443);
+        let reply = icmp_packet_too_big_reply(client, target, &[7; 1393], 1392).unwrap();
+
+        let ip = Ipv4Packet::new_checked(&reply[..]).unwrap();
+        assert!(ip.verify_checksum());
+        assert_eq!(ip.src_addr(), Ipv4Addr::new(203, 0, 113, 9));
+        assert_eq!(ip.dst_addr(), Ipv4Addr::new(198, 18, 0, 2));
+        let icmp = Icmpv4Packet::new_checked(ip.payload()).unwrap();
+        assert!(icmp.verify_checksum());
+        assert_eq!((icmp.msg_type(), icmp.msg_code()), (3.into(), 4));
+        assert_eq!(&ip.payload()[6..8], &1420u16.to_be_bytes());
+        assert_eq!(icmp.data().len(), 28);
+        assert_quotes_udp_datagram(icmp.data(), client, target);
+    }
+
+    #[test]
+    fn oversize_ipv6_datagram_gets_packet_too_big_unless_below_the_minimum_mtu() {
+        use smoltcp::wire::{Icmpv6Packet, Ipv6Packet};
+        let client = IpEndpoint::new(IpAddress::v6(0xfd00, 0, 0, 0, 0, 0, 0, 2), 50_000);
+        let target = IpEndpoint::new(IpAddress::v6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 9), 443);
+        let reply = icmp_packet_too_big_reply(client, target, &[7; 8192], 8152).unwrap();
+
+        let ip = Ipv6Packet::new_checked(&reply[..]).unwrap();
+        let icmp = Icmpv6Packet::new_checked(ip.payload()).unwrap();
+        assert!(icmp.verify_checksum(&ip.src_addr(), &ip.dst_addr()));
+        assert_eq!((icmp.msg_type(), icmp.msg_code()), (2.into(), 0));
+        assert_eq!(icmp.pkt_too_big_mtu(), 8200);
+        // The quote is capped so the reply fits the IPv6 minimum MTU.
+        assert_eq!(reply.len(), 1280);
+        assert_quotes_udp_datagram(icmp.payload(), client, target);
+
+        assert!(icmp_packet_too_big_reply(client, target, &[7; 1300], 1231).is_none());
+        assert!(icmp_packet_too_big_reply(client, target, &[7; 1300], 1232).is_some());
+    }
+
+    #[test]
+    fn icmp_reply_is_skipped_for_a_mixed_family_flow() {
+        let client = IpEndpoint::new(IpAddress::v4(198, 18, 0, 2), 50_000);
+        let target = IpEndpoint::new(IpAddress::v6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 9), 443);
+        assert!(icmp_packet_too_big_reply(client, target, &[7; 1400], 1392).is_none());
     }
 }

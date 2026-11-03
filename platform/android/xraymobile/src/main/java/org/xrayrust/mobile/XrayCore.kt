@@ -45,6 +45,7 @@ enum class XrayFfiCapability(val mask: Long) {
     SocksProfileImport(1L shl 26),
     HttpProfileImport(1L shl 27),
     OutboundProbeCancel(1L shl 28),
+    TunMtu(1L shl 29),
 }
 
 /** Concurrent flows per Hysteria outbound; all inbounds share one bounded session. */
@@ -585,6 +586,10 @@ class XrayCore private constructor(handle: Long) : Closeable {
     private val lifecycleLock = ReentrantReadWriteLock(true)
     private var nativeHandle: Long = handle
 
+    /** The MTU this core runs its TUN at; the interface must use the same value. */
+    var tunMtu: Int = XrayTunInterface.MTU
+        private set
+
     companion object {
         init {
             System.loadLibrary("xray_ffi")
@@ -604,7 +609,9 @@ class XrayCore private constructor(handle: Long) : Closeable {
             tunAdmission: XrayTunAdmissionOptions? = null,
             geodataSearchDirectory: File? = null,
             geodataSearchPolicy: XrayGeodataSearchPolicy = XrayGeodataSearchPolicy.Exclusive,
+            tunMtu: Int = XrayTunInterface.MTU,
         ): XrayCore {
+            requireTunMtuInRange(tunMtu)
             val core = XrayCore(nativeNew())
             try {
                 if (vpnService != null) {
@@ -622,6 +629,11 @@ class XrayCore private constructor(handle: Long) : Closeable {
                         core.nativeSetHysteriaStreamLimits(it, hysteriaStreamLimits.maxTcpStreams,
                             hysteriaStreamLimits.maxUdpSessions)
                     }
+                }
+                if (tunMtu != XrayTunInterface.MTU) {
+                    core.requireFeature(16, XrayFfiCapability.TunMtu)
+                    core.withLifecycleHandle { core.nativeSetTunMtu(it, tunMtu) }
+                    core.tunMtu = tunMtu
                 }
                 if (tunAdmission != null) {
                     core.requireFeature(11, XrayFfiCapability.TunAdmission)
@@ -664,6 +676,23 @@ class XrayCore private constructor(handle: Long) : Closeable {
             validateXrayFfiVersion(info.version)
             return info
         }
+
+        /**
+         * The MTU to give both the interface and [create]: [requested] when the library supports
+         * [XrayFfiCapability.TunMtu], otherwise [XrayTunInterface.MTU], which every library runs at.
+         */
+        @JvmStatic
+        fun supportedTunMtu(requested: Int): Int {
+            requireTunMtuInRange(requested)
+            val info = ffiInfo()
+            val supported = info.version.minor >= 16 && info.supports(XrayFfiCapability.TunMtu)
+            return if (supported) requested else XrayTunInterface.MTU
+        }
+
+        private fun requireTunMtuInRange(mtu: Int) =
+            require(mtu in XrayTunInterface.MIN_MTU..XrayTunInterface.MAX_MTU) {
+                "TUN MTU must be in ${XrayTunInterface.MIN_MTU}..${XrayTunInterface.MAX_MTU}, got $mtu"
+            }
 
         internal fun importProfileJson(request: ByteArray): ByteArray = nativeImportProfileJson(request)
 
@@ -866,7 +895,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
         withDataPathHandle { nativePushPacket(it, packet, length) }
     }
 
-    fun pollPacket(maxBytes: Int = XrayTunInterface.MTU): ByteArray? {
+    fun pollPacket(maxBytes: Int = tunMtu): ByteArray? {
         require(maxBytes > 0) { "maxBytes must be positive" }
         val storage = ByteBuffer.allocateDirect(maxBytes)
         val lengths = IntArray(1)
@@ -888,7 +917,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
     fun pollPacketsInto(
         storage: ByteBuffer,
         lengths: IntArray,
-        maxPacketBytes: Int = XrayTunInterface.MTU,
+        maxPacketBytes: Int = tunMtu,
         waitMilliseconds: Int = 250,
     ): Int {
         require(storage.isDirect) { "packet storage must be a direct ByteBuffer" }
@@ -1069,6 +1098,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
     private external fun nativeRebindWireGuard(handle: Long): Long
     private external fun nativeSetTunAdmission(handle: Long, callback: NativeTunAdmission, timeoutMs: Int, failOpen: Boolean)
 
+    private external fun nativeSetTunMtu(handle: Long, mtu: Int)
     private external fun nativeSetHysteriaStreamLimits(handle: Long, maxTcpStreams: Int, maxUdpSessions: Int)
     private external fun nativeProbeOutboundUrl(
         handle: Long,
@@ -1197,6 +1227,8 @@ data class XrayTunStats(
     val tcp443FirstByteDurationMsMax: Long,
     val tcpRemoteWrittenBytes: Long = 0,
     val tcpRemoteReadBytes: Long = 0,
+    /** UDP datagrams dropped because their outbound path carries less (ABI 1.16). */
+    val udpOversizeDatagrams: Long = 0,
 ) {
     /**
      * Live payload bytes sent towards remotes by all TUN flows, TCP plus UDP, whichever outbound
@@ -1214,7 +1246,7 @@ data class XrayTunStats(
         get() = tcpRemoteReadBytes + udpRemoteReadBytes
 }
 
-internal const val NATIVE_TUN_STATS_VALUE_COUNT = 21
+internal const val NATIVE_TUN_STATS_VALUE_COUNT = 22
 
 /** Decodes the `XrayTunStats` carrier returned by the JNI bridge; new values are appended. */
 internal fun tunStatsFromNative(values: LongArray): XrayTunStats {
@@ -1243,6 +1275,7 @@ internal fun tunStatsFromNative(values: LongArray): XrayTunStats {
         tcp443FirstByteDurationMsMax = values[18],
         tcpRemoteWrittenBytes = values[19],
         tcpRemoteReadBytes = values[20],
+        udpOversizeDatagrams = values[21],
     )
 }
 

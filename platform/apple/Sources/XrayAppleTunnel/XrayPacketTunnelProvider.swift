@@ -648,6 +648,12 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     /// Throwing fails startup; settings are immutable for the running tunnel.
     open func hysteriaStreamLimits() throws -> XrayHysteriaStreamLimits? { nil }
 
+    /// Override to run the TUN at another MTU (ABI 1.16). Called once per configured start,
+    /// before DNS bootstrap and network settings. The provider gives the interface and the core
+    /// the same value, falling back to 1500 when the library lacks `TUN_MTU`. Returning nil
+    /// keeps 1500. Larger MTUs cost Network Extension memory: about 3 KiB per TCP flow at 9000.
+    open func tunMtu() throws -> XrayTunMtu? { nil }
+
     /// Override to opt into host admission for new TCP/UDP flows in either TUN backend.
     /// Called once per configured start, before DNS bootstrap and network settings.
     /// Returning nil preserves the original path without admission callbacks.
@@ -660,11 +666,13 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     static func resolvingHostOptions(
         _ config: ResolvedConfig,
         hysteriaStreamLimits: () throws -> XrayHysteriaStreamLimits?,
-        tunAdmissionOptions: () throws -> XrayTunAdmissionOptions?
+        tunAdmissionOptions: () throws -> XrayTunAdmissionOptions?,
+        tunMtu: () throws -> XrayTunMtu? = { nil }
     ) throws -> ResolvedConfig {
         var resolved = config
         resolved.hysteriaStreamLimits = try hysteriaStreamLimits()
         resolved.tunAdmission = try tunAdmissionOptions()
+        resolved.tunMtu = try tunMtu().map(XrayCore.supportedTunMtu) ?? .standard
         return resolved
     }
 
@@ -733,7 +741,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             resolvedConfig = try Self.resolvingHostOptions(
                 resolvedConfig,
                 hysteriaStreamLimits: hysteriaStreamLimits,
-                tunAdmissionOptions: tunAdmissionOptions
+                tunAdmissionOptions: tunAdmissionOptions,
+                tunMtu: tunMtu
             )
         } catch {
             if lifecycle.cancelStart(lifecycleToken) {
@@ -968,7 +977,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             setTunnelNetworkSettings(
                 Self.networkSettings(
                     excludingServerAddresses: resolvedConfig.excludedServerAddresses,
-                    resolvedDNSConfiguration: resolvedDNSConfiguration
+                    resolvedDNSConfiguration: resolvedDNSConfiguration,
+                    mtu: resolvedConfig.tunMtu
                 ),
                 completionHandler: settingsCompletion
             )
@@ -1116,7 +1126,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             tunFdWriteBatchMaxPackets: stats.tunFdWriteBatchMaxPackets,
             tunFdReadLoopExits: stats.tunFdReadLoopExits,
             tunFdWriteLoopExits: stats.tunFdWriteLoopExits,
-            tunFdTransientIoErrors: stats.tunFdTransientIoErrors
+            tunFdTransientIoErrors: stats.tunFdTransientIoErrors,
+            udpOversizeDatagrams: stats.udpOversizeDatagrams
         )
         XrayAppleLog.info(
             "PacketTunnelProvider",
@@ -1245,6 +1256,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         var dnsConfiguration: XrayPacketTunnelDNSConfiguration
         var hysteriaStreamLimits: XrayHysteriaStreamLimits? = nil
         var tunAdmission: XrayTunAdmissionOptions? = nil
+        var tunMtu: XrayTunMtu = .standard
         var geodataSelection = GeodataSelection(
             directory: Bundle.main.resourceURL,
             policy: .fallbackToDefaults
@@ -2330,10 +2342,11 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
 
     static func networkSettings(
         excludingServerAddresses serverAddresses: [String] = [],
-        resolvedDNSConfiguration: XrayPacketTunnelResolvedDNSConfiguration
+        resolvedDNSConfiguration: XrayPacketTunnelResolvedDNSConfiguration,
+        mtu: XrayTunMtu = .standard
     ) -> NEPacketTunnelNetworkSettings {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: tunnelRemoteAddress)
-        settings.mtu = 1500
+        settings.mtu = NSNumber(value: mtu.value)
 
         let ipv4Settings = NEIPv4Settings(
             addresses: [tunnelLocalIPv4Address],
@@ -2890,7 +2903,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 startupProbe: resolvedConfig.startupProbeConfiguration.options,
                 fileLogDirectory: diagnosticLogDirectory,
                 hysteriaStreamLimits: resolvedConfig.hysteriaStreamLimits,
-                tunAdmission: resolvedConfig.tunAdmission
+                tunAdmission: resolvedConfig.tunAdmission,
+                tunMtu: resolvedConfig.tunMtu
             )
         }
         return try XrayCore(
@@ -2905,7 +2919,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             startupProbe: resolvedConfig.startupProbeConfiguration.options,
             fileLogDirectory: diagnosticLogDirectory,
             hysteriaStreamLimits: resolvedConfig.hysteriaStreamLimits,
-            tunAdmission: resolvedConfig.tunAdmission
+            tunAdmission: resolvedConfig.tunAdmission,
+            tunMtu: resolvedConfig.tunMtu
         )
     }
 

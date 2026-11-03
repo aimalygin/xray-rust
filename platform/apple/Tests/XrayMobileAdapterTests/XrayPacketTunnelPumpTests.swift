@@ -209,8 +209,9 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
     func testFFIInfoReportsCurrentCapabilities() {
         let info = XrayCore.ffiInfo
 
-        XCTAssertEqual(info.version, XrayFFIVersion(major: 1, minor: 15))
+        XCTAssertEqual(info.version, XrayFFIVersion(major: 1, minor: 16))
         XCTAssertTrue(info.supports(.hysteriaStreamLimits))
+        XCTAssertTrue(info.supports(.tunMtu))
         XCTAssertTrue(info.supports(.hysteria2Outbound))
         XCTAssertTrue(info.supports(.wireguardOutbound))
         XCTAssertTrue(info.supports(.profileImport))
@@ -548,6 +549,7 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         XCTAssertTrue(joined.contains("tunFdReadLoopExits=1"))
         XCTAssertTrue(joined.contains("tunFdWriteLoopExits=2"))
         XCTAssertTrue(joined.contains("tunFdTransientIoErrors=9"))
+        XCTAssertTrue(joined.contains("udpOversizeDatagrams=11"))
     }
 
     func testTunRuntimeProfileNameMapsToFfiProfile() {
@@ -742,7 +744,8 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         tunFdWriteBatchMaxPackets: 30,
         tunFdReadLoopExits: 1,
         tunFdWriteLoopExits: 2,
-        tunFdTransientIoErrors: 9
+        tunFdTransientIoErrors: 9,
+        udpOversizeDatagrams: 11
     )
 }
 

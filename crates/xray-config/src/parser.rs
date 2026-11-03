@@ -750,8 +750,25 @@ impl Parser<'_> {
         match protocol {
             InboundProtocol::Socks(_) => self.validate_socks_inbound_settings(settings, index),
             InboundProtocol::Http => self.validate_http_inbound_settings(settings, index),
-            InboundProtocol::Tun | InboundProtocol::Tproxy(_) => {}
+            InboundProtocol::Tun => self.validate_tun_inbound_settings(settings, index),
+            InboundProtocol::Tproxy(_) => {}
         }
+    }
+
+    /// The host owns the TUN interface and gives the runtime its MTU, so an
+    /// Xray `settings.mtu` (matched case-insensitively, as Go's JSON does)
+    /// would silently disagree with the interface. Warn instead of using it.
+    fn validate_tun_inbound_settings(&mut self, settings: &Value, index: usize) {
+        let Some(key) = settings
+            .as_object()
+            .and_then(|settings| settings.keys().find(|key| key.eq_ignore_ascii_case("mtu")))
+        else {
+            return;
+        };
+        self.warning(
+            format!("$.inbounds[{index}].settings.{key}"),
+            "TUN MTU is ignored here: the host sets it as a runtime option (xray_core_set_tun_mtu) together with its interface",
+        );
     }
 
     fn parse_inbound_user_level(&mut self, inbound: &Value, index: usize) -> Option<u32> {

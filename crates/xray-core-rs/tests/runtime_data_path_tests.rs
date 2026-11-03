@@ -54,7 +54,7 @@ use xray_config::{
 };
 use xray_core_rs::{
     ConnectionState, Core, CoreError, DnsBootstrapMode, OutboundAccounting, OutboundRouter,
-    RuntimeLogConfig, RuntimeLogger, TcpOutbound, TunRuntimeOptions, TunRuntimeProfile,
+    RuntimeLogConfig, RuntimeLogger, TcpOutbound, TunMtu, TunRuntimeOptions, TunRuntimeProfile,
     VlessTcpOutbound,
 };
 use xray_proxy::inbound::{
@@ -2434,6 +2434,57 @@ async fn tun_tcp_clients_reach_same_target_concurrently_through_freedom_outbound
 }
 
 #[tokio::test]
+async fn tun_jumbo_mtu_carries_full_size_segments_both_ways() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let mut core = Core::with_tun_runtime_options(
+        runtime_tun_config_with_freedom_outbound(),
+        TunRuntimeOptions {
+            mtu: TunMtu::new(9000).unwrap(),
+            ..TunRuntimeOptions::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(core.tun().mtu(), 9000);
+    core.start().await.unwrap();
+
+    let mut client = TunTcpClient::with_mtu(9000, 64 * 1024);
+    client.connect(echo_addr);
+    pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+    let payload: Vec<u8> = (0..48 * 1024u32).map(|i| (i % 251) as u8).collect();
+    client.send_payload(&payload);
+
+    let mut received = Vec::new();
+    let (mut largest_in, mut largest_out) = (0, 0);
+    let deadline = TokioInstant::now() + Duration::from_secs(3);
+    while received.len() < payload.len() {
+        client.poll();
+        while let Some(packet) = client.device.pop_outbound() {
+            largest_in = packet.len().max(largest_in);
+            core.tun().push_inbound(packet).await.unwrap();
+        }
+        while let Some(packet) = core.tun().try_poll_outbound().await.unwrap() {
+            largest_out = packet.len().max(largest_out);
+            client.device.push_inbound(packet);
+        }
+        client.poll();
+        received.extend_from_slice(&client.recv_available());
+        assert!(TokioInstant::now() < deadline, "jumbo echo timed out");
+        sleep(Duration::from_millis(1)).await;
+    }
+
+    assert_eq!(received, payload);
+    // Full 8960-byte segments cross the link in both directions.
+    assert_eq!(largest_in, 9000);
+    assert_eq!(largest_out, 9000);
+    assert_eq!(core.tun().stats().await.dropped_packets, 0);
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
 async fn tun_tcp_timings_stay_zero_when_collection_disabled() {
     let stats = timeout(
         Duration::from_secs(2),
@@ -3496,6 +3547,61 @@ async fn tun_udp_client_reaches_echo_target_through_vless_udp_outbound() {
     timeout(Duration::from_secs(2), run_tun_udp_vless_echo_scenario())
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn tun_vless_xudp_drops_an_oversize_first_datagram_and_opens_with_the_next() {
+    timeout(Duration::from_secs(2), async {
+        let (vless_addr, vless_handle) = spawn_fake_vless_xudp_server().await;
+        let echo_port = allocate_unused_loopback_port();
+        let mut core = Core::with_tun_runtime_options(
+            runtime_tun_config_with_vless_server(vless_addr),
+            TunRuntimeOptions {
+                mtu: TunMtu::new(9000).unwrap(),
+                ..TunRuntimeOptions::default()
+            },
+        )
+        .unwrap();
+        core.start().await.unwrap();
+        let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+        let datagram = |payload: &[u8]| {
+            Bytes::from(ipv4_udp_packet(
+                client_addr,
+                49155,
+                Ipv4Addr::LOCALHOST,
+                echo_port,
+                payload,
+            ))
+        };
+
+        // 8193 bytes fit the TUN but not one Xray XUDP buffer.
+        core.tun()
+            .push_inbound(datagram(&[0x5a; 8193]))
+            .await
+            .unwrap();
+        let icmp = poll_tun_outbound_until(core.tun(), |packet| packet.get(9) == Some(&1)).await;
+        assert_eq!((icmp[20], icmp[21]), (3, 4));
+        assert_eq!(icmp[26..28], (8192u16 + 28).to_be_bytes());
+
+        core.tun()
+            .push_inbound(datagram(b"hello tun vless xudp"))
+            .await
+            .unwrap();
+        poll_tun_outbound_until(core.tun(), |packet| {
+            ipv4_udp_payload(packet).is_some_and(|payload| payload == b"hello tun vless xudp")
+        })
+        .await;
+        let stats = core.tun().stats().await;
+        assert_eq!(stats.udp_oversize_datagrams, 1);
+        assert_eq!(stats.udp_remote_write_errors, 0);
+        core.stop().await.unwrap();
+        timeout(Duration::from_secs(1), vless_handle)
+            .await
+            .unwrap()
+            .unwrap();
+    })
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -9584,7 +9690,11 @@ struct TunTcpClient {
 
 impl TunTcpClient {
     fn new() -> Self {
-        let mut device = TestPacketDevice::new(1500);
+        Self::with_mtu(1500, 8192)
+    }
+
+    fn with_mtu(mtu: usize, buffer_size: usize) -> Self {
+        let mut device = TestPacketDevice::new(mtu);
         let mut iface_config = SmolInterfaceConfig::new(SmolHardwareAddress::Ip);
         iface_config.random_seed = 0x7475_6e74_6573_7401;
         let mut iface = SmolInterface::new(iface_config, &mut device, SmolInstant::now());
@@ -9599,8 +9709,8 @@ impl TunTcpClient {
             .unwrap();
 
         let mut tcp_socket = smol_tcp::Socket::new(
-            smol_tcp::SocketBuffer::new(vec![0; 8192]),
-            smol_tcp::SocketBuffer::new(vec![0; 8192]),
+            smol_tcp::SocketBuffer::new(vec![0; buffer_size]),
+            smol_tcp::SocketBuffer::new(vec![0; buffer_size]),
         );
         // Keep the synthetic local link independent of Cargo's unified
         // congestion-control features enabled for the WireGuard Internet path.
@@ -12301,6 +12411,58 @@ async fn wireguard_runtime_tun_tcp_udp_and_host_close() {
             49154,
             &udp_payload,
         );
+        // 1393 bytes exceed what the default 1420-byte tunnel carries over
+        // IPv4: the host gets "fragmentation needed" with MTU 1420, only that
+        // datagram is dropped, and the flow keeps carrying smaller ones.
+        let udp_flow = core
+            .connection_snapshot()
+            .connections
+            .into_iter()
+            .find(|c| c.network == RoutingNetwork::Udp)
+            .unwrap()
+            .id;
+        core.tun()
+            .push_inbound(Bytes::from(ipv4_udp_packet(
+                client_ip,
+                49154,
+                wireguard_support::INNER_IP,
+                udp_address.port(),
+                &[0x5a; 1393],
+            )))
+            .await
+            .unwrap();
+        let icmp = poll_tun_outbound_until_with_timeout(
+            core.tun(),
+            wireguard_support::DEADLINE,
+            |packet| packet.get(9) == Some(&1),
+        )
+        .await;
+        assert_eq!((icmp[20], icmp[21]), (3, 4));
+        assert_eq!(icmp[26..28], 1420u16.to_be_bytes());
+        assert_eq!(icmp[40..44], client_ip.octets());
+        assert_eq!(icmp[44..48], wireguard_support::INNER_IP.octets());
+        core.tun()
+            .push_inbound(Bytes::from(ipv4_udp_packet(
+                client_ip,
+                49154,
+                wireguard_support::INNER_IP,
+                udp_address.port(),
+                &udp_payload,
+            )))
+            .await
+            .unwrap();
+        poll_tun_outbound_until_with_timeout(core.tun(), wireguard_support::DEADLINE, |packet| {
+            ipv4_udp_payload(packet).is_some_and(|p| p == udp_payload)
+        })
+        .await;
+        let stats = core.tun().stats().await;
+        assert_eq!(stats.udp_oversize_datagrams, 1);
+        assert_eq!(stats.udp_remote_write_errors, 0);
+        assert!(core
+            .connection_snapshot()
+            .connections
+            .iter()
+            .any(|c| c.id == udp_flow));
         assert_eq!(protector.0.load(Ordering::SeqCst), 1);
         assert_eq!(bootstrap.0.load(Ordering::SeqCst), 1);
         let connections = core.connection_snapshot().connections;
@@ -12318,7 +12480,7 @@ async fn wireguard_runtime_tun_tcp_udp_and_host_close() {
         assert_eq!(proxy.host_closed_connections, 2);
         assert_eq!(
             proxy.uplink_bytes,
-            (payload.len() + udp_payload.len()) as u64
+            (payload.len() + 2 * udp_payload.len()) as u64
         );
         assert_eq!(proxy.downlink_bytes, proxy.uplink_bytes);
         core.stop().await.unwrap();
