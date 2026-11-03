@@ -26,6 +26,11 @@ out Xray-core `v26.10.31` at the exact commit
 the checkout independently and does not accept a revision override. A tagged
 RC therefore cannot publish unless this exact compatibility gate passes.
 
+A manual CI dispatch runs the same gates on a release candidate. A stable
+release tag does not rerun them: its `candidate-ci` job requires a passing
+manual run on the tag's exact commit and records it (see the
+[release process](release-process.md)).
+
 ### Weekly scheduled compatibility
 
 The weekly schedule runs two contracts that are independent of RC
@@ -100,8 +105,9 @@ local reference binary, live credentials, or external network access. The
 fixture safety check rejects routable endpoints and unreviewed
 credential-shaped values without printing their contents.
 
-Release-candidate tags also add blocking `host-hardening`, `fuzz-smoke`, and
-`controlled-network` jobs after the ordinary jobs pass. They run Loom, Miri,
+Release-candidate tags and manual dispatches also add blocking
+`host-hardening`, `fuzz-smoke`, and `controlled-network` jobs after the
+ordinary jobs pass. They run Loom, Miri,
 AddressSanitizer, extended libFuzzer campaigns, and the Linux `tc netem`
 transport matrix. Like `rc-interop`, they do not run for an ordinary branch or
 pull request.
@@ -159,7 +165,10 @@ cargo deny --locked check advisories bans licenses sources
 CI installs `cargo-audit` 0.22.2 and `cargo-deny` 0.19.4. Install those tools
 before reproducing this part locally.
 
-The dedicated secret-scan job checks the complete reachable history:
+The dedicated secret-scan job checks the complete reachable history. On a tag
+push it scans only the tag's ancestry (`--log-opts=HEAD`) with the policy the
+tag carries, because evidence commits reach `main` after the tag and their
+exceptions exist only in `main`'s policy:
 
 ```sh
 XRAY_FIXTURE_SCAN_HISTORY=1 \
