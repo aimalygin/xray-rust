@@ -317,7 +317,7 @@ release also carries the standalone AAR:
 
 ```kotlin
 dependencies {
-    implementation("io.github.aimalygin:xray-rust-mobile:0.8.1")
+    implementation("io.github.aimalygin:xray-rust-mobile:0.9.0")
 }
 ```
 
@@ -350,7 +350,7 @@ Add the Swift Package:
 dependencies: [
     .package(
         url: "https://github.com/aimalygin/xray-rust-mobile.git",
-        exact: "0.8.1"
+        exact: "0.9.0"
     ),
 ]
 ```

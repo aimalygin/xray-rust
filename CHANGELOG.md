@@ -12,8 +12,9 @@ long-term supported release series.
 
 ## 0.9.0 - 2026-11-01
 
-Release candidate preparation; publication and exact-candidate release
-qualification are pending.
+Published on 2026-11-03 with exact-candidate release evidence and the
+owner-accepted limitations in the
+[0.9.0 release](https://github.com/aimalygin/xray-rust/releases/tag/v0.9.0).
 
 - Require versioned exact-candidate Apple/Android evidence for 0.9 publication.
   SOCKS, HTTP and classic Shadowsocks AEAD each need every device transition on
