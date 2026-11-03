@@ -10,6 +10,15 @@ long-term supported release series.
 
 ## Unreleased
 
+- Sniffing: QUIC reassembles a ClientHello spread over several Initial packets
+  and datagrams, as Xray-core does. A Chrome-shaped ClientHello with a
+  post-quantum key share fills two datagrams (the fixture is captured from
+  Xray-core's ChromeParrot stack), so its server name was not sniffed before
+  and such flows ignored domain routing rules. While the ClientHello is
+  incomplete, a flow waits at most 200 ms and 32,767 bytes for the rest, then
+  forwards every datagram it read, in order. Only the gap-free part of the
+  CRYPTO stream is parsed, so a missing piece is never read as part of a name.
+  QUIC draft-29 Initials and CONNECTION_CLOSE frames are recognized as well.
 - Compatibility reference moved to Xray-core v26.10.31
   (`a4a3dff5b20c2faae567b742c172c7b95e75c083`, Go 1.27.3): CI, interop
   guards, oracle modules, fixtures and the benchmark harness pin it. See the

@@ -41,6 +41,7 @@ mod startup_probe;
 mod tun;
 mod tun_admission;
 mod tun_fd;
+mod udp_ingress;
 
 #[cfg(feature = "fuzzing")]
 #[doc(hidden)]

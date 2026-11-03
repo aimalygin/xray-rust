@@ -12,6 +12,7 @@ use zeroize::Zeroize;
 
 const QUIC_V1: u32 = 1;
 const QUIC_V2: u32 = 0x6b33_43cf;
+const QUIC_DRAFT_29: u32 = 0xff00_001d;
 // RFC 9369 sections 3.1–3.3.
 const QUIC_V2_INITIAL_SALT: [u8; 20] = [
     0x0d, 0xed, 0xe3, 0xde, 0xf7, 0x00, 0xa6, 0xdb, 0x81, 0x93, 0x81, 0xbe, 0x6e, 0x26, 0x9d, 0xcb,
@@ -21,13 +22,22 @@ const QUIC_V1_INITIAL_SALT: [u8; 20] = [
     0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34, 0xb3, 0x4d, 0x17, 0x9a, 0xe6, 0xa4, 0xc8, 0x0c, 0xad,
     0xcc, 0xbb, 0x7f, 0x0a,
 ];
+// draft-ietf-quic-tls-29 section 5.2, still sniffed by Xray-core.
+const QUIC_DRAFT_29_INITIAL_SALT: [u8; 20] = [
+    0xaf, 0xbf, 0xec, 0x28, 0x99, 0x93, 0xd2, 0x4c, 0x9e, 0x97, 0x86, 0xf1, 0x9c, 0x61, 0x11, 0xe0,
+    0x43, 0x90, 0xa8, 0x99,
+];
 const QUIC_CLIENT_INITIAL_SECRET_LEN: usize = 32;
 const QUIC_INITIAL_KEY_LEN: usize = 16;
 const QUIC_INITIAL_IV_LEN: usize = 12;
 const QUIC_INITIAL_HP_LEN: usize = 16;
 const QUIC_TAG_LEN: usize = 16;
 const QUIC_HP_SAMPLE_LEN: usize = 16;
-const QUIC_MAX_CRYPTO_STREAM_SIZE: usize = 16 * 1024;
+/// Xray-core reassembles at most 32767 bytes of Initial CRYPTO data.
+pub(crate) const QUIC_MAX_CRYPTO_STREAM_SIZE: usize = 32_767;
+/// Chrome scatters a ClientHello over a handful of CRYPTO frames; more
+/// disjoint pieces than this are not a client hello worth waiting for.
+const QUIC_MAX_CRYPTO_RANGES: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SniffedTarget {
@@ -85,26 +95,59 @@ pub(crate) fn sniff_tcp_initial_payload(
     None
 }
 
-pub(crate) fn sniff_udp_initial_payload(
-    config: &InboundSniffingConfig,
-    original: &Target,
-    payload: &[u8],
-) -> Option<SniffedTarget> {
-    if config.metadata_only || payload.is_empty() {
-        return None;
-    }
+/// What sniffing the first datagrams of a UDP flow has established.
+#[derive(Debug)]
+pub(crate) enum UdpSniffProgress {
+    /// Sniffing is over: the sniffed target, or `None` to keep the original.
+    Done(Option<SniffedTarget>),
+    /// A QUIC Initial matched, but its ClientHello continues in a later
+    /// datagram.
+    NeedMore,
+}
 
-    for override_kind in &config.dest_override {
-        let domain = match override_kind {
-            SniffingDestination::Quic => sniff_quic_initial_sni(payload),
-            SniffingDestination::Http | SniffingDestination::Tls => None,
-        };
-        if let Some(domain) = domain {
-            return Some(sniffed_target(config, original, domain, *override_kind));
+/// Sniffs the leading datagrams of one UDP flow.
+///
+/// A ClientHello larger than one datagram, such as Chrome's with a
+/// post-quantum key share, arrives in several Initial packets. Xray-core
+/// reassembles their CRYPTO data across datagrams, and so does this; only HTTP
+/// and TLS are TCP-only sniffers, so QUIC is the one UDP protocol.
+pub(crate) struct UdpSniffer<'a> {
+    config: &'a InboundSniffingConfig,
+    original: &'a Target,
+    quic: QuicCryptoAssembler,
+}
+
+impl<'a> UdpSniffer<'a> {
+    pub(crate) fn new(config: &'a InboundSniffingConfig, original: &'a Target) -> Self {
+        Self {
+            config,
+            original,
+            quic: QuicCryptoAssembler::default(),
         }
     }
 
-    None
+    /// Feeds the flow's next datagram, starting with its first.
+    pub(crate) fn feed(&mut self, datagram: &[u8]) -> UdpSniffProgress {
+        if self.config.metadata_only
+            || datagram.is_empty()
+            || !self
+                .config
+                .dest_override
+                .contains(&SniffingDestination::Quic)
+        {
+            return UdpSniffProgress::Done(None);
+        }
+        match self.quic.feed(datagram) {
+            QuicSniff::Domain(domain) => UdpSniffProgress::Done(Some(sniffed_target(
+                self.config,
+                self.original,
+                domain,
+                SniffingDestination::Quic,
+            ))),
+            QuicSniff::NeedMore => UdpSniffProgress::NeedMore,
+            QuicSniff::NoDomain => UdpSniffProgress::Done(None),
+        }
+    }
 }
 
 fn sniffed_target(
@@ -223,25 +266,177 @@ fn sniff_tls_client_hello_body_sni(body: &[u8]) -> Option<String> {
     None
 }
 
-fn sniff_quic_initial_sni(packet: &[u8]) -> Option<String> {
-    // Single-datagram QUIC v1/v2 Initial sniffing, not general QUIC stream reassembly.
-    let header = parse_quic_initial_header(packet)?;
-    let keys = quic_initial_keys(header.version, header.dcid)?;
-    let unprotected = unprotect_quic_initial_header(packet, &header, &keys.hp)?;
-    let plaintext = decrypt_quic_initial_packet(packet, &unprotected, &keys)?;
-    let crypto_stream = collect_quic_crypto_stream(&plaintext)?;
-    sniff_tls_client_hello_handshake_sni(&crypto_stream)
+/// The SNI of a ClientHello that fits in one datagram.
+#[cfg(test)]
+fn sniff_quic_initial_sni(datagram: &[u8]) -> Option<String> {
+    match QuicCryptoAssembler::default().feed(datagram) {
+        QuicSniff::Domain(domain) => Some(domain),
+        QuicSniff::NeedMore | QuicSniff::NoDomain => None,
+    }
 }
 
 /// Exercises the QUIC Initial decoder without exposing it in normal builds.
+/// Each element is one datagram of the same flow.
 #[cfg(feature = "fuzzing")]
 #[doc(hidden)]
-pub fn sniff_quic_initial_sni_for_fuzzing(packet: &[u8]) -> Option<String> {
-    sniff_quic_initial_sni(packet)
+pub fn sniff_quic_initial_sni_for_fuzzing<'a>(
+    datagrams: impl IntoIterator<Item = &'a [u8]>,
+) -> Option<String> {
+    let mut assembler = QuicCryptoAssembler::default();
+    for datagram in datagrams {
+        match assembler.feed(datagram) {
+            QuicSniff::Domain(domain) => return Some(domain),
+            QuicSniff::NoDomain => return None,
+            QuicSniff::NeedMore => {}
+        }
+    }
+    None
 }
 
-struct QuicInitialHeader<'a> {
+enum QuicSniff {
+    Domain(String),
+    NeedMore,
+    NoDomain,
+}
+
+enum ClientHelloState {
+    Complete(Option<String>),
+    Partial,
+}
+
+/// The CRYPTO stream of a client's Initial packets, reassembled across
+/// coalesced packets and datagrams.
+///
+/// Only the gap-free prefix is parsed. Xray-core parses its zero-filled
+/// buffer instead, where a missing piece reads as NUL bytes that can become
+/// part of a server name.
+#[derive(Default)]
+struct QuicCryptoAssembler {
+    stream: Vec<u8>,
+    /// Received byte ranges, sorted and merged.
+    received: Vec<(usize, usize)>,
+}
+
+impl QuicCryptoAssembler {
+    fn feed(&mut self, datagram: &[u8]) -> QuicSniff {
+        self.feed_packets(datagram).unwrap_or(QuicSniff::NoDomain)
+    }
+
+    fn feed_packets(&mut self, mut rest: &[u8]) -> Option<QuicSniff> {
+        while !rest.is_empty() {
+            let header = parse_quic_long_header(rest)?;
+            if header.initial {
+                let keys = quic_initial_keys(header.version, header.dcid)?;
+                let unprotected = unprotect_quic_initial_header(rest, &header, &keys.hp)?;
+                let plaintext = decrypt_quic_initial_packet(rest, &unprotected, &keys)?;
+                self.add_frames(&plaintext)?;
+                if let ClientHelloState::Complete(domain) = self.client_hello() {
+                    return Some(domain.map_or(QuicSniff::NoDomain, QuicSniff::Domain));
+                }
+            }
+            rest = &rest[header.payload_end..];
+            // A datagram may be padded with zeros after its last packet.
+            let padding = rest.iter().take_while(|&&byte| byte == 0).count();
+            rest = &rest[padding..];
+        }
+        (!self.received.is_empty()).then_some(QuicSniff::NeedMore)
+    }
+
+    fn add_frames(&mut self, plaintext: &[u8]) -> Option<()> {
+        let mut offset = 0usize;
+        while offset < plaintext.len() {
+            let frame_type = plaintext[offset];
+            offset += 1;
+            match frame_type {
+                // PADDING and PING.
+                0x00 | 0x01 => {}
+                0x02 | 0x03 => {
+                    offset = skip_quic_ack_frame(plaintext, offset, frame_type == 0x03)?;
+                }
+                0x06 => {
+                    let (crypto_offset, used) = read_quic_varint(plaintext, offset)?;
+                    offset = offset.checked_add(used)?;
+                    let (crypto_len, used) = read_quic_varint(plaintext, offset)?;
+                    offset = offset.checked_add(used)?;
+                    let crypto_offset = usize::try_from(crypto_offset).ok()?;
+                    let crypto_len = usize::try_from(crypto_len).ok()?;
+                    let data_end = offset.checked_add(crypto_len)?;
+                    let data = plaintext.get(offset..data_end)?;
+                    self.insert(crypto_offset, data)?;
+                    offset = data_end;
+                }
+                // CONNECTION_CLOSE, the only other frame an Initial may carry.
+                0x1c => {
+                    for _ in 0..2 {
+                        let (_, used) = read_quic_varint(plaintext, offset)?;
+                        offset = offset.checked_add(used)?;
+                    }
+                    let (reason_len, used) = read_quic_varint(plaintext, offset)?;
+                    offset = offset.checked_add(used)?;
+                    offset = offset.checked_add(usize::try_from(reason_len).ok()?)?;
+                    plaintext.get(..offset)?;
+                }
+                _ => return None,
+            }
+        }
+        Some(())
+    }
+
+    fn insert(&mut self, start: usize, data: &[u8]) -> Option<()> {
+        let end = start.checked_add(data.len())?;
+        if end > QUIC_MAX_CRYPTO_STREAM_SIZE {
+            return None;
+        }
+        if data.is_empty() {
+            return Some(());
+        }
+        if self.stream.len() < end {
+            self.stream.resize(end, 0);
+        }
+        self.stream[start..end].copy_from_slice(data);
+
+        let first = self
+            .received
+            .partition_point(|&(_, range_end)| range_end < start);
+        let last = self
+            .received
+            .partition_point(|&(range_start, _)| range_start <= end);
+        let merged = self.received[first..last]
+            .iter()
+            .fold((start, end), |(low, high), &(range_start, range_end)| {
+                (low.min(range_start), high.max(range_end))
+            });
+        self.received.splice(first..last, [merged]);
+        (self.received.len() <= QUIC_MAX_CRYPTO_RANGES).then_some(())
+    }
+
+    fn client_hello(&self) -> ClientHelloState {
+        let prefix = match self.received.first() {
+            Some(&(0, end)) => &self.stream[..end],
+            _ => return ClientHelloState::Partial,
+        };
+        if prefix.len() < 4 {
+            return ClientHelloState::Partial;
+        }
+        if prefix[0] != 1 {
+            return ClientHelloState::Complete(None);
+        }
+        let Some(total) = read_u24(prefix, 1).map(|len| 4 + len as usize) else {
+            return ClientHelloState::Partial;
+        };
+        if total > QUIC_MAX_CRYPTO_STREAM_SIZE {
+            return ClientHelloState::Complete(None);
+        }
+        if prefix.len() < total {
+            return ClientHelloState::Partial;
+        }
+        ClientHelloState::Complete(sniff_tls_client_hello_handshake_sni(&prefix[..total]))
+    }
+}
+
+struct QuicLongHeader<'a> {
     version: u32,
+    initial: bool,
     dcid: &'a [u8],
     packet_number_offset: usize,
     payload_end: usize,
@@ -269,20 +464,26 @@ struct QuicUnprotectedHeader {
     payload_end: usize,
 }
 
-fn parse_quic_initial_header(packet: &[u8]) -> Option<QuicInitialHeader<'_>> {
+/// Parses one long-header packet. A client's first flight carries Initial
+/// packets, possibly coalesced with 0-RTT ones, which are skipped by length.
+fn parse_quic_long_header(packet: &[u8]) -> Option<QuicLongHeader<'_>> {
     let first = *packet.first()?;
-    if first & 0x80 == 0 {
+    // Long header with the fixed bit set, as Xray-core requires.
+    if first & 0xc0 != 0xc0 {
         return None;
     }
     let version = read_u32(packet, 1)?;
-    let initial_type = match version {
-        QUIC_V1 => 0,
-        QUIC_V2 => 0x10,
+    // RFC 9000 section 17.2 and RFC 9369 section 3.2 packet types.
+    let (initial_type, retry_type) = match version {
+        QUIC_V1 | QUIC_DRAFT_29 => (0x00, 0x30),
+        QUIC_V2 => (0x10, 0x00),
         _ => return None,
     };
-    if first & 0x30 != initial_type {
+    let packet_type = first & 0x30;
+    if packet_type == retry_type {
         return None;
     }
+    let initial = packet_type == initial_type;
 
     let mut offset = 5usize;
     let dcid_len = usize::from(*packet.get(offset)?);
@@ -297,22 +498,25 @@ fn parse_quic_initial_header(packet: &[u8]) -> Option<QuicInitialHeader<'_>> {
     packet.get(offset..scid_end)?;
     offset = scid_end;
 
-    let (token_len, token_len_size) = read_quic_varint(packet, offset)?;
-    offset = offset.checked_add(token_len_size)?;
-    offset = offset.checked_add(usize::try_from(token_len).ok()?)?;
-    packet.get(..offset)?;
+    if initial {
+        let (token_len, token_len_size) = read_quic_varint(packet, offset)?;
+        offset = offset.checked_add(token_len_size)?;
+        offset = offset.checked_add(usize::try_from(token_len).ok()?)?;
+        packet.get(..offset)?;
+    }
 
     let (length, length_size) = read_quic_varint(packet, offset)?;
     offset = offset.checked_add(length_size)?;
     let length = usize::try_from(length).ok()?;
-    if length <= QUIC_TAG_LEN {
+    if initial && length <= QUIC_TAG_LEN {
         return None;
     }
     let payload_end = offset.checked_add(length)?;
     packet.get(..payload_end)?;
 
-    Some(QuicInitialHeader {
+    Some(QuicLongHeader {
         version,
+        initial,
         dcid,
         packet_number_offset: offset,
         payload_end,
@@ -324,6 +528,7 @@ fn quic_initial_keys(version: u32, dcid: &[u8]) -> Option<QuicInitialKeys> {
     let salt = match version {
         QUIC_V1 => QUIC_V1_INITIAL_SALT,
         QUIC_V2 => QUIC_V2_INITIAL_SALT,
+        QUIC_DRAFT_29 => QUIC_DRAFT_29_INITIAL_SALT,
         _ => return None,
     };
     let labels: [&[u8]; 3] = if version == QUIC_V2 {
@@ -368,7 +573,7 @@ fn quic_initial_keys(version: u32, dcid: &[u8]) -> Option<QuicInitialKeys> {
 
 fn unprotect_quic_initial_header(
     packet: &[u8],
-    header: &QuicInitialHeader<'_>,
+    header: &QuicLongHeader<'_>,
     hp_key: &[u8; QUIC_INITIAL_HP_LEN],
 ) -> Option<QuicUnprotectedHeader> {
     let sample_offset = header.packet_number_offset.checked_add(4)?;
@@ -423,46 +628,6 @@ fn decrypt_quic_initial_packet(
             },
         )
         .ok()
-}
-
-fn collect_quic_crypto_stream(plaintext: &[u8]) -> Option<Vec<u8>> {
-    let mut offset = 0usize;
-    let mut crypto_stream = Vec::new();
-    let mut found_crypto = false;
-
-    while offset < plaintext.len() {
-        let frame_type = plaintext[offset];
-        offset += 1;
-        match frame_type {
-            0x00 | 0x01 => {}
-            0x02 | 0x03 => {
-                offset = skip_quic_ack_frame(plaintext, offset, frame_type == 0x03)?;
-            }
-            0x06 => {
-                let (crypto_offset, used) = read_quic_varint(plaintext, offset)?;
-                offset = offset.checked_add(used)?;
-                let (crypto_len, used) = read_quic_varint(plaintext, offset)?;
-                offset = offset.checked_add(used)?;
-                let crypto_offset = usize::try_from(crypto_offset).ok()?;
-                let crypto_len = usize::try_from(crypto_len).ok()?;
-                let data_end = offset.checked_add(crypto_len)?;
-                let stream_end = crypto_offset.checked_add(crypto_len)?;
-                if data_end > plaintext.len() || stream_end > QUIC_MAX_CRYPTO_STREAM_SIZE {
-                    return None;
-                }
-                if crypto_stream.len() < stream_end {
-                    crypto_stream.resize(stream_end, 0);
-                }
-                crypto_stream[crypto_offset..stream_end]
-                    .copy_from_slice(&plaintext[offset..data_end]);
-                offset = data_end;
-                found_crypto = true;
-            }
-            _ => return None,
-        }
-    }
-
-    found_crypto.then_some(crypto_stream)
 }
 
 fn skip_quic_ack_frame(plaintext: &[u8], mut offset: usize, has_ecn: bool) -> Option<usize> {
@@ -632,6 +797,156 @@ mod tests {
             443,
             Network::Udp,
         )
+    }
+
+    fn sniff_udp_initial_payload(
+        config: &InboundSniffingConfig,
+        original: &Target,
+        payload: &[u8],
+    ) -> Option<SniffedTarget> {
+        match UdpSniffer::new(config, original).feed(payload) {
+            UdpSniffProgress::Done(sniffed) => sniffed,
+            UdpSniffProgress::NeedMore => None,
+        }
+    }
+
+    /// Feeds the datagrams in order and records which ones left sniffing
+    /// waiting for more.
+    fn sniff_datagrams(datagrams: &[Vec<u8>]) -> (Vec<bool>, Option<String>) {
+        let config = quic_sniffing_config(true);
+        let original = original_udp_target();
+        let mut sniffer = UdpSniffer::new(&config, &original);
+        let mut waited = Vec::new();
+        for datagram in datagrams {
+            match sniffer.feed(datagram) {
+                UdpSniffProgress::NeedMore => waited.push(true),
+                UdpSniffProgress::Done(sniffed) => {
+                    waited.push(false);
+                    let domain = sniffed.map(|sniffed| match sniffed.route_target.addr {
+                        TargetAddr::Domain(domain) => domain,
+                        other => panic!("sniffing produced a non-domain target {other:?}"),
+                    });
+                    return (waited, domain);
+                }
+            }
+        }
+        (waited, None)
+    }
+
+    fn chrome_parrot_datagrams() -> Vec<Vec<u8>> {
+        include_str!("../../../tests/fixtures/quic/xray-chrome-parrot-client-initials.hex")
+            .lines()
+            .map(|line| {
+                (0..line.len())
+                    .step_by(2)
+                    .map(|i| u8::from_str_radix(&line[i..i + 2], 16).unwrap())
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn reassembles_xray_chrome_parrot_client_hello_across_datagrams() {
+        // Captured from Xray-core v26.10.31's default ChromeParrot QUIC stack.
+        let datagrams = chrome_parrot_datagrams();
+        assert_eq!(datagrams.len(), 4);
+        assert!(datagrams.iter().all(|datagram| datagram.len() == 1250));
+        // Neither half alone carries the whole ClientHello.
+        assert!(sniff_quic_initial_sni(&datagrams[0]).is_none());
+        assert!(sniff_quic_initial_sni(&datagrams[1]).is_none());
+
+        let (waited, domain) = sniff_datagrams(&datagrams);
+        assert_eq!(waited, [true, false]);
+        assert_eq!(domain.as_deref(), Some("chrome-parrot.example"));
+        // Arrival order does not matter, nor do retransmitted pieces.
+        let reordered = [datagrams[1].clone(), datagrams[0].clone()];
+        assert_eq!(
+            sniff_datagrams(&reordered).1.as_deref(),
+            Some("chrome-parrot.example")
+        );
+        let retransmitted = [
+            datagrams[0].clone(),
+            datagrams[2].clone(),
+            datagrams[3].clone(),
+        ];
+        assert_eq!(
+            sniff_datagrams(&retransmitted).1.as_deref(),
+            Some("chrome-parrot.example")
+        );
+    }
+
+    #[test]
+    fn reassembles_scattered_crypto_frames_from_coalesced_and_later_packets() {
+        let hello = tls_client_hello_handshake_with_padding_and_sni(1800, "split.example");
+        let crypto = |start: usize, end: usize| crypto_frame(start, &hello[start..end]);
+        let first = [
+            quic_initial_packet(0, &[crypto(1200, hello.len()), vec![0x01]].concat()),
+            quic_initial_packet(1, &[vec![0; 8], crypto(0, 400)].concat()),
+        ]
+        .concat();
+        let second = quic_initial_packet(2, &crypto(400, 1200));
+
+        let (waited, domain) = sniff_datagrams(&[first.clone(), second.clone()]);
+        assert_eq!(waited, [true, false]);
+        assert_eq!(domain.as_deref(), Some("split.example"));
+
+        // A coalesced 0-RTT packet is skipped by its length.
+        let zero_rtt = quic_long_header_packet(0xd0, &[0x55; 40]);
+        let with_zero_rtt = [first, zero_rtt, second].concat();
+        assert_eq!(
+            sniff_datagrams(&[with_zero_rtt]).1.as_deref(),
+            Some("split.example")
+        );
+    }
+
+    #[test]
+    fn never_parses_bytes_that_have_not_arrived() {
+        // Xray-core zero-fills a missing piece, which can put NUL bytes in the
+        // middle of a parsed server name.
+        let host = "gap-in-the-name.example";
+        let hello = tls_client_hello_handshake_with_padding_and_sni(0, host);
+        let name = hello.len() - host.len();
+        let gap = name + 4..name + 9;
+        let around = quic_initial_packet(
+            0,
+            &[
+                crypto_frame(0, &hello[..gap.start]),
+                crypto_frame(gap.end, &hello[gap.end..]),
+            ]
+            .concat(),
+        );
+        let filler = quic_initial_packet(1, &crypto_frame(gap.start, &hello[gap.clone()]));
+
+        let (waited, domain) = sniff_datagrams(&[around, filler]);
+        assert_eq!(waited, [true, false]);
+        assert_eq!(domain.as_deref(), Some(host));
+    }
+
+    #[test]
+    fn stops_waiting_when_more_data_cannot_help() {
+        let hello = tls_client_hello_handshake_with_padding_and_sni(400, "done.example");
+        // Not QUIC, a complete ClientHello without SNI, and a ClientHello that
+        // could only complete beyond the reassembly limit.
+        let without_sni = tls_client_hello_handshake_with_padding_and_sni(64, "");
+        let oversized = crypto_frame(0, &[1, 0x00, 0x80, 0x00]);
+        let beyond_limit = crypto_frame(QUIC_MAX_CRYPTO_STREAM_SIZE, &[0]);
+        for datagram in [
+            b"\x13\x37 not a QUIC packet".to_vec(),
+            quic_initial_packet(0, &crypto_frame(0, &without_sni)),
+            quic_initial_packet(0, &oversized),
+            quic_initial_packet(0, &beyond_limit),
+        ] {
+            assert_eq!(sniff_datagrams(&[datagram]), (vec![false], None));
+        }
+
+        // Too many disjoint pieces of one ClientHello.
+        let scattered: Vec<u8> = (0..=QUIC_MAX_CRYPTO_RANGES)
+            .flat_map(|piece| crypto_frame(2 * piece + 1, &hello[2 * piece + 1..2 * piece + 2]))
+            .collect();
+        assert_eq!(
+            sniff_datagrams(&[quic_initial_packet(0, &scattered)]),
+            (vec![false], None)
+        );
     }
 
     fn quic_sniffing_config(route_only: bool) -> InboundSniffingConfig {
@@ -813,19 +1128,33 @@ mod tests {
     }
 
     fn tls_client_hello_handshake_with_sni(host: &str) -> Vec<u8> {
-        let mut sni_entry = Vec::new();
-        sni_entry.push(0);
-        sni_entry.extend_from_slice(&(host.len() as u16).to_be_bytes());
-        sni_entry.extend_from_slice(host.as_bytes());
+        tls_client_hello_handshake_with_padding_and_sni(0, host)
+    }
 
-        let mut sni_extension = Vec::new();
-        sni_extension.extend_from_slice(&((sni_entry.len()) as u16).to_be_bytes());
-        sni_extension.extend_from_slice(&sni_entry);
-
+    /// A ClientHello whose padding extension, when `padding` is nonzero,
+    /// precedes the SNI, so the name lands late as with Chrome's shuffled
+    /// extensions. An empty `host` omits the SNI extension.
+    fn tls_client_hello_handshake_with_padding_and_sni(padding: usize, host: &str) -> Vec<u8> {
         let mut extensions = Vec::new();
-        extensions.extend_from_slice(&0u16.to_be_bytes());
-        extensions.extend_from_slice(&(sni_extension.len() as u16).to_be_bytes());
-        extensions.extend_from_slice(&sni_extension);
+        if padding > 0 {
+            extensions.extend_from_slice(&21u16.to_be_bytes());
+            extensions.extend_from_slice(&(padding as u16).to_be_bytes());
+            extensions.resize(extensions.len() + padding, 0);
+        }
+        if !host.is_empty() {
+            let mut sni_entry = Vec::new();
+            sni_entry.push(0);
+            sni_entry.extend_from_slice(&(host.len() as u16).to_be_bytes());
+            sni_entry.extend_from_slice(host.as_bytes());
+
+            let mut sni_extension = Vec::new();
+            sni_extension.extend_from_slice(&((sni_entry.len()) as u16).to_be_bytes());
+            sni_extension.extend_from_slice(&sni_entry);
+
+            extensions.extend_from_slice(&0u16.to_be_bytes());
+            extensions.extend_from_slice(&(sni_extension.len() as u16).to_be_bytes());
+            extensions.extend_from_slice(&sni_extension);
+        }
 
         let mut body = Vec::new();
         body.extend_from_slice(&[0x03, 0x03]);
@@ -860,7 +1189,39 @@ mod tests {
         record
     }
 
+    fn crypto_frame(offset: usize, data: &[u8]) -> Vec<u8> {
+        let mut frame = vec![0x06];
+        encode_quic_varint(offset as u64, &mut frame);
+        encode_quic_varint(data.len() as u64, &mut frame);
+        frame.extend_from_slice(data);
+        frame
+    }
+
     fn quic_initial_packet_with_sni(host: &str) -> Vec<u8> {
+        quic_initial_packet(
+            0,
+            &crypto_frame(0, &tls_client_hello_handshake_with_sni(host)),
+        )
+    }
+
+    const TEST_DCID: [u8; 8] = [0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08];
+    const TEST_SCID: [u8; 8] = [0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb];
+
+    /// An unprotected long-header packet that sniffing must skip by length.
+    fn quic_long_header_packet(first: u8, payload: &[u8]) -> Vec<u8> {
+        let mut packet = vec![first];
+        packet.extend_from_slice(&1u32.to_be_bytes());
+        packet.push(TEST_DCID.len() as u8);
+        packet.extend_from_slice(&TEST_DCID);
+        packet.push(TEST_SCID.len() as u8);
+        packet.extend_from_slice(&TEST_SCID);
+        encode_quic_varint(payload.len() as u64, &mut packet);
+        packet.extend_from_slice(payload);
+        packet
+    }
+
+    /// A protected QUIC v1 client Initial carrying `plaintext` frames.
+    fn quic_initial_packet(packet_number: u8, plaintext: &[u8]) -> Vec<u8> {
         use aes::cipher::{BlockCipherEncrypt, KeyInit};
         use aes::Aes128;
         use aes_gcm::aead::{Aead, Payload};
@@ -873,20 +1234,10 @@ mod tests {
             0x0c, 0xad, 0xcc, 0xbb, 0x7f, 0x0a,
         ];
 
-        let dcid = [0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08];
-        let scid = [0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb];
-        let packet_number = 0u64;
         let packet_number_len = 1usize;
 
-        let mut plaintext = Vec::new();
-        let handshake = tls_client_hello_handshake_with_sni(host);
-        plaintext.push(0x06);
-        encode_quic_varint(0, &mut plaintext);
-        encode_quic_varint(handshake.len() as u64, &mut plaintext);
-        plaintext.extend_from_slice(&handshake);
-
         let initial_secret = {
-            let hk = Hkdf::<Sha256>::new(Some(&INITIAL_SALT), &dcid);
+            let hk = Hkdf::<Sha256>::new(Some(&INITIAL_SALT), &TEST_DCID);
             let mut secret = [0u8; 32];
             hk.expand(&hkdf_label(32, b"client in"), &mut secret)
                 .expect("initial secret label is valid");
@@ -906,28 +1257,26 @@ mod tests {
         let mut header = Vec::new();
         header.push(0xc0);
         header.extend_from_slice(&1u32.to_be_bytes());
-        header.push(dcid.len() as u8);
-        header.extend_from_slice(&dcid);
-        header.push(scid.len() as u8);
-        header.extend_from_slice(&scid);
+        header.push(TEST_DCID.len() as u8);
+        header.extend_from_slice(&TEST_DCID);
+        header.push(TEST_SCID.len() as u8);
+        header.extend_from_slice(&TEST_SCID);
         encode_quic_varint(0, &mut header);
         encode_quic_varint(
             packet_number_len as u64 + plaintext.len() as u64 + 16,
             &mut header,
         );
         let packet_number_offset = header.len();
-        header.push(packet_number as u8);
+        header.push(packet_number);
 
         let mut nonce = iv;
-        for (index, byte) in packet_number.to_be_bytes().iter().enumerate() {
-            nonce[4 + index] ^= byte;
-        }
+        nonce[11] ^= packet_number;
         let cipher = Aes128Gcm::new_from_slice(&key).expect("key length is valid");
         let ciphertext = cipher
             .encrypt(
                 &Nonce::from(nonce),
                 Payload {
-                    msg: &plaintext,
+                    msg: plaintext,
                     aad: &header,
                 },
             )
@@ -957,6 +1306,9 @@ mod tests {
             output.push(value as u8);
         } else if value < 16_384 {
             let encoded = (value as u16) | 0x4000;
+            output.extend_from_slice(&encoded.to_be_bytes());
+        } else if value < 1 << 30 {
+            let encoded = (value as u32) | 0x8000_0000;
             output.extend_from_slice(&encoded.to_be_bytes());
         } else {
             panic!("test varint value is too large: {value}");

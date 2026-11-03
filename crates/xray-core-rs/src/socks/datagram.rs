@@ -9,7 +9,7 @@ pub(super) async fn bridge(
     client_visible_target: Option<Target>,
     outbound: UdpOutbound,
     context: SocksUdpFlowContext,
-    from_client: mpsc::Receiver<Bytes>,
+    from_client: UdpIngress,
     mut shutdown: watch::Receiver<bool>,
     first_payload: Bytes,
     pending_open_permit: OwnedSemaphorePermit,

@@ -132,7 +132,7 @@ pub(super) async fn absorb_blackholed_udp_flow(
     generation: u64,
     blackhole: BlackholeOutbound,
     context: &TunRuntimeContext,
-    mut from_stack: mpsc::Receiver<Bytes>,
+    mut from_stack: UdpIngress,
     mut shutdown: watch::Receiver<bool>,
     connection: ConnectionLease,
 ) {

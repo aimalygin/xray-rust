@@ -46,8 +46,10 @@ their original source identities.
   already treats a close frame as end of stream.
 - The TLS sniffer refuses an empty SNI `host_name`, which QUIC CRYPTO gaps
   produce; ours already returns no domain for an empty name. Upstream also
-  joins several Initial datagrams before giving up, while xray-rust sniffs one;
-  that older difference is unchanged by this release.
+  joins several Initial datagrams before giving up. xray-rust sniffed only the
+  first until 0.10.0, which now reassembles them too, parsing only the
+  gap-free part of the CRYPTO stream (see
+  [QUIC sniffing](config-compatibility.md#inbounds)).
 - DNS outbound drops a hijacked A/AAAA reply larger than its buffer; ours
   bounds the reply and sets TC instead.
 - HTTP inbound forwards a short `100 Continue` promptly on its plain-HTTP

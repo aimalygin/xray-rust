@@ -189,7 +189,7 @@ pub(crate) fn log_oversize_udp_datagram(
 pub(crate) async fn relay_udp<O, OFut, F, Fut>(
     session: Session,
     target: &Target,
-    mut input: tokio::sync::mpsc::Receiver<bytes::Bytes>,
+    mut input: crate::udp_ingress::UdpIngress,
     first: bytes::Bytes,
     traffic: &crate::connection::ConnectionTraffic,
     idle: Duration,
