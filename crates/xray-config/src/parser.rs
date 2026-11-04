@@ -32,17 +32,17 @@ use crate::{
     CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostTarget, DnsIpFilter,
     DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
     DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
-    DomainHostIndex, DomainMatcher, DomainNameMode, DomainStrategy, GrpcSettings,
-    HappyEyeballsSettings, HttpUpgradeSettings, InboundConfig, InboundProtocol,
-    InboundSniffingConfig, IpCidr, Network, ObservatoryConfig, OutboundConfig, OutboundProtocol,
-    OutboundProxySettings, OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig,
-    QuicBbrProfile, QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings,
-    RealitySettings, RealityShortId, RegexMatcher, SniffingDestination, SocketOptions,
-    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings, WebSocketSettings,
-    XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
-    XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings, DEFAULT_OBSERVATORY_PROBE_INTERVAL,
-    DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVE_EXPIRED_TTL_SECONDS,
-    OBSERVATORY_PROBE_TIMEOUT,
+    DomainHostIndex, DomainMatcher, DomainNameMode, DomainStrategy, FreedomOutboundSettings,
+    FreedomRedirect, GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings, InboundConfig,
+    InboundProtocol, InboundSniffingConfig, IpCidr, Network, ObservatoryConfig, OutboundConfig,
+    OutboundProtocol, OutboundProxySettings, OutboundSettings, PolicyConfig, PolicyLevelConfig,
+    PolicySystemConfig, QuicBbrProfile, QuicCongestion, QuicIntervalRange, QuicParamsSettings,
+    QuicUdpHopSettings, RealitySettings, RealityShortId, RegexMatcher, SniffingDestination,
+    SocketOptions, StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
+    WebSocketSettings, XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement,
+    XhttpRange, XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
+    DEFAULT_OBSERVATORY_PROBE_INTERVAL, DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS,
+    MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
@@ -1012,10 +1012,9 @@ impl Parser<'_> {
             OutboundProtocol::Hysteria => {
                 OutboundSettings::Hysteria(self.parse_hysteria_settings(outbound, index)?)
             }
-            OutboundProtocol::Freedom => {
-                self.validate_freedom_settings(outbound.get("settings"), index);
-                OutboundSettings::Freedom
-            }
+            OutboundProtocol::Freedom => OutboundSettings::Freedom(
+                self.parse_freedom_settings(outbound.get("settings"), index),
+            ),
             OutboundProtocol::Dns => {
                 OutboundSettings::Dns(self.parse_dns_outbound_settings(outbound, index)?)
             }
@@ -1104,7 +1103,7 @@ impl Parser<'_> {
                         .is_none_or(|user| user.encryption.is_none())
                     && !vless.server.is_xray_plaintext_server_exempt()
             }
-            OutboundSettings::Freedom
+            OutboundSettings::Freedom(_)
             | OutboundSettings::Dns(_)
             | OutboundSettings::Hysteria(_)
             | OutboundSettings::Trojan(_)
@@ -1314,17 +1313,85 @@ impl Parser<'_> {
         })
     }
 
-    fn validate_freedom_settings(&mut self, settings: Option<&Value>, index: usize) {
+    /// Errors are recorded and parsing continues with defaults, so the rest
+    /// of the outbound is still checked.
+    fn parse_freedom_settings(
+        &mut self,
+        settings: Option<&Value>,
+        index: usize,
+    ) -> FreedomOutboundSettings {
         let Some(settings) = settings else {
-            return;
+            return FreedomOutboundSettings::default();
         };
         let settings_path = format!("$.outbounds[{index}].settings");
         if !settings.is_object() {
             self.error(settings_path, "freedom settings must be an object");
-            return;
+            return FreedomOutboundSettings::default();
         }
 
         self.reject_unknown_fields(settings, &settings_path, &surface::FREEDOM_SETTINGS);
+        FreedomOutboundSettings {
+            redirect: self
+                .freedom_redirect(settings, &format!("{settings_path}.redirect"))
+                .unwrap_or_default(),
+            user_level: self
+                .nullable_u32_at(settings, "userLevel", format!("{settings_path}.userLevel"))
+                .unwrap_or_default(),
+        }
+    }
+
+    /// Freedom's `redirect`, read as Xray-core v26.10.31 reads it: Go's
+    /// `net.SplitHostPort`, a decimal port that fits `uint32` and then 16
+    /// bits, and `net.ParseAddress` for the host.
+    fn freedom_redirect(&mut self, settings: &Value, path: &str) -> Option<FreedomRedirect> {
+        let raw = match settings.get("redirect") {
+            None | Some(Value::Null) => return Some(FreedomRedirect::default()),
+            Some(Value::String(raw)) if raw.is_empty() => return Some(FreedomRedirect::default()),
+            Some(Value::String(raw)) => raw.as_str(),
+            Some(_) => {
+                self.error(path, "field `redirect` must be a string");
+                return None;
+            }
+        };
+        let (host, port) = match go_split_host_port(raw) {
+            Ok(parts) => parts,
+            Err(why) => {
+                self.error(path, format!("invalid redirect address `{raw}`: {why}"));
+                return None;
+            }
+        };
+        // strconv.ParseUint(port, 10, 32): digits only, no sign.
+        let Some(port) = (!port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()))
+            .then(|| port.parse::<u32>().ok())
+            .flatten()
+            .and_then(|port| u16::try_from(port).ok())
+        else {
+            self.error(path, format!("invalid redirect port in `{raw}`"));
+            return None;
+        };
+        let address = if host.is_empty() {
+            None
+        } else {
+            let host = normalize_xray_address_text(host);
+            if host.is_empty() {
+                self.error(
+                    path,
+                    format!("invalid redirect address `{raw}`: empty host"),
+                );
+                return None;
+            }
+            match host.parse::<IpAddr>() {
+                // Xray-core keeps the destination for the unspecified addresses.
+                Ok(ip) => Some(ip.to_canonical())
+                    .filter(|ip| !ip.is_unspecified())
+                    .map(TargetAddr::Ip),
+                Err(_) => Some(TargetAddr::Domain(host.to_owned())),
+            }
+        };
+        Some(FreedomRedirect {
+            address,
+            port: std::num::NonZeroU16::new(port),
+        })
     }
 
     /// Moves a freedom's domain strategy into `sockopt.domainStrategy`, as
@@ -2638,6 +2705,46 @@ fn strip_inverse_prefix(mut value: &str) -> (&str, bool) {
 fn dns_ip_rule_uses_geodata(value: &str) -> bool {
     let (value, _) = strip_inverse_prefix(value);
     value.starts_with("geoip:") || value.starts_with("ext:") || value.starts_with("ext-ip:")
+}
+
+/// Go's `net.SplitHostPort`, with its error texts.
+fn go_split_host_port(hostport: &str) -> Result<(&str, &str), &'static str> {
+    const MISSING_PORT: &str = "missing port in address";
+    const TOO_MANY_COLONS: &str = "too many colons in address";
+    // The port starts after the last colon.
+    let Some(i) = hostport.rfind(':') else {
+        return Err(MISSING_PORT);
+    };
+    let (host, j, k) = if hostport.starts_with('[') {
+        // Expect the first ']' just before the last ':'.
+        let Some(end) = hostport.find(']') else {
+            return Err("missing ']' in address");
+        };
+        if end + 1 == hostport.len() {
+            return Err(MISSING_PORT);
+        }
+        if end + 1 != i {
+            return Err(if hostport.as_bytes()[end + 1] == b':' {
+                TOO_MANY_COLONS
+            } else {
+                MISSING_PORT
+            });
+        }
+        (&hostport[1..end], 1, end + 1)
+    } else {
+        let host = &hostport[..i];
+        if host.contains(':') {
+            return Err(TOO_MANY_COLONS);
+        }
+        (host, 0, 0)
+    };
+    if hostport[j..].contains('[') {
+        return Err("unexpected '[' in address");
+    }
+    if hostport[k..].contains(']') {
+        return Err("unexpected ']' in address");
+    }
+    Ok((host, &hostport[i + 1..]))
 }
 
 fn normalize_xray_address_text(mut value: &str) -> &str {

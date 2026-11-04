@@ -3454,7 +3454,14 @@ async fn bridge_tcp_flow_inner(
         }
         return;
     };
-    let bridge_idle_timeout = idle_timeout_override.unwrap_or(context.inbound_policy.conn_idle);
+    let bridge_idle_timeout = idle_timeout_override.unwrap_or_else(|| match outbound.primary() {
+        // Freedom's own timer runs at its level beside the inbound's.
+        TcpOutbound::Freedom(freedom) => context
+            .inbound_policy
+            .conn_idle
+            .min(effective_policy_for_level(&context.config, Some(freedom.level())).conn_idle),
+        _ => context.inbound_policy.conn_idle,
+    });
     let bridge_operation_timeout =
         is_dns_proxy.then_some(bridge_idle_timeout.min(dns_operation_timeout));
     connection.mark_active();
@@ -4575,6 +4582,8 @@ async fn bridge_udp_flow(
     match outbound {
         UdpOutbound::Freedom(freedom) => {
             let domain_strategy = freedom.domain_strategy().for_original_ip(key.target.addr);
+            // Replies still come from the flow's own destination.
+            let dial_target = freedom.redirect(&dial_target).unwrap_or(dial_target);
             bridge_udp_freedom_flow(
                 key,
                 generation,

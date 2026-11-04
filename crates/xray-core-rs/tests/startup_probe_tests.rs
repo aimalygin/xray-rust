@@ -32,7 +32,7 @@ fn freedom(tag: &str) -> OutboundConfig {
             udp_noise: None,
             socket_options: None,
         },
-        settings: OutboundSettings::Freedom,
+        settings: OutboundSettings::Freedom(Default::default()),
     }
 }
 

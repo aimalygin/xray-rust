@@ -45,10 +45,10 @@ use async_trait::async_trait;
 use rand::Rng;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_config::{
-    CoreConfig, DnsOutboundSettings, DomainStrategy, Network, OutboundConfig, OutboundSettings,
-    QuicParamsSettings, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
-    RoutingLeastLoadSettings, RoutingRule, RoutingRuleTarget, StreamSecurity, StreamSettings,
-    StreamTransport, TargetAddr, VlessUser, XhttpSettings,
+    CoreConfig, DnsOutboundSettings, DomainStrategy, FreedomOutboundSettings, FreedomRedirect,
+    Network, OutboundConfig, OutboundSettings, QuicParamsSettings, RoutingBalancerStrategy,
+    RoutingConfig, RoutingDomainStrategy, RoutingLeastLoadSettings, RoutingRule, RoutingRuleTarget,
+    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, VlessUser, XhttpSettings,
 };
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
@@ -351,6 +351,9 @@ pub struct FreedomOutbound {
     fragment: Option<Arc<xray_transport::TcpFragmentConfig>>,
     happy_eyeballs: Option<HappyEyeballsConfig>,
     domain_strategy: DomainStrategy,
+    /// Present only when it changes the destination.
+    redirect: Option<Arc<FreedomRedirect>>,
+    user_level: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -670,21 +673,59 @@ impl VlessTcpOutbound {
 }
 
 impl FreedomOutbound {
-    fn from_stream(stream: &StreamSettings) -> Result<Self, CoreError> {
+    fn new(settings: &FreedomOutboundSettings, stream: &StreamSettings) -> Result<Self, CoreError> {
         Ok(Self {
             fragment: carrier::fragment_config(stream)?,
             happy_eyeballs: happy_eyeballs_config(stream),
-            domain_strategy: Self::stream_domain_strategy(stream),
+            ..Self::for_udp(settings, stream)
         })
     }
 
-    /// UDP reads only the domain strategy.
-    fn for_udp(stream: &StreamSettings) -> Self {
+    /// UDP reads neither the fragment mask nor Happy Eyeballs.
+    fn for_udp(settings: &FreedomOutboundSettings, stream: &StreamSettings) -> Self {
         Self {
             fragment: None,
             happy_eyeballs: None,
             domain_strategy: Self::stream_domain_strategy(stream),
+            redirect: (!settings.redirect.is_empty()).then(|| Arc::new(settings.redirect.clone())),
+            user_level: settings.user_level,
         }
+    }
+
+    /// The destination `redirect` sends a connection to instead of
+    /// `target`, as Xray-core's freedom rewrites it before dialing.
+    pub(crate) fn redirect(&self, target: &Target) -> Option<Target> {
+        let redirect = self.redirect.as_deref()?;
+        let addr = match &redirect.address {
+            Some(TargetAddr::Ip(ip)) => RoutingTargetAddr::Ip(*ip),
+            Some(TargetAddr::Domain(domain)) => RoutingTargetAddr::Domain(domain.clone()),
+            None => target.addr.clone(),
+        };
+        let port = redirect.port.map_or(target.port, std::num::NonZeroU16::get);
+        Some(Target::new(addr, port, target.network))
+    }
+
+    /// Whether `redirect` replaces the destination address, so the original
+    /// one never needs resolving.
+    fn redirects_address(&self) -> bool {
+        self.redirect
+            .as_deref()
+            .is_some_and(|redirect| redirect.address.is_some())
+    }
+
+    /// The address `redirect` sends connections to, with port 0, so a chain
+    /// can resolve it once.
+    fn redirect_address(&self) -> Option<Target> {
+        let addr = match self.redirect.as_deref()?.address.as_ref()? {
+            TargetAddr::Ip(ip) => RoutingTargetAddr::Ip(*ip),
+            TargetAddr::Domain(domain) => RoutingTargetAddr::Domain(domain.clone()),
+        };
+        Some(Target::new(addr, 0, RoutingNetwork::Tcp))
+    }
+
+    /// The policy level of freedom's own idle timer.
+    pub(crate) fn level(&self) -> u32 {
+        self.user_level
     }
 
     fn stream_domain_strategy(stream: &StreamSettings) -> DomainStrategy {
@@ -769,13 +810,35 @@ impl ResolvedTcpConnector for OutboundProxyTcpConnector {
         happy_eyeballs: Option<&HappyEyeballsConfig>,
     ) -> Result<BoxedTransportStream, TransportError> {
         match self.outbound.primary() {
-            TcpOutbound::Freedom(_) => {
+            TcpOutbound::Freedom(freedom) => {
+                // The next hop's server is this hop's destination, so
+                // `redirect` rewrites it as it does any other.
+                let redirected = freedom.redirect(original_target);
+                let (target, candidates) = match &redirected {
+                    Some(target) => {
+                        let addresses = if freedom.redirects_address() {
+                            &self.server_candidates[..]
+                        } else {
+                            candidates
+                        };
+                        let candidates = addresses
+                            .iter()
+                            .map(|address| {
+                                let mut address = *address;
+                                address.set_port(target.port);
+                                address
+                            })
+                            .collect();
+                        (target, candidates)
+                    }
+                    None => (original_target, candidates.to_vec()),
+                };
                 self.outbound
                     .freedom_dialer(&self.transport_dialer)
                     .connect_resolved(
                         &ConnectorConfig::Tcp,
-                        original_target,
-                        candidates,
+                        target,
+                        &candidates,
                         self.outbound.freedom_happy_eyeballs().or(happy_eyeballs),
                     )
                     .await
@@ -909,7 +972,18 @@ fn prepare_outbound_proxy_dialer<'a>(
             TcpOutbound::Hysteria(_) => {
                 return Err(CoreError::UnsupportedOutboundProxyNetwork("Hysteria"))
             }
-            TcpOutbound::Freedom(_) => Box::default(),
+            // Ports are filled in per connection, from the next hop's server
+            // unless the redirect names one.
+            TcpOutbound::Freedom(freedom) => match freedom.redirect_address() {
+                Some(address) => {
+                    let resolver =
+                        DomainStrategyResolver::new(dns_resolver, freedom.domain_strategy());
+                    resolve_server_candidates(&address, &resolver)
+                        .await?
+                        .into_boxed_slice()
+                }
+                None => Box::default(),
+            },
             TcpOutbound::Chained { .. } => {
                 unreachable!("a compiled chain wrapper has one plain primary outbound")
             }
@@ -935,9 +1009,10 @@ fn proxy_chain_requires_local_resolution(proxy: &TcpOutbound) -> bool {
         | TcpOutbound::Shadowsocks2022(_)
         | TcpOutbound::Hysteria(_)
         | TcpOutbound::Wireguard(_) => false,
-        TcpOutbound::Freedom(_) => match proxy {
+        TcpOutbound::Freedom(freedom) => match proxy {
             TcpOutbound::Chained { proxy, .. } => proxy_chain_requires_local_resolution(proxy),
-            _ => true,
+            // The redirect address replaces the next hop's server.
+            _ => !freedom.redirects_address(),
         },
         TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     }
@@ -1255,7 +1330,7 @@ impl OutboundGraph {
                 },
                 tag: outbound.tag.clone(),
                 kind: match outbound.settings {
-                    OutboundSettings::Freedom => OutboundNodeKind::Freedom,
+                    OutboundSettings::Freedom(_) => OutboundNodeKind::Freedom,
                     OutboundSettings::Vless(_) => OutboundNodeKind::Vless,
                     OutboundSettings::Trojan(_) => OutboundNodeKind::Trojan,
                     OutboundSettings::Vmess(_) => OutboundNodeKind::Vmess,
@@ -3239,14 +3314,14 @@ impl OutboundFactory {
                 .map(TcpOutbound::Http)
                 .map_err(CachedOutboundError::from_core_error),
             OutboundSettings::Blackhole(_) => Err(CachedOutboundError::BlackholeOutbound),
-            OutboundSettings::Freedom => {
+            OutboundSettings::Freedom(settings) => {
                 if !stream_transport_is_dialable(&outbound.stream) {
                     return Err(CachedOutboundError::UnsupportedOutboundNetwork);
                 }
                 if outbound.stream.security != StreamSecurity::None {
                     return Err(CachedOutboundError::UnsupportedOutboundSecurity);
                 }
-                build_freedom_tcp_outbound(&outbound.stream)
+                build_freedom_tcp_outbound(settings, &outbound.stream)
                     .map_err(CachedOutboundError::from_core_error)
             }
             OutboundSettings::Vless(_) => self
@@ -3309,7 +3384,7 @@ impl OutboundFactory {
                 .map_err(CachedOutboundError::from_core_error),
             OutboundSettings::Http(_) => Err(CachedOutboundError::UnsupportedOutboundNetwork),
             OutboundSettings::Blackhole(_) => Err(CachedOutboundError::BlackholeOutbound),
-            OutboundSettings::Freedom => {
+            OutboundSettings::Freedom(settings) => {
                 if !stream_transport_is_dialable(&outbound.stream) {
                     return Err(CachedOutboundError::UnsupportedOutboundNetwork);
                 }
@@ -3317,6 +3392,7 @@ impl OutboundFactory {
                     return Err(CachedOutboundError::UnsupportedOutboundSecurity);
                 }
                 Ok(UdpOutbound::Freedom(FreedomOutbound::for_udp(
+                    settings,
                     &outbound.stream,
                 )))
             }
@@ -3362,7 +3438,7 @@ impl OutboundFactory {
                     .map_err(CachedOutboundError::from_core_error)
             }
             OutboundSettings::Blackhole(_) => Err(CachedOutboundError::BlackholeOutbound),
-            OutboundSettings::Freedom
+            OutboundSettings::Freedom(_)
             | OutboundSettings::Vless(_)
             | OutboundSettings::Hysteria(_)
             | OutboundSettings::Trojan(_)
@@ -3417,14 +3493,14 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
         OutboundSettings::Socks(_) => SocksOutbound::new(outbound).map(TcpOutbound::Socks),
         OutboundSettings::Http(_) => HttpOutbound::new(outbound).map(TcpOutbound::Http),
         OutboundSettings::Blackhole(_) => Err(CoreError::BlackholeOutbound),
-        OutboundSettings::Freedom => {
+        OutboundSettings::Freedom(settings) => {
             if !stream_transport_is_dialable(&outbound.stream) {
                 return Err(CoreError::UnsupportedOutboundNetwork);
             }
             if outbound.stream.security != StreamSecurity::None {
                 return Err(CoreError::UnsupportedOutboundSecurity);
             }
-            build_freedom_tcp_outbound(&outbound.stream)
+            build_freedom_tcp_outbound(settings, &outbound.stream)
         }
         OutboundSettings::Vless(_) => build_vless_tcp_outbound(outbound)
             .map(|outbound| TcpOutbound::Vless(Box::new(outbound))),
@@ -3447,7 +3523,7 @@ fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreErro
         OutboundSettings::Socks(_) => SocksOutbound::new(outbound).map(UdpOutbound::Socks),
         OutboundSettings::Http(_) => Err(CoreError::UnsupportedOutboundNetwork),
         OutboundSettings::Blackhole(_) => Err(CoreError::BlackholeOutbound),
-        OutboundSettings::Freedom => {
+        OutboundSettings::Freedom(settings) => {
             if !stream_transport_is_dialable(&outbound.stream) {
                 return Err(CoreError::UnsupportedOutboundNetwork);
             }
@@ -3455,6 +3531,7 @@ fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreErro
                 return Err(CoreError::UnsupportedOutboundSecurity);
             }
             Ok(UdpOutbound::Freedom(FreedomOutbound::for_udp(
+                settings,
                 &outbound.stream,
             )))
         }
@@ -3542,8 +3619,11 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
     })
 }
 
-fn build_freedom_tcp_outbound(stream: &StreamSettings) -> Result<TcpOutbound, CoreError> {
-    FreedomOutbound::from_stream(stream).map(TcpOutbound::Freedom)
+fn build_freedom_tcp_outbound(
+    settings: &FreedomOutboundSettings,
+    stream: &StreamSettings,
+) -> Result<TcpOutbound, CoreError> {
+    FreedomOutbound::new(settings, stream).map(TcpOutbound::Freedom)
 }
 
 fn dns_tcp_connector(stream: &StreamSettings) -> Result<DnsTcpConnector, CoreError> {
@@ -3808,6 +3888,8 @@ async fn open_plain_tcp_stream_with_resolvers_and_dialer(
             Box::pin(outbound.open_tcp(target, bootstrap_resolver, transport_dialer)).await
         }
         TcpOutbound::Freedom(freedom) => {
+            let redirected = freedom.redirect(target);
+            let target = redirected.as_ref().unwrap_or(target);
             let candidates = if requires_local_resolution {
                 let resolver =
                     DomainStrategyResolver::new(destination_resolver, freedom.domain_strategy());
@@ -4189,7 +4271,7 @@ mod tests {
                 udp_noise: None,
                 socket_options: None,
             },
-            settings: OutboundSettings::Freedom,
+            settings: OutboundSettings::Freedom(Default::default()),
         }
     }
 
@@ -5795,6 +5877,167 @@ mod tests {
         .expect("open the chain");
 
         assert_eq!(*connector.candidates.lock().unwrap(), [vec![v4]]);
+    }
+
+    fn redirect_freedom(redirect: FreedomRedirect, domain_strategy: DomainStrategy) -> TcpOutbound {
+        TcpOutbound::Freedom(FreedomOutbound {
+            redirect: Some(Arc::new(redirect)),
+            domain_strategy,
+            ..FreedomOutbound::default()
+        })
+    }
+
+    fn redirect_to(address: Option<TargetAddr>, port: u16) -> FreedomRedirect {
+        FreedomRedirect {
+            address,
+            port: std::num::NonZeroU16::new(port),
+        }
+    }
+
+    #[tokio::test]
+    async fn freedom_dials_the_redirect_destination() {
+        let answer = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 20), 443));
+        let pinned = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 30));
+        for (redirect, expected_lookup, expected) in [
+            // An IP address and port replace both.
+            (
+                redirect_to(Some(TargetAddr::Ip(pinned)), 8443),
+                None,
+                SocketAddr::new(pinned, 8443),
+            ),
+            // Port 0 keeps the destination's port.
+            (
+                redirect_to(Some(TargetAddr::Ip(pinned)), 0),
+                None,
+                SocketAddr::new(pinned, 443),
+            ),
+            // A port alone keeps the destination's address. Resolvers answer
+            // with the port they are asked for, which is the redirect's.
+            (
+                redirect_to(None, 8443),
+                Some(("dual.example", 8443)),
+                answer,
+            ),
+            // A domain resolves in place of the destination.
+            (
+                redirect_to(Some(TargetAddr::Domain("redirect.example".to_owned())), 0),
+                Some(("redirect.example", 443)),
+                answer,
+            ),
+        ] {
+            let connector = Arc::new(CandidateRecordingConnector::default());
+            let dialer = TransportDialer::system()
+                .unwrap()
+                .with_resolved_tcp_connector(connector.clone());
+            let mut resolver = FakeDnsResolver::resolving_to_many(vec![answer]);
+            if let Some((domain, port)) = expected_lookup {
+                resolver = resolver.expect_lookup(domain, port);
+            }
+            let outbound = redirect_freedom(redirect, DomainStrategy::AsIs);
+            open_tcp_stream_with_resolver_and_dialer(
+                &outbound,
+                &domain_tcp_target("dual.example"),
+                &resolver,
+                &dialer,
+            )
+            .await
+            .expect("dial the redirect destination");
+            let dialed = connector.candidates.lock().unwrap().clone();
+            assert_eq!(dialed, [vec![expected]]);
+            assert_eq!(resolver.calls(), usize::from(expected_lookup.is_some()));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_freedom_hop_redirects_the_next_server() {
+        let pinned = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 40));
+        let answer = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 41), 443));
+        for (redirect, server_lookups, expected) in [
+            // The server is never resolved once its address is replaced.
+            (
+                redirect_to(Some(TargetAddr::Ip(pinned)), 0),
+                0,
+                SocketAddr::new(pinned, 443),
+            ),
+            (
+                redirect_to(None, 8443),
+                1,
+                SocketAddr::new(answer.ip(), 8443),
+            ),
+        ] {
+            let mut config = direct_selection_config();
+            config.outbounds = vec![
+                direct_selection_vless("entry"),
+                direct_selection_freedom("exit"),
+            ];
+            let OutboundSettings::Vless(vless) = &mut config.outbounds[0].settings else {
+                unreachable!()
+            };
+            vless.server = TargetAddr::Domain("server.example".to_owned());
+            config.outbounds[0].proxy_settings = Some(OutboundProxySettings {
+                tag: "exit".to_owned(),
+                transport_layer: true,
+            });
+            config.outbounds[1].settings = OutboundSettings::Freedom(FreedomOutboundSettings {
+                redirect,
+                user_level: 0,
+            });
+            config.default_outbound_tag = Some("entry".to_owned());
+            config.routing.rules.clear();
+            let router = OutboundRouter::new(Arc::new(config));
+            let outbound = router.select_tcp_outbound().expect("compile the chain");
+
+            let resolver = FakeDnsResolver::resolving_to_many(vec![answer]);
+            let connector = Arc::new(CandidateRecordingConnector::default());
+            let dialer = TransportDialer::system()
+                .unwrap()
+                .with_resolved_tcp_connector(connector.clone());
+            let _stream = open_tcp_stream_with_resolver_and_dialer(
+                &outbound,
+                &domain_tcp_target("destination.example"),
+                &resolver,
+                &dialer,
+            )
+            .await
+            .expect("open the chain");
+
+            assert_eq!(*connector.candidates.lock().unwrap(), [vec![expected]]);
+            assert_eq!(resolver.calls(), server_lookups);
+        }
+    }
+
+    #[test]
+    fn freedom_settings_reach_tcp_and_udp_outbounds() {
+        let mut configured = direct_selection_freedom("direct");
+        configured.settings = OutboundSettings::Freedom(FreedomOutboundSettings {
+            redirect: redirect_to(None, 53),
+            user_level: 3,
+        });
+        let TcpOutbound::Freedom(tcp) = build_tcp_outbound(&configured).unwrap() else {
+            panic!("freedom compiles to freedom");
+        };
+        let UdpOutbound::Freedom(udp) = build_udp_outbound(&configured).unwrap() else {
+            panic!("freedom compiles to freedom");
+        };
+        let target = Target::new(
+            RoutingTargetAddr::Domain("dns.example".to_owned()),
+            5353,
+            RoutingNetwork::Udp,
+        );
+        for freedom in [tcp, udp] {
+            assert_eq!(freedom.level(), 3);
+            let redirected = freedom.redirect(&target).expect("a redirect");
+            assert_eq!(redirected.addr, target.addr);
+            assert_eq!(redirected.port, 53);
+            assert_eq!(redirected.network, RoutingNetwork::Udp);
+        }
+
+        // An empty redirect is dropped.
+        let compiled = build_tcp_outbound(&direct_selection_freedom("direct")).unwrap();
+        let TcpOutbound::Freedom(freedom) = compiled else {
+            panic!("freedom compiles to freedom");
+        };
+        assert!(freedom.redirect(&target).is_none());
     }
 
     #[test]

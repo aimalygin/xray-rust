@@ -8734,7 +8734,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
             udp_noise: None,
             socket_options: None,
         },
-        settings: OutboundSettings::Freedom,
+        settings: OutboundSettings::Freedom(Default::default()),
     };
     let dns = OutboundConfig {
         mux: None,
@@ -9248,7 +9248,7 @@ fn phase2_probe_outbound(tag: String, proxy_tag: Option<String>) -> OutboundConf
             udp_noise: None,
             socket_options: None,
         },
-        settings: OutboundSettings::Freedom,
+        settings: OutboundSettings::Freedom(Default::default()),
     }
 }
 
@@ -10680,7 +10680,7 @@ fn route_probe_config(
                 udp_noise: None,
                 socket_options: None,
             },
-            settings: OutboundSettings::Freedom,
+            settings: OutboundSettings::Freedom(Default::default()),
         })
         .collect::<Vec<_>>();
 

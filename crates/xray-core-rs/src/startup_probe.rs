@@ -809,7 +809,7 @@ mod https_tests {
                     udp_noise: None,
                     socket_options: None,
                 },
-                settings: OutboundSettings::Freedom,
+                settings: OutboundSettings::Freedom(Default::default()),
             }],
             default_outbound_tag: Some("direct".to_owned()),
             routing: RoutingConfig::default(),

@@ -3045,6 +3045,39 @@
       },
       "accepted": false,
       "errorPath": "$.outbounds[0].streamSettings.sockopt.domainStrategy"
+    },
+    {
+      "name": "freedom-redirect-userLevel",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/settings": {
+          "redirect": "1.1.1.1:53",
+          "userLevel": 1
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "freedom-redirect-missing-port",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/settings": {
+          "redirect": "1.1.1.1"
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.redirect"
+    },
+    {
+      "name": "freedom-userLevel-negative",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/settings": {
+          "userLevel": -1
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.userLevel"
     }
   ]
 }

@@ -203,7 +203,7 @@ impl Parser<'_> {
                 continue;
             }
             if !fragment_handlers[*target_index]
-                || !matches!(target.settings, OutboundSettings::Freedom)
+                || !matches!(target.settings, OutboundSettings::Freedom(_))
             {
                 // Ordinary transport-layer chaining is compiled and cycle-checked
                 // by the same core graph as the legacy proxySettings form.
@@ -223,7 +223,7 @@ impl Parser<'_> {
                 );
                 continue;
             }
-            if !matches!(target.settings, OutboundSettings::Freedom)
+            if !matches!(target.settings, OutboundSettings::Freedom(_))
                 || target.stream.security != StreamSecurity::None
                 || target.stream.transport != StreamTransport::Raw
                 || target.proxy_settings.is_some()
@@ -258,9 +258,9 @@ impl Parser<'_> {
                     | OutboundSettings::Wireguard(_)
                     | OutboundSettings::Blackhole(_)
             )
-            || !matches!(outbound.settings, OutboundSettings::Freedom)
+            || !matches!(outbound.settings, OutboundSettings::Freedom(_))
                 && outbound.stream.security == StreamSecurity::None
-            || matches!(outbound.settings, OutboundSettings::Freedom)
+            || matches!(outbound.settings, OutboundSettings::Freedom(_))
                 && (outbound.stream.security != StreamSecurity::None
                     || outbound.stream.transport != StreamTransport::Raw)
         {

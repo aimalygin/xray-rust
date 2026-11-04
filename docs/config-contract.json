@@ -685,10 +685,12 @@
       "fields": [
         "fragment",
         "domainStrategy",
-        "targetStrategy"
+        "targetStrategy",
+        "redirect",
+        "userLevel"
       ],
       "id": "FREEDOM_SETTINGS",
-      "notes": "domainStrategy, or targetStrategy when nonempty, is deprecated and migrates to sockopt.domainStrategy, as in Xray-core. Only the bounded tlshello fragment option is supported; noise and other freedom settings fail closed."
+      "notes": "domainStrategy, or targetStrategy when nonempty, is deprecated and migrates to sockopt.domainStrategy, as in Xray-core. redirect is host:port as Go's SplitHostPort reads it; it replaces the destination address unless the host is empty, 0.0.0.0 or ::, and the port unless it is 0. userLevel selects the policy level of freedom's idle timer. Only the bounded tlshello fragment option is supported; noise and other freedom settings fail closed."
     },
     {
       "context": "streamSettings.finalmask.tcp[]",
