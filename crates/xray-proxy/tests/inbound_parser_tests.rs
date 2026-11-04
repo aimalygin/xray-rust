@@ -4,7 +4,8 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_proxy::inbound::{
-    encode_socks5_udp_datagram, negotiate_socks5, negotiate_socks5_no_auth, parse_http_connect,
+    decode_http_basic_credentials, encode_socks5_udp_datagram, negotiate_socks5,
+    negotiate_socks5_no_auth, parse_http_connect, parse_http_connect_request, parse_socks4_connect,
     parse_socks5_connect, parse_socks5_request, parse_socks5_request_message,
     parse_socks5_udp_datagram, write_socks5_command_not_supported, write_socks5_failure,
     write_socks5_success, write_socks5_success_with_bind, HttpParseError, SocksAccount,
@@ -550,4 +551,131 @@ async fn rejects_http_port_zero() {
     let err = parse_http_connect(Cursor::new(raw)).await.unwrap_err();
 
     assert_eq!(err, HttpParseError::InvalidPort);
+}
+
+/// A SOCKS 4 request after its version byte.
+fn socks4_body(command: u8, port: u16, ip: [u8; 4], user: &[u8], domain: Option<&[u8]>) -> Vec<u8> {
+    let mut body = vec![command];
+    body.extend_from_slice(&port.to_be_bytes());
+    body.extend_from_slice(&ip);
+    body.extend_from_slice(user);
+    body.push(0);
+    if let Some(domain) = domain {
+        body.extend_from_slice(domain);
+        body.push(0);
+    }
+    body
+}
+
+#[tokio::test]
+async fn parses_socks4_and_socks4a_connect_like_xray() {
+    let target = |body: Vec<u8>| async move { parse_socks4_connect(Cursor::new(body)).await };
+    assert_eq!(
+        target(socks4_body(1, 443, [192, 0, 2, 7], b"user-id", None)).await,
+        Ok(Target::new(
+            TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 7))),
+            443,
+            Network::Tcp
+        ))
+    );
+    // Any address with a zero first byte announces a 4a domain.
+    assert_eq!(
+        target(socks4_body(1, 80, [0, 0, 0, 9], b"", Some(b"example.test"))).await,
+        Ok(Target::new(
+            TargetAddr::Domain("example.test".to_owned()),
+            80,
+            Network::Tcp
+        ))
+    );
+    // Go's ParseAddress turns a literal into an IP target.
+    assert_eq!(
+        target(socks4_body(1, 80, [0, 0, 0, 1], b"", Some(b"2001:db8::1"))).await,
+        Ok(Target::new(
+            TargetAddr::Ip("2001:db8::1".parse().unwrap()),
+            80,
+            Network::Tcp
+        ))
+    );
+    for (body, error) in [
+        (
+            socks4_body(2, 80, [192, 0, 2, 7], b"", None),
+            SocksParseError::UnsupportedCommand(2),
+        ),
+        (
+            socks4_body(1, 80, [0, 0, 0, 1], b"", Some(b"")),
+            SocksParseError::InvalidDomain,
+        ),
+        (
+            socks4_body(1, 80, [0, 0, 0, 1], b"", Some(b"\xff\xfe")),
+            SocksParseError::InvalidDomain,
+        ),
+        (
+            socks4_body(1, 80, [192, 0, 2, 7], &[b'u'; 256], None),
+            SocksParseError::InvalidDomain,
+        ),
+        (vec![1, 0, 80, 192, 0, 2, 7, b'u'], SocksParseError::Io),
+    ] {
+        assert_eq!(target(body.clone()).await, Err(error), "{body:?}");
+    }
+    assert!(
+        target(socks4_body(1, 80, [192, 0, 2, 7], &[b'u'; 255], None))
+            .await
+            .is_ok()
+    );
+}
+
+#[test]
+fn decodes_http_basic_credentials_like_go() {
+    let decoded = |value: &[u8]| {
+        decode_http_basic_credentials(value).map(|(user, pass)| (user.to_vec(), pass.to_vec()))
+    };
+    assert_eq!(
+        decoded(b"Basic dXNlcjpwYXNz"),
+        Some((b"user".to_vec(), b"pass".to_vec()))
+    );
+    // Split at the first colon; empty halves are Go's result too.
+    assert_eq!(
+        decoded(b"Basic dXNlcjpwOmFzcw=="),
+        Some((b"user".to_vec(), b"p:ass".to_vec()))
+    );
+    assert_eq!(decoded(b"Basic Og=="), Some((Vec::new(), Vec::new())));
+    for refused in [
+        &b"basic dXNlcjpwYXNz"[..],
+        b"Bearer dXNlcjpwYXNz",
+        b"Basic dXNlcjpwYXNz=",
+        b"Basic dXNlcnBhc3M=",
+        b"Basic ",
+    ] {
+        assert_eq!(
+            decoded(refused),
+            None,
+            "{:?}",
+            String::from_utf8_lossy(refused)
+        );
+    }
+}
+
+#[tokio::test]
+async fn http_connect_keeps_the_last_proxy_authorization() {
+    let request = parse_http_connect_request(Cursor::new(
+        b"CONNECT example.test:443 HTTP/1.1\r\nProxy-Authorization: Basic Zmlyc3Q6Zmlyc3Q=\r\nPROXY-AUTHORIZATION:\tBasic dXNlcjpwYXNz \r\nHost: example.test:443\r\n\r\n".to_vec(),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(
+        request.proxy_authorization.as_deref().map(Vec::as_slice),
+        Some(&b"Basic dXNlcjpwYXNz"[..])
+    );
+    let auth = SocksInboundAuth::Password(vec![SocksAccount::new(b"user", b"pass").unwrap()]);
+    assert!(auth.admits_http_basic(request.proxy_authorization.as_deref().map(Vec::as_slice)));
+    assert!(!auth.admits_http_basic(Some(b"Basic Zmlyc3Q6Zmlyc3Q=")));
+    assert!(!auth.admits_http_basic(None));
+    assert!(SocksInboundAuth::NoAuth.admits_http_basic(None));
+
+    let anonymous = parse_http_connect_request(Cursor::new(
+        b"CONNECT example.test:443 HTTP/1.1\r\n\r\n".to_vec(),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(anonymous.proxy_authorization, None);
 }

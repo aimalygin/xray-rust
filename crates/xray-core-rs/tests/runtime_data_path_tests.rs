@@ -2166,6 +2166,23 @@ async fn socks_policy_vless_user_level_conn_idle_closes_idle_tunnel() {
 }
 
 #[tokio::test]
+async fn socks_inbound_also_serves_socks4_socks4a_and_http_connect_like_xray() {
+    timeout(Duration::from_secs(4), run_socks_inbound_mixed_scenario())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn password_socks_inbound_refuses_socks4_and_requires_http_basic_credentials() {
+    timeout(
+        Duration::from_secs(4),
+        run_password_socks_inbound_mixed_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn socks_password_inbound_tunnels_only_after_rfc1929_success() {
     timeout(
         Duration::from_secs(2),
@@ -3902,6 +3919,177 @@ async fn socks5_password_login(client: &mut TcpStream, user: &[u8], pass: &[u8])
     client.read_exact(&mut status).await.unwrap();
     assert_eq!(status[0], 1);
     status[1]
+}
+
+fn socks4_connect_request(
+    command: u8,
+    port: u16,
+    ip: [u8; 4],
+    user: &[u8],
+    domain: Option<&[u8]>,
+) -> Vec<u8> {
+    let mut request = vec![4, command];
+    request.extend_from_slice(&port.to_be_bytes());
+    request.extend_from_slice(&ip);
+    request.extend_from_slice(user);
+    request.push(0);
+    if let Some(domain) = domain {
+        request.extend_from_slice(domain);
+        request.push(0);
+    }
+    request
+}
+
+/// Sends one SOCKS 4 request and returns the reply status (90 granted).
+async fn socks4_status(socks_addr: SocketAddr, request: &[u8]) -> (TcpStream, u8) {
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    client.write_all(request).await.unwrap();
+    let mut reply = [0; 8];
+    client.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[0], 0);
+    assert_eq!(reply[2..], [0; 6]);
+    (client, reply[1])
+}
+
+/// Sends one HTTP request head and returns the response head.
+async fn http_proxy_head(socks_addr: SocketAddr, request: &str) -> (TcpStream, String) {
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    client.write_all(request.as_bytes()).await.unwrap();
+    let mut head = Vec::new();
+    while !head.ends_with(b"\r\n\r\n") {
+        let mut byte = [0; 1];
+        if client.read(&mut byte).await.unwrap() == 0 {
+            break;
+        }
+        head.push(byte[0]);
+    }
+    (client, String::from_utf8(head).unwrap())
+}
+
+async fn assert_echoes(client: &mut TcpStream, payload: &[u8]) {
+    client.write_all(payload).await.unwrap();
+    let mut echoed = vec![0; payload.len()];
+    client.read_exact(&mut echoed).await.unwrap();
+    assert_eq!(echoed, payload);
+}
+
+async fn run_socks_inbound_mixed_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let SocketAddr::V4(echo_v4) = echo_addr else {
+        panic!("echo server binds IPv4 loopback");
+    };
+    let resolver = StaticDnsResolver {
+        domain: "socks4a.example.test",
+        addr: echo_addr,
+    };
+    let mut core =
+        Core::with_dns_resolver(runtime_config_with_freedom_outbound(), Arc::new(resolver))
+            .unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    // SOCKS 4a names its target; the user ID is ignored.
+    let request = socks4_connect_request(
+        1,
+        echo_v4.port(),
+        [0, 0, 0, 1],
+        b"any-user",
+        Some(b"socks4a.example.test"),
+    );
+    let (mut client, status) = socks4_status(socks_addr, &request).await;
+    assert_eq!(status, 90);
+    assert_echoes(&mut client, b"hello socks4a").await;
+    drop(client);
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let request = socks4_connect_request(1, echo_addr.port(), [127, 0, 0, 1], b"", None);
+    let (mut client, status) = socks4_status(socks_addr, &request).await;
+    assert_eq!(status, 90);
+    assert_echoes(&mut client, b"hello socks4").await;
+    drop(client);
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // BIND is refused, as Xray refuses every SOCKS 4 command but CONNECT.
+    let request = socks4_connect_request(2, 80, [127, 0, 0, 1], b"", None);
+    assert_eq!(socks4_status(socks_addr, &request).await.1, 91);
+
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let (mut client, head) = http_proxy_head(
+        socks_addr,
+        &format!("CONNECT {echo_addr} HTTP/1.1\r\nHost: {echo_addr}\r\n\r\n"),
+    )
+    .await;
+    assert_eq!(head, "HTTP/1.1 200 Connection Established\r\n\r\n");
+    assert_echoes(&mut client, b"hello http on socks").await;
+    drop(client);
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Plain HTTP forwarding stays unsupported, as on the HTTP inbound.
+    let (_, head) = http_proxy_head(
+        socks_addr,
+        "GET http://example.test/ HTTP/1.1\r\nHost: example.test\r\n\r\n",
+    )
+    .await;
+    assert!(head.starts_with("HTTP/1.1 400 Bad Request\r\n"), "{head}");
+    core.stop().await.unwrap();
+}
+
+async fn run_password_socks_inbound_mixed_scenario() {
+    let mut core = Core::new(runtime_config_with_password_socks_inbound()).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    // Xray: "socks 4 is not allowed when auth is required."
+    let request = socks4_connect_request(1, 9, [127, 0, 0, 1], b"synthetic-user", None);
+    let (mut client, status) = socks4_status(socks_addr, &request).await;
+    assert_eq!(status, 91);
+    let mut byte = [0; 1];
+    assert_eq!(client.read(&mut byte).await.unwrap(), 0);
+
+    let required = "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"proxy\"\r\n\r\n";
+    for credentials in [
+        None,
+        Some("Basic c3ludGhldGljLXVzZXI6d3JvbmctcGFzcw=="),
+        // Go's prefix check is case-sensitive.
+        Some("basic c3ludGhldGljLXVzZXI6c3ludGhldGljLXBhc3M="),
+    ] {
+        let authorization = credentials
+            .map(|value| format!("Proxy-Authorization: {value}\r\n"))
+            .unwrap_or_default();
+        let (_, head) = http_proxy_head(
+            socks_addr,
+            &format!("CONNECT 127.0.0.1:9 HTTP/1.1\r\n{authorization}\r\n"),
+        )
+        .await;
+        assert_eq!(head, required, "{credentials:?}");
+    }
+
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let (mut client, head) = http_proxy_head(
+        socks_addr,
+        &format!(
+            "CONNECT {echo_addr} HTTP/1.1\r\nproxy-authorization:  Basic c3ludGhldGljLXVzZXI6c3ludGhldGljLXBhc3M= \r\n\r\n"
+        ),
+    )
+    .await;
+    assert_eq!(head, "HTTP/1.1 200 Connection Established\r\n\r\n");
+    assert_echoes(&mut client, b"hello basic auth").await;
+    drop(client);
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
 }
 
 async fn run_socks_password_freedom_echo_scenario() {

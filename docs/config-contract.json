@@ -861,7 +861,7 @@
         "sniffing"
       ],
       "id": "INBOUND",
-      "notes": "socks, http and tun. Only loopback listeners unless allowUnauthenticatedLan is explicitly true. TUN settings have a separate compatibility surface."
+      "notes": "socks (alias mixed: SOCKS 5, SOCKS 4/4a CONNECT and HTTP CONNECT on one port), http and tun. Only loopback listeners unless allowUnauthenticatedLan is explicitly true. TUN settings have a separate compatibility surface."
     },
     {
       "context": "$.routing.balancers[].strategy.settings (leastLoad)",
