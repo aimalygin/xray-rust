@@ -10,6 +10,21 @@ long-term supported release series.
 
 ## Unreleased
 
+- DNS domain rules read as Xray-core v26.10.31 reads them: a server's
+  `domains`, `dns.hosts` keys and the DNS outbound's rules. Profiles it accepts
+  no longer fail to parse.
+  - A server's `domains` and a DNS outbound rule's `domain` take `null`
+    entries, which read as empty strings, and `domains` itself may be `null`.
+  - Domain rules take Xray-core's syntax there too: text with an unknown
+    prefix is a substring in `domains` and `domain`, and an exact name as a
+    `dns.hosts` key; `ext-site:` spells `ext:`; and a prefix may have an empty
+    value, so `"keyword:"` as a hosts key maps every name.
+  - A geosite selection with no domains is accepted. It puts no name first,
+    maps nothing as a hosts key, and keeps a DNS outbound rule from applying.
+  - A DNS outbound rule's `qType` reads as Xray-core's `PortList`. A reversed
+    range such as `"24-23"` adds no type, so a rule left with no type answers
+    every type, where it used to fail parsing. A single type with a sign or a
+    leading zero, such as `"053"`, is now rejected, as there.
 - Routing rules read as Xray-core v26.10.31 reads them. Profiles it accepts
   no longer fail to parse, and a few rules now apply as they do there.
   - `type` is no longer required or checked, so rules without

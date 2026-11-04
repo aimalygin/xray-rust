@@ -1337,8 +1337,7 @@ mod tests {
     use tokio::sync::oneshot;
     use xray_config::{
         DnsFakeIpConfig, DnsHostTarget, DnsOutboundRule, DnsOutboundRuleAction,
-        DnsOutboundSettings, DomainMatcher, DomainMatcherSet, IpCidr, Network,
-        TargetAddr as ConfigTargetAddr,
+        DnsOutboundSettings, DomainMatcher, IpCidr, Network, TargetAddr as ConfigTargetAddr,
     };
     use xray_routing::{Network as RoutingNetwork, TargetAddr};
     use xray_transport::{SystemDnsResolver, TransportDialer};
@@ -1389,7 +1388,7 @@ mod tests {
                 action: DnsOutboundRuleAction::Direct,
                 r_code: 0,
                 qtype_ranges: Vec::new(),
-                domain_matchers: DomainMatcherSet::default(),
+                domain_matchers: None,
             }],
             ..DnsOutboundSettings::default()
         })

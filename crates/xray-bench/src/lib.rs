@@ -8585,10 +8585,12 @@ fn dns_outbound_probe_common_settings(rule_count: usize) -> DnsOutboundSettings 
             },
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: compile_dns_domain_matchers(&[DomainMatcher::Full(
-                DNS_POLICY_PROBE_DOMAIN.to_owned(),
-            )])
-            .expect("exact DNS outbound matcher compiles"),
+            domain_matchers: Some(
+                compile_dns_domain_matchers(&[DomainMatcher::Full(
+                    DNS_POLICY_PROBE_DOMAIN.to_owned(),
+                )])
+                .expect("exact DNS outbound matcher compiles"),
+            ),
         })
         .collect();
     DnsOutboundSettings {
@@ -8608,10 +8610,12 @@ fn dns_outbound_probe_worst_case_settings(
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: compile_dns_domain_matchers(&[DomainMatcher::Keyword(format!(
-                "rule-{index}-ordered-miss.invalid"
-            ))])
-            .expect("keyword DNS outbound matcher compiles"),
+            domain_matchers: Some(
+                compile_dns_domain_matchers(&[DomainMatcher::Keyword(format!(
+                    "rule-{index}-ordered-miss.invalid"
+                ))])
+                .expect("keyword DNS outbound matcher compiles"),
+            ),
         })
         .collect::<Vec<_>>();
     let mut domain_matchers = DomainMatcherSet::builder();
@@ -8629,9 +8633,11 @@ fn dns_outbound_probe_worst_case_settings(
         action: DnsOutboundRuleAction::Return,
         r_code: 0,
         qtype_ranges: Vec::new(),
-        domain_matchers: domain_matchers
-            .build()
-            .expect("keyword DNS outbound matchers compile"),
+        domain_matchers: Some(
+            domain_matchers
+                .build()
+                .expect("keyword DNS outbound matchers compile"),
+        ),
     });
     DnsOutboundSettings {
         rules,
@@ -14880,7 +14886,13 @@ mod tests {
         assert_eq!(common.rules.len(), 8);
         assert_eq!(worst.rules.len(), 8);
         assert_eq!(
-            worst.rules.last().unwrap().domain_matchers.matcher_count(),
+            worst
+                .rules
+                .last()
+                .unwrap()
+                .domain_matchers
+                .as_ref()
+                .map_or(0, DomainMatcherSet::matcher_count),
             16_384
         );
     }

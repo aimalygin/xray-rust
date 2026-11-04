@@ -297,8 +297,8 @@ impl CompiledDnsOutboundRule {
             r_code: rule.r_code,
             all_qtypes: rule.qtype_ranges.is_empty(),
             qtype_ranges: compile_qtype_ranges(&rule.qtype_ranges),
-            all_domains: rule.domain_matchers.is_empty(),
-            domain_matchers: rule.domain_matchers.clone(),
+            all_domains: rule.domain_matchers.is_none(),
+            domain_matchers: rule.domain_matchers.clone().unwrap_or_default(),
         }
     }
 
@@ -740,6 +740,8 @@ mod tests {
         }
     }
 
+    /// A rule whose domain condition is `domain_matchers`; none sets no
+    /// condition.
     fn rule(
         action: DnsOutboundRuleAction,
         qtype_ranges: Vec<DnsQTypeRange>,
@@ -749,7 +751,8 @@ mod tests {
             action,
             r_code: 0,
             qtype_ranges,
-            domain_matchers: compile_dns_domain_matchers(&domain_matchers).unwrap(),
+            domain_matchers: (!domain_matchers.is_empty())
+                .then(|| compile_dns_domain_matchers(&domain_matchers).unwrap()),
         }
     }
 
@@ -845,6 +848,25 @@ mod tests {
         assert_eq!(
             policy.decide_message(&message, false).unwrap(),
             DnsOutboundDecision::Drop
+        );
+    }
+
+    #[test]
+    fn a_domain_condition_with_no_domain_matches_no_name() {
+        // A geosite selection with no domain leaves an empty set: unlike no
+        // condition at all, it matches no name, as in Xray-core.
+        let mut empty = rule(DnsOutboundRuleAction::Drop, vec![], vec![]);
+        empty.domain_matchers = Some(DomainMatcherSet::default());
+        let policy = CompiledDnsOutboundPolicy::new(&settings(vec![
+            empty,
+            rule(DnsOutboundRuleAction::Direct, vec![], vec![]),
+        ]));
+
+        assert_eq!(
+            policy
+                .decide_message(&query(1, "example.com", 16, 0), false)
+                .unwrap(),
+            DnsOutboundDecision::Direct
         );
     }
 
@@ -965,7 +987,7 @@ mod tests {
             action: DnsOutboundRuleAction::Hijack,
             r_code: 3,
             qtype_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
+            domain_matchers: None,
         }]));
 
         assert_eq!(

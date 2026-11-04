@@ -1,6 +1,6 @@
-//! Xray-core v26.10.31's list grammars shared by routing rules and freedom's
-//! final rules: `StringList`, `NetworkList`, `PortList` and the domain rules
-//! `geodata.ParseDomainRules` reads.
+//! Xray-core v26.10.31's list grammars shared by routing rules, freedom's
+//! final rules, DNS and the DNS outbound: `StringList`, `NetworkList`,
+//! `PortList` and the domain rules `geodata.ParseDomainRule` reads.
 
 use super::{normalize_u16_ranges, Parser, U16SelectorKind};
 use crate::{Network, RoutingPortRange};
@@ -18,6 +18,16 @@ pub(super) struct ListEntry<'v> {
 pub(super) struct PortList {
     pub(super) ranges: Vec<RoutingPortRange>,
     pub(super) has_ranges: bool,
+}
+
+/// What `geodata.ParseDomainRule` makes of text with no known prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PlainDomain {
+    /// A substring, as routing rules, DNS servers' `domains` and the DNS
+    /// outbound's rules read it.
+    Substring,
+    /// The whole name, as `dns.hosts` keys read it.
+    Full,
 }
 
 impl Parser<'_> {
@@ -103,10 +113,12 @@ impl Parser<'_> {
     ///
     /// Deliberately, a number above 65535 is rejected: Xray-core keeps it and
     /// truncates it to 16 bits when matching, so 65617 would match port 81.
+    /// `kind` picks the budget the entries count against.
     pub(super) fn port_list(
         &mut self,
         raw: Option<&Value>,
         path: &str,
+        kind: U16SelectorKind,
     ) -> Option<Option<PortList>> {
         let mut pairs = Vec::new();
         let mut has_ranges = false;
@@ -118,7 +130,7 @@ impl Parser<'_> {
                     return None;
                 };
                 if port != 0 {
-                    if !self.consume_u16_selector(U16SelectorKind::RoutingPort, path) {
+                    if !self.consume_u16_selector(kind, path) {
                         return None;
                     }
                     let Ok(port) = u16::try_from(port) else {
@@ -141,7 +153,7 @@ impl Parser<'_> {
                     if entry.is_empty() {
                         continue;
                     }
-                    if !self.consume_u16_selector(U16SelectorKind::RoutingPort, &entry_path) {
+                    if !self.consume_u16_selector(kind, &entry_path) {
                         return None;
                     }
                     let range = if entry.contains('-') || entry.contains("env:") {
@@ -185,44 +197,56 @@ impl Parser<'_> {
         Some((start <= end).then_some((start, end)))
     }
 
-    /// A domain rule as Xray-core's `geodata.ParseDomainRules` reads it for
-    /// routing: `geosite:` and the `ext:` spellings name geodata, the custom
-    /// prefixes take any value including an empty one, and anything else,
-    /// even text with a colon, is a substring.
-    pub(super) fn routing_domain_rule(
+    /// A domain rule as Xray-core's `geodata.ParseDomainRule` reads it:
+    /// `geosite:` and the `ext:` spellings name geodata, whose selection may
+    /// hold no domain; the custom prefixes take any value, even an empty one;
+    /// anything else, even text with a colon, is `plain`.
+    pub(super) fn domain_rule(
         &mut self,
         value: &str,
         path: &str,
         max_matchers: usize,
+        plain: PlainDomain,
     ) -> Option<Vec<DomainMatcher>> {
         if let Some(spec) = value.strip_prefix("geosite:") {
-            return self.parse_geosite_matchers("geosite.dat", spec, path, max_matchers, true);
+            return self.parse_geosite_matchers("geosite.dat", spec, path, max_matchers);
         }
         for prefix in ["ext:", "ext-domain:", "ext-site:"] {
             if let Some(spec) = value.strip_prefix(prefix) {
-                return self.parse_external_geosite_matchers(spec, path, max_matchers, true);
+                return self.parse_external_geosite_matchers(spec, path, max_matchers);
             }
         }
         let matcher = if let Some(pattern) = value.strip_prefix("regexp:") {
-            match RegexMatcher::new(pattern.to_owned()) {
-                Ok(matcher) => DomainMatcher::Regex(matcher),
-                Err(error) => {
-                    self.error(path, error.to_string());
-                    return None;
-                }
-            }
+            self.domain_regex(pattern.to_owned(), path)?
         } else if let Some(domain) = value.strip_prefix("domain:") {
             DomainMatcher::Suffix(domain.to_owned())
         } else if let Some(domain) = value.strip_prefix("full:") {
             DomainMatcher::Full(domain.to_owned())
         } else if let Some(keyword) = value.strip_prefix("keyword:") {
             DomainMatcher::Keyword(keyword.to_owned())
-        } else if value.starts_with("dotless:") {
-            return self.parse_domain_matcher(value, path, max_matchers);
+        } else if let Some(text) = value.strip_prefix("dotless:") {
+            if text.contains('.') {
+                self.error(path, "dotless domain matcher must not contain a dot");
+                return None;
+            }
+            self.domain_regex(format!("^[^.]*{text}[^.]*$"), path)?
         } else {
-            DomainMatcher::Keyword(value.to_owned())
+            match plain {
+                PlainDomain::Substring => DomainMatcher::Keyword(value.to_owned()),
+                PlainDomain::Full => DomainMatcher::Full(value.to_owned()),
+            }
         };
         Some(vec![matcher])
+    }
+
+    fn domain_regex(&mut self, pattern: String, path: &str) -> Option<DomainMatcher> {
+        match RegexMatcher::new(pattern) {
+            Ok(matcher) => Some(DomainMatcher::Regex(matcher)),
+            Err(error) => {
+                self.error(path, error.to_string());
+                None
+            }
+        }
     }
 }
 

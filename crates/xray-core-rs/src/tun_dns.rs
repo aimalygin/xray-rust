@@ -6620,7 +6620,7 @@ mod tests {
                         0
                     },
                     qtype_ranges: Vec::new(),
-                    domain_matchers: xray_config::DomainMatcherSet::default(),
+                    domain_matchers: None,
                 }],
                 ..xray_config::DnsOutboundSettings::default()
             })
