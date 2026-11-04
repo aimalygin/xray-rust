@@ -283,6 +283,7 @@ async fn run_local_xray_round_robin_balancer_interop() {
             domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
             target: RoutingRuleTarget::Balancer("automatic".to_owned()),
+            local_os: Vec::new(),
         }],
         balancers: vec![RoutingBalancer {
             tag: "automatic".to_owned(),

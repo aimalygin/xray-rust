@@ -15,6 +15,16 @@ fn xray_transparent_inbound_and_network_alias() {
             mark: 255
         })
     );
+    // Xray's newer name for the same inbound.
+    p["inbounds"][0]["protocol"] = json!("tunnel");
+    assert_eq!(
+        parse_xray_json(&p.to_string()).unwrap().config.inbounds[0].protocol,
+        InboundProtocol::Tproxy(TproxySettings {
+            tcp: true,
+            udp: true,
+            mark: 255
+        })
+    );
     p["inbounds"][0]["settings"] = json!({"allowedNetwork":["udp"],"followRedirect":true});
     assert_eq!(
         parse_xray_json(&p.to_string()).unwrap().config.inbounds[0].protocol,

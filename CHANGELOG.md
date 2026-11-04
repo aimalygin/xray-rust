@@ -10,6 +10,16 @@ long-term supported release series.
 
 ## Unreleased
 
+- Xray-core configs with these options now parse instead of failing:
+  - routing rules take `localOS`, an array or comma-separated string of Go
+    `runtime.GOOS` names (`darwin`, `ios`, `android`, `linux`, `windows`),
+    so a shared profile can route differently per platform. Apple platforms
+    other than macOS report `ios`, as Go has no tvOS or visionOS value;
+  - blackhole `response.type: "custom"` replies with the bytes of
+    `customResponseData` (padded standard base64, at most 65,535 bytes), over
+    TCP and as one datagram to a UDP flow;
+  - Xray's protocol aliases `direct` (freedom), `block` (blackhole) and
+    `tunnel` (`dokodemo-door`).
 - Sniffing: QUIC reassembles a ClientHello spread over several Initial packets
   and datagrams, as Xray-core does. A Chrome-shaped ClientHello with a
   post-quantum key share fills two datagrams (the fixture is captured from

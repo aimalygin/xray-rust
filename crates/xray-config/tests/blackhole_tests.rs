@@ -1,3 +1,4 @@
+use base64::Engine as _;
 use serde_json::{json, Value};
 use xray_config::{
     parse_xray_json, BlackholeOutboundSettings, BlackholeResponse, DiagnosticSeverity,
@@ -34,10 +35,10 @@ fn block_settings(raw: &Value) -> BlackholeOutboundSettings {
         .rules
         .iter()
         .all(|rule| rule.target == RoutingRuleTarget::Outbound("block".to_owned())));
-    let OutboundSettings::Blackhole(settings) = outbound.settings else {
+    let OutboundSettings::Blackhole(settings) = &outbound.settings else {
         panic!("expected blackhole settings, got {:?}", outbound.settings);
     };
-    settings
+    settings.clone()
 }
 
 #[test]
@@ -65,6 +66,31 @@ fn accepts_xray_blackhole_settings_shapes() {
         ),
         (
             json!({"tag": "block", "protocol": "blackhole", "settings": {"response": {"type": "HTTP"}}}),
+            BlackholeResponse::Http,
+        ),
+        // Xray's `block` alias.
+        (
+            json!({"tag": "block", "protocol": "block", "settings": {"response": {"type": "http"}}}),
+            BlackholeResponse::Http,
+        ),
+        (
+            json!({"tag": "block", "protocol": "blackhole", "settings": {"response": {
+                "type": "custom", "customResponseData": "SFRUUC8xLjEgNDA0IE5vdCBGb3VuZA0KDQo="}}}),
+            BlackholeResponse::Custom(b"HTTP/1.1 404 Not Found\r\n\r\n".to_vec()),
+        ),
+        (
+            json!({"tag": "block", "protocol": "blackhole", "settings": {"response": {
+                "type": "Custom", "customResponseData": null}}}),
+            BlackholeResponse::Custom(Vec::new()),
+        ),
+        (
+            json!({"tag": "block", "protocol": "blackhole", "settings": {"response": {"type": "custom"}}}),
+            BlackholeResponse::Custom(Vec::new()),
+        ),
+        // Like Xray, other types ignore the data, even when it is not base64.
+        (
+            json!({"tag": "block", "protocol": "blackhole", "settings": {"response": {
+                "type": "http", "customResponseData": "not base64"}}}),
             BlackholeResponse::Http,
         ),
     ] {
@@ -114,6 +140,24 @@ fn rejects_responses_xray_rejects_and_unknown_fields_with_paths() {
             json!({"response": {"type": "http", "body": "blocked"}}),
             "$.outbounds[1].settings.response.body",
         ),
+        (
+            json!({"response": {"type": "custom", "customResponseData": 403}}),
+            "$.outbounds[1].settings.response.customResponseData",
+        ),
+        // Go's StdEncoding requires padding.
+        (
+            json!({"response": {"type": "custom", "customResponseData": "SGk"}}),
+            "$.outbounds[1].settings.response.customResponseData",
+        ),
+        (
+            json!({"response": {"type": "custom", "customResponseData": "not base64"}}),
+            "$.outbounds[1].settings.response.customResponseData",
+        ),
+        (
+            json!({"response": {"type": "custom", "customResponseData":
+                base64::engine::general_purpose::STANDARD.encode(vec![0u8; 65_536])}}),
+            "$.outbounds[1].settings.response.customResponseData",
+        ),
     ] {
         let raw =
             subscription(json!({"tag": "block", "protocol": "blackhole", "settings": settings}));
@@ -135,6 +179,22 @@ fn unknown_response_type_is_not_echoed() {
         "settings": {"response": {"type": "private-fixture-value\r\n"}}}));
     let error = parse_xray_json(&raw.to_string()).unwrap_err();
     assert!(!format!("{error:?}").contains("private-fixture-value"));
+
+    let raw = subscription(json!({"tag": "block", "protocol": "blackhole",
+        "settings": {"response": {"type": "custom", "customResponseData": "private-fixture-value"}}}));
+    let error = parse_xray_json(&raw.to_string()).unwrap_err();
+    assert!(!format!("{error:?}").contains("private-fixture-value"));
+}
+
+#[test]
+fn custom_response_size_bound_is_inclusive() {
+    let largest = vec![0x5a; 65_535];
+    let settings = block_settings(&subscription(
+        json!({"tag": "block", "protocol": "blackhole",
+        "settings": {"response": {"type": "custom",
+            "customResponseData": base64::engine::general_purpose::STANDARD.encode(&largest)}}}),
+    ));
+    assert_eq!(settings.response, BlackholeResponse::Custom(largest));
 }
 
 #[test]

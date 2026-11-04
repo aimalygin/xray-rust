@@ -1238,6 +1238,7 @@ mod tests {
                         IpCidr::new(server.ip(), if server.is_ipv4() { 32 } else { 128 }).unwrap(),
                     ),
                     target: xray_config::RoutingRuleTarget::Outbound("dns-out".to_owned()),
+                    local_os: Vec::new(),
                 }],
                 balancers: Vec::new(),
                 domain_strategy: RoutingDomainStrategy::IpIfNonMatch,

@@ -1279,7 +1279,7 @@ async fn absorb_socks_udp_blackhole_flow(
         tokio::select! {
             biased;
             () = wait_for_connection_close(&mut connection_close) => {}
-            _ = context.deliver(client_target, response) => {}
+            _ = context.deliver(client_target, &response) => {}
         }
     }
     absorb_udp_datagrams(

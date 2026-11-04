@@ -29,8 +29,8 @@ pub use model::{
     XhttpDownloadSettings, XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement,
     XhttpRange, XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
     DEFAULT_DNS_SERVER_TIMEOUT_MS, DEFAULT_OBSERVATORY_PROBE_INTERVAL,
-    DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVE_EXPIRED_TTL_SECONDS,
-    OBSERVATORY_PROBE_TIMEOUT,
+    DEFAULT_OBSERVATORY_PROBE_URL, LOCAL_OS, MAX_DNS_SERVER_TIMEOUT_MS,
+    MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
 };
 pub use model::{
     BlackholeOutboundSettings, BlackholeResponse, HttpOutboundSettings, SocksInboundSettings,

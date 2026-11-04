@@ -644,6 +644,7 @@ async fn startup_probe_uses_default_outbound_directly_without_routing_rules() {
             domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
             target: xray_config::RoutingRuleTarget::Outbound("missing".to_owned()),
+            local_os: Vec::new(),
         }],
         ..Default::default()
     };
@@ -758,6 +759,7 @@ fn outbound_probe_core(addr: SocketAddr) -> Core {
             domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
             target: xray_config::RoutingRuleTarget::Outbound("missing".to_owned()),
+            local_os: Vec::new(),
         }],
         ..Default::default()
     };

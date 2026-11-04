@@ -550,10 +550,11 @@
     {
       "context": "$.outbounds[].settings.response (blackhole)",
       "fields": [
-        "type"
+        "type",
+        "customResponseData"
       ],
       "id": "BLACKHOLE_RESPONSE",
-      "notes": "type is required and case-insensitive: none or http (Xray's fixed HTTP 403 reply). Null, empty and unknown responses fail closed, matching Xray."
+      "notes": "type is required and case-insensitive: none, http (Xray's fixed HTTP 403 reply) or custom. custom sends customResponseData, standard padded base64 of at most 65,535 bytes; absent or null sends nothing. Other types ignore it. Null, empty and unknown responses fail closed, matching Xray."
     },
     {
       "context": "$.dns",
@@ -817,7 +818,7 @@
         "streamSettings"
       ],
       "id": "TPROXY_INBOUND",
-      "notes": "Linux transparent TCP/UDP interception only. Firewall and policy routes remain operator-owned; no host network mutation."
+      "notes": "Linux transparent TCP/UDP interception only. Xray's protocol name tunnel is an alias. Firewall and policy routes remain operator-owned; no host network mutation."
     },
     {
       "context": "$.inbounds[].settings (dokodemo-door)",
@@ -918,7 +919,7 @@
         "sendThrough"
       ],
       "id": "OUTBOUND",
-      "notes": "freedom, blackhole, dns, VLESS, Trojan, Shadowsocks 2022 and AEAD, VMess AEAD, SOCKS5 (CONNECT and UDP ASSOCIATE), HTTP/1.1 CONNECT, Hysteria 2 and a bounded WireGuard client subset. sendThrough is rejected whenever present, including null. First outbound is the default. Tag graph validation is a later core compilation step."
+      "notes": "freedom (alias direct), blackhole (alias block), dns, VLESS, Trojan, Shadowsocks 2022 and AEAD, VMess AEAD, SOCKS5 (CONNECT and UDP ASSOCIATE), HTTP/1.1 CONNECT, Hysteria 2 and a bounded WireGuard client subset. sendThrough is rejected whenever present, including null. First outbound is the default. Tag graph validation is a later core compilation step."
     },
     {
       "context": "$.policy",
@@ -1041,12 +1042,13 @@
         "domain",
         "domains",
         "ip",
+        "localOS",
         "outboundTag",
         "balancerTag",
         "ruleTag"
       ],
       "id": "ROUTING_RULE",
-      "notes": "Supports field rules only; domains is an alias of domain. Exactly one outboundTag or balancerTag target. Domain/geodata, compact port selectors and aggregate budgets are validated."
+      "notes": "Supports field rules only; domains is an alias of domain. Exactly one outboundTag or balancerTag target. Domain/geodata, compact port selectors and aggregate budgets are validated. localOS (array or comma-separated string) matches the running platform as Go's runtime.GOOS names it: darwin on macOS, ios on Apple mobile platforms, android, linux, windows."
     },
     {
       "context": "$.inbounds[].sniffing",

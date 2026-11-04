@@ -4211,6 +4211,7 @@ mod tests {
                     domain_matchers: DomainMatcherSet::default(),
                     ip_matchers: Default::default(),
                     target: RoutingRuleTarget::Outbound("direct".to_owned()),
+                    local_os: Vec::new(),
                 }],
                 ..Default::default()
             },
@@ -4346,6 +4347,7 @@ mod tests {
             domain_matchers: DomainMatcherSet::default(),
             ip_matchers: ip_matcher_set(IpCidr::full(IpAddr::V4(ip))),
             target: RoutingRuleTarget::Outbound(tag.to_owned()),
+            local_os: Vec::new(),
         }
     }
 
@@ -4358,6 +4360,7 @@ mod tests {
                 .unwrap(),
             ip_matchers: ip_matcher_set(IpCidr::full(IpAddr::V4(ip))),
             target: RoutingRuleTarget::Outbound(tag.to_owned()),
+            local_os: Vec::new(),
         }
     }
 
@@ -4369,6 +4372,7 @@ mod tests {
             domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
             target: RoutingRuleTarget::Outbound(outbound_tag.to_owned()),
+            local_os: Vec::new(),
         }
     }
 
@@ -4384,6 +4388,7 @@ mod tests {
             domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
             target: RoutingRuleTarget::Outbound(outbound_tag.to_owned()),
+            local_os: Vec::new(),
         }
     }
 
@@ -4937,6 +4942,7 @@ mod tests {
             domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
             target: RoutingRuleTarget::Outbound("dns-out".to_owned()),
+            local_os: Vec::new(),
         }];
 
         let router = OutboundRouter::new(Arc::new(config));
@@ -5746,6 +5752,7 @@ mod tests {
             domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
             target: RoutingRuleTarget::Balancer("automatic".to_owned()),
+            local_os: Vec::new(),
         }];
         config
     }
