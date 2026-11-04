@@ -23,7 +23,8 @@ use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{AbortHandle, JoinError, JoinSet};
 use tokio::time::{sleep, Duration, Instant as TokioInstant};
 use xray_config::{
-    CoreConfig, DnsQueryStrategy as ConfigDnsQueryStrategy, DnsServerConfig, InboundSniffingConfig,
+    CoreConfig, DnsQueryStrategy as ConfigDnsQueryStrategy, DnsServerConfig, DomainStrategy,
+    InboundSniffingConfig,
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
@@ -44,9 +45,9 @@ use crate::dns_outbound_runtime::{FakeIpTargetProvenance, RestoredClientTarget};
 use crate::fake_dns::FakeIpMapper;
 use crate::outbound::{
     open_tcp_stream_with_resolvers_and_dialer,
-    open_vless_udp_stream_with_resolver_dialer_and_options, DnsOutbound, TcpOutbound,
-    TcpSessionOutbound, UdpOutbound, UdpSessionOutbound, VlessTcpOutbound, VlessUdpFraming,
-    VlessUdpOpenOptions,
+    open_vless_udp_stream_with_resolver_dialer_and_options, DnsOutbound, DomainStrategyResolver,
+    FreedomOutbound, TcpOutbound, TcpSessionOutbound, UdpOutbound, UdpSessionOutbound,
+    VlessTcpOutbound, VlessUdpFraming, VlessUdpOpenOptions,
 };
 use crate::policy::{effective_policy_for_level, EffectivePolicy};
 use crate::udp_ingress::{sniff_udp_flow, UdpIngress};
@@ -2860,9 +2861,7 @@ async fn open_tcp_bridge_stream(
             .await?);
         }
         match outbound {
-            TcpOutbound::Freedom
-            | TcpOutbound::FreedomHappyEyeballs(_)
-            | TcpOutbound::FreedomFragment(_) => {
+            TcpOutbound::Freedom(_) => {
                 let candidates =
                     dns_proxy::resolve_freedom_dns_upstreams(upstream, context).await?;
                 return Ok(crate::dns::open_routed_freedom_dns_tcp_stream(
@@ -2922,9 +2921,7 @@ async fn open_tcp_bridge_stream(
         }
     }
     let destination_resolver = match outbound.primary() {
-        TcpOutbound::Freedom
-        | TcpOutbound::FreedomHappyEyeballs(_)
-        | TcpOutbound::FreedomFragment(_) => context.dns_resolver.as_ref(),
+        TcpOutbound::Freedom(_) => context.dns_resolver.as_ref(),
         TcpOutbound::Trojan(_)
         | TcpOutbound::Socks(_)
         | TcpOutbound::Http(_)
@@ -3236,7 +3233,10 @@ async fn bridge_tcp_flow_inner(
             .as_ref()
             .is_some_and(dns_proxy::DnsProxyUpstream::is_local)
         {
-            Ok((TcpSessionOutbound::Transport(TcpOutbound::Freedom), None))
+            Ok((
+                TcpSessionOutbound::Transport(TcpOutbound::Freedom(FreedomOutbound::default())),
+                None,
+            ))
         } else {
             tokio::select! {
                 biased;
@@ -3319,9 +3319,7 @@ async fn bridge_tcp_flow_inner(
             TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
                 effective_policy_for_level(&context.config, Some(0)).handshake
             }
-            TcpOutbound::Freedom
-            | TcpOutbound::FreedomHappyEyeballs(_)
-            | TcpOutbound::FreedomFragment(_) => context.inbound_policy.handshake,
+            TcpOutbound::Freedom(_) => context.inbound_policy.handshake,
             TcpOutbound::Trojan(outbound) => {
                 effective_policy_for_level(&context.config, Some(outbound.level())).handshake
             }
@@ -4575,11 +4573,13 @@ async fn bridge_udp_flow(
     }
 
     match outbound {
-        UdpOutbound::Freedom => {
+        UdpOutbound::Freedom(freedom) => {
+            let domain_strategy = freedom.domain_strategy().for_original_ip(key.target.addr);
             bridge_udp_freedom_flow(
                 key,
                 generation,
                 dial_target,
+                domain_strategy,
                 context,
                 from_stack,
                 shutdown,
@@ -4813,6 +4813,7 @@ async fn bridge_udp_freedom_flow(
     key: UdpFlowKey,
     generation: u64,
     target: Target,
+    domain_strategy: DomainStrategy,
     context: TunRuntimeContext,
     from_stack: UdpIngress,
     shutdown: watch::Receiver<bool>,
@@ -4821,10 +4822,11 @@ async fn bridge_udp_freedom_flow(
     connection: ConnectionLease,
     mut connection_close: watch::Receiver<bool>,
 ) {
+    let resolver = DomainStrategyResolver::new(context.dns_resolver.as_ref(), domain_strategy);
     let resolved = tokio::select! {
         biased;
         () = wait_for_connection_close(&mut connection_close) => return,
-        result = resolve_udp_freedom_target(&target, context.dns_resolver.as_ref()) => result,
+        result = resolve_udp_freedom_target(&target, &resolver) => result,
     };
     let target_addr = match resolved {
         Ok(target) => target,

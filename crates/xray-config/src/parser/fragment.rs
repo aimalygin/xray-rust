@@ -209,6 +209,20 @@ impl Parser<'_> {
                 // by the same core graph as the legacy proxySettings form.
                 continue;
             }
+            if target
+                .stream
+                .socket_options
+                .as_ref()
+                .is_some_and(|options| options.domain_strategy.has_strategy())
+            {
+                // Inlining keeps only the fragment mask, and the caller's own
+                // server lookup does not read a domain strategy yet.
+                self.error(
+                    path,
+                    "dialerProxy cannot use a freedom fragment outbound with a domain strategy",
+                );
+                continue;
+            }
             if !matches!(target.settings, OutboundSettings::Freedom)
                 || target.stream.security != StreamSecurity::None
                 || target.stream.transport != StreamTransport::Raw

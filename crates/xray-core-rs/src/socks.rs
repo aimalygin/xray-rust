@@ -13,7 +13,7 @@ use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{AbortHandle, Id as TaskId, JoinSet};
-use xray_config::{CoreConfig, InboundSniffingConfig, SocksInboundSettings};
+use xray_config::{CoreConfig, DomainStrategy, InboundSniffingConfig, SocksInboundSettings};
 use xray_proxy::inbound::{
     encode_socks5_udp_datagram, negotiate_socks5, parse_http_connect_request, parse_socks4_connect,
     parse_socks5_request_message, parse_socks5_udp_datagram, write_socks5_command_not_supported,
@@ -28,7 +28,7 @@ use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
 
 use crate::outbound::{
     absorb_udp_datagrams, open_tcp_stream_with_resolvers_and_dialer, BlackholeOutbound,
-    DnsOutbound, TcpSessionOutbound, UdpSessionOutbound,
+    DnsOutbound, DomainStrategyResolver, TcpSessionOutbound, UdpSessionOutbound,
 };
 use crate::{
     connection::{wait_for_connection_close, ConnectionLease},
@@ -710,9 +710,7 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
     };
 
     let (open_timeout, tunnel_idle, relay_buffer_size) = match outbound.primary() {
-        TcpOutbound::Freedom
-        | TcpOutbound::FreedomHappyEyeballs(_)
-        | TcpOutbound::FreedomFragment(_) => (
+        TcpOutbound::Freedom(_) => (
             policy.handshake,
             policy.conn_idle,
             policy.relay_buffer_size(),
@@ -1348,7 +1346,8 @@ async fn bridge_socks_udp_flow(
     };
 
     match outbound {
-        UdpOutbound::Freedom => {
+        UdpOutbound::Freedom(freedom) => {
+            let domain_strategy = freedom.udp_domain_strategy(&target);
             if context.runtime_logger.is_enabled() {
                 let source = context.client_addr.to_string();
                 crate::debug_log::log_access_accepted(
@@ -1361,6 +1360,7 @@ async fn bridge_socks_udp_flow(
             bridge_socks_udp_freedom_flow(
                 dial_target,
                 client_visible_target,
+                domain_strategy,
                 context,
                 from_client,
                 shutdown,
@@ -1642,6 +1642,7 @@ async fn sniff_socks_udp_target(
 async fn bridge_socks_udp_freedom_flow(
     target: Target,
     client_visible_target: Option<Target>,
+    domain_strategy: DomainStrategy,
     context: SocksUdpFlowContext,
     mut from_client: UdpIngress,
     mut shutdown: watch::Receiver<bool>,
@@ -1650,10 +1651,12 @@ async fn bridge_socks_udp_freedom_flow(
     connection: ConnectionLease,
     mut connection_close: watch::Receiver<bool>,
 ) {
+    let resolver =
+        DomainStrategyResolver::new(context.dns_resolvers.destination.as_ref(), domain_strategy);
     let resolved = tokio::select! {
         biased;
         () = wait_for_connection_close(&mut connection_close) => return,
-        result = resolve_udp_socket_addr(&target, context.dns_resolvers.destination.as_ref()) => result,
+        result = resolve_udp_socket_addr(&target, &resolver) => result,
     };
     let Ok(target_addr) = resolved else {
         return;

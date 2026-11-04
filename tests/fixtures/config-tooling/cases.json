@@ -2975,6 +2975,76 @@
       },
       "accepted": false,
       "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[0].settings.packetSize"
+    },
+    {
+      "name": "freedom-domain-strategy",
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "direct",
+            "protocol": "freedom",
+            "settings": {},
+            "streamSettings": {
+              "sockopt": {
+                "domainStrategy": "UseIPv4"
+              }
+            }
+          }
+        ]
+      },
+      "accepted": true
+    },
+    {
+      "name": "freedom-settings-domainStrategy",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/settings": {
+          "domainStrategy": "ForceIPv6v4"
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "freedom-domainStrategy-unknown",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/streamSettings/sockopt/domainStrategy": "UseIPv5"
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.sockopt.domainStrategy"
+    },
+    {
+      "name": "dialer-proxy-freedom-domainStrategy",
+      "base": "dialer-proxy-261021",
+      "set": {
+        "/outbounds/1/streamSettings": {
+          "sockopt": {
+            "domainStrategy": "ForceIPv4"
+          }
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "http-sockopt-domainStrategy",
+      "base": "dialer-proxy-261021",
+      "set": {
+        "/outbounds/0/streamSettings/sockopt/domainStrategy": "UseIPv4"
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.sockopt.domainStrategy"
     }
   ]
 }

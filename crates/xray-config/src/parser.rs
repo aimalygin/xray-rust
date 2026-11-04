@@ -32,16 +32,17 @@ use crate::{
     CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostTarget, DnsIpFilter,
     DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
     DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
-    DomainHostIndex, DomainMatcher, DomainNameMode, GrpcSettings, HappyEyeballsSettings,
-    HttpUpgradeSettings, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr, Network,
-    ObservatoryConfig, OutboundConfig, OutboundProtocol, OutboundProxySettings, OutboundSettings,
-    PolicyConfig, PolicyLevelConfig, PolicySystemConfig, QuicBbrProfile, QuicCongestion,
-    QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings, RealitySettings, RealityShortId,
-    RegexMatcher, SniffingDestination, SocketOptions, StreamSecurity, StreamSettings,
-    StreamTransport, TargetAddr, TlsSettings, WebSocketSettings, XhttpMode, XhttpPaddingMethod,
-    XhttpPaddingPlacement, XhttpPlacement, XhttpRange, XhttpSettings, XhttpUplinkDataPlacement,
-    XhttpXmuxSettings, DEFAULT_OBSERVATORY_PROBE_INTERVAL, DEFAULT_OBSERVATORY_PROBE_URL,
-    MAX_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
+    DomainHostIndex, DomainMatcher, DomainNameMode, DomainStrategy, GrpcSettings,
+    HappyEyeballsSettings, HttpUpgradeSettings, InboundConfig, InboundProtocol,
+    InboundSniffingConfig, IpCidr, Network, ObservatoryConfig, OutboundConfig, OutboundProtocol,
+    OutboundProxySettings, OutboundSettings, PolicyConfig, PolicyLevelConfig, PolicySystemConfig,
+    QuicBbrProfile, QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings,
+    RealitySettings, RealityShortId, RegexMatcher, SniffingDestination, SocketOptions,
+    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings, WebSocketSettings,
+    XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
+    XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings, DEFAULT_OBSERVATORY_PROBE_INTERVAL,
+    DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVE_EXPIRED_TTL_SECONDS,
+    OBSERVATORY_PROBE_TIMEOUT,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
@@ -1031,7 +1032,33 @@ impl Parser<'_> {
                 OutboundSettings::Http(self.parse_http_outbound_settings(outbound, index)?)
             }
         };
+        let target_strategy = self.domain_strategy_at(
+            outbound,
+            "targetStrategy",
+            &format!("$.outbounds[{index}].targetStrategy"),
+        );
         let mut stream = self.parse_stream_settings(outbound, index)?;
+        let target_strategy = target_strategy?;
+        if protocol == OutboundProtocol::Freedom {
+            self.migrate_freedom_domain_strategy(outbound, index, target_strategy, &mut stream);
+        } else {
+            if target_strategy.has_strategy() {
+                self.error(
+                    format!("$.outbounds[{index}].targetStrategy"),
+                    "targetStrategy is supported only on freedom outbounds",
+                );
+            }
+            if stream
+                .socket_options
+                .as_ref()
+                .is_some_and(|options| options.domain_strategy.has_strategy())
+            {
+                self.error(
+                    format!("$.outbounds[{index}].streamSettings.sockopt.domainStrategy"),
+                    "sockopt.domainStrategy is supported only on freedom outbounds",
+                );
+            }
+        }
         if protocol == OutboundProtocol::Freedom {
             if let Some(raw) = outbound
                 .get("settings")
@@ -1298,6 +1325,91 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(settings, &settings_path, &surface::FREEDOM_SETTINGS);
+    }
+
+    /// Moves a freedom's domain strategy into `sockopt.domainStrategy`, as
+    /// Xray-core v26.10.31 does when it builds the outbound: an outbound
+    /// `targetStrategy` wins, then the deprecated `settings.targetStrategy` or
+    /// `settings.domainStrategy`, and either replaces a `sockopt` value.
+    fn migrate_freedom_domain_strategy(
+        &mut self,
+        outbound: &Value,
+        index: usize,
+        target_strategy: DomainStrategy,
+        stream: &mut StreamSettings,
+    ) {
+        let settings_path = format!("$.outbounds[{index}].settings");
+        let settings = outbound.get("settings").filter(|value| value.is_object());
+        // Go decodes both into strings; `targetStrategy` wins when nonempty,
+        // and the other name is then never looked at.
+        let mut chosen = None;
+        for key in ["targetStrategy", "domainStrategy"] {
+            let path = format!("{settings_path}.{key}");
+            match settings.and_then(|settings| settings.get(key)) {
+                None | Some(Value::Null) => {}
+                Some(Value::String(name)) => {
+                    if chosen.is_none() && !name.is_empty() {
+                        chosen = Some((name.as_str(), path));
+                    }
+                }
+                Some(_) => self.error(path, format!("field `{key}` must be a string")),
+            }
+        }
+        let settings_strategy = match chosen {
+            None => DomainStrategy::AsIs,
+            Some((name, path)) => match DomainStrategy::parse(name) {
+                Some(strategy) => {
+                    if strategy.has_strategy() && !target_strategy.has_strategy() {
+                        // Xray-core v26.10.31 prints an equivalent notice.
+                        self.warning(
+                            &path,
+                            "freedom domainStrategy is deprecated; its value was migrated to `streamSettings.sockopt.domainStrategy`",
+                        );
+                    }
+                    strategy
+                }
+                None => {
+                    self.error(path, format!("unsupported domain strategy `{name}`"));
+                    return;
+                }
+            },
+        };
+        let strategy = if target_strategy.has_strategy() {
+            self.warning(
+                format!("$.outbounds[{index}].targetStrategy"),
+                "freedom does not read the outbound targetStrategy; it was migrated to `streamSettings.sockopt.domainStrategy`",
+            );
+            target_strategy
+        } else {
+            settings_strategy
+        };
+        if strategy.has_strategy() {
+            stream
+                .socket_options
+                .get_or_insert_with(SocketOptions::default)
+                .domain_strategy = strategy;
+        }
+    }
+
+    /// Reads one of Xray-core's domain strategy names. Go decodes the field
+    /// into a string, so JSON null is the empty name, `AsIs`.
+    pub(super) fn domain_strategy_at(
+        &mut self,
+        value: &Value,
+        key: &str,
+        path: &str,
+    ) -> Option<DomainStrategy> {
+        match value.get(key) {
+            None | Some(Value::Null) => Some(DomainStrategy::AsIs),
+            Some(Value::String(name)) => DomainStrategy::parse(name).or_else(|| {
+                self.error(path, format!("unsupported domain strategy `{name}`"));
+                None
+            }),
+            Some(_) => {
+                self.error(path, format!("field `{key}` must be a string"));
+                None
+            }
+        }
     }
 
     fn string_at<'a>(&self, value: &'a Value, key: &str) -> Option<&'a str> {

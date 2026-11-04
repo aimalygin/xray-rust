@@ -1353,6 +1353,110 @@ pub struct HttpUpgradeSettings {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SocketOptions {
     pub happy_eyeballs: Option<HappyEyeballsSettings>,
+    /// `sockopt.domainStrategy`, after freedom's deprecated `domainStrategy`
+    /// and an outbound `targetStrategy` were migrated into it as Xray-core
+    /// does. Only freedom reads it so far.
+    pub domain_strategy: DomainStrategy,
+}
+
+/// Xray-core's `internet.DomainStrategy`: whether a dial resolves a domain
+/// itself, which address families it asks for first and next, and whether a
+/// failed lookup ends the dial.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DomainStrategy {
+    #[default]
+    AsIs,
+    UseIp,
+    UseIpv4,
+    UseIpv6,
+    UseIpv4v6,
+    UseIpv6v4,
+    ForceIp,
+    ForceIpv4,
+    ForceIpv6,
+    ForceIpv4v6,
+    ForceIpv6v4,
+}
+
+/// The address families one lookup asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddressFamilies {
+    Both,
+    Ipv4,
+    Ipv6,
+}
+
+impl DomainStrategy {
+    /// Parses the names Xray-core accepts, ignoring case; `""` is `AsIs`.
+    pub fn parse(name: &str) -> Option<Self> {
+        Some(match name.to_ascii_lowercase().as_str() {
+            "" | "asis" => Self::AsIs,
+            "useip" => Self::UseIp,
+            "useipv4" => Self::UseIpv4,
+            "useipv6" => Self::UseIpv6,
+            "useipv4v6" => Self::UseIpv4v6,
+            "useipv6v4" => Self::UseIpv6v4,
+            "forceip" => Self::ForceIp,
+            "forceipv4" => Self::ForceIpv4,
+            "forceipv6" => Self::ForceIpv6,
+            "forceipv4v6" => Self::ForceIpv4v6,
+            "forceipv6v4" => Self::ForceIpv6v4,
+            _ => return None,
+        })
+    }
+
+    /// Whether a dial resolves a domain itself rather than leaving it as is.
+    pub fn has_strategy(self) -> bool {
+        self != Self::AsIs
+    }
+
+    /// Whether a failed lookup fails the dial instead of falling back to an
+    /// ordinary lookup of both families.
+    pub fn force_ip(self) -> bool {
+        matches!(
+            self,
+            Self::ForceIp
+                | Self::ForceIpv4
+                | Self::ForceIpv6
+                | Self::ForceIpv4v6
+                | Self::ForceIpv6v4
+        )
+    }
+
+    /// The families of the first lookup.
+    pub fn preferred(self) -> AddressFamilies {
+        match self {
+            Self::AsIs | Self::UseIp | Self::ForceIp => AddressFamilies::Both,
+            Self::UseIpv4 | Self::UseIpv4v6 | Self::ForceIpv4 | Self::ForceIpv4v6 => {
+                AddressFamilies::Ipv4
+            }
+            Self::UseIpv6 | Self::UseIpv6v4 | Self::ForceIpv6 | Self::ForceIpv6v4 => {
+                AddressFamilies::Ipv6
+            }
+        }
+    }
+
+    /// The family asked for when the first lookup fails or finds nothing.
+    pub fn fallback(self) -> Option<AddressFamilies> {
+        match self {
+            Self::UseIpv4v6 | Self::ForceIpv4v6 => Some(AddressFamilies::Ipv6),
+            Self::UseIpv6v4 | Self::ForceIpv6v4 => Some(AddressFamilies::Ipv4),
+            _ => None,
+        }
+    }
+
+    /// Xray-core's `GetDynamicStrategy`: a freedom UDP flow whose original
+    /// destination was an IP address prefers that address's family when the
+    /// strategy names none.
+    pub fn for_original_ip(self, original: std::net::IpAddr) -> Self {
+        match (self, original) {
+            (Self::UseIp, std::net::IpAddr::V4(_)) => Self::UseIpv4v6,
+            (Self::UseIp, std::net::IpAddr::V6(_)) => Self::UseIpv6v4,
+            (Self::ForceIp, std::net::IpAddr::V4(_)) => Self::ForceIpv4v6,
+            (Self::ForceIp, std::net::IpAddr::V6(_)) => Self::ForceIpv6v4,
+            (strategy, _) => strategy,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
