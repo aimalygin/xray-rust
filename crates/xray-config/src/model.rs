@@ -614,6 +614,34 @@ pub enum MuxUdp443 {
     Skip,
 }
 
+/// Freedom's own settings. Its domain strategy lives in
+/// [`SocketOptions::domain_strategy`], where Xray-core migrates it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FreedomOutboundSettings {
+    /// `redirect`, without the parts Xray-core ignores.
+    pub redirect: FreedomRedirect,
+    /// `userLevel`: the policy level of freedom's own idle timer.
+    pub user_level: u32,
+}
+
+/// Freedom's `redirect`: the destination address, port, or both that every
+/// connection is sent to instead.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FreedomRedirect {
+    /// Replaces the destination address. Xray-core keeps the destination for
+    /// an empty host, `0.0.0.0` and `::`, which parse to `None`.
+    pub address: Option<TargetAddr>,
+    /// Replaces the destination port; Xray-core keeps it for port 0.
+    pub port: Option<std::num::NonZeroU16>,
+}
+
+impl FreedomRedirect {
+    /// Whether the redirect changes nothing.
+    pub fn is_empty(&self) -> bool {
+        self.address.is_none() && self.port.is_none()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutboundProxySettings {
     pub tag: String,
@@ -637,7 +665,7 @@ pub enum OutboundProtocol {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutboundSettings {
-    Freedom,
+    Freedom(FreedomOutboundSettings),
     Dns(DnsOutboundSettings),
     Vless(VlessOutboundSettings),
     Trojan(TrojanOutboundSettings),
@@ -653,7 +681,7 @@ pub enum OutboundSettings {
 impl OutboundSettings {
     pub fn protocol(&self) -> OutboundProtocol {
         match self {
-            Self::Freedom => OutboundProtocol::Freedom,
+            Self::Freedom(_) => OutboundProtocol::Freedom,
             Self::Dns(_) => OutboundProtocol::Dns,
             Self::Vless(_) => OutboundProtocol::Vless,
             Self::Vmess(_) => OutboundProtocol::Vmess,

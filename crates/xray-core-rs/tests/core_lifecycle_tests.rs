@@ -119,7 +119,7 @@ async fn core_selector_override_is_available_before_and_during_runtime() {
             udp_noise: None,
             socket_options: None,
         },
-        settings: OutboundSettings::Freedom,
+        settings: OutboundSettings::Freedom(Default::default()),
     });
     config.routing.balancers = vec![RoutingBalancer {
         tag: "automatic".to_owned(),

@@ -710,9 +710,13 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
     };
 
     let (open_timeout, tunnel_idle, relay_buffer_size) = match outbound.primary() {
-        TcpOutbound::Freedom(_) => (
+        // Freedom's own timer runs at its level beside the inbound's, so the
+        // shorter idle timeout wins, as in Xray-core.
+        TcpOutbound::Freedom(freedom) => (
             policy.handshake,
-            policy.conn_idle,
+            policy
+                .conn_idle
+                .min(effective_policy_for_level(&config, Some(freedom.level())).conn_idle),
             policy.relay_buffer_size(),
         ),
         TcpOutbound::Vless(vless) => {
@@ -1348,6 +1352,16 @@ async fn bridge_socks_udp_flow(
     match outbound {
         UdpOutbound::Freedom(freedom) => {
             let domain_strategy = freedom.udp_domain_strategy(&target);
+            // Once Xray-core's freedom redirects, it stops attributing replies
+            // to their senders, so they come from the destination the client
+            // addressed.
+            let (dial_target, client_visible_target) = match freedom.redirect(&dial_target) {
+                Some(redirected) => (
+                    redirected,
+                    Some(client_visible_target.unwrap_or_else(|| target.clone())),
+                ),
+                None => (dial_target, client_visible_target),
+            };
             if context.runtime_logger.is_enabled() {
                 let source = context.client_addr.to_string();
                 crate::debug_log::log_access_accepted(

@@ -740,7 +740,7 @@ impl Core {
             if outbound.stream.udp_noise.is_some()
                 && matches!(
                     outbound.settings,
-                    xray_config::OutboundSettings::Freedom
+                    xray_config::OutboundSettings::Freedom(_)
                         | xray_config::OutboundSettings::Blackhole(_)
                         | xray_config::OutboundSettings::Dns(_)
                         | xray_config::OutboundSettings::Wireguard(_)
@@ -750,10 +750,10 @@ impl Core {
             }
             if let Some(fragment) = &outbound.stream.tcp_fragment {
                 if outbound.stream.network != xray_config::Network::Tcp
-                    || matches!(outbound.settings, xray_config::OutboundSettings::Freedom)
+                    || matches!(outbound.settings, xray_config::OutboundSettings::Freedom(_))
                         && (outbound.stream.security != xray_config::StreamSecurity::None
                             || outbound.stream.transport != xray_config::StreamTransport::Raw)
-                    || !matches!(outbound.settings, xray_config::OutboundSettings::Freedom)
+                    || !matches!(outbound.settings, xray_config::OutboundSettings::Freedom(_))
                         && outbound.stream.security == xray_config::StreamSecurity::None
                     || matches!(&outbound.stream.transport, xray_config::StreamTransport::Xhttp(xhttp) if xhttp.download.is_some() || matches!(&outbound.stream.security, xray_config::StreamSecurity::Tls(tls) if tls.alpn == ["h3"]))
                     || matches!(

@@ -164,7 +164,7 @@ fn normalized_model_can_represent_freedom_outbound() {
             udp_noise: None,
             socket_options: None,
         },
-        settings: OutboundSettings::Freedom,
+        settings: OutboundSettings::Freedom(Default::default()),
     };
 
     assert_eq!(outbound.settings.protocol(), OutboundProtocol::Freedom);

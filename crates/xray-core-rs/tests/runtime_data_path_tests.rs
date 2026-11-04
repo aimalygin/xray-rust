@@ -78,6 +78,8 @@ mod tun_admission;
 mod blackhole;
 #[path = "runtime_data_path_tests/freedom_domain_strategy.rs"]
 mod freedom_domain_strategy;
+#[path = "runtime_data_path_tests/freedom_settings.rs"]
+mod freedom_settings;
 #[path = "runtime_data_path_tests/socks_inbound_udp.rs"]
 mod socks_inbound_udp;
 #[path = "runtime_data_path_tests/socks_outbound.rs"]
@@ -163,7 +165,7 @@ fn freedom_outbound() -> OutboundConfig {
             udp_noise: None,
             socket_options: None,
         },
-        settings: OutboundSettings::Freedom,
+        settings: OutboundSettings::Freedom(Default::default()),
     }
 }
 
@@ -10092,6 +10094,11 @@ impl TunTcpClient {
 
     fn is_open(&mut self) -> bool {
         self.sockets.get::<smol_tcp::Socket>(self.tcp).is_open()
+    }
+
+    /// False once the remote end has closed its side.
+    fn may_recv(&mut self) -> bool {
+        self.sockets.get::<smol_tcp::Socket>(self.tcp).may_recv()
     }
 
     fn send_payload(&mut self, payload: &[u8]) {

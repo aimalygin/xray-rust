@@ -239,9 +239,13 @@ async fn handle_http_connection(
     };
 
     let (open_timeout, tunnel_idle, relay_buffer_size) = match outbound.primary() {
-        TcpOutbound::Freedom(_) => (
+        // Freedom's own timer runs at its level beside the inbound's, so the
+        // shorter idle timeout wins, as in Xray-core.
+        TcpOutbound::Freedom(freedom) => (
             policy.handshake,
-            policy.conn_idle,
+            policy
+                .conn_idle
+                .min(effective_policy_for_level(&config, Some(freedom.level())).conn_idle),
             policy.relay_buffer_size(),
         ),
         TcpOutbound::Vless(outbound) => {

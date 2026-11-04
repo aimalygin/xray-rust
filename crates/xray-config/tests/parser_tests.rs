@@ -108,7 +108,7 @@ fn parses_mobile_vless_reality_vision_split_routing_fixture() {
     assert_eq!(parsed.config.routing.rules.len(), 2);
     assert!(matches!(
         parsed.config.outbounds[1].settings,
-        OutboundSettings::Freedom
+        OutboundSettings::Freedom(_)
     ));
     assert!(
         parsed.config.routing.rules[0].matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))))
@@ -469,7 +469,7 @@ fn parses_freedom_outbound_as_direct_tcp_default() {
     assert_eq!(parsed.config.outbounds[0].tag.as_deref(), Some("direct"));
     assert!(matches!(
         parsed.config.outbounds[0].settings,
-        OutboundSettings::Freedom
+        OutboundSettings::Freedom(_)
     ));
 }
 
@@ -1177,7 +1177,7 @@ fn rejects_dns_fake_ip_without_ipv4_pool_when_enabled() {
 }
 
 #[test]
-fn rejects_freedom_redirect_with_path() {
+fn freedom_redirect_parses_and_a_malformed_one_reports_its_path() {
     let raw = r#"{
         "inbounds": [],
         "outbounds": [
@@ -1189,7 +1189,16 @@ fn rejects_freedom_redirect_with_path() {
         ]
     }"#;
 
-    assert_parse_error_path(raw, "$.outbounds[0].settings.redirect");
+    let parsed = parse_xray_json(raw).expect("redirect should parse");
+    let OutboundSettings::Freedom(settings) = &parsed.config.outbounds[0].settings else {
+        panic!("freedom parses to freedom");
+    };
+    assert_eq!(settings.redirect.port.map(|port| port.get()), Some(80));
+    // A host without a port is what Go's SplitHostPort rejects.
+    assert_parse_error_path(
+        &raw.replace("127.0.0.1:80", "127.0.0.1"),
+        "$.outbounds[0].settings.redirect",
+    );
 }
 
 #[test]

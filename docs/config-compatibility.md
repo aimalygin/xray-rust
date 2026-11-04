@@ -517,8 +517,9 @@ parsed, so a missing piece is never read as part of a name.
 
 `freedom` (alias `direct`), `vless`, `dns`, `blackhole` (alias `block`), `socks`,
 and `http` are supported. DNS
-outbound settings are described below, and [blackhole](#blackhole-outbound),
-[SOCKS](#socks-outbound) and [HTTP](#http-outbound) after the TLS notes. VLESS accepts one `vnext` server with one or more UUID users, but the
+outbound settings are described below, and [freedom](#freedom-outbound),
+[blackhole](#blackhole-outbound), [SOCKS](#socks-outbound) and
+[HTTP](#http-outbound) after the TLS notes. VLESS accepts one `vnext` server with one or more UUID users, but the
 runtime currently selects the first user. With `encryption: "none"`, optional
 `level` and these flow values are accepted:
 
@@ -643,6 +644,47 @@ custom certificate stores, or removed chain/SPKI pin fields. They are rejected
 with a path-aware error instead of being ignored. The programmatic
 `allow_insecure` model field exists only for hermetic local tests and cannot be
 produced by canonical JSON parsing.
+
+### Freedom outbound
+
+`freedom` (alias `direct`) dials destinations itself. Its `settings` take
+Xray-core v26.10.31's `redirect` and `userLevel`, the deprecated
+`domainStrategy` and `targetStrategy` (see the
+[domain strategy socket option](#domain-strategy-socket-option)), and the
+legacy `fragment` (see [TLS ClientHello
+fragmentation](#v08-tls-clienthello-fragmentation)). `noises`, `finalRules`,
+`proxyProtocol` and `ipsBlocked` are still rejected.
+
+`redirect` sends every connection and UDP flow to another destination. It is
+`host:port`, read as Xray-core reads it with Go's `net.SplitHostPort`: an IPv6
+host goes in brackets, and the port is decimal up to 65535.
+
+- An empty host, `0.0.0.0` or `::` keeps the destination's address, and port 0
+  keeps its port. So `"127.0.0.1:0"` changes only the address, and `":53"`
+  only the port.
+- A domain host resolves like any other destination, with freedom's domain
+  strategy.
+- Replies of a redirected UDP flow come from the destination the client
+  addressed. Xray-core does the same, since its freedom stops attributing
+  replies to their senders once it redirects.
+- When freedom carries another outbound through `dialerProxy`, the redirect
+  rewrites that outbound's server address as it rewrites any destination. If
+  it replaces the address, the original server name is never resolved.
+
+`userLevel` selects the policy level of freedom's own idle timer. As in
+Xray-core, that timer runs beside the inbound's, so a connection closes after
+the shorter of the two `connIdle` values. Without `userLevel`, freedom uses
+level 0. The time allowed to open the connection still comes from the inbound's
+`handshake`, and the relay buffer from its `bufferSize`. UDP flows keep their
+fixed 60-second idle timeout.
+
+Differences from Xray-core:
+
+- Queries that the built-in DNS client or the TUN DNS proxy route to a freedom
+  outbound go to their DNS server even when that outbound has a `redirect`.
+  Xray-core's DNS client dispatches them through freedom, which redirects them.
+- A host that trims to nothing, such as `" :53"`, is rejected. Xray-core
+  accepts it as an empty domain that never resolves.
 
 ### Blackhole outbound
 

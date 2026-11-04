@@ -10,6 +10,17 @@ long-term supported release series.
 
 ## Unreleased
 
+- Freedom: `redirect` and `userLevel`, which used to fail parsing.
+  - `redirect` sends every connection and UDP flow to another address, port or
+    both, read with Xray-core's rules: an empty host, `0.0.0.0` or `::` keeps
+    the address, and port 0 keeps the port.
+  - Replies of a redirected UDP flow come from the destination the client
+    addressed, and a freedom `dialerProxy` hop redirects the next server.
+  - `userLevel` gives freedom its own idle timer at that level, beside the
+    inbound's, so the shorter `connIdle` wins.
+  - As in Xray-core, freedom without `userLevel` now runs at level 0. An
+    inbound level with a longer `connIdle` therefore no longer keeps freedom
+    connections open longer.
 - Freedom: `streamSettings.sockopt.domainStrategy`, with Xray-core's eleven
   strategies, together with the deprecated spellings that Xray-core migrates
   into it: freedom's `settings.domainStrategy` and `settings.targetStrategy`,
