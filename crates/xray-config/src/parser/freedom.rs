@@ -2,9 +2,7 @@
 //! as Xray-core v26.10.31 reads them.
 
 use super::*;
-use crate::{
-    FreedomBlockDelay, FreedomFinalRule, FreedomRuleAction, ProxyProtocolVersion, RoutingPortRange,
-};
+use crate::{FreedomBlockDelay, FreedomFinalRule, FreedomRuleAction, ProxyProtocolVersion};
 
 impl Parser<'_> {
     /// `proxyProtocol` is a `uint32`; Xray-core ignores every value but 1
@@ -94,18 +92,12 @@ impl Parser<'_> {
                 None
             }
         };
-        let networks = self.final_rule_networks(rule.get("network"), &format!("{path}.network"));
-        let port_path = format!("{path}.port");
+        let networks = self.network_list(rule.get("network"), &format!("{path}.network"));
+        // A final rule checks ports only once its list has a range, so `0`
+        // and `""` apply to every port.
         let port_ranges = self
-            .parse_u16_selector_ranges(rule.get("port"), &port_path, U16SelectorKind::RoutingPort)
-            .and_then(|pairs| {
-                pairs
-                    .into_iter()
-                    .map(|(start, end)| RoutingPortRange::new(start, end))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|error| self.error(&port_path, error.to_string()))
-                    .ok()
-            });
+            .port_list(rule.get("port"), &format!("{path}.port"))
+            .map(|list| list.and_then(|list| list.has_ranges.then_some(list.ranges)));
         let ip_matchers = self.final_rule_ips(rule.get("ip"), &format!("{path}.ip"));
         let block_delay = self.block_delay(rule.get("blockDelay"), &format!("{path}.blockDelay"));
         Some(FreedomFinalRule {
@@ -117,87 +109,20 @@ impl Parser<'_> {
         })
     }
 
-    /// Xray-core's `NetworkList`: a comma-separated string or an array of
-    /// strings, absent or empty for every network. Names other than `tcp` and
-    /// `udp` are kept as networks nothing travels over.
-    fn final_rule_networks(
-        &mut self,
-        raw: Option<&Value>,
-        path: &str,
-    ) -> Option<Option<Vec<Network>>> {
-        let names: Vec<&str> = match raw {
-            None | Some(Value::Null) => return Some(None),
-            Some(Value::String(names)) => names.split(',').collect(),
-            Some(Value::Array(items)) => {
-                let mut names = Vec::with_capacity(items.len());
-                for item in items {
-                    match item {
-                        Value::String(name) => names.push(name.as_str()),
-                        // Go decodes a null element as an empty name.
-                        Value::Null => names.push(""),
-                        _ => {
-                            self.error(
-                                path,
-                                "field `network` must be a string or an array of strings",
-                            );
-                            return None;
-                        }
-                    }
-                }
-                names
-            }
-            Some(_) => {
-                self.error(
-                    path,
-                    "field `network` must be a string or an array of strings",
-                );
-                return None;
-            }
-        };
-        if names.is_empty() {
-            return Some(None);
-        }
-        let mut networks = Vec::with_capacity(2);
-        for name in names {
-            let network = if name.eq_ignore_ascii_case("tcp") {
-                Network::Tcp
-            } else if name.eq_ignore_ascii_case("udp") {
-                Network::Udp
-            } else {
-                continue;
-            };
-            if !networks.contains(&network) {
-                networks.push(network);
-            }
-        }
-        Some(Some(networks))
-    }
-
     /// Xray-core's `StringList` of routing IP rules: a comma-separated
     /// string, split without trimming, or an array of strings. An empty list
     /// sets no address condition.
     fn final_rule_ips(&mut self, raw: Option<&Value>, path: &str) -> Option<Option<IpMatcherSet>> {
-        let entries: Vec<(Option<&str>, String)> = match raw {
-            None | Some(Value::Null) => return Some(None),
-            Some(Value::String(list)) => list
-                .split(',')
-                .enumerate()
-                .map(|(index, entry)| (Some(entry), format!("{path}[{index}]")))
-                .collect(),
-            Some(Value::Array(items)) => items
-                .iter()
-                .enumerate()
-                .map(|(index, item)| (item.as_str(), format!("{path}[{index}]")))
-                .collect(),
-            Some(_) => {
-                self.error(path, "field `ip` must be a string or an array of strings");
-                return None;
-            }
-        };
-        if entries.is_empty() {
-            return Some(None);
+        match self.string_list(raw, path)? {
+            Some(entries) if !entries.is_empty() => self
+                .routing_ip_matcher_set(
+                    entries
+                        .into_iter()
+                        .map(|entry| (Some(entry.text), entry.path)),
+                )
+                .map(Some),
+            _ => Some(None),
         }
-        self.routing_ip_matcher_set(entries).map(Some)
     }
 
     /// Xray-core's `Int32Range` of seconds: an integer or a `min-max` string,

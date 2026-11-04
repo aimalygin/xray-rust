@@ -157,7 +157,7 @@ objects! {
         "AsIs, IPIfNonMatch and IPOnDemand. Ordered field rules and bounded balancers only."),
     ROUTING_RULE: ("$.routing.rules[]",
         ["type", "inboundTag", "network", "port", "domain", "domains", "ip", "localOS", "outboundTag", "balancerTag", "ruleTag"],
-        "Supports field rules only; domains is an alias of domain. Exactly one outboundTag or balancerTag target. Domain/geodata, compact port selectors and aggregate budgets are validated. localOS (array or comma-separated string) matches the running platform as Go's runtime.GOOS names it: darwin on macOS, ios on Apple mobile platforms, android, linux, windows."),
+        "Read as Xray-core v26.10.31 reads it. type is not read. A nonempty outboundTag wins over balancerTag. inboundTag, domain, domains, ip and localOS take an array or a comma-separated string; domains replaces domain when both are given. network names other than tcp and udp match nothing, and any port given sets a condition, so 0, \"\" or a reversed range matches no port. A rule with no condition is refused. Domain/geodata, port selectors and aggregate budgets are validated. localOS matches the running platform as Go's runtime.GOOS names it: darwin on macOS, ios on Apple mobile platforms, android, linux, windows."),
     SNIFFING: ("$.inbounds[].sniffing",
         ["enabled", "destOverride", "metadataOnly", "routeOnly", "domainsExcluded", "excludedDomains"],
         "domainsExcluded rejects nonempty arrays; excludedDomains is ignored after string-array validation. destOverride supports http, tls and quic when enabled."),

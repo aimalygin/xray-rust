@@ -188,7 +188,7 @@ fn final_rules_read_as_xray_reads_them() {
     let rule = final_rule(json!({"action": "Block"}));
     assert_eq!(rule.action, FreedomRuleAction::Block);
     assert_eq!(rule.networks, None);
-    assert!(rule.port_ranges.is_empty());
+    assert_eq!(rule.port_ranges, None);
     assert_eq!(rule.ip_matchers, None);
     assert_eq!(rule.block_delay, None);
     assert_eq!(
@@ -213,19 +213,30 @@ fn final_rules_read_as_xray_reads_them() {
     assert_eq!(networks(json!([])), None);
     assert_eq!(networks(Value::Null), None);
 
-    // PortList, as in routing rules: a numeric zero is an empty list.
+    // PortList, as in routing rules. A final rule checks ports only once the
+    // list has a range, so a numeric zero applies to every port, while a
+    // reversed range, which Xray-core keeps, applies to none.
     let ports = |raw: Value| final_rule(json!({"action": "block", "port": raw})).port_ranges;
     assert_eq!(
         ports(json!("53, 443,1000-2000")),
-        vec![
+        Some(vec![
             RoutingPortRange::single(53),
             RoutingPortRange::single(443),
             RoutingPortRange::new(1000, 2000).unwrap(),
-        ]
+        ])
     );
-    assert_eq!(ports(json!(8443)), vec![RoutingPortRange::single(8443)]);
-    assert!(ports(json!(0)).is_empty());
-    assert_eq!(ports(json!("0")), vec![RoutingPortRange::single(0)]);
+    assert_eq!(
+        ports(json!(8443)),
+        Some(vec![RoutingPortRange::single(8443)])
+    );
+    assert_eq!(ports(json!(0)), None);
+    assert_eq!(ports(json!("")), None);
+    assert_eq!(ports(json!("0")), Some(vec![RoutingPortRange::single(0)]));
+    assert_eq!(ports(json!("2-1")), Some(vec![]));
+    assert_eq!(
+        ports(json!("2-1,53")),
+        Some(vec![RoutingPortRange::single(53)])
+    );
 
     // StringList of routing IP rules; an empty list sets no condition.
     let ips = |raw: Value| final_rule(json!({"action": "block", "ip": raw})).ip_matchers;
@@ -256,7 +267,10 @@ fn final_rules_reject_what_xray_rejects() {
         (json!({"action": "deny"}), "action"),
         (json!({"action": 1}), "action"),
         (json!({"action": "block", "network": 5}), "network"),
-        (json!({"action": "block", "network": ["tcp", 5]}), "network"),
+        (
+            json!({"action": "block", "network": ["tcp", 5]}),
+            "network[1]",
+        ),
         (json!({"action": "block", "port": "x"}), "port[0]"),
         (json!({"action": "block", "port": 65_536}), "port"),
         (json!({"action": "block", "port": -1}), "port"),
@@ -356,7 +370,7 @@ fn an_empty_condition_matches_nothing_and_an_absent_one_everything() {
     let any = FreedomFinalRule {
         action: FreedomRuleAction::Block,
         networks: None,
-        port_ranges: Vec::new(),
+        port_ranges: None,
         ip_matchers: None,
         block_delay: None,
     };
@@ -376,7 +390,7 @@ fn an_empty_condition_matches_nothing_and_an_absent_one_everything() {
     };
     assert!(!no_address.applies(Network::Tcp, ip, 1));
     let port = FreedomFinalRule {
-        port_ranges: vec![RoutingPortRange::new(50, 60).unwrap()],
+        port_ranges: Some(vec![RoutingPortRange::new(50, 60).unwrap()]),
         ..any.clone()
     };
     assert!(port.applies(Network::Tcp, ip, 55));

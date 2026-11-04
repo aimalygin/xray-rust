@@ -1,11 +1,10 @@
 //! Routing configuration, selectors, and their bounded parser budgets.
 
-use super::{parse_xray_duration, Parser, U16SelectorKind, OBSERVATORY_PROBE_TIMEOUT};
+use super::{insert_domain_matchers, parse_xray_duration, Parser, OBSERVATORY_PROBE_TIMEOUT};
 use crate::surface;
 use crate::{
-    Network, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
-    RoutingLeastLoadCost, RoutingLeastLoadSettings, RoutingPortRange, RoutingRule,
-    RoutingRuleTarget,
+    DomainNameMode, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
+    RoutingLeastLoadCost, RoutingLeastLoadSettings, RoutingRule, RoutingRuleTarget,
 };
 use serde_json::Value;
 use std::collections::HashSet;
@@ -512,50 +511,31 @@ impl Parser<'_> {
 
         self.reject_unknown_fields(rule, &rule_path, &surface::ROUTING_RULE);
 
-        let type_path = format!("{rule_path}.type");
-        let Some(rule_type) = self.optional_string_at(rule, "type", type_path.clone()) else {
-            if rule.get("type").is_none() {
-                self.error(type_path, "missing routing rule type");
-            }
-            return None;
-        };
-        if rule_type != "field" {
+        // Xray-core v26.10.31 does not read `type`, so any value is ignored.
+        if !matches!(
+            rule.get("ruleTag"),
+            None | Some(Value::Null | Value::String(_))
+        ) {
             self.error(
-                type_path,
-                format!("unsupported routing rule type `{rule_type}`"),
+                format!("{rule_path}.ruleTag"),
+                "field `ruleTag` must be a string",
             );
             return None;
         }
-
-        let outbound_tag = rule.get("outboundTag").filter(|value| !value.is_null());
-        let balancer_tag = rule.get("balancerTag").filter(|value| !value.is_null());
-        if outbound_tag.is_some() && balancer_tag.is_some() {
-            self.error(
-                format!("{rule_path}.balancerTag"),
-                "routing rule cannot combine outboundTag and balancerTag",
-            );
-            return None;
-        }
-        let target = if outbound_tag.is_some() {
-            let path = format!("{rule_path}.outboundTag");
-            let tag = self.optional_string_at(rule, "outboundTag", path.clone())?;
-            if tag.is_empty() {
-                self.error(path, "routing rule outboundTag cannot be empty");
+        let outbound_tag = self.routing_tag(rule, "outboundTag", &rule_path)?;
+        let balancer_tag = self.routing_tag(rule, "balancerTag", &rule_path)?;
+        // As in Xray-core, a nonempty outboundTag wins over balancerTag.
+        let target = if !outbound_tag.is_empty() {
+            RoutingRuleTarget::Outbound(outbound_tag.to_owned())
+        } else if !balancer_tag.is_empty() {
+            if !balancer_tags.contains(balancer_tag) {
+                self.error(
+                    format!("{rule_path}.balancerTag"),
+                    format!("routing balancer {balancer_tag:?} is not configured"),
+                );
                 return None;
             }
-            RoutingRuleTarget::Outbound(tag.to_owned())
-        } else if balancer_tag.is_some() {
-            let path = format!("{rule_path}.balancerTag");
-            let tag = self.optional_string_at(rule, "balancerTag", path.clone())?;
-            if tag.is_empty() {
-                self.error(path, "routing rule balancerTag cannot be empty");
-                return None;
-            }
-            if !balancer_tags.contains(tag) {
-                self.error(path, format!("routing balancer {tag:?} is not configured"));
-                return None;
-            }
-            RoutingRuleTarget::Balancer(tag.to_owned())
+            RoutingRuleTarget::Balancer(balancer_tag.to_owned())
         } else {
             self.error(
                 format!("{rule_path}.outboundTag"),
@@ -564,15 +544,32 @@ impl Parser<'_> {
             return None;
         };
 
-        let inbound_tags =
-            self.optional_string_array_at(rule, "inboundTag", format!("{rule_path}.inboundTag"))?;
-        let networks = self.parse_routing_networks(rule, &rule_path)?;
-        let port_ranges = self.parse_routing_port_ranges(rule, &rule_path)?;
-        let domain_matchers = self.parse_routing_rule_domain_matchers(rule, &rule_path)?;
-        let ip_matchers = self.parse_ip_matchers(rule, "ip", format!("{rule_path}.ip"))?;
+        let inbound_tags = self
+            .string_list(rule.get("inboundTag"), &format!("{rule_path}.inboundTag"))?
+            .unwrap_or_default()
+            .into_iter()
+            .map(|entry| entry.text.to_owned())
+            .collect();
+        let networks = self.network_list(rule.get("network"), &format!("{rule_path}.network"))?;
+        // Unlike a final rule, a routing rule checks ports for any `port`
+        // given, so `0` and `""` match no port.
+        let port_ranges = self
+            .port_list(rule.get("port"), &format!("{rule_path}.port"))?
+            .map(|list| list.ranges);
+        let domain_matchers = self.routing_rule_domains(rule, &rule_path)?;
+        let ip_matchers = match self.string_list(rule.get("ip"), &format!("{rule_path}.ip"))? {
+            Some(entries) if !entries.is_empty() => Some(
+                self.routing_ip_matcher_set(
+                    entries
+                        .into_iter()
+                        .map(|entry| (Some(entry.text), entry.path)),
+                )?,
+            ),
+            _ => None,
+        };
         let local_os = self.parse_routing_local_os(rule, &rule_path)?;
 
-        Some(RoutingRule {
+        let rule = RoutingRule {
             inbound_tags,
             networks,
             port_ranges,
@@ -580,7 +577,77 @@ impl Parser<'_> {
             ip_matchers,
             local_os,
             target,
-        })
+        };
+        if !rule.has_condition() {
+            self.error(rule_path, "routing rule has no effective fields");
+            return None;
+        }
+        Some(rule)
+    }
+
+    /// `outboundTag` or `balancerTag`: a string, or empty when absent or
+    /// `null`.
+    fn routing_tag<'v>(&mut self, rule: &'v Value, key: &str, rule_path: &str) -> Option<&'v str> {
+        match rule.get(key) {
+            None | Some(Value::Null) => Some(""),
+            Some(Value::String(tag)) => Some(tag),
+            Some(_) => {
+                self.error(
+                    format!("{rule_path}.{key}"),
+                    format!("field `{key}` must be a string"),
+                );
+                None
+            }
+        }
+    }
+
+    /// `domain` and `domains`, each a `StringList` of domain rules. As in
+    /// Xray-core, `domains` replaces `domain` when both are given, though
+    /// both must parse.
+    fn routing_rule_domains(
+        &mut self,
+        rule: &Value,
+        rule_path: &str,
+    ) -> Option<Option<DomainMatcherSet>> {
+        let domain =
+            self.routing_domain_list(rule.get("domain"), &format!("{rule_path}.domain"))?;
+        let domains =
+            self.routing_domain_list(rule.get("domains"), &format!("{rule_path}.domains"))?;
+        Some(
+            if rule.get("domains").is_some_and(|value| !value.is_null()) {
+                domains
+            } else {
+                domain
+            },
+        )
+    }
+
+    fn routing_domain_list(
+        &mut self,
+        raw: Option<&Value>,
+        path: &str,
+    ) -> Option<Option<DomainMatcherSet>> {
+        let Some(entries) = self.string_list(raw, path)? else {
+            return Some(None);
+        };
+        if entries.is_empty() {
+            return Some(None);
+        }
+        let mut matchers = DomainMatcherSet::builder();
+        for entry in entries {
+            let remaining = self.matcher_budget.remaining_domain_matchers();
+            if remaining == 0 {
+                self.domain_matcher_budget_error(&entry.path);
+                return None;
+            }
+            let parsed = self.routing_domain_rule(entry.text, &entry.path, remaining)?;
+            if !self.matcher_budget.consume_domain_matchers(parsed.len()) {
+                self.domain_matcher_budget_error(&entry.path);
+                return None;
+            }
+            insert_domain_matchers(&mut matchers, &parsed, DomainNameMode::Routing);
+        }
+        Some(Some(self.build_domain_matcher_set(matchers, path)?))
     }
 
     /// Xray's `localOS` is a Go `StringList`: an array of strings, or one
@@ -595,9 +662,11 @@ impl Parser<'_> {
             Some(Value::Array(names)) => names
                 .iter()
                 .enumerate()
-                .map(|(index, name)| match name.as_str() {
-                    Some(name) => Some(name.to_owned()),
-                    None => {
+                .map(|(index, name)| match name {
+                    Value::String(name) => Some(name.to_owned()),
+                    // Go reads `null` as an empty name.
+                    Value::Null => Some(String::new()),
+                    _ => {
                         self.error(format!("{path}[{index}]"), "localOS entry must be a string");
                         None
                     }
@@ -611,91 +680,5 @@ impl Parser<'_> {
                 None
             }
         }
-    }
-
-    fn parse_routing_networks(&mut self, rule: &Value, rule_path: &str) -> Option<Vec<Network>> {
-        let path = format!("{rule_path}.network");
-        let mut networks = Vec::new();
-        match rule.get("network") {
-            None | Some(Value::Null) => return Some(networks),
-            Some(Value::String(values)) => {
-                for (index, value) in values.split(',').enumerate() {
-                    self.push_routing_network(value, &format!("{path}[{index}]"), &mut networks)?;
-                }
-            }
-            Some(Value::Array(values)) => {
-                networks.reserve(values.len().min(2));
-                for (index, value) in values.iter().enumerate() {
-                    let item_path = format!("{path}[{index}]");
-                    let Some(value) = value.as_str() else {
-                        self.error(item_path, "routing network must be a string");
-                        return None;
-                    };
-                    self.push_routing_network(value, &item_path, &mut networks)?;
-                }
-            }
-            Some(_) => {
-                self.error(path, "routing network must be a string, array, or null");
-                return None;
-            }
-        }
-        Some(networks)
-    }
-
-    fn push_routing_network(
-        &mut self,
-        raw: &str,
-        path: &str,
-        networks: &mut Vec<Network>,
-    ) -> Option<()> {
-        let network = if raw.eq_ignore_ascii_case("tcp") {
-            Network::Tcp
-        } else if raw.eq_ignore_ascii_case("udp") {
-            Network::Udp
-        } else {
-            self.error(path, format!("unsupported routing network `{raw}`"));
-            return None;
-        };
-        if !networks.contains(&network) {
-            networks.push(network);
-        }
-        Some(())
-    }
-
-    fn parse_routing_port_ranges(
-        &mut self,
-        rule: &Value,
-        rule_path: &str,
-    ) -> Option<Vec<RoutingPortRange>> {
-        let path = format!("{rule_path}.port");
-        let pairs =
-            self.parse_u16_selector_ranges(rule.get("port"), &path, U16SelectorKind::RoutingPort)?;
-        let mut ranges = Vec::with_capacity(pairs.len());
-        for (start, end) in pairs {
-            match RoutingPortRange::new(start, end) {
-                Ok(range) => ranges.push(range),
-                Err(error) => {
-                    self.error(&path, error.to_string());
-                    return None;
-                }
-            }
-        }
-        Some(ranges)
-    }
-
-    fn parse_routing_rule_domain_matchers(
-        &mut self,
-        rule: &Value,
-        rule_path: &str,
-    ) -> Option<DomainMatcherSet> {
-        let mut matchers = DomainMatcherSet::builder();
-        self.parse_domain_matchers(rule, "domain", format!("{rule_path}.domain"), &mut matchers)?;
-        self.parse_domain_matchers(
-            rule,
-            "domains",
-            format!("{rule_path}.domains"),
-            &mut matchers,
-        )?;
-        self.build_domain_matcher_set(matchers, &format!("{rule_path}.domain"))
     }
 }

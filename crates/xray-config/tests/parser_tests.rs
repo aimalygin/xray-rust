@@ -1248,8 +1248,8 @@ fn parses_field_routing_rule_with_inbound_tag() {
         parsed.config.routing.rules[0].inbound_tags,
         vec!["socks-in".to_owned()]
     );
-    assert!(parsed.config.routing.rules[0].domain_matchers.is_empty());
-    assert!(parsed.config.routing.rules[0].ip_matchers.is_empty());
+    assert!(parsed.config.routing.rules[0].domain_matchers.is_none());
+    assert!(parsed.config.routing.rules[0].ip_matchers.is_none());
     assert_eq!(
         parsed.config.routing.rules[0].target,
         RoutingRuleTarget::Outbound("proxy".to_owned())
@@ -1270,8 +1270,8 @@ fn parses_xray_routing_network_and_port_selectors() {
     let parsed = parse_xray_json(&raw).expect("network and port routing should parse");
     let rule = &parsed.config.routing.rules[0];
 
-    assert_eq!(rule.networks, vec![Network::Udp, Network::Tcp]);
-    assert_eq!(rule.port_ranges.len(), 3);
+    assert_eq!(rule.networks, Some(vec![Network::Udp, Network::Tcp]));
+    assert_eq!(rule.port_ranges.as_ref().map(Vec::len), Some(3));
     assert!(rule.matches_target(None, None, None, Some(Network::Udp), Some(53)));
     assert!(rule.matches_target(None, None, None, Some(Network::Tcp), Some(8_001)));
     assert!(!rule.matches_target(None, None, None, Some(Network::Udp), Some(443)));
@@ -1292,25 +1292,22 @@ fn parses_routing_network_array_and_numeric_port() {
     let parsed = parse_xray_json(&raw).expect("routing selectors should parse");
     let rule = &parsed.config.routing.rules[0];
 
-    assert_eq!(rule.networks, vec![Network::Udp]);
-    assert!(rule.port_ranges[0].contains(53));
+    assert_eq!(rule.networks, Some(vec![Network::Udp]));
+    assert!(rule.port_ranges.as_ref().unwrap()[0].contains(53));
 }
 
 #[test]
 fn rejects_invalid_routing_network_and_port_selectors_with_paths() {
     for (fields, path) in [
         (
-            r#""network": "unix", "outboundTag": "proxy""#,
-            "$.routing.rules[0].network[0]",
-        ),
-        (
             r#""network": [42], "outboundTag": "proxy""#,
             "$.routing.rules[0].network[0]",
         ),
         (
-            r#""port": "54-53", "outboundTag": "proxy""#,
+            r#""port": "54-x", "outboundTag": "proxy""#,
             "$.routing.rules[0].port[0]",
         ),
+        // Deliberate: Xray-core truncates such a port to 16 bits.
         (
             r#""port": 65536, "outboundTag": "proxy""#,
             "$.routing.rules[0].port",
@@ -1391,7 +1388,8 @@ fn parses_field_routing_rule_with_plain_keyword_domain_and_domains_alias() {
     let parsed = parse_xray_json(&raw).expect("config should parse");
 
     assert_eq!(parsed.config.routing.rules.len(), 1);
-    assert!(parsed.config.routing.rules[0].matches_domain(Some("cdn-example.test")));
+    // As in Xray-core, `domains` replaces `domain` when both are given.
+    assert!(!parsed.config.routing.rules[0].matches_domain(Some("cdn-example.test")));
     assert!(parsed.config.routing.rules[0].matches_domain(Some("service-api.test")));
     assert!(parsed.config.routing.rules[0].matches_domain(Some("EXACT.test")));
     assert!(!parsed.config.routing.rules[0].matches_domain(Some("service.test")));
@@ -1491,6 +1489,41 @@ fn parses_field_routing_inverse_ip_matchers() {
     );
     assert!(!parsed.config.routing.rules[0]
         .matches_ip(Some(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))));
+}
+
+#[test]
+fn a_geosite_selection_without_domains_matches_nothing() {
+    let asset_dir = unique_temp_dir("geosite-empty-selection");
+    write_geosite_dat(
+        &asset_dir,
+        "geosite.dat",
+        &[TestGeoSite {
+            code: "TEST".to_owned(),
+            domain: vec![site_domain(2, "example.com", &[])],
+        }],
+    );
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "domain": ["geosite:test@missing"],
+          "outboundTag": "proxy"
+        }, {
+          "domain": ["ext-site:geosite.dat:test"],
+          "outboundTag": "proxy"
+        }]"#,
+    );
+
+    let parsed =
+        parse_xray_json_with_geodata_dirs(&raw, &[asset_dir]).expect("config should parse");
+
+    // Xray-core keeps the condition, so the rule matches no domain rather
+    // than every one.
+    let empty = &parsed.config.routing.rules[0];
+    assert!(empty.domain_matchers.is_some());
+    assert!(!empty.matches_domain(Some("example.com")));
+    assert!(!empty.matches_domain(Some("other.test")));
+    // `ext-site:` spells `ext:`.
+    let ext_site = &parsed.config.routing.rules[1];
+    assert!(ext_site.matches_domain(Some("api.example.com")));
 }
 
 #[test]
@@ -1609,34 +1642,6 @@ fn rejects_missing_geodata_code_with_path() {
         r#""rules": [{
           "type": "field",
           "domain": ["geosite:missing"],
-          "outboundTag": "proxy"
-        }]"#,
-    );
-
-    let err = parse_xray_json_with_geodata_dirs(&raw, &[asset_dir]).unwrap_err();
-
-    assert_eq!(err.diagnostics[0].severity, DiagnosticSeverity::Error);
-    assert_eq!(
-        err.diagnostics[0].path.as_deref(),
-        Some("$.routing.rules[0].domain[0]")
-    );
-}
-
-#[test]
-fn rejects_geosite_attribute_selection_with_no_matchers() {
-    let asset_dir = unique_temp_dir("empty-geosite-attrs");
-    write_geosite_dat(
-        &asset_dir,
-        "geosite.dat",
-        &[TestGeoSite {
-            code: "TEST".to_owned(),
-            domain: vec![site_domain(2, "ads.example.com", &["ads"])],
-        }],
-    );
-    let raw = raw_with_routing(
-        r#""rules": [{
-          "type": "field",
-          "domain": ["geosite:test@missing"],
           "outboundTag": "proxy"
         }]"#,
     );

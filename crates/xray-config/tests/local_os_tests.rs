@@ -7,7 +7,7 @@ fn rule(local_os: Value) -> Result<RoutingRule, Vec<(Option<String>, String)>> {
     let raw = json!({
         "outbounds": [{"tag": "direct", "protocol": "direct"}],
         "routing": {"rules": [
-            {"type": "field", "localOS": local_os, "outboundTag": "direct"}
+            {"localOS": local_os, "network": "tcp,udp", "outboundTag": "direct"}
         ]}
     });
     match parse_xray_json(&raw.to_string()) {
@@ -36,10 +36,33 @@ fn local_os_is_a_go_string_list() {
         (json!("linux,darwin"), vec!["linux", "darwin"]),
         (json!("linux, darwin"), vec!["linux", " darwin"]),
         (json!(""), vec![""]),
+        // Go reads a null entry as an empty name.
+        (json!(["linux", null]), vec!["linux", ""]),
         (json!([]), vec![]),
         (json!(null), vec![]),
     ] {
         assert_eq!(rule(raw.clone()).unwrap().local_os, names, "{raw}");
+    }
+}
+
+#[test]
+fn an_empty_local_os_alone_leaves_the_rule_without_a_condition() {
+    // Xray-core refuses a rule with no condition, and an empty localOS is
+    // none.
+    for local_os in [json!([]), json!(null)] {
+        let raw = json!({
+            "outbounds": [{"tag": "direct", "protocol": "direct"}],
+            "routing": {"rules": [{"localOS": local_os, "outboundTag": "direct"}]}
+        });
+        let error = parse_xray_json(&raw.to_string()).unwrap_err();
+        assert!(
+            error
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.path.as_deref() == Some("$.routing.rules[0]")),
+            "{local_os}: {:?}",
+            error.diagnostics
+        );
     }
 }
 

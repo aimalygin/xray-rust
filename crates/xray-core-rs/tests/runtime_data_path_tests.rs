@@ -485,10 +485,10 @@ fn runtime_tun_config_with_dns_outbound(
     config.outbounds.insert(0, dns_outbound(settings));
     config.routing.rules = vec![RoutingRule {
         inbound_tags: vec!["tun-in".to_owned()],
-        networks,
-        port_ranges: vec![RoutingPortRange::single(53)],
-        domain_matchers: DomainMatcherSet::default(),
-        ip_matchers: Default::default(),
+        networks: Some(networks),
+        port_ranges: Some(vec![RoutingPortRange::single(53)]),
+        domain_matchers: None,
+        ip_matchers: None,
         target: RoutingRuleTarget::Outbound("dns-out".to_owned()),
         local_os: Vec::new(),
     }];
@@ -516,10 +516,10 @@ fn runtime_listener_config_with_dns_outbound(
         routing: RoutingConfig {
             rules: vec![RoutingRule {
                 inbound_tags: vec![inbound_tag.to_owned()],
-                networks,
-                port_ranges: vec![RoutingPortRange::single(53)],
-                domain_matchers: DomainMatcherSet::default(),
-                ip_matchers: Default::default(),
+                networks: Some(networks),
+                port_ranges: Some(vec![RoutingPortRange::single(53)]),
+                domain_matchers: None,
+                ip_matchers: None,
                 target: RoutingRuleTarget::Outbound("dns-out".to_owned()),
                 local_os: Vec::new(),
             }],
@@ -554,10 +554,10 @@ fn runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> Co
         routing: RoutingConfig {
             rules: vec![RoutingRule {
                 inbound_tags: vec!["tun-in".to_owned()],
-                networks: Vec::new(),
-                port_ranges: Vec::new(),
-                domain_matchers: DomainMatcherSet::default(),
-                ip_matchers: Default::default(),
+                networks: None,
+                port_ranges: None,
+                domain_matchers: None,
+                ip_matchers: None,
                 target: RoutingRuleTarget::Outbound("direct".to_owned()),
                 local_os: Vec::new(),
             }],
@@ -579,7 +579,7 @@ fn runtime_tun_config_with_route_only_quic_sniffing(unused_proxy_port: u16) -> C
     });
     config.routing.rules[0].inbound_tags = Vec::new();
     config.routing.rules[0].domain_matchers =
-        compile_domain_matchers(&[DomainMatcher::Suffix("quic.example".to_owned())]).unwrap();
+        Some(compile_domain_matchers(&[DomainMatcher::Suffix("quic.example".to_owned())]).unwrap());
     config
 }
 
@@ -592,7 +592,7 @@ fn runtime_tun_config_with_fake_ip_route_only_http_sniffing(unused_proxy_port: u
         route_only: true,
     });
     config.routing.rules[0].domain_matchers =
-        compile_domain_matchers(&[DomainMatcher::Full("routed.example".to_owned())]).unwrap();
+        Some(compile_domain_matchers(&[DomainMatcher::Full("routed.example".to_owned())]).unwrap());
     config.dns.fake_ip = Some(DnsFakeIpConfig {
         enabled: true,
         ipv4_pool: IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 15).unwrap(),
@@ -615,9 +615,10 @@ fn runtime_tun_config_with_fake_ip_quic_sniffing_routed_to_dns_outbound() -> Cor
         metadata_only: false,
         route_only: true,
     });
-    config.routing.rules[0].port_ranges.clear();
-    config.routing.rules[0].domain_matchers =
-        compile_domain_matchers(&[DomainMatcher::Full("dns-route.example".to_owned())]).unwrap();
+    config.routing.rules[0].port_ranges = None;
+    config.routing.rules[0].domain_matchers = Some(
+        compile_domain_matchers(&[DomainMatcher::Full("dns-route.example".to_owned())]).unwrap(),
+    );
     config.dns.fake_ip = Some(DnsFakeIpConfig {
         enabled: true,
         ipv4_pool: IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 15).unwrap(),
@@ -632,7 +633,7 @@ fn runtime_tun_config_with_fake_ip_domain_routed_freedom_outbound(
 ) -> CoreConfig {
     let mut config = runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port);
     config.routing.rules[0].domain_matchers =
-        compile_domain_matchers(&[DomainMatcher::Suffix("example.com".to_owned())]).unwrap();
+        Some(compile_domain_matchers(&[DomainMatcher::Suffix("example.com".to_owned())]).unwrap());
     config.dns = DnsConfig {
         fake_ip: Some(DnsFakeIpConfig {
             enabled: true,
@@ -676,10 +677,10 @@ fn runtime_tun_dns_proxy_config_routing_second_upstream_to_freedom(
     let prefix = if second.is_ipv4() { 32 } else { 128 };
     config.routing.rules = vec![RoutingRule {
         inbound_tags: vec!["dns-route".to_owned()],
-        networks: Vec::new(),
-        port_ranges: Vec::new(),
-        domain_matchers: DomainMatcherSet::default(),
-        ip_matchers: ip_matcher_set(IpCidr::new(second.ip(), prefix).unwrap()),
+        networks: None,
+        port_ranges: None,
+        domain_matchers: None,
+        ip_matchers: Some(ip_matcher_set(IpCidr::new(second.ip(), prefix).unwrap())),
         target: RoutingRuleTarget::Outbound("direct".to_owned()),
         local_os: Vec::new(),
     }];
@@ -695,8 +696,9 @@ fn runtime_tun_config_with_fake_ip_ip_if_non_match_routed_freedom_outbound(
     unused_proxy_port: u16,
 ) -> CoreConfig {
     let mut config = runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port);
-    config.routing.rules[0].ip_matchers =
-        ip_matcher_set(IpCidr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)), 8).unwrap());
+    config.routing.rules[0].ip_matchers = Some(ip_matcher_set(
+        IpCidr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)), 8).unwrap(),
+    ));
     config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
     config.dns = DnsConfig {
         fake_ip: Some(DnsFakeIpConfig {
@@ -876,10 +878,10 @@ fn runtime_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreCo
         routing: RoutingConfig {
             rules: vec![RoutingRule {
                 inbound_tags: vec!["socks-in".to_owned()],
-                networks: Vec::new(),
-                port_ranges: Vec::new(),
-                domain_matchers: DomainMatcherSet::default(),
-                ip_matchers: Default::default(),
+                networks: None,
+                port_ranges: None,
+                domain_matchers: None,
+                ip_matchers: None,
                 target: RoutingRuleTarget::Outbound("direct".to_owned()),
                 local_os: Vec::new(),
             }],
@@ -914,13 +916,13 @@ fn runtime_config_with_domain_routed_freedom_outbound(unused_proxy_port: u16) ->
         routing: RoutingConfig {
             rules: vec![RoutingRule {
                 inbound_tags: Vec::new(),
-                networks: Vec::new(),
-                port_ranges: Vec::new(),
-                domain_matchers: compile_domain_matchers(&[DomainMatcher::Suffix(
-                    "example.com".to_owned(),
-                )])
-                .unwrap(),
-                ip_matchers: Default::default(),
+                networks: None,
+                port_ranges: None,
+                domain_matchers: Some(
+                    compile_domain_matchers(&[DomainMatcher::Suffix("example.com".to_owned())])
+                        .unwrap(),
+                ),
+                ip_matchers: None,
                 target: RoutingRuleTarget::Outbound("direct".to_owned()),
                 local_os: Vec::new(),
             }],
@@ -940,8 +942,9 @@ fn runtime_socks_config_with_route_only_http_sniffing(unused_proxy_port: u16) ->
         metadata_only: false,
         route_only: true,
     });
-    config.routing.rules[0].domain_matchers =
-        compile_domain_matchers(&[DomainMatcher::Suffix("routed.example".to_owned())]).unwrap();
+    config.routing.rules[0].domain_matchers = Some(
+        compile_domain_matchers(&[DomainMatcher::Suffix("routed.example".to_owned())]).unwrap(),
+    );
     config
 }
 
@@ -954,7 +957,7 @@ fn runtime_socks_config_with_route_only_quic_sniffing(unused_proxy_port: u16) ->
         route_only: true,
     });
     config.routing.rules[0].domain_matchers =
-        compile_domain_matchers(&[DomainMatcher::Suffix("quic.example".to_owned())]).unwrap();
+        Some(compile_domain_matchers(&[DomainMatcher::Suffix("quic.example".to_owned())]).unwrap());
     config
 }
 
@@ -981,12 +984,12 @@ fn runtime_config_with_ip_routed_freedom_outbound(unused_proxy_port: u16) -> Cor
         routing: RoutingConfig {
             rules: vec![RoutingRule {
                 inbound_tags: Vec::new(),
-                networks: Vec::new(),
-                port_ranges: Vec::new(),
-                domain_matchers: DomainMatcherSet::default(),
-                ip_matchers: ip_matcher_set(
+                networks: None,
+                port_ranges: None,
+                domain_matchers: None,
+                ip_matchers: Some(ip_matcher_set(
                     IpCidr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)), 8).unwrap(),
-                ),
+                )),
                 target: RoutingRuleTarget::Outbound("direct".to_owned()),
                 local_os: Vec::new(),
             }],
@@ -1025,12 +1028,12 @@ fn runtime_config_with_ip_if_non_match_routed_freedom_outbound(
         routing: RoutingConfig {
             rules: vec![RoutingRule {
                 inbound_tags: Vec::new(),
-                networks: Vec::new(),
-                port_ranges: Vec::new(),
-                domain_matchers: DomainMatcherSet::default(),
-                ip_matchers: ip_matcher_set(
+                networks: None,
+                port_ranges: None,
+                domain_matchers: None,
+                ip_matchers: Some(ip_matcher_set(
                     IpCidr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)), 8).unwrap(),
-                ),
+                )),
                 target: RoutingRuleTarget::Outbound("direct".to_owned()),
                 local_os: Vec::new(),
             }],
@@ -4431,9 +4434,10 @@ async fn run_socks_udp_split_client_hello_quic_sniffing_scenario() {
     let (echo_addr, echo_handle) = spawn_recording_udp_echo_server(datagrams.len()).await;
     let mut config =
         runtime_socks_config_with_route_only_quic_sniffing(allocate_unused_loopback_port());
-    config.routing.rules[0].domain_matchers =
+    config.routing.rules[0].domain_matchers = Some(
         compile_domain_matchers(&[DomainMatcher::Full("chrome-parrot.example".to_owned())])
-            .unwrap();
+            .unwrap(),
+    );
     let mut core = Core::new(config).unwrap();
     core.start().await.unwrap();
     let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
@@ -5291,9 +5295,10 @@ async fn run_tun_udp_split_client_hello_quic_sniffing_scenario() {
     // a dead proxy.
     let mut config =
         runtime_tun_config_with_route_only_quic_sniffing(allocate_unused_loopback_port());
-    config.routing.rules[0].domain_matchers =
+    config.routing.rules[0].domain_matchers = Some(
         compile_domain_matchers(&[DomainMatcher::Full("chrome-parrot.example".to_owned())])
-            .unwrap();
+            .unwrap(),
+    );
     let mut core = Core::new(config).unwrap();
     core.start().await.unwrap();
 
@@ -5473,22 +5478,22 @@ async fn run_tun_fake_dns_static_only_udp_freedom_scenario() {
     config.routing.rules = vec![
         RoutingRule {
             inbound_tags: vec!["dns-route".to_owned()],
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
-            ip_matchers: Default::default(),
+            networks: None,
+            port_ranges: None,
+            domain_matchers: None,
+            ip_matchers: None,
             target: RoutingRuleTarget::Outbound("direct".to_owned()),
             local_os: Vec::new(),
         },
         RoutingRule {
             inbound_tags: Vec::new(),
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: compile_domain_matchers(&[DomainMatcher::Full(
-                "mobile-udp.example".to_owned(),
-            )])
-            .unwrap(),
-            ip_matchers: Default::default(),
+            networks: None,
+            port_ranges: None,
+            domain_matchers: Some(
+                compile_domain_matchers(&[DomainMatcher::Full("mobile-udp.example".to_owned())])
+                    .unwrap(),
+            ),
+            ip_matchers: None,
             target: RoutingRuleTarget::Outbound("direct".to_owned()),
             local_os: Vec::new(),
         },
@@ -5944,7 +5949,7 @@ async fn run_tun_dns_outbound_nonstandard_port_scenario() {
         ..DnsOutboundSettings::default()
     };
     let mut config = runtime_tun_config_with_dns_outbound(settings, vec![Network::Udp]);
-    config.routing.rules[0].port_ranges = vec![RoutingPortRange::single(5_353)];
+    config.routing.rules[0].port_ranges = Some(vec![RoutingPortRange::single(5_353)]);
     let mut core = Core::new(config).unwrap();
     core.start().await.unwrap();
 
@@ -6564,19 +6569,19 @@ async fn run_core_wide_fake_dns_socks_to_http_scenario() {
     });
     config.routing.rules.push(RoutingRule {
         inbound_tags: vec!["http-in".to_owned()],
-        networks: vec![Network::Tcp],
-        port_ranges: Vec::new(),
-        domain_matchers: DomainMatcherSet::default(),
-        ip_matchers: ip_matcher_set(fake_ip_pool),
+        networks: Some(vec![Network::Tcp]),
+        port_ranges: None,
+        domain_matchers: None,
+        ip_matchers: Some(ip_matcher_set(fake_ip_pool)),
         target: RoutingRuleTarget::Outbound("dns-out".to_owned()),
         local_os: Vec::new(),
     });
     config.routing.rules.push(RoutingRule {
         inbound_tags: vec!["socks-in".to_owned()],
-        networks: vec![Network::Udp],
-        port_ranges: Vec::new(),
-        domain_matchers: DomainMatcherSet::default(),
-        ip_matchers: ip_matcher_set(fake_ip_pool),
+        networks: Some(vec![Network::Udp]),
+        port_ranges: None,
+        domain_matchers: None,
+        ip_matchers: Some(ip_matcher_set(fake_ip_pool)),
         target: RoutingRuleTarget::Outbound("dns-out".to_owned()),
         local_os: Vec::new(),
     });
@@ -6684,12 +6689,12 @@ async fn run_tun_dns_outbound_fake_ip_domain_scenario(strategy: RoutingDomainStr
     config.outbounds.insert(0, dns_outbound(settings));
     config.routing.rules = vec![RoutingRule {
         inbound_tags: vec!["tun-in".to_owned()],
-        networks: vec![Network::Udp],
-        port_ranges: vec![RoutingPortRange::single(upstream.port())],
-        domain_matchers: DomainMatcherSet::default(),
-        ip_matchers: ip_matcher_set(
+        networks: Some(vec![Network::Udp]),
+        port_ranges: Some(vec![RoutingPortRange::single(upstream.port())]),
+        domain_matchers: None,
+        ip_matchers: Some(ip_matcher_set(
             IpCidr::new(upstream.ip(), if upstream.is_ipv4() { 32 } else { 128 }).unwrap(),
-        ),
+        )),
         target: RoutingRuleTarget::Outbound("dns-out".to_owned()),
         local_os: Vec::new(),
     }];
@@ -6761,12 +6766,12 @@ async fn run_tun_dns_outbound_tcp_fake_ip_domain_scenario(strategy: RoutingDomai
     config.outbounds.insert(0, dns_outbound(settings));
     config.routing.rules = vec![RoutingRule {
         inbound_tags: vec!["tun-in".to_owned()],
-        networks: vec![Network::Tcp],
-        port_ranges: vec![RoutingPortRange::single(upstream.port())],
-        domain_matchers: DomainMatcherSet::default(),
-        ip_matchers: ip_matcher_set(
+        networks: Some(vec![Network::Tcp]),
+        port_ranges: Some(vec![RoutingPortRange::single(upstream.port())]),
+        domain_matchers: None,
+        ip_matchers: Some(ip_matcher_set(
             IpCidr::new(upstream.ip(), if upstream.is_ipv4() { 32 } else { 128 }).unwrap(),
-        ),
+        )),
         target: RoutingRuleTarget::Outbound("dns-out".to_owned()),
         local_os: Vec::new(),
     }];
@@ -7860,12 +7865,12 @@ async fn run_tun_dns_proxy_udp_static_ip_skip_routing_scenario(strategy: Routing
     config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
     config.routing.rules = vec![RoutingRule {
         inbound_tags: vec!["dns-route".to_owned()],
-        networks: Vec::new(),
-        port_ranges: Vec::new(),
-        domain_matchers: DomainMatcherSet::default(),
-        ip_matchers: ip_matcher_set(
+        networks: None,
+        port_ranges: None,
+        domain_matchers: None,
+        ip_matchers: Some(ip_matcher_set(
             IpCidr::new(upstream.ip(), if upstream.is_ipv4() { 32 } else { 128 }).unwrap(),
-        ),
+        )),
         target: RoutingRuleTarget::Outbound("proxy".to_owned()),
         local_os: Vec::new(),
     }];
@@ -7931,12 +7936,12 @@ async fn run_tun_dns_proxy_udp_dynamic_ip_skip_routing_scenario(strategy: Routin
     config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
     config.routing.rules = vec![RoutingRule {
         inbound_tags: vec!["dns-route".to_owned()],
-        networks: Vec::new(),
-        port_ranges: Vec::new(),
-        domain_matchers: DomainMatcherSet::default(),
-        ip_matchers: ip_matcher_set(
+        networks: None,
+        port_ranges: None,
+        domain_matchers: None,
+        ip_matchers: Some(ip_matcher_set(
             IpCidr::new(upstream.ip(), if upstream.is_ipv4() { 32 } else { 128 }).unwrap(),
-        ),
+        )),
         target: RoutingRuleTarget::Outbound("proxy".to_owned()),
         local_os: Vec::new(),
     }];
@@ -8698,10 +8703,10 @@ async fn run_tun_dns_proxy_tcp_partial_response_failover_scenario() {
     ];
     config.routing.rules = vec![RoutingRule {
         inbound_tags: vec!["dns-vless".to_owned()],
-        networks: Vec::new(),
-        port_ranges: Vec::new(),
-        domain_matchers: DomainMatcherSet::default(),
-        ip_matchers: Default::default(),
+        networks: None,
+        port_ranges: None,
+        domain_matchers: None,
+        ip_matchers: None,
         target: RoutingRuleTarget::Outbound("proxy".to_owned()),
         local_os: Vec::new(),
     }];
@@ -9182,10 +9187,10 @@ async fn run_tun_fake_dns_udp_resolved_ip_routed_freedom_scenario(strategy: Rout
         0,
         RoutingRule {
             inbound_tags: vec!["dns-route".to_owned()],
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
-            ip_matchers: Default::default(),
+            networks: None,
+            port_ranges: None,
+            domain_matchers: None,
+            ip_matchers: None,
             target: RoutingRuleTarget::Outbound("direct".to_owned()),
             local_os: Vec::new(),
         },
@@ -10008,10 +10013,12 @@ async fn run_domain_target_preservation_scenario(strategy: RoutingDomainStrategy
         )]);
         config.routing.rules = vec![RoutingRule {
             inbound_tags: Vec::new(),
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
-            ip_matchers: ip_matcher_set(IpCidr::new("203.0.113.7".parse().unwrap(), 32).unwrap()),
+            networks: None,
+            port_ranges: None,
+            domain_matchers: None,
+            ip_matchers: Some(ip_matcher_set(
+                IpCidr::new("203.0.113.7".parse().unwrap(), 32).unwrap(),
+            )),
             target: RoutingRuleTarget::Outbound("proxy".to_owned()),
             local_os: Vec::new(),
         }];

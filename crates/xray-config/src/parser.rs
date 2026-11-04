@@ -16,6 +16,7 @@ mod vless;
 mod vmess;
 mod wireguard;
 mod xhttp;
+mod xray_lists;
 
 use std::{
     collections::HashSet,
@@ -1541,87 +1542,6 @@ impl Parser<'_> {
         }
     }
 
-    fn optional_string_array_at(
-        &mut self,
-        value: &Value,
-        key: &str,
-        path: String,
-    ) -> Option<Vec<String>> {
-        let Some(raw) = value.get(key) else {
-            return Some(Vec::new());
-        };
-        let Some(values) = raw.as_array() else {
-            self.error(path, format!("field `{key}` must be an array"));
-            return None;
-        };
-
-        let mut strings = Vec::with_capacity(values.len());
-        for (index, value) in values.iter().enumerate() {
-            let Some(value) = value.as_str() else {
-                self.error(
-                    format!("{path}[{index}]"),
-                    "routing matcher must be a string",
-                );
-                return None;
-            };
-            if value.is_empty() {
-                self.error(
-                    format!("{path}[{index}]"),
-                    "routing matcher cannot be empty",
-                );
-                return None;
-            }
-            strings.push(value.to_owned());
-        }
-
-        Some(strings)
-    }
-
-    fn parse_domain_matchers(
-        &mut self,
-        value: &Value,
-        key: &str,
-        path: String,
-        matchers: &mut DomainMatcherSetBuilder,
-    ) -> Option<()> {
-        let Some(raw) = value.get(key) else {
-            return Some(());
-        };
-        let Some(values) = raw.as_array() else {
-            self.error(path, format!("field `{key}` must be an array"));
-            return None;
-        };
-
-        for (index, value) in values.iter().enumerate() {
-            let item_path = format!("{path}[{index}]");
-            let Some(value) = value.as_str() else {
-                self.error(&item_path, "routing matcher must be a string");
-                return None;
-            };
-            if value.is_empty() {
-                self.error(&item_path, "routing matcher cannot be empty");
-                return None;
-            }
-
-            let remaining = self.matcher_budget.remaining_domain_matchers();
-            if remaining == 0 {
-                self.domain_matcher_budget_error(&item_path);
-                return None;
-            }
-            let parsed_matchers = self.parse_domain_matcher(value, &item_path, remaining)?;
-            if !self
-                .matcher_budget
-                .consume_domain_matchers(parsed_matchers.len())
-            {
-                self.domain_matcher_budget_error(&item_path);
-                return None;
-            }
-            insert_domain_matchers(matchers, &parsed_matchers, DomainNameMode::Routing);
-        }
-
-        Some(())
-    }
-
     fn parse_domain_matcher(
         &mut self,
         value: &str,
@@ -1629,13 +1549,13 @@ impl Parser<'_> {
         max_matchers: usize,
     ) -> Option<Vec<DomainMatcher>> {
         if let Some(spec) = value.strip_prefix("geosite:") {
-            return self.parse_geosite_matchers("geosite.dat", spec, path, max_matchers);
+            return self.parse_geosite_matchers("geosite.dat", spec, path, max_matchers, false);
         }
         if let Some(spec) = value.strip_prefix("ext-domain:") {
-            return self.parse_external_geosite_matchers(spec, path, max_matchers);
+            return self.parse_external_geosite_matchers(spec, path, max_matchers, false);
         }
         if let Some(spec) = value.strip_prefix("ext:") {
-            return self.parse_external_geosite_matchers(spec, path, max_matchers);
+            return self.parse_external_geosite_matchers(spec, path, max_matchers, false);
         }
 
         let Some((kind, domain)) = value.split_once(':') else {
@@ -1682,24 +1602,29 @@ impl Parser<'_> {
         spec: &str,
         path: &str,
         max_matchers: usize,
+        allow_empty: bool,
     ) -> Option<Vec<DomainMatcher>> {
         let (file_name, code_spec) = self.parse_external_geodata_ref(spec, path)?;
-        self.parse_geosite_matchers(file_name, code_spec, path, max_matchers)
+        self.parse_geosite_matchers(file_name, code_spec, path, max_matchers, allow_empty)
     }
 
+    /// The domains a geosite code selects. Without `allow_empty`, a
+    /// selection of no domains is an error; routing allows it, as Xray-core
+    /// does, and keeps it as a condition no domain meets.
     fn parse_geosite_matchers(
         &mut self,
         file_name: &str,
         code_spec: &str,
         path: &str,
         max_matchers: usize,
+        allow_empty: bool,
     ) -> Option<Vec<DomainMatcher>> {
         let (code, attrs) = self.parse_geosite_code_and_attrs(code_spec, path)?;
         match self
             .geodata_loader
             .load_site_matchers(file_name, code, &attrs, max_matchers)
         {
-            Ok(matchers) if matchers.is_empty() => {
+            Ok(matchers) if matchers.is_empty() && !allow_empty => {
                 self.error(
                     path,
                     format!("geosite `{file_name}:{code}` produced no domain matchers"),
@@ -1712,27 +1637,6 @@ impl Parser<'_> {
                 None
             }
         }
-    }
-
-    fn parse_ip_matchers(
-        &mut self,
-        value: &Value,
-        key: &str,
-        path: String,
-    ) -> Option<IpMatcherSet> {
-        let Some(raw) = value.get(key) else {
-            return Some(IpMatcherSet::default());
-        };
-        let Some(values) = raw.as_array() else {
-            self.error(path, format!("field `{key}` must be an array"));
-            return None;
-        };
-        self.routing_ip_matcher_set(
-            values
-                .iter()
-                .enumerate()
-                .map(|(index, value)| (value.as_str(), format!("{path}[{index}]"))),
-        )
     }
 
     /// Builds routing IP matchers from `(entry, path)` pairs, where `None` is

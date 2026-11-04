@@ -706,8 +706,9 @@ that no rule matches is allowed.
 - `network` is a comma-separated string or an array. Xray-core keeps a name
   other than `tcp` and `udp` as a network nothing travels over, so `"tcp, udp"`
   covers only TCP. An absent or empty list covers both.
-- `port` reads as in routing rules. `ip` takes routing IP rules, including
-  `geoip:` and `!` negation, as an array or a comma-separated string.
+- `port` and `ip` read as in routing rules. Unlike a routing rule, a final
+  rule checks ports only once its list has a range, so `"port": 0` covers
+  every port, while a reversed range such as `"2-1"` alone covers none.
 - Rules check the destination after `redirect` rewrites it. A domain is
   checked by every address it resolves to with freedom's domain strategy, and
   the connection is blocked when any one of them is.
@@ -741,12 +742,11 @@ Differences from Xray-core:
 - A domain is checked against what the managed resolver returns, as for
   dialing. Without a domain strategy, Xray-core checks it against the system
   resolver's answer.
-- In a final rule, a port above 65535 or a reversed range such as `"2-1"` is
-  rejected, as in routing rules here; Xray-core accepts either, and it never
-  matches. A negative `blockDelay`, or one outside 32-bit integers, is
-  rejected; Xray-core accepts both, wraps the latter, and on a negative delay
-  later panics or closes at once. An unknown field in a rule is rejected rather
-  than ignored.
+- In a final rule, a numeric port above 65535 is rejected, as in routing
+  rules. A negative `blockDelay`, or one outside 32-bit integers, is rejected;
+  Xray-core accepts both, wraps the latter, and on a negative delay later
+  panics or closes at once. An unknown field in a rule is rejected rather than
+  ignored.
 
 ### Blackhole outbound
 
@@ -1871,25 +1871,48 @@ Differences from Xray-core:
 Supported routing configuration:
 
 - `domainStrategy`: `AsIs`, `IPIfNonMatch`, or `IPOnDemand` (since `0.6.0-dev.0`);
-- rule `type`: `field`;
+- rule `type`: not read, as in Xray-core v26.10.31, so it may be absent or
+  hold anything;
 - selectors: `inboundTag`, `domain`/`domains`, `ip`, `network`, `port`, and
   `localOS`;
-- destination: exactly one of `outboundTag` or `balancerTag`;
+- destination: `outboundTag`, or `balancerTag` when `outboundTag` is absent
+  or empty, as in Xray-core;
 - `routing.balancers` with `tag`, prefix-based `selector`, optional
   `fallbackTag`, and `random` (the default), `roundRobin`, `leastPing`, or the
   bounded `leastLoad` strategy.
 
-`network` accepts Xray-compatible `tcp`/`udp` strings or arrays, including a
-comma-separated string. `localOS` limits a rule to operating systems named as
-Go's `runtime.GOOS`, compared case-insensitively: `darwin` on macOS, `ios` on
-iOS, its simulators and Mac Catalyst, `android`, `linux`, `windows`. Go has no
-tvOS, watchOS or visionOS value, so those report `ios` too. Like Xray's
-`StringList`, it takes an array or one string split at commas without
-trimming; unknown names never match, and `""` makes a rule that never applies.
-The result is fixed for the process. `port` accepts a number or comma/range string over
-`0..=65535`. Rules are evaluated in declaration order, and every populated
-selector field inside one rule is ANDed; alternatives belong in arrays/ranges
-or separate ordered rules.
+Rule fields read as Xray-core v26.10.31 reads them:
+
+- `inboundTag`, `domain`, `domains`, `ip` and `localOS` are Xray's
+  `StringList`: an array of strings, or one string split at commas without
+  trimming. Go reads a `null` entry as an empty string.
+- `network` names `tcp` and `udp`, case-insensitively. Xray-core keeps any
+  other name, such as `quic` or the ` udp` in `"tcp, udp"`, as a network no
+  connection uses.
+- `port` is a number or a comma-separated string of ports and `from-to`
+  ranges over `0..=65535`. A single port reads as a JSON integer, with no sign
+  or leading zero, and a range's ends as decimal digits.
+- When both are given, `domains` replaces `domain`, though both must parse.
+- A condition given with nothing it can match keeps the rule from applying,
+  as in Xray-core: `"port": 0`, `""` or a reversed range such as `"2-1"`, a
+  `network` of only unknown names, an empty inbound tag, or a geosite
+  selection with no domains.
+- A rule with no condition at all is refused, as Xray-core refuses it, rather
+  than taking every connection.
+
+`localOS` limits a rule to operating systems named as Go's `runtime.GOOS`,
+compared case-insensitively: `darwin` on macOS, `ios` on iOS, its simulators
+and Mac Catalyst, `android`, `linux`, `windows`. Go has no tvOS, watchOS or
+visionOS value, so those report `ios` too. Unknown names never match, and
+`""` makes a rule that never applies. The result is fixed for the process.
+Rules are evaluated in declaration order, and every populated selector field
+inside one rule is ANDed; alternatives belong in arrays/ranges or separate
+ordered rules.
+
+Differences from Xray-core:
+
+- A numeric `port` above 65535 is rejected. Xray-core keeps it and truncates
+  it to 16 bits when matching, so `65617` would match port 81.
 
 `IPOnDemand` resolves a domain when evaluation reaches an IP condition, after
 the rule's inbound/network/port predicates and before its domain predicate,
@@ -1979,12 +2002,18 @@ host timeout of 1 to 60000 ms, and returns the delay or the same typed failure
 category. Its result is not written to health snapshots and does not
 influence selector groups.
 
-Domain matchers:
+Domain matchers, read in routing rules as Xray-core's `ParseDomainRules`
+reads them:
 
-- bare string or `keyword:value`;
-- `domain:value`, `full:value`, `regexp:value`;
+- bare string or `keyword:value`, a substring. Text with any other prefix,
+  such as `foo:bar`, is a substring too;
+- `domain:value`, `full:value`, `regexp:value`, `dotless:value`;
 - `geosite:code` and `geosite:code@attribute`;
-- `ext:file.dat:code` and `ext-domain:file.dat:code`.
+- `ext:file.dat:code`, and its spellings `ext-domain:` and `ext-site:`.
+
+A prefix may have an empty value, as in Xray-core: an empty substring,
+`keyword:` or `regexp:` matches every domain, `domain:` only names ending in a
+dot, and `full:` none.
 
 IP matchers:
 
@@ -2012,8 +2041,7 @@ grow with the size of a `geoip:` list. Matching follows Xray-core's
 - a CIDR prefix longer than the address family allows (for example `/33` for
   IPv4) is rejected at load time rather than clamped.
 
-Balancers and non-`field` rules are unsupported. If no rule matches, the first
-outbound tag is used as the default.
+If no rule matches, the first outbound is used as the default.
 
 ## DNS
 

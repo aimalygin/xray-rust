@@ -77,7 +77,7 @@ async fn select_on_demand<'a>(
         {
             continue;
         }
-        if !rule.ip_matchers.is_empty() {
+        if rule.ip_matchers.is_some() {
             if resolution.is_none() {
                 let resolved = dns_resolver.resolve_all(domain, target.port).await.ok();
                 if resolved
