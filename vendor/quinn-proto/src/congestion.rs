@@ -86,6 +86,14 @@ pub trait Controller: Send + Sync {
     ) {
     }
 
+    /// Ack-eliciting packets were declared lost in one loss-detection pass.
+    ///
+    /// Called just before `on_congestion_event` for the same batch with the
+    /// number and total size of the lost packets. Lost MTU probes and ECN
+    /// congestion signals are not reported here. The default ignores it.
+    #[allow(unused_variables)]
+    fn on_packets_lost(&mut self, now: Instant, packets: u64, bytes: u64) {}
+
     /// Packets were deemed lost or marked congested
     ///
     /// `in_persistent_congestion` indicates whether all packets sent within the persistent

@@ -168,6 +168,101 @@ async fn pinned_reference_rejects_wrong_auth_and_closes_failed_tcp_destination()
     client.close();
 }
 
+/// Moves `PAYLOAD` bytes through one Hysteria stream and returns how long it
+/// took. `b'U'` uploads to the target, which acknowledges the last byte;
+/// `b'D'` asks it for the bytes instead.
+async fn timed_transfer(client: &HysteriaClient, target: &Target, direction: u8) -> Duration {
+    let mut tcp = client.open_tcp(target).await.unwrap();
+    tcp.write_all(&[direction]).await.unwrap();
+    let started = std::time::Instant::now();
+    if direction == b'U' {
+        tcp.write_all(&vec![0x55; BRUTAL_PAYLOAD]).await.unwrap();
+        let mut ack = [0];
+        timeout(DEADLINE * 2, tcp.read_exact(&mut ack))
+            .await
+            .unwrap()
+            .unwrap();
+    } else {
+        let mut received = vec![0; BRUTAL_PAYLOAD];
+        timeout(DEADLINE * 2, tcp.read_exact(&mut received))
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    started.elapsed()
+}
+
+const BRUTAL_PAYLOAD: usize = 3 * 1024 * 1024;
+
+#[tokio::test]
+#[ignore = "requires pinned reference; use check-hysteria-interop.sh or check-native-hysteria-interop.sh"]
+async fn pinned_reference_brutal_paces_both_directions_at_the_negotiated_rate() {
+    use xray_transport::stream::H3Congestion;
+    // The server sends at up to 100 Mbps but takes only 8 Mbps, about 1 MiB/s
+    // (Xray counts 2^20 bits per Mbps, native Hysteria 10^6).
+    let server = ReferenceServer::start_with_bandwidth("100 mbps", "8 mbps").await;
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let target = Target::new(TargetAddr::Ip(address.ip()), address.port(), Network::Tcp);
+    let _endpoint = Task(tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            tokio::spawn(async move {
+                let mut direction = [0];
+                socket.read_exact(&mut direction).await.unwrap();
+                if direction[0] == b'U' {
+                    let mut buffer = vec![0; BRUTAL_PAYLOAD];
+                    socket.read_exact(&mut buffer).await.unwrap();
+                    socket.write_all(b"k").await.unwrap();
+                } else {
+                    socket.write_all(&vec![0x44; BRUTAL_PAYLOAD]).await.unwrap();
+                }
+                let _ = socket.shutdown().await;
+            });
+        }
+    }));
+    let connect = |congestion: H3Congestion, receive: u64| {
+        let mut config = server.config();
+        config.quic.congestion = congestion;
+        config.receive_bytes_per_second = receive;
+        HysteriaClient::connect(config, &server.connector)
+    };
+    let brutal = H3Congestion::Brutal {
+        up_bytes_per_second: 100 << 17,
+    };
+
+    // Upload: Brutal at the server's announced 8 Mbps, not our 100 Mbps.
+    let client = connect(brutal, 0).await.unwrap();
+    let paced = timed_transfer(&client, &target, b'U').await;
+    client.close();
+    // Our announced 8 Mbps makes the server pace the download with Brutal.
+    let client = connect(H3Congestion::BbrStandard, 1 << 20).await.unwrap();
+    let paced_down = timed_transfer(&client, &target, b'D').await;
+    // Neither side paces when the client announces no rate and runs BBR.
+    let free_up = timed_transfer(&client, &target, b'U').await;
+    client.close();
+    let client = connect(H3Congestion::BbrStandard, 0).await.unwrap();
+    let free_down = timed_transfer(&client, &target, b'D').await;
+    client.close();
+
+    eprintln!(
+        "3 MiB: Brutal up {paced:?}, Brutal down {paced_down:?}, BBR up {free_up:?}, BBR down {free_down:?}"
+    );
+    for (name, elapsed) in [("upload", paced), ("download", paced_down)] {
+        // About 3 s at 1 MiB/s; pacing never lets it finish much sooner.
+        assert!(
+            elapsed >= Duration::from_millis(2400) && elapsed <= Duration::from_secs(10),
+            "Brutal {name} took {elapsed:?}"
+        );
+    }
+    for (name, elapsed) in [("upload", free_up), ("download", free_down)] {
+        assert!(
+            elapsed < Duration::from_millis(1500),
+            "unpaced {name} took {elapsed:?}"
+        );
+    }
+}
+
 #[path = "hysteria/network_change.rs"]
 mod network_change;
 

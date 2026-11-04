@@ -1046,6 +1046,12 @@ pub struct QuicParamsSettings {
     pub keep_alive_period_secs: i64,
     pub disable_path_mtu_discovery: bool,
     pub max_incoming_streams: i64,
+    /// quic-go's `Transport.DisableGSO`.
+    pub disable_gso: bool,
+    /// Only Xray-core's QUIC servers consult it, so it changes nothing here.
+    pub disable_stateless_reset: bool,
+    /// Brutal keeps its exact rate instead of compensating for loss.
+    pub brutal_disable_loss_compensation: bool,
     /// Retained for fail-closed runtime handling. Unlike Xray's config build,
     /// parsing this flag does not mutate process-global environment variables.
     pub debug: bool,

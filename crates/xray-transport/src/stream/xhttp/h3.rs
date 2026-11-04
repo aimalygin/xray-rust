@@ -28,6 +28,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep_until, Instant};
 
+use crate::quic_congestion::{BrutalDecision, BrutalFactory, BrutalRate, NegotiatedBrutalFactory};
 use crate::{
     canonicalize_socket_addr, memory_class, HappyEyeballsConfig, MemoryClass, SocketHandle,
     SocketProtector, TransportError,
@@ -75,15 +76,23 @@ pub enum H3QuicVersion {
     V2,
 }
 
-/// Congestion-control choices understood by XHTTP configuration.
+/// Congestion-control choices understood by XHTTP and Hysteria configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum H3Congestion {
     /// Quinn's BBR implementation with Xray's standard initial window.
     BbrStandard,
     Reno,
+    /// Xray's conservative BBR profile; not implemented, so rejected.
     BbrConservative,
+    /// Xray's aggressive BBR profile; not implemented, so rejected.
     BbrAggressive,
-    Brutal,
+    /// Hysteria's default: BBR, or Brutal at the lower of this rate and the
+    /// receive rate the server announces once both are nonzero. Only a
+    /// Hysteria connection can negotiate it; XHTTP rejects it.
+    Brutal {
+        up_bytes_per_second: u64,
+    },
+    /// Brutal at this fixed rate, whatever the peer announces.
     ForceBrutal {
         bytes_per_second: u64,
     },
@@ -121,7 +130,11 @@ pub struct H3QuicConfig {
     pub keep_alive_interval: Option<Duration>,
     pub max_incoming_bidirectional_streams: u64,
     pub disable_path_mtu_discovery: bool,
+    /// `disableGSO`: send every datagram with its own system call.
+    pub disable_gso: bool,
     pub congestion: H3Congestion,
+    /// `brutalDisableLossCompensation`: Brutal keeps its exact rate under loss.
+    pub brutal_disable_loss_compensation: bool,
     pub udp_hop: H3UdpHopConfig,
     pub udp_noise: Option<crate::udp_noise::UdpNoiseConfig>,
     pub debug: bool,
@@ -143,7 +156,9 @@ impl Default for H3QuicConfig {
                 target_os = "windows",
                 target_os = "macos"
             )),
+            disable_gso: false,
             congestion: H3Congestion::BbrStandard,
+            brutal_disable_loss_compensation: false,
             udp_hop: H3UdpHopConfig::default(),
             udp_noise: None,
             debug: false,
@@ -209,6 +224,8 @@ impl H3QuicConfig {
         let congestion = match self.congestion {
             H3Congestion::BbrStandard => "quinn-bbr-standard-approximation",
             H3Congestion::Reno => "new-reno",
+            H3Congestion::ForceBrutal { bytes_per_second } if bytes_per_second > 0 => "brutal",
+            H3Congestion::Brutal { .. } => "brutal-if-negotiated",
             requested => return Err(H3Error::UnsupportedCongestion { requested }),
         };
         quinn_varint(
@@ -313,6 +330,10 @@ pub enum H3Error {
     },
     #[error("QUIC congestion mode {requested:?} is not implemented without silent fallback")]
     UnsupportedCongestion { requested: H3Congestion },
+    #[error(
+        "QUIC congestion `brutal` follows the receive rate a Hysteria server announces; over XHTTP H3 use bbr, reno or force-brutal"
+    )]
+    BrutalNeedsHysteria,
     #[error(
         "invalid QUIC UDP hop ({port_count} ports, interval {interval_min:?}-{interval_max:?}): ports must be nonzero and both bounds at least 5 seconds"
     )]
@@ -1045,17 +1066,20 @@ pub(crate) async fn connect_quic_transport(
     config: H3ConnectConfig,
     expected_alpn: &'static [u8],
 ) -> Result<(Endpoint, quinn::Connection, H3Diagnostics, SocketAddr), H3Error> {
-    connect_quic_transport_with_datagrams(config, expected_alpn, None, None, None).await
+    connect_quic_transport_with_datagrams(config, expected_alpn, None, None, None, None).await
 }
 
 /// Optional receive/send byte budgets and advertised frame-size cap for QUIC datagrams.
 /// `None` preserves the existing XHTTP/DoQ transport configuration.
+/// `negotiation` settles Hysteria's [`H3Congestion::Brutal`] after
+/// authentication; without it that mode is rejected.
 pub(crate) async fn connect_quic_transport_with_datagrams(
     config: H3ConnectConfig,
     expected_alpn: &'static [u8],
     datagram_buffers: Option<(usize, usize, u16)>,
     carrier: Option<&crate::hysteria::HysteriaCarrierConfig>,
     noise_state: Option<Arc<crate::udp_noise::UdpNoiseState>>,
+    negotiation: Option<&Arc<BrutalDecision>>,
 ) -> Result<(Endpoint, quinn::Connection, H3Diagnostics, SocketAddr), H3Error> {
     drop(crate::tls::parse_tls_server_name(&config.server_name)?);
     let diagnostics = config.quic.diagnostics()?;
@@ -1070,6 +1094,7 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
         &config,
         datagram_buffers,
         carrier.is_some_and(|c| c.salamander_password.is_some()),
+        negotiation,
     )?;
     let remote_addr = canonicalize_socket_addr(config.remote_addr);
     let bind_addr = unspecified_bind_addr(remote_addr);
@@ -1248,6 +1273,7 @@ fn build_quinn_config(
     config: &H3ConnectConfig,
     datagram_buffers: Option<(usize, usize, u16)>,
     salamander: bool,
+    negotiation: Option<&Arc<BrutalDecision>>,
 ) -> Result<(EndpointConfig, ClientConfig), H3Error> {
     let mut endpoint = EndpointConfig::default();
     endpoint.supported_versions(vec![QUIC_V1]);
@@ -1300,16 +1326,36 @@ fn build_quinn_config(
     if config.quic.disable_path_mtu_discovery {
         transport.mtu_discovery_config(None);
     }
+    // quic-go's `Transport.DisableGSO`.
+    transport.enable_segmentation_offload(!config.quic.disable_gso);
+    let standard_bbr = || {
+        let mut bbr = quinn::congestion::BbrConfig::default();
+        bbr.initial_window(XRAY_BBR_INITIAL_WINDOW);
+        Arc::new(bbr)
+    };
+    let disable_loss_compensation = config.quic.brutal_disable_loss_compensation;
     match config.quic.congestion {
         H3Congestion::BbrStandard => {
-            let mut bbr = quinn::congestion::BbrConfig::default();
-            bbr.initial_window(XRAY_BBR_INITIAL_WINDOW);
-            transport.congestion_controller_factory(Arc::new(bbr));
+            transport.congestion_controller_factory(standard_bbr());
         }
         H3Congestion::Reno => {
             transport.congestion_controller_factory(Arc::new(
                 quinn::congestion::NewRenoConfig::default(),
             ));
+        }
+        H3Congestion::ForceBrutal { bytes_per_second } if bytes_per_second > 0 => {
+            transport.congestion_controller_factory(Arc::new(BrutalFactory(BrutalRate {
+                bytes_per_second,
+                disable_loss_compensation,
+            })));
+        }
+        H3Congestion::Brutal { .. } => {
+            let decision = negotiation.ok_or(H3Error::BrutalNeedsHysteria)?;
+            transport.congestion_controller_factory(Arc::new(NegotiatedBrutalFactory {
+                bbr: standard_bbr(),
+                disable_loss_compensation,
+                decision: Arc::clone(decision),
+            }));
         }
         requested => return Err(H3Error::UnsupportedCongestion { requested }),
     }

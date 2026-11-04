@@ -62,8 +62,55 @@ individually. Its bounded receive scratch is 64 KiB per live carrier; send
 scratch is reused. Profiles without either option use the existing UDP path.
 Hysteria accepts `disableChromeParrot: true` to acknowledge its native Quinn
 TLS behavior. Without it, parsing warns that ChromeParrot shaping is absent;
-explicit false/null is rejected. Other explicit QUIC overrides, Brutal,
-bandwidth overrides, QUIC v2 transport and socket overrides remain unsupported.
+explicit false/null is rejected. QUIC v2 transport and socket overrides remain
+unsupported.
+
+### Hysteria bandwidth and the other QUIC parameters
+
+Hysteria reads the rest of `finalmask.quicParams` as Xray's Hysteria dialer
+does:
+
+```json
+"quicParams": {"disableChromeParrot": true, "brutalUp": "100 mbps", "brutalDown": "200 mbps"}
+```
+
+Bandwidths use Xray's binary units: one `mbps` is 2^20 bits per second.
+`brutalDown` is announced to the server as `Hysteria-CC-RX`, so a server with
+its own Brutal rate sends at the lower of its `brutalUp` and this value; zero
+leaves the server on BBR. With the default congestion or `brutal`, the client
+sends with Brutal at the lower of `brutalUp` and the rate the server announces
+once both are nonzero, and with standard BBR otherwise. `force-brutal` sends at
+`brutalUp` whatever the server announces; `bbr` and `reno` ignore the rates.
+
+Brutal is ported from Xray-core's sender. It paces at its rate, which loss does
+not lower, and lets twice the rate's bandwidth-delay product be in flight.
+Unless `brutalDisableLossCompensation` is set, both are divided by the share of
+packets acknowledged over the last five seconds, never by less than 0.8, once
+those seconds hold 50 packets. quinn reports lost packets to it through a
+callback added to the vendored `quinn-proto`. quinn sends a packet only while
+the bytes in flight plus the packet stay below the window, where quic-go sends
+while the bytes in flight are at most the window, so the window quinn sees is
+Xray's plus one datagram and one byte.
+
+The idle timeout defaults to 30 seconds and, as in Xray, there is no keepalive
+unless `keepAlivePeriod` sets one. quic-go grows the receive windows from their
+initial value to the maximum, while quinn keeps a Hysteria connection's windows
+fixed, so the larger of the two is the window. Without either, the 2 MiB stream
+and 3 MiB connection windows remain; Xray's Hysteria dialer defaults to 8 MiB
+and 20 MiB. `disableGSO` turns off segmentation offload. `maxIncomingStreams`
+has no effect, as in Xray's dialer, and `disableStatelessReset` only affects
+Xray-core's servers. Only the standard BBR profile is implemented: a
+conservative or aggressive `bbrProfile` fails to parse wherever BBR may run,
+which for Hysteria includes the default and `brutal` modes. `debug: true` fails
+before the outbound starts.
+
+An ignored interop test transfers 3 MiB each way through pinned Xray-core with
+server rates `brutalUp: "100 mbps"` and `brutalDown: "8 mbps"`. A client with
+`brutalUp: "100 mbps"` uploads at the negotiated 8 Mbps, and announcing
+8 Mbps makes the server pace the download: each takes about 3 seconds, against
+20 to 60 ms with BBR. The test fails if the client keeps BBR or announces zero.
+These are loopback checks, not throughput or fairness measurements on real
+paths.
 
 The transport tests exercise TCP, inner TLS, fragmented UDP, automatic hopping,
 manual rebind and rejected socket protection against pinned Xray-core and
@@ -1105,26 +1152,30 @@ Eyeballs policy as the other outbounds. Its stock TLS 1.3 config ignores
 separation between QUIC TLS and the TCP uTLS callback. Xray v26.10.21 now
 adds ChromeParrot shaping; Rust does not reproduce that fingerprint. Set
 `quicParams.disableChromeParrot: true` for the explicitly supported contract.
-Omission warns, while explicit false/null fails. `disableGSO`,
-`disableStatelessReset` and `brutalDisableLossCompensation` are recognized but
-rejected for every value; their runtime controls are not implemented.
+Omission warns, while explicit false/null fails. `disableGSO` turns off
+segmentation offload, `brutalDisableLossCompensation` applies to
+`force-brutal`, and `disableStatelessReset`, which only Xray-core's servers
+read, is accepted without effect.
 
 `streamSettings.finalmask.quicParams` is parsed for every stream but applied
 only to H3. The phase-one engine implements QUIC v1, Reno, the default/standard
-BBR selection, initial receive windows, equal explicit maximum windows,
-`maxIdleTimeout`, `keepAlivePeriod`, `disablePathMTUDiscovery`, and
-`maxIncomingStreams`. With no overrides it uses Xray's 2 MiB stream and 3 MiB
-connection initial windows, a 300-second idle timeout, and a ten-second H3
-keepalive.
+BBR selection, `force-brutal` (the Brutal sender described in the Hysteria
+section, at `brutalUp`), initial and maximum receive windows,
+`maxIdleTimeout`, `keepAlivePeriod`, `disablePathMTUDiscovery`,
+`maxIncomingStreams` and `disableGSO`. With no overrides it uses Xray's 2 MiB
+stream and 3 MiB connection initial windows, a 300-second idle timeout, and a
+ten-second H3 keepalive.
 
-Receive-window growth is deliberately not claimed: Quinn holds those windows
-static, while quic-go adapts them toward 6 MiB per stream and 15 MiB per
-connection. Standard BBR is likewise a Quinn-BBR approximation with Xray's
-initial congestion window, not quic-go's exact controller. Distinct
-`maxStreamReceiveWindow`/`maxConnectionReceiveWindow` values, QUIC v2 through
-the transport API, conservative/aggressive BBR profiles, Brutal and
-force-Brutal, and `debug: true` fail closed before opening
-a socket. H3 accepts the UDP-hop mask, or the legacy `quicParams.udpHop`, with
+XHTTP downloads grow their receive windows from the initial values toward the
+maxima, by default 6 MiB per stream and 15 MiB per connection, as quic-go does;
+a constrained host keeps the initial windows. Standard BBR is a Quinn-BBR
+approximation with Xray's initial congestion window, not quic-go's exact
+controller. A maximum below its initial window, QUIC v2 through the transport
+API and `debug: true` fail closed before opening a socket. A conservative or
+aggressive `bbrProfile` with BBR selected fails to parse, and so does plain
+`brutal`: it follows the rate a Hysteria server announces, and Xray-core's
+XHTTP dialer has no case for it and panics when dialing. H3 accepts the
+UDP-hop mask, or the legacy `quicParams.udpHop`, with
 the Hysteria rules above: the first Initial already goes to a hop port, and
 each interval moves the connection to a fresh protected socket aimed at
 another port while QUIC migrates the path. The timer starts once the

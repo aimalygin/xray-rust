@@ -987,7 +987,7 @@
         "brutalDisableLossCompensation"
       ],
       "id": "QUIC_PARAMS",
-      "notes": "Bounded XHTTP H3 subset; Hysteria accepts only legacy udpHop and disableChromeParrot=true. Native Quinn TLS has no ChromeParrot shaping. disableGSO, disableStatelessReset and brutalDisableLossCompensation are recognized but rejected, including false/null. Carrier compilation checks additional bounds."
+      "notes": "Hysteria and XHTTP H3. congestion brutal (Hysteria only: Brutal at the lower of brutalUp and the server's announced rate, else BBR), force-brutal, bbr and reno; bbrProfile standard only where BBR may run. Hysteria announces brutalDown as its receive rate. Native Quinn TLS has no ChromeParrot shaping, so disableChromeParrot must be true. disableStatelessReset only affects Xray servers; maxIncomingStreams has no effect on Hysteria. Carrier compilation checks additional bounds."
     },
     {
       "context": "streamSettings.tcpSettings; streamSettings.rawSettings",

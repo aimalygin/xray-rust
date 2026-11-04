@@ -5613,6 +5613,9 @@ fn finalmask_quic_params_full_v26_surface_is_normalized() {
           "keepAlivePeriod": 60,
           "disablePathMTUDiscovery": true,
           "maxIncomingStreams": 8,
+          "disableGSO": true,
+          "disableStatelessReset": true,
+          "brutalDisableLossCompensation": true,
           "debug": true
         "#,
     ))
@@ -5641,6 +5644,9 @@ fn finalmask_quic_params_full_v26_surface_is_normalized() {
             keep_alive_period_secs: 60,
             disable_path_mtu_discovery: true,
             max_incoming_streams: 8,
+            disable_gso: true,
+            disable_stateless_reset: true,
+            brutal_disable_loss_compensation: true,
             debug: true,
         })
     );

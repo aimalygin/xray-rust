@@ -7019,11 +7019,16 @@ mod tests {
             keep_alive_period_secs: 11,
             disable_path_mtu_discovery: true,
             max_incoming_streams: 16,
+            disable_gso: true,
+            disable_stateless_reset: true,
+            brutal_disable_loss_compensation: true,
             debug: false,
         });
 
         let built = built_xhttp_transport(&outbound);
         let quic = built.h3_quic_config();
+        assert!(quic.disable_gso);
+        assert!(quic.brutal_disable_loss_compensation);
         assert_eq!(quic.initial_stream_receive_window, 2_100_000);
         assert_eq!(quic.max_stream_receive_window, Some(2_100_000));
         assert_eq!(quic.initial_connection_receive_window, 3_100_000);
@@ -7080,8 +7085,9 @@ mod tests {
                 max_stream_receive_window: 1024 * 1024,
                 ..QuicParamsSettings::default()
             },
+            // Only Hysteria announces the peer rate plain `brutal` follows.
             QuicParamsSettings {
-                congestion: xray_config::QuicCongestion::ForceBrutal,
+                congestion: xray_config::QuicCongestion::Brutal,
                 brutal_up_bytes_per_sec: 65_536,
                 ..QuicParamsSettings::default()
             },
@@ -7111,6 +7117,20 @@ mod tests {
             ..QuicParamsSettings::default()
         });
         build_vless_tcp_outbound(&adaptive).expect("receive windows auto-tune up to their maxima");
+
+        let mut fixed_rate = adaptive;
+        fixed_rate.stream.quic_params = Some(QuicParamsSettings {
+            congestion: xray_config::QuicCongestion::ForceBrutal,
+            brutal_up_bytes_per_sec: 65_536,
+            ..QuicParamsSettings::default()
+        });
+        let built = built_xhttp_transport(&fixed_rate);
+        assert_eq!(
+            built.h3_quic_config().congestion,
+            H3Congestion::ForceBrutal {
+                bytes_per_second: 65_536
+            }
+        );
     }
 
     #[test]

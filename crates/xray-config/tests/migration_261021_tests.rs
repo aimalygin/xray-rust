@@ -159,7 +159,7 @@ fn legacy_udp_hop_hint_points_only_quic_carriers_at_the_udphop_mask() {
 }
 
 #[test]
-fn quic_fingerprint_limit_is_explicit_and_unimplemented_controls_fail_closed() {
+fn quic_fingerprint_limit_is_explicit_and_transport_switches_parse_as_go_bools() {
     let mut raw = hysteria();
     raw["outbounds"][0]["streamSettings"]
         .as_object_mut()
@@ -170,16 +170,41 @@ fn quic_fingerprint_limit_is_explicit_and_unimplemented_controls_fail_closed() {
         .diagnostics
         .iter()
         .any(|d| d.message.contains("ChromeParrot")));
+    for bad in [Value::Null, json!(false), json!("true")] {
+        let mut invalid = hysteria();
+        invalid["outbounds"][0]["streamSettings"]["finalmask"]["quicParams"]
+            ["disableChromeParrot"] = bad;
+        assert!(parse_xray_json(&invalid.to_string()).is_err());
+    }
+    // Go leaves a bool false for null and rejects a string.
     for key in [
-        "disableChromeParrot",
         "disableGSO",
         "disableStatelessReset",
         "brutalDisableLossCompensation",
     ] {
-        for bad in [Value::Null, json!(false), json!("true")] {
-            let mut invalid = hysteria();
-            invalid["outbounds"][0]["streamSettings"]["finalmask"]["quicParams"][key] = bad;
-            assert!(parse_xray_json(&invalid.to_string()).is_err(), "{key}");
+        let mut invalid = hysteria();
+        invalid["outbounds"][0]["streamSettings"]["finalmask"]["quicParams"][key] = json!("true");
+        assert!(parse_xray_json(&invalid.to_string()).is_err(), "{key}");
+        for (value, expected) in [
+            (Value::Null, false),
+            (json!(false), false),
+            (json!(true), true),
+        ] {
+            let mut raw = hysteria();
+            raw["outbounds"][0]["streamSettings"]["finalmask"]["quicParams"][key] = value;
+            let parsed =
+                parse_xray_json(&raw.to_string()).unwrap_or_else(|e| panic!("{key}: {e:?}"));
+            let quic = parsed.config.outbounds[0]
+                .stream
+                .quic_params
+                .as_ref()
+                .unwrap();
+            let actual = match key {
+                "disableGSO" => quic.disable_gso,
+                "disableStatelessReset" => quic.disable_stateless_reset,
+                _ => quic.brutal_disable_loss_compensation,
+            };
+            assert_eq!(actual, expected, "{key}");
         }
     }
 }

@@ -13,6 +13,8 @@ pub struct HysteriaOutbound {
 struct SessionOwner {
     limits: xray_transport::hysteria::HysteriaLimits,
     carrier: xray_transport::hysteria::HysteriaCarrierConfig,
+    quic: H3QuicConfig,
+    receive_bytes_per_second: u64,
     server: Target,
     tls: TlsClientConfig,
     auth: xray_config::HysteriaSettings,
@@ -81,12 +83,9 @@ impl HysteriaOutbound {
                 .transpose()?,
             ..Default::default()
         };
+        let (quic, receive_bytes_per_second) =
+            hysteria_quic_config(config.stream.quic_params.as_ref())?;
         if let Some(quic) = &config.stream.quic_params {
-            let mut remaining = quic.clone();
-            remaining.udp_hop = Default::default();
-            if remaining != QuicParamsSettings::default() {
-                return Err(CoreError::UnsupportedOutboundNetwork);
-            }
             let hop = &quic.udp_hop;
             let interval = |value: i32| -> Result<Duration, CoreError> {
                 if value == 0 {
@@ -130,6 +129,8 @@ impl HysteriaOutbound {
             inner: Arc::new(SessionOwner {
                 limits: limits.transport_limits(),
                 carrier,
+                quic,
+                receive_bytes_per_second,
                 server: Target::new(
                     match &server.server {
                         TargetAddr::Domain(domain) => RoutingTargetAddr::Domain(domain.clone()),
@@ -226,6 +227,8 @@ impl HysteriaOutbound {
             config.auth = self.inner.auth.auth.clone();
             config.limits = self.inner.limits;
             config.carrier = self.inner.carrier.clone();
+            config.quic = self.inner.quic.clone();
+            config.receive_bytes_per_second = self.inner.receive_bytes_per_second;
             // Give later DNS candidates a chance within the total operation deadline.
             let generation = self.inner.network_generation.load(Ordering::Acquire);
             let attempt = tokio::time::timeout(
@@ -285,6 +288,58 @@ impl HysteriaOutbound {
     ) -> Result<HysteriaUdpSession, CoreError> {
         Ok(self.client(resolver, dialer).await?.open_udp()?)
     }
+}
+
+/// Xray's Hysteria dialer settings from `finalmask.quicParams`, and the
+/// receive rate (`brutalDown`) announced in `Hysteria-CC-RX`.
+///
+/// They differ from XHTTP's: a 30-second idle timeout, no incoming-stream
+/// limit of its own, and Brutal at the lower of `brutalUp` and the server's
+/// announced rate once both are nonzero, otherwise BBR. quic-go grows a
+/// connection's receive windows from the initial value to the maximum, while
+/// quinn keeps a Hysteria connection's windows fixed, so the larger of the two
+/// is the window. UDP hop travels in the Hysteria carrier instead.
+pub(super) fn hysteria_quic_config(
+    settings: Option<&QuicParamsSettings>,
+) -> Result<(H3QuicConfig, u64), CoreError> {
+    let mut quic = super::xhttp::xhttp_h3_quic_config(settings)
+        .map_err(|_| CoreError::UnsupportedOutboundNetwork)?;
+    let defaults = H3QuicConfig::default();
+    let receive_bytes_per_second = settings.map_or(0, |s| s.brutal_down_bytes_per_sec);
+    if settings.is_none_or(|s| s.max_idle_timeout_secs == 0) {
+        quic.max_idle_timeout = Duration::from_secs(30);
+    }
+    quic.max_incoming_bidirectional_streams = defaults.max_incoming_bidirectional_streams;
+    quic.initial_stream_receive_window = quic
+        .initial_stream_receive_window
+        .max(quic.max_stream_receive_window.take().unwrap_or(0));
+    quic.initial_connection_receive_window = quic
+        .initial_connection_receive_window
+        .max(quic.max_connection_receive_window.take().unwrap_or(0));
+    quic.udp_hop = H3UdpHopConfig::default();
+    if let Some(settings) = settings {
+        let negotiates = matches!(
+            settings.congestion,
+            xray_config::QuicCongestion::Default | xray_config::QuicCongestion::Brutal
+        );
+        if negotiates {
+            // The parser rejects these profiles; never fall back silently.
+            if settings.bbr_profile != xray_config::QuicBbrProfile::Standard {
+                return Err(CoreError::UnsupportedOutboundNetwork);
+            }
+            quic.congestion = if settings.brutal_up_bytes_per_sec > 0 {
+                H3Congestion::Brutal {
+                    up_bytes_per_second: settings.brutal_up_bytes_per_sec,
+                }
+            } else {
+                // Without its own rate the client never uses Brutal: BBR.
+                super::xhttp::bbr_congestion(settings.bbr_profile)
+            };
+        }
+    }
+    quic.diagnostics()
+        .map_err(|_| CoreError::UnsupportedOutboundNetwork)?;
+    Ok((quic, receive_bytes_per_second))
 }
 
 #[cfg(test)]

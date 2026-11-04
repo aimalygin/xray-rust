@@ -65,8 +65,8 @@ their original source identities.
 
 The v26.10.21 record's stage 2 remains planned separately: MASQUE/WARP,
 XDRIVE, Lua for DNS/routing/noise, newer FinalMask types (header-custom,
-sudoku, xdns, xicmp, xmc, realm, filter, mKCP), `localOS`, custom Blackhole
-responses and Hysteria Realm options.
+sudoku, xdns, xicmp, xmc, realm, filter, mKCP) and Hysteria Realm options.
+`localOS` and custom Blackhole responses arrived in 0.10.0.
 
 ## Evidence
 

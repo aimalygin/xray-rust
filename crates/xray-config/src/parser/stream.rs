@@ -558,28 +558,6 @@ impl Parser<'_> {
                     "only disableChromeParrot=true is supported; ChromeParrot fingerprint shaping is unavailable");
             }
         }
-        for key in [
-            "disableGSO",
-            "disableStatelessReset",
-            "brutalDisableLossCompensation",
-        ] {
-            if quic.get(key).is_some() {
-                self.error(
-                    format!("{quic_path}.{key}"),
-                    format!("QUIC override `{key}` is unsupported by the current Rust carrier"),
-                );
-            }
-        }
-        if network == StreamNetwork::Hysteria {
-            for key in quic.as_object().expect("checked object").keys() {
-                if !matches!(key.as_str(), "udpHop" | "disableChromeParrot") {
-                    self.error(
-                        format!("{quic_path}.{key}"),
-                        "Hysteria supports legacy udpHop and disableChromeParrot=true only",
-                    );
-                }
-            }
-        }
 
         // Go's encoding/json treats null for scalar struct fields as their
         // existing zero value. The nullable helpers below preserve that rule.
@@ -636,6 +614,25 @@ impl Parser<'_> {
             self.error(
                 format!("{quic_path}.congestion"),
                 "force-brutal requires nonzero brutalUp",
+            );
+        }
+        // Fail closed where Xray would run what this runtime lacks.
+        let uses_bbr_profile = match congestion {
+            QuicCongestion::Default | QuicCongestion::Bbr => true,
+            // Hysteria falls back to BBR unless both sides announce a rate.
+            QuicCongestion::Brutal => network == StreamNetwork::Hysteria,
+            QuicCongestion::Reno | QuicCongestion::ForceBrutal => false,
+        };
+        if is_quic && uses_bbr_profile && bbr_profile != QuicBbrProfile::Standard {
+            self.error(
+                format!("{quic_path}.bbrProfile"),
+                "only the standard BBR profile is implemented; conservative and aggressive need Xray's own BBR sender",
+            );
+        }
+        if is_quic && network == StreamNetwork::Xhttp && congestion == QuicCongestion::Brutal {
+            self.error(
+                format!("{quic_path}.congestion"),
+                "congestion `brutal` follows the rate a Hysteria server announces, and Xray's XHTTP dialer panics on it; use bbr, reno or force-brutal",
             );
         }
 
@@ -705,6 +702,17 @@ impl Parser<'_> {
                 &quic_path,
             )?,
             max_incoming_streams,
+            disable_gso: self.quic_bool_at(quic, "disableGSO", &quic_path)?,
+            disable_stateless_reset: self.quic_bool_at(
+                quic,
+                "disableStatelessReset",
+                &quic_path,
+            )?,
+            brutal_disable_loss_compensation: self.quic_bool_at(
+                quic,
+                "brutalDisableLossCompensation",
+                &quic_path,
+            )?,
             debug: self.quic_bool_at(quic, "debug", &quic_path)?,
         })
     }

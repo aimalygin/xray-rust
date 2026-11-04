@@ -47,6 +47,20 @@ previous gain-versus-bytes comparison.
 packet token round trips through the connection, coalescing, ACK-only sends,
 loss, reordering, and ordinary congestion-controller callbacks.
 
+## Lost-packet counts
+
+`Controller::on_packets_lost(now, packets, bytes)` reports how many
+ack-eliciting packets one loss-detection pass declared lost, and their total
+size, just before `on_congestion_event` for the same batch. That callback
+carries only the bytes, while Hysteria's Brutal sender compensates for loss by
+packet counts: acknowledged against lost packets over five one-second slots.
+Lost MTU probes and ECN signals are not reported, and the default ignores the
+call, so other controllers are unchanged.
+`lost_packets_are_reported_with_their_count_and_size` drops two real stream
+datagrams and checks the callback's totals against the connection's loss
+statistics; it fails when the call is removed. The complete 300-test library
+suite passes in the reconstruction.
+
 ## Measured RTT and periodic probing
 
 An unset RTT epoch is a fresh connection, not an expired sample. The initial
