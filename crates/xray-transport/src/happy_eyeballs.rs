@@ -200,6 +200,143 @@ where
     }
 }
 
+/// Go's `net.Dialer` defaults, which Xray-core dials with when `happyEyeballs`
+/// is not configured: a 16-second dial timeout (`DefaultSystemDialer`) and a
+/// 300 ms head start for the first address family.
+const GO_DIAL_TIMEOUT: Duration = Duration::from_secs(16);
+const GO_FALLBACK_DELAY: Duration = Duration::from_millis(300);
+/// Go's `partialDeadline` gives each serial attempt at least this long.
+const GO_MIN_ATTEMPT: Duration = Duration::from_secs(2);
+
+/// Connects the way Go's `net.Dialer` does without `happyEyeballs`.
+///
+/// Candidates of the first address's family are tried one after another,
+/// each with an even share of what remains of the 16-second budget but at
+/// least two seconds. The other family starts 300 ms later, or as soon as the
+/// first one has failed. The first connection wins; if both families fail, the
+/// first family's first error is returned. A socket-protection failure stops
+/// both at once.
+pub async fn connect_tcp_dual_stack(
+    candidates: &[SocketAddr],
+    socket_protector: Option<&dyn SocketProtector>,
+) -> Result<TcpStream, TransportError> {
+    dial_dual_stack(candidates, |candidate| {
+        connect_tcp_stream(candidate, socket_protector)
+    })
+    .await
+}
+
+async fn dial_dual_stack<T, Connect, ConnectFuture>(
+    candidates: &[SocketAddr],
+    connect: Connect,
+) -> Result<T, TransportError>
+where
+    Connect: Fn(SocketAddr) -> ConnectFuture,
+    ConnectFuture: Future<Output = Result<T, TransportError>>,
+{
+    let candidates: Vec<SocketAddr> = candidates
+        .iter()
+        .map(|candidate| canonicalize_socket_addr(*candidate))
+        .collect();
+    let Some(first) = candidates.first() else {
+        return Err(no_candidates_error());
+    };
+    let (primaries, fallbacks): (Vec<_>, Vec<_>) = candidates
+        .iter()
+        .partition(|candidate| candidate.is_ipv4() == first.is_ipv4());
+    let deadline = Instant::now() + GO_DIAL_TIMEOUT;
+
+    let primary = dial_serial(&primaries, deadline, &connect);
+    tokio::pin!(primary);
+    if fallbacks.is_empty() {
+        return primary.await;
+    }
+    // Go starts the fallbacks after the delay, or at once when the primaries
+    // have failed; once started they run on even if that happens later.
+    let (primary_failed, primary_failed_rx) = tokio::sync::oneshot::channel::<()>();
+    let fallback = async {
+        tokio::select! {
+            () = tokio::time::sleep(GO_FALLBACK_DELAY) => {}
+            _ = primary_failed_rx => {}
+        }
+        dial_serial(&fallbacks, deadline, &connect).await
+    };
+    tokio::pin!(fallback);
+
+    tokio::select! {
+        result = &mut primary => match result {
+            Ok(stream) => Ok(stream),
+            Err(error @ TransportError::SocketProtection(_)) => Err(error),
+            Err(primary_error) => {
+                let _ = primary_failed.send(());
+                fallback
+                    .await
+                    .map_err(|fallback_error| keep_fatal(primary_error, fallback_error))
+            }
+        },
+        result = &mut fallback => match result {
+            Ok(stream) => Ok(stream),
+            Err(error @ TransportError::SocketProtection(_)) => Err(error),
+            Err(fallback_error) => primary
+                .await
+                .map_err(|primary_error| keep_fatal(primary_error, fallback_error)),
+        },
+    }
+}
+
+/// Go's `dialSerial`: each attempt gets `remaining / attempts_left`, but at
+/// least two seconds unless the deadline is nearer.
+async fn dial_serial<T, Connect, ConnectFuture>(
+    candidates: &[SocketAddr],
+    deadline: Instant,
+    connect: &Connect,
+) -> Result<T, TransportError>
+where
+    Connect: Fn(SocketAddr) -> ConnectFuture,
+    ConnectFuture: Future<Output = Result<T, TransportError>>,
+{
+    let mut first_error = None;
+    for (index, candidate) in candidates.iter().enumerate() {
+        let now = Instant::now();
+        let remaining = deadline.saturating_duration_since(now);
+        if remaining.is_zero() {
+            break;
+        }
+        let share = remaining / u32::try_from(candidates.len() - index).unwrap_or(u32::MAX);
+        let attempt = share.max(GO_MIN_ATTEMPT).min(remaining);
+        let result = tokio::time::timeout(attempt, connect(*candidate))
+            .await
+            .unwrap_or_else(|_| {
+                Err(TransportError::Tcp(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    format!("TCP connect to {candidate} timed out"),
+                )))
+            });
+        match result {
+            Ok(stream) => return Ok(stream),
+            Err(error @ TransportError::SocketProtection(_)) => return Err(error),
+            Err(error) => {
+                first_error.get_or_insert(error);
+            }
+        }
+    }
+    Err(first_error.unwrap_or_else(|| {
+        TransportError::Tcp(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "TCP dial deadline passed",
+        ))
+    }))
+}
+
+/// Both families failed: report the primary's error, unless the fallback hit
+/// a protection failure, which must not be hidden.
+fn keep_fatal(primary: TransportError, fallback: TransportError) -> TransportError {
+    match fallback {
+        TransportError::SocketProtection(_) => fallback,
+        _ => primary,
+    }
+}
+
 fn no_candidates_error() -> TransportError {
     TransportError::Tcp(io::Error::new(
         io::ErrorKind::InvalidInput,
@@ -710,5 +847,150 @@ mod tests {
         assert!(stream.nodelay().expect("read TCP_NODELAY"));
         assert_eq!(protector.calls.load(Ordering::SeqCst), 2);
         listener.accept().await.expect("accept winning connection");
+    }
+
+    /// When each candidate was tried and how it ends, for Go-style dialing.
+    #[derive(Clone, Copy)]
+    enum Dial {
+        Hang,
+        FailAfter(u64),
+        SucceedAfter(u64),
+        Unprotectable,
+    }
+
+    async fn go_dial(
+        plan: &[(SocketAddr, Dial)],
+    ) -> (Result<SocketAddr, TransportError>, Vec<(SocketAddr, u64)>) {
+        let started = Arc::new(Mutex::new(Vec::new()));
+        let epoch = Instant::now();
+        let plan: HashMap<SocketAddr, Dial> = plan.iter().copied().collect();
+        // Candidates are dialed in port order, so tests read top to bottom.
+        let mut candidates: Vec<SocketAddr> = plan.keys().copied().collect();
+        candidates.sort_by_key(SocketAddr::port);
+        let log = Arc::clone(&started);
+        let result = dial_dual_stack(&candidates, move |candidate| {
+            let log = Arc::clone(&log);
+            let dial = plan[&candidate];
+            async move {
+                let at = Instant::now().duration_since(epoch).as_millis() as u64;
+                log.lock().unwrap().push((candidate, at));
+                match dial {
+                    Dial::Hang => pending().await,
+                    Dial::FailAfter(ms) => {
+                        tokio::time::sleep(Duration::from_millis(ms)).await;
+                        Err(TransportError::Tcp(io::Error::new(
+                            io::ErrorKind::ConnectionRefused,
+                            candidate.to_string(),
+                        )))
+                    }
+                    Dial::SucceedAfter(ms) => {
+                        tokio::time::sleep(Duration::from_millis(ms)).await;
+                        Ok(candidate)
+                    }
+                    Dial::Unprotectable => Err(TransportError::SocketProtection(io::Error::other(
+                        "protect failed",
+                    ))),
+                }
+            }
+        })
+        .await;
+        let started = started.lock().unwrap().clone();
+        (result, started)
+    }
+
+    fn v4(port: u16) -> SocketAddr {
+        SocketAddr::from((Ipv4Addr::new(192, 0, 2, 1), port))
+    }
+
+    fn v6(port: u16) -> SocketAddr {
+        SocketAddr::from((Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1), port))
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn go_dialing_starts_the_other_family_300ms_later_or_when_the_first_fails() {
+        let (result, started) =
+            go_dial(&[(v6(1), Dial::Hang), (v4(2), Dial::SucceedAfter(0))]).await;
+        assert_eq!(result.unwrap(), v4(2));
+        assert_eq!(started, [(v6(1), 0), (v4(2), 300)]);
+
+        let (result, started) =
+            go_dial(&[(v6(1), Dial::FailAfter(50)), (v4(2), Dial::SucceedAfter(0))]).await;
+        assert_eq!(result.unwrap(), v4(2));
+        assert_eq!(started, [(v6(1), 0), (v4(2), 50)]);
+
+        // The first family can still win after the other has started.
+        let (result, _) = go_dial(&[(v4(1), Dial::SucceedAfter(400)), (v6(2), Dial::Hang)]).await;
+        assert_eq!(result.unwrap(), v4(1));
+
+        // A primary failure after the fallback started does not restart it.
+        let (result, started) = go_dial(&[
+            (v6(1), Dial::FailAfter(500)),
+            (v4(2), Dial::SucceedAfter(400)),
+        ])
+        .await;
+        assert_eq!(result.unwrap(), v4(2));
+        assert_eq!(started, [(v6(1), 0), (v4(2), 300)]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn go_dialing_tries_one_family_serially_with_even_shares_of_16_seconds() {
+        let (result, started) = go_dial(&[
+            (v4(1), Dial::Hang),
+            (v4(2), Dial::FailAfter(1_000)),
+            (v4(3), Dial::SucceedAfter(0)),
+        ])
+        .await;
+        assert_eq!(result.unwrap(), v4(3));
+        // 16 s / 3 (tokio rounds timers up to the next millisecond), then the
+        // second attempt's failure starts the third early.
+        assert_eq!(started, [(v4(1), 0), (v4(2), 5_334), (v4(3), 6_334)]);
+
+        // Each attempt gets at least two seconds; the budget ends the rest.
+        let plan: Vec<_> = (1..=10).map(|port| (v4(port), Dial::Hang)).collect();
+        let (result, started) = go_dial(&plan).await;
+        assert!(
+            matches!(result, Err(TransportError::Tcp(error)) if error.kind() == io::ErrorKind::TimedOut)
+        );
+        let starts: Vec<u64> = started.iter().map(|(_, at)| *at).collect();
+        assert_eq!(
+            starts,
+            [0, 2_000, 4_000, 6_000, 8_000, 10_000, 12_000, 14_000]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn go_dialing_reports_the_first_familys_error_and_stops_on_protection_failure() {
+        let (result, _) =
+            go_dial(&[(v6(1), Dial::FailAfter(10)), (v4(2), Dial::FailAfter(10))]).await;
+        assert!(
+            matches!(result, Err(TransportError::Tcp(error)) if error.to_string() == v6(1).to_string())
+        );
+
+        let (result, started) =
+            go_dial(&[(v6(1), Dial::Unprotectable), (v4(2), Dial::SucceedAfter(0))]).await;
+        assert!(matches!(result, Err(TransportError::SocketProtection(_))));
+        assert_eq!(started, [(v6(1), 0)]);
+
+        let (result, _) = go_dial(&[(v6(1), Dial::Hang), (v4(2), Dial::Unprotectable)]).await;
+        assert!(matches!(result, Err(TransportError::SocketProtection(_))));
+    }
+
+    #[tokio::test]
+    async fn connects_through_a_later_address_when_the_first_is_refused() {
+        // Only IPv4 listens, so the IPv6 loopback refuses (or is unreachable).
+        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let candidates = [
+            SocketAddr::from((Ipv6Addr::LOCALHOST, port)),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
+        ];
+        let (stream, accepted) = tokio::join!(
+            connect_tcp_dual_stack(&candidates, None),
+            tokio::time::timeout(Duration::from_secs(5), listener.accept()),
+        );
+        assert_eq!(stream.unwrap().peer_addr().unwrap(), candidates[1]);
+        assert!(matches!(accepted, Ok(Ok(_))));
     }
 }

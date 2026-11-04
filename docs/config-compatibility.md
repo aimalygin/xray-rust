@@ -1632,6 +1632,17 @@ protector before connect. Protection failure is fatal, and success, failure,
 caller cancellation, or dropping the dial future drops all losing attempts;
 the scheduler does not leave detached connection tasks running.
 
+Without the race, two or more candidates are dialed as Go's `net.Dialer` dials
+them, which is what Xray-core does when `happyEyeballs` is off. Candidates of
+the first address's family are tried one after another, each with an even
+share of what remains of 16 seconds (Xray's dial timeout) but at least two
+seconds. The other family starts 300 ms after the first attempt, or as soon as
+the first family has failed, and the first connection wins. A dual-stack host
+whose first address is unreachable, such as `localhost` served on IPv4 only or
+a server behind broken IPv6, therefore still connects. One candidate is dialed
+directly, as before. The same rules cover Freedom, proxy carriers and REALITY;
+socket protection is still fatal.
+
 ## Routing
 
 Supported routing configuration:
@@ -2232,7 +2243,7 @@ outbound's documented TLS/REALITY `streamSettings`. The public resolver result
 carries every candidate and TTL metadata. An explicitly enabled
 `sockopt.happyEyeballs` policy consumes those candidates through the bounded
 raw-TCP race described above; its Xray-compatible zero-delay default leaves the
-race disabled.
+race disabled and dials the candidates the way Go's `net.Dialer` does.
 
 A fake-IP profile does not inherently need `dns.servers` when its restored
 domains always use VLESS, because VLESS preserves them for remote resolution.

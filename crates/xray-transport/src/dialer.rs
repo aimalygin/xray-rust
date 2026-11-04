@@ -3,10 +3,10 @@ use std::{fmt, io, net::SocketAddr, sync::Arc};
 use crate::stream::{connect_httpupgrade, connect_websocket, TransportLayer};
 use crate::utls_tls::TlsAlpnPolicy;
 use crate::{
-    connect_tcp_happy_eyeballs, connect_tcp_stream, connect_tcp_target, BoxedTransportStream,
-    ConnectorConfig, HappyEyeballsConfig, RealityRuntimeEngine, RealityTlsEngine,
-    ResolvedTcpConnector, RustlsRealityTlsSessionProvider, SocketProtector, TlsConnector,
-    TransportError,
+    connect_tcp_dual_stack, connect_tcp_happy_eyeballs, connect_tcp_stream, connect_tcp_target,
+    BoxedTransportStream, ConnectorConfig, HappyEyeballsConfig, RealityRuntimeEngine,
+    RealityTlsEngine, ResolvedTcpConnector, RustlsRealityTlsSessionProvider, SocketProtector,
+    TlsConnector, TransportError,
 };
 use xray_routing::{Target, TargetAddr};
 
@@ -356,25 +356,17 @@ impl TransportDialer {
                         .ok_or(TransportError::UnsupportedConnectorConfig(
                             "REALITY tlshello fragmentation",
                         ))?;
-                    let stream = match race_config {
-                        Some(race) => {
-                            connect_tcp_happy_eyeballs(
-                                candidates,
-                                self.socket_protector.as_deref(),
-                                race,
-                            )
-                            .await?
-                        }
-                        None => connect_tcp_stream(first, self.socket_protector.as_deref()).await?,
-                    };
+                    let stream = self
+                        .connect_candidates(candidates, first, race_config)
+                        .await?;
                     return prepared.complete_fragmented(stream, fragment.clone()).await;
                 }
 
-                let Some(race_config) = race_config else {
+                if race_config.is_none() && candidates.len() < 2 {
                     return reality
                         .connect_socket_addr(reality_config, original_target, first)
                         .await;
-                };
+                }
                 let Some(prepared) =
                     reality.prepare_preconnected(reality_config, original_target)?
                 else {
@@ -384,12 +376,9 @@ impl TransportDialer {
                         .connect_socket_addr(reality_config, original_target, first)
                         .await;
                 };
-                let stream = connect_tcp_happy_eyeballs(
-                    candidates,
-                    self.socket_protector.as_deref(),
-                    race_config,
-                )
-                .await?;
+                let stream = self
+                    .connect_candidates(candidates, first, race_config)
+                    .await?;
 
                 prepared.complete(stream).await
             }
@@ -443,14 +432,26 @@ impl TransportDialer {
             .first()
             .copied()
             .ok_or_else(|| no_resolved_candidates_error(original_target))?;
-        match happy_eyeballs.filter(|config| !config.try_delay.is_zero() && candidates.len() >= 2) {
-            Some(race_config) => Ok(connect_tcp_happy_eyeballs(
-                candidates,
-                self.socket_protector.as_deref(),
-                race_config,
-            )
-            .await?),
-            None => Ok(connect_tcp_stream(first, self.socket_protector.as_deref()).await?),
+        let race_config =
+            happy_eyeballs.filter(|config| !config.try_delay.is_zero() && candidates.len() >= 2);
+        self.connect_candidates(candidates, first, race_config)
+            .await
+    }
+
+    /// Races configured `happyEyeballs`; otherwise dials like Go's
+    /// `net.Dialer`, which Xray-core uses, so a dual-stack host whose first
+    /// address is unreachable still connects through another.
+    async fn connect_candidates(
+        &self,
+        candidates: &[SocketAddr],
+        first: SocketAddr,
+        race_config: Option<&HappyEyeballsConfig>,
+    ) -> Result<tokio::net::TcpStream, TransportError> {
+        let protector = self.socket_protector.as_deref();
+        match race_config {
+            Some(race) => connect_tcp_happy_eyeballs(candidates, protector, race).await,
+            None if candidates.len() >= 2 => connect_tcp_dual_stack(candidates, protector).await,
+            None => connect_tcp_stream(first, protector).await,
         }
     }
 }
