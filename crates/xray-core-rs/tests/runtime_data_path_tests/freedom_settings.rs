@@ -416,7 +416,11 @@ async fn a_blocked_tcp_connection_is_held_and_then_closed() {
         .await
         .expect("the block delay closes the connection");
     assert!(matches!(closed, Ok(0) | Err(_)), "{closed:?}");
-    assert!(held.elapsed() >= Duration::from_millis(900), "{:?}", held.elapsed());
+    assert!(
+        held.elapsed() >= Duration::from_millis(900),
+        "{:?}",
+        held.elapsed()
+    );
     assert!(
         timeout(Duration::from_millis(100), listener.accept())
             .await
@@ -477,8 +481,10 @@ async fn an_earlier_allow_shields_an_address_and_names_are_checked_resolved() {
 async fn spawn_udp_reflector() -> (SocketAddr, SocketAddr, JoinHandle<()>) {
     let receiver = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let replier = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-    let (receiver_addr, replier_addr) =
-        (receiver.local_addr().unwrap(), replier.local_addr().unwrap());
+    let (receiver_addr, replier_addr) = (
+        receiver.local_addr().unwrap(),
+        replier.local_addr().unwrap(),
+    );
     let handle = tokio::spawn(async move {
         let mut buffer = [0; 2048];
         loop {
@@ -491,7 +497,11 @@ async fn spawn_udp_reflector() -> (SocketAddr, SocketAddr, JoinHandle<()>) {
 
 /// Sends `payload` to `target` over SOCKS UDP and returns the reply, if one
 /// comes within half a second.
-async fn socks_udp_exchange(socks: SocketAddr, target: SocketAddr, payload: &[u8]) -> Option<Vec<u8>> {
+async fn socks_udp_exchange(
+    socks: SocketAddr,
+    target: SocketAddr,
+    payload: &[u8],
+) -> Option<Vec<u8>> {
     let mut control = TcpStream::connect(socks).await.unwrap();
     let relay = socks5_udp_associate(&mut control).await;
     let client = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
@@ -507,7 +517,12 @@ async fn socks_udp_exchange(socks: SocketAddr, target: SocketAddr, payload: &[u8
         .await
         .ok()?
         .unwrap();
-    Some(parse_socks5_udp_datagram(&buffer[..reply.0]).unwrap().payload.to_vec())
+    Some(
+        parse_socks5_udp_datagram(&buffer[..reply.0])
+            .unwrap()
+            .payload
+            .to_vec(),
+    )
 }
 
 #[tokio::test]
@@ -517,7 +532,9 @@ async fn udp_rules_block_destinations_and_reply_sources() {
     let mut core = start(SOCKS_IN, "{}", "").await;
     let socks = core.inbound_addr(Some("socks-in")).unwrap();
     assert_eq!(
-        socks_udp_exchange(socks, receiver, b"control").await.as_deref(),
+        socks_udp_exchange(socks, receiver, b"control")
+            .await
+            .as_deref(),
         Some(b"control".as_slice())
     );
     core.stop().await.unwrap();
@@ -689,7 +706,10 @@ async fn the_header_goes_beneath_the_fragment_mask() {
         .await
         .unwrap();
     socks5_connect(&mut client, server).await;
-    client.write_all(&[22, 3, 1, 0, 4, 1, 2, 3, 4]).await.unwrap();
+    client
+        .write_all(&[22, 3, 1, 0, 4, 1, 2, 3, 4])
+        .await
+        .unwrap();
     // Xray-core's freedom writes the header on the connection itself, so its
     // fragmenter still sees the hello as the first write and splits it.
     let mut expected = format!(

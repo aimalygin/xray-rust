@@ -159,7 +159,13 @@ fn proxy_protocol_keeps_only_versions_one_and_two() {
         assert_eq!(version(ignored.clone()), None, "{ignored}");
     }
     assert_eq!(parse(json!({})).proxy_protocol, None);
-    for raw in [json!(-1), json!(1.5), json!("1"), json!(true), json!(4_294_967_296_u64)] {
+    for raw in [
+        json!(-1),
+        json!(1.5),
+        json!("1"),
+        json!(true),
+        json!(4_294_967_296_u64),
+    ] {
         let (path, _) = rejection(json!({ "proxyProtocol": raw }));
         assert_eq!(path, "$.outbounds[0].settings.proxyProtocol", "{raw}");
     }
@@ -185,16 +191,25 @@ fn final_rules_read_as_xray_reads_them() {
     assert!(rule.port_ranges.is_empty());
     assert_eq!(rule.ip_matchers, None);
     assert_eq!(rule.block_delay, None);
-    assert_eq!(final_rule(json!({"action": "ALLOW"})).action, FreedomRuleAction::Allow);
+    assert_eq!(
+        final_rule(json!({"action": "ALLOW"})).action,
+        FreedomRuleAction::Allow
+    );
 
     // NetworkList: unknown names are kept as networks nothing travels over.
     let networks = |raw: Value| final_rule(json!({"action": "block", "network": raw})).networks;
-    assert_eq!(networks(json!("tcp,udp")), Some(vec![Network::Tcp, Network::Udp]));
+    assert_eq!(
+        networks(json!("tcp,udp")),
+        Some(vec![Network::Tcp, Network::Udp])
+    );
     assert_eq!(networks(json!("UDP")), Some(vec![Network::Udp]));
     assert_eq!(networks(json!("tcp, udp")), Some(vec![Network::Tcp]));
     assert_eq!(networks(json!("unix")), Some(vec![]));
     assert_eq!(networks(json!("")), Some(vec![]));
-    assert_eq!(networks(json!(["udp", null, "quic"])), Some(vec![Network::Udp]));
+    assert_eq!(
+        networks(json!(["udp", null, "quic"])),
+        Some(vec![Network::Udp])
+    );
     assert_eq!(networks(json!([])), None);
     assert_eq!(networks(Value::Null), None);
 
@@ -249,7 +264,10 @@ fn final_rules_reject_what_xray_rejects() {
         (json!({"action": "block", "ip": [5]}), "ip[0]"),
         (json!({"action": "block", "ip": ["300.0.0.1"]}), "ip[0]"),
         (json!({"action": "block", "ip": 5}), "ip"),
-        (json!({"action": "block", "blockDelay": {"from": 1, "to": 2}}), "blockDelay"),
+        (
+            json!({"action": "block", "blockDelay": {"from": 1, "to": 2}}),
+            "blockDelay",
+        ),
         (json!({"action": "block", "blockDelay": 1.5}), "blockDelay"),
         (json!({"action": "block", "blockDelay": "x"}), "blockDelay"),
     ] {
@@ -265,9 +283,18 @@ fn final_rules_reject_what_xray_rejects() {
     // later panics or never holds the connection; an unknown field is
     // silently ignored there.
     for (rule, field) in [
-        (json!({"action": "block", "blockDelay": "-5-10"}), "blockDelay"),
-        (json!({"action": "block", "blockDelay": "2147483648"}), "blockDelay"),
-        (json!({"action": "block", "domain": ["example.com"]}), "domain"),
+        (
+            json!({"action": "block", "blockDelay": "-5-10"}),
+            "blockDelay",
+        ),
+        (
+            json!({"action": "block", "blockDelay": "2147483648"}),
+            "blockDelay",
+        ),
+        (
+            json!({"action": "block", "domain": ["example.com"]}),
+            "domain",
+        ),
     ] {
         let (path, _) = rejection(json!({ "finalRules": [rule.clone()] }));
         assert_eq!(path, format!("{rule_path}.{field}"), "{rule}");
@@ -299,8 +326,9 @@ fn ips_blocked_is_ignored_with_a_warning() {
         assert!(settings.final_rules.is_empty());
         assert_eq!(warnings, ["$.outbounds[0].settings.ipsBlocked"]);
     }
-    let (_, warnings) =
-        warnings(&json!({"outbounds": [{"protocol": "freedom", "settings": {"ipsBlocked": null}}]}));
+    let (_, warnings) = warnings(
+        &json!({"outbounds": [{"protocol": "freedom", "settings": {"ipsBlocked": null}}]}),
+    );
     assert!(warnings.is_empty());
     for raw in [json!(5), json!([5]), json!({})] {
         let (path, _) = rejection(json!({ "ipsBlocked": raw }));
@@ -354,6 +382,9 @@ fn an_empty_condition_matches_nothing_and_an_absent_one_everything() {
     assert!(port.applies(Network::Tcp, ip, 55));
     assert!(!port.applies(Network::Tcp, ip, 61));
     let rules = [no_network, port.clone(), any];
-    assert_eq!(deciding_final_rule(&rules, Network::Tcp, ip, 55), Some(&port));
+    assert_eq!(
+        deciding_final_rule(&rules, Network::Tcp, ip, 55),
+        Some(&port)
+    );
     assert_eq!(deciding_final_rule(&rules[..2], Network::Tcp, ip, 61), None);
 }
