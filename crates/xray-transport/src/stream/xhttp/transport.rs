@@ -369,6 +369,10 @@ impl XhttpTransport {
         }
         if http_version == XhttpHttpVersion::Http3 {
             h3_quic.diagnostics()?;
+            // Xray's XHTTP dialer has no case for it and panics on dial.
+            if matches!(h3_quic.congestion, super::H3Congestion::Brutal { .. }) {
+                return Err(super::H3Error::BrutalNeedsHysteria.into());
+            }
         }
         let rng: Arc<StdMutex<Box<dyn RngCore + Send>>> = Arc::new(StdMutex::new(Box::new(OsRng)));
         let clock: XhttpClock = Arc::new(Instant::now);

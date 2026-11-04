@@ -84,6 +84,101 @@ fn typed_hysteria_contract_is_checked_before_runtime_start() {
     }
 }
 
+#[test]
+fn hysteria_quic_params_follow_xrays_hysteria_dialer() {
+    let (quic, receive) = hysteria_quic_config(None).unwrap();
+    assert_eq!(quic.max_idle_timeout, Duration::from_secs(30));
+    assert_eq!(quic.congestion, H3Congestion::BbrStandard);
+    assert_eq!(quic.keep_alive_interval, None);
+    assert_eq!(receive, 0);
+
+    let base = QuicParamsSettings {
+        brutal_up_bytes_per_sec: 1_250_000,
+        brutal_down_bytes_per_sec: 2_500_000,
+        ..QuicParamsSettings::default()
+    };
+    // The default and `brutal` modes negotiate; the rest ignore the rates.
+    for (congestion, expected) in [
+        (
+            xray_config::QuicCongestion::Default,
+            H3Congestion::Brutal {
+                up_bytes_per_second: 1_250_000,
+            },
+        ),
+        (
+            xray_config::QuicCongestion::Brutal,
+            H3Congestion::Brutal {
+                up_bytes_per_second: 1_250_000,
+            },
+        ),
+        (xray_config::QuicCongestion::Bbr, H3Congestion::BbrStandard),
+        (xray_config::QuicCongestion::Reno, H3Congestion::Reno),
+        (
+            xray_config::QuicCongestion::ForceBrutal,
+            H3Congestion::ForceBrutal {
+                bytes_per_second: 1_250_000,
+            },
+        ),
+    ] {
+        let settings = QuicParamsSettings {
+            congestion,
+            ..base.clone()
+        };
+        let (quic, receive) = hysteria_quic_config(Some(&settings)).unwrap();
+        assert_eq!(quic.congestion, expected, "{congestion:?}");
+        assert_eq!(receive, 2_500_000, "brutalDown is announced in every mode");
+    }
+
+    // Without its own rate the client stays on BBR.
+    let (quic, _) = hysteria_quic_config(Some(&QuicParamsSettings::default())).unwrap();
+    assert_eq!(quic.congestion, H3Congestion::BbrStandard);
+
+    let (quic, _) = hysteria_quic_config(Some(&QuicParamsSettings {
+        init_stream_receive_window: 8 * 1024 * 1024,
+        max_stream_receive_window: 16 * 1024 * 1024,
+        init_connection_receive_window: 20 * 1024 * 1024,
+        max_idle_timeout_secs: 60,
+        keep_alive_period_secs: 10,
+        max_incoming_streams: 64,
+        disable_gso: true,
+        brutal_disable_loss_compensation: true,
+        ..QuicParamsSettings::default()
+    }))
+    .unwrap();
+    assert_eq!(
+        quic.initial_stream_receive_window,
+        16 * 1024 * 1024,
+        "quinn keeps the window fixed: the larger value wins"
+    );
+    assert_eq!(quic.max_stream_receive_window, None);
+    assert_eq!(quic.initial_connection_receive_window, 20 * 1024 * 1024);
+    assert_eq!(quic.max_idle_timeout, Duration::from_secs(60));
+    assert_eq!(quic.keep_alive_interval, Some(Duration::from_secs(10)));
+    assert_eq!(
+        quic.max_incoming_bidirectional_streams,
+        H3QuicConfig::default().max_incoming_bidirectional_streams,
+        "Xray's Hysteria dialer leaves the incoming-stream limit alone"
+    );
+    assert!(quic.disable_gso && quic.brutal_disable_loss_compensation);
+
+    for invalid in [
+        QuicParamsSettings {
+            debug: true,
+            ..QuicParamsSettings::default()
+        },
+        QuicParamsSettings {
+            bbr_profile: xray_config::QuicBbrProfile::Conservative,
+            ..QuicParamsSettings::default()
+        },
+        QuicParamsSettings {
+            bbr_profile: xray_config::QuicBbrProfile::Aggressive,
+            ..base.clone()
+        },
+    ] {
+        assert!(hysteria_quic_config(Some(&invalid)).is_err(), "{invalid:?}");
+    }
+}
+
 #[tokio::test]
 async fn hysteria_close_cancels_bootstrap_and_waiting_callers() {
     let outbound = HysteriaOutbound::new(&configured()).unwrap();

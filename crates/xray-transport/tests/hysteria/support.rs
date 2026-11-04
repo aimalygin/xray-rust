@@ -99,6 +99,20 @@ impl ReferenceServer {
     }
 
     pub async fn start_with_carrier(udp_enabled: bool, salamander: bool) -> Self {
+        Self::start_with_options(udp_enabled, salamander, None).await
+    }
+
+    /// A server with its own Brutal rates, as `(send, receive)` bandwidth
+    /// strings: Xray's `brutalUp`/`brutalDown`, native Hysteria's `bandwidth`.
+    pub async fn start_with_bandwidth(send: &str, receive: &str) -> Self {
+        Self::start_with_options(true, false, Some((send, receive))).await
+    }
+
+    async fn start_with_options(
+        udp_enabled: bool,
+        salamander: bool,
+        bandwidth: Option<(&str, &str)>,
+    ) -> Self {
         let (binary, native) = match (
             std::env::var_os("XRAY_HYSTERIA_BINARY"),
             std::env::var_os("NATIVE_HYSTERIA_BINARY"),
@@ -150,6 +164,15 @@ impl ReferenceServer {
                 config["obfs"] = serde_json::json!({"type":"salamander", "salamander":{"password":SALAMANDER_PASSWORD}});
             } else {
                 config["inbounds"][0]["streamSettings"]["finalmask"] = serde_json::json!({"udp":[{"type":"salamander","settings":{"password":SALAMANDER_PASSWORD}}]});
+            }
+        }
+        if let Some((send, receive)) = bandwidth {
+            if native {
+                config["bandwidth"] = serde_json::json!({"up": send, "down": receive});
+                config["ignoreClientBandwidth"] = serde_json::json!(false);
+            } else {
+                config["inbounds"][0]["streamSettings"]["finalmask"]["quicParams"] =
+                    serde_json::json!({"brutalUp": send, "brutalDown": receive});
             }
         }
         std::fs::write(

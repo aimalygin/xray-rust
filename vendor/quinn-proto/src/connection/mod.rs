@@ -1718,6 +1718,7 @@ impl Connection {
         let largest_acked_packet = self.spaces[pn_space].largest_acked_packet.unwrap();
         let packet_threshold = self.config.packet_threshold as u64;
         let mut size_of_lost_packets = 0u64;
+        let mut lost_ack_eliciting_packets = 0u64;
 
         // InPersistentCongestion: Determine if all packets in the time period before the newest
         // lost packet, including the edges, are marked lost. PTO computation must always
@@ -1749,6 +1750,7 @@ impl Connection {
                 } else {
                     lost_packets.push(packet);
                     size_of_lost_packets += info.size as u64;
+                    lost_ack_eliciting_packets += u64::from(info.ack_eliciting);
                     if info.ack_eliciting && due_to_ack {
                         match persistent_congestion_start {
                             // Two ACK-eliciting packets lost more than congestion_period apart, with no
@@ -1826,6 +1828,11 @@ impl Connection {
 
             if lost_ack_eliciting {
                 self.stats.path.congestion_events += 1;
+                self.path.congestion.on_packets_lost(
+                    now,
+                    lost_ack_eliciting_packets,
+                    size_of_lost_packets,
+                );
                 self.path.congestion.on_congestion_event(
                     now,
                     largest_lost_sent,

@@ -294,20 +294,21 @@ pub(super) fn xhttp_h3_quic_config(
             target_os = "windows",
             target_os = "macos"
         ));
+    config.disable_gso = settings.disable_gso;
     config.congestion = match settings.congestion {
         xray_config::QuicCongestion::Reno => H3Congestion::Reno,
-        xray_config::QuicCongestion::Brutal => H3Congestion::Brutal,
+        // The XHTTP transport refuses it: only Hysteria announces rates.
+        xray_config::QuicCongestion::Brutal => H3Congestion::Brutal {
+            up_bytes_per_second: settings.brutal_up_bytes_per_sec,
+        },
         xray_config::QuicCongestion::ForceBrutal => H3Congestion::ForceBrutal {
             bytes_per_second: settings.brutal_up_bytes_per_sec,
         },
         xray_config::QuicCongestion::Default | xray_config::QuicCongestion::Bbr => {
-            match settings.bbr_profile {
-                xray_config::QuicBbrProfile::Conservative => H3Congestion::BbrConservative,
-                xray_config::QuicBbrProfile::Standard => H3Congestion::BbrStandard,
-                xray_config::QuicBbrProfile::Aggressive => H3Congestion::BbrAggressive,
-            }
+            bbr_congestion(settings.bbr_profile)
         }
     };
+    config.brutal_disable_loss_compensation = settings.brutal_disable_loss_compensation;
     config.udp_hop = H3UdpHopConfig {
         ports: settings.udp_hop.ports.clone(),
         interval_min: quic_i32_seconds("udpHop.interval.from", settings.udp_hop.interval.from)?,
@@ -315,6 +316,15 @@ pub(super) fn xhttp_h3_quic_config(
     };
     config.debug = settings.debug;
     Ok(config)
+}
+
+/// The BBR variant for Xray's `bbrProfile`; only standard is implemented.
+pub(super) const fn bbr_congestion(profile: xray_config::QuicBbrProfile) -> H3Congestion {
+    match profile {
+        xray_config::QuicBbrProfile::Conservative => H3Congestion::BbrConservative,
+        xray_config::QuicBbrProfile::Standard => H3Congestion::BbrStandard,
+        xray_config::QuicBbrProfile::Aggressive => H3Congestion::BbrAggressive,
+    }
 }
 
 pub(super) const QUIC_VARINT_MAX: u64 = (1_u64 << 62) - 1;

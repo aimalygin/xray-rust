@@ -2681,15 +2681,41 @@ fn unsupported_quic_parity_modes_fail_closed() {
     ));
 
     config.max_stream_receive_window = None;
+    for requested in [H3Congestion::BbrConservative, H3Congestion::BbrAggressive] {
+        config.congestion = requested;
+        assert!(matches!(
+            config.diagnostics(),
+            Err(H3Error::UnsupportedCongestion { requested: actual }) if actual == requested
+        ));
+    }
     config.congestion = H3Congestion::ForceBrutal {
-        bytes_per_second: 65_536,
+        bytes_per_second: 0,
     };
     assert!(matches!(
         config.diagnostics(),
-        Err(H3Error::UnsupportedCongestion {
-            requested: H3Congestion::ForceBrutal { .. }
-        })
+        Err(H3Error::UnsupportedCongestion { .. })
     ));
+    config.congestion = H3Congestion::ForceBrutal {
+        bytes_per_second: 65_536,
+    };
+    assert_eq!(config.diagnostics().unwrap().congestion, "brutal");
+    // Xray's XHTTP dialer panics on plain `brutal`; it needs Hysteria's
+    // bandwidth exchange, so an XHTTP transport refuses it up front.
+    config.congestion = H3Congestion::Brutal {
+        up_bytes_per_second: 65_536,
+    };
+    assert!(config.diagnostics().is_ok());
+    let (xhttp, endpoint) = xhttp_config(XhttpModeSelection::StreamOne, 4);
+    let Err(refused) = XhttpTransport::new_with_h3_quic(
+        xhttp,
+        endpoint,
+        XhttpHttpVersion::Http3,
+        unlimited_xmux(),
+        config.clone(),
+    ) else {
+        panic!("XHTTP H3 must refuse negotiated Brutal");
+    };
+    assert!(refused.to_string().contains("Hysteria"), "{refused}");
 
     config.congestion = H3Congestion::BbrStandard;
     config.udp_hop = H3UdpHopConfig {

@@ -1183,7 +1183,22 @@
      /// Packets are acked in batches, all with the same `now` argument. This indicates one of those batches has completed.
      #[allow(unused_variables)]
      fn on_end_acks(
-@@ -64,6 +105,12 @@
+@@ -45,6 +86,14 @@
+     ) {
+     }
+ 
++    /// Ack-eliciting packets were declared lost in one loss-detection pass.
++    ///
++    /// Called just before `on_congestion_event` for the same batch with the
++    /// number and total size of the lost packets. Lost MTU probes and ECN
++    /// congestion signals are not reported here. The default ignores it.
++    #[allow(unused_variables)]
++    fn on_packets_lost(&mut self, now: Instant, packets: u64, bytes: u64) {}
++
+     /// Packets were deemed lost or marked congested
+     ///
+     /// `in_persistent_congestion` indicates whether all packets sent within the persistent
+@@ -64,6 +113,12 @@
  
      /// Number of ack-eliciting bytes that may be in flight
      fn window(&self) -> u64;
@@ -1417,7 +1432,23 @@
              );
          }
  
-@@ -1737,7 +1789,8 @@
+@@ -1666,6 +1718,7 @@
+         let largest_acked_packet = self.spaces[pn_space].largest_acked_packet.unwrap();
+         let packet_threshold = self.config.packet_threshold as u64;
+         let mut size_of_lost_packets = 0u64;
++        let mut lost_ack_eliciting_packets = 0u64;
+ 
+         // InPersistentCongestion: Determine if all packets in the time period before the newest
+         // lost packet, including the edges, are marked lost. PTO computation must always
+@@ -1697,6 +1750,7 @@
+                 } else {
+                     lost_packets.push(packet);
+                     size_of_lost_packets += info.size as u64;
++                    lost_ack_eliciting_packets += u64::from(info.ack_eliciting);
+                     if info.ack_eliciting && due_to_ack {
+                         match persistent_congestion_start {
+                             // Two ACK-eliciting packets lost more than congestion_period apart, with no
+@@ -1737,7 +1791,8 @@
              self.stats.path.lost_bytes += size_of_lost_packets;
              trace!(
                  "packets lost: {:?}, bytes lost: {}",
@@ -1427,6 +1458,18 @@
              );
  
              for &packet in &lost_packets {
+@@ -1773,6 +1828,11 @@
+ 
+             if lost_ack_eliciting {
+                 self.stats.path.congestion_events += 1;
++                self.path.congestion.on_packets_lost(
++                    now,
++                    lost_ack_eliciting_packets,
++                    size_of_lost_packets,
++                );
+                 self.path.congestion.on_congestion_event(
+                     now,
+                     largest_lost_sent,
 --- a/src/connection/pacing.rs
 +++ b/src/connection/pacing.rs
 @@ -15,6 +15,7 @@
@@ -1976,7 +2019,7 @@
      #[test]
 --- a/src/tests/congestion_sent.rs
 +++ b/src/tests/congestion_sent.rs
-@@ -0,0 +1,381 @@
+@@ -0,0 +1,442 @@
 +use super::*;
 +use crate::congestion::{Controller, ControllerFactory, CubicConfig};
 +use crate::connection::RttEstimator;
@@ -1984,7 +2027,12 @@
 +use std::sync::atomic::{AtomicU64, Ordering};
 +
 +#[derive(Clone)]
-+struct Recorder(Arc<Mutex<Vec<u64>>>, Arc<AtomicU64>, Arc<AtomicU64>);
++struct Recorder(
++    Arc<Mutex<Vec<u64>>>,
++    Arc<AtomicU64>,
++    Arc<AtomicU64>,
++    Arc<Mutex<(u64, u64)>>,
++);
 +
 +impl ControllerFactory for Recorder {
 +    fn build(self: Arc<Self>, now: Instant, mtu: u16) -> Box<dyn Controller> {
@@ -1992,6 +2040,7 @@
 +            bytes: self.0.clone(),
 +            window_override: self.1.clone(),
 +            rate_override: self.2.clone(),
++            lost: self.3.clone(),
 +            tokens: Default::default(),
 +            next_token: 1,
 +            rtt_samples: Vec::new(),
@@ -2006,6 +2055,7 @@
 +    bytes: Arc<Mutex<Vec<u64>>>,
 +    window_override: Arc<AtomicU64>,
 +    rate_override: Arc<AtomicU64>,
++    lost: Arc<Mutex<(u64, u64)>>,
 +    inner: Box<dyn Controller>,
 +    tokens: std::collections::BTreeMap<u64, (Instant, u64)>,
 +    next_token: u64,
@@ -2071,6 +2121,12 @@
 +        }
 +        self.inner.on_end_acks(now, flight, limited, largest);
 +    }
++    fn on_packets_lost(&mut self, now: Instant, packets: u64, bytes: u64) {
++        let mut lost = self.lost.lock().unwrap();
++        lost.0 += packets;
++        lost.1 += bytes;
++        self.inner.on_packets_lost(now, packets, bytes);
++    }
 +    fn on_congestion_event(&mut self, now: Instant, sent: Instant, persistent: bool, lost: u64) {
 +        self.inner.on_congestion_event(now, sent, persistent, lost);
 +    }
@@ -2097,6 +2153,7 @@
 +            bytes: self.bytes.clone(),
 +            window_override: self.window_override.clone(),
 +            rate_override: self.rate_override.clone(),
++            lost: self.lost.clone(),
 +            tokens: self.tokens.clone(),
 +            next_token: self.next_token,
 +            rtt_samples: self.rtt_samples.clone(),
@@ -2122,6 +2179,7 @@
 +    let mut transport = TransportConfig::default();
 +    transport.congestion_controller_factory(Arc::new(Recorder(
 +        recorded.clone(),
++        Arc::default(),
 +        Arc::default(),
 +        Arc::default(),
 +    )));
@@ -2257,6 +2315,51 @@
 +}
 +
 +#[test]
++fn lost_packets_are_reported_with_their_count_and_size() {
++    let lost = Arc::new(Mutex::new((0u64, 0u64)));
++    let mut transport = TransportConfig::default();
++    transport.mtu_discovery_config(None);
++    transport.congestion_controller_factory(Arc::new(Recorder(
++        Arc::default(),
++        Arc::default(),
++        Arc::default(),
++        lost.clone(),
++    )));
++    let mut config = client_config();
++    config.transport_config(Arc::new(transport));
++    let mut pair = Pair::default();
++    let (client, server) = pair.connect_with(config);
++    pair.latency = Duration::from_millis(25);
++    let stream = pair.client_streams(client).open(Dir::Uni).unwrap();
++    let payload = vec![0x42; 64 * 1024];
++    assert_eq!(
++        pair.client_send(client, stream).write(&payload).unwrap(),
++        payload.len()
++    );
++    pair.client_send(client, stream).finish().unwrap();
++    let stats = pair.client_conn_mut(client).stats().path;
++    let (lost_packets_before, lost_bytes_before) = (stats.lost_packets, stats.lost_bytes);
++    pair.drive_client();
++    // Each 1-RTT datagram carries one short-header packet with stream data.
++    assert!(pair.server.inbound.pop_front().is_some(), "drop a sent datagram");
++    assert!(pair.server.inbound.pop_front().is_some(), "drop a second one");
++    let mut idle = false;
++    for _ in 0..1000 {
++        if !pair.step() {
++            idle = true;
++            break;
++        }
++    }
++    assert!(idle, "transfer must complete without an endless timer loop");
++    let stats = pair.client_conn_mut(client).stats().path;
++    let (packets, bytes) = *lost.lock().unwrap();
++    assert!(packets >= 2, "both dropped packets must be reported lost");
++    assert_eq!(packets, stats.lost_packets - lost_packets_before);
++    assert_eq!(bytes, stats.lost_bytes - lost_bytes_before);
++    assert_eq!(pair.server_streams(server).accept(Dir::Uni), Some(stream));
++}
++
++#[test]
 +fn measured_rtt_callback_arrives_before_batch_end() {
 +    let (mut pair, client, _, _) = connected(false);
 +    pair.latency = Duration::from_millis(25);
@@ -2292,6 +2395,7 @@
 +        recorded.clone(),
 +        window.clone(),
 +        rate.clone(),
++        Arc::default(),
 +    )));
 +    let mut config = client_config();
 +    config.transport_config(Arc::new(transport));

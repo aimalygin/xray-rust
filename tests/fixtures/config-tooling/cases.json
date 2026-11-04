@@ -2925,28 +2925,39 @@
       "accepted": false
     },
     {
-      "name": "quic-unsupported-disableGSO",
+      "name": "quic-disableGSO",
       "base": "udp-hop-mask-261021",
       "set": {
         "/outbounds/0/streamSettings/finalmask/quicParams/disableGSO": true
       },
-      "accepted": false
+      "accepted": true
     },
     {
-      "name": "quic-unsupported-disableStatelessReset",
+      "name": "quic-disableStatelessReset",
       "base": "udp-hop-mask-261021",
       "set": {
         "/outbounds/0/streamSettings/finalmask/quicParams/disableStatelessReset": true
       },
-      "accepted": false
+      "accepted": true
     },
     {
-      "name": "quic-unsupported-brutalDisableLossCompensation",
+      "name": "quic-hysteria-brutal-rates",
       "base": "udp-hop-mask-261021",
       "set": {
+        "/outbounds/0/streamSettings/finalmask/quicParams/brutalUp": "100 mbps",
+        "/outbounds/0/streamSettings/finalmask/quicParams/brutalDown": "200 mbps",
         "/outbounds/0/streamSettings/finalmask/quicParams/brutalDisableLossCompensation": true
       },
-      "accepted": false
+      "accepted": true
+    },
+    {
+      "name": "quic-unsupported-bbrProfile",
+      "base": "udp-hop-mask-261021",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/quicParams/bbrProfile": "conservative"
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.quicParams.bbrProfile"
     }
   ]
 }

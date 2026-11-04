@@ -15,9 +15,10 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use zeroize::Zeroizing;
 
+use crate::quic_congestion::BrutalDecision;
 use crate::stream::{
-    configure_quic_datagram_socket, connect_quic_transport_with_datagrams, H3ConnectConfig,
-    H3Error, H3QuicConfig, QuicSendWindow, QUIC_INITIAL_SEND_WINDOW,
+    configure_quic_datagram_socket, connect_quic_transport_with_datagrams, H3Congestion,
+    H3ConnectConfig, H3Error, H3QuicConfig, QuicSendWindow, QUIC_INITIAL_SEND_WINDOW,
 };
 use crate::{TlsClientConfig, TlsConnector, TransportError};
 
@@ -83,6 +84,10 @@ pub struct HysteriaConfig {
     pub quic: H3QuicConfig,
     pub limits: HysteriaLimits,
     pub carrier: super::HysteriaCarrierConfig,
+    /// `brutalDown` in bytes per second, announced to the server as
+    /// `Hysteria-CC-RX`. A server with its own Brutal rate sends at the lower
+    /// of the two; zero leaves it on BBR.
+    pub receive_bytes_per_second: u64,
 }
 
 impl HysteriaConfig {
@@ -97,6 +102,7 @@ impl HysteriaConfig {
                 max_idle_timeout: Duration::from_secs(30),
                 ..H3QuicConfig::default()
             },
+            receive_bytes_per_second: 0,
         }
     }
 }
@@ -109,6 +115,7 @@ impl fmt::Debug for HysteriaConfig {
             .field("quic", &self.quic)
             .field("limits", &self.limits)
             .field("carrier", &self.carrier)
+            .field("receive_bytes_per_second", &self.receive_bytes_per_second)
             .finish_non_exhaustive()
     }
 }
@@ -387,6 +394,13 @@ impl HysteriaClient {
             .as_ref()
             .filter(|noise| !noise.items.is_empty())
             .map(|_| Arc::new(crate::udp_noise::UdpNoiseState::default()));
+        // Hysteria's default mode picks Brutal or BBR from the server's reply.
+        let negotiation = match config.quic.congestion {
+            H3Congestion::Brutal {
+                up_bytes_per_second,
+            } => Some((up_bytes_per_second, Arc::new(BrutalDecision::default()))),
+            _ => None,
+        };
         let (endpoint, connection, _, wire_peer) = connect_quic_transport_with_datagrams(
             H3ConnectConfig {
                 remote_addr: config.remote_addr,
@@ -403,6 +417,7 @@ impl HysteriaClient {
             )),
             Some(&config.carrier),
             noise_state.clone(),
+            negotiation.as_ref().map(|(_, decision)| decision),
         )
         .await
         .map_err(|error| match error {
@@ -432,7 +447,7 @@ impl HysteriaClient {
             .method(Method::POST)
             .uri("https://hysteria/auth")
             .header("hysteria-auth", auth)
-            .header("hysteria-cc-rx", "0")
+            .header("hysteria-cc-rx", config.receive_bytes_per_second)
             .header("hysteria-padding", padding)
             .body(())
             .map_err(|_| HysteriaError::Configuration)?;
@@ -451,7 +466,13 @@ impl HysteriaClient {
         if response.status().as_u16() != 233 {
             return Err(HysteriaError::Authentication);
         }
-        let udp_enabled = parse_auth_headers(response.headers())?;
+        let (udp_enabled, server_receive_rate) = parse_auth_headers(response.headers())?;
+        if let Some((up, decision)) = &negotiation {
+            // Xray: Brutal at min(brutalUp, server rate) once both are known.
+            decision.decide(
+                (*up > 0 && server_receive_rate > 0).then(|| (*up).min(server_receive_rate)),
+            );
+        }
         stream.stop_sending(h3::error::Code::H3_REQUEST_CANCELLED);
         drop(stream);
         let registry = Arc::new(Registry::new(config.limits));
@@ -569,7 +590,9 @@ pub(super) fn random_padding(min: usize, max: usize) -> String {
         .collect()
 }
 
-fn parse_auth_headers(headers: &http::HeaderMap) -> Result<bool, HysteriaError> {
+/// Returns whether the server relays UDP and the receive rate it announces in
+/// bytes per second, zero for `auto`.
+fn parse_auth_headers(headers: &http::HeaderMap) -> Result<(bool, u64), HysteriaError> {
     let one = |name| {
         let mut values = headers.get_all(name).iter();
         let value = values.next().ok_or(HysteriaError::AuthenticationHeaders)?;
@@ -585,17 +608,14 @@ fn parse_auth_headers(headers: &http::HeaderMap) -> Result<bool, HysteriaError> 
         "false" | "False" | "FALSE" | "f" | "F" | "0" => false,
         _ => return Err(HysteriaError::AuthenticationHeaders),
     };
-    let rate = one("hysteria-cc-rx")?;
-    if rate != "auto"
-        && (rate.is_empty()
-            || !rate.bytes().all(|b| b.is_ascii_digit())
-            || rate.parse::<u64>().is_err())
-    {
-        return Err(HysteriaError::AuthenticationHeaders);
-    }
-    // Only adaptive BBR/Reno modes are exposed. As with Xray's explicit BBR/Reno
-    // modes, the advertised Brutal rate does not select fixed-rate congestion.
-    Ok(udp)
+    let rate = match one("hysteria-cc-rx")? {
+        "auto" => 0,
+        rate if !rate.is_empty() && rate.bytes().all(|b| b.is_ascii_digit()) => rate
+            .parse::<u64>()
+            .map_err(|_| HysteriaError::AuthenticationHeaders)?,
+        _ => return Err(HysteriaError::AuthenticationHeaders),
+    };
+    Ok((udp, rate))
 }
 
 #[cfg(test)]
@@ -610,7 +630,7 @@ mod tests {
             "hysteria-cc-rx",
             HeaderValue::from_static("18446744073709551615"),
         );
-        assert_eq!(parse_auth_headers(&headers), Ok(true));
+        assert_eq!(parse_auth_headers(&headers), Ok((true, u64::MAX)));
         for value in ["", "+1", "-1", "18446744073709551616", "AUTO", "1,2"] {
             headers.insert("hysteria-cc-rx", HeaderValue::from_str(value).unwrap());
             assert_eq!(
@@ -630,7 +650,9 @@ mod tests {
             Err(HysteriaError::AuthenticationHeaders)
         );
         headers.insert("hysteria-udp", HeaderValue::from_static("0"));
-        assert_eq!(parse_auth_headers(&headers), Ok(false));
+        assert_eq!(parse_auth_headers(&headers), Ok((false, 0)), "auto");
+        headers.insert("hysteria-cc-rx", HeaderValue::from_static("1250000"));
+        assert_eq!(parse_auth_headers(&headers), Ok((false, 1_250_000)));
         headers.append("hysteria-cc-rx", HeaderValue::from_static("0"));
         assert_eq!(
             parse_auth_headers(&headers),

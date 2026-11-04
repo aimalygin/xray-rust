@@ -10,6 +10,18 @@ long-term supported release series.
 
 ## Unreleased
 
+- QUIC: Brutal congestion control and Hysteria's bandwidth exchange.
+  Hysteria now reads all of `finalmask.quicParams`, as Xray-core's Hysteria
+  dialer does, instead of only `udpHop` and `disableChromeParrot`, so profiles
+  with `brutalUp`/`brutalDown` import. The client announces `brutalDown` to the
+  server and sends with Brutal at the lower of `brutalUp` and the server's
+  announced rate, or with BBR when either is zero. `force-brutal` now works on
+  Hysteria and XHTTP H3. `disableGSO` and `brutalDisableLossCompensation` take
+  effect, and `disableStatelessReset`, which only Xray servers read, is
+  accepted. Conservative and aggressive BBR profiles, and plain `brutal` over
+  XHTTP H3, which crashes Xray-core's dialer, are rejected when parsing. The
+  vendored `quinn-proto` gains a lost-packet callback for Brutal's loss
+  compensation.
 - Freedom and proxy carriers no longer dial only the first resolved address
   when `sockopt.happyEyeballs` is off. As with Go's `net.Dialer`, which
   Xray-core uses, the first address family is tried address by address

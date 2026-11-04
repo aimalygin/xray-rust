@@ -139,7 +139,7 @@ objects! {
         "Legacy form with migration warning; prefer sockopt.dialerProxy. Requires nonempty tag and transportLayer=true. REALITY chains fail parsing; cycles and additional carrier constraints are validated by core compilation."),
     QUIC_PARAMS: ("streamSettings.finalmask.quicParams",
         ["congestion", "debug", "bbrProfile", "brutalUp", "brutalDown", "udpHop", "initStreamReceiveWindow", "maxStreamReceiveWindow", "initConnectionReceiveWindow", "maxConnectionReceiveWindow", "maxIdleTimeout", "keepAlivePeriod", "disablePathMTUDiscovery", "maxIncomingStreams", "disableChromeParrot", "disableGSO", "disableStatelessReset", "brutalDisableLossCompensation"],
-        "Bounded XHTTP H3 subset; Hysteria accepts only legacy udpHop and disableChromeParrot=true. Native Quinn TLS has no ChromeParrot shaping. disableGSO, disableStatelessReset and brutalDisableLossCompensation are recognized but rejected, including false/null. Carrier compilation checks additional bounds."),
+        "Hysteria and XHTTP H3. congestion brutal (Hysteria only: Brutal at the lower of brutalUp and the server's announced rate, else BBR), force-brutal, bbr and reno; bbrProfile standard only where BBR may run. Hysteria announces brutalDown as its receive rate. Native Quinn TLS has no ChromeParrot shaping, so disableChromeParrot must be true. disableStatelessReset only affects Xray servers; maxIncomingStreams has no effect on Hysteria. Carrier compilation checks additional bounds."),
     RAW: ("streamSettings.tcpSettings; streamSettings.rawSettings",
         ["header", "acceptProxyProtocol"],
         "acceptProxyProtocol is ignored on the client."),

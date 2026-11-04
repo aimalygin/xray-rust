@@ -84,7 +84,7 @@ fn hysteria2_rejects_unsupported_or_inconsistent_settings_without_exposing_auth(
         (
             "/outbounds/0/streamSettings",
             "finalmask",
-            json!({"quicParams":{"congestion":"bbr"}}),
+            json!({"quicParams":{"bbrProfile":"aggressive"}}),
         ),
         (
             "/outbounds/0/streamSettings",
@@ -173,8 +173,8 @@ fn hysteria_salamander_hopping_and_fail_closed_masks() {
         assert!(!format!("{error:?}").contains("synthetic-secret"));
     }
     for quic in [
-        json!({"debug":false}),
-        json!({"congestion":"bbr"}),
+        json!({"bbrProfile":"conservative"}),
+        json!({"congestion":"force-brutal"}),
         json!({"udpHop":{"ports":"1-65535,1"}}),
         json!({"udpHop":{"ports":443,"interval":4}}),
     ] {
