@@ -10,6 +10,13 @@ long-term supported release series.
 
 ## Unreleased
 
+- SOCKS inbound: like Xray-core's, it now also serves SOCKS 4/4a `CONNECT`
+  and HTTP `CONNECT` on the same port, choosing by the first byte, and
+  `mixed` is accepted as its alias. Under `password`, SOCKS 4 is refused as
+  Xray refuses it, and HTTP needs the same accounts as
+  `Proxy-Authorization: Basic` credentials, or gets Xray's
+  `407 Proxy Authentication Required`. Plain HTTP forwarding (non-`CONNECT`
+  methods) is still answered with `400`, as on the HTTP inbound.
 - Xray-core configs with these options now parse instead of failing:
   - routing rules take `localOS`, an array or comma-separated string of Go
     `runtime.GOOS` names (`darwin`, `ios`, `android`, `linux`, `windows`),

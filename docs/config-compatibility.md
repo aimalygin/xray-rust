@@ -376,7 +376,7 @@ Other top-level keys are rejected.
 
 | Protocol | Supported behavior | Unsupported or constrained behavior |
 | --- | --- | --- |
-| `socks` | SOCKS5 `CONNECT`, `UDP ASSOCIATE` unless `"udp": false`, `userLevel`, sniffing; `auth` `noauth` or `password` with RFC 1929 `accounts` | GSSAPI; `accounts` with `noauth`; an absent `udp` keeps `UDP ASSOCIATE` enabled, unlike Xray-core |
+| `socks` (alias `mixed`) | SOCKS5 `CONNECT`, `UDP ASSOCIATE` unless `"udp": false`, SOCKS 4/4a `CONNECT`, HTTP `CONNECT` on the same port, `userLevel`, sniffing; `auth` `noauth` or `password` with RFC 1929 `accounts` | GSSAPI; SOCKS 4 `BIND`; plain HTTP forwarding; `accounts` with `noauth`; an absent `udp` keeps `UDP ASSOCIATE` enabled, unlike Xray-core |
 | `http` | HTTP `CONNECT`, timeout-shaped policy, `userLevel`, sniffing | Accounts and transparent proxy mode |
 | `tun` | Platform packet boundary or registered fd; port may be omitted | Platform interface creation and routes are host responsibilities |
 
@@ -407,6 +407,26 @@ unaffected. An absent `udp` still accepts `UDP ASSOCIATE`, while Xray-core
 treats it as `false`; set `udp` explicitly in profiles shared with Xray-core.
 Whether to adopt Xray-core's default is an
 [open compatibility question](xray-core-differences.md#socks-inbound-udp-false-and-the-absent-default).
+
+As in Xray-core, the first byte of a connection selects the protocol, and
+`mixed` is only another name for `socks`:
+
+- `5` is SOCKS5 as above.
+- `4` is SOCKS 4 or 4a `CONNECT`. The user ID is ignored, an address whose
+  first byte is zero is followed by a domain (4a), and the grant
+  (`0x00 0x5A`, zero port and address) is sent before dispatch. Other commands,
+  a user ID or domain over 255 bytes, and any SOCKS 4 request while the
+  inbound requires a password are refused with `0x5B`; Xray refuses the last
+  for the same reason, and allows user IDs up to 8 KiB.
+- Anything else is read as an HTTP request. `CONNECT` answers
+  `200 Connection Established` and then routes and sniffs like a SOCKS
+  `CONNECT`. Under `password`, it needs `Proxy-Authorization: Basic` with one
+  of the `accounts`, decoded as Go's `parseBasicAuth` does (case-sensitive
+  `Basic `, padded base64, split at the first colon) and compared in constant
+  time; otherwise the reply is Xray's
+  `407 Proxy Authentication Required` with `Proxy-Authenticate: Basic
+  realm="proxy"`. Other methods get `400 Bad Request`, as on the HTTP inbound:
+  plain HTTP forwarding is not implemented yet.
 
 Common fields are `tag`, `protocol`, `listen`, `port`, `settings`, and
 `sniffing`. Sniffing supports `enabled`, `destOverride` values `http`, `tls`,
@@ -514,11 +534,12 @@ xray-rust supports `vnext` and applies the guard there as an intentional
 security hardening, so this one unsafe legacy profile is rejected even though
 the pinned Xray binary accepts it. Such a server must use TLS, REALITY, or the
 supported VLESS encryption subset unless
-its IP is in Xray's exemption set (`0.0.0.0/8`, `10/8`,
-`100.64/10`, `127/8`, `169.254/16`, `172.16/12`, `192.0.0/24`,
-`192.0.2/24`, `192.88.99/24`, `192.168/16`, `198.18/15`,
-`198.51.100/24`, `203.0.113/24`, `224/3`, `::/127`, `fc00::/7`,
-`fe80::/10`, or `ff00::/8`). Domain exemptions are `lan`, `localdomain`,
+its IP is private, loopback or link-local as Go's `IsPrivate`, `IsLoopback`
+and `IsLinkLocalUnicast` define them (`10/8`, `172.16/12`, `192.168/16`,
+`fc00::/7`, `127/8`, `::1`, `169.254/16`, `fe80::/10`), which is Xray-core
+v26.10.31's set; v26.10.21 also exempted the shared, benchmarking,
+documentation, reserved, multicast and unspecified ranges. Domain exemptions
+are `lan`, `localdomain`,
 `example`, `invalid`, `localhost`, `test`, `local`, `home.arpa`, and
 `internal`, including their subdomains, plus a valid dotless ASCII hostname
 label. Domain matching lowercases the name and removes one trailing dot.

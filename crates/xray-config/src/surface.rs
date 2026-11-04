@@ -109,7 +109,7 @@ objects! {
         "tproxy must be tproxy; optional nonnegative i32 mark also applies to source-preserving UDP replies. Requires Linux and socket privileges."),
     INBOUND: ("$.inbounds[]",
         ["tag", "protocol", "listen", "port", "settings", "sniffing"],
-        "socks, http and tun. Only loopback listeners unless allowUnauthenticatedLan is explicitly true. TUN settings have a separate compatibility surface."),
+        "socks (alias mixed: SOCKS 5, SOCKS 4/4a CONNECT and HTTP CONNECT on one port), http and tun. Only loopback listeners unless allowUnauthenticatedLan is explicitly true. TUN settings have a separate compatibility surface."),
     LEAST_LOAD: ("$.routing.balancers[].strategy.settings (leastLoad)",
         ["expected", "maxRTT", "tolerance", "baselines", "costs"],
         "Value types, bounds and activation rules are enforced by the executable parser."),

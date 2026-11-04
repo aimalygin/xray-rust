@@ -15,9 +15,10 @@ use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{AbortHandle, Id as TaskId, JoinSet};
 use xray_config::{CoreConfig, InboundSniffingConfig, SocksInboundSettings};
 use xray_proxy::inbound::{
-    encode_socks5_udp_datagram, negotiate_socks5, parse_socks5_request_message,
-    parse_socks5_udp_datagram, write_socks5_command_not_supported, write_socks5_failure,
-    write_socks5_success, write_socks5_success_with_bind, SocksCommand,
+    encode_socks5_udp_datagram, negotiate_socks5, parse_http_connect_request, parse_socks4_connect,
+    parse_socks5_request_message, parse_socks5_udp_datagram, write_socks5_command_not_supported,
+    write_socks5_failure, write_socks5_success, write_socks5_success_with_bind, SocksCommand,
+    SocksInboundAuth, SOCKS4_GRANTED, SOCKS4_REJECTED, SOCKS4_VERSION,
 };
 use xray_proxy::vless::{
     encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet, read_xudp_packet,
@@ -326,6 +327,49 @@ async fn handle_socks_connection(
     udp_budgets: SocksUdpBudgets,
 ) {
     let auth = &settings.auth;
+    // Like Xray-core, the first byte selects SOCKS 5, SOCKS 4/4a or, for
+    // anything else, HTTP on the same port (`mixed` is only an alias).
+    let mut first = [0_u8; 1];
+    let Ok(Ok(1)) = tokio::time::timeout(policy.handshake, inbound.peek(&mut first)).await else {
+        return;
+    };
+    match first[0] {
+        5 => {}
+        SOCKS4_VERSION => {
+            handle_socks4_connection(
+                inbound,
+                auth,
+                inbound_tag,
+                config,
+                outbound_router,
+                dns_resolvers,
+                transport_dialer,
+                sniffing,
+                policy,
+                runtime_logger,
+                connection_registry,
+            )
+            .await;
+            return;
+        }
+        _ => {
+            handle_socks_http_connection(
+                inbound,
+                auth,
+                inbound_tag,
+                config,
+                outbound_router,
+                dns_resolvers,
+                transport_dialer,
+                sniffing,
+                policy,
+                runtime_logger,
+                connection_registry,
+            )
+            .await;
+            return;
+        }
+    }
     if tokio::time::timeout(policy.handshake, negotiate_socks5(&mut inbound, auth))
         .await
         .ok()
@@ -398,6 +442,119 @@ async fn handle_socks_connection(
             .await;
         }
     }
+}
+
+/// SOCKS 4/4a `CONNECT`, which Xray-core refuses while the inbound requires
+/// a password. The grant goes out before dispatch, as in Xray.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "connection tasks receive shared runtime dependencies explicitly"
+)]
+async fn handle_socks4_connection(
+    mut inbound: TcpStream,
+    auth: &SocksInboundAuth,
+    inbound_tag: Option<String>,
+    config: Arc<CoreConfig>,
+    outbound_router: Arc<OutboundRouter>,
+    dns_resolvers: RuntimeDnsResolvers,
+    transport_dialer: Arc<TransportDialer>,
+    sniffing: Option<InboundSniffingConfig>,
+    policy: EffectivePolicy,
+    runtime_logger: RuntimeLogger,
+    connection_registry: Arc<ConnectionRegistry>,
+) {
+    let mut version = [0_u8; 1];
+    if inbound.read_exact(&mut version).await.is_err() {
+        return;
+    }
+    // The whole request is read even when it will be refused, so closing
+    // does not reset the connection over unread bytes and lose the reply.
+    let target =
+        match tokio::time::timeout(policy.handshake, parse_socks4_connect(&mut inbound)).await {
+            Ok(Ok(target)) if !auth.requires_password() => target,
+            _ => {
+                let _ = inbound.write_all(&SOCKS4_REJECTED).await;
+                return;
+            }
+        };
+    if inbound.write_all(&SOCKS4_GRANTED).await.is_err() {
+        return;
+    }
+    handle_socks_connect::<false>(
+        inbound,
+        target,
+        inbound_tag,
+        config,
+        outbound_router,
+        dns_resolvers,
+        transport_dialer,
+        sniffing,
+        policy,
+        runtime_logger,
+        connection_registry,
+    )
+    .await;
+}
+
+/// HTTP `CONNECT` on a SOCKS port. Xray's SOCKS inbound passes it to an HTTP
+/// server that requires the SOCKS accounts as Basic credentials; the tunnel
+/// then routes and sniffs as a SOCKS connection would.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "connection tasks receive shared runtime dependencies explicitly"
+)]
+async fn handle_socks_http_connection(
+    mut inbound: TcpStream,
+    auth: &SocksInboundAuth,
+    inbound_tag: Option<String>,
+    config: Arc<CoreConfig>,
+    outbound_router: Arc<OutboundRouter>,
+    dns_resolvers: RuntimeDnsResolvers,
+    transport_dialer: Arc<TransportDialer>,
+    sniffing: Option<InboundSniffingConfig>,
+    policy: EffectivePolicy,
+    runtime_logger: RuntimeLogger,
+    connection_registry: Arc<ConnectionRegistry>,
+) {
+    let request = match tokio::time::timeout(
+        policy.handshake,
+        parse_http_connect_request(&mut inbound),
+    )
+    .await
+    {
+        Ok(Ok(request)) => request,
+        _ => {
+            let _ = inbound.write_all(crate::http::HTTP_BAD_REQUEST).await;
+            return;
+        }
+    };
+    if !auth.admits_http_basic(request.proxy_authorization.as_deref().map(Vec::as_slice)) {
+        let _ = inbound
+            .write_all(crate::http::HTTP_PROXY_AUTH_REQUIRED)
+            .await;
+        return;
+    }
+    if inbound
+        .write_all(crate::http::HTTP_CONNECT_ESTABLISHED)
+        .await
+        .is_err()
+    {
+        return;
+    }
+    handle_socks_connect::<false>(
+        inbound,
+        request.target,
+        inbound_tag,
+        config,
+        outbound_router,
+        dns_resolvers,
+        transport_dialer,
+        sniffing,
+        policy,
+        runtime_logger,
+        connection_registry,
+    )
+    .await;
 }
 
 #[expect(

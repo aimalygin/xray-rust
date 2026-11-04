@@ -120,9 +120,29 @@ pub enum SocksInboundAuth {
     Password(Vec<SocksAccount>),
 }
 
+/// `fold` with a non-short-circuit `|` checks every account, so the timing
+/// does not reveal which one matched; `any` would stop at the first.
+fn accounts_admit(accounts: &[SocksAccount], user: &[u8], pass: &[u8]) -> bool {
+    accounts.iter().fold(false, |accepted, account| {
+        accepted | account.matches(user, pass)
+    })
+}
+
 impl SocksInboundAuth {
     pub const fn requires_password(&self) -> bool {
         matches!(self, Self::Password(_))
+    }
+
+    /// Whether an HTTP request on this SOCKS port may proceed. Xray's SOCKS
+    /// inbound hands other protocols to an HTTP server that requires its
+    /// accounts as `Proxy-Authorization: Basic` credentials.
+    pub fn admits_http_basic(&self, proxy_authorization: Option<&[u8]>) -> bool {
+        match self {
+            Self::NoAuth => true,
+            Self::Password(accounts) => proxy_authorization
+                .and_then(crate::inbound::decode_http_basic_credentials)
+                .is_some_and(|(user, pass)| accounts_admit(accounts, &user, &pass)),
+        }
     }
 
     /// The RFC 1928 method code this inbound selects.
@@ -205,11 +225,7 @@ where
     }
     let user = read_credential(stream).await?;
     let pass = read_credential(stream).await?;
-    // `fold` with a non-short-circuit `|` checks every account, so the timing
-    // does not reveal which one matched; `any` would stop at the first.
-    let accepted = accounts.iter().fold(false, |accepted, account| {
-        accepted | account.matches(&user, &pass)
-    });
+    let accepted = accounts_admit(accounts, &user, &pass);
     let status = if accepted {
         PASSWORD_AUTH_SUCCESS
     } else {
@@ -530,5 +546,62 @@ fn parse_target_addr(raw: &[u8], offset: usize) -> Result<(TargetAddr, usize), S
             Ok((TargetAddr::Ip(IpAddr::V6(Ipv6Addr::from(addr))), end))
         }
         other => Err(SocksParseError::UnsupportedAddressType(other)),
+    }
+}
+
+/// The first byte of a SOCKS 4 or 4a request.
+pub const SOCKS4_VERSION: u8 = 0x04;
+const SOCKS4_CONNECT: u8 = 0x01;
+/// A SOCKS 4 reply: version 0, status, then port and address, which Xray
+/// leaves zero.
+pub const SOCKS4_GRANTED: [u8; 8] = [0x00, 90, 0, 0, 0, 0, 0, 0];
+pub const SOCKS4_REJECTED: [u8; 8] = [0x00, 91, 0, 0, 0, 0, 0, 0];
+/// A user ID or SOCKS 4a domain longer than this is refused. Xray allows up to
+/// its 8 KiB buffer; a DNS name has at most 253 bytes.
+const MAX_SOCKS4_STRING: usize = 255;
+
+/// Reads a SOCKS 4 or 4a `CONNECT` after its version byte, as Xray-core
+/// accepts it: the user ID is ignored, and an address whose first byte is zero
+/// is followed by a domain (4a). Other commands are refused.
+pub async fn parse_socks4_connect<R>(mut reader: R) -> Result<Target, SocksParseError>
+where
+    R: AsyncRead + Unpin,
+{
+    let command = reader.read_u8().await.map_err(|_| SocksParseError::Io)?;
+    let port = reader.read_u16().await.map_err(|_| SocksParseError::Io)?;
+    let mut ip = [0; 4];
+    reader
+        .read_exact(&mut ip)
+        .await
+        .map_err(|_| SocksParseError::Io)?;
+    read_socks4_string(&mut reader).await?;
+    let addr = if ip[0] == 0 {
+        let domain = read_socks4_string(&mut reader).await?;
+        let domain = String::from_utf8(domain).map_err(|_| SocksParseError::InvalidDomain)?;
+        match domain.parse::<IpAddr>() {
+            Ok(ip) => TargetAddr::Ip(ip),
+            Err(_) if !domain.is_empty() => TargetAddr::Domain(domain),
+            Err(_) => return Err(SocksParseError::InvalidDomain),
+        }
+    } else {
+        TargetAddr::Ip(IpAddr::V4(Ipv4Addr::from(ip)))
+    };
+    if command != SOCKS4_CONNECT {
+        return Err(SocksParseError::UnsupportedCommand(command));
+    }
+    Ok(Target::new(addr, port, Network::Tcp))
+}
+
+async fn read_socks4_string<R>(reader: &mut R) -> Result<Vec<u8>, SocksParseError>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut value = Vec::new();
+    loop {
+        match reader.read_u8().await.map_err(|_| SocksParseError::Io)? {
+            0 => return Ok(value),
+            _ if value.len() == MAX_SOCKS4_STRING => return Err(SocksParseError::InvalidDomain),
+            byte => value.push(byte),
+        }
     }
 }

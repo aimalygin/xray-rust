@@ -7232,3 +7232,27 @@ fn tun_inbound_mtu_warns_that_the_host_owns_it() {
     }"#;
     assert!(parse_xray_json(raw).unwrap().diagnostics.is_empty());
 }
+
+#[test]
+fn mixed_is_xrays_alias_of_the_socks_inbound() {
+    let parsed = parse_xray_json(
+        r#"{
+            "inbounds": [{"tag": "mixed-in", "protocol": "mixed", "listen": "127.0.0.1",
+                "port": 10808, "settings": {"auth": "password", "udp": false,
+                "accounts": [{"user": "synthetic-user", "pass": "synthetic-pass"}]}}],
+            "outbounds": [{"protocol": "freedom"}]
+        }"#,
+    )
+    .unwrap();
+    assert_eq!(
+        parsed.config.inbounds[0].protocol,
+        InboundProtocol::Socks(SocksInboundSettings {
+            auth: SocksInboundAuth::Password(vec![SocksAccount::new(
+                b"synthetic-user",
+                b"synthetic-pass"
+            )
+            .unwrap()]),
+            udp: false,
+        })
+    );
+}

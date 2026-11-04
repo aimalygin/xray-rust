@@ -637,7 +637,8 @@ impl Parser<'_> {
     fn parse_inbound(&mut self, inbound: &Value, index: usize) -> Option<InboundConfig> {
         let protocol_path = format!("$.inbounds[{index}].protocol");
         let protocol = match self.string_at(inbound, "protocol") {
-            Some("socks") => {
+            // Xray's SOCKS inbound also serves HTTP; `mixed` is its alias.
+            Some("socks" | "mixed") => {
                 InboundProtocol::Socks(self.parse_socks_inbound_settings(inbound, index))
             }
             Some("http") => InboundProtocol::Http,

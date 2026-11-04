@@ -3,6 +3,7 @@ use std::net::IpAddr;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use xray_routing::{Network, Target, TargetAddr};
+use zeroize::Zeroizing;
 
 const MAX_REQUEST_LINE_LEN: usize = 8192;
 
@@ -22,9 +23,21 @@ pub enum HttpParseError {
     Io,
 }
 
-pub async fn parse_http_connect<R: AsyncRead + Unpin>(
+/// An HTTP `CONNECT` request and the credentials it offered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HttpConnectRequest {
+    pub target: Target,
+    /// The last `Proxy-Authorization` value, trimmed of whitespace.
+    pub proxy_authorization: Option<Zeroizing<Vec<u8>>>,
+}
+
+pub async fn parse_http_connect<R: AsyncRead + Unpin>(reader: R) -> Result<Target, HttpParseError> {
+    Ok(parse_http_connect_request(reader).await?.target)
+}
+
+pub async fn parse_http_connect_request<R: AsyncRead + Unpin>(
     mut reader: R,
-) -> Result<Target, HttpParseError> {
+) -> Result<HttpConnectRequest, HttpParseError> {
     let request_line = read_line_limited(&mut reader).await?;
     let request_line =
         std::str::from_utf8(&request_line).map_err(|_| HttpParseError::NotConnect)?;
@@ -39,18 +52,49 @@ pub async fn parse_http_connect<R: AsyncRead + Unpin>(
     let (host, port) = parse_authority(authority)?;
     let port = parse_port(port)?;
     let addr = parse_host(host)?;
-    consume_headers(&mut reader).await?;
+    let proxy_authorization = consume_headers(&mut reader).await?;
 
-    Ok(Target::new(addr, port, Network::Tcp))
+    Ok(HttpConnectRequest {
+        target: Target::new(addr, port, Network::Tcp),
+        proxy_authorization,
+    })
 }
 
-async fn consume_headers<R: AsyncRead + Unpin>(reader: &mut R) -> Result<(), HttpParseError> {
+async fn consume_headers<R: AsyncRead + Unpin>(
+    reader: &mut R,
+) -> Result<Option<Zeroizing<Vec<u8>>>, HttpParseError> {
+    let mut proxy_authorization = None;
     loop {
-        let line = read_line_limited(reader).await?;
-        if line == b"\r\n" || line == b"\n" {
-            return Ok(());
+        let line = Zeroizing::new(read_line_limited(reader).await?);
+        if *line == b"\r\n" || *line == b"\n" {
+            return Ok(proxy_authorization);
+        }
+        if let Some(colon) = line.iter().position(|&byte| byte == b':') {
+            if line[..colon].eq_ignore_ascii_case(b"proxy-authorization") {
+                proxy_authorization = Some(Zeroizing::new(line[colon + 1..].trim_ascii().to_vec()));
+            }
         }
     }
+}
+
+/// A user name and password from `Proxy-Authorization`, wiped on drop.
+pub type HttpBasicCredentials = (Zeroizing<Vec<u8>>, Zeroizing<Vec<u8>>);
+
+/// Go's `parseBasicAuth` in Xray's HTTP server: a case-sensitive `Basic `
+/// prefix, padded standard base64, and a split at the first colon.
+pub fn decode_http_basic_credentials(value: &[u8]) -> Option<HttpBasicCredentials> {
+    use base64::Engine as _;
+    let encoded = value.strip_prefix(b"Basic ")?;
+    let decoded = Zeroizing::new(
+        base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .ok()?,
+    );
+    let colon = decoded.iter().position(|&byte| byte == b':')?;
+    Some((
+        Zeroizing::new(decoded[..colon].to_vec()),
+        Zeroizing::new(decoded[colon + 1..].to_vec()),
+    ))
 }
 
 async fn read_line_limited<R: AsyncRead + Unpin>(
