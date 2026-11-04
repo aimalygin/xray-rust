@@ -194,6 +194,7 @@ or change firewall rules, interfaces or routes. Optional nonnegative i32
 `sockopt.mark` applies to the inbound and source-preserving UDP reply sockets;
 it is not a general outbound socket-mark configuration.
 
+Xray's newer protocol name `tunnel` is accepted as an alias of `dokodemo-door`.
 Use separate IPv4/IPv6 inbounds; IPv6 listeners are v6-only. `network` accepts
 `tcp`, `udp`, comma-separated values or arrays; `allowedNetwork` is the alias
 and `network` takes precedence. Default is TCP. TCP uses the accepted socket's
@@ -425,7 +426,8 @@ parsed, so a missing piece is never read as part of a name.
 
 ## Outbounds and streams
 
-`freedom`, `vless`, `dns`, `blackhole`, `socks`, and `http` are supported. DNS
+`freedom` (alias `direct`), `vless`, `dns`, `blackhole` (alias `block`), `socks`,
+and `http` are supported. DNS
 outbound settings are described below, and [blackhole](#blackhole-outbound),
 [SOCKS](#socks-outbound) and [HTTP](#http-outbound) after the TLS notes. VLESS accepts one `vnext` server with one or more UUID users, but the
 runtime currently selects the first user. With `encryption: "none"`, optional
@@ -561,11 +563,17 @@ deny rules (ads, QUIC on UDP/443, other traffic a profile refuses):
 { "tag": "block", "protocol": "blackhole", "settings": { "response": { "type": "http" } } }
 ```
 
+Xray's protocol name `block` is an alias, as `direct` is for `freedom`.
 `settings` may be absent, `null`, or an object with an optional `response`. A
 present `response` must be an object whose case-insensitive `type` is `none`
-(the default) or `http`. As in Xray, a `null` or non-object response, a missing
-or `null` type, and any other type fail parsing; unknown keys also fail here,
-where Go would ignore them. `sendThrough`, enabled `mux`, and `streamSettings`
+(the default), `http` or `custom`. `custom` sends the bytes of
+`customResponseData`, which must be padded standard base64 as Go's
+`StdEncoding` decodes it; an absent or `null` value sends nothing, and other
+types ignore the field, as Xray does. xray-rust also limits the decoded reply
+to 65,535 bytes, so that a UDP flow can receive it in one datagram; Xray sets
+no limit. As in Xray, a `null` or non-object response, a missing or `null`
+type, and any other type fail parsing; unknown keys also fail here, where Go
+would ignore them. `sendThrough`, enabled `mux`, and `streamSettings`
 keep the generic outbound validation, but nothing in `streamSettings` is used
 because nothing is dialed.
 
@@ -576,7 +584,7 @@ The handler never resolves a destination, dials, or opens a socket:
   `none` then closes the connection. `http` writes Xray's fixed reply
   byte-for-byte (`HTTP/1.1 403 Forbidden`, `Connection: close`,
   `Cache-Control: max-age=3600, public`, `Content-Length: 0`, with LF line
-  endings) and half-closes. Xray holds the link for one second after that
+  endings) and half-closes; `custom` writes its bytes the same way. Xray holds the link for one second after that
   reply; xray-rust instead discards late client bytes for at most one second,
   so unread input does not turn the close into a reset.
 - TUN TCP completes the client handshake in the userspace stack, as Xray's TUN
@@ -585,8 +593,9 @@ The handler never resolves a destination, dials, or opens a socket:
   upload after that, or any upload with `none`, resets the flow, as when Xray
   interrupts the link. It is not counted as a TCP open error.
 - UDP from SOCKS `UDP ASSOCIATE` and TUN is dispatched once per flow (client
-  address and destination), as Xray dispatches a link once. `http` returns
-  its reply once, as a datagram from the destination the client addressed;
+  address and destination), as Xray dispatches a link once. `http` and a
+  nonempty `custom` return their reply once, as a datagram from the
+  destination the client addressed;
   `none` returns nothing, and nothing answers with an ICMP error. Later
   datagrams of the flow are discarded rather than routed again, until the
   flow has been idle for the 60-second UDP idle timeout (Xray waits for 30 to
@@ -1608,14 +1617,21 @@ Supported routing configuration:
 
 - `domainStrategy`: `AsIs`, `IPIfNonMatch`, or `IPOnDemand` (since `0.6.0-dev.0`);
 - rule `type`: `field`;
-- selectors: `inboundTag`, `domain`/`domains`, `ip`, `network`, and `port`;
+- selectors: `inboundTag`, `domain`/`domains`, `ip`, `network`, `port`, and
+  `localOS`;
 - destination: exactly one of `outboundTag` or `balancerTag`;
 - `routing.balancers` with `tag`, prefix-based `selector`, optional
   `fallbackTag`, and `random` (the default), `roundRobin`, `leastPing`, or the
   bounded `leastLoad` strategy.
 
 `network` accepts Xray-compatible `tcp`/`udp` strings or arrays, including a
-comma-separated string. `port` accepts a number or comma/range string over
+comma-separated string. `localOS` limits a rule to operating systems named as
+Go's `runtime.GOOS`, compared case-insensitively: `darwin` on macOS, `ios` on
+iOS, its simulators and Mac Catalyst, `android`, `linux`, `windows`. Go has no
+tvOS, watchOS or visionOS value, so those report `ios` too. Like Xray's
+`StringList`, it takes an array or one string split at commas without
+trimming; unknown names never match, and `""` makes a rule that never applies.
+The result is fixed for the process. `port` accepts a number or comma/range string over
 `0..=65535`. Rules are evaluated in declaration order, and every populated
 selector field inside one rule is ANDed; alternatives belong in arrays/ranges
 or separate ordered rules.

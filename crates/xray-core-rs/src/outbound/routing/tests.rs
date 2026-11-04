@@ -332,3 +332,41 @@ async fn ip_on_demand_keeps_one_policy_revision_across_dns_await() {
     );
     assert_eq!(resolver.calls.load(Ordering::SeqCst), 1);
 }
+
+#[tokio::test]
+async fn local_os_rules_apply_only_on_their_platforms() {
+    // No platform is named `no-such-os` or the empty string. The second rule
+    // names this one in upper case inside a comma-separated string.
+    let this_os = format!("plan9,{}", xray_config::LOCAL_OS.to_ascii_uppercase());
+    let router = OutboundRouter::new(Arc::new(config(json!({
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+            {"type": "field", "localOS": ["no-such-os", ""], "domain": ["full:example.test"],
+                "outboundTag": "domain"},
+            {"type": "field", "localOS": this_os, "ip": ["203.0.113.7/32"], "outboundTag": "ip"},
+            {"type": "field", "localOS": "", "network": "tcp", "outboundTag": "second"}
+        ]
+    }))));
+    let resolver = Resolver::new(vec!["203.0.113.7".parse().unwrap()]);
+    assert_eq!(selected_tag(&router, &target(), &resolver).await, "ip");
+
+    let address = Target::new(
+        TargetAddr::Ip("203.0.113.7".parse().unwrap()),
+        443,
+        RoutingNetwork::Tcp,
+    );
+    let selected = router
+        .select_tcp_outbound_for_session_with_tag(Some("socks-in"), &address, true)
+        .unwrap();
+    assert_eq!(selected.tag.as_deref(), Some("ip"));
+    // Excluded everywhere, the last rule never routes; the first outbound does.
+    let other = Target::new(
+        TargetAddr::Ip("198.51.100.9".parse().unwrap()),
+        443,
+        RoutingNetwork::Tcp,
+    );
+    let selected = router
+        .select_tcp_outbound_for_session_with_tag(Some("socks-in"), &other, true)
+        .unwrap();
+    assert_eq!(selected.tag.as_deref(), Some("default"));
+}

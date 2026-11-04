@@ -570,6 +570,7 @@ impl Parser<'_> {
         let port_ranges = self.parse_routing_port_ranges(rule, &rule_path)?;
         let domain_matchers = self.parse_routing_rule_domain_matchers(rule, &rule_path)?;
         let ip_matchers = self.parse_ip_matchers(rule, "ip", format!("{rule_path}.ip"))?;
+        let local_os = self.parse_routing_local_os(rule, &rule_path)?;
 
         Some(RoutingRule {
             inbound_tags,
@@ -577,8 +578,39 @@ impl Parser<'_> {
             port_ranges,
             domain_matchers,
             ip_matchers,
+            local_os,
             target,
         })
+    }
+
+    /// Xray's `localOS` is a Go `StringList`: an array of strings, or one
+    /// string split at commas without trimming. Names are not validated; one
+    /// that is no `runtime.GOOS` value simply never matches.
+    fn parse_routing_local_os(&mut self, rule: &Value, rule_path: &str) -> Option<Vec<String>> {
+        let path = format!("{rule_path}.localOS");
+        match rule.get("localOS") {
+            None | Some(Value::Null) => Some(Vec::new()),
+            // As in Go, `""` splits into one empty name that no platform has.
+            Some(Value::String(names)) => Some(names.split(',').map(str::to_owned).collect()),
+            Some(Value::Array(names)) => names
+                .iter()
+                .enumerate()
+                .map(|(index, name)| match name.as_str() {
+                    Some(name) => Some(name.to_owned()),
+                    None => {
+                        self.error(format!("{path}[{index}]"), "localOS entry must be a string");
+                        None
+                    }
+                })
+                .collect(),
+            Some(_) => {
+                self.error(
+                    path,
+                    "localOS must be a string, an array of strings or null",
+                );
+                None
+            }
+        }
     }
 
     fn parse_routing_networks(&mut self, rule: &Value, rule_path: &str) -> Option<Vec<Network>> {

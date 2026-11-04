@@ -296,8 +296,29 @@ pub struct RoutingRule {
     pub port_ranges: Vec<RoutingPortRange>,
     pub domain_matchers: DomainMatcherSet,
     pub ip_matchers: IpMatcherSet,
+    /// Xray's `localOS`: the rule applies only on these operating systems,
+    /// named as Go's `runtime.GOOS` and compared case-insensitively. Empty
+    /// applies everywhere.
+    pub local_os: Vec<String>,
     pub target: RoutingRuleTarget,
 }
+
+/// The running platform as Go's `runtime.GOOS` names it, which Xray's
+/// `localOS` compares against. Go builds for iOS, its simulators and Mac
+/// Catalyst report `ios`; Go has no tvOS, watchOS or visionOS value, so those
+/// Apple platforms report `ios` too.
+pub const LOCAL_OS: &str = if cfg!(target_os = "macos") {
+    "darwin"
+} else if cfg!(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+)) {
+    "ios"
+} else {
+    std::env::consts::OS
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RoutingRuleTarget {
@@ -331,11 +352,26 @@ impl RoutingRule {
         target_network: Option<Network>,
         target_port: Option<u16>,
     ) -> bool {
-        self.matches_inbound(inbound_tag)
+        self.matches_local_os()
+            && self.matches_inbound(inbound_tag)
             && self.matches_network(target_network)
             && self.matches_port(target_port)
             && self.matches_domain(target_domain)
             && self.matches_ip(target_ip)
+    }
+
+    /// Whether `localOS` admits the running platform, fixed for the process
+    /// as in Xray.
+    pub fn matches_local_os(&self) -> bool {
+        self.matches_local_os_on(LOCAL_OS)
+    }
+
+    pub fn matches_local_os_on(&self, os: &str) -> bool {
+        self.local_os.is_empty()
+            || self
+                .local_os
+                .iter()
+                .any(|candidate| candidate.eq_ignore_ascii_case(os))
     }
 
     pub fn matches_inbound(&self, inbound_tag: Option<&str>) -> bool {
@@ -634,18 +670,20 @@ impl OutboundSettings {
 
 /// Xray `blackhole` outbound settings. The handler never dials: TCP sessions
 /// receive the optional response and are closed, and UDP datagrams are dropped.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BlackholeOutboundSettings {
     pub response: BlackholeResponse,
 }
 
 /// Xray `settings.response.type`. Matching Xray, `none` is the default when
-/// `response` is absent; `http` writes Xray's fixed HTTP 403 reply first.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// `response` is absent; `http` writes Xray's fixed HTTP 403 reply first and
+/// `custom` writes the decoded `customResponseData` bytes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum BlackholeResponse {
     #[default]
     None,
     Http,
+    Custom(Vec<u8>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

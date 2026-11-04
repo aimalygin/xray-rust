@@ -642,7 +642,10 @@ impl Parser<'_> {
             }
             Some("http") => InboundProtocol::Http,
             Some("tun") => InboundProtocol::Tun,
-            Some("dokodemo-door") => InboundProtocol::Tproxy(self.parse_tproxy(inbound, index)?),
+            // Xray registers `tunnel` as the newer name of `dokodemo-door`.
+            Some("dokodemo-door" | "tunnel") => {
+                InboundProtocol::Tproxy(self.parse_tproxy(inbound, index)?)
+            }
             Some(protocol) => {
                 self.error(
                     protocol_path,
@@ -965,7 +968,8 @@ impl Parser<'_> {
             .map(str::to_ascii_lowercase)
             .as_deref()
         {
-            Some("freedom") => OutboundProtocol::Freedom,
+            // Xray registers `direct` and `block` as aliases.
+            Some("freedom" | "direct") => OutboundProtocol::Freedom,
             Some("dns") => OutboundProtocol::Dns,
             Some("vless") => OutboundProtocol::Vless,
             Some("vmess") => OutboundProtocol::Vmess,
@@ -973,7 +977,7 @@ impl Parser<'_> {
             Some("shadowsocks") => OutboundProtocol::Shadowsocks2022,
             Some("hysteria") => OutboundProtocol::Hysteria,
             Some("wireguard") => OutboundProtocol::Wireguard,
-            Some("blackhole") => OutboundProtocol::Blackhole,
+            Some("blackhole" | "block") => OutboundProtocol::Blackhole,
             Some("socks") => OutboundProtocol::Socks,
             Some("http") => OutboundProtocol::Http,
             Some(protocol) => {

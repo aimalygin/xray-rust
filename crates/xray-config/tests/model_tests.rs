@@ -249,6 +249,7 @@ fn routing_network_and_port_selectors_fail_closed_without_target_metadata() {
         domain_matchers: DomainMatcherSet::default(),
         ip_matchers: Default::default(),
         target: RoutingRuleTarget::Outbound("dns-out".to_owned()),
+        local_os: Vec::new(),
     };
 
     assert!(!rule.matches(None, None, None));
@@ -299,6 +300,7 @@ fn normalized_model_can_represent_inbound_tag_routing_rule() {
             domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
             target: RoutingRuleTarget::Outbound("direct".to_owned()),
+            local_os: Vec::new(),
         }],
         ..Default::default()
     };
@@ -324,6 +326,7 @@ fn normalized_model_can_represent_domain_routing_rule() {
             .unwrap(),
             ip_matchers: Default::default(),
             target: RoutingRuleTarget::Outbound("proxy".to_owned()),
+            local_os: Vec::new(),
         }],
         ..Default::default()
     };
@@ -353,6 +356,7 @@ fn normalized_model_can_represent_ip_routing_rule() {
                 matchers.build()
             },
             target: RoutingRuleTarget::Outbound("direct".to_owned()),
+            local_os: Vec::new(),
         }],
         ..Default::default()
     };
@@ -380,6 +384,7 @@ fn normalized_model_applies_inverse_ip_matchers_as_a_conjunction() {
                 matchers.build()
             },
             target: RoutingRuleTarget::Outbound("direct".to_owned()),
+            local_os: Vec::new(),
         }],
         ..Default::default()
     };

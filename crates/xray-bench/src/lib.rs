@@ -8779,6 +8779,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
                     .expect("exact DNS selector matchers compile"),
                 ip_matchers: Default::default(),
                 target: xray_config::RoutingRuleTarget::Outbound("dns-out".to_owned()),
+                local_os: Vec::new(),
             }
         })
         .collect();
@@ -9267,6 +9268,7 @@ fn phase2_selector_config(member_count: usize) -> CoreConfig {
                 domain_matchers: DomainMatcherSet::default(),
                 ip_matchers: IpMatcherSet::default(),
                 target: RoutingRuleTarget::Balancer("automatic".to_owned()),
+                local_os: Vec::new(),
             }],
             balancers: vec![RoutingBalancer {
                 tag: "automatic".to_owned(),
@@ -10720,6 +10722,7 @@ fn route_probe_config(
                 .expect("route-probe domain matchers compile"),
             ip_matchers: ip_matchers.build(),
             target: xray_config::RoutingRuleTarget::Outbound(selected_tag.clone()),
+            local_os: Vec::new(),
         });
     }
 

@@ -10,6 +10,7 @@
 
 use std::time::Duration;
 
+use bytes::Bytes;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::watch;
 use xray_config::{BlackholeResponse, OutboundSettings};
@@ -31,23 +32,25 @@ pub(crate) const BLACKHOLE_RESPONSE_GRACE: Duration = Duration::from_secs(1);
 
 const DISCARD_BUFFER_SIZE: usize = 512;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BlackholeOutbound {
-    response: BlackholeResponse,
+    response: Bytes,
 }
 
 impl BlackholeOutbound {
-    pub(crate) fn new(response: BlackholeResponse) -> Self {
+    pub(crate) fn new(response: &BlackholeResponse) -> Self {
+        let response = match response {
+            BlackholeResponse::None => Bytes::new(),
+            BlackholeResponse::Http => Bytes::from_static(XRAY_HTTP_403_RESPONSE),
+            BlackholeResponse::Custom(data) => Bytes::copy_from_slice(data),
+        };
         Self { response }
     }
 
     /// Bytes written to a blackholed TCP session before it is closed, or sent
     /// once as a datagram to a blackholed UDP flow.
-    pub(crate) fn response_bytes(self) -> &'static [u8] {
-        match self.response {
-            BlackholeResponse::None => &[],
-            BlackholeResponse::Http => XRAY_HTTP_403_RESPONSE,
-        }
+    pub(crate) fn response_bytes(&self) -> Bytes {
+        self.response.clone()
     }
 
     /// Answers a client stream whose proxy handshake already succeeded, as
@@ -65,7 +68,7 @@ impl BlackholeOutbound {
         if response.is_empty() {
             return;
         }
-        if stream.write_all(response).await.is_err() || stream.shutdown().await.is_err() {
+        if stream.write_all(&response).await.is_err() || stream.shutdown().await.is_err() {
             return;
         }
         let mut discard = [0_u8; DISCARD_BUFFER_SIZE];
@@ -126,7 +129,7 @@ impl OutboundFactory {
             .map(|outbound| &outbound.settings)
         {
             Some(OutboundSettings::Blackhole(settings)) => {
-                Ok(BlackholeOutbound::new(settings.response))
+                Ok(BlackholeOutbound::new(&settings.response))
             }
             _ => Err(CoreError::NoSupportedOutbound),
         }
@@ -139,7 +142,6 @@ mod tests {
     use std::sync::Arc;
 
     use async_trait::async_trait;
-    use bytes::Bytes;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::mpsc;
     use xray_config::{parse_xray_json, BlackholeResponse};
@@ -195,10 +197,10 @@ mod tests {
         );
         assert_eq!(XRAY_HTTP_403_RESPONSE.len(), 97);
         assert_eq!(
-            BlackholeOutbound::new(BlackholeResponse::Http).response_bytes(),
+            BlackholeOutbound::new(&BlackholeResponse::Http).response_bytes(),
             XRAY_HTTP_403_RESPONSE
         );
-        assert!(BlackholeOutbound::new(BlackholeResponse::None)
+        assert!(BlackholeOutbound::new(&BlackholeResponse::None)
             .response_bytes()
             .is_empty());
     }
@@ -211,7 +213,7 @@ mod tests {
             .await
             .unwrap();
         let finished = tokio::spawn(async move {
-            BlackholeOutbound::new(BlackholeResponse::Http)
+            BlackholeOutbound::new(&BlackholeResponse::Http)
                 .finish_stream(&mut server)
                 .await;
         });
@@ -224,9 +226,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn custom_response_reaches_tcp_and_udp_clients_byte_for_byte() {
+        // `block` is Xray's alias; the data is padded standard base64.
+        let router = router(
+            r#"{
+                "outbounds": [
+                    {"tag": "direct", "protocol": "direct"},
+                    {"tag": "custom", "protocol": "block", "settings": {"response": {
+                        "type": "custom", "customResponseData": "YmxvY2tlZCBieSBwb2xpY3kK"}}}
+                ],
+                "routing": {"rules": [
+                    {"type": "field", "ip": ["203.0.113.0/24"], "outboundTag": "custom"}
+                ]}
+            }"#,
+        );
+        let resolver = NoLookupResolver;
+        let selected = router
+            .select_tcp_session_outbound_with_tag_and_resolver(
+                None,
+                &target([203, 0, 113, 5], 80, RoutingNetwork::Tcp),
+                true,
+                &resolver,
+            )
+            .await
+            .unwrap();
+        let TcpSessionOutbound::Blackhole(blackhole) = selected.outbound else {
+            panic!("expected blackhole, got {:?}", selected.outbound);
+        };
+        let (mut client, mut server) = tokio::io::duplex(1024);
+        let finished = tokio::spawn(async move { blackhole.finish_stream(&mut server).await });
+        let mut received = Vec::new();
+        client.read_to_end(&mut received).await.unwrap();
+        assert_eq!(received, b"blocked by policy\n");
+        drop(client);
+        finished.await.unwrap();
+
+        let selected = router
+            .select_udp_session_outbound_with_tag_and_resolver(
+                None,
+                &target([203, 0, 113, 5], 443, RoutingNetwork::Udp),
+                true,
+                &resolver,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            selected.outbound,
+            UdpSessionOutbound::Blackhole(blackhole)
+                if blackhole.response_bytes() == b"blocked by policy\n"[..]
+        ));
+    }
+
+    #[tokio::test]
     async fn none_response_writes_nothing() {
         let (mut client, mut server) = tokio::io::duplex(1024);
-        BlackholeOutbound::new(BlackholeResponse::None)
+        BlackholeOutbound::new(&BlackholeResponse::None)
             .finish_stream(&mut server)
             .await;
         drop(server);
@@ -239,7 +293,7 @@ mod tests {
     async fn response_grace_is_bounded_when_the_client_never_closes() {
         let (mut client, mut server) = tokio::io::duplex(1024);
         let started = tokio::time::Instant::now();
-        BlackholeOutbound::new(BlackholeResponse::Http)
+        BlackholeOutbound::new(&BlackholeResponse::Http)
             .finish_stream(&mut server)
             .await;
         assert!(started.elapsed() >= BLACKHOLE_RESPONSE_GRACE);

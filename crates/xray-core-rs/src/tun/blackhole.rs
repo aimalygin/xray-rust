@@ -95,7 +95,7 @@ pub(super) async fn finish_blackholed_tcp_flow(
             &serial,
             flow.handle,
             flow.generation,
-            Bytes::from_static(response),
+            response,
         ) => result.is_ok(),
     };
     if !delivered {
@@ -147,7 +147,7 @@ pub(super) async fn absorb_blackholed_udp_flow(
             _ = context.stack_tx.send(StackEvent::UdpDatagram {
                 client: key.client.into_endpoint(),
                 source: key.target.into_endpoint(),
-                payload: Bytes::from_static(response),
+                payload: response,
             }) => {}
         }
     }

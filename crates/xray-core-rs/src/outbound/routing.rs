@@ -70,7 +70,8 @@ async fn select_on_demand<'a>(
         // Xray v26.7.28 BuildCondition checks these before destination IP,
         // then domain. A domain mismatch in a combined rule must not suppress
         // its DNS lookup. An earlier matching domain-only rule still wins.
-        if !rule.matches_inbound(inbound_tag)
+        if !rule.matches_local_os()
+            || !rule.matches_inbound(inbound_tag)
             || !rule.matches_network(Some(target_network(target)))
             || !rule.matches_port(Some(target.port))
         {
