@@ -3051,7 +3051,7 @@
       "base": "freedom-domain-strategy",
       "set": {
         "/outbounds/0/settings": {
-          "redirect": "1.1.1.1:53",
+          "redirect": "192.0.2.53:53",
           "userLevel": 1
         }
       },
@@ -3062,7 +3062,7 @@
       "base": "freedom-domain-strategy",
       "set": {
         "/outbounds/0/settings": {
-          "redirect": "1.1.1.1"
+          "redirect": "192.0.2.53"
         }
       },
       "accepted": false,
