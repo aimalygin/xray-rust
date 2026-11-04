@@ -10,6 +10,13 @@ long-term supported release series.
 
 ## Unreleased
 
+- Hysteria: Gecko, the shape layer that a Salamander `packetSize` selects in
+  Xray-core and that Hysteria 2.9.2 added. Such profiles no longer fail to
+  import. Handshake datagrams travel as two to eight randomly padded
+  fragments, and replies are reassembled; later traffic stays plain
+  Salamander. Padding stops at 1,452 bytes so fragments fit the path MTU;
+  Xray-core pads up to 2,048 and relies on IP fragmentation. `hy2://` links
+  with `obfs=gecko` import with Hysteria's default sizes, 512 to 1,200 bytes.
 - QUIC: Brutal congestion control and Hysteria's bandwidth exchange.
   Hysteria now reads all of `finalmask.quicParams`, as Xray-core's Hysteria
   dialer does, instead of only `udpHop` and `disableChromeParrot`, so profiles

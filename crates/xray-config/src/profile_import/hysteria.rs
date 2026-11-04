@@ -91,12 +91,18 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
             }
         }
     }
+    // Hysteria's URIs carry no Gecko sizes, so its client pads Gecko to its
+    // defaults, 512..=1200 bytes.
     let salamander = match (obfs.as_deref(), obfs_password.as_deref()) {
         (None, None) => None,
-        (Some(kind), Some(password))
-            if kind.eq_ignore_ascii_case("salamander") && (4..=4096).contains(&password.len()) =>
-        {
-            Some(password)
+        (Some(kind), Some(password)) if (4..=4096).contains(&password.len()) => {
+            if kind.eq_ignore_ascii_case("salamander") {
+                Some((password, None))
+            } else if kind.eq_ignore_ascii_case("gecko") {
+                Some((password, Some("512-1200")))
+            } else {
+                return Err(ImportError::Unsupported);
+            }
         }
         _ => return Err(ImportError::Unsupported),
     };
@@ -117,8 +123,12 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
         masks.push(json!({"type":"udphop","settings":{
             "mode":"intervalLocal,intervalRemote","remotePorts":ports}}));
     }
-    if let Some(password) = salamander {
-        masks.push(json!({"type":"salamander", "settings":{"password":password.as_str()}}));
+    if let Some((password, gecko)) = salamander {
+        let mut mask = json!({"type":"salamander", "settings":{"password":password.as_str()}});
+        if let Some(size) = gecko {
+            mask["settings"]["packetSize"] = json!(size);
+        }
+        masks.push(mask);
     }
     root.0["dns"] = if dns.is_empty() {
         json!({"queryStrategy":"UseIPv4","fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16","poolSize":32768,"ttl":60}})

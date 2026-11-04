@@ -727,6 +727,9 @@ pub struct HysteriaSettings {
     pub auth: zeroize::Zeroizing<String>,
     /// The single supported `finalmask.udp` mask, consumed by this carrier.
     pub salamander_password: Option<zeroize::Zeroizing<String>>,
+    /// Salamander's `packetSize` when its upper bound is positive, which
+    /// selects Gecko in Xray: `1 <= from <= to <= 2048`.
+    pub gecko_packet_size: Option<FragmentRange>,
 }
 
 impl fmt::Debug for HysteriaSettings {
@@ -734,6 +737,7 @@ impl fmt::Debug for HysteriaSettings {
         f.debug_struct("HysteriaSettings")
             .field("auth", &"<redacted>")
             .field("salamander", &self.salamander_password.is_some())
+            .field("gecko_packet_size", &self.gecko_packet_size)
             .finish()
     }
 }

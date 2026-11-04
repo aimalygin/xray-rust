@@ -61,7 +61,7 @@ objects! {
         "Xray array/str/hex/base64 packets or random length/randRange; delay follows each packet, at most 1000 ms per item and 10 seconds total."),
     SALAMANDER: ("streamSettings.finalmask.udp[].settings (salamander)",
         ["password", "packetSize"],
-        "Password is 4..=4096 UTF-8 bytes. packetSize must be absent, null or zero; Gecko is unsupported."),
+        "Password is 4..=4096 UTF-8 bytes. A packetSize range with a positive upper bound selects Gecko (1 <= from <= to <= 2048); padding stops at 1452 bytes."),
     FREEDOM_SETTINGS: ("$.outbounds[].settings (freedom)",
         ["fragment"],
         "Only the bounded tlshello fragment option is supported; noise and other freedom settings fail closed."),

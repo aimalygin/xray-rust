@@ -41,7 +41,8 @@ fn hysteria_imports_salamander_and_bounded_port_lists_without_dropping_options()
     for suffix in [
         "?obfs=salamander",
         "?obfs-password=secret",
-        "?obfs=gecko&obfs-password=secret",
+        "?obfs=gecko&obfs-password=abc",
+        "?obfs=plain&obfs-password=secret",
         "?obfs=salamander&obfs-password=abc",
         "?mport=0",
         "?mport=1-65535,1",
@@ -64,6 +65,22 @@ fn hysteria_imports_salamander_and_bounded_port_lists_without_dropping_options()
         &[]
     )
     .is_err());
+}
+#[test]
+fn hysteria_gecko_links_pad_to_hysterias_default_sizes() {
+    let imported = import_profile(
+        ProfileFormat::Hysteria2,
+        "hy2://auth@server.example?obfs=Gecko&obfs-password=test%2Bpass",
+        None,
+        &[],
+    )
+    .unwrap();
+    let config: Value = serde_json::from_str(&imported.config_json).unwrap();
+    assert_eq!(
+        config["outbounds"][0]["streamSettings"]["finalmask"]["udp"],
+        json!([{"type":"salamander","settings":{"password":"test+pass","packetSize":"512-1200"}}])
+    );
+    assert!(!format!("{imported:?}").contains("test+pass"));
 }
 fn config(format: ProfileFormat, text: &str) -> Value {
     serde_json::from_str(&import_profile(format, text, None, &[]).unwrap().config_json).unwrap()

@@ -2958,6 +2958,23 @@
       },
       "accepted": false,
       "errorPath": "$.outbounds[0].streamSettings.finalmask.quicParams.bbrProfile"
+    },
+    {
+      "name": "salamander-gecko-packetSize",
+      "base": "hysteria2",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/0/settings/packetSize": "512-1200"
+      },
+      "accepted": true
+    },
+    {
+      "name": "salamander-gecko-zero-lower-bound",
+      "base": "hysteria2",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/0/settings/packetSize": "0-512"
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[0].settings.packetSize"
     }
   ]
 }

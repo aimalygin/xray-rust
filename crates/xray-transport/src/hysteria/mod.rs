@@ -3,11 +3,13 @@
 
 pub(crate) mod carrier;
 mod client;
+mod gecko;
 mod tcp;
 mod udp;
 
 pub use carrier::HysteriaCarrierConfig;
 pub use client::{HysteriaClient, HysteriaConfig, HysteriaError, HysteriaLimits};
+pub use gecko::GeckoPacketSize;
 pub use tcp::HysteriaTcpStream;
 pub use udp::{HysteriaDatagram, HysteriaUdpSession};
 

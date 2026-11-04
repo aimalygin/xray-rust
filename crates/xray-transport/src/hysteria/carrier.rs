@@ -1,13 +1,17 @@
 //! Optional Hysteria UDP carrier transforms. The ordinary carrier never enters
 //! this wrapper. Port changes use Quinn's bounded current/previous socket pair.
 use std::{
+    collections::VecDeque,
     fmt,
     io::{self, IoSliceMut},
     net::{SocketAddr, UdpSocket},
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc, Mutex,
+    },
     task::{Context, Poll},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use blake2::{digest::consts::U32, Blake2b, Digest};
@@ -17,7 +21,10 @@ use quinn::{udp, AsyncUdpSocket, UdpPoller};
 use rand::{Rng, RngCore};
 use zeroize::{Zeroize, Zeroizing};
 
-use super::HysteriaError;
+use super::{
+    gecko::{self, GeckoPacketSize, Reassembly},
+    HysteriaError,
+};
 use crate::stream::H3UdpHopConfig;
 
 pub(crate) const SALT_LEN: usize = 8;
@@ -26,6 +33,9 @@ pub(crate) const SALT_LEN: usize = 8;
 #[derive(Clone, Default)]
 pub struct HysteriaCarrierConfig {
     pub salamander_password: Option<Arc<Zeroizing<String>>>,
+    /// Gecko's fragment sizes, Salamander's `packetSize` in Xray. Requires a
+    /// Salamander password.
+    pub gecko: Option<GeckoPacketSize>,
     pub udp_hop: H3UdpHopConfig,
     pub noise: Option<crate::udp_noise::UdpNoiseConfig>,
 }
@@ -34,6 +44,7 @@ impl fmt::Debug for HysteriaCarrierConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HysteriaCarrierConfig")
             .field("salamander", &self.salamander_password.is_some())
+            .field("gecko", &self.gecko)
             .field("udp_hop", &self.udp_hop)
             .finish()
     }
@@ -50,6 +61,9 @@ impl HysteriaCarrierConfig {
             .is_some_and(|p| !(4..=4096).contains(&p.len()))
             || self.udp_hop.ports.len() > 65_535
             || self.udp_hop.ports.contains(&0)
+            || self
+                .gecko
+                .is_some_and(|size| self.salamander_password.is_none() || !size.is_valid())
         {
             return Err(HysteriaError::Configuration);
         }
@@ -151,6 +165,10 @@ pub(crate) fn wrap(
             .salamander_password
             .as_ref()
             .map(|_| Mutex::new(vec![0; 65_536].into_boxed_slice())),
+        gecko: config
+            .gecko
+            .filter(|_| config.salamander_password.is_some())
+            .map(GeckoState::new),
     });
     if let Some(noise) = config.noise.as_ref().filter(|n| n.before_salamander) {
         crate::udp_noise::wrap(wrapped, logical_peer, noise.clone(), noise_state)
@@ -166,6 +184,90 @@ struct CarrierSocket {
     password: Option<Arc<Zeroizing<String>>>,
     send_buffer: Mutex<Vec<u8>>,
     receive_buffer: Option<Mutex<Box<[u8]>>>,
+    gecko: Option<GeckoState>,
+}
+
+/// Per-socket Gecko state. Hops and rebinds get a fresh socket and state;
+/// the server keys its reassembly by source address, so nothing carries over.
+struct GeckoState {
+    size: GeckoPacketSize,
+    last_message: AtomicU32,
+    receive: Mutex<GeckoReceive>,
+}
+
+#[derive(Default)]
+struct GeckoReceive {
+    reassembly: Reassembly,
+    /// Reassembled messages and the short-header datagrams read with them,
+    /// delivered before the socket is read again.
+    ready: VecDeque<Vec<u8>>,
+    /// The metadata of the read that filled `ready`.
+    meta: udp::RecvMeta,
+}
+
+impl GeckoState {
+    fn new(size: GeckoPacketSize) -> Self {
+        Self {
+            size,
+            last_message: AtomicU32::new(0),
+            receive: Mutex::default(),
+        }
+    }
+
+    /// Gecko's message IDs: a wrapping counter whose first value is one.
+    fn next_message(&self) -> u8 {
+        self.last_message
+            .fetch_add(1, Ordering::Relaxed)
+            .wrapping_add(1) as u8
+    }
+
+    /// Feeds one read's decoded datagrams, split at its stride, through
+    /// reassembly. Returns false, consuming nothing, when none is a frame.
+    fn absorb(&self, decoded: &[u8], meta: &udp::RecvMeta) -> bool {
+        let datagrams = || decoded.chunks(meta.stride.max(1));
+        if !datagrams().any(gecko::is_fragmented) {
+            return false;
+        }
+        let now = Instant::now();
+        let mut receive = self.receive.lock().unwrap_or_else(|e| e.into_inner());
+        for datagram in datagrams() {
+            if !gecko::is_fragmented(datagram) {
+                receive.ready.push_back(datagram.to_vec());
+            } else if let Some(frame) = gecko::parse_frame(datagram) {
+                if let Some(message) = receive.reassembly.accept(now, frame) {
+                    receive.ready.push_back(message);
+                }
+            }
+        }
+        // ECN marks belong to individual fragments, not to messages.
+        receive.meta = udp::RecvMeta { ecn: None, ..*meta };
+        true
+    }
+
+    /// Moves ready datagrams into Quinn's buffers, one per buffer. Returns
+    /// how many buffers were used, or none when nothing was ready.
+    fn deliver(&self, bufs: &mut [IoSliceMut<'_>], meta: &mut [udp::RecvMeta]) -> Option<usize> {
+        let mut receive = self.receive.lock().unwrap_or_else(|e| e.into_inner());
+        let mut count = 0;
+        for (buffer, meta) in bufs.iter_mut().zip(meta.iter_mut()) {
+            let Some(datagram) = receive.ready.pop_front() else {
+                break;
+            };
+            *meta = udp::RecvMeta {
+                len: datagram.len(),
+                stride: datagram.len(),
+                ..receive.meta
+            };
+            if datagram.len() <= buffer.len() {
+                buffer[..datagram.len()].copy_from_slice(&datagram);
+            } else {
+                meta.len = 0;
+                meta.stride = 1;
+            }
+            count += 1;
+        }
+        (count > 0).then_some(count)
+    }
 }
 
 impl fmt::Debug for CarrierSocket {
@@ -249,12 +351,46 @@ impl AsyncUdpSocket for CarrierSocket {
             ));
         }
         let mut buffer = self.send_buffer.lock().unwrap_or_else(|e| e.into_inner());
+        rewritten.segment_size = None;
+        if let Some(gecko) = self
+            .gecko
+            .as_ref()
+            .filter(|_| gecko::is_fragmented(transmit.contents))
+        {
+            let message = gecko.next_message();
+            let frames = gecko::fragment(
+                transmit.contents,
+                message,
+                gecko.size,
+                &mut rand::thread_rng(),
+            );
+            for (index, frame) in frames.iter().enumerate() {
+                buffer.resize(frame.len() + SALT_LEN, 0);
+                let mut salt = [0; SALT_LEN];
+                rand::thread_rng().fill_bytes(&mut salt);
+                encode(password, salt, frame, &mut buffer);
+                let fragment = udp::Transmit {
+                    contents: &buffer,
+                    ..rewritten
+                };
+                match self.inner.try_send(&fragment) {
+                    Ok(()) => {}
+                    // Fragments already sent cannot be recalled. Losing the
+                    // rest loses the datagram, which QUIC recovers; resending
+                    // would leave the peer another incomplete message.
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock && index > 0 => {
+                        return Ok(())
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+            return Ok(());
+        }
         buffer.resize(transmit.contents.len() + SALT_LEN, 0);
         let mut salt = [0; SALT_LEN];
         rand::thread_rng().fill_bytes(&mut salt);
         encode(password, salt, transmit.contents, &mut buffer);
         rewritten.contents = &buffer;
-        rewritten.segment_size = None;
         self.inner.try_send(&rewritten)
     }
 
@@ -265,6 +401,9 @@ impl AsyncUdpSocket for CarrierSocket {
         meta: &mut [udp::RecvMeta],
     ) -> Poll<io::Result<usize>> {
         if let (Some(password), Some(scratch)) = (&self.password, &self.receive_buffer) {
+            if let Some(count) = self.gecko.as_ref().and_then(|g| g.deliver(bufs, meta)) {
+                return Poll::Ready(Ok(count));
+            }
             // Quinn allocates receive buffers from its advertised QUIC payload
             // limit, which excludes the salt. Reserve wire overhead separately,
             // including for GRO aggregates, before copying decoded bytes back.
@@ -277,6 +416,18 @@ impl AsyncUdpSocket for CarrierSocket {
             if meta[0].addr == self.wire_peer {
                 decode(password, &mut scratch, &mut meta[0]);
                 meta[0].addr = self.logical_peer;
+                if let Some(gecko) = &self.gecko {
+                    // Frames travel only during the handshake; afterwards
+                    // every datagram takes the copy below.
+                    if meta[0].len > 0 && gecko.absorb(&scratch[..meta[0].len], &meta[0]) {
+                        if let Some(count) = gecko.deliver(bufs, meta) {
+                            return Poll::Ready(Ok(count));
+                        }
+                        meta[0].len = 0;
+                        meta[0].stride = 1;
+                        return Poll::Ready(Ok(1));
+                    }
+                }
                 if meta[0].len <= bufs[0].len() {
                     bufs[0][..meta[0].len].copy_from_slice(&scratch[..meta[0].len]);
                 } else {
@@ -473,6 +624,22 @@ mod tests {
     }
 
     #[test]
+    fn gecko_requires_salamander_and_bounded_sizes() {
+        let mut config = HysteriaCarrierConfig {
+            gecko: GeckoPacketSize::new(512, 1200),
+            ..Default::default()
+        };
+        assert!(config.validate().is_err());
+        config.salamander_password = Some(Arc::new(Zeroizing::new("synthetic".into())));
+        config.validate().unwrap();
+        assert!(format!("{config:?}").contains("min: 512, max: 1200"));
+        for (min, max) in [(0, 10), (20, 10), (1, 2049)] {
+            config.gecko = Some(GeckoPacketSize { min, max });
+            assert!(config.validate().is_err());
+        }
+    }
+
+    #[test]
     fn scheduled_hops_always_leave_the_current_port() {
         let logical: SocketAddr = "192.0.2.1:443".parse().unwrap();
         let mut config = HysteriaCarrierConfig::default();
@@ -532,5 +699,202 @@ mod tests {
         assert_eq!(meta[0].addr, logical);
         assert_eq!(meta[0].len, input.len());
         assert_eq!(output, input);
+    }
+
+    fn salamander_datagram(password: &str, plaintext: &[u8]) -> Vec<u8> {
+        let mut wire = vec![0; plaintext.len() + SALT_LEN];
+        let mut salt = [0; SALT_LEN];
+        rand::thread_rng().fill_bytes(&mut salt);
+        encode(password, salt, plaintext, &mut wire);
+        wire
+    }
+
+    fn salamander_plaintext(password: &str, wire: &[u8]) -> Vec<u8> {
+        let mut bytes = wire.to_vec();
+        let mut meta = udp::RecvMeta {
+            len: bytes.len(),
+            stride: bytes.len(),
+            ..Default::default()
+        };
+        decode(password, &mut bytes, &mut meta);
+        bytes.truncate(meta.len);
+        bytes
+    }
+
+    #[tokio::test]
+    async fn gecko_fragments_long_headers_and_reassembles_replies() {
+        use std::future::poll_fn;
+        const PASSWORD: &str = "synthetic-password";
+        let peer = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let wire_peer = peer.local_addr().unwrap();
+        let local = UdpSocket::bind("127.0.0.1:0").unwrap();
+        local.set_nonblocking(true).unwrap();
+        let logical: SocketAddr = "127.0.0.1:1".parse().unwrap();
+        let size = GeckoPacketSize::new(200, 400).unwrap();
+        let config = HysteriaCarrierConfig {
+            salamander_password: Some(Arc::new(Zeroizing::new(PASSWORD.into()))),
+            gecko: Some(size),
+            ..Default::default()
+        };
+        config.validate().unwrap();
+        let client = wrap(local, logical, wire_peer, &config, None).unwrap();
+        assert_eq!(client.max_transmit_segments(), 1);
+        let mut poller = client.clone().create_io_poller();
+        let mut long = vec![0xc3; 1200];
+        rand::thread_rng().fill_bytes(&mut long[1..]);
+        let short: Vec<u8> = std::iter::once(0x43).chain(1..=99).collect();
+        for contents in [long.as_slice(), &short] {
+            let transmit = udp::Transmit {
+                destination: logical,
+                ecn: None,
+                contents,
+                segment_size: None,
+                src_ip: None,
+            };
+            loop {
+                match client.try_send(&transmit) {
+                    Ok(()) => break,
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        poll_fn(|cx| poller.as_mut().poll_writable(cx))
+                            .await
+                            .unwrap()
+                    }
+                    Err(e) => panic!("{e}"),
+                }
+            }
+        }
+        let receive = || async {
+            let mut bytes = [0; 2048];
+            let (n, from) =
+                tokio::time::timeout(Duration::from_secs(2), peer.recv_from(&mut bytes))
+                    .await
+                    .unwrap()
+                    .unwrap();
+            (bytes[..n].to_vec(), from)
+        };
+        // The long header leaves as two to eight Salamander datagrams, each
+        // with its own salt, padded into packetSize when its chunk allows.
+        let (first, client_address) = receive().await;
+        let chunks = usize::from(salamander_plaintext(PASSWORD, &first)[2] & 0x0f);
+        assert!((2..=8).contains(&chunks));
+        let mut wires = vec![first];
+        for _ in 1..chunks {
+            wires.push(receive().await.0);
+        }
+        let mut reassembly = Reassembly::default();
+        let mut message = None;
+        for (index, wire) in wires.iter().enumerate() {
+            let plaintext = salamander_plaintext(PASSWORD, wire);
+            let frame = gecko::parse_frame(&plaintext).unwrap();
+            let chunk = if index + 1 < chunks {
+                1200 / chunks
+            } else {
+                1200 - (chunks - 1) * (1200 / chunks)
+            };
+            let unpadded = SALT_LEN + 5 + chunk;
+            if unpadded > 400 {
+                assert_eq!(wire.len(), unpadded);
+            } else {
+                assert!((200..=400).contains(&wire.len()), "{}", wire.len());
+            }
+            message = reassembly.accept(Instant::now(), frame).or(message);
+        }
+        assert_eq!(message.unwrap(), long);
+        assert_ne!(wires[0][..SALT_LEN], wires[1][..SALT_LEN]);
+        // A short header travels as one ordinary Salamander datagram.
+        let (wire, _) = receive().await;
+        assert_eq!(wire.len(), short.len() + SALT_LEN);
+        assert_eq!(salamander_plaintext(PASSWORD, &wire), short);
+
+        // Replies: fragments out of order around a short header, plus a
+        // malformed frame, come back as the two datagrams.
+        let mut reply = vec![0xe0; 300];
+        rand::thread_rng().fill_bytes(&mut reply[1..]);
+        let mut frames = gecko::fragment(&reply, 77, size, &mut rand::thread_rng());
+        frames.rotate_right(1);
+        let mut sequence = vec![salamander_datagram(PASSWORD, &frames[0])];
+        sequence.push(salamander_datagram(PASSWORD, &short));
+        sequence.push(salamander_datagram(PASSWORD, &[0x80, 1, 0x09, 0, 0]));
+        sequence.extend(frames[1..].iter().map(|f| salamander_datagram(PASSWORD, f)));
+        for datagram in &sequence {
+            peer.send_to(datagram, client_address).await.unwrap();
+        }
+        let mut storage = [[0u8; 1500]; 4];
+        let mut delivered = Vec::new();
+        let mut reads = 0;
+        while delivered.len() < 2 {
+            let [a, b, c, d] = &mut storage;
+            let mut bufs = [a, b, c, d].map(|b| IoSliceMut::new(b));
+            let mut meta = [udp::RecvMeta::default(); 4];
+            let count = tokio::time::timeout(
+                Duration::from_secs(2),
+                poll_fn(|cx| client.poll_recv(cx, &mut bufs, &mut meta)),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            reads += 1;
+            for (buffer, meta) in bufs.iter().zip(&meta).take(count) {
+                if meta.len > 0 {
+                    assert_eq!(meta.addr, logical);
+                    assert_eq!(meta.stride, meta.len);
+                    delivered.push(buffer[..meta.len].to_vec());
+                }
+            }
+        }
+        assert_eq!(delivered, [short.clone(), reply]);
+        assert_eq!(reads, sequence.len());
+    }
+
+    #[test]
+    fn gecko_delivery_splits_gro_reads_and_spans_polls() {
+        let state = GeckoState::new(GeckoPacketSize::new(100, 200).unwrap());
+        let source: SocketAddr = "192.0.2.7:443".parse().unwrap();
+        let read = |len| udp::RecvMeta {
+            addr: source,
+            len,
+            stride: 40,
+            ecn: Some(udp::EcnCodepoint::Ce),
+            dst_ip: None,
+        };
+        // A read of short headers alone stays on the ordinary path.
+        assert!(!state.absorb(&[0x41; 70], &read(70)));
+        // A GRO read with frames: short header, both halves of message 5
+        // (the second with one padding byte), and a shorter last datagram.
+        let mut decoded = vec![0x41; 40];
+        decoded.extend_from_slice(&[0x80, 5, 0x02, 0, 0]);
+        decoded.extend_from_slice(&[b'a'; 35]);
+        decoded.extend_from_slice(&[0x80, 5, 0x12, 0, 1, 0xff]);
+        decoded.extend_from_slice(&[b'b'; 34]);
+        decoded.extend_from_slice(&[0x42; 10]);
+        assert!(state.absorb(&decoded, &read(decoded.len())));
+        let mut first = [0u8; 64];
+        let mut second = [0u8; 64];
+        let mut bufs = [IoSliceMut::new(&mut first), IoSliceMut::new(&mut second)];
+        let mut meta = [udp::RecvMeta::default(); 2];
+        assert_eq!(state.deliver(&mut bufs, &mut meta), Some(2));
+        assert_eq!(
+            (meta[0].addr, meta[0].len, meta[0].stride),
+            (source, 40, 40)
+        );
+        assert_eq!(meta[0].ecn, None);
+        assert_eq!(&bufs[0][..40], &[0x41; 40]);
+        // The 69-byte message does not fit a 64-byte buffer and is dropped.
+        assert_eq!(meta[1].len, 0);
+        // The rest waits for the next poll, ahead of any new read.
+        assert_eq!(state.deliver(&mut bufs, &mut meta), Some(1));
+        assert_eq!((meta[0].len, meta[0].stride), (10, 10));
+        assert_eq!(&bufs[0][..10], &[0x42; 10]);
+        assert_eq!(state.deliver(&mut bufs, &mut meta), None);
+        // A message that fits is delivered whole.
+        let mut message = vec![0x80, 6, 0x02, 0, 0];
+        message.extend_from_slice(&[b'c'; 35]);
+        message.extend_from_slice(&[0x80, 6, 0x12, 0, 0, b'd']);
+        assert!(state.absorb(&message, &read(message.len())));
+        assert_eq!(state.deliver(&mut bufs, &mut meta), Some(1));
+        assert_eq!(
+            &bufs[0][..meta[0].len],
+            [[b'c'; 35].as_slice(), b"d"].concat()
+        );
     }
 }
