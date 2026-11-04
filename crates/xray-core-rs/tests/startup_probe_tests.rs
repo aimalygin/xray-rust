@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use xray_config::{
-    CoreConfig, DnsQueryStrategy, DnsServerConfig, DomainMatcherSet, InboundConfig,
-    InboundProtocol, Network, OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig,
-    RoutingConfig, RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
+    CoreConfig, DnsQueryStrategy, DnsServerConfig, InboundConfig, InboundProtocol, Network,
+    OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig, RoutingConfig, RoutingRule,
+    StreamSecurity, StreamSettings, StreamTransport,
 };
 use xray_core_rs::{
     Core, CoreError, CoreState, DnsBootstrapMode, OutboundHealthFailure, OutboundProbeError,
@@ -639,10 +639,10 @@ async fn startup_probe_uses_default_outbound_directly_without_routing_rules() {
     config.routing = RoutingConfig {
         rules: vec![RoutingRule {
             inbound_tags: Vec::new(),
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
-            ip_matchers: Default::default(),
+            networks: None,
+            port_ranges: None,
+            domain_matchers: None,
+            ip_matchers: None,
             target: xray_config::RoutingRuleTarget::Outbound("missing".to_owned()),
             local_os: Vec::new(),
         }],
@@ -754,10 +754,10 @@ fn outbound_probe_core(addr: SocketAddr) -> Core {
     config.routing = RoutingConfig {
         rules: vec![RoutingRule {
             inbound_tags: Vec::new(),
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
-            ip_matchers: Default::default(),
+            networks: None,
+            port_ranges: None,
+            domain_matchers: None,
+            ip_matchers: None,
             target: xray_config::RoutingRuleTarget::Outbound("missing".to_owned()),
             local_os: Vec::new(),
         }],

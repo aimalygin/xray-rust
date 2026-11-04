@@ -244,10 +244,10 @@ fn dns_qtype_and_routing_port_ranges_enforce_ordered_bounds() {
 fn routing_network_and_port_selectors_fail_closed_without_target_metadata() {
     let rule = RoutingRule {
         inbound_tags: Vec::new(),
-        networks: vec![Network::Udp],
-        port_ranges: vec![RoutingPortRange::single(53)],
-        domain_matchers: DomainMatcherSet::default(),
-        ip_matchers: Default::default(),
+        networks: Some(vec![Network::Udp]),
+        port_ranges: Some(vec![RoutingPortRange::single(53)]),
+        domain_matchers: None,
+        ip_matchers: None,
         target: RoutingRuleTarget::Outbound("dns-out".to_owned()),
         local_os: Vec::new(),
     };
@@ -296,10 +296,10 @@ fn normalized_model_can_represent_inbound_tag_routing_rule() {
     let routing = RoutingConfig {
         rules: vec![RoutingRule {
             inbound_tags: vec!["socks-in".to_owned()],
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
-            ip_matchers: Default::default(),
+            networks: None,
+            port_ranges: None,
+            domain_matchers: None,
+            ip_matchers: None,
             target: RoutingRuleTarget::Outbound("direct".to_owned()),
             local_os: Vec::new(),
         }],
@@ -316,16 +316,18 @@ fn normalized_model_can_represent_domain_routing_rule() {
     let routing = RoutingConfig {
         rules: vec![RoutingRule {
             inbound_tags: Vec::new(),
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: compile_domain_matchers(&[
-                DomainMatcher::Keyword("ample".to_owned()),
-                DomainMatcher::Suffix("example.com".to_owned()),
-                DomainMatcher::Full("exact.test".to_owned()),
-                DomainMatcher::Regex(RegexMatcher::new("^re-[a-z]+\\.test$").unwrap()),
-            ])
-            .unwrap(),
-            ip_matchers: Default::default(),
+            networks: None,
+            port_ranges: None,
+            domain_matchers: Some(
+                compile_domain_matchers(&[
+                    DomainMatcher::Keyword("ample".to_owned()),
+                    DomainMatcher::Suffix("example.com".to_owned()),
+                    DomainMatcher::Full("exact.test".to_owned()),
+                    DomainMatcher::Regex(RegexMatcher::new("^re-[a-z]+\\.test$").unwrap()),
+                ])
+                .unwrap(),
+            ),
+            ip_matchers: None,
             target: RoutingRuleTarget::Outbound("proxy".to_owned()),
             local_os: Vec::new(),
         }],
@@ -347,15 +349,15 @@ fn normalized_model_can_represent_ip_routing_rule() {
     let routing = RoutingConfig {
         rules: vec![RoutingRule {
             inbound_tags: Vec::new(),
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
-            ip_matchers: {
+            networks: None,
+            port_ranges: None,
+            domain_matchers: None,
+            ip_matchers: Some({
                 let mut matchers = IpMatcherSet::builder();
                 matchers.insert_cidr(cidr(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)), 8), false);
                 matchers.insert_private_networks(false);
                 matchers.build()
-            },
+            }),
             target: RoutingRuleTarget::Outbound("direct".to_owned()),
             local_os: Vec::new(),
         }],
@@ -374,16 +376,16 @@ fn normalized_model_applies_inverse_ip_matchers_as_a_conjunction() {
     let routing = RoutingConfig {
         rules: vec![RoutingRule {
             inbound_tags: Vec::new(),
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
-            ip_matchers: {
+            networks: None,
+            port_ranges: None,
+            domain_matchers: None,
+            ip_matchers: Some({
                 let mut matchers = IpMatcherSet::builder();
                 matchers.insert_cidr(cidr(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)), 8), true);
                 matchers.insert_cidr(cidr(IpAddr::V4(Ipv4Addr::new(192, 168, 0, 0)), 16), true);
                 matchers.insert_cidr(cidr(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 0)), 24), false);
                 matchers.build()
-            },
+            }),
             target: RoutingRuleTarget::Outbound("direct".to_owned()),
             local_os: Vec::new(),
         }],

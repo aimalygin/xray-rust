@@ -1229,12 +1229,12 @@ mod tests {
             routing: RoutingConfig {
                 rules: vec![RoutingRule {
                     inbound_tags: Vec::new(),
-                    networks: vec![network],
-                    port_ranges: Vec::new(),
-                    domain_matchers: DomainMatcherSet::default(),
-                    ip_matchers: ip_matcher_set(
+                    networks: Some(vec![network]),
+                    port_ranges: None,
+                    domain_matchers: None,
+                    ip_matchers: Some(ip_matcher_set(
                         IpCidr::new(server.ip(), if server.is_ipv4() { 32 } else { 128 }).unwrap(),
-                    ),
+                    )),
                     target: xray_config::RoutingRuleTarget::Outbound("dns-out".to_owned()),
                     local_os: Vec::new(),
                 }],

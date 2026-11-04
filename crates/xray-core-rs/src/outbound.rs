@@ -2415,13 +2415,14 @@ struct DnsRouteNetworkIndexBuilder {
 
 impl DnsRouteNetworkIndexBuilder {
     fn add_rule(&mut self, rule: &RoutingRule) {
-        if rule.networks.is_empty() {
+        let Some(networks) = &rule.networks else {
             self.add_ports(Network::Tcp, rule);
             self.add_ports(Network::Udp, rule);
             return;
-        }
+        };
 
-        for network in rule.networks.iter().copied() {
+        // A network list of only names Xray-core does not know adds nothing.
+        for network in networks.iter().copied() {
             self.add_ports(network, rule);
         }
     }
@@ -2431,13 +2432,13 @@ impl DnsRouteNetworkIndexBuilder {
             Network::Tcp => &mut self.tcp,
             Network::Udp => &mut self.udp,
         };
-        if rule.port_ranges.is_empty() {
-            ranges.push(DnsRoutePortRange::ALL);
-        } else {
-            ranges.extend(rule.port_ranges.iter().map(|range| DnsRoutePortRange {
+        match &rule.port_ranges {
+            None => ranges.push(DnsRoutePortRange::ALL),
+            // A port condition with no ranges matches no port.
+            Some(port_ranges) => ranges.extend(port_ranges.iter().map(|range| DnsRoutePortRange {
                 start: range.start(),
                 end: range.end(),
-            }));
+            })),
         }
     }
 
@@ -4379,11 +4380,11 @@ mod tests {
     use tokio::sync::Notify;
     use uuid::Uuid;
     use xray_config::{
-        compile_domain_matchers, DnsConfig, DnsServerConfig, DomainMatcher, DomainMatcherSet,
-        GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings, IpCidr, IpMatcherSet,
-        OutboundProxySettings, RealitySettings, RealityShortId, RoutingConfig,
-        RoutingDomainStrategy, RoutingPortRange, RoutingRule, SocketOptions, StreamSettings,
-        TlsSettings, VlessOutboundSettings, WebSocketSettings,
+        compile_domain_matchers, DnsConfig, DnsServerConfig, DomainMatcher, GrpcSettings,
+        HappyEyeballsSettings, HttpUpgradeSettings, IpCidr, IpMatcherSet, OutboundProxySettings,
+        RealitySettings, RealityShortId, RoutingConfig, RoutingDomainStrategy, RoutingPortRange,
+        RoutingRule, SocketOptions, StreamSettings, TlsSettings, VlessOutboundSettings,
+        WebSocketSettings,
     };
     use xray_proxy::vless::{unpad_vision_block, VisionCommand};
     use xray_transport::{
@@ -4513,10 +4514,10 @@ mod tests {
             routing: RoutingConfig {
                 rules: vec![RoutingRule {
                     inbound_tags: Vec::new(),
-                    networks: Vec::new(),
-                    port_ranges: Vec::new(),
-                    domain_matchers: DomainMatcherSet::default(),
-                    ip_matchers: Default::default(),
+                    networks: None,
+                    port_ranges: None,
+                    domain_matchers: None,
+                    ip_matchers: None,
                     target: RoutingRuleTarget::Outbound("direct".to_owned()),
                     local_os: Vec::new(),
                 }],
@@ -4649,10 +4650,10 @@ mod tests {
     fn ip_rule(tag: &str, ip: Ipv4Addr) -> RoutingRule {
         RoutingRule {
             inbound_tags: Vec::new(),
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
-            ip_matchers: ip_matcher_set(IpCidr::full(IpAddr::V4(ip))),
+            networks: None,
+            port_ranges: None,
+            domain_matchers: None,
+            ip_matchers: Some(ip_matcher_set(IpCidr::full(IpAddr::V4(ip)))),
             target: RoutingRuleTarget::Outbound(tag.to_owned()),
             local_os: Vec::new(),
         }
@@ -4661,11 +4662,12 @@ mod tests {
     fn domain_and_ip_rule(tag: &str, domain: &str, ip: Ipv4Addr) -> RoutingRule {
         RoutingRule {
             inbound_tags: Vec::new(),
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: compile_domain_matchers(&[DomainMatcher::Full(domain.to_owned())])
-                .unwrap(),
-            ip_matchers: ip_matcher_set(IpCidr::full(IpAddr::V4(ip))),
+            networks: None,
+            port_ranges: None,
+            domain_matchers: Some(
+                compile_domain_matchers(&[DomainMatcher::Full(domain.to_owned())]).unwrap(),
+            ),
+            ip_matchers: Some(ip_matcher_set(IpCidr::full(IpAddr::V4(ip)))),
             target: RoutingRuleTarget::Outbound(tag.to_owned()),
             local_os: Vec::new(),
         }
@@ -4674,10 +4676,10 @@ mod tests {
     fn inbound_rule(inbound_tag: &str, outbound_tag: &str) -> RoutingRule {
         RoutingRule {
             inbound_tags: vec![inbound_tag.to_owned()],
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
-            ip_matchers: Default::default(),
+            networks: None,
+            port_ranges: None,
+            domain_matchers: None,
+            ip_matchers: None,
             target: RoutingRuleTarget::Outbound(outbound_tag.to_owned()),
             local_os: Vec::new(),
         }
@@ -4690,10 +4692,10 @@ mod tests {
     ) -> RoutingRule {
         RoutingRule {
             inbound_tags: Vec::new(),
-            networks: vec![network],
-            port_ranges: vec![port_range],
-            domain_matchers: DomainMatcherSet::default(),
-            ip_matchers: Default::default(),
+            networks: Some(vec![network]),
+            port_ranges: Some(vec![port_range]),
+            domain_matchers: None,
+            ip_matchers: None,
             target: RoutingRuleTarget::Outbound(outbound_tag.to_owned()),
             local_os: Vec::new(),
         }
@@ -5197,6 +5199,37 @@ mod tests {
     }
 
     #[test]
+    fn dns_selector_prefilter_skips_conditions_that_match_nothing() {
+        // `"port": 0` or `"network": "quic"` keeps a condition that no
+        // connection meets, so the rule can never select the DNS outbound.
+        let target = Target::new(
+            RoutingTargetAddr::Domain("example.test".to_owned()),
+            53,
+            RoutingNetwork::Udp,
+        );
+        for nothing in [
+            |rule: &mut RoutingRule| rule.port_ranges = Some(Vec::new()),
+            |rule: &mut RoutingRule| rule.networks = Some(Vec::new()),
+        ] {
+            let mut config = direct_selection_config();
+            config.outbounds.push(dns_selection_outbound(
+                "dns-out",
+                DnsOutboundSettings::default(),
+            ));
+            let mut rule = network_port_rule("dns-out", Network::Udp, RoutingPortRange::single(53));
+            nothing(&mut rule);
+            config.routing.rules = vec![rule];
+            let router = OutboundRouter::new(Arc::new(config));
+
+            assert!(!router.may_select_dns_outbound(None, &target));
+            assert!(router
+                .select_dns_outbound_for_session(None, &target)
+                .expect("a rule that matches nothing keeps the regular path")
+                .is_none());
+        }
+    }
+
+    #[test]
     fn dns_selector_prefilter_merges_large_adjacent_rule_sets() {
         let mut config = direct_selection_config();
         config.outbounds.push(dns_selection_outbound(
@@ -5240,16 +5273,18 @@ mod tests {
         inbound_tags.extend(inbound_tags.clone());
         config.routing.rules = vec![RoutingRule {
             inbound_tags,
-            networks: vec![Network::Udp],
-            port_ranges: (0..SELECTOR_COUNT)
-                .map(|index| {
-                    RoutingPortRange::single(
-                        u16::try_from(index * 2).expect("test port must fit in u16"),
-                    )
-                })
-                .collect(),
-            domain_matchers: DomainMatcherSet::default(),
-            ip_matchers: Default::default(),
+            networks: Some(vec![Network::Udp]),
+            port_ranges: Some(
+                (0..SELECTOR_COUNT)
+                    .map(|index| {
+                        RoutingPortRange::single(
+                            u16::try_from(index * 2).expect("test port must fit in u16"),
+                        )
+                    })
+                    .collect(),
+            ),
+            domain_matchers: None,
+            ip_matchers: None,
             target: RoutingRuleTarget::Outbound("dns-out".to_owned()),
             local_os: Vec::new(),
         }];
@@ -5278,8 +5313,9 @@ mod tests {
         ));
         config.default_outbound_tag = Some("direct".to_owned());
         let mut rule = network_port_rule("dns-out", Network::Udp, RoutingPortRange::single(53));
-        rule.domain_matchers =
-            compile_domain_matchers(&[DomainMatcher::Full("dns-only.test".to_owned())]).unwrap();
+        rule.domain_matchers = Some(
+            compile_domain_matchers(&[DomainMatcher::Full("dns-only.test".to_owned())]).unwrap(),
+        );
         config.routing.rules = vec![rule];
         let router = OutboundRouter::new(Arc::new(config));
         let target = Target::new(
@@ -6380,10 +6416,10 @@ mod tests {
         }];
         config.routing.rules = vec![RoutingRule {
             inbound_tags: Vec::new(),
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
-            ip_matchers: Default::default(),
+            networks: None,
+            port_ranges: None,
+            domain_matchers: None,
+            ip_matchers: None,
             target: RoutingRuleTarget::Balancer("automatic".to_owned()),
             local_os: Vec::new(),
         }];
@@ -8376,8 +8412,8 @@ mod tests {
         let mut config = direct_selection_config();
         config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
         let mut rule = ip_rule("direct", Ipv4Addr::new(203, 0, 113, 7));
-        rule.networks = vec![Network::Tcp];
-        rule.port_ranges = vec![RoutingPortRange::single(443)];
+        rule.networks = Some(vec![Network::Tcp]);
+        rule.port_ranges = Some(vec![RoutingPortRange::single(443)]);
         config.routing.rules = vec![rule];
         let router = OutboundRouter::new(Arc::new(config));
         let resolver =
@@ -8513,8 +8549,8 @@ mod tests {
         let mut config = direct_selection_config();
         config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
         let mut rule = domain_and_ip_rule("direct", "example.test", resolved_ip);
-        rule.networks = vec![Network::Tcp];
-        rule.port_ranges = vec![RoutingPortRange::single(443)];
+        rule.networks = Some(vec![Network::Tcp]);
+        rule.port_ranges = Some(vec![RoutingPortRange::single(443)]);
         config.routing.rules = vec![rule];
         let router = OutboundRouter::new(Arc::new(config));
         let resolver = FakeDnsResolver::resolving_to(SocketAddr::from((resolved_ip, 443)))
@@ -8559,8 +8595,8 @@ mod tests {
         let mut config = direct_selection_config();
         config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
         let mut rule = domain_and_ip_rule("direct", "example.test", resolved_ipv4);
-        rule.networks = vec![Network::Tcp];
-        rule.port_ranges = vec![RoutingPortRange::single(443)];
+        rule.networks = Some(vec![Network::Tcp]);
+        rule.port_ranges = Some(vec![RoutingPortRange::single(443)]);
         config.routing.rules = vec![rule];
         let router = OutboundRouter::new(Arc::new(config));
 

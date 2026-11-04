@@ -13,12 +13,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration, Instant};
 use xray_config::{
-    parse_xray_json, CoreConfig, DomainMatcherSet, GrpcSettings, HttpUpgradeSettings,
-    InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings, RealitySettings,
-    RealityShortId, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingRule,
-    RoutingRuleTarget, SocksInboundSettings, StreamSecurity, StreamSettings, StreamTransport,
-    TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode,
-    XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
+    parse_xray_json, CoreConfig, GrpcSettings, HttpUpgradeSettings, InboundConfig, InboundProtocol,
+    Network, OutboundConfig, OutboundSettings, RealitySettings, RealityShortId, RoutingBalancer,
+    RoutingBalancerStrategy, RoutingConfig, RoutingRule, RoutingRuleTarget, SocksInboundSettings,
+    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
+    VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode, XhttpSettings,
+    XhttpUplinkDataPlacement, XhttpXmuxSettings,
 };
 use xray_core_rs::Core;
 use xray_proxy::inbound::SocksInboundAuth;
@@ -278,10 +278,10 @@ async fn run_local_xray_round_robin_balancer_interop() {
     config.routing = RoutingConfig {
         rules: vec![RoutingRule {
             inbound_tags: vec!["socks-in".to_owned()],
-            networks: vec![Network::Tcp],
-            port_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
-            ip_matchers: Default::default(),
+            networks: Some(vec![Network::Tcp]),
+            port_ranges: None,
+            domain_matchers: None,
+            ip_matchers: None,
             target: RoutingRuleTarget::Balancer("automatic".to_owned()),
             local_os: Vec::new(),
         }],

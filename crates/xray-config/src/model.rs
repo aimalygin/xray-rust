@@ -289,13 +289,21 @@ pub struct DnsFakeIpConfig {
     pub ttl: u32,
 }
 
+/// A routing rule. Each condition is `None` when the rule sets none and
+/// applies everywhere. As in Xray-core, a condition given with nothing it
+/// can match, such as `"port": 0`, `"network": "quic"` or a geosite
+/// selection with no domains, stays `Some` and matches nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoutingRule {
+    /// Inbound tags; empty applies to every inbound. Xray-core keeps an
+    /// empty tag, which no connection carries.
     pub inbound_tags: Vec<String>,
-    pub networks: Vec<Network>,
-    pub port_ranges: Vec<RoutingPortRange>,
-    pub domain_matchers: DomainMatcherSet,
-    pub ip_matchers: IpMatcherSet,
+    /// Networks; a name Xray-core does not know matches no connection.
+    pub networks: Option<Vec<Network>>,
+    /// Destination ports; a reversed range matches no port.
+    pub port_ranges: Option<Vec<RoutingPortRange>>,
+    pub domain_matchers: Option<DomainMatcherSet>,
+    pub ip_matchers: Option<IpMatcherSet>,
     /// Xray's `localOS`: the rule applies only on these operating systems,
     /// named as Go's `runtime.GOOS` and compared case-insensitively. Empty
     /// applies everywhere.
@@ -379,7 +387,8 @@ impl RoutingRule {
             return true;
         }
 
-        let Some(inbound_tag) = inbound_tag else {
+        // As in Xray-core, a connection without a tag matches no tag list.
+        let Some(inbound_tag) = inbound_tag.filter(|tag| !tag.is_empty()) else {
             return false;
         };
 
@@ -389,44 +398,54 @@ impl RoutingRule {
     }
 
     pub fn matches_network(&self, target_network: Option<Network>) -> bool {
-        if self.networks.is_empty() {
+        let Some(networks) = &self.networks else {
             return true;
-        }
+        };
 
-        target_network.is_some_and(|target| self.networks.contains(&target))
+        target_network.is_some_and(|target| networks.contains(&target))
     }
 
     pub fn matches_port(&self, target_port: Option<u16>) -> bool {
-        if self.port_ranges.is_empty() {
+        let Some(port_ranges) = &self.port_ranges else {
             return true;
-        }
+        };
 
-        target_port
-            .is_some_and(|target| self.port_ranges.iter().any(|range| range.contains(target)))
+        target_port.is_some_and(|target| port_ranges.iter().any(|range| range.contains(target)))
     }
 
     pub fn matches_domain(&self, target_domain: Option<&str>) -> bool {
-        if self.domain_matchers.is_empty() {
+        let Some(domain_matchers) = &self.domain_matchers else {
             return true;
-        }
+        };
 
         let Some(target_domain) = target_domain else {
             return false;
         };
 
-        self.domain_matchers.matches(target_domain)
+        domain_matchers.matches(target_domain)
     }
 
     pub fn matches_ip(&self, target_ip: Option<&IpAddr>) -> bool {
-        if self.ip_matchers.is_empty() {
+        let Some(ip_matchers) = &self.ip_matchers else {
             return true;
-        }
+        };
 
         let Some(target_ip) = target_ip else {
             return false;
         };
 
-        self.ip_matchers.matches(*target_ip)
+        ip_matchers.matches(*target_ip)
+    }
+
+    /// Whether the rule sets any condition. Xray-core refuses a rule with
+    /// none, which would otherwise take every connection.
+    pub fn has_condition(&self) -> bool {
+        !self.local_os.is_empty()
+            || !self.inbound_tags.is_empty()
+            || self.networks.is_some()
+            || self.port_ranges.is_some()
+            || self.domain_matchers.is_some()
+            || self.ip_matchers.is_some()
     }
 }
 
@@ -646,8 +665,10 @@ pub struct FreedomFinalRule {
     /// Xray-core keeps a name it doesn't know as a network nothing travels
     /// over, so a list of only such names applies to nothing.
     pub networks: Option<Vec<Network>>,
-    /// The ports the rule applies to; empty applies to every port.
-    pub port_ranges: Vec<RoutingPortRange>,
+    /// The ports the rule applies to; `None` applies to every port. Xray-core
+    /// checks ports once the list has a range, so a list of only reversed
+    /// ranges applies to no port.
+    pub port_ranges: Option<Vec<RoutingPortRange>>,
     /// The addresses the rule applies to; `None` applies to every address.
     pub ip_matchers: Option<IpMatcherSet>,
     /// How long a blocked connection is held before it closes. `None` is
@@ -676,8 +697,10 @@ impl FreedomFinalRule {
         self.networks
             .as_ref()
             .is_none_or(|networks| networks.contains(&network))
-            && (self.port_ranges.is_empty()
-                || self.port_ranges.iter().any(|range| range.contains(port)))
+            && self
+                .port_ranges
+                .as_ref()
+                .is_none_or(|ranges| ranges.iter().any(|range| range.contains(port)))
             && self
                 .ip_matchers
                 .as_ref()

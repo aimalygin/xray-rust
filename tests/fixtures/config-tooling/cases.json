@@ -3144,6 +3144,80 @@
       },
       "accepted": true,
       "warningPath": "$.outbounds[0].settings.ipsBlocked"
+    },
+    {
+      "name": "routing-xray-string-lists",
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "direct",
+            "protocol": "freedom"
+          },
+          {
+            "tag": "block",
+            "protocol": "blackhole"
+          }
+        ],
+        "routing": {
+          "rules": [
+            {
+              "inboundTag": "socks-in",
+              "network": "tcp, udp",
+              "port": "53,443",
+              "ip": "10.0.0.0/8, 192.0.2.0/24",
+              "domain": "example.com,keyword:ads",
+              "outboundTag": "block"
+            }
+          ]
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "routing-rule-without-condition",
+      "base": "routing-xray-string-lists",
+      "set": {
+        "/routing/rules/0": {
+          "outboundTag": "block"
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.routing.rules[0]"
+    },
+    {
+      "name": "routing-port-zero-matches-nothing",
+      "base": "routing-xray-string-lists",
+      "set": {
+        "/routing/rules/0": {
+          "port": 0,
+          "outboundTag": "block"
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "routing-port-truncated",
+      "base": "routing-xray-string-lists",
+      "set": {
+        "/routing/rules/0": {
+          "port": 65617,
+          "outboundTag": "block"
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.routing.rules[0].port"
     }
   ]
 }

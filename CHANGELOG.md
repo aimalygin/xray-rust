@@ -10,6 +10,22 @@ long-term supported release series.
 
 ## Unreleased
 
+- Routing rules read as Xray-core v26.10.31 reads them. Profiles it accepts
+  no longer fail to parse, and a few rules now apply as they do there.
+  - `type` is no longer required or checked, so rules without
+    `"type": "field"` parse.
+  - `inboundTag`, `domain`, `domains` and `ip` also take a comma-separated
+    string. `network` keeps a name other than `tcp` and `udp` as one no
+    connection uses, and `outboundTag` wins over `balancerTag`.
+  - Domain rules take Xray-core's syntax: text with an unknown prefix is a
+    substring, `ext-site:` spells `ext:`, and a prefix may have an empty value.
+  - Behavior changes, all matching Xray-core: `"port": 0` or `""` now keeps
+    the rule from applying, where it used to match every port, and so does a
+    reversed range, which used to fail parsing. `domains` replaces `domain`
+    rather than adding to it. A rule with no condition is refused instead of
+    taking every connection, and a geosite selection with no domains matches
+    nothing instead of failing to parse.
+  - A final rule's reversed port range is accepted too, and covers no port.
 - Freedom: `proxyProtocol` and `finalRules`, which used to fail parsing.
   - `proxyProtocol` 1 or 2 writes that PROXY protocol header first, naming the
     inbound's client (for TUN, the app) and the address freedom connected to,

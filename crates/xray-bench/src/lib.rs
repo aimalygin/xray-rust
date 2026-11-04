@@ -8772,12 +8772,14 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
             }
             RoutingRule {
                 inbound_tags: vec!["bench-in".to_owned()],
-                networks: vec![ConfigNetwork::Udp],
-                port_ranges: vec![RoutingPortRange::single(53)],
-                domain_matchers: domain_matchers
-                    .build()
-                    .expect("exact DNS selector matchers compile"),
-                ip_matchers: Default::default(),
+                networks: Some(vec![ConfigNetwork::Udp]),
+                port_ranges: Some(vec![RoutingPortRange::single(53)]),
+                domain_matchers: Some(
+                    domain_matchers
+                        .build()
+                        .expect("exact DNS selector matchers compile"),
+                ),
+                ip_matchers: None,
                 target: xray_config::RoutingRuleTarget::Outbound("dns-out".to_owned()),
                 local_os: Vec::new(),
             }
@@ -9263,10 +9265,10 @@ fn phase2_selector_config(member_count: usize) -> CoreConfig {
         routing: RoutingConfig {
             rules: vec![RoutingRule {
                 inbound_tags: vec!["bench-in".to_owned()],
-                networks: vec![ConfigNetwork::Tcp],
-                port_ranges: Vec::new(),
-                domain_matchers: DomainMatcherSet::default(),
-                ip_matchers: IpMatcherSet::default(),
+                networks: Some(vec![ConfigNetwork::Tcp]),
+                port_ranges: None,
+                domain_matchers: None,
+                ip_matchers: None,
                 target: RoutingRuleTarget::Balancer("automatic".to_owned()),
                 local_os: Vec::new(),
             }],
@@ -10713,14 +10715,18 @@ fn route_probe_config(
                 );
             }
         }
+        let domain_matchers = domain_matchers
+            .build()
+            .expect("route-probe domain matchers compile");
+        let ip_matchers = ip_matchers.build();
+        // Each rule sets only the condition it fills; an empty set would
+        // match nothing.
         routing_rules.push(RoutingRule {
             inbound_tags: vec!["bench-in".to_owned()],
-            networks: Vec::new(),
-            port_ranges: Vec::new(),
-            domain_matchers: domain_matchers
-                .build()
-                .expect("route-probe domain matchers compile"),
-            ip_matchers: ip_matchers.build(),
+            networks: None,
+            port_ranges: None,
+            domain_matchers: (!domain_matchers.is_empty()).then_some(domain_matchers),
+            ip_matchers: (!ip_matchers.is_empty()).then_some(ip_matchers),
             target: xray_config::RoutingRuleTarget::Outbound(selected_tag.clone()),
             local_os: Vec::new(),
         });
@@ -14645,8 +14651,11 @@ mod tests {
         let config = route_probe_config(4, 2, 5, 0).unwrap();
         for rule in &config.routing.rules[..3] {
             assert!(!rule.matches_ip(Some(&target)));
-            assert_eq!(rule.ip_matchers.range_count(), 5);
-            assert!(rule.domain_matchers.is_empty());
+            assert_eq!(
+                rule.ip_matchers.as_ref().map(IpMatcherSet::range_count),
+                Some(5)
+            );
+            assert!(rule.domain_matchers.is_none());
         }
         assert!(config.routing.rules[3].matches_ip(Some(&target)));
         assert!(route_probe_config(1 << 15, 2, 17, 0).is_err());
@@ -14675,7 +14684,7 @@ mod tests {
     fn route_probe_domain_rules_miss_until_the_final_exact_rule() {
         let config = route_probe_config(4, 2, 5, 3).unwrap();
         for (rule_index, rule) in config.routing.rules[..3].iter().enumerate() {
-            assert!(rule.ip_matchers.is_empty());
+            assert!(rule.ip_matchers.is_none());
             assert!(!rule.matches_domain(Some(ROUTE_PROBE_DOMAIN)));
             assert!(rule.matches_domain(Some(&format!(
                 "host.{}",
@@ -14683,7 +14692,7 @@ mod tests {
             ))));
         }
         let last = &config.routing.rules[3];
-        assert!(last.ip_matchers.is_empty());
+        assert!(last.ip_matchers.is_none());
         assert!(last.matches_domain(Some(ROUTE_PROBE_DOMAIN)));
         assert!(!last.matches_domain(Some("sub.route-probe.invalid")));
         assert!(route_probe_config(1 << 15, 2, 1, 8).is_err());
