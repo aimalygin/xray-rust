@@ -10,6 +10,21 @@ long-term supported release series.
 
 ## Unreleased
 
+- Freedom: `proxyProtocol` and `finalRules`, which used to fail parsing.
+  - `proxyProtocol` 1 or 2 writes that PROXY protocol header first, naming the
+    inbound's client (for TUN, the app) and the address freedom connected to,
+    byte for byte as Xray-core's go-proxyproto writes it. A UDP flow sends it
+    as its own first datagram, and a freedom `dialerProxy` hop sends it to the
+    next server, so a client can reach a server behind a PROXY-protocol load
+    balancer.
+  - `finalRules` allow or block addresses by network, port and IP, the first
+    matching rule deciding. A domain is checked by every address it resolves
+    to. A blocked TCP connection is held and discarded until the client gives
+    up or `blockDelay` passes; a blocked UDP flow drops its datagrams, and an
+    open one drops replies from blocked sources.
+  - The removed `ipsBlocked` is accepted with a warning and ignored, as in
+    Xray-core, and `finalRules` on a freedom that itself dials through
+    `dialerProxy` are dropped with a warning.
 - Freedom: `redirect` and `userLevel`, which used to fail parsing.
   - `redirect` sends every connection and UDP flow to another address, port or
     both, read with Xray-core's rules: an empty host, `0.0.0.0` or `::` keeps

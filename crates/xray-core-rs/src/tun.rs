@@ -44,10 +44,10 @@ use crate::connection::{
 use crate::dns_outbound_runtime::{FakeIpTargetProvenance, RestoredClientTarget};
 use crate::fake_dns::FakeIpMapper;
 use crate::outbound::{
-    open_tcp_stream_with_resolvers_and_dialer,
-    open_vless_udp_stream_with_resolver_dialer_and_options, DnsOutbound, DomainStrategyResolver,
-    FreedomOutbound, TcpOutbound, TcpSessionOutbound, UdpOutbound, UdpSessionOutbound,
-    VlessTcpOutbound, VlessUdpFraming, VlessUdpOpenOptions,
+    absorb_udp_datagrams_until, final_rules, open_tcp_stream_with_resolvers_and_dialer,
+    open_vless_udp_stream_with_resolver_dialer_and_options, proxy_protocol, DnsOutbound,
+    DomainStrategyResolver, FreedomOutbound, InboundSource, TcpOutbound, TcpSessionOutbound,
+    UdpOutbound, UdpSessionOutbound, VlessTcpOutbound, VlessUdpFraming, VlessUdpOpenOptions,
 };
 use crate::policy::{effective_policy_for_level, EffectivePolicy};
 use crate::udp_ingress::{sniff_udp_flow, UdpIngress};
@@ -1904,6 +1904,14 @@ impl EndpointKey {
     fn into_endpoint(self) -> IpEndpoint {
         IpEndpoint::new(IpAddress::from(self.addr), self.port)
     }
+
+    fn socket_addr(self) -> SocketAddr {
+        SocketAddr::new(self.addr, self.port)
+    }
+}
+
+fn endpoint_socket_addr(endpoint: IpEndpoint) -> SocketAddr {
+    EndpointKey::from_endpoint(endpoint).socket_addr()
 }
 
 #[derive(Debug)]
@@ -2177,23 +2185,30 @@ fn open_ready_tcp_flows(
                         ),
                     )
                 }
-                destination => spawn_admitted_tcp_bridge(
-                    bridge_tasks,
-                    &context,
-                    raw_tuple,
-                    shutdown.clone(),
-                    handle,
-                    generation,
-                    bridge_tcp_flow(
+                destination => {
+                    let client = sockets
+                        .get::<tcp::Socket>(handle)
+                        .remote_endpoint()
+                        .map(endpoint_socket_addr);
+                    spawn_admitted_tcp_bridge(
+                        bridge_tasks,
+                        &context,
+                        raw_tuple,
+                        shutdown.clone(),
                         handle,
                         generation,
-                        destination,
-                        context.clone(),
-                        from_stack,
-                        shutdown.clone(),
-                        permits,
-                    ),
-                ),
+                        bridge_tcp_flow(
+                            handle,
+                            generation,
+                            destination,
+                            context.clone(),
+                            from_stack,
+                            shutdown.clone(),
+                            permits,
+                            client,
+                        ),
+                    )
+                }
             },
             AdmittedTcpFlow::FakeDns { mapper, permit } => spawn_admitted_tcp_bridge(
                 bridge_tasks,
@@ -2841,6 +2856,7 @@ async fn open_tcp_bridge_stream(
     target: &Target,
     dns_upstream: Option<&dns_proxy::DnsProxyUpstream>,
     context: &TunRuntimeContext,
+    source: Option<InboundSource>,
 ) -> Result<BoxedTransportStream, crate::CoreError> {
     if let Some(upstream) = dns_upstream {
         if matches!(
@@ -2938,6 +2954,7 @@ async fn open_tcp_bridge_stream(
         destination_resolver,
         context.bootstrap_dns_resolver(),
         &context.transport_dialer,
+        source.as_ref(),
     )
     .await
 }
@@ -2946,6 +2963,10 @@ fn socket_addr_has_nonzero_scope(addr: SocketAddr) -> bool {
     matches!(addr, SocketAddr::V6(addr) if addr.scope_id() != 0)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a TUN TCP flow receives its identity and shared runtime state explicitly"
+)]
 async fn bridge_tcp_flow(
     handle: SocketHandle,
     generation: u64,
@@ -2954,6 +2975,7 @@ async fn bridge_tcp_flow(
     mut from_stack: mpsc::Receiver<StackToRemoteData>,
     mut shutdown: watch::Receiver<bool>,
     permits: TcpBridgePermits,
+    client: Option<SocketAddr>,
 ) {
     let mut client_already_opened = false;
     let mut initial_upload = VecDeque::new();
@@ -3082,6 +3104,7 @@ async fn bridge_tcp_flow(
         None,
         None,
         initial_upload,
+        client.map(InboundSource::tcp),
     )
     .await;
 }
@@ -3172,6 +3195,7 @@ async fn bridge_preopened_dns_tcp_flow(
         idle_timeout_override,
         operation_timeout_override,
         initial_upload,
+        None,
     )
     .await;
 }
@@ -3195,6 +3219,7 @@ async fn bridge_tcp_flow_inner(
     idle_timeout_override: Option<Duration>,
     operation_timeout_override: Option<Duration>,
     mut initial_upload: VecDeque<StackToRemoteData>,
+    source: Option<InboundSource>,
 ) {
     let collect_tcp_timings = context.tun_runtime_options.collect_tcp_timings;
     let tcp_timing_start = collect_tcp_timings.then(StdInstant::now);
@@ -3376,6 +3401,7 @@ async fn bridge_tcp_flow_inner(
                     &dial_target,
                     dns_upstream.as_ref(),
                     &context,
+                    source,
                 ),
             ) => result,
         };
@@ -4589,6 +4615,7 @@ async fn bridge_udp_flow(
                 generation,
                 dial_target,
                 domain_strategy,
+                freedom,
                 context,
                 from_stack,
                 shutdown,
@@ -4823,22 +4850,24 @@ async fn bridge_udp_freedom_flow(
     generation: u64,
     target: Target,
     domain_strategy: DomainStrategy,
+    freedom: FreedomOutbound,
     context: TunRuntimeContext,
-    from_stack: UdpIngress,
-    shutdown: watch::Receiver<bool>,
+    mut from_stack: UdpIngress,
+    mut shutdown: watch::Receiver<bool>,
     udp_timing_start: Option<StdInstant>,
     first_payload: Bytes,
     connection: ConnectionLease,
     mut connection_close: watch::Receiver<bool>,
 ) {
     let resolver = DomainStrategyResolver::new(context.dns_resolver.as_ref(), domain_strategy);
+    let rules = freedom.final_rules();
     let resolved = tokio::select! {
         biased;
         () = wait_for_connection_close(&mut connection_close) => return,
-        result = resolve_udp_freedom_target(&target, &resolver) => result,
+        result = final_rules::resolve_udp_destination(&target, &resolver, rules) => result,
     };
-    let target_addr = match resolved {
-        Ok(target) => target,
+    let (target_addr, addresses) = match resolved {
+        Ok(resolved) => resolved,
         Err(_) => {
             if context.runtime_logger.is_enabled() {
                 crate::debug_log::log_access_rejected(
@@ -4856,6 +4885,27 @@ async fn bridge_udp_freedom_flow(
             return;
         }
     };
+    if let Some(rule) = final_rules::blocking_rule(rules, xray_config::Network::Udp, addresses) {
+        // Xray-core holds the blocked flow, discarding its datagrams, so they
+        // are not dispatched again until the block delay passes.
+        let deadline = TokioInstant::now() + final_rules::block_delay(rule);
+        drop(first_payload);
+        connection.mark_active();
+        absorb_udp_datagrams_until(
+            &mut from_stack,
+            &mut shutdown,
+            &mut connection_close,
+            UDP_IDLE_TIMEOUT,
+            Some(deadline),
+        )
+        .await;
+        let _ = context
+            .stack_tx
+            .send(StackEvent::UdpClosed { key, generation })
+            .await;
+        connection.finish();
+        return;
+    }
     let bind_addr = match target_addr {
         SocketAddr::V4(_) => SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
         SocketAddr::V6(_) => SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0),
@@ -4899,6 +4949,28 @@ async fn bridge_udp_freedom_flow(
             .await;
         return;
     }
+    if let Some(version) = freedom.proxy_protocol() {
+        // Xray-core writes the header as a datagram of its own.
+        let header = proxy_protocol::header(
+            version,
+            Some(InboundSource::udp(key.client.socket_addr())),
+            RoutingNetwork::Udp,
+            target_addr,
+        );
+        let sent = tokio::select! {
+            biased;
+            () = wait_for_connection_close(&mut connection_close) => return,
+            result = socket.send_to(&header, target_addr) => result,
+        };
+        if sent.is_err() {
+            context.tun.record_udp_remote_write_error();
+            let _ = context
+                .stack_tx
+                .send(StackEvent::UdpClosed { key, generation })
+                .await;
+            return;
+        }
+    }
     connection.mark_active();
     let traffic = connection.traffic();
     context.tun.record_udp_remote_open(target.port == 443);
@@ -4913,6 +4985,7 @@ async fn bridge_udp_freedom_flow(
             target,
             target_addr,
             socket,
+            rules,
             context,
             from_stack,
             shutdown,
@@ -4931,6 +5004,7 @@ async fn bridge_udp_freedom_flow(
             target,
             target_addr,
             socket,
+            rules,
             context,
             from_stack,
             shutdown,
@@ -4951,6 +5025,7 @@ async fn bridge_udp_freedom_flow_loop<T>(
     target: Target,
     target_addr: SocketAddr,
     socket: UdpSocket,
+    rules: &[xray_config::FreedomFinalRule],
     context: TunRuntimeContext,
     mut from_stack: UdpIngress,
     mut shutdown: watch::Receiver<bool>,
@@ -5009,10 +5084,13 @@ async fn bridge_udp_freedom_flow_loop<T>(
                 timing.record_written(payload_len);
             }
             received = socket.recv_from(&mut read_buffer) => {
-                let Ok((len, _source)) = received else {
+                let Ok((len, source)) = received else {
                     context.tun.record_udp_remote_read_error();
                     break;
                 };
+                if final_rules::blocks(rules, xray_config::Network::Udp, source) {
+                    continue;
+                }
                 timing.record_first_response(context.tun.as_ref(), &target, len);
                 context.tun.record_udp_remote_read(len);
                 traffic.record_downlink(len as u64);
@@ -5037,16 +5115,6 @@ async fn bridge_udp_freedom_flow_loop<T>(
         .send(StackEvent::UdpClosed { key, generation })
         .await;
     connection.finish();
-}
-
-async fn resolve_udp_freedom_target(
-    target: &Target,
-    dns_resolver: &dyn DnsResolver,
-) -> Result<SocketAddr, crate::CoreError> {
-    match &target.addr {
-        RoutingTargetAddr::Ip(ip) => Ok(SocketAddr::new(*ip, target.port)),
-        RoutingTargetAddr::Domain(domain) => Ok(dns_resolver.resolve(domain, target.port).await?),
-    }
 }
 
 #[expect(

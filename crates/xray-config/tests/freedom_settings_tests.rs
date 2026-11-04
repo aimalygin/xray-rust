@@ -147,3 +147,213 @@ fn settings_combine_with_the_other_freedom_options() {
     assert_eq!(settings.user_level, 2);
     assert_eq!(settings.redirect, to(ip(Ipv4Addr::new(192, 0, 2, 1)), 8443));
 }
+
+#[test]
+fn proxy_protocol_keeps_only_versions_one_and_two() {
+    use xray_config::ProxyProtocolVersion;
+    let version = |raw: Value| parse(json!({ "proxyProtocol": raw })).proxy_protocol;
+    assert_eq!(version(json!(1)), Some(ProxyProtocolVersion::V1));
+    assert_eq!(version(json!(2)), Some(ProxyProtocolVersion::V2));
+    // Xray-core accepts any uint32 and ignores what is not 1 or 2.
+    for ignored in [json!(0), json!(3), json!(4_294_967_295_u64), Value::Null] {
+        assert_eq!(version(ignored.clone()), None, "{ignored}");
+    }
+    assert_eq!(parse(json!({})).proxy_protocol, None);
+    for raw in [json!(-1), json!(1.5), json!("1"), json!(true), json!(4_294_967_296_u64)] {
+        let (path, _) = rejection(json!({ "proxyProtocol": raw }));
+        assert_eq!(path, "$.outbounds[0].settings.proxyProtocol", "{raw}");
+    }
+}
+
+fn final_rule(rule: Value) -> xray_config::FreedomFinalRule {
+    let mut rules = parse(json!({ "finalRules": [rule] })).final_rules;
+    assert_eq!(rules.len(), 1);
+    rules.remove(0)
+}
+
+#[test]
+fn final_rules_read_as_xray_reads_them() {
+    use xray_config::{FreedomBlockDelay, FreedomRuleAction, Network, RoutingPortRange};
+
+    assert!(parse(json!({})).final_rules.is_empty());
+    assert!(parse(json!({"finalRules": null})).final_rules.is_empty());
+    assert!(parse(json!({"finalRules": []})).final_rules.is_empty());
+
+    let rule = final_rule(json!({"action": "Block"}));
+    assert_eq!(rule.action, FreedomRuleAction::Block);
+    assert_eq!(rule.networks, None);
+    assert!(rule.port_ranges.is_empty());
+    assert_eq!(rule.ip_matchers, None);
+    assert_eq!(rule.block_delay, None);
+    assert_eq!(final_rule(json!({"action": "ALLOW"})).action, FreedomRuleAction::Allow);
+
+    // NetworkList: unknown names are kept as networks nothing travels over.
+    let networks = |raw: Value| final_rule(json!({"action": "block", "network": raw})).networks;
+    assert_eq!(networks(json!("tcp,udp")), Some(vec![Network::Tcp, Network::Udp]));
+    assert_eq!(networks(json!("UDP")), Some(vec![Network::Udp]));
+    assert_eq!(networks(json!("tcp, udp")), Some(vec![Network::Tcp]));
+    assert_eq!(networks(json!("unix")), Some(vec![]));
+    assert_eq!(networks(json!("")), Some(vec![]));
+    assert_eq!(networks(json!(["udp", null, "quic"])), Some(vec![Network::Udp]));
+    assert_eq!(networks(json!([])), None);
+    assert_eq!(networks(Value::Null), None);
+
+    // PortList, as in routing rules: a numeric zero is an empty list.
+    let ports = |raw: Value| final_rule(json!({"action": "block", "port": raw})).port_ranges;
+    assert_eq!(
+        ports(json!("53, 443,1000-2000")),
+        vec![
+            RoutingPortRange::single(53),
+            RoutingPortRange::single(443),
+            RoutingPortRange::new(1000, 2000).unwrap(),
+        ]
+    );
+    assert_eq!(ports(json!(8443)), vec![RoutingPortRange::single(8443)]);
+    assert!(ports(json!(0)).is_empty());
+    assert_eq!(ports(json!("0")), vec![RoutingPortRange::single(0)]);
+
+    // StringList of routing IP rules; an empty list sets no condition.
+    let ips = |raw: Value| final_rule(json!({"action": "block", "ip": raw})).ip_matchers;
+    // Go's ParseAddress trims the space after a comma.
+    let listed = ips(json!("10.0.0.0/8, 192.0.2.1")).expect("an address condition");
+    assert!(listed.matches("10.1.2.3".parse().unwrap()));
+    assert!(listed.matches("192.0.2.1".parse().unwrap()));
+    assert!(!listed.matches("192.0.2.2".parse().unwrap()));
+    let inverse = ips(json!(["!192.0.2.0/24"])).expect("an address condition");
+    assert!(!inverse.matches("192.0.2.9".parse().unwrap()));
+    assert!(inverse.matches("198.51.100.1".parse().unwrap()));
+    assert_eq!(ips(json!([])), None);
+
+    // Int32Range of seconds, in either order.
+    let delay = |raw: Value| final_rule(json!({"action": "block", "blockDelay": raw})).block_delay;
+    let seconds = |min_secs, max_secs| Some(FreedomBlockDelay { min_secs, max_secs });
+    assert_eq!(delay(json!(5)), seconds(5, 5));
+    assert_eq!(delay(json!("10-5")), seconds(5, 10));
+    assert_eq!(delay(json!("")), seconds(0, 0));
+    assert_eq!(delay(Value::Null), None);
+}
+
+#[test]
+fn final_rules_reject_what_xray_rejects() {
+    let rule_path = "$.outbounds[0].settings.finalRules[0]";
+    for (rule, field) in [
+        (json!({}), "action"),
+        (json!({"action": "deny"}), "action"),
+        (json!({"action": 1}), "action"),
+        (json!({"action": "block", "network": 5}), "network"),
+        (json!({"action": "block", "network": ["tcp", 5]}), "network"),
+        (json!({"action": "block", "port": "x"}), "port[0]"),
+        (json!({"action": "block", "port": 65_536}), "port"),
+        (json!({"action": "block", "port": -1}), "port"),
+        (json!({"action": "block", "ip": ""}), "ip[0]"),
+        (json!({"action": "block", "ip": [5]}), "ip[0]"),
+        (json!({"action": "block", "ip": ["300.0.0.1"]}), "ip[0]"),
+        (json!({"action": "block", "ip": 5}), "ip"),
+        (json!({"action": "block", "blockDelay": {"from": 1, "to": 2}}), "blockDelay"),
+        (json!({"action": "block", "blockDelay": 1.5}), "blockDelay"),
+        (json!({"action": "block", "blockDelay": "x"}), "blockDelay"),
+    ] {
+        let (path, _) = rejection(json!({ "finalRules": [rule.clone()] }));
+        assert_eq!(path, format!("{rule_path}.{field}"), "{rule}");
+    }
+    let (path, _) = rejection(json!({"finalRules": {"action": "block"}}));
+    assert_eq!(path, "$.outbounds[0].settings.finalRules");
+    let (path, _) = rejection(json!({"finalRules": [null]}));
+    assert_eq!(path, rule_path);
+
+    // Deliberate: Xray-core accepts these, and a negative or wrapped delay
+    // later panics or never holds the connection; an unknown field is
+    // silently ignored there.
+    for (rule, field) in [
+        (json!({"action": "block", "blockDelay": "-5-10"}), "blockDelay"),
+        (json!({"action": "block", "blockDelay": "2147483648"}), "blockDelay"),
+        (json!({"action": "block", "domain": ["example.com"]}), "domain"),
+    ] {
+        let (path, _) = rejection(json!({ "finalRules": [rule.clone()] }));
+        assert_eq!(path, format!("{rule_path}.{field}"), "{rule}");
+    }
+}
+
+fn warnings(raw: &Value) -> (xray_config::FreedomOutboundSettings, Vec<String>) {
+    let raw = raw.to_string();
+    let parsed = parse_xray_json(&raw)
+        .unwrap_or_else(|error| panic!("{raw} should parse: {:?}", error.diagnostics));
+    let warnings = parsed
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Warning)
+        .filter_map(|diagnostic| diagnostic.path.clone())
+        .collect();
+    let OutboundSettings::Freedom(settings) = &parsed.config.outbounds[0].settings else {
+        panic!("freedom parses to freedom");
+    };
+    (settings.clone(), warnings)
+}
+
+#[test]
+fn ips_blocked_is_ignored_with_a_warning() {
+    for raw in [json!(["10.0.0.0/8"]), json!("10.0.0.0/8"), json!([null])] {
+        let (settings, warnings) = warnings(
+            &json!({"outbounds": [{"protocol": "freedom", "settings": {"ipsBlocked": raw}}]}),
+        );
+        assert!(settings.final_rules.is_empty());
+        assert_eq!(warnings, ["$.outbounds[0].settings.ipsBlocked"]);
+    }
+    let (_, warnings) =
+        warnings(&json!({"outbounds": [{"protocol": "freedom", "settings": {"ipsBlocked": null}}]}));
+    assert!(warnings.is_empty());
+    for raw in [json!(5), json!([5]), json!({})] {
+        let (path, _) = rejection(json!({ "ipsBlocked": raw }));
+        assert_eq!(path, "$.outbounds[0].settings.ipsBlocked");
+    }
+}
+
+#[test]
+fn final_rules_are_ignored_through_dialer_proxy() {
+    let (settings, warnings) = warnings(&json!({"outbounds": [
+        {"protocol": "freedom", "settings": {"finalRules": [{"action": "block"}]},
+         "streamSettings": {"sockopt": {"dialerProxy": "next"}}},
+        {"tag": "next", "protocol": "freedom"}
+    ]}));
+    assert!(settings.final_rules.is_empty());
+    assert_eq!(warnings, ["$.outbounds[0].settings.finalRules"]);
+}
+
+#[test]
+fn an_empty_condition_matches_nothing_and_an_absent_one_everything() {
+    use xray_config::{
+        deciding_final_rule, FreedomFinalRule, FreedomRuleAction, IpMatcherSet, Network,
+        RoutingPortRange,
+    };
+    let any = FreedomFinalRule {
+        action: FreedomRuleAction::Block,
+        networks: None,
+        port_ranges: Vec::new(),
+        ip_matchers: None,
+        block_delay: None,
+    };
+    let ip: IpAddr = "192.0.2.1".parse().unwrap();
+    assert!(any.applies(Network::Tcp, ip, 1));
+    assert!(any.applies(Network::Udp, ip, 65_535));
+    // Xray-core keeps an unknown network as one nothing travels over, and an
+    // `ip` list that builds no ranges as a matcher that matches nothing.
+    let no_network = FreedomFinalRule {
+        networks: Some(Vec::new()),
+        ..any.clone()
+    };
+    assert!(!no_network.applies(Network::Tcp, ip, 1));
+    let no_address = FreedomFinalRule {
+        ip_matchers: Some(IpMatcherSet::default()),
+        ..any.clone()
+    };
+    assert!(!no_address.applies(Network::Tcp, ip, 1));
+    let port = FreedomFinalRule {
+        port_ranges: vec![RoutingPortRange::new(50, 60).unwrap()],
+        ..any.clone()
+    };
+    assert!(port.applies(Network::Tcp, ip, 55));
+    assert!(!port.applies(Network::Tcp, ip, 61));
+    let rules = [no_network, port.clone(), any];
+    assert_eq!(deciding_final_rule(&rules, Network::Tcp, ip, 55), Some(&port));
+    assert_eq!(deciding_final_rule(&rules[..2], Network::Tcp, ip, 61), None);
+}

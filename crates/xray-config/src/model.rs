@@ -622,6 +622,78 @@ pub struct FreedomOutboundSettings {
     pub redirect: FreedomRedirect,
     /// `userLevel`: the policy level of freedom's own idle timer.
     pub user_level: u32,
+    /// `proxyProtocol`: the PROXY protocol header freedom writes before the
+    /// payload. Xray-core ignores every value but 1 and 2.
+    pub proxy_protocol: Option<ProxyProtocolVersion>,
+    /// `finalRules`, checked in order against each address freedom connects
+    /// or sends to. Empty when freedom itself dials through `dialerProxy`,
+    /// where Xray-core ignores them.
+    pub final_rules: Vec<FreedomFinalRule>,
+}
+
+/// The PROXY protocol version of freedom's `proxyProtocol`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProxyProtocolVersion {
+    V1,
+    V2,
+}
+
+/// One of freedom's `finalRules`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FreedomFinalRule {
+    pub action: FreedomRuleAction,
+    /// The networks the rule applies to; `None` applies to every network.
+    /// Xray-core keeps a name it doesn't know as a network nothing travels
+    /// over, so a list of only such names applies to nothing.
+    pub networks: Option<Vec<Network>>,
+    /// The ports the rule applies to; empty applies to every port.
+    pub port_ranges: Vec<RoutingPortRange>,
+    /// The addresses the rule applies to; `None` applies to every address.
+    pub ip_matchers: Option<IpMatcherSet>,
+    /// How long a blocked connection is held before it closes. `None` is
+    /// Xray-core's default, 30 to 90 seconds.
+    pub block_delay: Option<FreedomBlockDelay>,
+}
+
+/// What a matching final rule does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FreedomRuleAction {
+    Allow,
+    Block,
+}
+
+/// A whole number of seconds drawn uniformly from `min_secs..=max_secs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FreedomBlockDelay {
+    pub min_secs: u32,
+    pub max_secs: u32,
+}
+
+impl FreedomFinalRule {
+    /// Whether the rule applies to `ip`:`port` over `network`, as Xray-core's
+    /// `FinalRule.Apply` decides.
+    pub fn applies(&self, network: Network, ip: IpAddr, port: u16) -> bool {
+        self.networks
+            .as_ref()
+            .is_none_or(|networks| networks.contains(&network))
+            && (self.port_ranges.is_empty()
+                || self.port_ranges.iter().any(|range| range.contains(port)))
+            && self
+                .ip_matchers
+                .as_ref()
+                .is_none_or(|matchers| matchers.matches(canonicalize_ip(ip)))
+    }
+}
+
+/// The rule that decides an address: the first that applies, as Xray-core's
+/// `matchFinalRule` picks it.
+pub fn deciding_final_rule(
+    rules: &[FreedomFinalRule],
+    network: Network,
+    ip: IpAddr,
+    port: u16,
+) -> Option<&FreedomFinalRule> {
+    rules.iter().find(|rule| rule.applies(network, ip, port))
 }
 
 /// Freedom's `redirect`: the destination address, port, or both that every

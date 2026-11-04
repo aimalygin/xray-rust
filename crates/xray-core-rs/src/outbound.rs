@@ -4,7 +4,9 @@ mod protocol_stream;
 mod shadowsocks;
 pub use shadowsocks::Shadowsocks2022Outbound;
 mod blackhole;
-pub(crate) use blackhole::{absorb_udp_datagrams, BlackholeOutbound, BLACKHOLE_RESPONSE_GRACE};
+pub(crate) use blackhole::{
+    absorb_udp_datagrams, absorb_udp_datagrams_until, BlackholeOutbound, BLACKHOLE_RESPONSE_GRACE,
+};
 mod encryption;
 mod trojan;
 pub use trojan::TrojanOutbound;
@@ -19,6 +21,8 @@ pub use wireguard::WireguardOutbound;
 mod carrier;
 pub(crate) mod datagram;
 mod domain_strategy;
+pub(crate) mod final_rules;
+pub(crate) mod proxy_protocol;
 pub(crate) use domain_strategy::DomainStrategyResolver;
 mod mux;
 mod routing;
@@ -33,7 +37,7 @@ use routing::{select_routed_target, select_routed_target_with_resolver};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::io;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
@@ -45,10 +49,11 @@ use async_trait::async_trait;
 use rand::Rng;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_config::{
-    CoreConfig, DnsOutboundSettings, DomainStrategy, FreedomOutboundSettings, FreedomRedirect,
-    Network, OutboundConfig, OutboundSettings, QuicParamsSettings, RoutingBalancerStrategy,
-    RoutingConfig, RoutingDomainStrategy, RoutingLeastLoadSettings, RoutingRule, RoutingRuleTarget,
-    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, VlessUser, XhttpSettings,
+    CoreConfig, DnsOutboundSettings, DomainStrategy, FreedomFinalRule, FreedomOutboundSettings,
+    FreedomRedirect, Network, OutboundConfig, OutboundSettings, ProxyProtocolVersion,
+    QuicParamsSettings, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
+    RoutingLeastLoadSettings, RoutingRule, RoutingRuleTarget, StreamSecurity, StreamSettings,
+    StreamTransport, TargetAddr, VlessUser, XhttpSettings,
 };
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
@@ -71,6 +76,7 @@ use zeroize::Zeroizing;
 
 use crate::policy::effective_policy_for_level;
 use crate::{CompiledDnsOutboundPolicy, CoreError};
+pub(crate) use proxy_protocol::InboundSource;
 
 #[cfg(test)]
 use xray_config::RoutingBalancer;
@@ -354,6 +360,9 @@ pub struct FreedomOutbound {
     /// Present only when it changes the destination.
     redirect: Option<Arc<FreedomRedirect>>,
     user_level: u32,
+    proxy_protocol: Option<ProxyProtocolVersion>,
+    /// Present only when there are rules.
+    final_rules: Option<Arc<[FreedomFinalRule]>>,
 }
 
 #[derive(Debug, Clone)]
@@ -689,6 +698,66 @@ impl FreedomOutbound {
             domain_strategy: Self::stream_domain_strategy(stream),
             redirect: (!settings.redirect.is_empty()).then(|| Arc::new(settings.redirect.clone())),
             user_level: settings.user_level,
+            proxy_protocol: settings.proxy_protocol,
+            final_rules: (!settings.final_rules.is_empty())
+                .then(|| settings.final_rules.as_slice().into()),
+        }
+    }
+
+    /// `finalRules`, in order.
+    pub(crate) fn final_rules(&self) -> &[FreedomFinalRule] {
+        self.final_rules.as_deref().unwrap_or_default()
+    }
+
+    /// `proxyProtocol`, the header freedom writes before the payload.
+    pub(crate) fn proxy_protocol(&self) -> Option<ProxyProtocolVersion> {
+        self.proxy_protocol
+    }
+
+    /// The stand-in for a TCP connection to `candidates` that a final rule
+    /// blocks: Xray-core holds it, discarding what the client sends.
+    fn blocked_stream(&self, candidates: &[SocketAddr]) -> Option<BoxedTransportStream> {
+        let rule = final_rules::blocking_rule(
+            self.final_rules(),
+            Network::Tcp,
+            candidates.iter().copied(),
+        )?;
+        Some(Box::new(final_rules::BlockedStream::new(
+            final_rules::block_delay(rule),
+        )))
+    }
+
+    /// Connects to `target` at `candidates` through `dialer`, as Xray-core's
+    /// freedom does once it has its destination: a connection that a final
+    /// rule blocks is held and discarded instead, and the PROXY protocol
+    /// header goes first on the raw connection, before any fragment mask.
+    async fn connect(
+        &self,
+        dialer: &TransportDialer,
+        target: &Target,
+        candidates: &[SocketAddr],
+        happy_eyeballs: Option<&HappyEyeballsConfig>,
+        source: Option<InboundSource>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        if let Some(blocked) = self.blocked_stream(candidates) {
+            return Ok(blocked);
+        }
+        match self.proxy_protocol {
+            None => {
+                dialer
+                    .connect_resolved(&ConnectorConfig::Tcp, target, candidates, happy_eyeballs)
+                    .await
+            }
+            // Boxed so the rare header path adds no state to every TCP open.
+            Some(version) => {
+                Box::pin(dialer.connect_tcp_with_preamble(
+                    target,
+                    candidates,
+                    happy_eyeballs,
+                    |peer| tcp_proxy_header(version, source, peer),
+                ))
+                .await
+            }
         }
     }
 
@@ -761,6 +830,18 @@ impl FreedomOutbound {
     }
 }
 
+/// The PROXY protocol header for a TCP connection to `peer`. Through
+/// dialerProxy there is no direct peer, and Xray-core's connection reports
+/// 0.0.0.0:0 as its remote address.
+fn tcp_proxy_header(
+    version: ProxyProtocolVersion,
+    source: Option<InboundSource>,
+    peer: Option<SocketAddr>,
+) -> Vec<u8> {
+    let destination = peer.unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0));
+    proxy_protocol::header(version, source, RoutingNetwork::Tcp, destination)
+}
+
 impl TcpOutbound {
     pub(crate) fn freedom_dialer<'a>(
         &self,
@@ -775,6 +856,18 @@ impl TcpOutbound {
         match self {
             Self::Chained { outbound, .. } => outbound.primary(),
             outbound => outbound,
+        }
+    }
+
+    /// Whether a freedom in this chain writes a PROXY protocol header, which
+    /// names the client.
+    pub(crate) fn writes_proxy_protocol(&self) -> bool {
+        match self {
+            Self::Freedom(freedom) => freedom.proxy_protocol.is_some(),
+            Self::Chained { outbound, proxy } => {
+                outbound.writes_proxy_protocol() || proxy.writes_proxy_protocol()
+            }
+            _ => false,
         }
     }
 
@@ -799,6 +892,8 @@ struct OutboundProxyTcpConnector {
     outbound: TcpOutbound,
     server_candidates: Box<[SocketAddr]>,
     transport_dialer: TransportDialer,
+    /// The client of the connection the chain carries.
+    source: Option<InboundSource>,
 }
 
 #[async_trait]
@@ -833,13 +928,13 @@ impl ResolvedTcpConnector for OutboundProxyTcpConnector {
                     }
                     None => (original_target, candidates.to_vec()),
                 };
-                self.outbound
-                    .freedom_dialer(&self.transport_dialer)
-                    .connect_resolved(
-                        &ConnectorConfig::Tcp,
+                freedom
+                    .connect(
+                        &self.outbound.freedom_dialer(&self.transport_dialer),
                         target,
                         &candidates,
                         self.outbound.freedom_happy_eyeballs().or(happy_eyeballs),
+                        self.source,
                     )
                     .await
             }
@@ -914,6 +1009,7 @@ fn prepare_outbound_proxy_dialer<'a>(
     proxy: &'a TcpOutbound,
     dns_resolver: &'a dyn DnsResolver,
     transport_dialer: &'a TransportDialer,
+    source: Option<InboundSource>,
 ) -> Pin<Box<dyn Future<Output = Result<TransportDialer, CoreError>> + Send + 'a>> {
     Box::pin(async move {
         let (outbound, nested_proxy) = match proxy {
@@ -922,7 +1018,7 @@ fn prepare_outbound_proxy_dialer<'a>(
         };
         let transport_dialer = match nested_proxy {
             Some(proxy) => {
-                prepare_outbound_proxy_dialer(proxy, dns_resolver, transport_dialer).await?
+                prepare_outbound_proxy_dialer(proxy, dns_resolver, transport_dialer, source).await?
             }
             None => transport_dialer.clone(),
         };
@@ -994,6 +1090,7 @@ fn prepare_outbound_proxy_dialer<'a>(
                 outbound: outbound.clone(),
                 server_candidates,
                 transport_dialer: connector_dialer,
+                source,
             })),
         )
     })
@@ -3787,20 +3884,45 @@ pub async fn open_tcp_stream_with_resolver_and_dialer(
         dns_resolver,
         dns_resolver,
         transport_dialer,
+        None,
     )
     .await
 }
 
+/// Opens a TCP connection to `target` through `outbound`. `source` is the
+/// client the connection is for, which a freedom `proxyProtocol` header
+/// names; it is borrowed to keep this common future small.
 pub(crate) async fn open_tcp_stream_with_resolvers_and_dialer(
     outbound: &TcpOutbound,
     target: &Target,
     destination_resolver: &dyn DnsResolver,
     bootstrap_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
+    source: Option<&InboundSource>,
 ) -> Result<BoxedTransportStream, CoreError> {
     if let TcpOutbound::Chained { outbound, proxy } = outbound {
-        let proxy_dialer =
-            prepare_outbound_proxy_dialer(proxy, bootstrap_resolver, transport_dialer).await?;
+        let proxy_dialer = prepare_outbound_proxy_dialer(
+            proxy,
+            bootstrap_resolver,
+            transport_dialer,
+            source.copied(),
+        )
+        .await?;
+        let requires_local_resolution = proxy_chain_requires_local_resolution(proxy);
+        if let (Some(source), TcpOutbound::Freedom(freedom)) = (source, outbound.primary()) {
+            if freedom.proxy_protocol.is_some() {
+                return Box::pin(open_freedom_tcp_stream(
+                    outbound,
+                    freedom,
+                    target,
+                    destination_resolver,
+                    &proxy_dialer,
+                    requires_local_resolution,
+                    Some(*source),
+                ))
+                .await;
+            }
+        }
         // A freedom hop is handed the server address as its destination, and
         // Xray-core's freedom resolves that with its own domain strategy.
         let strategy = match proxy.primary() {
@@ -3813,11 +3935,27 @@ pub(crate) async fn open_tcp_stream_with_resolvers_and_dialer(
             destination_resolver,
             &DomainStrategyResolver::new(bootstrap_resolver, strategy),
             &proxy_dialer,
-            proxy_chain_requires_local_resolution(proxy),
+            requires_local_resolution,
         )
         .await;
     }
 
+    // A freedom that names the client in its header opens apart, so the
+    // common open future carries no client.
+    if let (Some(source), TcpOutbound::Freedom(freedom)) = (source, outbound) {
+        if freedom.proxy_protocol.is_some() {
+            return Box::pin(open_freedom_tcp_stream(
+                outbound,
+                freedom,
+                target,
+                destination_resolver,
+                transport_dialer,
+                true,
+                Some(*source),
+            ))
+            .await;
+        }
+    }
     open_plain_tcp_stream_with_resolvers_and_dialer(
         outbound,
         target,
@@ -3827,6 +3965,37 @@ pub(crate) async fn open_tcp_stream_with_resolvers_and_dialer(
         true,
     )
     .await
+}
+
+/// Opens a freedom TCP connection that has final rules or writes a PROXY
+/// protocol header naming `source`. Callers box it, so these rarer settings
+/// add no state to every TCP open.
+async fn open_freedom_tcp_stream(
+    outbound: &TcpOutbound,
+    freedom: &FreedomOutbound,
+    target: &Target,
+    destination_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+    requires_local_resolution: bool,
+    source: Option<InboundSource>,
+) -> Result<BoxedTransportStream, CoreError> {
+    let redirected = freedom.redirect(target);
+    let target = redirected.as_ref().unwrap_or(target);
+    let candidates = if requires_local_resolution {
+        let resolver = DomainStrategyResolver::new(destination_resolver, freedom.domain_strategy());
+        resolve_server_candidates(target, &resolver).await?
+    } else {
+        Vec::new()
+    };
+    Ok(freedom
+        .connect(
+            &outbound.freedom_dialer(transport_dialer),
+            target,
+            &candidates,
+            outbound.freedom_happy_eyeballs(),
+            source,
+        )
+        .await?)
 }
 
 async fn open_plain_tcp_stream_with_resolvers_and_dialer(
@@ -3888,6 +4057,19 @@ async fn open_plain_tcp_stream_with_resolvers_and_dialer(
             Box::pin(outbound.open_tcp(target, bootstrap_resolver, transport_dialer)).await
         }
         TcpOutbound::Freedom(freedom) => {
+            if freedom.final_rules.is_some() || freedom.proxy_protocol.is_some() {
+                // Without a known client, a header names none.
+                return Box::pin(open_freedom_tcp_stream(
+                    outbound,
+                    freedom,
+                    target,
+                    destination_resolver,
+                    transport_dialer,
+                    requires_local_resolution,
+                    None,
+                ))
+                .await;
+            }
             let redirected = freedom.redirect(target);
             let target = redirected.as_ref().unwrap_or(target);
             let candidates = if requires_local_resolution {
@@ -5980,7 +6162,7 @@ mod tests {
             });
             config.outbounds[1].settings = OutboundSettings::Freedom(FreedomOutboundSettings {
                 redirect,
-                user_level: 0,
+                ..FreedomOutboundSettings::default()
             });
             config.default_outbound_tag = Some("entry".to_owned());
             config.routing.rules.clear();
@@ -6012,6 +6194,7 @@ mod tests {
         configured.settings = OutboundSettings::Freedom(FreedomOutboundSettings {
             redirect: redirect_to(None, 53),
             user_level: 3,
+            ..FreedomOutboundSettings::default()
         });
         let TcpOutbound::Freedom(tcp) = build_tcp_outbound(&configured).unwrap() else {
             panic!("freedom compiles to freedom");
@@ -9193,6 +9376,7 @@ mod future_layout_tests {
             &SystemDnsResolver,
             &SystemDnsResolver,
             &dialer,
+            None,
         );
         // Without isolating new protocol setup, even idle Freedom tasks keep
         // a 9.8 KiB future and exceed the 100/1000-flow RSS release budgets.

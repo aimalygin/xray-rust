@@ -251,6 +251,7 @@ async fn run_startup_probe_inner(
             destination_resolver,
             bootstrap_resolver,
             transport_dialer,
+            None,
         ),
     )
     .await

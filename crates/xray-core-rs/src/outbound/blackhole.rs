@@ -93,9 +93,27 @@ pub(crate) async fn absorb_udp_datagrams(
     connection_close: &mut watch::Receiver<bool>,
     idle_timeout: Duration,
 ) {
+    absorb_udp_datagrams_until(from_client, shutdown, connection_close, idle_timeout, None).await;
+}
+
+/// As [`absorb_udp_datagrams`], also returning at `deadline`.
+pub(crate) async fn absorb_udp_datagrams_until(
+    from_client: &mut crate::udp_ingress::UdpIngress,
+    shutdown: &mut watch::Receiver<bool>,
+    connection_close: &mut watch::Receiver<bool>,
+    idle_timeout: Duration,
+    deadline: Option<tokio::time::Instant>,
+) {
     if *shutdown.borrow() {
         return;
     }
+    let deadline = async {
+        match deadline {
+            Some(deadline) => tokio::time::sleep_until(deadline).await,
+            None => std::future::pending().await,
+        }
+    };
+    tokio::pin!(deadline);
     loop {
         tokio::select! {
             biased;
@@ -105,6 +123,7 @@ pub(crate) async fn absorb_udp_datagrams(
                     return;
                 }
             }
+            () = &mut deadline => return,
             () = tokio::time::sleep(idle_timeout) => return,
             datagram = from_client.recv() => {
                 if datagram.is_none() {
