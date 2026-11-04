@@ -3291,7 +3291,7 @@ async fn open_raw_dns_tcp_candidate(
         () = wait_for_tun_shutdown(shutdown) => return RawDnsTcpOpenResult::Shutdown,
         result = timeout_at(
             open_deadline,
-            open_tcp_bridge_stream(&outbound, &target, Some(upstream), context),
+            open_tcp_bridge_stream(&outbound, &target, Some(upstream), context, None),
         ) => result,
     };
     let stream = match result {
@@ -3816,7 +3816,9 @@ async fn open_dns_tcp_pooled_connection(
 ) -> Result<DnsTcpPooledConnection, crate::CoreError> {
     let global_connection_permit = context.dns_tcp_connection_pool.reserve_connection_slot()?;
     let stream = match outbound {
-        Some(outbound) => open_tcp_bridge_stream(outbound, target, Some(upstream), context).await?,
+        Some(outbound) => {
+            open_tcp_bridge_stream(outbound, target, Some(upstream), context, None).await?
+        }
         None => {
             let candidates = resolve_freedom_dns_upstreams(upstream, context).await?;
             crate::dns::open_local_dns_tcp_stream(

@@ -1,6 +1,7 @@
 mod blackhole;
 mod dns;
 mod fragment;
+mod freedom;
 mod http_outbound;
 mod hysteria;
 mod noise;
@@ -996,7 +997,7 @@ impl Parser<'_> {
         };
         self.validate_outbound_compatibility(outbound, index);
 
-        let settings = match protocol {
+        let mut settings = match protocol {
             OutboundProtocol::Shadowsocks2022 => {
                 OutboundSettings::Shadowsocks2022(self.parse_shadowsocks_settings(outbound, index)?)
             }
@@ -1084,6 +1085,16 @@ impl Parser<'_> {
             }
         }
         let proxy_settings = self.parse_outbound_proxy_settings(outbound, index);
+        if let (OutboundSettings::Freedom(freedom), Some(_)) = (&mut settings, &proxy_settings) {
+            if !freedom.final_rules.is_empty() {
+                // Freedom is not the final outbound then, as Xray-core warns.
+                self.warning(
+                    format!("$.outbounds[{index}].settings.finalRules"),
+                    "freedom `finalRules` are ignored when freedom dials through `dialerProxy`",
+                );
+                freedom.final_rules.clear();
+            }
+        }
         self.validate_hysteria_pair(&settings, &stream, proxy_settings.is_some(), index);
         self.validate_trojan_stream(&settings, &stream, index);
         self.validate_socks_outbound_stream(&settings, &stream, index);
@@ -1330,6 +1341,7 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(settings, &settings_path, &surface::FREEDOM_SETTINGS);
+        self.freedom_ips_blocked(settings, &format!("{settings_path}.ipsBlocked"));
         FreedomOutboundSettings {
             redirect: self
                 .freedom_redirect(settings, &format!("{settings_path}.redirect"))
@@ -1337,6 +1349,9 @@ impl Parser<'_> {
             user_level: self
                 .nullable_u32_at(settings, "userLevel", format!("{settings_path}.userLevel"))
                 .unwrap_or_default(),
+            proxy_protocol: self
+                .freedom_proxy_protocol(settings, &format!("{settings_path}.proxyProtocol")),
+            final_rules: self.freedom_final_rules(settings, &format!("{settings_path}.finalRules")),
         }
     }
 
@@ -1712,11 +1727,24 @@ impl Parser<'_> {
             self.error(path, format!("field `{key}` must be an array"));
             return None;
         };
+        self.routing_ip_matcher_set(
+            values
+                .iter()
+                .enumerate()
+                .map(|(index, value)| (value.as_str(), format!("{path}[{index}]"))),
+        )
+    }
+
+    /// Builds routing IP matchers from `(entry, path)` pairs, where `None` is
+    /// an entry that is not a string.
+    fn routing_ip_matcher_set<'v>(
+        &mut self,
+        entries: impl IntoIterator<Item = (Option<&'v str>, String)>,
+    ) -> Option<IpMatcherSet> {
         let mut matchers = IpMatcherSet::builder();
 
-        for (index, value) in values.iter().enumerate() {
-            let item_path = format!("{path}[{index}]");
-            let Some(value) = value.as_str() else {
+        for (value, item_path) in entries {
+            let Some(value) = value else {
                 self.error(&item_path, "routing matcher must be a string");
                 return None;
             };

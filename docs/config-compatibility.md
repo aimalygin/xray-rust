@@ -648,12 +648,13 @@ produced by canonical JSON parsing.
 ### Freedom outbound
 
 `freedom` (alias `direct`) dials destinations itself. Its `settings` take
-Xray-core v26.10.31's `redirect` and `userLevel`, the deprecated
-`domainStrategy` and `targetStrategy` (see the
+Xray-core v26.10.31's `redirect`, `userLevel`, `proxyProtocol` and
+`finalRules`, the deprecated `domainStrategy` and `targetStrategy` (see the
 [domain strategy socket option](#domain-strategy-socket-option)), and the
 legacy `fragment` (see [TLS ClientHello
-fragmentation](#v08-tls-clienthello-fragmentation)). `noises`, `finalRules`,
-`proxyProtocol` and `ipsBlocked` are still rejected.
+fragmentation](#v08-tls-clienthello-fragmentation)). As in Xray-core, the
+removed `ipsBlocked` is accepted with a warning and ignored. `noises` is still
+rejected.
 
 `redirect` sends every connection and UDP flow to another destination. It is
 `host:port`, read as Xray-core reads it with Go's `net.SplitHostPort`: an IPv6
@@ -678,13 +679,74 @@ level 0. The time allowed to open the connection still comes from the inbound's
 `handshake`, and the relay buffer from its `bufferSize`. UDP flows keep their
 fixed 60-second idle timeout.
 
+`proxyProtocol` set to 1 or 2 makes freedom write a PROXY protocol header of
+that version before anything else, built as go-proxyproto v0.16.0 builds it
+for Xray-core; other values are ignored. The header names the inbound's client
+(for TUN, the app's address) and the address freedom actually connected to.
+
+- The family is IPv4 only when both ends are; otherwise an IPv4 end is written
+  mapped into IPv6. Version 1 has no UDP form and writes `PROXY UNKNOWN`.
+- A connection with no known client, such as the startup probe's, gets the
+  unspecified header: `PROXY UNKNOWN`, or a version 2 `LOCAL`.
+- The header goes on the raw connection beneath freedom's `fragment`, which
+  therefore still sees the TLS hello as its first write and fragments it.
+- A UDP flow sends the header as a datagram of its own before its first
+  payload.
+- When freedom carries another outbound through `dialerProxy`, the header goes
+  first to that outbound's server and names the client of the connection it
+  carries. When freedom itself dials through `dialerProxy`, there is no direct
+  peer, and the header names `0.0.0.0:0`, as Xray-core's chained connection
+  reports it.
+
+`finalRules` decide, in order, which addresses freedom may reach. Each rule has
+an `action`, `allow` or `block`, and optional `network`, `port` and `ip`
+conditions. The first rule whose conditions all hold decides, and an address
+that no rule matches is allowed.
+
+- `network` is a comma-separated string or an array. Xray-core keeps a name
+  other than `tcp` and `udp` as a network nothing travels over, so `"tcp, udp"`
+  covers only TCP. An absent or empty list covers both.
+- `port` reads as in routing rules. `ip` takes routing IP rules, including
+  `geoip:` and `!` negation, as an array or a comma-separated string.
+- Rules check the destination after `redirect` rewrites it. A domain is
+  checked by every address it resolves to with freedom's domain strategy, and
+  the connection is blocked when any one of them is.
+- A blocked TCP connection is held open, as in Xray-core: the client sees
+  success, what it sends is discarded, and the connection closes once the
+  client finishes or after `blockDelay`. That is whole seconds drawn from an
+  integer or a `min-max` range, 30 to 90 by default.
+- A blocked UDP flow discards its datagrams for the block delay. An open flow
+  drops each reply whose source a rule blocks.
+- When freedom carries another outbound through `dialerProxy`, the rules check
+  that outbound's server. When freedom itself dials through `dialerProxy`, it
+  is not the last hop, and Xray-core ignores its rules; the parser warns and
+  drops them.
+- Xray-core's default rules, which block private addresses for connections
+  from its server inbounds, do not arise: xray-rust has only client inbounds.
+
 Differences from Xray-core:
 
 - Queries that the built-in DNS client or the TUN DNS proxy route to a freedom
-  outbound go to their DNS server even when that outbound has a `redirect`.
-  Xray-core's DNS client dispatches them through freedom, which redirects them.
+  outbound go to their DNS server even when that outbound has a `redirect`,
+  `proxyProtocol` or `finalRules`. Xray-core's DNS client dispatches them
+  through freedom.
 - A host that trims to nothing, such as `" :53"`, is rejected. Xray-core
   accepts it as an empty domain that never resolves.
+- Xray-core's UDP is full cone: one freedom flow serves every destination a
+  client source sends to, so only the first destination gets the PROXY protocol
+  header. Here each destination is a flow of its own and gets the header.
+- With a FinalMask fragment instead of freedom's own `fragment`, Xray-core
+  writes the header through the fragmenter, which then leaves the TLS hello
+  unfragmented. Here the header always goes beneath the fragmenter.
+- A domain is checked against what the managed resolver returns, as for
+  dialing. Without a domain strategy, Xray-core checks it against the system
+  resolver's answer.
+- In a final rule, a port above 65535 or a reversed range such as `"2-1"` is
+  rejected, as in routing rules here; Xray-core accepts either, and it never
+  matches. A negative `blockDelay`, or one outside 32-bit integers, is
+  rejected; Xray-core accepts both, wraps the latter, and on a negative delay
+  later panics or closes at once. An unknown field in a rule is rejected rather
+  than ignored.
 
 ### Blackhole outbound
 

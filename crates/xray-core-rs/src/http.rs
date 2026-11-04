@@ -11,7 +11,9 @@ use xray_transport::TransportDialer;
 
 use crate::connection::wait_for_connection_close;
 use crate::dns::RuntimeDnsResolvers;
-use crate::outbound::{open_tcp_stream_with_resolvers_and_dialer, TcpSessionOutbound};
+use crate::outbound::{
+    open_tcp_stream_with_resolvers_and_dialer, InboundSource, TcpSessionOutbound,
+};
 use crate::policy::{
     accept_error_wants_backoff, copy_bidirectional_with_idle_timeout_and_traffic,
     effective_policy_for_level, AcceptBackoff, EffectivePolicy,
@@ -307,6 +309,10 @@ async fn handle_http_connection(
         TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     };
     let outbound_label = crate::debug_log::tcp_outbound_label(&outbound);
+    let client = outbound
+        .writes_proxy_protocol()
+        .then(|| inbound.peer_addr().ok().map(InboundSource::tcp))
+        .flatten();
     let opened = tokio::select! {
         result = tokio::time::timeout(
             open_timeout,
@@ -316,6 +322,7 @@ async fn handle_http_connection(
                 dns_resolvers.destination.as_ref(),
                 dns_resolvers.bootstrap.as_ref(),
                 transport_dialer.as_ref(),
+                client.as_ref(),
             ),
         ) => Some(result),
         () = wait_for_connection_close(&mut connection_close) => None,

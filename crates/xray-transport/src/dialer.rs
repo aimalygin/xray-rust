@@ -1,5 +1,7 @@
 use std::{fmt, io, net::SocketAddr, sync::Arc};
 
+use tokio::io::AsyncWriteExt;
+
 use crate::stream::{connect_httpupgrade, connect_websocket, TransportLayer};
 use crate::utls_tls::TlsAlpnPolicy;
 use crate::{
@@ -294,6 +296,43 @@ impl TransportDialer {
             None => stream,
         };
         Ok((stream, peer))
+    }
+
+    /// Opens a raw TCP carrier as [`Self::connect_resolved`] does with
+    /// [`ConnectorConfig::Tcp`], first writing `preamble(peer)` on the bare
+    /// carrier, beneath any fragment mask.
+    ///
+    /// `peer` is the direct TCP peer, or `None` when a resolved connector
+    /// carries the stream through another outbound.
+    pub async fn connect_tcp_with_preamble(
+        &self,
+        original_target: &Target,
+        candidates: &[SocketAddr],
+        happy_eyeballs: Option<&HappyEyeballsConfig>,
+        preamble: impl FnOnce(Option<SocketAddr>) -> Vec<u8> + Send,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        let (mut stream, peer): (BoxedTransportStream, _) = match &self.resolved_tcp_connector {
+            Some(connector) => (
+                connector
+                    .connect_resolved(original_target, candidates, happy_eyeballs)
+                    .await?,
+                None,
+            ),
+            None => {
+                let tcp = self
+                    .connect_direct_tcp(original_target, candidates, happy_eyeballs)
+                    .await?;
+                let peer = tcp.peer_addr().map_err(TransportError::Tcp)?;
+                (Box::new(tcp), Some(peer))
+            }
+        };
+        let preamble = preamble(peer);
+        stream
+            .write_all(&preamble)
+            .await
+            .map_err(TransportError::Tcp)?;
+        stream.flush().await.map_err(TransportError::Tcp)?;
+        Ok(self.mask_tcp_carrier(stream))
     }
 
     pub(crate) async fn connect_resolved_with_alpn_policy(

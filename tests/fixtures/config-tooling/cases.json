@@ -3078,6 +3078,72 @@
       },
       "accepted": false,
       "errorPath": "$.outbounds[0].settings.userLevel"
+    },
+    {
+      "name": "freedom-proxyProtocol-finalRules",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/settings": {
+          "proxyProtocol": 2,
+          "finalRules": [
+            {
+              "action": "block",
+              "network": "udp",
+              "port": "53",
+              "ip": [
+                "192.0.2.0/24"
+              ],
+              "blockDelay": "1-2"
+            },
+            {
+              "action": "allow"
+            }
+          ]
+        }
+      },
+      "accepted": true,
+      "objects": {
+        "FREEDOM_FINAL_RULE": "/outbounds/0/settings/finalRules/0"
+      }
+    },
+    {
+      "name": "freedom-finalRules-unknown-action",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/settings": {
+          "finalRules": [
+            {
+              "action": "deny"
+            }
+          ]
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.finalRules[0].action"
+    },
+    {
+      "name": "freedom-proxyProtocol-string",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/settings": {
+          "proxyProtocol": "1"
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.proxyProtocol"
+    },
+    {
+      "name": "freedom-ipsBlocked-removed",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/settings": {
+          "ipsBlocked": [
+            "10.0.0.0/8"
+          ]
+        }
+      },
+      "accepted": true,
+      "warningPath": "$.outbounds[0].settings.ipsBlocked"
     }
   ]
 }

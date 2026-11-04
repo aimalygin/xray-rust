@@ -24,11 +24,12 @@ use xray_proxy::vless::{
     encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet, read_xudp_packet,
 };
 use xray_routing::{Target, TargetAddr};
-use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
+use xray_transport::{protect_udp_socket, TransportDialer};
 
 use crate::outbound::{
-    absorb_udp_datagrams, open_tcp_stream_with_resolvers_and_dialer, BlackholeOutbound,
-    DnsOutbound, DomainStrategyResolver, TcpSessionOutbound, UdpSessionOutbound,
+    absorb_udp_datagrams, absorb_udp_datagrams_until, final_rules,
+    open_tcp_stream_with_resolvers_and_dialer, proxy_protocol, BlackholeOutbound, DnsOutbound,
+    DomainStrategyResolver, FreedomOutbound, InboundSource, TcpSessionOutbound, UdpSessionOutbound,
 };
 use crate::{
     connection::{wait_for_connection_close, ConnectionLease},
@@ -778,6 +779,10 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
         TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     };
     let outbound_label = crate::debug_log::tcp_outbound_label(&outbound);
+    let client = outbound
+        .writes_proxy_protocol()
+        .then(|| inbound.peer_addr().ok().map(InboundSource::tcp))
+        .flatten();
     let opened = tokio::select! {
         result = tokio::time::timeout(
             open_timeout,
@@ -787,6 +792,7 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
                 dns_resolvers.destination.as_ref(),
                 dns_resolvers.bootstrap.as_ref(),
                 transport_dialer.as_ref(),
+                client.as_ref(),
             ),
         ) => Some(result),
         () = wait_for_connection_close(&mut connection_close) => None,
@@ -1375,6 +1381,7 @@ async fn bridge_socks_udp_flow(
                 dial_target,
                 client_visible_target,
                 domain_strategy,
+                freedom,
                 context,
                 from_client,
                 shutdown,
@@ -1657,6 +1664,7 @@ async fn bridge_socks_udp_freedom_flow(
     target: Target,
     client_visible_target: Option<Target>,
     domain_strategy: DomainStrategy,
+    freedom: FreedomOutbound,
     context: SocksUdpFlowContext,
     mut from_client: UdpIngress,
     mut shutdown: watch::Receiver<bool>,
@@ -1667,14 +1675,33 @@ async fn bridge_socks_udp_freedom_flow(
 ) {
     let resolver =
         DomainStrategyResolver::new(context.dns_resolvers.destination.as_ref(), domain_strategy);
+    let rules = freedom.final_rules();
     let resolved = tokio::select! {
         biased;
         () = wait_for_connection_close(&mut connection_close) => return,
-        result = resolve_udp_socket_addr(&target, &resolver) => result,
+        result = final_rules::resolve_udp_destination(&target, &resolver, rules) => result,
     };
-    let Ok(target_addr) = resolved else {
+    let Ok((target_addr, addresses)) = resolved else {
         return;
     };
+    if let Some(rule) = final_rules::blocking_rule(rules, xray_config::Network::Udp, addresses) {
+        // Xray-core holds the blocked flow, discarding its datagrams, so they
+        // are not dispatched again until the block delay passes.
+        let deadline = tokio::time::Instant::now() + final_rules::block_delay(rule);
+        drop(pending_open_permit);
+        drop(first_payload);
+        connection.mark_active();
+        absorb_udp_datagrams_until(
+            &mut from_client,
+            &mut shutdown,
+            &mut connection_close,
+            SOCKS_UDP_FLOW_IDLE_TIMEOUT,
+            Some(deadline),
+        )
+        .await;
+        connection.finish();
+        return;
+    }
     let bind_addr = match target_addr {
         SocketAddr::V4(_) => SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
         SocketAddr::V6(_) => SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0),
@@ -1692,6 +1719,23 @@ async fn bridge_socks_udp_freedom_flow(
     }
     connection.mark_active();
     let traffic = connection.traffic();
+    if let Some(version) = freedom.proxy_protocol() {
+        // Xray-core writes the header as a datagram of its own.
+        let header = proxy_protocol::header(
+            version,
+            Some(InboundSource::udp(context.client_addr)),
+            xray_routing::Network::Udp,
+            target_addr,
+        );
+        let sent = tokio::select! {
+            biased;
+            () = wait_for_connection_close(&mut connection_close) => return,
+            result = remote_socket.send_to(&header, target_addr) => result,
+        };
+        if sent.is_err() {
+            return;
+        }
+    }
     let first_payload_len = first_payload.len();
     let first_sent = tokio::select! {
         biased;
@@ -1731,6 +1775,9 @@ async fn bridge_socks_udp_freedom_flow(
                 let Ok((len, source)) = received else {
                     break;
                 };
+                if final_rules::blocks(rules, xray_config::Network::Udp, source) {
+                    continue;
+                }
                 let source = client_visible_target.clone().unwrap_or_else(|| {
                     Target::new(
                         TargetAddr::Ip(source.ip()),
@@ -1977,19 +2024,6 @@ fn socks_udp_flow_global_id(client_addr: SocketAddr, target: &Target) -> [u8; 8]
         hash = hash.wrapping_mul(0x100000001b3);
     }
     hash.to_be_bytes()
-}
-
-async fn resolve_udp_socket_addr(
-    target: &Target,
-    dns_resolver: &dyn DnsResolver,
-) -> Result<SocketAddr, ()> {
-    match &target.addr {
-        TargetAddr::Ip(ip) => Ok(SocketAddr::new(*ip, target.port)),
-        TargetAddr::Domain(domain) => dns_resolver
-            .resolve(domain, target.port)
-            .await
-            .map_err(|_| ()),
-    }
 }
 
 #[cfg(test)]
