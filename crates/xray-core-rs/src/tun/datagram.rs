@@ -10,7 +10,7 @@ pub(super) async fn bridge(
     target: Target,
     outbound: UdpOutbound,
     context: TunRuntimeContext,
-    from_stack: mpsc::Receiver<Bytes>,
+    from_stack: UdpIngress,
     mut shutdown: watch::Receiver<bool>,
     first_payload: Bytes,
     connection: ConnectionLease,

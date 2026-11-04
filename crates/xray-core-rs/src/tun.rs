@@ -49,6 +49,7 @@ use crate::outbound::{
     VlessUdpOpenOptions,
 };
 use crate::policy::{effective_policy_for_level, EffectivePolicy};
+use crate::udp_ingress::{sniff_udp_flow, UdpIngress};
 use crate::{
     OutboundRouter, RuntimeLogger, TunAdmissionPolicy, TunRuntimeOptions, TunRuntimeProfile,
 };
@@ -4425,7 +4426,15 @@ async fn bridge_udp_flow(
             .await;
         return;
     };
-    let sniffed_target = sniff_tun_udp_target(&context, &target, provenance, &first_payload);
+    let (sniffed_target, from_stack) = sniff_tun_udp_target(
+        &context,
+        &target,
+        provenance,
+        &first_payload,
+        from_stack,
+        &mut shutdown,
+    )
+    .await;
     let sniffed_protocol = sniffed_target.sniffed_protocol;
     let route_target = sniffed_target.route_target;
     let dial_target = sniffed_target.dial_target;
@@ -4627,7 +4636,7 @@ async fn bridge_udp_dns_outbound_flow(
     routed_target: Target,
     outbound: DnsOutbound,
     context: TunRuntimeContext,
-    mut from_stack: mpsc::Receiver<Bytes>,
+    mut from_stack: UdpIngress,
     mut shutdown: watch::Receiver<bool>,
     first_payload: Bytes,
     _dns_permit: OwnedSemaphorePermit,
@@ -4764,26 +4773,36 @@ impl TunUdpSniffedTarget {
     }
 }
 
-fn sniff_tun_udp_target(
+async fn sniff_tun_udp_target(
     context: &TunRuntimeContext,
     target: &Target,
     provenance: FakeIpTargetProvenance,
     first_payload: &[u8],
-) -> TunUdpSniffedTarget {
+    from_stack: mpsc::Receiver<Bytes>,
+    shutdown: &mut watch::Receiver<bool>,
+) -> (TunUdpSniffedTarget, UdpIngress) {
     if provenance == FakeIpTargetProvenance::Mapped {
-        return TunUdpSniffedTarget::from_sniffed(target, provenance, None);
+        return (
+            TunUdpSniffedTarget::from_sniffed(target, provenance, None),
+            from_stack.into(),
+        );
     }
-    let Some(config) = context.sniffing.as_ref() else {
-        return TunUdpSniffedTarget::original(target);
-    };
-    if !crate::sniffing::should_sniff_udp(Some(config)) {
-        return TunUdpSniffedTarget::original(target);
-    }
-    let Some(sniffed) = crate::sniffing::sniff_udp_initial_payload(config, target, first_payload)
+    let Some(config) = context
+        .sniffing
+        .as_ref()
+        .filter(|config| crate::sniffing::should_sniff_udp(Some(config)))
     else {
-        return TunUdpSniffedTarget::original(target);
+        return (TunUdpSniffedTarget::original(target), from_stack.into());
     };
-    TunUdpSniffedTarget::from_sniffed(target, provenance, Some(sniffed))
+    let (sniffed, from_stack) =
+        sniff_udp_flow(config, target, first_payload, from_stack, shutdown).await;
+    let Some(sniffed) = sniffed else {
+        return (TunUdpSniffedTarget::original(target), from_stack);
+    };
+    (
+        TunUdpSniffedTarget::from_sniffed(target, provenance, Some(sniffed)),
+        from_stack,
+    )
 }
 
 #[expect(
@@ -4795,7 +4814,7 @@ async fn bridge_udp_freedom_flow(
     generation: u64,
     target: Target,
     context: TunRuntimeContext,
-    from_stack: mpsc::Receiver<Bytes>,
+    from_stack: UdpIngress,
     shutdown: watch::Receiver<bool>,
     udp_timing_start: Option<StdInstant>,
     first_payload: Bytes,
@@ -4922,7 +4941,7 @@ async fn bridge_udp_freedom_flow_loop<T>(
     target_addr: SocketAddr,
     socket: UdpSocket,
     context: TunRuntimeContext,
-    mut from_stack: mpsc::Receiver<Bytes>,
+    mut from_stack: UdpIngress,
     mut shutdown: watch::Receiver<bool>,
     timing: &mut T,
     first_payload: Bytes,
@@ -5029,7 +5048,7 @@ async fn bridge_udp_vless_flow(
     target: Target,
     outbound: Box<VlessTcpOutbound>,
     context: TunRuntimeContext,
-    from_stack: mpsc::Receiver<Bytes>,
+    from_stack: UdpIngress,
     shutdown: watch::Receiver<bool>,
     udp_timing_start: Option<StdInstant>,
     first_payload: Bytes,
@@ -5172,7 +5191,7 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
     generation: u64,
     target: Target,
     context: TunRuntimeContext,
-    mut from_stack: mpsc::Receiver<Bytes>,
+    mut from_stack: UdpIngress,
     mut shutdown: watch::Receiver<bool>,
     framing: VlessUdpFraming,
     remote_reader: &mut R,

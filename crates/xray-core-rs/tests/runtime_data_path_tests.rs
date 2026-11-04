@@ -2717,6 +2717,16 @@ async fn tun_udp_route_only_quic_sniffing_uses_sni_for_routing() {
 }
 
 #[tokio::test]
+async fn tun_udp_quic_sniffing_reassembles_a_client_hello_split_over_datagrams() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_udp_split_client_hello_quic_sniffing_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn tun_fake_dns_udp_flow_uses_domain_routing_rule() {
     timeout(
         Duration::from_secs(2),
@@ -3725,6 +3735,16 @@ async fn socks_udp_client_route_only_quic_sniffing_uses_sni_for_routing() {
 }
 
 #[tokio::test]
+async fn socks_udp_quic_sniffing_reassembles_a_client_hello_split_over_datagrams() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_udp_split_client_hello_quic_sniffing_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn socks_client_reaches_echo_target_through_domain_vless_server() {
     timeout(
         Duration::from_secs(2),
@@ -4206,6 +4226,52 @@ async fn run_socks_udp_route_only_quic_sniffing_echo_scenario() {
         .await
         .unwrap()
         .unwrap();
+}
+
+async fn run_socks_udp_split_client_hello_quic_sniffing_scenario() {
+    let datagrams = chrome_parrot_client_initials();
+    let (echo_addr, echo_handle) = spawn_recording_udp_echo_server(datagrams.len()).await;
+    let mut config =
+        runtime_socks_config_with_route_only_quic_sniffing(allocate_unused_loopback_port());
+    config.routing.rules[0].domain_matchers =
+        compile_domain_matchers(&[DomainMatcher::Full("chrome-parrot.example".to_owned())])
+            .unwrap();
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut control = TcpStream::connect(socks_addr).await.unwrap();
+    let relay_addr = socks5_udp_associate(&mut control).await;
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let target = Target::new(
+        RoutingTargetAddr::Ip(echo_addr.ip()),
+        echo_addr.port(),
+        RoutingNetwork::Udp,
+    );
+    for datagram in &datagrams {
+        let request = encode_socks5_udp_datagram(&target, datagram).unwrap();
+        socket.send_to(&request, relay_addr).await.unwrap();
+    }
+    let mut echoed = Vec::new();
+    let mut response = vec![0; 2048];
+    while echoed.len() < datagrams.len() {
+        let (len, _) = socket.recv_from(&mut response).await.unwrap();
+        echoed.push(
+            parse_socks5_udp_datagram(&response[..len])
+                .unwrap()
+                .payload
+                .to_vec(),
+        );
+    }
+    assert_eq!(echoed, datagrams);
+    let received = timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(received, datagrams);
+    drop(socket);
+    drop(control);
+    core.stop().await.unwrap();
 }
 
 async fn run_socks_udp_vless_echo_scenario() {
@@ -4983,6 +5049,83 @@ async fn run_tun_udp_route_only_quic_sniffing_echo_scenario() {
         .await
         .unwrap()
         .unwrap();
+}
+
+/// Chrome-shaped QUIC from Xray-core's ChromeParrot stack: one ClientHello for
+/// `chrome-parrot.example` in two 1250-byte datagrams.
+fn chrome_parrot_client_initials() -> [Vec<u8>; 2] {
+    let mut datagrams =
+        include_str!("../../../tests/fixtures/quic/xray-chrome-parrot-client-initials.hex")
+            .lines()
+            .map(|line| {
+                (0..line.len())
+                    .step_by(2)
+                    .map(|i| u8::from_str_radix(&line[i..i + 2], 16).unwrap())
+                    .collect::<Vec<u8>>()
+            });
+    [datagrams.next().unwrap(), datagrams.next().unwrap()]
+}
+
+/// Records and echoes the first `count` datagrams it receives, in order.
+async fn spawn_recording_udp_echo_server(count: usize) -> (SocketAddr, JoinHandle<Vec<Vec<u8>>>) {
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = socket.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let mut received = Vec::with_capacity(count);
+        let mut buffer = [0; 2048];
+        while received.len() < count {
+            let (len, peer) = socket.recv_from(&mut buffer).await.unwrap();
+            socket.send_to(&buffer[..len], peer).await.unwrap();
+            received.push(buffer[..len].to_vec());
+        }
+        received
+    });
+    (addr, handle)
+}
+
+async fn run_tun_udp_split_client_hello_quic_sniffing_scenario() {
+    let datagrams = chrome_parrot_client_initials();
+    let (echo_addr, echo_handle) = spawn_recording_udp_echo_server(datagrams.len()).await;
+    let SocketAddr::V4(echo_addr_v4) = echo_addr else {
+        panic!("UDP TUN QUIC sniffing test expects IPv4 echo server");
+    };
+    // Only the sniffed name routes to the echo server; the default outbound is
+    // a dead proxy.
+    let mut config =
+        runtime_tun_config_with_route_only_quic_sniffing(allocate_unused_loopback_port());
+    config.routing.rules[0].domain_matchers =
+        compile_domain_matchers(&[DomainMatcher::Full("chrome-parrot.example".to_owned())])
+            .unwrap();
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    for datagram in &datagrams {
+        let request = ipv4_udp_packet(
+            client_addr,
+            49155,
+            *echo_addr_v4.ip(),
+            echo_addr_v4.port(),
+            datagram,
+        );
+        core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+    }
+
+    let mut echoed = Vec::new();
+    poll_tun_outbound_until(core.tun(), |packet| {
+        if let Some(payload) = ipv4_udp_payload(packet) {
+            echoed.push(payload.to_vec());
+        }
+        echoed.len() == datagrams.len()
+    })
+    .await;
+    assert_eq!(echoed, datagrams);
+    let received = timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(received, datagrams);
+    core.stop().await.unwrap();
 }
 
 async fn run_tun_tcp_in_pool_unmapped_route_only_http_sniffing_scenario() {

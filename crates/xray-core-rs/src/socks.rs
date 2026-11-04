@@ -39,6 +39,7 @@ use crate::{
         effective_policy_for_level, AcceptBackoff, EffectivePolicy,
     },
     runtime_log::{monotonic_millis, LogThrottle},
+    udp_ingress::{sniff_udp_flow, UdpIngress},
     ConnectionRegistry, OutboundRouter, RuntimeLogger, TcpOutbound, UdpOutbound, VlessTcpOutbound,
     VlessUdpFraming,
 };
@@ -1067,8 +1068,15 @@ async fn bridge_socks_udp_flow(
     let effective_target = restored_target.target;
     let client_visible_target =
         (provenance == FakeIpTargetProvenance::Mapped).then(|| target.clone());
-    let sniffed_target =
-        sniff_socks_udp_target(&context, &effective_target, provenance, &first_payload);
+    let (sniffed_target, from_client) = sniff_socks_udp_target(
+        &context,
+        &effective_target,
+        provenance,
+        &first_payload,
+        from_client,
+        &mut shutdown,
+    )
+    .await;
     let sniffed_protocol = sniffed_target.sniffed_protocol;
     let route_target = sniffed_target.route_target;
     let dial_target = sniffed_target.dial_target;
@@ -1260,7 +1268,7 @@ async fn absorb_socks_udp_blackhole_flow(
     client_target: &Target,
     blackhole: BlackholeOutbound,
     context: &SocksUdpFlowContext,
-    mut from_client: mpsc::Receiver<Bytes>,
+    mut from_client: UdpIngress,
     mut shutdown: watch::Receiver<bool>,
     connection: ConnectionLease,
 ) {
@@ -1293,7 +1301,7 @@ async fn bridge_socks_udp_dns_flow(
     routed_target: Target,
     outbound: crate::DnsOutbound,
     context: SocksUdpFlowContext,
-    mut from_client: mpsc::Receiver<Bytes>,
+    mut from_client: UdpIngress,
     mut shutdown: watch::Receiver<bool>,
     first_payload: Bytes,
     connection: ConnectionLease,
@@ -1438,26 +1446,36 @@ fn apply_fake_ip_sniffed_dial_precedence(
     sniffed
 }
 
-fn sniff_socks_udp_target(
+async fn sniff_socks_udp_target(
     context: &SocksUdpFlowContext,
     target: &Target,
     provenance: FakeIpTargetProvenance,
     first_payload: &[u8],
-) -> SocksUdpSniffedTarget {
+    from_client: mpsc::Receiver<Bytes>,
+    shutdown: &mut watch::Receiver<bool>,
+) -> (SocksUdpSniffedTarget, UdpIngress) {
     if !fake_ip_allows_content_sniffing(provenance) {
-        return SocksUdpSniffedTarget::from_sniffed(target, provenance, None);
+        return (
+            SocksUdpSniffedTarget::from_sniffed(target, provenance, None),
+            from_client.into(),
+        );
     }
-    let Some(config) = context.sniffing.as_ref() else {
-        return SocksUdpSniffedTarget::original(target);
-    };
-    if !crate::sniffing::should_sniff_udp(Some(config)) {
-        return SocksUdpSniffedTarget::original(target);
-    }
-    let Some(sniffed) = crate::sniffing::sniff_udp_initial_payload(config, target, first_payload)
+    let Some(config) = context
+        .sniffing
+        .as_ref()
+        .filter(|config| crate::sniffing::should_sniff_udp(Some(config)))
     else {
-        return SocksUdpSniffedTarget::original(target);
+        return (SocksUdpSniffedTarget::original(target), from_client.into());
     };
-    SocksUdpSniffedTarget::from_sniffed(target, provenance, Some(sniffed))
+    let (sniffed, from_client) =
+        sniff_udp_flow(config, target, first_payload, from_client, shutdown).await;
+    let Some(sniffed) = sniffed else {
+        return (SocksUdpSniffedTarget::original(target), from_client);
+    };
+    (
+        SocksUdpSniffedTarget::from_sniffed(target, provenance, Some(sniffed)),
+        from_client,
+    )
 }
 
 #[expect(
@@ -1468,7 +1486,7 @@ async fn bridge_socks_udp_freedom_flow(
     target: Target,
     client_visible_target: Option<Target>,
     context: SocksUdpFlowContext,
-    mut from_client: mpsc::Receiver<Bytes>,
+    mut from_client: UdpIngress,
     mut shutdown: watch::Receiver<bool>,
     first_payload: Bytes,
     pending_open_permit: OwnedSemaphorePermit,
@@ -1569,7 +1587,7 @@ async fn bridge_socks_udp_vless_flow(
     client_visible_target: Option<Target>,
     outbound: Box<VlessTcpOutbound>,
     context: SocksUdpFlowContext,
-    mut from_client: mpsc::Receiver<Bytes>,
+    mut from_client: UdpIngress,
     mut shutdown: watch::Receiver<bool>,
     first_payload: Bytes,
     pending_open_permit: OwnedSemaphorePermit,

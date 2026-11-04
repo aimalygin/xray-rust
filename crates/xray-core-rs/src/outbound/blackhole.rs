@@ -10,9 +10,8 @@
 
 use std::time::Duration;
 
-use bytes::Bytes;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
 use xray_config::{BlackholeResponse, OutboundSettings};
 
 use super::{OutboundFactory, OutboundNodeId};
@@ -86,7 +85,7 @@ impl BlackholeOutbound {
 /// long, its sender is gone (the inbound ended or evicted the flow), the core
 /// shuts down or the host closes the connection.
 pub(crate) async fn absorb_udp_datagrams(
-    from_client: &mut mpsc::Receiver<Bytes>,
+    from_client: &mut crate::udp_ingress::UdpIngress,
     shutdown: &mut watch::Receiver<bool>,
     connection_close: &mut watch::Receiver<bool>,
     idle_timeout: Duration,
@@ -140,7 +139,9 @@ mod tests {
     use std::sync::Arc;
 
     use async_trait::async_trait;
+    use bytes::Bytes;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::sync::mpsc;
     use xray_config::{parse_xray_json, BlackholeResponse};
     use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
     use xray_transport::{DnsResolver, TransportError};
@@ -252,7 +253,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn udp_flow_is_absorbed_until_it_has_been_idle() {
-        let (sender, mut receiver) = mpsc::channel(4);
+        let (sender, receiver) = mpsc::channel(4);
+        let mut receiver = crate::udp_ingress::UdpIngress::from(receiver);
         let (_shutdown_tx, mut shutdown) = watch::channel(false);
         let (_close_tx, mut close) = watch::channel(false);
         let started = tokio::time::Instant::now();
@@ -274,7 +276,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn udp_absorption_ends_with_the_flow_the_core_or_a_host_close() {
         // The inbound ended or evicted the flow.
-        let (sender, mut receiver) = mpsc::channel::<Bytes>(1);
+        let (sender, receiver) = mpsc::channel::<Bytes>(1);
+        let mut receiver = crate::udp_ingress::UdpIngress::from(receiver);
         let (_shutdown_tx, mut shutdown) = watch::channel(false);
         let (_close_tx, mut close) = watch::channel(false);
         drop(sender);
@@ -282,7 +285,8 @@ mod tests {
         absorb_udp_datagrams(&mut receiver, &mut shutdown, &mut close, UDP_IDLE_TIMEOUT).await;
         assert_eq!(started.elapsed(), Duration::ZERO);
 
-        let (_sender, mut receiver) = mpsc::channel::<Bytes>(1);
+        let (_sender, receiver) = mpsc::channel::<Bytes>(1);
+        let mut receiver = crate::udp_ingress::UdpIngress::from(receiver);
         let (shutdown_tx, mut shutdown) = watch::channel(false);
         let (_close_tx, mut close) = watch::channel(false);
         let started = tokio::time::Instant::now();
@@ -295,7 +299,8 @@ mod tests {
         );
         assert_eq!(started.elapsed(), Duration::from_secs(5));
 
-        let (_sender, mut receiver) = mpsc::channel::<Bytes>(1);
+        let (_sender, receiver) = mpsc::channel::<Bytes>(1);
+        let mut receiver = crate::udp_ingress::UdpIngress::from(receiver);
         let (_shutdown_tx, mut shutdown) = watch::channel(false);
         let (close_tx, mut close) = watch::channel(false);
         let started = tokio::time::Instant::now();

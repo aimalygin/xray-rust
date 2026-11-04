@@ -412,6 +412,17 @@ Common fields are `tag`, `protocol`, `listen`, `port`, `settings`, and
 and `quic`, plus `metadataOnly` and `routeOnly`. This is a routing-oriented
 subset rather than full Xray sniffing behavior.
 
+QUIC sniffing reads the SNI from a client's Initial packets (QUIC v1, v2 and
+draft-29). A ClientHello larger than one datagram, such as Chrome's with a
+post-quantum key share, is reassembled from the CRYPTO frames of several
+Initial packets, coalesced or in later datagrams, as Xray-core does. While the
+ClientHello is incomplete the flow waits for more datagrams, at most 200 ms and
+32,767 bytes in total; then it is routed on its original destination. Every
+datagram read meanwhile is forwarded in order. Other UDP traffic, and a
+complete ClientHello without a server name, never wait. Unlike Xray-core, which
+parses a zero-filled buffer, only the gap-free start of the CRYPTO stream is
+parsed, so a missing piece is never read as part of a name.
+
 ## Outbounds and streams
 
 `freedom`, `vless`, `dns`, `blackhole`, `socks`, and `http` are supported. DNS
