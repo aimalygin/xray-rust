@@ -10,6 +10,17 @@ long-term supported release series.
 
 ## Unreleased
 
+- Freedom: `streamSettings.sockopt.domainStrategy`, with Xray-core's eleven
+  strategies, together with the deprecated spellings that Xray-core migrates
+  into it: freedom's `settings.domainStrategy` and `settings.targetStrategy`,
+  and an outbound `targetStrategy`. Profiles with any of them used to fail to
+  parse, including the common `"domainStrategy": "UseIPv4"` on a direct
+  outbound. `IPv4` and `IPv6` strategies dial only that family, and `IPv4v6`
+  and `IPv6v4` fall back to the other one. If nothing is found, `Use` retries
+  both families and `Force` fails. A UDP flow named by sniffing or a fake IP
+  prefers its original family, and a freedom `dialerProxy` hop resolves the
+  next server with its own strategy. Other outbounds accept only `AsIs` for
+  now.
 - Hysteria: Gecko, the shape layer that a Salamander `packetSize` selects in
   Xray-core and that Hysteria 2.9.2 added. Such profiles no longer fail to
   import. Handshake datagrams travel as two to eight randomly padded

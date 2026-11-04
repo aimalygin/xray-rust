@@ -919,8 +919,16 @@ impl Parser<'_> {
         let happy_eyeballs = socket_options
             .get("happyEyeballs")
             .and_then(|settings| self.parse_happy_eyeballs_settings(settings, index));
+        let domain_strategy = self.domain_strategy_at(
+            socket_options,
+            "domainStrategy",
+            &format!("{socket_options_path}.domainStrategy"),
+        )?;
 
-        Some(SocketOptions { happy_eyeballs })
+        Some(SocketOptions {
+            happy_eyeballs,
+            domain_strategy,
+        })
     }
 
     pub(super) fn parse_happy_eyeballs_settings(

@@ -8423,7 +8423,7 @@ fn measure_direct_route_probe(
             .map_err(|error| {
                 BenchError::InvalidArguments(format!("route probe failed: {error}"))
             })?;
-        if matches!(black_box(outbound), xray_core_rs::TcpOutbound::Freedom) {
+        if matches!(black_box(outbound), xray_core_rs::TcpOutbound::Freedom(_)) {
             selected += 1;
         }
     }
@@ -8468,7 +8468,7 @@ async fn measure_cached_dns_route_probe(
             .map_err(|error| {
                 BenchError::InvalidArguments(format!("DNS route probe failed: {error}"))
             })?;
-        if matches!(black_box(outbound), xray_core_rs::TcpOutbound::Freedom) {
+        if matches!(black_box(outbound), xray_core_rs::TcpOutbound::Freedom(_)) {
             selected += 1;
         }
     }
@@ -9572,7 +9572,7 @@ pub async fn run_phase2_probe(
             .map_err(|error| {
                 BenchError::InvalidArguments(format!("selecting Phase 2 outbound: {error}"))
             })?;
-        if !matches!(black_box(selected), xray_core_rs::TcpOutbound::Freedom) {
+        if !matches!(black_box(selected), xray_core_rs::TcpOutbound::Freedom(_)) {
             return Err(BenchError::InvalidArguments(
                 "Phase 2 round-robin selected a non-Freedom outbound".to_owned(),
             ));

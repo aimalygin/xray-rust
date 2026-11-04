@@ -415,7 +415,7 @@ mod tests {
         assert_eq!(selected.tag.as_deref(), Some("direct"));
         assert!(matches!(
             selected.outbound,
-            TcpSessionOutbound::Transport(TcpOutbound::Freedom)
+            TcpSessionOutbound::Transport(TcpOutbound::Freedom(_))
         ));
     }
 

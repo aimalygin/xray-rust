@@ -18,6 +18,8 @@ pub(crate) mod wireguard;
 pub use wireguard::WireguardOutbound;
 mod carrier;
 pub(crate) mod datagram;
+mod domain_strategy;
+pub(crate) use domain_strategy::DomainStrategyResolver;
 mod mux;
 mod routing;
 mod xhttp;
@@ -43,10 +45,10 @@ use async_trait::async_trait;
 use rand::Rng;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_config::{
-    CoreConfig, DnsOutboundSettings, Network, OutboundConfig, OutboundSettings, QuicParamsSettings,
-    RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy, RoutingLeastLoadSettings,
-    RoutingRule, RoutingRuleTarget, StreamSecurity, StreamSettings, StreamTransport, TargetAddr,
-    VlessUser, XhttpSettings,
+    CoreConfig, DnsOutboundSettings, DomainStrategy, Network, OutboundConfig, OutboundSettings,
+    QuicParamsSettings, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
+    RoutingLeastLoadSettings, RoutingRule, RoutingRuleTarget, StreamSecurity, StreamSettings,
+    StreamTransport, TargetAddr, VlessUser, XhttpSettings,
 };
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
@@ -342,17 +344,18 @@ pub(crate) enum DnsHappyEyeballsMode {
     Configured(HappyEyeballsConfig),
 }
 
-#[derive(Debug, Clone)]
-pub struct FragmentedFreedomOutbound {
-    fragment: Arc<xray_transport::TcpFragmentConfig>,
+/// A freedom outbound, which dials destinations itself. The default dials
+/// as Xray-core's freedom does with no settings.
+#[derive(Debug, Clone, Default)]
+pub struct FreedomOutbound {
+    fragment: Option<Arc<xray_transport::TcpFragmentConfig>>,
     happy_eyeballs: Option<HappyEyeballsConfig>,
+    domain_strategy: DomainStrategy,
 }
 
 #[derive(Debug, Clone)]
 pub enum TcpOutbound {
-    Freedom,
-    FreedomHappyEyeballs(HappyEyeballsConfig),
-    FreedomFragment(Box<FragmentedFreedomOutbound>),
+    Freedom(FreedomOutbound),
     Vless(Box<VlessTcpOutbound>),
     Trojan(TrojanOutbound),
     Socks(SocksOutbound),
@@ -375,7 +378,7 @@ pub(crate) struct SelectedTcpOutbound {
 
 #[derive(Debug, Clone)]
 pub enum UdpOutbound {
-    Freedom,
+    Freedom(FreedomOutbound),
     Vless(Box<VlessTcpOutbound>),
     Trojan(TrojanOutbound),
     Socks(SocksOutbound),
@@ -666,15 +669,64 @@ impl VlessTcpOutbound {
     }
 }
 
+impl FreedomOutbound {
+    fn from_stream(stream: &StreamSettings) -> Result<Self, CoreError> {
+        Ok(Self {
+            fragment: carrier::fragment_config(stream)?,
+            happy_eyeballs: happy_eyeballs_config(stream),
+            domain_strategy: Self::stream_domain_strategy(stream),
+        })
+    }
+
+    /// UDP reads only the domain strategy.
+    fn for_udp(stream: &StreamSettings) -> Self {
+        Self {
+            fragment: None,
+            happy_eyeballs: None,
+            domain_strategy: Self::stream_domain_strategy(stream),
+        }
+    }
+
+    fn stream_domain_strategy(stream: &StreamSettings) -> DomainStrategy {
+        stream
+            .socket_options
+            .as_ref()
+            .map(|options| options.domain_strategy)
+            .unwrap_or_default()
+    }
+
+    /// The dialer with this outbound's fragment mask, if it has one.
+    fn dialer<'a>(&self, dialer: &'a TransportDialer) -> std::borrow::Cow<'a, TransportDialer> {
+        match &self.fragment {
+            Some(fragment) => {
+                std::borrow::Cow::Owned(dialer.clone().with_tcp_fragment(fragment.clone()))
+            }
+            None => std::borrow::Cow::Borrowed(dialer),
+        }
+    }
+
+    pub(crate) fn domain_strategy(&self) -> DomainStrategy {
+        self.domain_strategy
+    }
+
+    /// The strategy for a UDP flow whose destination was `original` before
+    /// sniffing or a fake IP replaced it, as Xray-core's `GetDynamicStrategy`
+    /// picks it.
+    pub(crate) fn udp_domain_strategy(&self, original: &Target) -> DomainStrategy {
+        match original.addr {
+            RoutingTargetAddr::Ip(ip) => self.domain_strategy.for_original_ip(ip),
+            RoutingTargetAddr::Domain(_) => self.domain_strategy,
+        }
+    }
+}
+
 impl TcpOutbound {
     pub(crate) fn freedom_dialer<'a>(
         &self,
         dialer: &'a TransportDialer,
     ) -> std::borrow::Cow<'a, TransportDialer> {
         match self.primary() {
-            Self::FreedomFragment(config) => {
-                std::borrow::Cow::Owned(dialer.clone().with_tcp_fragment(config.fragment.clone()))
-            }
+            Self::Freedom(freedom) => freedom.dialer(dialer),
             _ => std::borrow::Cow::Borrowed(dialer),
         }
     }
@@ -687,9 +739,7 @@ impl TcpOutbound {
 
     pub(crate) fn freedom_happy_eyeballs(&self) -> Option<&HappyEyeballsConfig> {
         match self.primary() {
-            Self::Freedom => None,
-            Self::FreedomHappyEyeballs(config) => Some(config),
-            Self::FreedomFragment(config) => config.happy_eyeballs.as_ref(),
+            Self::Freedom(freedom) => freedom.happy_eyeballs.as_ref(),
             Self::Vless(_)
             | Self::Vmess(_)
             | Self::Trojan(_)
@@ -719,9 +769,7 @@ impl ResolvedTcpConnector for OutboundProxyTcpConnector {
         happy_eyeballs: Option<&HappyEyeballsConfig>,
     ) -> Result<BoxedTransportStream, TransportError> {
         match self.outbound.primary() {
-            TcpOutbound::Freedom
-            | TcpOutbound::FreedomHappyEyeballs(_)
-            | TcpOutbound::FreedomFragment(_) => {
+            TcpOutbound::Freedom(_) => {
                 self.outbound
                     .freedom_dialer(&self.transport_dialer)
                     .connect_resolved(
@@ -861,9 +909,7 @@ fn prepare_outbound_proxy_dialer<'a>(
             TcpOutbound::Hysteria(_) => {
                 return Err(CoreError::UnsupportedOutboundProxyNetwork("Hysteria"))
             }
-            TcpOutbound::Freedom
-            | TcpOutbound::FreedomHappyEyeballs(_)
-            | TcpOutbound::FreedomFragment(_) => Box::default(),
+            TcpOutbound::Freedom(_) => Box::default(),
             TcpOutbound::Chained { .. } => {
                 unreachable!("a compiled chain wrapper has one plain primary outbound")
             }
@@ -889,9 +935,7 @@ fn proxy_chain_requires_local_resolution(proxy: &TcpOutbound) -> bool {
         | TcpOutbound::Shadowsocks2022(_)
         | TcpOutbound::Hysteria(_)
         | TcpOutbound::Wireguard(_) => false,
-        TcpOutbound::Freedom
-        | TcpOutbound::FreedomHappyEyeballs(_)
-        | TcpOutbound::FreedomFragment(_) => match proxy {
+        TcpOutbound::Freedom(_) => match proxy {
             TcpOutbound::Chained { proxy, .. } => proxy_chain_requires_local_resolution(proxy),
             _ => true,
         },
@@ -3272,7 +3316,9 @@ impl OutboundFactory {
                 if outbound.stream.security != StreamSecurity::None {
                     return Err(CachedOutboundError::UnsupportedOutboundSecurity);
                 }
-                Ok(UdpOutbound::Freedom)
+                Ok(UdpOutbound::Freedom(FreedomOutbound::for_udp(
+                    &outbound.stream,
+                )))
             }
             OutboundSettings::Vless(_) => {
                 if outbound.stream.network != Network::Tcp {
@@ -3408,7 +3454,9 @@ fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreErro
             if outbound.stream.security != StreamSecurity::None {
                 return Err(CoreError::UnsupportedOutboundSecurity);
             }
-            Ok(UdpOutbound::Freedom)
+            Ok(UdpOutbound::Freedom(FreedomOutbound::for_udp(
+                &outbound.stream,
+            )))
         }
         OutboundSettings::Vless(_) => {
             if outbound.stream.network != Network::Tcp {
@@ -3495,18 +3543,7 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
 }
 
 fn build_freedom_tcp_outbound(stream: &StreamSettings) -> Result<TcpOutbound, CoreError> {
-    if let Some(fragment) = carrier::fragment_config(stream)? {
-        return Ok(TcpOutbound::FreedomFragment(Box::new(
-            FragmentedFreedomOutbound {
-                fragment,
-                happy_eyeballs: happy_eyeballs_config(stream),
-            },
-        )));
-    }
-    Ok(match happy_eyeballs_config(stream) {
-        Some(config) => TcpOutbound::FreedomHappyEyeballs(config),
-        None => TcpOutbound::Freedom,
-    })
+    FreedomOutbound::from_stream(stream).map(TcpOutbound::Freedom)
 }
 
 fn dns_tcp_connector(stream: &StreamSettings) -> Result<DnsTcpConnector, CoreError> {
@@ -3684,11 +3721,17 @@ pub(crate) async fn open_tcp_stream_with_resolvers_and_dialer(
     if let TcpOutbound::Chained { outbound, proxy } = outbound {
         let proxy_dialer =
             prepare_outbound_proxy_dialer(proxy, bootstrap_resolver, transport_dialer).await?;
+        // A freedom hop is handed the server address as its destination, and
+        // Xray-core's freedom resolves that with its own domain strategy.
+        let strategy = match proxy.primary() {
+            TcpOutbound::Freedom(freedom) => freedom.domain_strategy(),
+            _ => DomainStrategy::AsIs,
+        };
         return open_plain_tcp_stream_with_resolvers_and_dialer(
             outbound.primary(),
             target,
             destination_resolver,
-            bootstrap_resolver,
+            &DomainStrategyResolver::new(bootstrap_resolver, strategy),
             &proxy_dialer,
             proxy_chain_requires_local_resolution(proxy),
         )
@@ -3764,11 +3807,11 @@ async fn open_plain_tcp_stream_with_resolvers_and_dialer(
         TcpOutbound::Hysteria(outbound) => {
             Box::pin(outbound.open_tcp(target, bootstrap_resolver, transport_dialer)).await
         }
-        TcpOutbound::Freedom
-        | TcpOutbound::FreedomHappyEyeballs(_)
-        | TcpOutbound::FreedomFragment(_) => {
+        TcpOutbound::Freedom(freedom) => {
             let candidates = if requires_local_resolution {
-                resolve_server_candidates(target, destination_resolver).await?
+                let resolver =
+                    DomainStrategyResolver::new(destination_resolver, freedom.domain_strategy());
+                resolve_server_candidates(target, &resolver).await?
             } else {
                 Vec::new()
             };
@@ -4406,7 +4449,7 @@ mod tests {
             .select_tcp_outbound_for_session(None, &domain_tcp_target("example.test"))
             .expect("select target-aware TCP route");
 
-        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert!(matches!(selected, TcpOutbound::Freedom(_)));
     }
 
     #[test]
@@ -4428,7 +4471,7 @@ mod tests {
             .select_udp_outbound_for_session(None, &target)
             .expect("select target-aware UDP route");
 
-        assert!(matches!(selected, UdpOutbound::Freedom));
+        assert!(matches!(selected, UdpOutbound::Freedom(_)));
     }
 
     #[test]
@@ -4729,6 +4772,7 @@ mod tests {
                         max_concurrent_try: u32::try_from(configured.max_concurrent.get())
                             .expect("bounded test concurrency"),
                     }),
+                    ..SocketOptions::default()
                 }),
             },
             Duration::from_secs(60),
@@ -4783,6 +4827,7 @@ mod tests {
                 udp_noise: None,
                 socket_options: Some(SocketOptions {
                     happy_eyeballs: Some(HappyEyeballsSettings::default()),
+                    ..SocketOptions::default()
                 }),
             },
             Duration::from_secs(60),
@@ -5159,7 +5204,7 @@ mod tests {
         let router = OutboundRouter::new(Arc::new(direct_selection_config()));
         let selected = router.select_tcp_outbound_direct(Some("direct")).unwrap();
 
-        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert!(matches!(selected, TcpOutbound::Freedom(_)));
     }
 
     #[test]
@@ -5172,13 +5217,17 @@ mod tests {
                 try_delay_ms: 175,
                 max_concurrent_try: 3,
             }),
+            ..SocketOptions::default()
         });
 
-        let TcpOutbound::FreedomHappyEyeballs(compiled) =
+        let TcpOutbound::Freedom(freedom) =
             build_tcp_outbound(&configured).expect("compile freedom outbound")
         else {
-            panic!("explicit Happy Eyeballs settings should enable candidate racing");
+            panic!("freedom compiles to freedom");
         };
+        let compiled = freedom
+            .happy_eyeballs
+            .expect("explicit Happy Eyeballs settings should enable candidate racing");
 
         assert!(compiled.prioritize_ipv6);
         assert_eq!(compiled.interleave, 2);
@@ -5187,18 +5236,25 @@ mod tests {
     }
 
     #[test]
-    fn zero_happy_eyeballs_delay_preserves_legacy_freedom_variant() {
+    fn zero_happy_eyeballs_delay_leaves_freedom_without_racing() {
         let mut configured = direct_selection_freedom("direct");
         configured.stream.socket_options = Some(SocketOptions {
             happy_eyeballs: Some(HappyEyeballsSettings {
                 try_delay_ms: 0,
                 ..HappyEyeballsSettings::default()
             }),
+            ..SocketOptions::default()
         });
 
         let compiled = build_tcp_outbound(&configured).expect("compile freedom outbound");
 
-        assert!(matches!(compiled, TcpOutbound::Freedom));
+        assert!(matches!(
+            compiled,
+            TcpOutbound::Freedom(FreedomOutbound {
+                happy_eyeballs: None,
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -5211,6 +5267,7 @@ mod tests {
                 try_delay_ms: 250,
                 max_concurrent_try: 5,
             }),
+            ..SocketOptions::default()
         });
 
         let TcpOutbound::Vless(outbound) =
@@ -5242,11 +5299,14 @@ mod tests {
         drop(refused_listener);
         let resolver = FakeDnsResolver::resolving_to_many(vec![refused, successful])
             .expect_lookup("multi.example", 443);
-        let outbound = TcpOutbound::FreedomHappyEyeballs(HappyEyeballsConfig {
-            prioritize_ipv6: false,
-            interleave: 1,
-            try_delay: Duration::from_secs(30),
-            max_concurrent: NonZeroUsize::new(2).expect("non-zero test concurrency"),
+        let outbound = TcpOutbound::Freedom(FreedomOutbound {
+            happy_eyeballs: Some(HappyEyeballsConfig {
+                prioritize_ipv6: false,
+                interleave: 1,
+                try_delay: Duration::from_secs(30),
+                max_concurrent: NonZeroUsize::new(2).expect("non-zero test concurrency"),
+            }),
+            ..FreedomOutbound::default()
         });
         let target = domain_tcp_target("multi.example");
         let dialer = TransportDialer::system().expect("build transport dialer");
@@ -5622,6 +5682,153 @@ mod tests {
         assert_eq!(resolver.calls(), 0);
     }
 
+    /// Records the candidates of every dial and hands back an in-memory peer.
+    #[derive(Default)]
+    struct CandidateRecordingConnector {
+        candidates: Mutex<Vec<Vec<SocketAddr>>>,
+        peers: Mutex<Vec<tokio::io::DuplexStream>>,
+    }
+
+    #[async_trait]
+    impl ResolvedTcpConnector for CandidateRecordingConnector {
+        async fn connect_resolved(
+            &self,
+            _original_target: &Target,
+            candidates: &[SocketAddr],
+            _happy_eyeballs: Option<&HappyEyeballsConfig>,
+        ) -> Result<BoxedTransportStream, TransportError> {
+            self.candidates.lock().unwrap().push(candidates.to_vec());
+            let (stream, peer) = tokio::io::duplex(4_096);
+            self.peers.lock().unwrap().push(peer);
+            Ok(Box::new(stream))
+        }
+    }
+
+    fn strategy_freedom(domain_strategy: DomainStrategy) -> TcpOutbound {
+        TcpOutbound::Freedom(FreedomOutbound {
+            domain_strategy,
+            ..FreedomOutbound::default()
+        })
+    }
+
+    #[tokio::test]
+    async fn freedom_dials_only_the_addresses_its_domain_strategy_permits() {
+        let v4 = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 7), 443));
+        let v6 = SocketAddr::from((Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 7), 443));
+        let target = domain_tcp_target("dual.example");
+        for (answer, strategy, expected) in [
+            (vec![v6, v4], DomainStrategy::AsIs, Some(vec![v6, v4])),
+            (vec![v6, v4], DomainStrategy::UseIp, Some(vec![v6, v4])),
+            (vec![v6, v4], DomainStrategy::UseIpv4, Some(vec![v4])),
+            (vec![v6, v4], DomainStrategy::ForceIpv6, Some(vec![v6])),
+            (vec![v6, v4], DomainStrategy::UseIpv4v6, Some(vec![v4])),
+            (vec![v4], DomainStrategy::UseIpv6v4, Some(vec![v4])),
+            // A Use strategy falls back to both families; Force fails.
+            (vec![v4], DomainStrategy::UseIpv6, Some(vec![v4])),
+            (vec![v4], DomainStrategy::ForceIpv6, None),
+        ] {
+            let connector = Arc::new(CandidateRecordingConnector::default());
+            let dialer = TransportDialer::system()
+                .unwrap()
+                .with_resolved_tcp_connector(connector.clone());
+            let resolver = FakeDnsResolver::resolving_to_many(answer);
+            let opened = open_tcp_stream_with_resolver_and_dialer(
+                &strategy_freedom(strategy),
+                &target,
+                &resolver,
+                &dialer,
+            )
+            .await;
+            let dialed = connector.candidates.lock().unwrap().clone();
+            match expected {
+                Some(expected) => {
+                    opened.unwrap_or_else(|error| panic!("{strategy:?}: {error}"));
+                    assert_eq!(dialed, [expected], "{strategy:?}");
+                }
+                None => {
+                    assert!(opened.is_err(), "{strategy:?}");
+                    assert!(dialed.is_empty(), "{strategy:?}");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_freedom_hop_resolves_the_next_server_with_its_domain_strategy() {
+        let mut config = direct_selection_config();
+        config.outbounds = vec![
+            direct_selection_vless("entry"),
+            direct_selection_freedom("exit"),
+        ];
+        let OutboundSettings::Vless(vless) = &mut config.outbounds[0].settings else {
+            unreachable!()
+        };
+        vless.server = TargetAddr::Domain("server.example".to_owned());
+        config.outbounds[0].proxy_settings = Some(OutboundProxySettings {
+            tag: "exit".to_owned(),
+            transport_layer: true,
+        });
+        config.outbounds[1].stream.socket_options = Some(SocketOptions {
+            domain_strategy: DomainStrategy::ForceIpv4,
+            ..SocketOptions::default()
+        });
+        config.default_outbound_tag = Some("entry".to_owned());
+        config.routing.rules.clear();
+        let router = OutboundRouter::new(Arc::new(config));
+        let outbound = router.select_tcp_outbound().expect("compile the chain");
+
+        let v4 = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 9), 443));
+        let v6 = SocketAddr::from((Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 9), 443));
+        let resolver =
+            FakeDnsResolver::resolving_to_many(vec![v6, v4]).expect_lookup("server.example", 443);
+        let connector = Arc::new(CandidateRecordingConnector::default());
+        let dialer = TransportDialer::system()
+            .unwrap()
+            .with_resolved_tcp_connector(connector.clone());
+        let _stream = open_tcp_stream_with_resolver_and_dialer(
+            &outbound,
+            &domain_tcp_target("destination.example"),
+            &resolver,
+            &dialer,
+        )
+        .await
+        .expect("open the chain");
+
+        assert_eq!(*connector.candidates.lock().unwrap(), [vec![v4]]);
+    }
+
+    #[test]
+    fn freedom_domain_strategy_reaches_tcp_and_udp_outbounds() {
+        let mut configured = direct_selection_freedom("direct");
+        configured.stream.socket_options = Some(SocketOptions {
+            domain_strategy: DomainStrategy::ForceIp,
+            ..SocketOptions::default()
+        });
+        let TcpOutbound::Freedom(tcp) = build_tcp_outbound(&configured).unwrap() else {
+            panic!("freedom compiles to freedom");
+        };
+        assert_eq!(tcp.domain_strategy(), DomainStrategy::ForceIp);
+        let UdpOutbound::Freedom(udp) = build_udp_outbound(&configured).unwrap() else {
+            panic!("freedom compiles to freedom");
+        };
+        assert_eq!(udp.domain_strategy(), DomainStrategy::ForceIp);
+
+        // A UDP flow first addressed to an IP prefers that IP's family.
+        let original = |addr| Target::new(addr, 443, RoutingNetwork::Udp);
+        assert_eq!(
+            udp.udp_domain_strategy(&original(RoutingTargetAddr::Ip(IpAddr::V6(
+                Ipv6Addr::LOCALHOST
+            )))),
+            DomainStrategy::ForceIpv6v4
+        );
+        assert_eq!(
+            udp.udp_domain_strategy(&original(RoutingTargetAddr::Domain(
+                "quic.example".to_owned()
+            ))),
+            DomainStrategy::ForceIp
+        );
+    }
+
     #[tokio::test]
     async fn multi_hop_vless_chain_layers_each_request_in_graph_order() {
         let mut config = direct_selection_config();
@@ -5985,7 +6192,7 @@ mod tests {
         let selected = router
             .select_tcp_outbound_for_session(None, &target)
             .unwrap();
-        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert!(matches!(selected, TcpOutbound::Freedom(_)));
     }
 
     #[test]
@@ -6141,7 +6348,7 @@ mod tests {
         let selected = router
             .select_tcp_outbound_for_session(None, &target)
             .unwrap();
-        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert!(matches!(selected, TcpOutbound::Freedom(_)));
     }
 
     #[test]
@@ -6175,7 +6382,7 @@ mod tests {
         let selected = router
             .select_tcp_outbound_for_session(None, &target)
             .unwrap();
-        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert!(matches!(selected, TcpOutbound::Freedom(_)));
     }
 
     #[test]
@@ -6319,7 +6526,7 @@ mod tests {
             .select_tcp_outbound_for_session(None, &domain_tcp_target("example.test"))
             .unwrap();
 
-        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert!(matches!(selected, TcpOutbound::Freedom(_)));
     }
 
     #[test]
@@ -6407,7 +6614,7 @@ mod tests {
 
         let selected = router.select_tcp_outbound_direct(None).unwrap();
 
-        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert!(matches!(selected, TcpOutbound::Freedom(_)));
     }
 
     #[test]
@@ -6423,7 +6630,7 @@ mod tests {
 
         let selected = router.select_tcp_outbound().unwrap();
 
-        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert!(matches!(selected, TcpOutbound::Freedom(_)));
         let duplicate = router
             .graph()
             .node_for_tag("duplicate")
@@ -6448,7 +6655,7 @@ mod tests {
             router
                 .select_tcp_outbound_for_session(Some("socks-in"), &target)
                 .unwrap(),
-            TcpOutbound::Freedom
+            TcpOutbound::Freedom(_)
         ));
         assert!(router.factory.entries[2].tcp.get().is_none());
 
@@ -7760,7 +7967,7 @@ mod tests {
             .await
             .expect("select route using resolved IP");
 
-        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert!(matches!(selected, TcpOutbound::Freedom(_)));
     }
 
     #[tokio::test]
@@ -7786,7 +7993,7 @@ mod tests {
             .await
             .expect("select route using a non-first resolved IP");
 
-        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert!(matches!(selected, TcpOutbound::Freedom(_)));
         assert_eq!(resolver.calls(), 1);
     }
 
@@ -7816,7 +8023,7 @@ mod tests {
             .await
             .expect("select the first matching rule across all resolved IPs");
 
-        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert!(matches!(selected, TcpOutbound::Freedom(_)));
         assert_eq!(resolver.calls(), 1);
     }
 
@@ -7847,7 +8054,7 @@ mod tests {
                 .await
                 .expect("select route from a cached multi-address lookup");
 
-            assert!(matches!(selected, TcpOutbound::Freedom));
+            assert!(matches!(selected, TcpOutbound::Freedom(_)));
         }
         assert_eq!(upstream.calls(), 1);
     }
@@ -7871,7 +8078,7 @@ mod tests {
             .await
             .expect("select combined domain and resolved-IP route");
 
-        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert!(matches!(selected, TcpOutbound::Freedom(_)));
     }
 
     #[tokio::test]
@@ -7896,7 +8103,7 @@ mod tests {
             .await
             .expect("select cached combined domain and resolved-IP route");
 
-        assert!(matches!(selected, TcpOutbound::Freedom));
+        assert!(matches!(selected, TcpOutbound::Freedom(_)));
     }
 
     #[test]
@@ -7940,7 +8147,7 @@ mod tests {
             )
             .expect("select supplied combined domain and resolved-IP route");
 
-        assert!(matches!(selected.outbound, TcpOutbound::Freedom));
+        assert!(matches!(selected.outbound, TcpOutbound::Freedom(_)));
     }
 
     #[tokio::test]
@@ -8728,7 +8935,7 @@ mod future_layout_tests {
             RoutingNetwork::Tcp,
         );
         let dialer = TransportDialer::system().unwrap();
-        let outbound = TcpOutbound::Freedom;
+        let outbound = TcpOutbound::Freedom(FreedomOutbound::default());
         let plain = open_plain_tcp_stream_with_resolvers_and_dialer(
             &outbound,
             &target,

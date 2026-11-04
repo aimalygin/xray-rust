@@ -3230,7 +3230,7 @@ async fn open_raw_dns_tcp_candidate(
     let collect_tcp_timings = context.tun_runtime_options.collect_tcp_timings;
     let open_started = collect_tcp_timings.then(StdInstant::now);
     let selection = if upstream.is_local() {
-        Ok((TcpOutbound::Freedom, None))
+        Ok((TcpOutbound::Freedom(FreedomOutbound::default()), None))
     } else {
         context
             .outbound_router
@@ -3263,9 +3263,7 @@ async fn open_raw_dns_tcp_candidate(
         TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
             effective_policy_for_level(&context.config, Some(0)).handshake
         }
-        TcpOutbound::Freedom
-        | TcpOutbound::FreedomHappyEyeballs(_)
-        | TcpOutbound::FreedomFragment(_) => context.inbound_policy.handshake,
+        TcpOutbound::Freedom(_) => context.inbound_policy.handshake,
         TcpOutbound::Trojan(outbound) => {
             effective_policy_for_level(&context.config, Some(outbound.level())).handshake
         }
@@ -3519,7 +3517,7 @@ async fn proxy_udp_payload(
                     continue;
                 };
                 let outbound_timeout = match &outbound {
-                    UdpOutbound::Freedom => DNS_PROXY_FREEDOM_ATTEMPT_TIMEOUT,
+                    UdpOutbound::Freedom(_) => DNS_PROXY_FREEDOM_ATTEMPT_TIMEOUT,
                     UdpOutbound::Trojan(_)
                     | UdpOutbound::Socks(_)
                     | UdpOutbound::Vmess(_)
@@ -3944,7 +3942,7 @@ async fn exchange_udp_candidate(
     failure_phase: &mut DnsUdpFailurePhase,
 ) -> Result<DnsUpstreamResponse, crate::CoreError> {
     let response = match outbound {
-        UdpOutbound::Freedom => {
+        UdpOutbound::Freedom(_) => {
             let upstream = resolve_freedom_dns_upstream(upstream, context).await?;
             exchange_udp_freedom(upstream, query, max_payload, context, failure_phase).await?
         }

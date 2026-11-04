@@ -76,6 +76,8 @@ mod tun_admission;
 
 #[path = "runtime_data_path_tests/blackhole.rs"]
 mod blackhole;
+#[path = "runtime_data_path_tests/freedom_domain_strategy.rs"]
+mod freedom_domain_strategy;
 #[path = "runtime_data_path_tests/socks_inbound_udp.rs"]
 mod socks_inbound_udp;
 #[path = "runtime_data_path_tests/socks_outbound.rs"]
@@ -108,9 +110,7 @@ const TEST_UUID_BYTES: [u8; 16] = [
 fn compile_vless_tcp_outbound_one_shot(config: &CoreConfig) -> Result<VlessTcpOutbound, CoreError> {
     match OutboundRouter::new(Arc::new(config.clone())).select_tcp_outbound()? {
         TcpOutbound::Vless(outbound) => Ok(*outbound),
-        TcpOutbound::Freedom
-        | TcpOutbound::FreedomHappyEyeballs(_)
-        | TcpOutbound::FreedomFragment(_)
+        TcpOutbound::Freedom(_)
         | TcpOutbound::Trojan(_)
         | TcpOutbound::Socks(_)
         | TcpOutbound::Http(_)
@@ -1197,7 +1197,7 @@ fn full_xray_core_fixture_routes_reserved_domain_direct() {
         .select_tcp_outbound_for_session(None, &target)
         .expect("reserved domain rule should select direct");
 
-    assert!(matches!(outbound, TcpOutbound::Freedom));
+    assert!(matches!(outbound, TcpOutbound::Freedom(_)));
 }
 
 #[test]
@@ -1214,7 +1214,7 @@ fn full_xray_core_fixture_routes_reserved_cidr_direct() {
         .select_tcp_outbound_for_session(None, &target)
         .expect("reserved CIDR rule should select direct");
 
-    assert!(matches!(outbound, TcpOutbound::Freedom));
+    assert!(matches!(outbound, TcpOutbound::Freedom(_)));
 }
 
 #[tokio::test]

@@ -1667,8 +1667,8 @@ four uTLS can produce rather than dropping to a weaker check.
 
 ### Happy Eyeballs socket option
 
-`streamSettings.sockopt` currently supports only the Xray-compatible
-`happyEyeballs` object:
+`streamSettings.sockopt` supports the Xray-compatible `happyEyeballs` object,
+along with `dialerProxy` (see chaining) and `domainStrategy` (below):
 
 ```json
 {
@@ -1715,6 +1715,52 @@ whose first address is unreachable, such as `localhost` served on IPv4 only or
 a server behind broken IPv6, therefore still connects. One candidate is dialed
 directly, as before. The same rules cover Freedom, proxy carriers and REALITY;
 socket protection is still fatal.
+
+### Domain strategy socket option
+
+`streamSettings.sockopt.domainStrategy` takes Xray-core's names, ignoring
+case: `AsIs` (the default, as are `""` and null), `UseIP`, `UseIPv4`,
+`UseIPv6`, `UseIPv4v6`, `UseIPv6v4`, and the same five with `Force` in place
+of `Use`. On a `freedom` outbound it decides which addresses a domain
+destination may resolve to:
+
+- `IPv4` and `IPv6` ask for that family only; `IP` asks for both.
+- `IPv4v6` asks for IPv4, and for IPv6 if that finds nothing; `IPv6v4` is the
+  reverse.
+- If nothing is found, `Use` looks the domain up again for both families, as
+  `AsIs` does, and `Force` fails the connection.
+
+The permitted addresses are then dialed like any other candidates, through
+`happyEyeballs` or the sequential rules above. Under `UseIP` and `ForceIP`, a
+UDP flow whose destination was an IP address before sniffing or a fake IP
+named it prefers that address's family, as Xray-core's `GetDynamicStrategy`
+does. When a freedom outbound carries another outbound through `dialerProxy`,
+that outbound's server address resolves with freedom's strategy, since
+Xray-core hands it to freedom as the destination.
+
+Xray-core v26.10.31 deprecates freedom's own `settings.domainStrategy` (and
+`settings.targetStrategy`, which wins when nonempty), as well as an outbound
+`targetStrategy` on freedom, and migrates them into `sockopt.domainStrategy`.
+xray-rust migrates them the same way, with equivalent notices: the
+outbound `targetStrategy` wins, then the freedom setting, and either one
+replaces a `sockopt` value. On freedom, config verdicts for these fields match
+`xray run -test`.
+
+Differences from Xray-core:
+
+- Xray-core resolves with its DNS client, and when a `Use` strategy finds
+  nothing it hands the domain to the system resolver. xray-rust's freedom
+  resolves through the managed resolver in both cases, as it already does for
+  `AsIs`, where Xray-core uses the system resolver. A name known only to
+  `dns.hosts` therefore still connects after a `Use` fallback.
+- Xray-core dials one random permitted address per attempt and retries up to
+  five times. xray-rust tries the permitted addresses in order, as for any
+  other candidates, and a UDP flow takes the first one.
+- Other outbounds accept only `AsIs`. A different `sockopt.domainStrategy` or
+  `targetStrategy` on VLESS, Trojan and the other proxies fails parsing,
+  because their server lookup and target resolution do not read a strategy
+  yet. For the same reason, `dialerProxy` refuses a dedicated freedom fragment
+  handler that has a strategy, since inlining it would drop the strategy.
 
 ## Routing
 

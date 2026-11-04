@@ -83,7 +83,7 @@ pub(crate) async fn open_within_handshake(
         UdpOutbound::Vmess(outbound) => outbound.level(),
         UdpOutbound::Shadowsocks2022(outbound) => outbound.level(),
         UdpOutbound::Hysteria(_) | UdpOutbound::Wireguard(_) => 0,
-        UdpOutbound::Freedom => return Err(CoreError::UnsupportedOutboundNetwork),
+        UdpOutbound::Freedom(_) => return Err(CoreError::UnsupportedOutboundNetwork),
     };
     within_handshake(
         effective_policy_for_level(config, Some(level)).handshake,

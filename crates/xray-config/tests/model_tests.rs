@@ -269,6 +269,7 @@ fn normalized_model_uses_xray_happy_eyeballs_defaults() {
         udp_noise: None,
         socket_options: Some(SocketOptions {
             happy_eyeballs: Some(HappyEyeballsSettings::default()),
+            ..SocketOptions::default()
         }),
     };
 

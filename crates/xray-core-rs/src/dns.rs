@@ -218,7 +218,7 @@ impl RoutedDnsQueryTransport {
             .map_err(io::Error::other)?;
 
         match outbound {
-            UdpOutbound::Freedom => {
+            UdpOutbound::Freedom(_) => {
                 let server = self.resolved_server(server).await?;
                 let _udp_exchange_permit = self.direct_executor.try_reserve_udp_exchange()?;
                 exchange_freedom_udp(
@@ -429,9 +429,7 @@ impl RoutedDnsQueryTransport {
             .map_err(io::Error::other)?;
 
         Ok(match selected.outbound {
-            outbound @ (TcpOutbound::Freedom
-            | TcpOutbound::FreedomHappyEyeballs(_)
-            | TcpOutbound::FreedomFragment(_)) => {
+            outbound @ TcpOutbound::Freedom(_) => {
                 let candidates = self.resolved_servers(server).await?;
                 open_routed_freedom_dns_tcp_stream(
                     &outbound.freedom_dialer(&self.transport_dialer),

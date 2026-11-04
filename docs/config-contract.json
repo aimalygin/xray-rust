@@ -683,10 +683,12 @@
     {
       "context": "$.outbounds[].settings (freedom)",
       "fields": [
-        "fragment"
+        "fragment",
+        "domainStrategy",
+        "targetStrategy"
       ],
       "id": "FREEDOM_SETTINGS",
-      "notes": "Only the bounded tlshello fragment option is supported; noise and other freedom settings fail closed."
+      "notes": "domainStrategy, or targetStrategy when nonempty, is deprecated and migrates to sockopt.domainStrategy, as in Xray-core. Only the bounded tlshello fragment option is supported; noise and other freedom settings fail closed."
     },
     {
       "context": "streamSettings.finalmask.tcp[]",
@@ -916,10 +918,11 @@
         "streamSettings",
         "mux",
         "proxySettings",
-        "sendThrough"
+        "sendThrough",
+        "targetStrategy"
       ],
       "id": "OUTBOUND",
-      "notes": "freedom (alias direct), blackhole (alias block), dns, VLESS, Trojan, Shadowsocks 2022 and AEAD, VMess AEAD, SOCKS5 (CONNECT and UDP ASSOCIATE), HTTP/1.1 CONNECT, Hysteria 2 and a bounded WireGuard client subset. sendThrough is rejected whenever present, including null. First outbound is the default. Tag graph validation is a later core compilation step."
+      "notes": "freedom (alias direct), blackhole (alias block), dns, VLESS, Trojan, Shadowsocks 2022 and AEAD, VMess AEAD, SOCKS5 (CONNECT and UDP ASSOCIATE), HTTP/1.1 CONNECT, Hysteria 2 and a bounded WireGuard client subset. sendThrough is rejected whenever present, including null. targetStrategy migrates to sockopt.domainStrategy on freedom; other outbounds accept only AsIs. First outbound is the default. Tag graph validation is a later core compilation step."
     },
     {
       "context": "$.policy",
@@ -1067,10 +1070,11 @@
       "context": "streamSettings.sockopt",
       "fields": [
         "happyEyeballs",
-        "dialerProxy"
+        "dialerProxy",
+        "domainStrategy"
       ],
       "id": "SOCKOPT",
-      "notes": "dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser."
+      "notes": "dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser. domainStrategy takes Xray-core's eleven names, ignoring case; only freedom reads it, and other outbounds accept only AsIs."
     },
     {
       "context": "$.inbounds[].settings.accounts[] (socks)",
