@@ -49,8 +49,30 @@ The old `quicParams.udpHop` spelling remains accepted with a migration warning;
 combining both spellings fails. Profile import emits the new mask form.
 
 Salamander passwords contain 4..4096 UTF-8 bytes and remain redacted/zeroized.
-`packetSize` must be absent, null or zero; Gecko is unsupported. One noise mask
-may accompany Salamander, after UDP-hop; unknown and duplicate masks fail.
+One noise mask may accompany Salamander, after UDP-hop; unknown and duplicate
+masks fail.
+
+A Salamander `packetSize` with a positive upper bound selects Gecko, as in
+Xray-core and Hysteria 2.9.2+. It is an Xray integer range: a number, or a
+string holding one number or a `from-to` range in either order. Gecko needs
+`1 <= from <= to <= 2048`; an upper bound of zero or less (absent, null, `0`,
+`""`, negative) keeps plain Salamander. Gecko sends each QUIC long-header
+(handshake) datagram as two to eight fragments, each its own Salamander
+datagram with a random salt. Padding brings each fragment to a random size in
+the range when its chunk leaves room; a larger chunk travels unpadded.
+Short-header datagrams, everything after the handshake, pass through as plain
+Salamander. Incoming fragments are reassembled per message: like Gecko, at most
+eight incomplete messages are held, each for eight seconds, and duplicates or
+chunks whose count disagrees are dropped. A reassembled message is capped at
+64 KiB.
+
+One difference from the references: padding stops at 1,452 bytes, the largest
+datagram the carrier otherwise sends. Xray and Hysteria pad up to 2,048 bytes.
+Xray's masked socket never gets the don't-fragment flag, so larger datagrams
+leave IP-fragmented. Hysteria sets the flag, as Quinn does here, so a fragment
+past the path MTU is lost and the handshake stalls. A range above 1,452 bytes
+therefore pads to at most 1,452 bytes. Gecko and plain Salamander cannot talk
+to each other, so the server must use the same mode; its sizes need not match.
 
 Each hop binds and protects a fresh socket while retaining the authenticated
 QUIC session and its TCP/UDP leases. Quinn retains at most one previous socket

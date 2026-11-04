@@ -678,7 +678,7 @@
         "packetSize"
       ],
       "id": "SALAMANDER",
-      "notes": "Password is 4..=4096 UTF-8 bytes. packetSize must be absent, null or zero; Gecko is unsupported."
+      "notes": "Password is 4..=4096 UTF-8 bytes. A packetSize range with a positive upper bound selects Gecko (1 <= from <= to <= 2048); padding stops at 1452 bytes."
     },
     {
       "context": "$.outbounds[].settings (freedom)",

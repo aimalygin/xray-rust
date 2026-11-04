@@ -1,5 +1,5 @@
 use super::*;
-use crate::{HysteriaOutboundSettings, HysteriaSettings};
+use crate::{FragmentRange, HysteriaOutboundSettings, HysteriaSettings};
 
 impl Parser<'_> {
     pub(super) fn parse_hysteria_settings(
@@ -71,9 +71,13 @@ impl Parser<'_> {
             );
             return None;
         }
+        let (salamander_password, gecko_packet_size) = self
+            .parse_hysteria_salamander(stream, index)
+            .map_or((None, None), |(password, gecko)| (Some(password), gecko));
         Some(HysteriaSettings {
             auth: zeroize::Zeroizing::new(auth.into()),
-            salamander_password: self.parse_hysteria_salamander(stream, index),
+            salamander_password,
+            gecko_packet_size,
         })
     }
 
@@ -81,7 +85,7 @@ impl Parser<'_> {
         &mut self,
         stream: Option<&Value>,
         index: usize,
-    ) -> Option<zeroize::Zeroizing<String>> {
+    ) -> Option<(zeroize::Zeroizing<String>, Option<FragmentRange>)> {
         let masks = stream?.get("finalmask")?.get("udp")?;
         if masks.is_null() {
             return None;
@@ -110,16 +114,10 @@ impl Parser<'_> {
             return None;
         };
         self.reject_unknown_fields(settings, &format!("{path}.settings"), &surface::SALAMANDER);
-        // A positive packetSize selects Gecko in Xray, not Salamander.
-        if settings
-            .get("packetSize")
-            .is_some_and(|v| !v.is_null() && v.as_i64() != Some(0) && v.as_str() != Some("0"))
-        {
-            self.error(
-                format!("{path}.settings.packetSize"),
-                "Gecko packetSize is unsupported",
-            );
-        }
+        let gecko = self.gecko_packet_size(
+            settings.get("packetSize"),
+            &format!("{path}.settings.packetSize"),
+        );
         let Some(password) = settings.get("password").and_then(Value::as_str) else {
             self.error(
                 format!("{path}.settings.password"),
@@ -134,7 +132,45 @@ impl Parser<'_> {
             );
             return None;
         }
-        Some(zeroize::Zeroizing::new(password.into()))
+        Some((zeroize::Zeroizing::new(password.into()), gecko?))
+    }
+
+    /// Salamander's `packetSize`, an Xray `Int32Range`: a number, or a
+    /// string holding one or a `from-to` range, in either order. A positive
+    /// upper bound selects Gecko and needs `1 <= from` and `to <= 2048`;
+    /// anything else keeps plain Salamander.
+    fn gecko_packet_size(
+        &mut self,
+        raw: Option<&Value>,
+        path: &str,
+    ) -> Option<Option<FragmentRange>> {
+        let pair = match raw {
+            None | Some(Value::Null) => Some((0, 0)),
+            Some(Value::String(s)) => parse_xhttp_range_string(s),
+            Some(v) => v
+                .as_i64()
+                .and_then(|n| i32::try_from(n).ok())
+                .map(|n| (n, n)),
+        };
+        let Some((a, b)) = pair else {
+            self.error(path, "packetSize must be an i32 or an i32 range string");
+            return None;
+        };
+        let (from, to) = (a.min(b), a.max(b));
+        if to <= 0 {
+            return Some(None);
+        }
+        if from <= 0 || to > 2048 {
+            self.error(
+                path,
+                "Gecko packetSize bounds must satisfy 1 <= from <= to <= 2048",
+            );
+            return None;
+        }
+        Some(Some(FragmentRange {
+            from: from as u32,
+            to: to as u32,
+        }))
     }
 
     pub(super) fn validate_hysteria_pair(

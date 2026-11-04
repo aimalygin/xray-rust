@@ -99,18 +99,26 @@ impl ReferenceServer {
     }
 
     pub async fn start_with_carrier(udp_enabled: bool, salamander: bool) -> Self {
-        Self::start_with_options(udp_enabled, salamander, None).await
+        Self::start_with_options(udp_enabled, salamander.then_some(None), None).await
+    }
+
+    /// A Salamander server with Gecko's fragment sizes: Xray's `packetSize`,
+    /// native Hysteria's `gecko` obfuscation.
+    pub async fn start_with_gecko(min: u16, max: u16) -> Self {
+        Self::start_with_options(true, Some(Some((min, max))), None).await
     }
 
     /// A server with its own Brutal rates, as `(send, receive)` bandwidth
     /// strings: Xray's `brutalUp`/`brutalDown`, native Hysteria's `bandwidth`.
     pub async fn start_with_bandwidth(send: &str, receive: &str) -> Self {
-        Self::start_with_options(true, false, Some((send, receive))).await
+        Self::start_with_options(true, None, Some((send, receive))).await
     }
 
+    /// `salamander` is `Some(gecko)` for an obfuscated server, with Gecko's
+    /// `(min, max)` packet sizes when set.
     async fn start_with_options(
         udp_enabled: bool,
-        salamander: bool,
+        salamander: Option<Option<(u16, u16)>>,
         bandwidth: Option<(&str, &str)>,
     ) -> Self {
         let (binary, native) = match (
@@ -159,11 +167,22 @@ impl ReferenceServer {
             // These synthetic echo fixtures explicitly permit loopback only.
             "outbounds":[{"protocol":"freedom","settings":{"finalRules":[{"action":"allow","ip":["127.0.0.0/8","::1/128"]}]}}]})
         };
-        if salamander {
-            if native {
+        match (salamander, native) {
+            (None, _) => {}
+            (Some(None), true) => {
                 config["obfs"] = serde_json::json!({"type":"salamander", "salamander":{"password":SALAMANDER_PASSWORD}});
-            } else {
-                config["inbounds"][0]["streamSettings"]["finalmask"] = serde_json::json!({"udp":[{"type":"salamander","settings":{"password":SALAMANDER_PASSWORD}}]});
+            }
+            (Some(Some((min, max))), true) => {
+                config["obfs"] = serde_json::json!({"type":"gecko", "gecko":{
+                    "password":SALAMANDER_PASSWORD, "minPacketSize":min, "maxPacketSize":max}});
+            }
+            (Some(gecko), false) => {
+                let mut settings = serde_json::json!({"password":SALAMANDER_PASSWORD});
+                if let Some((min, max)) = gecko {
+                    settings["packetSize"] = serde_json::json!(format!("{min}-{max}"));
+                }
+                config["inbounds"][0]["streamSettings"]["finalmask"] =
+                    serde_json::json!({"udp":[{"type":"salamander","settings":settings}]});
             }
         }
         if let Some((send, receive)) = bandwidth {

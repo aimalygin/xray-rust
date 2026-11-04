@@ -161,7 +161,7 @@ fn hysteria_salamander_hopping_and_fail_closed_masks() {
     );
     for mask in [
         json!([{"type":"salamander","settings":{"password":"abc"}}]),
-        json!([{"type":"salamander","settings":{"password":"synthetic-secret", "packetSize":512}}]),
+        json!([{"type":"salamander","settings":{"password":"synthetic-secret", "packetSize":"0-512"}}]),
         json!([{"type":"salamander","settings":{"password":"synthetic-secret", "unknown":true}}]),
         json!([{"type":"noise","settings":{"noise":[{"rand":4097}]}}]),
         json!([{"type":"salamander","settings":{"password":"synthetic-secret"}}, {"type":"salamander","settings":{"password":"synthetic-secret"}}]),
@@ -185,4 +185,60 @@ fn hysteria_salamander_hopping_and_fail_closed_masks() {
     config["outbounds"][0]["streamSettings"]["method"] = json!("HYSTERIA");
     config["outbounds"][0]["streamSettings"]["network"] = json!("raw");
     assert!(parse_xray_json(&config.to_string()).is_ok());
+}
+
+#[test]
+fn salamander_packet_size_selects_gecko_like_xray() {
+    let parse = |size: Value| {
+        let mut config = example();
+        config["outbounds"][0]["streamSettings"]["finalmask"] = json!({
+            "udp":[{"type":"salamander","settings":{"password":"synthetic-secret","packetSize":size}}]
+        });
+        parse_xray_json(&config.to_string()).map(|parsed| {
+            let StreamTransport::Hysteria(settings) = &parsed.config.outbounds[0].stream.transport
+            else {
+                panic!()
+            };
+            assert!(settings.salamander_password.is_some());
+            settings.gecko_packet_size.map(|r| (r.from, r.to))
+        })
+    };
+    // Xray's Int32Range: an upper bound of zero or less keeps Salamander.
+    for plain in [
+        Value::Null,
+        json!(0),
+        json!("0"),
+        json!(""),
+        json!(-5),
+        json!("-5"),
+        json!("-10--1"),
+    ] {
+        assert_eq!(parse(plain.clone()).unwrap(), None, "{plain}");
+    }
+    for (size, expected) in [
+        (json!(512), (512, 512)),
+        (json!("512"), (512, 512)),
+        (json!("200-400"), (200, 400)),
+        (json!("400-200"), (200, 400)),
+        (json!("1-2048"), (1, 2048)),
+    ] {
+        assert_eq!(parse(size.clone()).unwrap(), Some(expected), "{size}");
+    }
+    for invalid in [
+        json!("0-512"),
+        json!("-5-10"),
+        json!(2049),
+        json!("100-2049"),
+        json!(true),
+        json!(1.5),
+        json!("abc"),
+        json!("5-"),
+        json!({"from":1,"to":2}),
+        json!(4_294_967_296_i64),
+    ] {
+        let error = parse(invalid.clone()).unwrap_err();
+        let text = format!("{error:?}");
+        assert!(text.contains("packetSize"), "{invalid}: {text}");
+        assert!(!text.contains("synthetic-secret"));
+    }
 }

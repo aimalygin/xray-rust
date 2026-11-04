@@ -16,7 +16,10 @@ use tokio::{
     time::timeout,
 };
 use xray_routing::{Network, Target, TargetAddr};
-use xray_transport::{hysteria::HysteriaClient, SocketHandle, SocketProtector};
+use xray_transport::{
+    hysteria::{GeckoPacketSize, HysteriaClient},
+    SocketHandle, SocketProtector,
+};
 
 #[derive(Default)]
 struct Protector {
@@ -34,9 +37,19 @@ impl SocketProtector for Protector {
     }
 }
 
+/// Gecko's packet sizes in the native Hysteria reference's own tests.
+const GECKO: (u16, u16) = (100, 1200);
+
 async fn scenario(salamander: bool, hopping: bool) {
+    scenario_with(salamander, None, hopping).await;
+}
+
+async fn scenario_with(salamander: bool, gecko: Option<(u16, u16)>, hopping: bool) {
     timeout(Duration::from_secs(35), async {
-        let server = ReferenceServer::start_with_carrier(true, salamander).await;
+        let server = match gecko {
+            Some((min, max)) => ReferenceServer::start_with_gecko(min, max).await,
+            None => ReferenceServer::start_with_carrier(true, salamander).await,
+        };
         // Each visible hop port forwards to the same server, as a server-side
         // UDP port redirect does. Every source gets a distinct upstream socket:
         // the real reference must handle QUIC path migration itself.
@@ -53,6 +66,7 @@ async fn scenario(salamander: bool, hopping: bool) {
                 SALAMANDER_PASSWORD.into(),
             )));
         }
+        config.carrier.gecko = gecko.map(|(min, max)| GeckoPacketSize::new(min, max).unwrap());
         if hopping {
             // The nominal destination port is deliberately unused. Even the
             // first QUIC Initial must use one of the configured hop ports.
@@ -193,6 +207,71 @@ async fn hopping_tcp_inner_tls_udp_and_rebind() {
 #[ignore = "requires pinned Xray/native Hysteria; use the interop scripts"]
 async fn salamander_and_hopping_tcp_inner_tls_udp_and_rebind() {
     scenario(true, true).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray/native Hysteria; use the interop scripts"]
+async fn gecko_and_hopping_tcp_inner_tls_udp_and_rebind() {
+    scenario_with(true, Some(GECKO), true).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray/native Hysteria; use the interop scripts"]
+async fn gecko_and_plain_salamander_cannot_complete_a_handshake() {
+    // Gecko frames are not QUIC packets, and Gecko drops unframed long
+    // headers, so a handshake succeeds only when both sides use Gecko.
+    for (server_gecko, client_gecko) in [(true, false), (false, true)] {
+        let server = if server_gecko {
+            ReferenceServer::start_with_gecko(GECKO.0, GECKO.1).await
+        } else {
+            ReferenceServer::start_with_carrier(true, true).await
+        };
+        let mut config = server.config();
+        config.limits.operation_timeout = Duration::from_millis(500);
+        config.carrier.salamander_password = Some(Arc::new(zeroize::Zeroizing::new(
+            SALAMANDER_PASSWORD.into(),
+        )));
+        config.carrier.gecko =
+            client_gecko.then(|| GeckoPacketSize::new(GECKO.0, GECKO.1).unwrap());
+        assert!(
+            HysteriaClient::connect(config, &server.connector)
+                .await
+                .is_err(),
+            "server Gecko {server_gecko}, client Gecko {client_gecko}"
+        );
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray/native Hysteria; use the interop scripts"]
+async fn gecko_padding_past_the_carrier_budget_still_connects() {
+    // The reference pads its fragments up to 2,048 bytes; ours stop at 1,452.
+    let server = ReferenceServer::start_with_gecko(1500, 2048).await;
+    let mut config = server.config();
+    config.carrier.salamander_password = Some(Arc::new(zeroize::Zeroizing::new(
+        SALAMANDER_PASSWORD.into(),
+    )));
+    config.carrier.gecko = GeckoPacketSize::new(1500, 2048);
+    let client = HysteriaClient::connect(config, &server.connector)
+        .await
+        .unwrap();
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let _echo = Task(tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let (mut r, mut w) = stream.into_split();
+        let _ = tokio::io::copy(&mut r, &mut w).await;
+    }));
+    let target = Target::new(TargetAddr::Ip(address.ip()), address.port(), Network::Tcp);
+    let mut tcp = client.open_tcp(&target).await.unwrap();
+    tcp.write_all(b"gecko").await.unwrap();
+    let mut reply = [0; 5];
+    timeout(DEADLINE, tcp.read_exact(&mut reply))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(&reply, b"gecko");
+    client.close();
 }
 
 #[tokio::test]

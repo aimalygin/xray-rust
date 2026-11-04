@@ -94,7 +94,10 @@ within the implemented runtime subset:
 - `sni` and `insecure=0`. TLS certificate verification and ALPN `h3` are retained.
   Missing SNI uses the endpoint host. Duplicate decoded keys are errors.
 - The v0.8 development branch additionally accepts `obfs=salamander` with
-  `obfs-password` (4..4096 UTF-8 bytes), plus comma-separated/range ports in the
+  `obfs-password` (4..4096 UTF-8 bytes); 0.10.0 also accepts `obfs=gecko` with
+  the same password rules, mapped to a Salamander mask with `packetSize`
+  `512-1200`, the sizes Hysteria's client uses for Gecko links. It accepts
+  comma-separated/range ports in the
   authority or the `mport` query extension. An authority range and `mport`
   cannot both be supplied. At most 65535 expanded ports are retained, including
   duplicate weights. The default hop interval is 30 seconds. These options map

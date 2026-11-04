@@ -2,7 +2,9 @@
 use super::*;
 use std::sync::atomic::AtomicBool;
 use tokio::sync::Mutex as AsyncMutex;
-use xray_transport::hysteria::{HysteriaClient, HysteriaConfig, HysteriaError, HysteriaUdpSession};
+use xray_transport::hysteria::{
+    GeckoPacketSize, HysteriaClient, HysteriaConfig, HysteriaError, HysteriaUdpSession,
+};
 
 #[derive(Clone, Debug)]
 pub struct HysteriaOutbound {
@@ -73,8 +75,20 @@ impl HysteriaOutbound {
         {
             return Err(CoreError::UnsupportedOutboundNetwork);
         }
+        let gecko = auth
+            .gecko_packet_size
+            .map(|size| {
+                let bound = |value: u32| u16::try_from(value).ok();
+                bound(size.from)
+                    .zip(bound(size.to))
+                    .and_then(|(min, max)| GeckoPacketSize::new(min, max))
+                    .filter(|_| auth.salamander_password.is_some())
+                    .ok_or(CoreError::UnsupportedOutboundNetwork)
+            })
+            .transpose()?;
         let mut carrier = xray_transport::hysteria::HysteriaCarrierConfig {
             salamander_password: auth.salamander_password.clone().map(Arc::new),
+            gecko,
             noise: config
                 .stream
                 .udp_noise

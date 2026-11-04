@@ -85,6 +85,41 @@ fn typed_hysteria_contract_is_checked_before_runtime_start() {
 }
 
 #[test]
+fn salamander_packet_size_reaches_the_carrier_as_gecko() {
+    let mut value: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tests/fixtures/configs/hysteria2.json"
+    ))
+    .unwrap();
+    value["outbounds"][0]["streamSettings"]["finalmask"] = serde_json::json!({"udp":[
+        {"type":"salamander","settings":{"password":"synthetic-secret","packetSize":"400-200"}}
+    ]});
+    let config = xray_config::parse_xray_json(&value.to_string())
+        .unwrap()
+        .config
+        .outbounds
+        .remove(0);
+    let outbound = HysteriaOutbound::new(&config).unwrap();
+    assert_eq!(outbound.inner.carrier.gecko, GeckoPacketSize::new(200, 400));
+    // Typed configs outside Gecko's bounds, or without Salamander, fail.
+    for (from, to, password) in [
+        (0, 10, true),
+        (1, 2049, true),
+        (1, 70_000, true),
+        (1, 10, false),
+    ] {
+        let mut invalid = config.clone();
+        let StreamTransport::Hysteria(settings) = &mut invalid.stream.transport else {
+            panic!()
+        };
+        settings.gecko_packet_size = Some(xray_config::FragmentRange { from, to });
+        if !password {
+            settings.salamander_password = None;
+        }
+        assert!(HysteriaOutbound::new(&invalid).is_err(), "{from}-{to}");
+    }
+}
+
+#[test]
 fn hysteria_quic_params_follow_xrays_hysteria_dialer() {
     let (quic, receive) = hysteria_quic_config(None).unwrap();
     assert_eq!(quic.max_idle_timeout, Duration::from_secs(30));
