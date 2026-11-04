@@ -50,7 +50,7 @@ pub use dns::{
     DnsQueryTransport, DnsQueryTransportKind, DnsResolver, NameServer, NameServerPolicy,
     NameServerTransport, SystemDnsResolver,
 };
-pub use happy_eyeballs::{connect_tcp_happy_eyeballs, HappyEyeballsConfig};
+pub use happy_eyeballs::{connect_tcp_dual_stack, connect_tcp_happy_eyeballs, HappyEyeballsConfig};
 pub use memory_class::{memory_class, set_memory_class, MemoryClass};
 pub(crate) use penetrating_tls::{CapturedStream, PenetratingTlsStream, ServerReadLog};
 pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};

@@ -10,6 +10,13 @@ long-term supported release series.
 
 ## Unreleased
 
+- Freedom and proxy carriers no longer dial only the first resolved address
+  when `sockopt.happyEyeballs` is off. As with Go's `net.Dialer`, which
+  Xray-core uses, the first address family is tried address by address
+  within a 16-second budget, and the other family joins after 300 ms or as
+  soon as the first fails. A host whose first address is unreachable, such as
+  `localhost` served only on IPv4 or a server behind broken IPv6, now
+  connects through the next one, as it does with Xray-core.
 - SOCKS inbound: like Xray-core's, it now also serves SOCKS 4/4a `CONNECT`
   and HTTP `CONNECT` on the same port, choosing by the first byte, and
   `mixed` is accepted as its alias. Under `password`, SOCKS 4 is refused as

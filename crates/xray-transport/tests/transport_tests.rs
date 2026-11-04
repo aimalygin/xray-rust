@@ -714,12 +714,14 @@ mod transport_tests {
     }
 
     #[tokio::test]
-    async fn transport_dialer_zero_delay_preserves_first_candidate_behavior() {
+    async fn transport_dialer_without_a_race_tries_later_candidates_like_go() {
+        // A zero delay disables Happy Eyeballs. Xray-core then leaves dialing
+        // to Go's net.Dialer, which moves on from a refused address.
         let (client_config, _) = tls_test_configs();
         let refused = refused_loopback_addr().await;
         let success_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .await
-            .expect("bind unused fallback candidate");
+            .expect("bind fallback candidate");
         let success = success_listener
             .local_addr()
             .expect("read fallback candidate");
@@ -733,16 +735,20 @@ mod transport_tests {
         );
         let race_config = happy_eyeballs_config(Duration::ZERO);
 
-        let result = dialer
-            .connect_resolved(
+        let candidates = [refused, success];
+        let (result, accepted) = tokio::join!(
+            dialer.connect_resolved(
                 &ConnectorConfig::Tcp,
                 &target,
-                &[refused, success],
+                &candidates,
                 Some(&race_config),
-            )
-            .await;
+            ),
+            // A regression must fail, not wait forever for a connection.
+            tokio::time::timeout(Duration::from_secs(5), success_listener.accept()),
+        );
 
-        assert!(matches!(result, Err(TransportError::Tcp(_))));
+        assert!(result.is_ok());
+        assert!(matches!(accepted, Ok(Ok(_))));
     }
 
     #[tokio::test]
