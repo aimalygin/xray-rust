@@ -348,6 +348,34 @@ cases against sing-box, but that run is not yet recorded; no physical-device
 run yet; the legacy fully-base64 `ss://` form and SIP003 plugins are not
 imported.
 
+## Panel subscription fields Xray-core does not read
+
+Remnawave's XRAY_JSON subscriptions (`xray-json.generator.service.ts`) put a
+root `remarks` label on every profile, and a `meta` object for some clients.
+They write `tlsSettings.enableSessionResumption` into every TLS host, and
+sing-box `uot`/`UoTVersion` into every Shadowsocks server. 3x-ui offers the
+same Shadowsocks pair. These fields used to fail parsing. Source-derived from
+v26.10.31:
+
+- `remarks` and `meta` are absent from Xray-core's root `Config`
+  (`infra/conf/xray.go`), which is decoded without `DisallowUnknownFields`
+  (`infra/conf/serial/loader.go`). They are now type-checked and ignored.
+- `uot` and `UoTVersion` are absent from `ShadowsocksServerTarget` and
+  `ShadowsocksClientConfig` (`infra/conf/shadowsocks.go`); Xray-core sends UDP
+  as native Shadowsocks datagrams, as this client does. They are ignored, and
+  `uot: true` raises a warning. This client is stricter on types:
+  `uot` must be a boolean and `UoTVersion` a nonnegative integer.
+- `enableSessionResumption` sets `SessionTicketsDisabled` on Go's TLS config
+  (`transport/internet/tls/config.go`), but `copyConfig` does not pass the
+  session cache to uTLS (`transport/internet/tls/tls.go`), so shaped
+  handshakes never resume there. They never resume here either. The known
+  difference: with `fingerprint: "unsafe"`, and on XHTTP HTTP/3 and Hysteria,
+  rustls keeps its session cache whatever the value, while Xray-core resumes
+  only when the value is `true`.
+
+Other panel TLS fields, such as `cipherSuites` and `echConfigList`, are still
+rejected.
+
 ## Follow-up checks
 
 - [x] Integrate the #87 review follow-up, including both relay-address fixes,

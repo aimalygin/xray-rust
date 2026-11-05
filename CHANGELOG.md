@@ -10,6 +10,13 @@ long-term supported release series.
 
 ## Unreleased
 
+- Remnawave XRAY_JSON profiles no longer fail on the fields the panel adds to
+  them. Every profile in such a subscription used to fail to parse.
+  - The root `remarks` label and `meta` object are type-checked and ignored.
+  - `tlsSettings.enableSessionResumption` takes a boolean. As in Xray-core, a
+    uTLS-shaped handshake never resumes, whatever its value.
+  - Shadowsocks `uot` and `UoTVersion`, which 3x-ui also writes, are ignored
+    as in Xray-core. UDP stays native, and `uot: true` raises a warning.
 - Routing rules can check where a connection comes from, with Xray-core's
   `sourceIP` (or `source`), `sourcePort`, `localIP`, `localPort` and `user`.
   Profiles with them used to fail to parse.
