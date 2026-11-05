@@ -932,6 +932,38 @@ pub struct FreedomOutboundSettings {
     /// or sends to. Empty when freedom itself dials through `dialerProxy`,
     /// where Xray-core ignores them.
     pub final_rules: Vec<FreedomFinalRule>,
+    /// `noises`: datagrams sent before the first of each UDP flow.
+    pub noises: Vec<FreedomNoise>,
+}
+
+/// One of freedom's `noises`, which Xray-core sends, in order, before the
+/// first datagram of a UDP flow, to the address the flow goes to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FreedomNoise {
+    pub packet: FreedomNoisePacket,
+    /// Milliseconds to wait after the datagram, drawn as Xray-core's
+    /// `RandBetween` draws: from the lower bound up to, but not including,
+    /// the upper, or the lower when they are at most one apart. `(0, 0)`
+    /// waits not at all.
+    pub delay_ms: (u32, u32),
+    pub apply_to: FreedomNoiseFamily,
+}
+
+/// What a noise datagram holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FreedomNoisePacket {
+    Bytes(Vec<u8>),
+    /// Random bytes, their count drawn between the two bounds as the delay
+    /// is.
+    Random(u32, u32),
+}
+
+/// The destinations a noise datagram goes to, by address family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FreedomNoiseFamily {
+    Ip,
+    Ipv4,
+    Ipv6,
 }
 
 /// The PROXY protocol version of freedom's `proxyProtocol`.

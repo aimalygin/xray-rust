@@ -3176,6 +3176,68 @@
       "warningPath": "$.outbounds[0].settings.ipsBlocked"
     },
     {
+      "name": "freedom-noises",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/settings": {
+          "noises": [
+            {
+              "type": "rand",
+              "packet": "16-32",
+              "delay": "10-20",
+              "applyTo": "ipv4"
+            },
+            {
+              "type": "str",
+              "packet": "synthetic-noise"
+            },
+            {
+              "type": "hex",
+              "packet": "00ff"
+            },
+            {
+              "type": "base64",
+              "packet": "AAEC"
+            }
+          ]
+        }
+      },
+      "accepted": true,
+      "warningPath": "$.outbounds[0].settings.noises",
+      "objects": {
+        "FREEDOM_NOISE": "/outbounds/0/settings/noises/0"
+      }
+    },
+    {
+      "name": "freedom-noise-removed",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/settings": {
+          "noise": {
+            "packet": "synthetic-noise"
+          }
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.noise"
+    },
+    {
+      "name": "freedom-noises-rand-from-zero",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/settings": {
+          "noises": [
+            {
+              "type": "rand",
+              "packet": "0-16"
+            }
+          ]
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.noises[0].packet"
+    },
+    {
       "name": "routing-xray-string-lists",
       "config": {
         "inbounds": [

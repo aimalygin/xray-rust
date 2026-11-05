@@ -78,6 +78,8 @@ mod tun_admission;
 mod blackhole;
 #[path = "runtime_data_path_tests/freedom_domain_strategy.rs"]
 mod freedom_domain_strategy;
+#[path = "runtime_data_path_tests/freedom_noises.rs"]
+mod freedom_noises;
 #[path = "runtime_data_path_tests/freedom_settings.rs"]
 mod freedom_settings;
 #[path = "runtime_data_path_tests/http_inbound.rs"]
