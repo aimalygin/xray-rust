@@ -38,6 +38,10 @@ pub enum ImportError {
     Syntax,
     #[error("profile contains an unsupported setting")]
     Unsupported,
+    /// A known link parameter whose value asks for behaviour the core does
+    /// not implement. Carries the parameter name, never its value.
+    #[error("profile contains an unsupported value for `{0}`")]
+    UnsupportedParameter(&'static str),
     #[error("profile contains a duplicate setting")]
     Duplicate,
     #[error("invalid profile name (1..128 UTF-8 bytes, no control characters)")]

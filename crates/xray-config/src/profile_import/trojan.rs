@@ -108,6 +108,19 @@ pub(super) fn stream_settings(
                 }
                 stream.0["tlsSettings"]["alpn"] = json!(alpn.split(',').collect::<Vec<_>>());
             }
+            // Xray-core reads both as comma-separated strings; the parser
+            // validates them as it validates canonical JSON.
+            for (uri, field) in [
+                ("pcs", "pinnedPeerCertSha256"),
+                ("vcn", "verifyPeerCertByName"),
+            ] {
+                if let Some(value) = params.remove(uri) {
+                    stream.0["tlsSettings"][field] = json!(value.as_str());
+                }
+            }
+            if params.contains_key("cs") {
+                return Err(ImportError::UnsupportedParameter("cs"));
+            }
         }
         "reality" => {
             let sni = params.remove("sni").ok_or(ImportError::Configuration)?;
@@ -152,6 +165,41 @@ pub(super) fn stream_settings(
                 stream.0[block][*field] = json!(value.as_str());
             }
         }
+    }
+    match network.as_str() {
+        // The core sends no RAW header obfuscation, so only its absence imports.
+        "raw" | "tcp" => {
+            if params
+                .remove("headerType")
+                .is_some_and(|v| !matches!(v.as_str(), "" | "none"))
+            {
+                return Err(ImportError::UnsupportedParameter("headerType"));
+            }
+        }
+        "ws" | "websocket" => {
+            if let Some(period) = params.remove("heartbeatPeriod") {
+                if period.is_empty() || !period.bytes().all(|b| b.is_ascii_digit()) {
+                    return Err(ImportError::Syntax);
+                }
+                let period: u32 = period.parse().map_err(|_| ImportError::Syntax)?;
+                stream.0[block]["heartbeatPeriod"] = json!(period);
+            }
+        }
+        "grpc" => match params.remove("mode").as_deref().map(String::as_str) {
+            None | Some("gun") => {}
+            Some("multi") => stream.0[block]["multiMode"] = json!(true),
+            Some(_) => return Err(ImportError::UnsupportedParameter("mode")),
+        },
+        "xhttp" | "splithttp" => {
+            if let Some(extra) = params.remove("extra") {
+                let extra: Value = serde_json::from_str(&extra).map_err(|_| ImportError::Syntax)?;
+                if !extra.is_object() {
+                    return Err(ImportError::Syntax);
+                }
+                stream.0[block]["extra"] = extra;
+            }
+        }
+        _ => {}
     }
     Ok(stream)
 }

@@ -17,6 +17,15 @@ long-term supported release series.
     uTLS-shaped handshake never resumes, whatever its value.
   - Shadowsocks `uot` and `UoTVersion`, which 3x-ui also writes, are ignored
     as in Xray-core. UDP stays native, and `uot: true` raises a warning.
+- `trojan://` and `vmess://` links from Remnawave and similar panels import.
+  Every Remnawave Trojan gRPC link used to fail, because it always carries
+  `mode=gun`.
+  - gRPC `mode=multi` turns on `multiMode`; WebSocket `heartbeatPeriod`, XHTTP
+    `extra` and the TLS certificate checks `pcs` (`pinnedPeerCertSha256`) and
+    `vcn` (`verifyPeerCertByName`) are carried into the profile.
+  - `headerType=none` imports. `headerType=http`, other gRPC modes and TLS
+    `cs` (cipher suites) are still refused, and the error now names the
+    parameter.
 - Routing rules can check where a connection comes from, with Xray-core's
   `sourceIP` (or `source`), `sourcePort`, `localIP`, `localPort` and `user`.
   Profiles with them used to fail to parse.

@@ -129,13 +129,14 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
         let id = take(&mut fields, "id", "");
         let name = take(&mut fields, "ps", "VMess").to_string();
         let network = take(&mut fields, "net", "tcp");
+        // v2rayN keeps the gRPC mode in `type`, the header type of other carriers.
         let header_type = take(&mut fields, "type", "none");
-        if !(matches!(header_type.as_str(), "" | "none")
-            || network.as_str() == "grpc" && header_type.as_str() == "gun")
-        {
-            return Err(ImportError::Unsupported);
-        }
         let mut params = Fields::new();
+        match (network.as_str(), header_type.as_str()) {
+            (_, "" | "none") => {}
+            ("grpc", _) => insert(&mut params, "mode", header_type)?,
+            _ => return Err(ImportError::UnsupportedParameter("type")),
+        }
         insert(&mut params, "type", network.clone())?;
         let security = take(&mut fields, "tls", "none");
         insert(
