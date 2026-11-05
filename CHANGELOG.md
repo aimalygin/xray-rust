@@ -10,6 +10,14 @@ long-term supported release series.
 
 ## Unreleased
 
+- Routing rules can match an HTTP request's attributes with Xray-core's
+  `attrs`, such as `{"attrs": {":method": "GET", "user-agent": "^curl/"}}`.
+  Profiles with it used to fail to parse.
+  - As in Xray-core, sniffing records the request line's `:method` and
+    `:path` and each header under its lowercased name. Each pattern must
+    match its attribute's value anywhere, case-sensitively.
+  - With an `attrs` rule, TCP flows are sniffed for their attributes even
+    where `destOverride` would not read them, as for `protocol`.
 - Routing rules can match the sniffed protocol with Xray-core's `protocol`,
   such as the common `{"protocol": ["bittorrent"], "outboundTag": "block"}`.
   Profiles with it used to fail to parse.

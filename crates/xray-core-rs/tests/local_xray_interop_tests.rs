@@ -277,6 +277,7 @@ async fn run_local_xray_round_robin_balancer_interop() {
     config.default_outbound_tag = Some("proxy-a".to_owned());
     config.routing = RoutingConfig {
         rules: vec![RoutingRule {
+            attributes: None,
             protocols: None,
             origin: Default::default(),
             inbound_tags: vec!["socks-in".to_owned()],

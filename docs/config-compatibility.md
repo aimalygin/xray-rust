@@ -1953,6 +1953,30 @@ before routing it, as for an unmapped fake IP. A flow is read only until every
 sniffer has ruled it out, as in Xray-core, so a protocol no sniffer knows is
 routed as soon as its first bytes arrive.
 
+`attrs` maps attribute names to regular expressions, and a rule applies when
+every named attribute is there and its value matches anywhere in it,
+case-sensitively. As in Xray-core, the attributes come from sniffing an HTTP
+request, so the inbound needs sniffing enabled, and `metadataOnly` records
+none:
+
+- `:method` and `:path` are the request line's method and target as
+  written, query included, when the line has exactly three parts split at
+  spaces.
+- Every other line with a colon is a header, under its lowercased but
+  untrimmed name, with a trimmed value. A later header replaces an earlier
+  one. Lines past the headers count too, as Xray-core reads every line up
+  to an empty one.
+- A `Host` header that does not parse ends the reading, and then no
+  `:method` or `:path` is recorded. A request with no host is not named
+  `http1`, but its attributes still count.
+
+Names in `attrs` are lowercased, so names that differ only in case keep one
+pattern. `null` or `{}` sets no condition, a `null` pattern needs only the
+attribute to be there, and a pattern that does not compile refuses the
+config, where Xray-core panics. UDP flows and flows sniffing does not read as
+HTTP have no attributes and match no `attrs`. When a rule has `attrs`, TCP
+flows are sniffed for it as for `protocol`.
+
 `localOS` limits a rule to operating systems named as Go's `runtime.GOOS`,
 compared case-insensitively: `darwin` on macOS, `ios` on iOS, its simulators
 and Mac Catalyst, `android`, `linux`, `windows`. Go has no tvOS, watchOS or
@@ -1966,6 +1990,16 @@ Differences from Xray-core:
 
 - A numeric `port` above 65535 is rejected. Xray-core keeps it and truncates
   it to 16 bits when matching, so `65617` would match port 81.
+- Regular expressions in `regexp:` domains, `user` and `attrs` are compiled
+  by Rust's `regex` crate, not Go's RE2. The two read a few constructs
+  differently. `\Q…\E` and octal escapes such as `\0` are refused here,
+  while `(?x)`, `(?u)`, `\u0041`, `a++` and repeat counts above 1000 are
+  accepted here, where Xray-core refuses them. `\d`, `\w`, `\s` and `\b` match
+  Unicode here and ASCII in Go. `\<`, `\b{start}` and `&&` in a class are
+  assertions or set operations here and literals in Go.
+- Where Xray-core's HTTP sniffer waits for more bytes, as for a request
+  without a `Host`, it routes after about 200 ms; here the request is routed
+  once its headers end.
 
 `IPOnDemand` resolves a domain when evaluation reaches an IP condition, after
 the rule's inbound, network, protocol, port and user predicates and before its

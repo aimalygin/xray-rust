@@ -3455,6 +3455,50 @@
       },
       "accepted": false,
       "errorPath": "$.routing.rules[0].protocol"
+    },
+    {
+      "name": "routing-attrs",
+      "base": "routing-xray-string-lists",
+      "set": {
+        "/routing/rules/0": {
+          "attrs": {
+            ":method": "GET",
+            "User-Agent": "^curl/"
+          },
+          "outboundTag": "block"
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "routing-attrs-pattern-not-a-string",
+      "base": "routing-xray-string-lists",
+      "set": {
+        "/routing/rules/0": {
+          "attrs": {
+            ":path": [
+              "/admin"
+            ]
+          },
+          "outboundTag": "block"
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.routing.rules[0].attrs.:path"
+    },
+    {
+      "name": "routing-attrs-pattern-does-not-compile",
+      "base": "routing-xray-string-lists",
+      "set": {
+        "/routing/rules/0": {
+          "attrs": {
+            "user-agent": "("
+          },
+          "outboundTag": "block"
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.routing.rules[0].attrs.user-agent"
     }
   ]
 }

@@ -418,6 +418,7 @@ async fn ip_on_demand_checks_origin_conditions_in_xray_core_order() {
     };
     let elsewhere = Some("192.0.2.1:5000".parse().unwrap());
     let route = |source, user| xray_config::RouteContext {
+        attributes: None,
         protocol: None,
         inbound_tag: Some("socks-in"),
         source,
@@ -471,4 +472,48 @@ async fn ip_on_demand_checks_the_sniffed_protocol() {
     assert_eq!(selected(None).await, ("domain".to_owned(), 0));
     assert_eq!(selected(Some("bittorrent")).await, ("second".to_owned(), 0));
     assert_eq!(selected(Some("tls")).await, ("ip".to_owned(), 1));
+}
+
+/// Under `IPOnDemand`, `attrs` is checked before the destination IP too.
+#[tokio::test]
+async fn ip_on_demand_checks_attributes_before_the_lookup() {
+    let config = config(json!({"domainStrategy": "IPOnDemand", "rules": [
+        {"attrs": {"user-agent": "^curl/"}, "ip": ["203.0.113.7/32"], "outboundTag": "ip"},
+        {"attrs": {":method": "POST"}, "outboundTag": "second"},
+        {"domain": ["full:example.test"], "outboundTag": "domain"}
+    ]}));
+    let router = OutboundRouter::new(Arc::new(config));
+    let selected = |attributes: Option<xray_config::ContentAttributes>| {
+        let router = &router;
+        async move {
+            let resolver = Resolver::new(vec!["203.0.113.7".parse().unwrap()]);
+            let route = xray_config::RouteContext {
+                attributes: attributes.as_ref(),
+                ..xray_config::RouteContext::inbound(Some("socks-in"))
+            };
+            let node = router
+                .select_configured_node_with_resolver(&route, &target(), &resolver)
+                .await
+                .unwrap();
+            (
+                router.graph().node(node).unwrap().tag().unwrap().to_owned(),
+                resolver.calls.load(Ordering::SeqCst),
+            )
+        }
+    };
+    let request = |method: &str, agent: &str| {
+        let mut attributes = xray_config::ContentAttributes::default();
+        attributes.set(":method", method.to_owned());
+        attributes.set("user-agent", agent.to_owned());
+        Some(attributes)
+    };
+    assert_eq!(selected(None).await, ("domain".to_owned(), 0));
+    assert_eq!(
+        selected(request("POST", "wget/1.21")).await,
+        ("second".to_owned(), 0)
+    );
+    assert_eq!(
+        selected(request("GET", "curl/8.7")).await,
+        ("ip".to_owned(), 1)
+    );
 }

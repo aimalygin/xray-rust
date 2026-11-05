@@ -2996,13 +2996,14 @@ async fn bridge_tcp_flow(
     let mut client_already_opened = false;
     let mut initial_upload = VecDeque::new();
     let mut protocol = None;
+    let mut attributes = None;
     if let TcpBridgeDestination::Standard(restored) = &destination {
         let provenance = restored.provenance;
-        let routes_by_protocol = context.outbound_router.routes_by_protocol();
+        let sniffed_routing = context.outbound_router.sniffed_routing();
         let sniffing_config = context
             .sniffing
             .as_ref()
-            .filter(|config| should_sniff_tun_tcp(Some(config), provenance, routes_by_protocol));
+            .filter(|config| should_sniff_tun_tcp(Some(config), provenance, sniffed_routing.tcp()));
         if let Some(sniffing_config) = sniffing_config {
             let opened = tokio::select! {
                 biased;
@@ -3021,6 +3022,7 @@ async fn bridge_tcp_flow(
                 &mut shutdown,
                 sniffing_config,
                 &restored.target,
+                sniffed_routing.attributes,
             )
             .await
             else {
@@ -3030,7 +3032,8 @@ async fn bridge_tcp_flow(
                 return;
             };
             initial_upload = upload;
-            if let Some(sniffed) = sniffed {
+            attributes = sniffed.attributes;
+            if let Some(sniffed) = sniffed.sniffed {
                 protocol = Some(sniffed.protocol);
                 // Only an unmapped fake IP takes its sniffed domain; other
                 // flows are sniffed for their protocol alone.
@@ -3056,6 +3059,7 @@ async fn bridge_tcp_flow(
         let client_target = &restored.target;
         let route = xray_config::RouteContext {
             protocol: protocol.map(crate::sniffing::SniffedProtocol::name),
+            attributes: attributes.as_ref(),
             ..context.app_route(client)
         };
         let selected_dns_outbound = tokio::select! {
@@ -3142,19 +3146,20 @@ async fn bridge_tcp_flow(
         initial_upload,
         client.map(InboundSource::tcp),
         protocol,
+        attributes,
     )
     .await;
 }
 
 /// TUN opens a TCP flow before routing only to sniff an unmapped fake IP's
-/// domain, or any flow's protocol when routing asks for it.
+/// domain, or any flow's protocol and attributes when routing asks for them.
 fn should_sniff_tun_tcp(
     config: Option<&InboundSniffingConfig>,
     provenance: FakeIpTargetProvenance,
-    routes_by_protocol: bool,
+    routes_by_sniffing: bool,
 ) -> bool {
-    (provenance == FakeIpTargetProvenance::InPoolUnmapped || routes_by_protocol)
-        && crate::sniffing::should_sniff_tcp(config, routes_by_protocol)
+    (provenance == FakeIpTargetProvenance::InPoolUnmapped || routes_by_sniffing)
+        && crate::sniffing::should_sniff_tcp(config, routes_by_sniffing)
 }
 
 async fn read_tun_tcp_sniff_payload(
@@ -3162,10 +3167,8 @@ async fn read_tun_tcp_sniff_payload(
     shutdown: &mut watch::Receiver<bool>,
     config: &InboundSniffingConfig,
     target: &Target,
-) -> Option<(
-    VecDeque<StackToRemoteData>,
-    Option<crate::sniffing::Sniffed>,
-)> {
+    record_attributes: bool,
+) -> Option<(VecDeque<StackToRemoteData>, crate::sniffing::TcpSniffed)> {
     let mut initial_upload = VecDeque::new();
     let mut sniff_buffer = BytesMut::with_capacity(TUN_TCP_SNIFF_BUFFER_SIZE);
     let timeout = sleep(TUN_TCP_SNIFF_TIMEOUT);
@@ -3180,9 +3183,14 @@ async fn read_tun_tcp_sniff_payload(
                         continue;
                     }
         () = &mut timeout => {
-                        let sniffed =
-                            crate::sniffing::sniff_tcp_initial_payload(config, target, &sniff_buffer, true)
-                                .found();
+                        let sniffed = crate::sniffing::sniff_tcp_initial_payload(
+                            config,
+                            target,
+                            &sniff_buffer,
+                            true,
+                            record_attributes,
+                        )
+                        .done();
                         return Some((initial_upload, sniffed));
                     }
                     data = from_stack.recv() => data?,
@@ -3193,12 +3201,14 @@ async fn read_tun_tcp_sniff_payload(
         initial_upload.push_back(data);
 
         let full = sniff_buffer.len() >= TUN_TCP_SNIFF_BUFFER_SIZE;
-        match crate::sniffing::sniff_tcp_initial_payload(config, target, &sniff_buffer, full) {
-            crate::sniffing::TcpSniff::Found(sniffed) => {
-                return Some((initial_upload, Some(sniffed)));
-            }
-            crate::sniffing::TcpSniff::Unknown => return Some((initial_upload, None)),
-            crate::sniffing::TcpSniff::NeedMore => {}
+        if let crate::sniffing::TcpSniff::Done(sniffed) = crate::sniffing::sniff_tcp_initial_payload(
+            config,
+            target,
+            &sniff_buffer,
+            full,
+            record_attributes,
+        ) {
+            return Some((initial_upload, sniffed));
         }
     }
 }
@@ -3242,6 +3252,7 @@ async fn bridge_preopened_dns_tcp_flow(
         initial_upload,
         None,
         None,
+        None,
     )
     .await;
 }
@@ -3267,6 +3278,7 @@ async fn bridge_tcp_flow_inner(
     mut initial_upload: VecDeque<StackToRemoteData>,
     source: Option<InboundSource>,
     protocol: Option<crate::sniffing::SniffedProtocol>,
+    attributes: Option<xray_config::ContentAttributes>,
 ) {
     let collect_tcp_timings = context.tun_runtime_options.collect_tcp_timings;
     let tcp_timing_start = collect_tcp_timings.then(StdInstant::now);
@@ -3297,6 +3309,7 @@ async fn bridge_tcp_flow_inner(
             protocol: protocol
                 .filter(|_| dns_upstream.is_none())
                 .map(crate::sniffing::SniffedProtocol::name),
+            attributes: attributes.as_ref().filter(|_| dns_upstream.is_none()),
             ..xray_config::RouteContext::inbound(routing_inbound_tag)
         };
         let candidate_deadline = dns_deadline.map(|total_deadline| {
@@ -4890,7 +4903,7 @@ async fn sniff_tun_udp_target(
     from_stack: mpsc::Receiver<Bytes>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> (TunUdpSniffedTarget, UdpIngress) {
-    let routes_by_protocol = context.outbound_router.routes_by_protocol();
+    let routes_by_protocol = context.outbound_router.sniffed_routing().protocol;
     let mapped = provenance == FakeIpTargetProvenance::Mapped;
     let config = context
         .sniffing

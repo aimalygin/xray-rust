@@ -314,6 +314,8 @@ pub struct RoutingRule {
     /// sniffers name, such as `http1`, `tls`, `quic` or `bittorrent`. Empty
     /// names are dropped, so a list of only empty names matches nothing.
     pub protocols: Option<Vec<String>>,
+    /// `attrs`: patterns the flow's attributes of the same names must match.
+    pub attributes: Option<RoutingAttributes>,
     pub target: RoutingRuleTarget,
 }
 
@@ -333,6 +335,8 @@ pub struct RouteContext<'a> {
     /// The protocol sniffing recognized, named as Xray-core's sniffers name
     /// it.
     pub protocol: Option<&'a str>,
+    /// What the flow carries for `attrs`, such as an HTTP request's headers.
+    pub attributes: Option<&'a ContentAttributes>,
 }
 
 impl<'a> RouteContext<'a> {
@@ -344,8 +348,109 @@ impl<'a> RouteContext<'a> {
             local: None,
             user: None,
             protocol: None,
+            attributes: None,
         }
     }
+}
+
+/// The attributes Xray-core keeps on a flow for routing's `attrs`. Its HTTP
+/// sniffer records a request's method and target as `:method` and `:path`,
+/// and each header under its lowercased name. Names are lowercased here, as
+/// Xray-core's matcher reads them, and a later value replaces an earlier one.
+///
+/// Headers can carry credentials, so `Debug` shows only the names.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct ContentAttributes {
+    entries: Vec<(String, String)>,
+}
+
+impl ContentAttributes {
+    pub fn set(&mut self, name: &str, value: String) {
+        let name = go_lowercase(name);
+        match self.entries.iter_mut().find(|(known, _)| *known == name) {
+            Some((_, known)) => *known = value,
+            None => self.entries.push((name.into_owned(), value)),
+        }
+    }
+
+    /// The value under `name`, which must already be lowercase.
+    pub fn get(&self, name: &str) -> Option<&str> {
+        self.entries
+            .iter()
+            .find(|(known, _)| known == name)
+            .map(|(_, value)| value.as_str())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+impl fmt::Debug for ContentAttributes {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_set()
+            .entries(self.entries.iter().map(|(name, _)| name))
+            .finish()
+    }
+}
+
+/// A rule's `attrs`: for each attribute name, a pattern its value must match
+/// anywhere, case-sensitively, as Go's `regexp.MatchString` does. Names are
+/// lowercased, as in Xray-core, so names that differ only in case keep one
+/// pattern.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RoutingAttributes {
+    patterns: Vec<(String, RegexMatcher)>,
+}
+
+impl RoutingAttributes {
+    pub fn insert(&mut self, name: &str, pattern: RegexMatcher) {
+        let name = go_lowercase(name);
+        match self.patterns.iter_mut().find(|(known, _)| *known == name) {
+            Some((_, known)) => *known = pattern,
+            None => self.patterns.push((name.into_owned(), pattern)),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.patterns.is_empty()
+    }
+
+    /// Whether every named attribute is present and matches. As in
+    /// Xray-core, a flow without attributes matches no `attrs`.
+    pub fn matches(&self, attributes: Option<&ContentAttributes>) -> bool {
+        attributes.is_some_and(|attributes| {
+            self.patterns.iter().all(|(name, pattern)| {
+                attributes
+                    .get(name)
+                    .is_some_and(|value| pattern.is_match(value))
+            })
+        })
+    }
+}
+
+/// Go's `strings.ToLower`, which maps each character on its own: unlike
+/// Rust's `str::to_lowercase`, it lowercases `İ` to a plain `i` and `Σ`
+/// always to `σ`.
+pub fn go_lowercase(text: &str) -> std::borrow::Cow<'_, str> {
+    if text.is_ascii() {
+        return if text.bytes().any(|byte| byte.is_ascii_uppercase()) {
+            text.to_ascii_lowercase().into()
+        } else {
+            text.into()
+        };
+    }
+    text.chars()
+        .flat_map(|character| {
+            let mut lower = character.to_lowercase();
+            // Only `İ` lowercases to more than one character in Rust.
+            let first = lower.next().unwrap_or(character);
+            let rest = (character != 'İ').then_some(lower).into_iter().flatten();
+            std::iter::once(first).chain(rest)
+        })
+        .collect::<String>()
+        .into()
 }
 
 /// A routing rule's conditions on where a connection comes from: `sourceIP`
@@ -494,6 +599,7 @@ impl RoutingRule {
             && self.matches_protocol(route.protocol)
             && self.matches_port(target_port)
             && self.origin.matches_ports_and_user(route)
+            && self.matches_attributes(route.attributes)
             && self.matches_ip(target_ip)
             && self.origin.matches_ips(route)
             && self.matches_domain(target_domain)
@@ -551,6 +657,12 @@ impl RoutingRule {
             })
     }
 
+    pub fn matches_attributes(&self, attributes: Option<&ContentAttributes>) -> bool {
+        self.attributes
+            .as_ref()
+            .is_none_or(|patterns| patterns.matches(attributes))
+    }
+
     pub fn matches_port(&self, target_port: Option<u16>) -> bool {
         let Some(port_ranges) = &self.port_ranges else {
             return true;
@@ -594,6 +706,7 @@ impl RoutingRule {
             || self.ip_matchers.is_some()
             || !self.origin.is_empty()
             || self.protocols.is_some()
+            || self.attributes.is_some()
     }
 }
 

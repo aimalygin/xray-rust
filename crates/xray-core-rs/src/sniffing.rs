@@ -7,7 +7,7 @@ use aes_gcm::aead::{Aead, Payload};
 use aes_gcm::{Aes128Gcm, Nonce};
 use hkdf::Hkdf;
 use sha2::Sha256;
-use xray_config::{InboundSniffingConfig, SniffingDestination};
+use xray_config::{go_lowercase, ContentAttributes, InboundSniffingConfig, SniffingDestination};
 use xray_routing::{Target, TargetAddr};
 use zeroize::Zeroize;
 
@@ -96,18 +96,18 @@ pub(crate) fn routing_protocol(
     })
 }
 
-/// Whether to read a TCP flow's first bytes: for `destOverride`, or for the
-/// protocol when routing has a `protocol` rule.
+/// Whether to read a TCP flow's first bytes: for `destOverride`, or for
+/// routing when it has a `protocol` or `attrs` rule.
 pub(crate) fn should_sniff_tcp(
     config: Option<&InboundSniffingConfig>,
-    routes_by_protocol: bool,
+    routes_by_sniffing: bool,
 ) -> bool {
     let Some(config) = config else {
         return false;
     };
     config.enabled
         && !config.metadata_only
-        && (routes_by_protocol
+        && (routes_by_sniffing
             || config.dest_override.iter().any(|override_kind| {
                 matches!(
                     override_kind,
@@ -133,22 +133,32 @@ pub(crate) fn should_sniff_udp(
                 .any(|override_kind| matches!(override_kind, SniffingDestination::Quic)))
 }
 
+/// What sniffing a TCP flow's first bytes found once it is over.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct TcpSniffed {
+    /// The protocol a sniffer named, with any target it makes.
+    pub sniffed: Option<Sniffed>,
+    /// What Xray-core's HTTP sniffer records for routing's `attrs`, for a
+    /// flow that starts with an HTTP method, when routing asks for it.
+    pub attributes: Option<ContentAttributes>,
+}
+
 /// What a TCP flow's first bytes say so far.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TcpSniff {
-    /// A sniffer named the flow.
-    Found(Sniffed),
+    /// A sniffer named the flow, or every sniffer ruled it out, so reading
+    /// on cannot help.
+    Done(TcpSniffed),
     /// No sniffer can tell yet.
     NeedMore,
-    /// Every sniffer ruled the flow out, so reading on cannot help.
-    Unknown,
 }
 
 impl TcpSniff {
-    pub(crate) fn found(self) -> Option<Sniffed> {
+    /// The outcome, or nothing found when sniffing would still wait.
+    pub(crate) fn done(self) -> TcpSniffed {
         match self {
-            Self::Found(sniffed) => Some(sniffed),
-            Self::NeedMore | Self::Unknown => None,
+            Self::Done(sniffed) => sniffed,
+            Self::NeedMore => TcpSniffed::default(),
         }
     }
 }
@@ -156,31 +166,39 @@ impl TcpSniff {
 /// Sniffs a TCP flow's first bytes with Xray-core's TCP sniffers, in their
 /// order: HTTP, TLS, BitTorrent. As there, the flow is unknown once every
 /// sniffer has ruled it out. `complete` says no more bytes will come, so an
-/// HTTP request whose headers were cut short is still named.
+/// HTTP request whose headers were cut short is still read.
+/// `record_attributes` keeps what the HTTP sniffer records for `attrs`.
 pub(crate) fn sniff_tcp_initial_payload(
     config: &InboundSniffingConfig,
     original: &Target,
     payload: &[u8],
     complete: bool,
+    record_attributes: bool,
 ) -> TcpSniff {
     if config.metadata_only {
-        return TcpSniff::Unknown;
+        return TcpSniff::Done(TcpSniffed::default());
     }
     let mut undecided = payload.is_empty();
+    let mut attributes = None;
 
     match begins_with_http_method(payload) {
         Some(true) => {
             if !complete && !has_http_header_end(payload) {
                 return TcpSniff::NeedMore;
             }
+            let request = sniff_http_request(payload, record_attributes);
+            attributes = request.attributes;
             // Xray-core names a request only by a host it can parse.
-            if let Some(host) = sniff_http_host(payload) {
+            if let Some(host) = request.host {
                 let target = normalize_host(&host).and_then(|domain| {
                     override_target(config, original, domain, SniffingDestination::Http)
                 });
-                return TcpSniff::Found(Sniffed {
-                    protocol: SniffedProtocol::Http1,
-                    target,
+                return TcpSniff::Done(TcpSniffed {
+                    sniffed: Some(Sniffed {
+                        protocol: SniffedProtocol::Http1,
+                        target,
+                    }),
+                    attributes,
                 });
             }
         }
@@ -191,9 +209,12 @@ pub(crate) fn sniff_tcp_initial_payload(
         TlsRecord::Complete => {
             // Without a server name, Xray-core does not take it for TLS.
             if let Some(domain) = sniff_tls_client_hello_sni(payload) {
-                return TcpSniff::Found(Sniffed {
-                    protocol: SniffedProtocol::Tls,
-                    target: override_target(config, original, domain, SniffingDestination::Tls),
+                return TcpSniff::Done(TcpSniffed {
+                    sniffed: Some(Sniffed {
+                        protocol: SniffedProtocol::Tls,
+                        target: override_target(config, original, domain, SniffingDestination::Tls),
+                    }),
+                    attributes,
                 });
             }
         }
@@ -203,16 +224,22 @@ pub(crate) fn sniff_tcp_initial_payload(
     if payload.len() < 20 {
         undecided = true;
     } else if is_bittorrent_handshake(payload) {
-        return TcpSniff::Found(Sniffed {
-            protocol: SniffedProtocol::Bittorrent,
-            target: None,
+        return TcpSniff::Done(TcpSniffed {
+            sniffed: Some(Sniffed {
+                protocol: SniffedProtocol::Bittorrent,
+                target: None,
+            }),
+            attributes,
         });
     }
 
     if undecided && !complete {
         TcpSniff::NeedMore
     } else {
-        TcpSniff::Unknown
+        TcpSniff::Done(TcpSniffed {
+            sniffed: None,
+            attributes,
+        })
     }
 }
 
@@ -404,30 +431,61 @@ fn sniffed_target(
     })
 }
 
-/// The host Xray-core's `SniffHTTP` names a request by: its last `Host`
-/// header's, without the port. Every line after the first, split at `\n`, is
-/// a header when it holds a colon, up to an empty line: past the `\r` line
-/// that ends headers written with `\r\n`, into the body. A header's name is
-/// not trimmed, and a `Host` that does not parse rules HTTP out.
-fn sniff_http_host(payload: &[u8]) -> Option<String> {
+/// What Xray-core's HTTP sniffer reads from a request.
+struct HttpRequest {
+    /// The host its last `Host` header names, without the port.
+    host: Option<String>,
+    attributes: Option<ContentAttributes>,
+}
+
+/// Reads a request as Xray-core's `SniffHTTP` does. Every line after the
+/// first, split at `\n`, is a header when it holds a colon, up to an empty
+/// line: past the `\r` line that ends headers written with `\r\n`, into the
+/// body. A header's name is lowercased but not trimmed, and its value is
+/// trimmed; a later header replaces an earlier one of the same name. A `Host`
+/// that does not parse rules HTTP out and ends the reading. Only then does
+/// the request line give `:method` and `:path`, when it has exactly three
+/// parts split at spaces.
+fn sniff_http_request(payload: &[u8], record_attributes: bool) -> HttpRequest {
+    let mut attributes = record_attributes.then(ContentAttributes::default);
+    let mut lines = payload.split(|&byte| byte == b'\n');
+    let request_line = lines.next().unwrap_or_default();
     let mut host = None;
-    for line in payload.split(|&byte| byte == b'\n').skip(1) {
+    for line in lines {
         if line.is_empty() {
             break;
         }
         let Some(colon) = line.iter().position(|&byte| byte == b':') else {
             continue;
         };
-        // No character outside ASCII lowercases into `host` in Go.
-        if !line[..colon].eq_ignore_ascii_case(b"host") {
-            continue;
-        }
-        let value = go_string(&line[colon + 1..]);
+        let name = go_lowercase(&go_string(&line[..colon])).into_owned();
+        let value = go_string(&line[colon + 1..]).trim().to_owned();
         // Xray-core lowercases the value first, which changes nothing
         // checked here.
-        host = xray_parse_host(value.trim())?.map(str::to_owned);
+        let parsed =
+            (name == "host").then(|| xray_parse_host(&value).map(|host| host.map(str::to_owned)));
+        if let Some(attributes) = attributes.as_mut() {
+            attributes.set(&name, value);
+        }
+        match parsed {
+            Some(Some(named)) => host = named,
+            Some(None) => {
+                return HttpRequest {
+                    host: None,
+                    attributes,
+                }
+            }
+            None => {}
+        }
     }
-    host
+    if let Some(attributes) = attributes.as_mut() {
+        let parts: Vec<&[u8]> = request_line.split(|&byte| byte == b' ').collect();
+        if let [method, path, _] = parts[..] {
+            attributes.set(":method", go_string(method).into_owned());
+            attributes.set(":path", go_string(path).into_owned());
+        }
+    }
+    HttpRequest { host, attributes }
 }
 
 /// Bytes as Go reads them as a string, where each byte of invalid UTF-8
@@ -1125,8 +1183,9 @@ mod tests {
         original: &Target,
         payload: &[u8],
     ) -> Option<SniffedTarget> {
-        sniff_tcp_initial_payload(config, original, payload, true)
-            .found()
+        sniff_tcp_initial_payload(config, original, payload, true, false)
+            .done()
+            .sniffed
             .and_then(|sniffed| sniffed.target)
     }
 
@@ -1304,45 +1363,56 @@ mod tests {
             ..sniffing_config(true)
         };
         let http = b"GET / HTTP/1.1\r\nHost: routed.example\r\n\r\n";
-        let sniffed = sniff_tcp_initial_payload(&tls_only, &original_ip_target(), http, false)
-            .found()
-            .expect("an HTTP request is named");
+        let sniffed =
+            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), http, false, false)
+                .done()
+                .sniffed
+                .expect("an HTTP request is named");
         assert_eq!(sniffed.protocol, SniffedProtocol::Http1);
         assert_eq!(sniffed.target, None);
 
         // Headers cut short wait for more bytes, unless none will come.
         let partial = b"GET / HTTP/1.1\r\nHost: routed.example\r\n";
         assert_eq!(
-            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), partial, false),
+            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), partial, false, false),
             TcpSniff::NeedMore
         );
-        let named = sniff_tcp_initial_payload(&tls_only, &original_ip_target(), partial, true)
-            .found()
-            .expect("a cut-short request is still named");
+        let named =
+            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), partial, true, false)
+                .done()
+                .sniffed
+                .expect("a cut-short request is still named");
         assert_eq!(named.protocol, SniffedProtocol::Http1);
 
         let mut handshake = vec![19];
         handshake.extend_from_slice(b"BitTorrent protocol");
         handshake.extend_from_slice(&[0; 8]);
         let bittorrent =
-            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), &handshake, false)
-                .found()
+            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), &handshake, false, false)
+                .done()
+                .sniffed
                 .expect("a BitTorrent handshake is named");
         assert_eq!(bittorrent.protocol, SniffedProtocol::Bittorrent);
         assert_eq!(bittorrent.target, None);
         assert_eq!(
-            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), &handshake[..19], false),
+            sniff_tcp_initial_payload(
+                &tls_only,
+                &original_ip_target(),
+                &handshake[..19],
+                false,
+                false
+            ),
             TcpSniff::NeedMore
         );
 
         // Once every sniffer has ruled it out, reading on cannot help.
         let ssh = b"SSH-2.0-OpenSSH_9.6\r\n";
         assert_eq!(
-            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), ssh, false),
-            TcpSniff::Unknown
+            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), ssh, false, false),
+            TcpSniff::Done(TcpSniffed::default())
         );
         assert_eq!(
-            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), b"SSH-2.0", false),
+            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), b"SSH-2.0", false, false),
             TcpSniff::NeedMore
         );
     }
@@ -1457,8 +1527,9 @@ mod tests {
         let original = original_ip_target();
         // Whether the request is named, and the domain it would route to.
         let sniff = |payload: &[u8]| {
-            sniff_tcp_initial_payload(&config, &original, payload, true)
-                .found()
+            sniff_tcp_initial_payload(&config, &original, payload, true, false)
+                .done()
+                .sniffed
                 .map(|sniffed| {
                     assert_eq!(sniffed.protocol, SniffedProtocol::Http1);
                     sniffed.target.map(|target| match target.route_target.addr {
@@ -1475,8 +1546,8 @@ mod tests {
         let hostless = b"GET / HTTP/1.0\r\nAccept: */*\r\n\r\n";
         assert_eq!(sniff(hostless), None);
         assert_eq!(
-            sniff_tcp_initial_payload(&config, &original, hostless, false),
-            TcpSniff::Unknown
+            sniff_tcp_initial_payload(&config, &original, hostless, false, false),
+            TcpSniff::Done(TcpSniffed::default())
         );
         for host in [
             "",
@@ -1542,9 +1613,71 @@ mod tests {
         );
         let lf = b"GET / HTTP/1.1\nHost: lf.example\n\n";
         assert!(matches!(
-            sniff_tcp_initial_payload(&config, &original, lf, false),
-            TcpSniff::Found(_)
+            sniff_tcp_initial_payload(&config, &original, lf, false, false),
+            TcpSniff::Done(TcpSniffed {
+                sniffed: Some(_),
+                ..
+            })
         ));
+    }
+
+    /// What the HTTP sniffer records for `attrs` from a complete payload.
+    fn recorded(payload: &[u8]) -> Option<ContentAttributes> {
+        sniff_tcp_initial_payload(
+            &sniffing_config(true),
+            &original_ip_target(),
+            payload,
+            true,
+            true,
+        )
+        .done()
+        .attributes
+    }
+
+    #[test]
+    fn records_attributes_as_xray_core_records_them() {
+        let attributes = recorded(
+            b"get /a?b=1 HTTP/1.1\r\nHost: Routed.Example\r\nUser-Agent:   curl/8.7  \r\n\
+              X-Dup: one\r\nx-dup: two\r\nWeird Name : v\r\n\r\nbody: line",
+        )
+        .expect("an HTTP request records attributes");
+        // The request line as written, the method's case and all.
+        assert_eq!(attributes.get(":method"), Some("get"));
+        assert_eq!(attributes.get(":path"), Some("/a?b=1"));
+        // Names lowercased, values trimmed, a later header replacing an
+        // earlier one.
+        assert_eq!(attributes.get("host"), Some("Routed.Example"));
+        assert_eq!(attributes.get("user-agent"), Some("curl/8.7"));
+        assert_eq!(attributes.get("x-dup"), Some("two"));
+        // Names are not trimmed, and lines past the headers count too.
+        assert_eq!(attributes.get("weird name "), Some("v"));
+        assert_eq!(attributes.get("body"), Some("line"));
+
+        // Without exactly three parts the request line records nothing, nor
+        // does it after a `Host` that does not parse, where reading stops.
+        let four = recorded(b"GET /a b HTTP/1.1\r\nHost: x.example\r\n\r\n").unwrap();
+        assert_eq!(four.get(":method"), None);
+        let bad_host =
+            recorded(b"GET / HTTP/1.1\r\nAccept: */*\r\nHost: a:b:c\r\nAfter: x\r\n\r\n").unwrap();
+        assert_eq!(bad_host.get("accept"), Some("*/*"));
+        assert_eq!(bad_host.get("host"), Some("a:b:c"));
+        assert_eq!(bad_host.get("after"), None);
+        assert_eq!(bad_host.get(":method"), None);
+        // A request without a host is not named, yet its attributes count.
+        let hostless = recorded(b"GET / HTTP/1.0\r\nAccept: */*\r\n\r\n").unwrap();
+        assert_eq!(hostless.get(":path"), Some("/"));
+
+        // Nothing is recorded unless routing asks, nor for other protocols.
+        let http = b"GET / HTTP/1.1\r\nHost: x.example\r\n\r\n";
+        let unasked = sniff_tcp_initial_payload(
+            &sniffing_config(true),
+            &original_ip_target(),
+            http,
+            true,
+            false,
+        );
+        assert_eq!(unasked.done().attributes, None);
+        assert_eq!(recorded(&tls_client_hello_with_sni("tls.example")), None);
     }
 
     #[test]

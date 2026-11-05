@@ -1069,13 +1069,14 @@
         "localPort",
         "user",
         "protocol",
+        "attrs",
         "localOS",
         "outboundTag",
         "balancerTag",
         "ruleTag"
       ],
       "id": "ROUTING_RULE",
-      "notes": "Read as Xray-core v26.10.31 reads it. type is not read. A nonempty outboundTag wins over balancerTag. inboundTag, domain, domains, ip and localOS take an array or a comma-separated string; domains replaces domain when both are given. network names other than tcp and udp match nothing, and any port given sets a condition, so 0, \"\" or a reversed range matches no port. A rule with no condition is refused. sourceIP (or source), sourcePort, localIP and localPort match the peer and the address the connection arrived on; user matches a SOCKS account by name or regexp:. protocol matches a prefix of the sniffed protocol: http1, tls, quic, bittorrent or fakedns. Domain/geodata, port selectors and aggregate budgets are validated. localOS matches the running platform as Go's runtime.GOOS names it: darwin on macOS, ios on Apple mobile platforms, android, linux, windows."
+      "notes": "Read as Xray-core v26.10.31 reads it. type is not read. A nonempty outboundTag wins over balancerTag. inboundTag, domain, domains, ip and localOS take an array or a comma-separated string; domains replaces domain when both are given. network names other than tcp and udp match nothing, and any port given sets a condition, so 0, \"\" or a reversed range matches no port. A rule with no condition is refused. sourceIP (or source), sourcePort, localIP and localPort match the peer and the address the connection arrived on; user matches a SOCKS account by name or regexp:. protocol matches a prefix of the sniffed protocol: http1, tls, quic, bittorrent or fakedns. attrs maps lowercased attribute names, such as an HTTP request's :method, :path and headers, to regular expressions their values must match; a pattern that does not compile is refused. Domain/geodata, port selectors and aggregate budgets are validated. localOS matches the running platform as Go's runtime.GOOS names it: darwin on macOS, ios on Apple mobile platforms, android, linux, windows."
     },
     {
       "context": "$.inbounds[].sniffing",
