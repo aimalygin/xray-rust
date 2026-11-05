@@ -32,9 +32,9 @@ pub use model::{
     VmessOutboundSettings, WebSocketSettings, WireguardDomainStrategy, WireguardOutboundSettings,
     WireguardPeerSettings, XhttpDownloadSettings, XhttpMode, XhttpPaddingMethod,
     XhttpPaddingPlacement, XhttpPlacement, XhttpRange, XhttpSettings, XhttpUplinkDataPlacement,
-    XhttpXmuxSettings, DEFAULT_DNS_SERVER_TIMEOUT_MS, DEFAULT_OBSERVATORY_PROBE_INTERVAL,
-    DEFAULT_OBSERVATORY_PROBE_URL, LOCAL_OS, MAX_DNS_SERVER_TIMEOUT_MS,
-    MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
+    XhttpXmuxSettings, DEFAULT_DNS_POLICY_KEY, DEFAULT_DNS_SERVER_TIMEOUT_MS,
+    DEFAULT_OBSERVATORY_PROBE_INTERVAL, DEFAULT_OBSERVATORY_PROBE_URL, LOCAL_OS,
+    MAX_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
 };
 pub use model::{
     BlackholeOutboundSettings, BlackholeResponse, HttpInboundSettings, HttpOutboundSettings,

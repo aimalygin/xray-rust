@@ -1394,6 +1394,23 @@
       }
     },
     {
+      "name": "dns-parallel-query-accepted",
+      "accepted": true,
+      "base": "dns-policy",
+      "set": {
+        "/dns/enableParallelQuery": true
+      }
+    },
+    {
+      "name": "dns-parallel-query-not-boolean",
+      "accepted": false,
+      "errorPath": "$.dns.enableParallelQuery",
+      "base": "dns-policy",
+      "set": {
+        "/dns/enableParallelQuery": "yes"
+      }
+    },
+    {
       "name": "fake-ip-pool-capacity",
       "accepted": false,
       "errorPath": "$.dns.fakeIp.poolSize",

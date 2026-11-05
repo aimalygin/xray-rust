@@ -223,6 +223,7 @@ fn tagged_dns_server_with_transport(
         query_strategy: DnsQueryStrategy::UseIp,
         final_query: false,
         client_ip: None,
+        policy_key: xray_config::DEFAULT_DNS_POLICY_KEY.to_owned(),
     }))
 }
 
@@ -3186,6 +3187,16 @@ async fn tun_dns_hijack_udp_uses_a_only_matched_policy_and_cache() {
     timeout(
         Duration::from_secs(2),
         run_tun_dns_hijack_udp_matched_policy_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_hijack_races_servers_by_policy_group_in_parallel() {
+    timeout(
+        Duration::from_secs(4),
+        run_tun_dns_hijack_parallel_query_scenario(),
     )
     .await
     .unwrap();
@@ -6977,6 +6988,7 @@ async fn run_tun_dns_hijack_udp_matched_policy_scenario() {
             query_strategy: DnsQueryStrategy::UseIp,
             final_query: false,
             client_ip: None,
+            policy_key: xray_config::DEFAULT_DNS_POLICY_KEY.to_owned(),
         })),
     ];
     let mut core = Core::new(config).unwrap();
@@ -7018,6 +7030,77 @@ async fn run_tun_dns_hijack_udp_matched_policy_scenario() {
     matched.stop().await;
 }
 
+/// With `enableParallelQuery`, servers sharing a policy key race and the
+/// quicker answer wins, while a server whose key differs settles first as an
+/// earlier group, however slow.
+async fn run_tun_dns_hijack_parallel_query_scenario() {
+    let slow_answer = Ipv4Addr::new(192, 0, 2, 30);
+    let fast_answer = Ipv4Addr::new(192, 0, 2, 31);
+    for (slow_key, expected) in [
+        (xray_config::DEFAULT_DNS_POLICY_KEY, fast_answer),
+        (
+            "client=none|skip=0|qs=|tag=first|domains=[]|expected=[]|expect=[]|unexpected=[]|",
+            slow_answer,
+        ),
+    ] {
+        let slow =
+            spawn_observed_udp_dns_a_server_with_delay(slow_answer, Duration::from_millis(400))
+                .await;
+        let fast = spawn_observed_udp_dns_a_server(fast_answer).await;
+        let mut config = runtime_tun_config_with_freedom_outbound();
+        config.dns.enable_parallel_query = true;
+        config.dns.servers = vec![
+            DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
+                endpoint: DnsServerEndpoint::Ip(slow.addr()),
+                transport: xray_config::DnsServerTransport::Classic,
+                https_path: None,
+                domains: Default::default(),
+                expected_ips: Default::default(),
+                unexpected_ips: Default::default(),
+                tag: String::new(),
+                timeout_ms: 0,
+                skip_fallback: false,
+                query_strategy: DnsQueryStrategy::UseIp,
+                final_query: false,
+                client_ip: None,
+                policy_key: slow_key.to_owned(),
+            })),
+            DnsServerConfig::Ip(fast.addr()),
+        ];
+        let mut core = Core::new(config).unwrap();
+        core.start().await.unwrap();
+
+        let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+        let anchor = Ipv4Addr::new(198, 18, 0, 1);
+        let transaction_id = 0x2261;
+        let query = build_dns_a_query(transaction_id, "parallel.example");
+        core.tun()
+            .push_inbound(Bytes::from(ipv4_udp_packet(
+                client_addr,
+                53_061,
+                anchor,
+                53,
+                &query,
+            )))
+            .await
+            .unwrap();
+        poll_tun_outbound_until(core.tun(), |packet| {
+            ipv4_udp_payload(packet).is_some_and(|payload| {
+                payload.get(0..2) == Some(&transaction_id.to_be_bytes())
+                    && dns_response_answer_ipv4(payload) == Some(expected)
+            })
+        })
+        .await;
+        // Both were asked, at once.
+        assert_eq!(slow.probe().snapshot().len(), 1);
+        assert_eq!(fast.probe().snapshot().len(), 1);
+
+        core.stop().await.unwrap();
+        slow.stop().await;
+        fast.stop().await;
+    }
+}
+
 /// `dns.clientIp` goes to every server without its own, and a server's own
 /// replaces it, as the EDNS client subnet of each query.
 async fn run_tun_dns_hijack_client_subnet_scenario() {
@@ -7042,6 +7125,7 @@ async fn run_tun_dns_hijack_client_subnet_scenario() {
             query_strategy: DnsQueryStrategy::UseIp,
             final_query: false,
             client_ip: Some("2001:db8::1".parse().unwrap()),
+            policy_key: xray_config::DEFAULT_DNS_POLICY_KEY.to_owned(),
         })),
         DnsServerConfig::Ip(default.addr()),
     ];
@@ -8467,6 +8551,7 @@ async fn run_tun_dns_hijack_tcp_mixed_pipeline_scenario() {
             query_strategy: DnsQueryStrategy::UseIp,
             final_query: false,
             client_ip: None,
+            policy_key: xray_config::DEFAULT_DNS_POLICY_KEY.to_owned(),
         })),
         DnsServerConfig::Ip(raw_server.addr()),
     ];

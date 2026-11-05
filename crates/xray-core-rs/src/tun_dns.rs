@@ -6391,6 +6391,7 @@ mod tests {
                     query_strategy: xray_config::DnsQueryStrategy::UseIpv6,
                     final_query: true,
                     client_ip: None,
+                    policy_key: xray_config::DEFAULT_DNS_POLICY_KEY.to_owned(),
                 })),
                 DnsServerConfig::Ip(first),
                 DnsServerConfig::Ip(first),

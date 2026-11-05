@@ -2699,6 +2699,7 @@ fn parses_tcp_dns_string_shorthand_as_default_policy() {
             query_strategy: DnsQueryStrategy::UseIp,
             final_query: false,
             client_ip: None,
+            policy_key: xray_config::DEFAULT_DNS_POLICY_KEY.to_owned(),
         }))]
     );
 }
@@ -3165,6 +3166,7 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
             query_strategy: DnsQueryStrategy::UseIp,
             final_query: false,
             client_ip: None,
+            policy_key: second.policy_key.clone(),
         }
     );
     assert!(second.domains.matches("my-corp-zone.example"));

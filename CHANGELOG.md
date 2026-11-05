@@ -10,6 +10,9 @@ long-term supported release series.
 
 ## Unreleased
 
+- `dns.enableParallelQuery` asks every selected DNS server at once and takes
+  the first answer of the earliest group of servers sharing a policy, as
+  Xray-core does. Profiles with it used to fail to parse.
 - `dns.clientIp` and a DNS server's own `clientIp` are sent as the EDNS
   client subnet of every query, as Xray-core sends them. Profiles with them
   used to fail to parse. DoH queries now carry Xray-core's EDNS padding.

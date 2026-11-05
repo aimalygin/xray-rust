@@ -582,10 +582,11 @@
         "serveExpiredTTL",
         "disableFallback",
         "disableFallbackIfMatch",
-        "clientIp"
+        "clientIp",
+        "enableParallelQuery"
       ],
       "id": "DNS",
-      "notes": "At most eight servers. clientIp is an IP address every server without its own sends as the EDNS client subnet (/24 for IPv4, /96 for IPv6), as Xray-core sends it. Managed selection, cache/fallback policy and IPv4 fake IP only. hosts keys are domain rules as Xray-core reads them, plain text being the whole name; a \"#N\" value answers with DNS RCODE N from 0 to 15. Hosts and server URL semantics require the executable validator."
+      "notes": "At most eight servers. clientIp is an IP address every server without its own sends as the EDNS client subnet (/24 for IPv4, /96 for IPv6), as Xray-core sends it. enableParallelQuery asks every selected server at once; adjacent servers with the same policy race as a group, groups settling in order. Managed selection, cache/fallback policy and IPv4 fake IP only. hosts keys are domain rules as Xray-core reads them, plain text being the whole name; a \"#N\" value answers with DNS RCODE N from 0 to 15. Hosts and server URL semantics require the executable validator."
     },
     {
       "context": "$.outbounds[].settings (dns)",
