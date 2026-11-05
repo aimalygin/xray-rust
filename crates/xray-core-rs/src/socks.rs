@@ -737,7 +737,7 @@ pub(crate) async fn handle_socks_connect<const SOCKS_REPLY: bool>(
         tcp_relay_policy(&config, &policy, &outbound);
     let outbound_label = crate::debug_log::tcp_outbound_label(&outbound);
     let client = outbound
-        .writes_proxy_protocol()
+        .names_the_client()
         .then(|| inbound.peer_addr().ok().map(InboundSource::tcp))
         .flatten();
     let opened = tokio::select! {

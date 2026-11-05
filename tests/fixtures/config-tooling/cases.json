@@ -2651,12 +2651,24 @@
     },
     {
       "name": "http-outbound-custom-headers",
-      "accepted": false,
-      "errorPath": "$.outbounds[0].settings.headers",
+      "accepted": true,
       "base": "http-outbound-flat",
       "set": {
         "/outbounds/0/settings/headers": {
-          "User-Agent": "synthetic"
+          "User-Agent": "synthetic",
+          "X-Target": "{{.Target}}",
+          "X-Source": "{{ .Source.Address }}"
+        }
+      }
+    },
+    {
+      "name": "http-outbound-header-template-function",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.headers.X-Target",
+      "base": "http-outbound-flat",
+      "set": {
+        "/outbounds/0/settings/headers": {
+          "X-Target": "{{printf \"%s\" .Target}}"
         }
       }
     },

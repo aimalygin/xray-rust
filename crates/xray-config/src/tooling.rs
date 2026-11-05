@@ -93,6 +93,7 @@ pub fn configuration_contract() -> Value {
             {"context": "$.dns.hosts", "semantics": "Dynamic domain-matcher keys map to an IP, domain alias or nonempty IP array; parser budgets and geodata expansion apply."},
             {"context": "$.policy.levels", "semantics": "Dynamic u32 level keys map to POLICY_LEVEL."},
             {"context": "wsSettings.headers; httpupgradeSettings.headers; xhttpSettings.headers", "semantics": "Dynamic header names with string/null values and carrier-specific Host rules."},
+            {"context": "$.outbounds[].settings.headers (http)", "semantics": "Dynamic header names with string/null Go template values; see HTTP_OUTBOUND."},
             {"context": "xhttpSettings.downloadSettings; splithttpSettings.downloadSettings; effective extra.downloadSettings", "fields": ["address", "port"], "extends": "STREAM", "semantics": "Requires address, port 1..65535 and explicit XHTTP method/network. A separate bounded stream is parsed with paths remapped to downloadSettings; recursive downloads, stream-one and chaining are unsupported."}
         ],
         "examples": configuration_examples(),

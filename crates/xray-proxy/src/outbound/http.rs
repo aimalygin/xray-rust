@@ -117,12 +117,16 @@ impl fmt::Debug for HttpAccount {
     }
 }
 
-/// Builds the CONNECT request for `target`.
+/// Builds the CONNECT request for `target`, as Xray-core's HTTP outbound
+/// writes it with Go's `Request.Write`.
 ///
-/// `headers` are extra fields, such as Xray's browser masquerade block; a
-/// `User-Agent` among them replaces Go's default. `Host`,
-/// `Proxy-Authorization` and `Proxy-Connection` are always this function's
-/// own and are skipped in `headers`. The target is validated before anything
+/// `headers` are the request's other fields: the configured custom headers
+/// and Xray's browser masquerade block. A `User-Agent` among them replaces
+/// Go's default, and a `Proxy-Authorization` replaces the account's, since
+/// Xray-core sets the custom headers after it. `Host` comes from the target
+/// and `Proxy-Connection` is always `Keep-Alive`, so theirs are skipped, as
+/// are the `Content-Length`, `Transfer-Encoding` and `Trailer` that Go
+/// writes from the request itself. The target is validated before anything
 /// is built, so callers can fail before resolving or dialing the proxy.
 pub fn encode_connect_request(
     target: &Target,
@@ -130,14 +134,24 @@ pub fn encode_connect_request(
     headers: &[(&str, &str)],
 ) -> Result<Zeroizing<Vec<u8>>, HttpClientError> {
     let authority = connect_authority(target)?;
-    let authorization = account.map(HttpAccount::proxy_authorization);
+    let custom_authorization = headers
+        .iter()
+        .any(|(name, _)| *name == "Proxy-Authorization");
+    let authorization = account
+        .filter(|_| !custom_authorization)
+        .map(HttpAccount::proxy_authorization);
     let mut fields: Vec<(&str, &str)> = headers
         .iter()
         .copied()
         .filter(|(name, _)| {
             !matches!(
                 *name,
-                "Host" | "User-Agent" | "Proxy-Authorization" | "Proxy-Connection"
+                "Host"
+                    | "User-Agent"
+                    | "Proxy-Connection"
+                    | "Content-Length"
+                    | "Transfer-Encoding"
+                    | "Trailer"
             )
         })
         .chain(

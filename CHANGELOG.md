@@ -29,6 +29,9 @@ long-term supported release series.
 - The SOCKS inbound reads `users` as another name for `accounts`, keeps the
   last account of a name, and accepts empty or missing credentials and
   `null` settings, as Xray-core does.
+- The HTTP outbound sends its `headers` as Xray-core does, Go templates
+  naming the connection's source and target included. Profiles with them
+  used to fail to parse.
 - The `loopback` outbound routes a connection again, as if it came from the
   inbound tag it names, as Xray-core's does. Its own `sniffing` cannot be
   enabled yet. A chain of more than 8 loopbacks fails the connection, where

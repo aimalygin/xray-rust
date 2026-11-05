@@ -137,17 +137,31 @@ fn request_without_headers_uses_go_defaults_and_no_authorization() {
 }
 
 #[test]
-fn request_owns_host_and_proxy_fields() {
+fn request_owns_host_proxy_connection_and_framing() {
     let headers = [
         ("Host", "spoofed.example"),
-        ("Proxy-Authorization", "Basic spoofed"),
         ("Proxy-Connection", "close"),
+        ("Content-Length", "5"),
+        ("Transfer-Encoding", "chunked"),
+        ("Trailer", "X-Spoofed"),
     ];
     let text = request(&domain("example.com"), None, &headers);
     assert!(!text.contains("spoofed"));
     assert!(!text.contains("close"));
+    assert!(!text.contains("Content-Length"));
+    assert!(!text.contains("chunked"));
+    assert!(!text.contains("Trailer"));
     assert_eq!(text.matches("Host:").count(), 1);
     assert!(!text.contains("Proxy-Authorization"));
+}
+
+#[test]
+fn a_custom_proxy_authorization_replaces_the_accounts() {
+    // Xray-core sets the custom headers after the account's credentials.
+    let headers = [("Proxy-Authorization", "Bearer synthetic-token")];
+    let text = request(&domain("example.com"), Some(&account()), &headers);
+    assert_eq!(text.matches("Proxy-Authorization:").count(), 1);
+    assert!(text.contains("Proxy-Authorization: Bearer synthetic-token\r\n"));
 }
 
 #[test]

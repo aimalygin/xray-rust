@@ -937,13 +937,15 @@ impl TcpOutbound {
         }
     }
 
-    /// Whether a freedom in this chain writes a PROXY protocol header, which
-    /// names the client.
-    pub(crate) fn writes_proxy_protocol(&self) -> bool {
+    /// Whether this chain names the client: a freedom in it writes a PROXY
+    /// protocol header, or an HTTP outbound's custom headers name the
+    /// source.
+    pub(crate) fn names_the_client(&self) -> bool {
         match self {
             Self::Freedom(freedom) => freedom.proxy_protocol.is_some(),
+            Self::Http(http) => http.names_the_client(),
             Self::Chained { outbound, proxy } => {
-                outbound.writes_proxy_protocol() || proxy.writes_proxy_protocol()
+                outbound.names_the_client() || proxy.names_the_client()
             }
             _ => false,
         }
@@ -1046,6 +1048,7 @@ impl ResolvedTcpConnector for OutboundProxyTcpConnector {
                     &self.server_candidates,
                     &[],
                     &self.transport_dialer,
+                    self.source.map(|source| source.addr),
                 )
                 .await
                 .map_err(|error| TransportError::ChainedOutbound(error.to_string())),
@@ -4208,21 +4211,35 @@ pub(crate) async fn open_tcp_stream_with_resolvers_and_dialer(
             TcpOutbound::Freedom(freedom) => freedom.domain_strategy(),
             _ => DomainStrategy::AsIs,
         };
+        let bootstrap = DomainStrategyResolver::new(bootstrap_resolver, strategy);
+        if let (Some(source), TcpOutbound::Http(http)) = (source, outbound.primary()) {
+            if http.names_the_client() {
+                return Box::pin(open_http_tcp_stream(
+                    http,
+                    target,
+                    &bootstrap,
+                    &proxy_dialer,
+                    requires_local_resolution,
+                    source.addr,
+                ))
+                .await;
+            }
+        }
         return open_plain_tcp_stream_with_resolvers_and_dialer(
             outbound.primary(),
             target,
             destination_resolver,
-            &DomainStrategyResolver::new(bootstrap_resolver, strategy),
+            &bootstrap,
             &proxy_dialer,
             requires_local_resolution,
         )
         .await;
     }
 
-    // A freedom that names the client in its header opens apart, so the
-    // common open future carries no client.
-    if let (Some(source), TcpOutbound::Freedom(freedom)) = (source, outbound) {
-        if freedom.proxy_protocol.is_some() {
+    // An outbound that names the client opens apart, so the common open
+    // future carries no client.
+    match (source, outbound) {
+        (Some(source), TcpOutbound::Freedom(freedom)) if freedom.proxy_protocol.is_some() => {
             return Box::pin(open_freedom_tcp_stream(
                 outbound,
                 freedom,
@@ -4234,6 +4251,18 @@ pub(crate) async fn open_tcp_stream_with_resolvers_and_dialer(
             ))
             .await;
         }
+        (Some(source), TcpOutbound::Http(http)) if http.names_the_client() => {
+            return Box::pin(open_http_tcp_stream(
+                http,
+                target,
+                bootstrap_resolver,
+                transport_dialer,
+                true,
+                source.addr,
+            ))
+            .await;
+        }
+        _ => {}
     }
     open_plain_tcp_stream_with_resolvers_and_dialer(
         outbound,
@@ -4244,6 +4273,25 @@ pub(crate) async fn open_tcp_stream_with_resolvers_and_dialer(
         true,
     )
     .await
+}
+
+/// Opens an HTTP tunnel whose custom headers name the client, `source`.
+/// Callers box it, as for a freedom naming the client.
+async fn open_http_tcp_stream(
+    http: &HttpOutbound,
+    target: &Target,
+    bootstrap_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+    requires_local_resolution: bool,
+    source: SocketAddr,
+) -> Result<BoxedTransportStream, CoreError> {
+    if requires_local_resolution {
+        http.open(target, bootstrap_resolver, transport_dialer, Some(source))
+            .await
+    } else {
+        http.open_resolved(target, &[], &[], transport_dialer, Some(source))
+            .await
+    }
 }
 
 /// Opens a freedom TCP connection that has final rules or writes a PROXY
@@ -4302,9 +4350,9 @@ async fn open_plain_tcp_stream_with_resolvers_and_dialer(
         }
         TcpOutbound::Http(outbound) => {
             if requires_local_resolution {
-                Box::pin(outbound.open(target, bootstrap_resolver, transport_dialer)).await
+                Box::pin(outbound.open(target, bootstrap_resolver, transport_dialer, None)).await
             } else {
-                Box::pin(outbound.open_resolved(target, &[], &[], transport_dialer)).await
+                Box::pin(outbound.open_resolved(target, &[], &[], transport_dialer, None)).await
             }
         }
         TcpOutbound::Vmess(outbound) => {
