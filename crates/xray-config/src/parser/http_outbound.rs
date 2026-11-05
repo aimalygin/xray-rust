@@ -295,31 +295,4 @@ impl Parser<'_> {
             }
         }
     }
-
-    /// Only raw/tcp with none or TLS is implemented. TLS offers what
-    /// Xray-core offers, and the tunnel is HTTP/2 when the proxy picks `h2`.
-    pub(super) fn validate_http_outbound_stream(
-        &mut self,
-        settings: &OutboundSettings,
-        stream: &StreamSettings,
-        index: usize,
-    ) {
-        if !matches!(settings, OutboundSettings::Http(_)) {
-            return;
-        }
-        let path = format!("$.outbounds[{index}].streamSettings");
-        if stream.transport != StreamTransport::Raw {
-            self.error(
-                format!("{path}.network"),
-                "HTTP outbound supports only the raw (tcp) network",
-            );
-        }
-        match &stream.security {
-            StreamSecurity::None | StreamSecurity::Tls(_) => {}
-            StreamSecurity::Reality(_) => self.error(
-                format!("{path}.security"),
-                "HTTP outbound supports only none or TLS security",
-            ),
-        }
-    }
 }

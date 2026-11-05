@@ -1195,22 +1195,26 @@ rather than being converted to Punycode as Go does.
   Go reads it without a limit. Bytes that arrive after the head in the same
   read are delivered to the client first. Xray reads the head through a
   `bufio.Reader` it then discards, so it loses them.
-- `streamSettings` may select only `raw`/`tcp` with `security` `none` or `tls`.
-  TLS offers what Xray-core offers: a shaped hello (`chrome` unless
-  `fingerprint` names another) sends its profile's ALPN, `h2` and `http/1.1`
-  for `chrome`, unless `alpn` is exactly `["http/1.1"]`; `fingerprint:
-  "unsafe"` sends the configured list as it is, and none when it is empty,
-  where Xray-core sends `h2` and `http/1.1`. The proxy's pick decides the
-  tunnel: HTTP/2 for `h2`, HTTP/1.1 for `http/1.1` or no pick, and any other
-  protocol fails the flow, as in Xray-core. Other networks and REALITY fail
-  parsing.
+- `streamSettings` may select any transport, as in Xray: `raw`/`tcp`,
+  WebSocket, HTTPUpgrade, gRPC or XHTTP, with `security` `none`, `tls`, or
+  `reality` on `raw`, gRPC and XHTTP. On `raw`, TLS offers what Xray-core
+  offers: a shaped hello (`chrome` unless `fingerprint` names another) sends
+  its profile's ALPN, `h2` and `http/1.1` for `chrome`, unless `alpn` is
+  exactly `["http/1.1"]`; `fingerprint: "unsafe"` sends the configured list as
+  it is, and none when it is empty, where Xray-core sends `h2` and `http/1.1`.
+  The proxy's pick decides the tunnel: HTTP/2 for `h2`, HTTP/1.1 for
+  `http/1.1` or no pick, and any other protocol fails the flow, as in
+  Xray-core. Every other transport, and REALITY, carries HTTP/1.1 whatever
+  was negotiated, as there: Xray-core reads the protocol only from the raw
+  transport's TLS. Its own REALITY server negotiates none.
 - Only TCP is supported. UDP routed to an HTTP outbound is refused without
   dialing the proxy, and DNS queries over UDP through it fail, so use `tcp://`
   DNS servers on such a route. Enabled `mux` fails parsing.
 - A plaintext public server is accepted, because HTTP proxies are usually
-  plaintext. Without `tls`, the Basic credentials and the destination of every
-  tunnel travel in cleartext; use `tls`, or keep a credentialed proxy on
-  loopback or a trusted network.
+  plaintext, and so is a plaintext XHTTP `downloadSettings` leg to one.
+  Without `tls` or `reality`, the Basic credentials and the destination of
+  every tunnel travel in cleartext; use `tls` or `reality`, or keep a
+  credentialed proxy on loopback or a trusted network.
 - Chaining uses `sockopt.dialerProxy` (or the warned legacy `proxySettings` form)
   in both directions: an HTTP outbound can carry another TCP outbound, and it
   can ride another outbound's TCP carrier. `probeOutboundUrl` works through it.
@@ -1265,6 +1269,10 @@ connections over HTTP/2, HTTP/1.1 against an HTTP/1.1-only proxy, with
 outbound probes. Android and Apple prepare the
 proxy's carrier hostname like a SOCKS server's. Tests use loopback; they do not
 establish physical-device VPN routing.
+
+`scripts/check-v08-carrier-interop.sh` runs the same server-first TCP flow as
+for [SOCKS](#socks-outbound) through Xray-core v26.10.31's HTTP inbound, with
+Basic credentials, over the same eleven transports and securities.
 
 ### WebSocket and HTTPUpgrade
 

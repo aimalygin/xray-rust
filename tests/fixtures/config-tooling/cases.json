@@ -2756,9 +2756,8 @@
       }
     },
     {
-      "name": "http-outbound-non-raw-network",
-      "accepted": false,
-      "errorPath": "$.outbounds[0].streamSettings.network",
+      "name": "http-outbound-websocket",
+      "accepted": true,
       "base": "http-outbound-flat",
       "set": {
         "/outbounds/0/streamSettings/network": "ws"
@@ -2777,8 +2776,7 @@
     },
     {
       "name": "http-outbound-reality",
-      "accepted": false,
-      "errorPath": "$.outbounds[0].streamSettings.security",
+      "accepted": true,
       "base": "http-outbound-legacy",
       "set": {
         "/outbounds/0/streamSettings": {
@@ -2789,6 +2787,23 @@
             "fingerprint": "chrome",
             "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
             "shortId": "02030405"
+          }
+        }
+      }
+    },
+    {
+      "name": "http-outbound-grpc-tls",
+      "accepted": true,
+      "base": "http-outbound-legacy",
+      "set": {
+        "/outbounds/0/streamSettings": {
+          "network": "grpc",
+          "security": "tls",
+          "tlsSettings": {
+            "serverName": "server.example"
+          },
+          "grpcSettings": {
+            "serviceName": "proxy"
           }
         }
       }
