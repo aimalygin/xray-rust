@@ -1,0 +1,9 @@
+HTTP/1.1 100 Continue
+
+HTTP/1.1 200 OK
+Content-Length: 2
+X-F: a
+ b
+Connection: X-Drop
+
+ok

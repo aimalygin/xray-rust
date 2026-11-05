@@ -536,12 +536,13 @@ async fn rejects_http_empty_host() {
 }
 
 #[tokio::test]
-async fn rejects_http_port_zero() {
+async fn keeps_http_port_zero_to_fail_when_dialed() {
+    // As in Xray-core, which answers it and then fails to dial it.
     let raw = b"CONNECT example.com:0 HTTP/1.1\r\n\r\n";
 
-    let err = parse_http_connect(Cursor::new(raw)).await.unwrap_err();
+    let target = parse_http_connect(Cursor::new(raw)).await.unwrap();
 
-    assert_eq!(err, HttpParseError::InvalidPort);
+    assert_eq!(target.port, 0);
 }
 
 /// A SOCKS 4 request after its version byte.
@@ -796,10 +797,6 @@ async fn http_requests_read_as_go_reads_them() {
         ),
         (
             b"CONNECT example.com:+80 HTTP/1.1\r\n\r\n",
-            HttpParseError::InvalidPort,
-        ),
-        (
-            b"CONNECT example.com:65536 HTTP/1.1\r\n\r\n",
             HttpParseError::InvalidPort,
         ),
         (

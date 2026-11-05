@@ -4079,12 +4079,9 @@ async fn run_socks_inbound_mixed_scenario() {
         .unwrap()
         .unwrap();
 
-    // Plain HTTP forwarding stays unsupported, as on the HTTP inbound.
-    let (_, head) = http_proxy_head(
-        socks_addr,
-        "GET http://example.test/ HTTP/1.1\r\nHost: example.test\r\n\r\n",
-    )
-    .await;
+    // A request that names no host gets Xray-core's 400.
+    let (_, head) =
+        http_proxy_head(socks_addr, "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n").await;
     assert!(head.starts_with("HTTP/1.1 400 Bad Request\r\n"), "{head}");
     core.stop().await.unwrap();
 }

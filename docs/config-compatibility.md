@@ -445,8 +445,8 @@ Other top-level keys are rejected.
 
 | Protocol | Supported behavior | Unsupported or constrained behavior |
 | --- | --- | --- |
-| `socks` (alias `mixed`) | SOCKS5 `CONNECT`, `UDP ASSOCIATE` unless `"udp": false`, SOCKS 4/4a `CONNECT`, HTTP `CONNECT` on the same port, `userLevel`, sniffing; `auth` `noauth` or `password` with RFC 1929 `accounts` | GSSAPI; SOCKS 4 `BIND`; plain HTTP forwarding; `accounts` with `noauth`; an absent `udp` keeps `UDP ASSOCIATE` enabled, unlike Xray-core |
-| `http` | HTTP `CONNECT`, `accounts` (Basic), timeout-shaped policy, `userLevel`, sniffing | Plain HTTP forwarding and transparent proxy mode |
+| `socks` (alias `mixed`) | SOCKS5 `CONNECT`, `UDP ASSOCIATE` unless `"udp": false`, SOCKS 4/4a `CONNECT`, HTTP `CONNECT` and plain HTTP forwarding on the same port, `userLevel`, sniffing; `auth` `noauth` or `password` with RFC 1929 `accounts` | GSSAPI; SOCKS 4 `BIND`; `accounts` with `noauth`; an absent `udp` keeps `UDP ASSOCIATE` enabled, unlike Xray-core |
+| `http` | HTTP `CONNECT` and plain HTTP forwarding, `accounts` (Basic), timeout-shaped policy, `userLevel`, sniffing | Transparent proxy mode |
 | `tun` | Platform packet boundary or registered fd; port may be omitted | Platform interface creation and routes are host responsibilities |
 
 `"auth": "password"` requires 1–64 `accounts` entries of `{"user", "pass"}`,
@@ -511,11 +511,32 @@ server does:
   Bytes sent after the request head are its first bytes.
 - A `CONNECT` target without a port, or with an empty one, goes to port 80,
   as Go's `ParseHost` reads it. A port is decimal digits, cut to 16 bits as
-  Xray-core does, so `70000` is port 4464; one that is 0 after the cut, or
-  any other text, closes the request. A host with a colon needs brackets.
-- Other methods ask for plain HTTP forwarding, which is not implemented yet,
-  and get Xray's `400 Bad Request` with `Connection: close` and
-  `Proxy-Connection: close`.
+  Xray-core does, so `70000` is port 4464; port 0 is kept and fails when
+  dialed, and other text closes the request. A host with a colon needs
+  brackets.
+- Any other request with an absolute target, such as
+  `GET http://example.com/`, is forwarded as Xray-core's `handlePlainHTTP`
+  forwards it. Each request is routed on its own, as protocol `http/1.1` and
+  without sniffing, since Xray-core gives it a context without the inbound's
+  sniffing settings. A target without a port goes to port 443 for `https`
+  and 80 otherwise.
+- The request goes on as Go's `Request.Write` writes it: the target's path
+  and query, `Host` from the target in Punycode, any `User-Agent`, the
+  body's length or chunking, `Connection: close`, and the other headers in
+  name order, without hop-by-hop headers or those `Connection` names.
+- The response comes back as Go's `Response.Write` writes it, without
+  hop-by-hop headers. One of known length sets `Connection`,
+  `Proxy-Connection` and `Keep-Alive` to keep the connection, which takes
+  another request when this one sent `Proxy-Connection: keep-alive`;
+  otherwise the connection closes after the response. One informational
+  (`1xx`) head goes on as it came. A response that does not come or does not
+  parse gets Xray's `503 Service Unavailable`, as does a request routed to a
+  DNS outbound; a blackhole's reply is the response.
+- A request that names no host, such as `GET / HTTP/1.1`, gets Xray's
+  `400 Bad Request` with `Connection: close` and `Proxy-Connection: close`.
+- Chunked bodies are decoded and chunked again. Go merges chunks whose
+  headers it has already buffered, so chunk boundaries can differ from
+  Xray-core's; the bytes they carry do not.
 
 The HTTP inbound reads `accounts` as Xray-core does, or `users` when
 `accounts` is absent or `null`, so an empty `accounts` requires nothing. Each
@@ -1973,7 +1994,8 @@ names only fake IPs. HTTP needs a `Host` header, read as Xray-core reads it:
 the last one counts, even past the headers, its name is not trimmed, and one
 whose port Go's `strconv.Atoi` refuses, such as `example.com:0x50`, keeps the
 request unnamed. A flow sniffing does not name matches no `protocol`
-rule. When a rule has `protocol`, flows are sniffed for it even where
+rule. A request the HTTP inbound forwards, rather than tunnels, is
+`http/1.1`, as in Xray-core. When a rule has `protocol`, flows are sniffed for it even where
 `destOverride` would not read them, though only `destOverride` decides whether
 a sniffed domain replaces the destination. On TUN that opens a TCP flow
 before routing it, as for an unmapped fake IP. A flow is read only until every
@@ -1982,9 +2004,12 @@ routed as soon as its first bytes arrive.
 
 `attrs` maps attribute names to regular expressions, and a rule applies when
 every named attribute is there and its value matches anywhere in it,
-case-sensitively. As in Xray-core, the attributes come from sniffing an HTTP
-request, so the inbound needs sniffing enabled, and `metadataOnly` records
-none:
+case-sensitively. As in Xray-core, a request the HTTP inbound forwards has
+the inbound's own attributes: `:method` uppercased, `:path` decoded, and
+each header's first value under its lowercased name, without `host` or
+hop-by-hop headers, and with an empty `user-agent` when none was sent. Other
+attributes come from sniffing an HTTP request, so the inbound needs sniffing
+enabled, and `metadataOnly` records none:
 
 - `:method` and `:path` are the request line's method and target as
   written, query included, when the line has exactly three parts split at

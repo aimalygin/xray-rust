@@ -2,16 +2,12 @@ use std::fmt;
 use std::net::IpAddr;
 
 use thiserror::Error;
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::AsyncRead;
 use xray_routing::{Network, Target, TargetAddr};
 use zeroize::Zeroizing;
 
+use super::http_message::{connect_target, read_http_request_head};
 use super::{InboundUser, SocksInboundAuth};
-
-const MAX_REQUEST_LINE_LEN: usize = 8192;
-/// Xray-core reads a `CONNECT` target with Go's `ParseHost`, which takes
-/// port 80 when the target names none.
-const DEFAULT_CONNECT_PORT: u16 = 80;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum HttpParseError {
@@ -49,108 +45,27 @@ pub async fn parse_http_connect<R: AsyncRead + Unpin>(reader: R) -> Result<Targe
 }
 
 /// Reads an HTTP proxy request's head as Go's `http.ReadRequest` does in
-/// Xray-core's HTTP inbound. Its request line is three parts split at single
-/// spaces, ending in an HTTP version Go reads; every header line holds a
-/// colon after a name of token characters, or spaces, which Go keeps
-/// uncanonicalized; and at most one `Host` is given. Anything else is
-/// malformed, which Xray-core answers by closing the connection.
+/// Xray-core's HTTP inbound, with the target of a `CONNECT`. A request Go
+/// refuses is malformed, which Xray-core answers by closing the connection.
 pub async fn parse_http_connect_request<R: AsyncRead + Unpin>(
     mut reader: R,
 ) -> Result<HttpConnectRequest, HttpParseError> {
-    let request_line = read_line_limited(&mut reader).await?;
-    let request_line =
-        std::str::from_utf8(trim_line_end(&request_line)).map_err(|_| HttpParseError::Malformed)?;
-    let (method, rest) = request_line
-        .split_once(' ')
-        .ok_or(HttpParseError::Malformed)?;
-    let (request_target, version) = rest.split_once(' ').ok_or(HttpParseError::Malformed)?;
-    if !is_token(method.as_bytes()) || !is_http_version(version) {
-        return Err(HttpParseError::Malformed);
-    }
-    // Go reads a target as an authority only for `CONNECT` exactly.
-    let target = (method == "CONNECT")
-        .then(|| parse_connect_target(request_target))
-        .transpose()?;
-    let proxy_authorization = read_headers(&mut reader).await?;
+    let head = read_http_request_head(&mut reader).await?;
+    let target = connect_target(&head).transpose()?;
     Ok(HttpConnectRequest {
         target,
-        proxy_authorization,
+        proxy_authorization: head.proxy_authorization,
     })
 }
 
-/// Reads header lines up to the blank one, keeping the first
-/// `Proxy-Authorization` value.
-async fn read_headers<R: AsyncRead + Unpin>(
-    reader: &mut R,
-) -> Result<Option<Zeroizing<Vec<u8>>>, HttpParseError> {
-    let mut proxy_authorization = None;
-    let mut hosts = 0;
-    let mut first = true;
-    loop {
-        let line = Zeroizing::new(read_line_limited(reader).await?);
-        let line = trim_line_end(&line);
-        if line.is_empty() {
-            return Ok(proxy_authorization);
-        }
-        // A line that starts with whitespace continues the previous header,
-        // which Go folds into it, but cannot open the header block.
-        if matches!(line.first(), Some(b' ' | b'\t')) {
-            if first {
-                return Err(HttpParseError::Malformed);
-            }
-            continue;
-        }
-        first = false;
-        let colon = line
-            .iter()
-            .position(|&byte| byte == b':')
-            .ok_or(HttpParseError::Malformed)?;
-        let name = &line[..colon];
-        if name.is_empty() || !name.iter().all(|&byte| is_token_byte(byte) || byte == b' ') {
-            return Err(HttpParseError::Malformed);
-        }
-        // Go leaves a name with a space as it is, so it is neither header.
-        if name.eq_ignore_ascii_case(b"host") {
-            hosts += 1;
-            if hosts > 1 {
-                return Err(HttpParseError::Malformed);
-            }
-        } else if name.eq_ignore_ascii_case(b"proxy-authorization") && proxy_authorization.is_none()
-        {
-            proxy_authorization = Some(Zeroizing::new(line[colon + 1..].trim_ascii().to_vec()));
-        }
-    }
-}
-
-fn trim_line_end(line: &[u8]) -> &[u8] {
-    let line = line.strip_suffix(b"\n").unwrap_or(line);
-    line.strip_suffix(b"\r").unwrap_or(line)
-}
-
-/// RFC 9110 token characters, as Go's `httpguts` checks a method or a header
-/// name.
-fn is_token_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)
-}
-
-fn is_token(text: &[u8]) -> bool {
-    !text.is_empty() && text.iter().all(|&byte| is_token_byte(byte))
-}
-
-/// Go's `ParseHTTPVersion`: `HTTP/` and one digit, a dot and one digit.
-fn is_http_version(version: &str) -> bool {
-    matches!(
-        version.as_bytes(),
-        [b'H', b'T', b'T', b'P', b'/', major, b'.', minor]
-            if major.is_ascii_digit() && minor.is_ascii_digit()
-    )
-}
-
-/// The target of a `CONNECT` request, as Go's URL parser and Xray-core's
-/// `ParseHost` read an authority. A missing or empty port is port 80; a port
-/// is digits read as Go's `strconv.Atoi` reads them and cut to 16 bits, so
-/// `70000` is port 4464, as in Xray-core. A host with a colon needs brackets.
-fn parse_connect_target(authority: &str) -> Result<Target, HttpParseError> {
+/// Where an authority goes, as Go's URL parser and Xray-core's `ParseHost`
+/// read one: a missing or empty port is `default_port`; a port is digits
+/// read as Go's `strconv.Atoi` reads them and cut to 16 bits, so `70000` is
+/// port 4464, as in Xray-core. A host with a colon needs brackets.
+pub(crate) fn parse_authority_target(
+    authority: &str,
+    default_port: u16,
+) -> Result<Target, HttpParseError> {
     let (host, port) = if let Some(rest) = authority.strip_prefix('[') {
         let (host, rest) = rest
             .split_once(']')
@@ -172,7 +87,7 @@ fn parse_connect_target(authority: &str) -> Result<Target, HttpParseError> {
         }
     };
     let port = match port {
-        None | Some("") => DEFAULT_CONNECT_PORT,
+        None | Some("") => default_port,
         Some(port) => parse_port(port)?,
     };
     let bracketed = authority.starts_with('[');
@@ -190,13 +105,10 @@ fn parse_port(port: &str) -> Result<u16, HttpParseError> {
     let value = port
         .parse::<i64>()
         .map_err(|_| HttpParseError::InvalidPort)?;
-    // Go converts the int to a 16-bit port, keeping its low bits.
+    // Go converts the int to a 16-bit port, keeping its low bits. Port 0 is
+    // kept, as in Xray-core, to fail when it is dialed.
     let port = value.to_le_bytes();
-    match u16::from_le_bytes([port[0], port[1]]) {
-        // Port 0 cannot be dialed; Xray-core answers it before failing to.
-        0 => Err(HttpParseError::InvalidPort),
-        port => Ok(port),
-    }
+    Ok(u16::from_le_bytes([port[0], port[1]]))
 }
 
 /// A host Go's URL parser accepts: letters, digits, `-._~`, the sub-delims,
@@ -308,23 +220,5 @@ impl fmt::Debug for HttpInboundAccounts {
             .debug_struct("HttpInboundAccounts")
             .field("accounts", &self.accounts.len())
             .finish()
-    }
-}
-
-async fn read_line_limited<R: AsyncRead + Unpin>(
-    reader: &mut R,
-) -> Result<Vec<u8>, HttpParseError> {
-    let mut line = Vec::new();
-
-    loop {
-        if line.len() >= MAX_REQUEST_LINE_LEN {
-            return Err(HttpParseError::LineTooLong);
-        }
-
-        let byte = reader.read_u8().await.map_err(|_| HttpParseError::Io)?;
-        line.push(byte);
-        if byte == b'\n' {
-            return Ok(line);
-        }
     }
 }

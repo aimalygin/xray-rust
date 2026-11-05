@@ -10,6 +10,17 @@ long-term supported release series.
 
 ## Unreleased
 
+- The HTTP inbound, and HTTP on a SOCKS port, forward plain HTTP requests
+  such as `GET http://example.com/`, as Xray-core does; they used to answer
+  them with a `400`.
+  - Each request is routed on its own, as `http/1.1`, with the request's
+    method, path and headers as its `attrs`.
+  - It goes on as Go's `Request.Write` writes it, with `Connection: close`
+    and without hop-by-hop headers. The response comes back as Go's
+    `Response.Write` writes it.
+  - A response of known length keeps the connection for another request
+    when the client sent `Proxy-Connection: keep-alive`. A response that
+    does not come gets a `503`.
 - A blackhole's `http` reply is the one Xray-core v26.10.31 writes, with CRLF
   line endings and its headers in Go's order, instead of the older one with
   LF line endings.

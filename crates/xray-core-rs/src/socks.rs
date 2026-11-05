@@ -725,74 +725,8 @@ pub(crate) async fn handle_socks_connect<const SOCKS_REPLY: bool>(
         }
     };
 
-    let (open_timeout, tunnel_idle, relay_buffer_size) = match outbound.primary() {
-        // Freedom's own timer runs at its level beside the inbound's, so the
-        // shorter idle timeout wins, as in Xray-core.
-        TcpOutbound::Freedom(freedom) => (
-            policy.handshake,
-            policy
-                .conn_idle
-                .min(effective_policy_for_level(&config, Some(freedom.level())).conn_idle),
-            policy.relay_buffer_size(),
-        ),
-        TcpOutbound::Vless(vless) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(vless.user().level));
-            (
-                outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
-                outbound_policy.relay_buffer_size(),
-            )
-        }
-        TcpOutbound::Trojan(outbound) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
-            (
-                outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
-                outbound_policy.relay_buffer_size(),
-            )
-        }
-        TcpOutbound::Socks(outbound) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
-            (
-                outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
-                outbound_policy.relay_buffer_size(),
-            )
-        }
-        TcpOutbound::Http(outbound) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
-            (
-                outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
-                outbound_policy.relay_buffer_size(),
-            )
-        }
-        TcpOutbound::Vmess(outbound) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
-            (
-                outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
-                outbound_policy.relay_buffer_size(),
-            )
-        }
-        TcpOutbound::Shadowsocks2022(outbound) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
-            (
-                outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
-                outbound_policy.relay_buffer_size(),
-            )
-        }
-        TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(0));
-            (
-                outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
-                outbound_policy.relay_buffer_size(),
-            )
-        }
-        TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
-    };
+    let (open_timeout, tunnel_idle, relay_buffer_size) =
+        tcp_relay_policy(&config, &policy, &outbound);
     let outbound_label = crate::debug_log::tcp_outbound_label(&outbound);
     let client = outbound
         .writes_proxy_protocol()
@@ -896,6 +830,84 @@ pub(crate) async fn handle_socks_connect<const SOCKS_REPLY: bool>(
     };
     let _ = copied;
     connection.finish();
+}
+
+/// The open timeout, idle timeout and relay buffer for a TCP outbound: its
+/// own level's handshake and buffer, and the shorter of its idle timeout and
+/// the inbound's, as Xray-core's two timers make it.
+pub(crate) fn tcp_relay_policy(
+    config: &CoreConfig,
+    policy: &EffectivePolicy,
+    outbound: &TcpOutbound,
+) -> (Duration, Duration, usize) {
+    match outbound.primary() {
+        // Freedom's own timer runs at its level beside the inbound's, so the
+        // shorter idle timeout wins, as in Xray-core.
+        TcpOutbound::Freedom(freedom) => (
+            policy.handshake,
+            policy
+                .conn_idle
+                .min(effective_policy_for_level(config, Some(freedom.level())).conn_idle),
+            policy.relay_buffer_size(),
+        ),
+        TcpOutbound::Vless(vless) => {
+            let outbound_policy = effective_policy_for_level(config, Some(vless.user().level));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Trojan(outbound) => {
+            let outbound_policy = effective_policy_for_level(config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Socks(outbound) => {
+            let outbound_policy = effective_policy_for_level(config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Http(outbound) => {
+            let outbound_policy = effective_policy_for_level(config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Vmess(outbound) => {
+            let outbound_policy = effective_policy_for_level(config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Shadowsocks2022(outbound) => {
+            let outbound_policy = effective_policy_for_level(config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
+            let outbound_policy = effective_policy_for_level(config, Some(0));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
+    }
 }
 
 async fn read_socks_tcp_sniff_payload(
@@ -1653,7 +1665,7 @@ impl SocksUdpSniffedTarget {
     }
 }
 
-fn fake_ip_allows_content_sniffing(provenance: FakeIpTargetProvenance) -> bool {
+pub(crate) fn fake_ip_allows_content_sniffing(provenance: FakeIpTargetProvenance) -> bool {
     provenance != FakeIpTargetProvenance::Mapped
 }
 
@@ -1667,7 +1679,7 @@ fn should_sniff_socks_tcp(
         && crate::sniffing::should_sniff_tcp(config, routes_by_sniffing)
 }
 
-fn apply_fake_ip_sniffed_dial_precedence(
+pub(crate) fn apply_fake_ip_sniffed_dial_precedence(
     provenance: FakeIpTargetProvenance,
     mut sniffed: crate::sniffing::SniffedTarget,
 ) -> crate::sniffing::SniffedTarget {
