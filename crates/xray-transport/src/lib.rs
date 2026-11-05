@@ -59,6 +59,9 @@ pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};
 pub use reality_runtime::{
     RealityHandshakeContextProvider, RealityRuntimeEngine, SystemRealityHandshakeContextProvider,
 };
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub use reality_rustls::extract_server_hello_for_fuzzing;
 pub use reality_rustls::RustlsRealityTlsSessionProvider;
 pub use tls::{plain_tls_client_hello_bytes, TlsConnector};
 pub use utls_profiles::draw_modern_fingerprint;

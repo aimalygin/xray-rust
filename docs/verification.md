@@ -114,12 +114,16 @@ pull request.
 
 ## Release-candidate fuzz gate
 
-Eight `cargo-fuzz` targets cover the configuration parser, DNS wire parser and
-response builder, Vision plus UDP/XUDP framing, SOCKS/HTTP inbound parsing,
-QUIC Initial sniffing, XHTTP HTTP/1.1 response framing, the bounded TUN queue,
-and the public FFI lifecycle. The corpus and targets live under `fuzz/`. The
-release command runs each target for 60 seconds with AddressSanitizer and keeps
-all generated corpus/artifact files outside the worktree:
+The `cargo-fuzz` targets cover, among others, the configuration parser, DNS
+wire parser and response builder, Vision plus UDP/XUDP framing, SOCKS/HTTP
+inbound parsing, QUIC Initial sniffing, XHTTP HTTP/1.1 response framing, the
+bounded TUN queue, and the public FFI lifecycle. `stream_decoders` feeds
+server-to-client gRPC Hunk and WebSocket frames, Shadowsocks AEAD and 2022 TCP
+responses, and VLESS responses with Vision unpadding in read sizes chosen by
+the input, and parses the same bytes as REALITY server records for the
+ServerHello capture. The corpus and targets live under `fuzz/`. The release
+command runs each target for 60 seconds with AddressSanitizer and keeps all
+generated corpus/artifact files outside the worktree:
 
 ```sh
 cargo install cargo-fuzz --version 0.13.2 --locked

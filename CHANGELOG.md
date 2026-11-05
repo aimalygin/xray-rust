@@ -25,6 +25,10 @@ long-term supported release series.
   padding frame is now sent only in that case, behind the header, instead of
   on every connection.
 
+- The release fuzz campaign also covers the decoders that read server data:
+  gRPC and WebSocket framing, Shadowsocks TCP responses, VLESS responses with
+  Vision, and the REALITY ServerHello capture. Reads are split at arbitrary
+  boundaries.
 - Routing rules can check where a connection comes from, with Xray-core's
   `sourceIP` (or `source`), `sourcePort`, `localIP`, `localPort` and `user`.
   Profiles with them used to fail to parse.

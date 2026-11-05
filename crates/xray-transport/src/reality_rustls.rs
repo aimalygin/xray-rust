@@ -635,6 +635,13 @@ fn reality_crypto_provider() -> CryptoProvider {
     provider
 }
 
+/// Exercises the ServerHello capture without exposing it in normal builds.
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub fn extract_server_hello_for_fuzzing(records: &[u8]) -> Option<Vec<u8>> {
+    extract_server_hello(records).ok()
+}
+
 fn extract_server_hello(records: &[u8]) -> Result<Vec<u8>, TransportError> {
     let mut record_offset = 0;
     while record_offset + TLS_RECORD_HEADER_LEN <= records.len() {
