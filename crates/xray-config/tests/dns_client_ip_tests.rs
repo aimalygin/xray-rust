@@ -57,14 +57,24 @@ fn a_servers_own_client_ip_stays_its_own() {
             "192.0.2.56"
         ]
     }));
-    let own: Vec<_> = parsed.servers.iter().map(DnsServerConfig::client_ip).collect();
+    let own: Vec<_> = parsed
+        .servers
+        .iter()
+        .map(DnsServerConfig::client_ip)
+        .collect();
     assert_eq!(own, [ip("198.51.100.200"), None, None, None]);
     assert_eq!(parsed.client_ip, ip("203.0.113.77"));
 }
 
 #[test]
 fn a_client_ip_that_is_not_an_ip_address_is_refused() {
-    for raw in [json!("example.com"), json!(""), json!("203.0.113.77:53"), json!(5), json!([])] {
+    for raw in [
+        json!("example.com"),
+        json!(""),
+        json!("203.0.113.77:53"),
+        json!(5),
+        json!([]),
+    ] {
         assert_eq!(
             error_path(json!({"clientIp": raw, "servers": ["192.0.2.53"]})),
             "$.dns.clientIp",
