@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use bytes::Bytes;
 use http::{header, Method, Request};
+use rand::Rng as _;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
 use tokio::sync::{watch, Notify};
@@ -1125,6 +1126,9 @@ pub struct NameServerPolicy {
     pub final_query: bool,
     /// Overrides the resolver's default wall-clock budget for this client.
     pub timeout: Option<Duration>,
+    /// Xray-core's `clientIp`, sent as the EDNS client subnet of every query
+    /// to this server.
+    pub client_ip: Option<IpAddr>,
 }
 
 impl NameServerPolicy {
@@ -1141,6 +1145,7 @@ impl NameServerPolicy {
             query_strategy: DnsQueryStrategy::UseIp,
             final_query: false,
             timeout: None,
+            client_ip: None,
         }
     }
 }
@@ -1176,6 +1181,7 @@ impl CompiledNameServerPolicies {
                     query_strategy,
                     final_query,
                     timeout,
+                    client_ip,
                 } = policy;
                 matcher_count += domains.matcher_count();
                 pattern_bytes += domains.pattern_bytes();
@@ -1191,6 +1197,7 @@ impl CompiledNameServerPolicies {
                     query_strategy,
                     final_query,
                     timeout,
+                    client_ip,
                 }
             })
             .collect();
@@ -1312,6 +1319,7 @@ struct CompiledNameServerPolicy {
     query_strategy: DnsQueryStrategy,
     final_query: bool,
     timeout: Option<Duration>,
+    client_ip: Option<IpAddr>,
 }
 
 impl CompiledNameServerPolicy {
@@ -1608,21 +1616,31 @@ impl ConfiguredDnsResolver {
                 DnsQueryMetadata::local(name_server.tag.as_deref()),
             ),
         };
+        // Xray-core draws DoH padding once per lookup, for both families.
+        let padding = if transport == DnsQueryTransportKind::Https {
+            rand::thread_rng().gen_range(DOH_PADDING_MIN..DOH_PADDING_END)
+        } else {
+            0
+        };
+        let edns = edns_opt_record(name_server.client_ip, padding);
+        let server_query = ServerQuery {
+            transport,
+            metadata,
+            edns: edns.as_deref(),
+        };
         let result = match query_strategy {
             DnsQueryStrategy::UseIp => {
                 let (ipv4, ipv6) = tokio::join!(
                     self.query_server_until(
                         &name_server.server,
-                        transport,
-                        metadata,
+                        server_query,
                         domain,
                         DnsRecordType::A,
                         deadline,
                     ),
                     self.query_server_until(
                         &name_server.server,
-                        transport,
-                        metadata,
+                        server_query,
                         domain,
                         DnsRecordType::Aaaa,
                         deadline,
@@ -1633,8 +1651,7 @@ impl ConfiguredDnsResolver {
             DnsQueryStrategy::UseIpv4 => merge_configured_family_results([self
                 .query_server_until(
                     &name_server.server,
-                    transport,
-                    metadata,
+                    server_query,
                     domain,
                     DnsRecordType::A,
                     deadline,
@@ -1643,8 +1660,7 @@ impl ConfiguredDnsResolver {
             DnsQueryStrategy::UseIpv6 => merge_configured_family_results([self
                 .query_server_until(
                     &name_server.server,
-                    transport,
-                    metadata,
+                    server_query,
                     domain,
                     DnsRecordType::Aaaa,
                     deadline,
@@ -1671,13 +1687,17 @@ impl ConfiguredDnsResolver {
     async fn query_server_until(
         &self,
         name_server: &NameServer,
-        initial_transport: DnsQueryTransportKind,
-        metadata: DnsQueryMetadata<'_>,
+        server_query: ServerQuery<'_>,
         domain: &str,
         record_type: DnsRecordType,
         deadline: time::Instant,
     ) -> io::Result<(ParsedDnsResponse, Instant)> {
-        let query = build_dns_query(domain, record_type)?;
+        let ServerQuery {
+            transport: initial_transport,
+            metadata,
+            edns,
+        } = server_query;
+        let query = build_dns_query(domain, record_type, edns)?;
         let response = time::timeout_at(
             deadline,
             self.query_transport
@@ -2371,7 +2391,7 @@ async fn query_udp_dns_server(
     timeout: Duration,
     socket_protector: Option<&dyn SocketProtector>,
 ) -> io::Result<Option<ConfiguredDnsAnswer>> {
-    let query = build_dns_query(domain, record_type)?;
+    let query = build_dns_query(domain, record_type, None)?;
     let response = time::timeout(
         timeout,
         exchange_direct_udp(server_addr, &query, socket_protector),
@@ -2387,8 +2407,64 @@ async fn query_udp_dns_server(
     }
 }
 
-fn build_dns_query(domain: &str, record_type: DnsRecordType) -> io::Result<Vec<u8>> {
-    build_dns_query_with_id(domain, record_type, rand::random())
+fn build_dns_query(
+    domain: &str,
+    record_type: DnsRecordType,
+    edns: Option<&[u8]>,
+) -> io::Result<Vec<u8>> {
+    build_dns_query_with_id(domain, record_type, rand::random(), edns)
+}
+
+/// How one lookup reaches a server: the transport, its routing metadata and
+/// the OPT record every query of the lookup carries.
+#[derive(Clone, Copy)]
+struct ServerQuery<'a> {
+    transport: DnsQueryTransportKind,
+    metadata: DnsQueryMetadata<'a>,
+    edns: Option<&'a [u8]>,
+}
+
+/// The smallest and one past the largest EDNS(0) padding Xray-core puts in a
+/// DoH query, `crypto.RandBetween(100, 300)`.
+const DOH_PADDING_MIN: usize = 100;
+const DOH_PADDING_END: usize = 300;
+
+/// The OPT record Xray-core's `genEDNS0Options` appends to a query: none
+/// without a client subnet or padding, else a root-named OPT with a 1350-byte
+/// UDP payload size and the TTL Go's `SetEDNS0(1350, 0xfe00, true)` packs,
+/// extended RCODE byte 0xE0, version 0 and the DO bit. The client subnet
+/// (RFC 7871) is the address cut to /24 for IPv4 or /96 for IPv6, and padding
+/// (RFC 7830) is `padding` zero bytes.
+fn edns_opt_record(client_ip: Option<IpAddr>, padding: usize) -> Option<Vec<u8>> {
+    const OPTION_CLIENT_SUBNET: u16 = 8;
+    const OPTION_PADDING: u16 = 12;
+    if client_ip.is_none() && padding == 0 {
+        return None;
+    }
+    let mut options = Vec::new();
+    if let Some(ip) = client_ip {
+        let (family, prefix, address): (u16, u8, Vec<u8>) = match ip.to_canonical() {
+            IpAddr::V4(ip) => (1, 24, ip.octets()[..3].to_vec()),
+            IpAddr::V6(ip) => (2, 96, ip.octets()[..12].to_vec()),
+        };
+        options.extend_from_slice(&OPTION_CLIENT_SUBNET.to_be_bytes());
+        options.extend_from_slice(&(4 + address.len() as u16).to_be_bytes());
+        options.extend_from_slice(&family.to_be_bytes());
+        options.extend_from_slice(&[prefix, 0]);
+        options.extend_from_slice(&address);
+    }
+    if padding != 0 {
+        options.extend_from_slice(&OPTION_PADDING.to_be_bytes());
+        options.extend_from_slice(&u16::try_from(padding).ok()?.to_be_bytes());
+        options.resize(options.len() + padding, 0);
+    }
+    let mut record = vec![0];
+    record.extend_from_slice(&41_u16.to_be_bytes());
+    record.extend_from_slice(&1350_u16.to_be_bytes());
+    record.extend_from_slice(&0xE000_8000_u32.to_be_bytes());
+    record.extend_from_slice(&u16::try_from(options.len()).ok()?.to_be_bytes());
+    record.extend_from_slice(&options);
+    Some(record)
 }
 
 fn normalize_dns_name(domain: &str) -> Option<String> {
@@ -2400,6 +2476,7 @@ fn build_dns_query_with_id(
     domain: &str,
     record_type: DnsRecordType,
     id: u16,
+    edns: Option<&[u8]>,
 ) -> io::Result<Vec<u8>> {
     let normalized_domain = domain.trim_end_matches('.');
     if normalized_domain.is_empty() {
@@ -2415,7 +2492,7 @@ fn build_dns_query_with_id(
     query.extend_from_slice(&1_u16.to_be_bytes());
     query.extend_from_slice(&0_u16.to_be_bytes());
     query.extend_from_slice(&0_u16.to_be_bytes());
-    query.extend_from_slice(&0_u16.to_be_bytes());
+    query.extend_from_slice(&u16::from(edns.is_some()).to_be_bytes());
 
     for label in normalized_domain.split('.') {
         let label_bytes = label.as_bytes();
@@ -2431,6 +2508,9 @@ fn build_dns_query_with_id(
     query.push(0);
     query.extend_from_slice(&record_type.code().to_be_bytes());
     query.extend_from_slice(&1_u16.to_be_bytes());
+    if let Some(edns) = edns {
+        query.extend_from_slice(edns);
+    }
     Ok(query)
 }
 
@@ -2830,9 +2910,9 @@ mod tests {
     };
 
     use super::{
-        build_dns_query_with_id, exchange_direct_https_candidates, exchange_direct_tls_candidates,
-        exchange_dns_https_h2, exchange_dns_quic_candidates, parse_dns_response,
-        query_udp_dns_server, select_name_server_indices, CachingDnsResolver,
+        build_dns_query_with_id, edns_opt_record, exchange_direct_https_candidates,
+        exchange_direct_tls_candidates, exchange_dns_https_h2, exchange_dns_quic_candidates,
+        parse_dns_response, query_udp_dns_server, select_name_server_indices, CachingDnsResolver,
         CompiledNameServerPolicies, ConfiguredDnsAddresses, ConfiguredDnsAnswer,
         ConfiguredDnsResolver, DnsHostTarget, DnsLookup, DnsQueryDispatch, DnsQueryMetadata,
         DnsQueryStrategy, DnsQueryTransport, DnsQueryTransportKind, DnsRecordType, DnsResolver,
@@ -2842,10 +2922,54 @@ mod tests {
 
     #[test]
     fn build_dns_query_uses_injected_transaction_id() {
-        let query = build_dns_query_with_id("example.com", DnsRecordType::A, 0xA17E)
+        let query = build_dns_query_with_id("example.com", DnsRecordType::A, 0xA17E, None)
             .expect("valid query should encode");
 
         assert_eq!(&query[..2], &0xA17E_u16.to_be_bytes());
+    }
+
+    /// Queries packed by Go's `dnsmessage` with the OPT record Xray-core
+    /// v26.10.31's `genEDNS0Options` builds, for ID 0x1234 and `ecs.example`.
+    const XRAY_EDNS_QUERIES: [(&str, Option<&str>, usize, &str); 6] = [
+        ("none", None, 0, "12340100000100000000000003656373076578616d706c650000010001"),
+        ("v4", Some("203.0.113.77"), 0, "12340100000100000000000103656373076578616d706c6500000100010000290546e0008000000b0008000700011800cb0071"),
+        ("v6", Some("2001:db8:1:2:3:4:5:6"), 0, "12340100000100000000000103656373076578616d706c6500001c00010000290546e00080000014000800100002600020010db80001000200030004"),
+        ("pad100", None, 100, "12340100000100000000000103656373076578616d706c6500000100010000290546e00080000068000c006400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        ("v4pad150", Some("203.0.113.77"), 150, "12340100000100000000000103656373076578616d706c6500000100010000290546e000800000a50008000700011800cb0071000c0096000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        ("v6pad299", Some("2001:db8:1:2:3:4:5:6"), 299, "12340100000100000000000103656373076578616d706c6500001c00010000290546e00080000143000800100002600020010db80001000200030004000c012b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+    ];
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    #[test]
+    fn queries_carry_xray_cores_edns_record_byte_for_byte() {
+        for (name, client_ip, padding, expected) in XRAY_EDNS_QUERIES {
+            let client_ip = client_ip.map(|ip| ip.parse::<IpAddr>().unwrap());
+            let record_type = if client_ip.is_some_and(|ip| ip.is_ipv6()) {
+                DnsRecordType::Aaaa
+            } else {
+                DnsRecordType::A
+            };
+            let edns = edns_opt_record(client_ip, padding);
+            let query =
+                build_dns_query_with_id("ecs.example", record_type, 0x1234, edns.as_deref())
+                    .unwrap();
+            assert_eq!(hex(&query), expected, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_mapped_client_ip_is_ipv4_and_the_host_bits_are_cut() {
+        let mapped = edns_opt_record(Some("::ffff:203.0.113.77".parse().unwrap()), 0);
+        let plain = edns_opt_record(Some("203.0.113.1".parse().unwrap()), 0);
+        assert_eq!(mapped, plain);
+        let v6 = edns_opt_record(Some("2001:db8:1:2:3:4:ffff:ffff".parse().unwrap()), 0);
+        assert_eq!(
+            v6,
+            edns_opt_record(Some("2001:db8:1:2:3:4::".parse().unwrap()), 0)
+        );
     }
 
     fn dns_ip_cidr(network: &str, prefix_len: u8) -> Cidr {
@@ -3099,7 +3223,7 @@ mod tests {
 
     #[tokio::test]
     async fn dns_over_https_h2_posts_wire_message_and_reads_bounded_response() {
-        let query = build_dns_query_with_id("example.com", DnsRecordType::A, 0xD048)
+        let query = build_dns_query_with_id("example.com", DnsRecordType::A, 0xD048, None)
             .expect("test query should encode");
         let dns_response = build_test_a_response(&query, Ipv4Addr::new(192, 0, 2, 44));
         let expected_query = query.clone();
@@ -3172,7 +3296,7 @@ mod tests {
     #[tokio::test]
     async fn dns_over_tls_retries_a_bootstrap_candidate_after_protocol_failure() {
         let server_name = "resolver.example";
-        let query = build_dns_query_with_id("dot-failover.example", DnsRecordType::A, 0xD04A)
+        let query = build_dns_query_with_id("dot-failover.example", DnsRecordType::A, 0xD04A, None)
             .expect("test query should encode");
         let dns_response = build_test_a_response(&query, Ipv4Addr::new(192, 0, 2, 46));
         let (server_tls, connector) = test_tls_pair(server_name, &[]);
@@ -3230,7 +3354,7 @@ mod tests {
     #[tokio::test]
     async fn dns_over_https_retries_a_bootstrap_candidate_after_http_failure() {
         let server_name = "resolver.example";
-        let query = build_dns_query_with_id("doh-failover.example", DnsRecordType::A, 0xD04B)
+        let query = build_dns_query_with_id("doh-failover.example", DnsRecordType::A, 0xD04B, None)
             .expect("test query should encode");
         let dns_response = build_test_a_response(&query, Ipv4Addr::new(192, 0, 2, 47));
         let (server_tls, connector) = test_tls_pair(server_name, &[b"h2"]);
@@ -3273,7 +3397,7 @@ mod tests {
     #[tokio::test]
     async fn dns_over_quic_uses_doq_alpn_and_one_length_prefixed_stream() {
         let server_name = "resolver.example";
-        let query = build_dns_query_with_id("example.com", DnsRecordType::A, 0xD049)
+        let query = build_dns_query_with_id("example.com", DnsRecordType::A, 0xD049, None)
             .expect("test query should encode");
         let dns_response = build_test_a_response(&query, Ipv4Addr::new(192, 0, 2, 45));
         let (server_config, connector) = test_doq_pair(server_name);
@@ -3326,7 +3450,7 @@ mod tests {
     #[tokio::test]
     async fn dns_over_quic_retries_a_bootstrap_candidate_after_invalid_framing() {
         let server_name = "resolver.example";
-        let query = build_dns_query_with_id("doq-failover.example", DnsRecordType::A, 0xD04C)
+        let query = build_dns_query_with_id("doq-failover.example", DnsRecordType::A, 0xD04C, None)
             .expect("test query should encode");
         let dns_response = build_test_a_response(&query, Ipv4Addr::new(192, 0, 2, 48));
         let (server_config, connector) = test_doq_pair(server_name);
@@ -3688,7 +3812,8 @@ mod tests {
 
     #[test]
     fn dns_parser_flattens_out_of_order_cname_chain_and_uses_minimum_ttl() {
-        let query = build_dns_query_with_id("origin.example", DnsRecordType::A, 0xA17F).unwrap();
+        let query =
+            build_dns_query_with_id("origin.example", DnsRecordType::A, 0xA17F, None).unwrap();
         let response =
             build_test_cname_and_a_response(&query, "alias.example", Ipv4Addr::new(192, 0, 2, 84));
 
@@ -3707,7 +3832,7 @@ mod tests {
 
     #[test]
     fn dns_parser_preserves_authoritative_ttl_above_300_seconds() {
-        let query = build_dns_query_with_id("long-ttl.example", DnsRecordType::A, 0xA180)
+        let query = build_dns_query_with_id("long-ttl.example", DnsRecordType::A, 0xA180, None)
             .expect("build query");
         let response = build_test_address_response(
             &query,
@@ -3890,9 +4015,13 @@ mod tests {
                 .expect("server should receive query");
             let query = packet[..len].to_vec();
             let transaction_id = u16::from_be_bytes([query[0], query[1]]);
-            let unrelated_query =
-                build_dns_query_with_id("unrelated.example", DnsRecordType::A, transaction_id)
-                    .unwrap();
+            let unrelated_query = build_dns_query_with_id(
+                "unrelated.example",
+                DnsRecordType::A,
+                transaction_id,
+                None,
+            )
+            .unwrap();
             server
                 .send_to(
                     &build_test_a_response(&unrelated_query, Ipv4Addr::new(198, 51, 100, 99)),
@@ -4018,6 +4147,130 @@ mod tests {
                     io::ErrorKind::InvalidData,
                     "unexpected DNS record type",
                 )),
+            }
+        }
+    }
+
+    /// Records every query with its transport and answers from its question
+    /// alone, so an OPT record in the query stays out of the answer.
+    #[derive(Default)]
+    struct EdnsRecordingTransport {
+        queries: Mutex<Vec<(DnsQueryTransportKind, Vec<u8>)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for EdnsRecordingTransport {
+        async fn exchange(
+            &self,
+            _server: &NameServer,
+            transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            self.queries
+                .lock()
+                .unwrap()
+                .push((transport, query.to_vec()));
+            let mut end = 12;
+            let (_, record_type, _) = super::read_dns_question(query, &mut end)?;
+            let question = &query[..end];
+            Ok(match record_type {
+                1 => build_test_a_response(question, Ipv4Addr::new(192, 0, 2, 90)),
+                _ => build_test_address_response(
+                    question,
+                    &[(
+                        28,
+                        60,
+                        Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 90)
+                            .octets()
+                            .to_vec(),
+                    )],
+                ),
+            })
+        }
+    }
+
+    /// The OPT record after a query's question, if any.
+    fn opt_record(query: &[u8]) -> Option<&[u8]> {
+        let mut end = 12;
+        super::read_dns_question(query, &mut end).unwrap();
+        let additional = u16::from_be_bytes([query[10], query[11]]);
+        assert_eq!(usize::from(additional), usize::from(end < query.len()));
+        (end < query.len()).then(|| &query[end..])
+    }
+
+    #[tokio::test]
+    async fn each_server_sends_its_client_subnet_and_doh_pads_both_families() {
+        let transport = Arc::new(EdnsRecordingTransport::default());
+        let policy = |address: [u8; 4], transport, client_ip: Option<&str>| {
+            let mut policy =
+                NameServerPolicy::new(NameServer::Socket(SocketAddr::from((address, 53))));
+            policy.transport = transport;
+            policy.https_path =
+                (transport == NameServerTransport::HttpsLocal).then(|| "/dns-query".to_owned());
+            policy.client_ip = client_ip.map(|ip| ip.parse().unwrap());
+            policy.skip_fallback = false;
+            policy
+        };
+        for (server, expected_subnet) in [
+            (
+                policy(
+                    [192, 0, 2, 1],
+                    NameServerTransport::Classic,
+                    Some("203.0.113.77"),
+                ),
+                Some("203.0.113.77"),
+            ),
+            (
+                policy([192, 0, 2, 2], NameServerTransport::Classic, None),
+                None,
+            ),
+            (
+                policy([192, 0, 2, 3], NameServerTransport::HttpsLocal, None),
+                None,
+            ),
+            (
+                policy(
+                    [192, 0, 2, 4],
+                    NameServerTransport::HttpsLocal,
+                    Some("2001:db8::1"),
+                ),
+                Some("2001:db8::1"),
+            ),
+        ] {
+            transport.queries.lock().unwrap().clear();
+            let https = server.transport == NameServerTransport::HttpsLocal;
+            let resolver = ConfiguredDnsResolver::new(
+                DomainHostIndex::default(),
+                Vec::new(),
+                Arc::new(RejectingResolver),
+            )
+            .with_name_server_policies(vec![server])
+            .with_query_transport(transport.clone());
+            resolver.resolve_all("ecs.example", 443).await.unwrap();
+
+            let queries = transport.queries.lock().unwrap().clone();
+            assert_eq!(queries.len(), 2, "one query per family");
+            let records: Vec<_> = queries
+                .iter()
+                .map(|(_, query)| opt_record(query).map(<[u8]>::to_vec))
+                .collect();
+            let padding = if https {
+                // A and AAAA carry the same record, padding drawn once.
+                assert_eq!(records[0], records[1]);
+                let record = records[0].as_deref().expect("DoH always pads");
+                let length = usize::from(u16::from_be_bytes([record[9], record[10]]));
+                let subnet =
+                    expected_subnet.map_or(0, |ip: &str| if ip.contains(':') { 20 } else { 11 });
+                let padding = length - subnet - 4;
+                assert!((100..300).contains(&padding), "{padding}");
+                padding
+            } else {
+                0
+            };
+            let expected = edns_opt_record(expected_subnet.map(|ip| ip.parse().unwrap()), padding);
+            for record in records {
+                assert_eq!(record, expected);
             }
         }
     }
@@ -7048,6 +7301,12 @@ mod tests {
     }
 
     fn build_test_address_response(query: &[u8], answers: &[(u16, u32, Vec<u8>)]) -> Vec<u8> {
+        // A server repeats the question, not the query's OPT record.
+        let mut question_end = 12;
+        let query = match super::read_dns_question(query, &mut question_end) {
+            Ok(_) => &query[..question_end],
+            Err(_) => query,
+        };
         let mut response = Vec::with_capacity(query.len() + answers.len() * 28);
         response.extend_from_slice(&query[..2]);
         response.extend_from_slice(&0x8180_u16.to_be_bytes());

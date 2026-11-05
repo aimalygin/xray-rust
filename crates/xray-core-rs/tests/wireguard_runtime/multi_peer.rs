@@ -67,7 +67,9 @@ async fn wireguard_runtime_multi_peer_json_bootstrap_shared_ownership_and_host_c
         assert_eq!(protector.0.load(Ordering::SeqCst),2,"one cached device with one socket per family");
         let snapshot = core.connection_snapshot();
         assert_eq!(snapshot.connections.len(),3);
-        let first_id = snapshot.connections.iter().find(|c| c.target.addr == TargetAddr::Domain("192.0.2.7".into())).unwrap().id;
+        // The SOCKS client sends the address as a domain, which the inbound
+        // reads as the IP it spells, as Xray-core's does.
+        let first_id = snapshot.connections.iter().find(|c| c.target.addr == TargetAddr::Ip("192.0.2.7".parse().unwrap())).unwrap().id;
         core.close_connection(first_id).unwrap();
         assert!(first.read_u8().await.is_err());
         echo(&mut second,b"other peer survives host close").await;

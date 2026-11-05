@@ -470,14 +470,21 @@ Other top-level keys are rejected.
 
 | Protocol | Supported behavior | Unsupported or constrained behavior |
 | --- | --- | --- |
-| `socks` (alias `mixed`) | SOCKS5 `CONNECT`, `UDP ASSOCIATE` unless `"udp": false`, SOCKS 4/4a `CONNECT`, HTTP `CONNECT` and plain HTTP forwarding on the same port, `userLevel`, sniffing; `auth` `noauth` or `password` with RFC 1929 `accounts` | GSSAPI; SOCKS 4 `BIND`; `accounts` with `noauth`; an absent `udp` keeps `UDP ASSOCIATE` enabled, unlike Xray-core |
+| `socks` (alias `mixed`) | SOCKS5 `CONNECT` (and Tor's `RESOLVE`, as `CONNECT`), `UDP ASSOCIATE` unless `"udp": false`, SOCKS 4/4a `CONNECT`, HTTP `CONNECT` and plain HTTP forwarding on the same port, `userLevel`, sniffing; `auth` `noauth` or `password` with RFC 1929 `accounts` (or `users`) | GSSAPI; SOCKS5 and SOCKS 4 `BIND`; `accounts` with `noauth`; an `auth` other than `noauth` or `password`; an absent `udp` keeps `UDP ASSOCIATE` enabled, unlike Xray-core |
 | `http` | HTTP `CONNECT` and plain HTTP forwarding, `accounts` (Basic), timeout-shaped policy, `userLevel`, sniffing | Transparent proxy mode |
 | `tun` | Platform packet boundary or registered fd; port may be omitted | Platform interface creation and routes are host responsibilities |
 
 `"auth": "password"` requires 1–64 `accounts` entries of `{"user", "pass"}`,
-each value 1–255 UTF-8 bytes, and makes the inbound offer only RFC 1929
-username/password; a client offering only no-auth receives `0xFF`. Credentials
-are compared in constant time and redacted from `Debug` output and diagnostics.
+and makes the inbound offer only RFC 1929 username/password; a client offering
+only no-auth receives `0xFF`. As in Xray-core v26.10.31, `users` is another
+name for `accounts`, which replaces it unless `null`; each value holds at most
+255 UTF-8 bytes, an absent or `null` one is empty, and a later account
+replaces an earlier one of the same `user`. A failed login gets status `0xFF`,
+as from Xray-core, and the version byte of the login is not checked.
+Credentials are compared in constant time and redacted from `Debug` output and
+diagnostics. Xray-core reads an `auth` other than `password` as `noauth`; it
+is refused here, so that a misspelled `password` cannot leave the inbound
+open.
 RFC 1929 authenticates only the TCP control connection, so a password-protected
 `UDP ASSOCIATE` accepts datagrams only from the client endpoint declared in the
 request. A request that leaves the port unset, such as `0.0.0.0:0`, is refused
@@ -502,16 +509,40 @@ treats it as `false`; set `udp` explicitly in profiles shared with Xray-core.
 Whether to adopt Xray-core's default is an
 [open compatibility question](xray-core-differences.md#socks-inbound-udp-false-and-the-absent-default).
 
+A SOCKS5 request is read as Xray-core v26.10.31 reads it, within one
+handshake timeout from the first byte of the greeting to the end of the
+request:
+
+- Only the command byte is checked, not the version or reserved byte. Tor's
+  `RESOLVE` (`0xF0`) and `RESOLVE_PTR` (`0xF1`) connect, as `CONNECT` does.
+  `BIND`, an unknown command, and `UDP ASSOCIATE` while `udp` is false get
+  `REP = 0x07` before the address is read.
+- A domain that starts with a digit or `[` and is an IP literal to Go's
+  `net.ParseAddress` is that IP, so `ip` rules match it: `127.0.0.1`,
+  `[::1]` and `127.0.0.1 ` are addresses. The brackets go, and white space
+  around a name that starts or ends with neither a letter nor a digit is
+  trimmed. An IPv4-mapped IPv6 address, as a domain or an IPv6 field, is IPv4.
+- Any other domain may hold only ASCII letters, digits, `-`, `.` and `_`.
+  Another one, an unknown address type, or a request cut short closes the
+  connection without a reply, as in Xray-core. These used to get a general
+  failure reply.
+- UDP datagrams follow the same address rules; one that breaks them is
+  dropped, as is a datagram without a payload. Their reserved bytes are not
+  checked. A SOCKS outbound reads its server's replies by the same rules.
+
 As in Xray-core, the first byte of a connection selects the protocol, and
 `mixed` is only another name for `socks`:
 
 - `5` is SOCKS5 as above.
 - `4` is SOCKS 4 or 4a `CONNECT`. The user ID is ignored, an address whose
   first byte is zero is followed by a domain (4a), and the grant
-  (`0x00 0x5A`, zero port and address) is sent before dispatch. Other commands,
-  a user ID or domain over 255 bytes, and any SOCKS 4 request while the
-  inbound requires a password are refused with `0x5B`; Xray refuses the last
-  for the same reason, and allows user IDs up to 8 KiB.
+  (`0x00 0x5A`, zero port and address) is sent before dispatch. The 4a domain
+  is read with Go's `net.ParseAddress`, as above, but its characters are not
+  checked. Other commands, a user ID or domain over 255 bytes, and any SOCKS 4
+  request while the inbound requires a password are refused with `0x5B`; Xray
+  refuses the last for the same reason, and allows user IDs up to 8 KiB. An
+  empty or non-UTF-8 4a domain is also refused, where Xray-core grants it and
+  then fails to dial.
 - Anything else is an HTTP request, served as on the HTTP inbound below.
   Under `password`, it needs `Proxy-Authorization: Basic` with one of the
   `accounts`.
@@ -2420,8 +2451,22 @@ seconds. Xray treats zero as an unbounded stale lifetime; this mobile-oriented
 core rejects that value rather than silently retaining records forever.
 Per-server cache/stale overrides remain unsupported because the current cache
 is owned once per Core rather than once per upstream. Special
-`localhost`/`fakedns` clients, routed DoQ, `clientIp`, and parallel queries are rejected until their
+`localhost`/`fakedns` clients, routed DoQ, and parallel queries are rejected until their
 runtime semantics exist; they are not silently approximated as classic UDP.
+
+`clientIp`, at the top level and in an object server, is sent as the EDNS
+client subnet (RFC 7871) of every query, as Xray-core v26.10.31 sends it. A
+server's own value replaces the top-level one, and a `null` one means none, so
+the top-level value applies. The value is an IP address read as Xray-core reads
+an address: brackets and surrounding spaces are dropped, an IPv4-mapped
+address is IPv4, and a domain, `host:port` or a non-string fails the
+configuration. The query then carries Xray-core's OPT record byte for byte: a
+1350-byte UDP payload size, the DNSSEC OK bit, an extended RCODE byte of
+`0xE0` (from Go packing `SetEDNS0(1350, 0xfe00, true)`), and the address cut to
+/24 for IPv4 or /96 for IPv6. With the DNSSEC OK bit, servers may add
+signature records; answers keep only the addresses. Every DoH query carries
+EDNS padding (RFC 7830) of 100 to 299 zero bytes, drawn once per lookup for both
+families, as Xray-core pads it, with or without a client subnet.
 
 Object servers support Xray's `expectedIPs`, legacy `expectIPs` alias, and
 `unexpectedIPs`. Each accepts an array, one comma-separated string, or `null`.
@@ -2846,7 +2891,7 @@ SOCKS, or HTTP TCP/UDP flow targets a mapped fake address, the original domain
 is restored before routing. VLESS carries that domain for remote resolution;
 Freedom resolves it through the managed routed resolver, including in mobile
 `StaticOnly` mode. Managed `dns.servers` routed DoQ transport, per-server cache
-policy, `clientIp`, and the broader
+policy, and the broader
 Xray DNS feature set are not implemented. This does not limit the DNS
 outbound's documented TLS/REALITY `streamSettings`. The public resolver result
 carries every candidate and TTL metadata. An explicitly enabled

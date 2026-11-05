@@ -1091,13 +1091,41 @@
     },
     {
       "name": "socks-account-empty-pass",
+      "accepted": true,
+      "base": "socks-password",
+      "set": {
+        "/inbounds/0/settings/accounts/0": {
+          "user": "synthetic-user",
+          "pass": ""
+        }
+      }
+    },
+    {
+      "name": "socks-users-alias",
+      "accepted": true,
+      "base": "socks-password",
+      "set": {
+        "/inbounds/0/settings": {
+          "auth": "password",
+          "accounts": null,
+          "users": [
+            {
+              "user": "synthetic-user",
+              "pass": "synthetic-pass"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "socks-account-pass-too-long",
       "accepted": false,
       "errorPath": "$.inbounds[0].settings.accounts[0]",
       "base": "socks-password",
       "set": {
         "/inbounds/0/settings/accounts/0": {
           "user": "synthetic-user",
-          "pass": ""
+          "pass": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
         }
       }
     },
@@ -1336,6 +1364,33 @@
       "base": "dns-policy",
       "set": {
         "/outbounds/1/settings/rules/0/qtype": 65
+      }
+    },
+    {
+      "name": "dns-client-ip-accepted",
+      "accepted": true,
+      "base": "dns-policy",
+      "set": {
+        "/dns/clientIp": "203.0.113.77",
+        "/dns/servers/0/clientIp": "2001:db8::1"
+      }
+    },
+    {
+      "name": "dns-client-ip-domain",
+      "accepted": false,
+      "errorPath": "$.dns.clientIp",
+      "base": "dns-policy",
+      "set": {
+        "/dns/clientIp": "example.com"
+      }
+    },
+    {
+      "name": "dns-server-client-ip-domain",
+      "accepted": false,
+      "errorPath": "$.dns.servers[0].clientIp",
+      "base": "dns-policy",
+      "set": {
+        "/dns/servers/0/clientIp": "example.com"
       }
     },
     {

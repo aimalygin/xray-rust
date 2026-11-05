@@ -17,11 +17,11 @@ use xray_config::{
     CoreConfig, DomainStrategy, InboundSniffingConfig, RouteContext, SocksInboundSettings,
 };
 use xray_proxy::inbound::{
-    encode_socks5_udp_datagram, negotiate_socks5, parse_socks4_connect,
-    parse_socks5_request_message, parse_socks5_udp_datagram, write_socks5_command_not_supported,
+    encode_socks5_udp_datagram, negotiate_socks5, parse_socks4_connect, parse_socks5_udp_datagram,
+    read_socks5_command, read_socks5_target, write_socks5_command_not_supported,
     write_socks5_failure, write_socks5_success, write_socks5_success_with_bind,
-    HttpInboundAccounts, InboundUser, SocksCommand, SocksInboundAuth, SOCKS4_GRANTED,
-    SOCKS4_REJECTED, SOCKS4_VERSION,
+    HttpInboundAccounts, InboundUser, SocksCommand, SocksInboundAuth, SocksParseError,
+    SOCKS4_GRANTED, SOCKS4_REJECTED, SOCKS4_VERSION,
 };
 use xray_proxy::vless::{
     encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet, read_xudp_packet,
@@ -380,7 +380,9 @@ async fn handle_socks_connection(
             return;
         }
     }
-    let Some(user) = tokio::time::timeout(policy.handshake, negotiate_socks5(&mut inbound, auth))
+    // Xray-core gives the whole handshake one deadline.
+    let deadline = tokio::time::Instant::now() + policy.handshake;
+    let Some(user) = tokio::time::timeout_at(deadline, negotiate_socks5(&mut inbound, auth))
         .await
         .ok()
         .and_then(Result::ok)
@@ -388,22 +390,34 @@ async fn handle_socks_connection(
         return;
     };
 
-    let request =
-        match tokio::time::timeout(policy.handshake, parse_socks5_request_message(&mut inbound))
-            .await
-        {
-            Ok(Ok(request)) => request,
+    // Xray-core refuses a command it does not serve, and UDP while `"udp"`
+    // is false, before reading the address. A request it cannot read is
+    // closed without a reply.
+    let command = match tokio::time::timeout_at(deadline, read_socks5_command(&mut inbound)).await {
+        Ok(Ok(SocksCommand::UdpAssociate)) if !settings.udp => None,
+        Ok(Ok(command)) => Some(command),
+        Ok(Err(SocksParseError::UnsupportedCommand(_))) => None,
+        _ => return,
+    };
+    let Some(command) = command else {
+        let _ = write_socks5_command_not_supported(&mut inbound).await;
+        crate::http::drain_arrived(&inbound);
+        return;
+    };
+    let target =
+        match tokio::time::timeout_at(deadline, read_socks5_target(&mut inbound, command)).await {
+            Ok(Ok(target)) => target,
             _ => {
-                let _ = write_socks5_failure(&mut inbound).await;
+                crate::http::drain_arrived(&inbound);
                 return;
             }
         };
 
-    match request.command {
+    match command {
         SocksCommand::Connect => {
             handle_socks_connect::<true>(
                 inbound,
-                request.target,
+                target,
                 user,
                 inbound_tag,
                 config,
@@ -418,15 +432,8 @@ async fn handle_socks_connection(
             .await;
         }
         SocksCommand::UdpAssociate => {
-            // Like Xray-core, `"udp": false` refuses before a relay socket or
-            // client lock exists; returning closes the control connection.
-            if !settings.udp {
-                let _ = write_socks5_command_not_supported(&mut inbound).await;
-                return;
-            }
             let client_lock = if auth.requires_password() {
-                let Some(lock) =
-                    SocksUdpClientLock::for_request(&request.target, inbound.peer_addr().ok())
+                let Some(lock) = SocksUdpClientLock::for_request(&target, inbound.peer_addr().ok())
                 else {
                     let _ = write_socks5_failure(&mut inbound).await;
                     return;
@@ -1042,6 +1049,10 @@ async fn handle_socks_udp_associate(
                 let Ok(datagram) = parse_socks5_udp_datagram(&buffer[..len]) else {
                     continue;
                 };
+                // Xray-core drops a datagram without a payload.
+                if datagram.payload.is_empty() {
+                    continue;
+                }
                 let flow_key = (client_addr, datagram.target.clone());
                 activity_sequence = activity_sequence.wrapping_add(1);
 
