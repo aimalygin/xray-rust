@@ -902,9 +902,12 @@ pub struct DnsOutboundRule {
     pub action: DnsOutboundRuleAction,
     /// DNS response code used by `Return` and by non-address `Hijack` rules.
     pub r_code: u16,
+    /// The query types the rule answers; empty answers every type.
     pub qtype_ranges: Vec<DnsQTypeRange>,
-    /// Compiled with [`compile_dns_domain_matchers`] semantics.
-    pub domain_matchers: DomainMatcherSet,
+    /// Compiled with [`compile_dns_domain_matchers`] semantics. `None` sets
+    /// no condition; an empty set, from a geosite selection with no domain,
+    /// matches no name.
+    pub domain_matchers: Option<DomainMatcherSet>,
 }
 
 impl DnsOutboundRule {
@@ -916,7 +919,10 @@ impl DnsOutboundRule {
     fn matches_normalized(&self, qtype: u16, normalized_domain: &str) -> bool {
         (self.qtype_ranges.is_empty()
             || self.qtype_ranges.iter().any(|range| range.contains(qtype)))
-            && (self.domain_matchers.is_empty() || self.domain_matchers.matches(normalized_domain))
+            && self
+                .domain_matchers
+                .as_ref()
+                .is_none_or(|matchers| matchers.matches(normalized_domain))
     }
 }
 

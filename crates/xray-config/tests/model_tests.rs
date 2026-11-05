@@ -3,11 +3,11 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use xray_config::{
     compile_dns_domain_matchers, compile_domain_matchers, CoreConfig, Diagnostic,
     DiagnosticSeverity, DnsConfig, DnsIpFilter, DnsOutboundRule, DnsOutboundRuleAction,
-    DnsOutboundSettings, DnsQTypeRange, DnsQueryStrategy, DomainMatcher, DomainMatcherSet,
-    HappyEyeballsSettings, InboundConfig, InboundProtocol, IpCidr, IpMatcherSet, Network,
-    OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
-    RegexMatcher, RoutingConfig, RoutingPortRange, RoutingRule, RoutingRuleTarget, SocketOptions,
-    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, VlessOutboundSettings, VlessUser,
+    DnsOutboundSettings, DnsQTypeRange, DnsQueryStrategy, DomainMatcher, HappyEyeballsSettings,
+    InboundConfig, InboundProtocol, IpCidr, IpMatcherSet, Network, OutboundConfig,
+    OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId, RegexMatcher,
+    RoutingConfig, RoutingPortRange, RoutingRule, RoutingRuleTarget, SocketOptions, StreamSecurity,
+    StreamSettings, StreamTransport, TargetAddr, VlessOutboundSettings, VlessUser,
 };
 use xray_routing::Cidr;
 
@@ -178,16 +178,18 @@ fn dns_outbound_rules_use_first_match_and_xray_defaults() {
                 action: DnsOutboundRuleAction::Direct,
                 r_code: 0,
                 qtype_ranges: vec![DnsQTypeRange::single(1)],
-                domain_matchers: compile_dns_domain_matchers(&[DomainMatcher::Suffix(
-                    "internal.example".to_owned(),
-                )])
-                .unwrap(),
+                domain_matchers: Some(
+                    compile_dns_domain_matchers(&[DomainMatcher::Suffix(
+                        "internal.example".to_owned(),
+                    )])
+                    .unwrap(),
+                ),
             },
             DnsOutboundRule {
                 action: DnsOutboundRuleAction::Drop,
                 r_code: 0,
                 qtype_ranges: vec![DnsQTypeRange::single(1)],
-                domain_matchers: DomainMatcherSet::default(),
+                domain_matchers: None,
             },
         ],
         ..Default::default()
@@ -215,10 +217,12 @@ fn dns_outbound_rules_use_first_match_and_xray_defaults() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: vec![DnsQTypeRange::single(1)],
-            domain_matchers: compile_dns_domain_matchers(&[DomainMatcher::Regex(
-                RegexMatcher::new(r"^api\.internal\.example$").expect("valid domain regexp"),
-            )])
-            .unwrap(),
+            domain_matchers: Some(
+                compile_dns_domain_matchers(&[DomainMatcher::Regex(
+                    RegexMatcher::new(r"^api\.internal\.example$").expect("valid domain regexp"),
+                )])
+                .unwrap(),
+            ),
         }],
         ..Default::default()
     };

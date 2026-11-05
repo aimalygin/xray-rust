@@ -823,10 +823,6 @@ fn rejects_invalid_dns_outbound_fields_with_precise_paths() {
             "$.outbounds[0].settings.rules[0].action",
         ),
         (
-            r#"{ "rules": [{ "action": "drop", "qType": "24-23" }] }"#,
-            "$.outbounds[0].settings.rules[0].qType[0]",
-        ),
-        (
             r#"{ "rules": [{ "action": "drop", "qType": "65536" }] }"#,
             "$.outbounds[0].settings.rules[0].qType[0]",
         ),
@@ -1524,6 +1520,62 @@ fn a_geosite_selection_without_domains_matches_nothing() {
     // `ext-site:` spells `ext:`.
     let ext_site = &parsed.config.routing.rules[1];
     assert!(ext_site.matches_domain(Some("api.example.com")));
+}
+
+#[test]
+fn dns_geosite_selections_without_domains_match_nothing() {
+    let asset_dir = unique_temp_dir("dns-geosite-empty-selection");
+    write_geosite_dat(
+        &asset_dir,
+        "geosite.dat",
+        &[TestGeoSite {
+            code: "TEST".to_owned(),
+            domain: vec![site_domain(2, "example.com", &[])],
+        }],
+    );
+    let raw = r#"{
+        "dns": {
+          "servers": [
+            { "address": "192.0.2.53", "domains": ["geosite:test@missing"] },
+            { "address": "192.0.2.54", "domains": ["ext-site:geosite.dat:test"] }
+          ],
+          "hosts": {
+            "geosite:test@missing": "192.0.2.1",
+            "ext-site:geosite.dat:test": "192.0.2.2"
+          }
+        },
+        "outbounds": [{
+          "tag": "dns-out",
+          "protocol": "dns",
+          "settings": { "rules": [{ "action": "drop", "domain": ["geosite:test@missing"] }] }
+        }]
+    }"#;
+
+    let parsed = parse_xray_json_with_geodata_dirs(raw, &[asset_dir]).expect("config should parse");
+
+    let DnsServerConfig::Policy(empty) = &parsed.config.dns.servers[0] else {
+        panic!("expected a policy server");
+    };
+    assert!(!empty.domains.matches("example.com"));
+    let DnsServerConfig::Policy(ext_site) = &parsed.config.dns.servers[1] else {
+        panic!("expected a policy server");
+    };
+    assert!(ext_site.domains.matches("api.example.com"));
+    // The empty selection maps nothing; `ext-site:` maps the code.
+    assert_eq!(
+        parsed.config.dns.hosts.lookup("api.example.com"),
+        Some(&DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2))))
+    );
+    // The DNS outbound keeps the condition, so the rule answers no name
+    // rather than every one.
+    let OutboundSettings::Dns(settings) = &parsed.config.outbounds[0].settings else {
+        panic!("expected dns outbound");
+    };
+    assert!(settings.rules[0].domain_matchers.is_some());
+    assert_eq!(
+        settings.action_for(16, "example.com"),
+        DnsOutboundRuleAction::Return
+    );
 }
 
 #[test]

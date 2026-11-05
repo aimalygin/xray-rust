@@ -1,6 +1,9 @@
 //! Routing configuration, selectors, and their bounded parser budgets.
 
-use super::{insert_domain_matchers, parse_xray_duration, Parser, OBSERVATORY_PROBE_TIMEOUT};
+use super::{
+    insert_domain_matchers, parse_xray_duration, Parser, PlainDomain, U16SelectorKind,
+    OBSERVATORY_PROBE_TIMEOUT,
+};
 use crate::surface;
 use crate::{
     DomainNameMode, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
@@ -554,7 +557,11 @@ impl Parser<'_> {
         // Unlike a final rule, a routing rule checks ports for any `port`
         // given, so `0` and `""` match no port.
         let port_ranges = self
-            .port_list(rule.get("port"), &format!("{rule_path}.port"))?
+            .port_list(
+                rule.get("port"),
+                &format!("{rule_path}.port"),
+                U16SelectorKind::RoutingPort,
+            )?
             .map(|list| list.ranges);
         let domain_matchers = self.routing_rule_domains(rule, &rule_path)?;
         let ip_matchers = match self.string_list(rule.get("ip"), &format!("{rule_path}.ip"))? {
@@ -640,7 +647,8 @@ impl Parser<'_> {
                 self.domain_matcher_budget_error(&entry.path);
                 return None;
             }
-            let parsed = self.routing_domain_rule(entry.text, &entry.path, remaining)?;
+            let parsed =
+                self.domain_rule(entry.text, &entry.path, remaining, PlainDomain::Substring)?;
             if !self.matcher_budget.consume_domain_matchers(parsed.len()) {
                 self.domain_matcher_budget_error(&entry.path);
                 return None;

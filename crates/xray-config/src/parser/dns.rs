@@ -692,65 +692,43 @@ impl Parser<'_> {
         })
     }
 
+    /// A server's `domains`, a `StringList` of domain rules as Xray-core's
+    /// `geodata.ParseDomainRules` reads them, plain text being a substring.
     pub(super) fn parse_dns_server_domains(
         &mut self,
         server: &Value,
         path: &str,
     ) -> Option<DomainMatcherSet> {
         let domains_path = format!("{path}.domains");
-        let Some(raw_domains) = server.get("domains") else {
+        let Some(entries) = self.string_list(server.get("domains"), &domains_path)? else {
             return Some(DomainMatcherSet::default());
         };
         let mut matchers = DomainMatcherSet::builder();
-        match raw_domains {
-            Value::String(domains) => {
-                for (index, domain) in domains.split(',').enumerate() {
-                    let item_path = format!("{domains_path}[{index}]");
-                    self.parse_dns_server_domain_matcher(domain, &item_path, &mut matchers)?;
-                }
-            }
-            Value::Array(domains) => {
-                for (index, domain) in domains.iter().enumerate() {
-                    let item_path = format!("{domains_path}[{index}]");
-                    let Some(domain) = domain.as_str() else {
-                        self.error(item_path, "dns server domain matcher must be a string");
-                        return None;
-                    };
-                    self.parse_dns_server_domain_matcher(domain, &item_path, &mut matchers)?;
-                }
-            }
-            _ => {
-                self.error(domains_path, "field `domains` must be a string or an array");
-                return None;
-            }
+        for entry in entries {
+            self.push_dns_domain_rule(entry.text, &entry.path, &mut matchers)?;
         }
         self.build_domain_matcher_set(matchers, &domains_path)
     }
 
-    pub(super) fn parse_dns_server_domain_matcher(
+    /// Adds one domain rule of a server's `domains` or of a DNS outbound
+    /// rule's `domain` to `matchers`.
+    fn push_dns_domain_rule(
         &mut self,
-        domain: &str,
+        rule: &str,
         path: &str,
         matchers: &mut DomainMatcherSetBuilder,
     ) -> Option<()> {
-        if domain.is_empty() {
-            self.error(path, "dns server domain matcher cannot be empty");
-            return None;
-        }
         let remaining = self.matcher_budget.remaining_domain_matchers();
         if remaining == 0 {
             self.domain_matcher_budget_error(path);
             return None;
         }
-        let parsed_matchers = self.parse_domain_matcher(domain, path, remaining)?;
-        if !self
-            .matcher_budget
-            .consume_domain_matchers(parsed_matchers.len())
-        {
+        let parsed = self.domain_rule(rule, path, remaining, PlainDomain::Substring)?;
+        if !self.matcher_budget.consume_domain_matchers(parsed.len()) {
             self.domain_matcher_budget_error(path);
             return None;
         }
-        insert_domain_matchers(matchers, &parsed_matchers, DomainNameMode::Dns);
+        insert_domain_matchers(matchers, &parsed, DomainNameMode::Dns);
         Some(())
     }
 
@@ -898,23 +876,15 @@ impl Parser<'_> {
         index
     }
 
+    /// A `dns.hosts` key, a domain rule as Xray-core's
+    /// `geodata.ParseDomainRule` reads it, plain text being the whole name.
     pub(super) fn parse_dns_host_matcher(
         &mut self,
         value: &str,
         path: &str,
         max_matchers: usize,
     ) -> Option<Vec<DomainMatcher>> {
-        // Xray's `dns.hosts` grammar defaults an unprefixed key to `full:`.
-        // Routing rules deliberately keep their separate keyword default.
-        if !value.contains(':') {
-            if value.is_empty() {
-                self.error(path, "DNS host domain cannot be empty");
-                return None;
-            }
-            return Some(vec![DomainMatcher::Full(value.to_owned())]);
-        }
-
-        self.parse_domain_matcher(value, path, max_matchers)
+        self.domain_rule(value, path, max_matchers, PlainDomain::Full)
     }
 
     pub(super) fn parse_dns_host_target(
@@ -1306,79 +1276,45 @@ impl Parser<'_> {
         })
     }
 
+    /// A rule's `qType`, Xray-core's `PortList`. The rule then answers the
+    /// types the ranges cover; with none, as when every range is reversed,
+    /// it answers every type.
     pub(super) fn parse_dns_qtype_ranges(
         &mut self,
         raw: Option<&Value>,
         path: &str,
     ) -> Option<Vec<DnsQTypeRange>> {
-        let pairs = self.parse_u16_selector_ranges(raw, path, U16SelectorKind::DnsQType)?;
-        let mut ranges = Vec::with_capacity(pairs.len());
-        for (start, end) in pairs {
-            match DnsQTypeRange::new(start, end) {
-                Ok(range) => ranges.push(range),
-                Err(error) => {
-                    self.error(path, error.to_string());
-                    return None;
-                }
-            }
-        }
-        Some(ranges)
+        let Some(list) = self.port_list(raw, path, U16SelectorKind::DnsQType)? else {
+            return Some(Vec::new());
+        };
+        Some(
+            list.ranges
+                .into_iter()
+                .filter_map(|range| DnsQTypeRange::new(range.start(), range.end()).ok())
+                .collect(),
+        )
     }
 
+    /// A rule's `domain`, a `StringList` of domain rules. As in Xray-core,
+    /// an absent, `null` or empty list sets no condition, while any rule in
+    /// it does, even a geosite selection with no domain.
     pub(super) fn parse_dns_outbound_domain_matchers(
         &mut self,
         raw: Option<&Value>,
         rule_path: &str,
-    ) -> Option<DomainMatcherSet> {
+    ) -> Option<Option<DomainMatcherSet>> {
         let path = format!("{rule_path}.domain");
+        let Some(entries) = self.string_list(raw, &path)? else {
+            return Some(None);
+        };
+        if entries.is_empty() {
+            return Some(None);
+        }
         let mut matchers = DomainMatcherSet::builder();
-        match raw {
-            None | Some(Value::Null) => return Some(DomainMatcherSet::default()),
-            Some(Value::String(domains)) => {
-                for (index, domain) in domains.split(',').enumerate() {
-                    self.push_dns_outbound_domain_matcher(
-                        domain,
-                        &format!("{path}[{index}]"),
-                        &mut matchers,
-                    )?;
-                }
-            }
-            Some(Value::Array(domains)) => {
-                for (index, domain) in domains.iter().enumerate() {
-                    let item_path = format!("{path}[{index}]");
-                    let Some(domain) = domain.as_str() else {
-                        self.error(item_path, "dns outbound domain matcher must be a string");
-                        return None;
-                    };
-                    self.push_dns_outbound_domain_matcher(domain, &item_path, &mut matchers)?;
-                }
-            }
-            Some(_) => {
-                self.error(path, "dns outbound domain must be a string, array, or null");
-                return None;
-            }
+        for entry in entries {
+            self.push_dns_domain_rule(entry.text, &entry.path, &mut matchers)?;
         }
-        self.build_domain_matcher_set(matchers, &path)
-    }
-
-    pub(super) fn push_dns_outbound_domain_matcher(
-        &mut self,
-        domain: &str,
-        path: &str,
-        matchers: &mut DomainMatcherSetBuilder,
-    ) -> Option<()> {
-        let remaining = self.matcher_budget.remaining_domain_matchers();
-        if remaining == 0 {
-            self.domain_matcher_budget_error(path);
-            return None;
-        }
-        let parsed = self.parse_domain_matcher(domain, path, remaining)?;
-        if !self.matcher_budget.consume_domain_matchers(parsed.len()) {
-            self.domain_matcher_budget_error(path);
-            return None;
-        }
-        insert_domain_matchers(matchers, &parsed, DomainNameMode::Dns);
-        Some(())
+        self.build_domain_matcher_set(matchers, &path).map(Some)
     }
 
     pub(super) fn parse_legacy_dns_outbound_rules(
@@ -1472,14 +1408,14 @@ impl Parser<'_> {
                     0
                 },
                 qtype_ranges,
-                domain_matchers: DomainMatcherSet::default(),
+                domain_matchers: None,
             });
         }
         rules.push(DnsOutboundRule {
             action: DnsOutboundRuleAction::Hijack,
             r_code: 0,
             qtype_ranges: vec![DnsQTypeRange::single(1), DnsQTypeRange::single(28)],
-            domain_matchers: DomainMatcherSet::default(),
+            domain_matchers: None,
         });
         rules.push(DnsOutboundRule {
             action: match mode {
@@ -1493,7 +1429,7 @@ impl Parser<'_> {
                 0
             },
             qtype_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
+            domain_matchers: None,
         });
         Some(rules)
     }

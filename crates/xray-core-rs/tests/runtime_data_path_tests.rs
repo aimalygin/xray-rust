@@ -5919,7 +5919,7 @@ async fn run_tun_dns_outbound_udp_return_scenario() {
             action: DnsOutboundRuleAction::Return,
             r_code: 3,
             qtype_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
+            domain_matchers: None,
         }],
         ..DnsOutboundSettings::default()
     };
@@ -5944,7 +5944,7 @@ async fn run_tun_dns_outbound_nonstandard_port_scenario() {
             action: DnsOutboundRuleAction::Return,
             r_code: 5,
             qtype_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
+            domain_matchers: None,
         }],
         ..DnsOutboundSettings::default()
     };
@@ -5996,7 +5996,7 @@ async fn run_tun_dns_outbound_udp_direct_tcp_rewrite_scenario() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
+            domain_matchers: None,
         }],
         ..DnsOutboundSettings::default()
     };
@@ -6033,7 +6033,7 @@ async fn run_tun_dns_outbound_udp_direct_update_scenario() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
+            domain_matchers: None,
         }],
         ..DnsOutboundSettings::default()
     };
@@ -6054,13 +6054,13 @@ async fn run_tun_dns_outbound_tcp_drop_then_return_scenario() {
                 action: DnsOutboundRuleAction::Drop,
                 r_code: 0,
                 qtype_ranges: vec![DnsQTypeRange::single(1)],
-                domain_matchers: DomainMatcherSet::default(),
+                domain_matchers: None,
             },
             DnsOutboundRule {
                 action: DnsOutboundRuleAction::Return,
                 r_code: 3,
                 qtype_ranges: vec![DnsQTypeRange::single(65)],
-                domain_matchers: DomainMatcherSet::default(),
+                domain_matchers: None,
             },
         ],
         ..DnsOutboundSettings::default()
@@ -6125,7 +6125,7 @@ async fn run_tun_dns_outbound_tcp_direct_transfer_scenarios() {
                 action: DnsOutboundRuleAction::Direct,
                 r_code: 0,
                 qtype_ranges: vec![DnsQTypeRange::single(query_type)],
-                domain_matchers: DomainMatcherSet::default(),
+                domain_matchers: None,
             }],
             ..DnsOutboundSettings::default()
         };
@@ -6157,7 +6157,7 @@ async fn run_tun_dns_outbound_tcp_direct_reuse_scenario() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
+            domain_matchers: None,
         }],
         ..DnsOutboundSettings::default()
     };
@@ -6220,7 +6220,7 @@ async fn run_tun_dns_outbound_tcp_late_transfer_scenario() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
+            domain_matchers: None,
         }],
         ..DnsOutboundSettings::default()
     };
@@ -6317,7 +6317,7 @@ async fn run_socks_udp_dns_outbound_direct_tcp_scenario() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
+            domain_matchers: None,
         }],
         ..DnsOutboundSettings::default()
     };
@@ -6382,25 +6382,29 @@ async fn run_socks_tcp_dns_outbound_policy_stream_scenario() {
                 action: DnsOutboundRuleAction::Drop,
                 r_code: 0,
                 qtype_ranges: Vec::new(),
-                domain_matchers: compile_dns_domain_matchers(&[DomainMatcher::Full(
-                    "drop.listener.example".to_owned(),
-                )])
-                .unwrap(),
+                domain_matchers: Some(
+                    compile_dns_domain_matchers(&[DomainMatcher::Full(
+                        "drop.listener.example".to_owned(),
+                    )])
+                    .unwrap(),
+                ),
             },
             DnsOutboundRule {
                 action: DnsOutboundRuleAction::Return,
                 r_code: 5,
                 qtype_ranges: Vec::new(),
-                domain_matchers: compile_dns_domain_matchers(&[DomainMatcher::Full(
-                    "reject.listener.example".to_owned(),
-                )])
-                .unwrap(),
+                domain_matchers: Some(
+                    compile_dns_domain_matchers(&[DomainMatcher::Full(
+                        "reject.listener.example".to_owned(),
+                    )])
+                    .unwrap(),
+                ),
             },
             DnsOutboundRule {
                 action: DnsOutboundRuleAction::Direct,
                 r_code: 0,
                 qtype_ranges: Vec::new(),
-                domain_matchers: DomainMatcherSet::default(),
+                domain_matchers: None,
             },
         ],
         ..DnsOutboundSettings::default()
@@ -6468,7 +6472,7 @@ async fn run_http_dns_outbound_direct_udp_scenario() {
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
+            domain_matchers: None,
         }],
         ..DnsOutboundSettings::default()
     };
@@ -6508,7 +6512,7 @@ async fn run_external_dns_tag_cannot_bypass_drop_scenario() {
             action: DnsOutboundRuleAction::Drop,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
+            domain_matchers: None,
         }],
         ..DnsOutboundSettings::default()
     };
@@ -6681,7 +6685,7 @@ async fn run_tun_dns_outbound_fake_ip_domain_scenario(strategy: RoutingDomainStr
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
+            domain_matchers: None,
         }],
         ..DnsOutboundSettings::default()
     };
@@ -6758,7 +6762,7 @@ async fn run_tun_dns_outbound_tcp_fake_ip_domain_scenario(strategy: RoutingDomai
             action: DnsOutboundRuleAction::Direct,
             r_code: 0,
             qtype_ranges: Vec::new(),
-            domain_matchers: DomainMatcherSet::default(),
+            domain_matchers: None,
         }],
         ..DnsOutboundSettings::default()
     };

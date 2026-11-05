@@ -1051,10 +1051,10 @@ mod tests {
     use xray_config::{
         compile_dns_domain_matchers, CoreConfig, DnsConfig, DnsHostTarget, DnsOutboundRule,
         DnsOutboundRuleAction, DnsOutboundSettings, DnsQTypeRange, DnsServerConfig,
-        DomainHostIndex, DomainMatcher, DomainMatcherSet, IpCidr, IpMatcherSet, Network,
-        OutboundConfig, OutboundSettings, PolicyConfig, RoutingConfig, RoutingDomainStrategy,
-        RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
-        TargetAddr as ConfigTargetAddr, TlsSettings,
+        DomainHostIndex, DomainMatcher, IpCidr, IpMatcherSet, Network, OutboundConfig,
+        OutboundSettings, PolicyConfig, RoutingConfig, RoutingDomainStrategy, RoutingRule,
+        StreamSecurity, StreamSettings, StreamTransport, TargetAddr as ConfigTargetAddr,
+        TlsSettings,
     };
     use xray_transport::{
         DnsQueryMetadata, DnsQueryTransportKind, SocketHandle, SocketProtector, TlsConnector,
@@ -1445,10 +1445,10 @@ mod tests {
                 action: DnsOutboundRuleAction::Drop,
                 r_code: 0,
                 qtype_ranges: vec![DnsQTypeRange::single(1)],
-                domain_matchers: compile_dns_domain_matchers(&[DomainMatcher::Full(
-                    "policy.test".to_owned(),
-                )])
-                .unwrap(),
+                domain_matchers: Some(
+                    compile_dns_domain_matchers(&[DomainMatcher::Full("policy.test".to_owned())])
+                        .unwrap(),
+                ),
             }],
         };
         let outbound = selected_dns_outbound(settings);
@@ -1511,7 +1511,7 @@ mod tests {
                 action: DnsOutboundRuleAction::Drop,
                 r_code: 0,
                 qtype_ranges: Vec::new(),
-                domain_matchers: DomainMatcherSet::default(),
+                domain_matchers: None,
             }],
         };
         let config = dns_outbound_config(
@@ -1591,7 +1591,7 @@ mod tests {
                 action: DnsOutboundRuleAction::Direct,
                 r_code: 0,
                 qtype_ranges: Vec::new(),
-                domain_matchers: DomainMatcherSet::default(),
+                domain_matchers: None,
             }],
             ..DnsOutboundSettings::default()
         };
@@ -1790,7 +1790,7 @@ mod tests {
                 action: DnsOutboundRuleAction::Direct,
                 r_code: 0,
                 qtype_ranges: Vec::new(),
-                domain_matchers: DomainMatcherSet::default(),
+                domain_matchers: None,
             }],
             ..DnsOutboundSettings::default()
         });
@@ -1896,7 +1896,7 @@ mod tests {
                 action: DnsOutboundRuleAction::Direct,
                 r_code: 0,
                 qtype_ranges: Vec::new(),
-                domain_matchers: DomainMatcherSet::default(),
+                domain_matchers: None,
             }],
         };
         let config = dns_outbound_config(

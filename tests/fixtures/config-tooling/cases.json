@@ -3218,6 +3218,126 @@
       },
       "accepted": false,
       "errorPath": "$.routing.rules[0].port"
+    },
+    {
+      "name": "dns-xray-domain-rules-accepted",
+      "config": {
+        "dns": {
+          "servers": [
+            {
+              "address": "192.0.2.53",
+              "domains": "keyword:ads,foo:bar,full:"
+            },
+            {
+              "address": "192.0.2.54",
+              "domains": [
+                null,
+                "regexp:"
+              ]
+            }
+          ],
+          "hosts": {
+            "foo:bar": "192.0.2.1",
+            "keyword:": "192.0.2.2"
+          }
+        },
+        "outbounds": [
+          {
+            "tag": "direct",
+            "protocol": "freedom"
+          },
+          {
+            "tag": "dns-out",
+            "protocol": "dns",
+            "settings": {
+              "rules": [
+                {
+                  "action": "return",
+                  "rCode": 3,
+                  "qType": "24-23",
+                  "domain": ""
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "accepted": true
+    },
+    {
+      "name": "dns-domain-rules-missing-geodata",
+      "config": {
+        "dns": {
+          "servers": [
+            {
+              "address": "192.0.2.53",
+              "domains": "keyword:ads,foo:bar,full:"
+            },
+            {
+              "address": "192.0.2.54",
+              "domains": [
+                null,
+                "ext-domain:geosite.dat:test"
+              ]
+            }
+          ],
+          "hosts": {
+            "foo:bar": "192.0.2.1",
+            "keyword:": "192.0.2.2"
+          }
+        },
+        "outbounds": [
+          {
+            "tag": "direct",
+            "protocol": "freedom"
+          },
+          {
+            "tag": "dns-out",
+            "protocol": "dns",
+            "settings": {
+              "rules": [
+                {
+                  "action": "return",
+                  "rCode": 3,
+                  "qType": "24-23",
+                  "domain": ""
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "accepted": false,
+      "errorPath": "$.dns.servers[1].domains[1]"
+    },
+    {
+      "name": "dns-server-dotless-with-dot",
+      "base": "dns-xray-domain-rules-accepted",
+      "set": {
+        "/dns/servers/0/domains": [
+          "dotless:a.b"
+        ]
+      },
+      "accepted": false,
+      "errorPath": "$.dns.servers[0].domains[0]"
+    },
+    {
+      "name": "dns-outbound-qtype-leading-zero",
+      "base": "dns-xray-domain-rules-accepted",
+      "set": {
+        "/outbounds/1/settings/rules/0/qType": "053"
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[1].settings.rules[0].qType[0]"
+    },
+    {
+      "name": "dns-outbound-qtype-truncated",
+      "base": "dns-xray-domain-rules-accepted",
+      "set": {
+        "/outbounds/1/settings/rules/0/qType": 65617
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[1].settings.rules[0].qType"
     }
   ]
 }

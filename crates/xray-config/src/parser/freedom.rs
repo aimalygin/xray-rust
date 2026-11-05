@@ -96,7 +96,11 @@ impl Parser<'_> {
         // A final rule checks ports only once its list has a range, so `0`
         // and `""` apply to every port.
         let port_ranges = self
-            .port_list(rule.get("port"), &format!("{path}.port"))
+            .port_list(
+                rule.get("port"),
+                &format!("{path}.port"),
+                U16SelectorKind::RoutingPort,
+            )
             .map(|list| list.and_then(|list| list.has_ranges.then_some(list.ranges)));
         let ip_matchers = self.final_rule_ips(rule.get("ip"), &format!("{path}.ip"));
         let block_delay = self.block_delay(rule.get("blockDelay"), &format!("{path}.blockDelay"));

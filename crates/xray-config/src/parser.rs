@@ -17,6 +17,7 @@ mod vmess;
 mod wireguard;
 mod xhttp;
 mod xray_lists;
+use xray_lists::PlainDomain;
 
 use std::{
     collections::HashSet,
@@ -39,12 +40,12 @@ use crate::{
     InboundProtocol, InboundSniffingConfig, IpCidr, Network, ObservatoryConfig, OutboundConfig,
     OutboundProtocol, OutboundProxySettings, OutboundSettings, PolicyConfig, PolicyLevelConfig,
     PolicySystemConfig, QuicBbrProfile, QuicCongestion, QuicIntervalRange, QuicParamsSettings,
-    QuicUdpHopSettings, RealitySettings, RealityShortId, RegexMatcher, SniffingDestination,
-    SocketOptions, StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
-    WebSocketSettings, XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement,
-    XhttpRange, XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
-    DEFAULT_OBSERVATORY_PROBE_INTERVAL, DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS,
-    MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
+    QuicUdpHopSettings, RealitySettings, RealityShortId, SniffingDestination, SocketOptions,
+    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings, WebSocketSettings,
+    XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
+    XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings, DEFAULT_OBSERVATORY_PROBE_INTERVAL,
+    DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVE_EXPIRED_TTL_SECONDS,
+    OBSERVATORY_PROBE_TIMEOUT,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
@@ -1542,95 +1543,31 @@ impl Parser<'_> {
         }
     }
 
-    fn parse_domain_matcher(
-        &mut self,
-        value: &str,
-        path: &str,
-        max_matchers: usize,
-    ) -> Option<Vec<DomainMatcher>> {
-        if let Some(spec) = value.strip_prefix("geosite:") {
-            return self.parse_geosite_matchers("geosite.dat", spec, path, max_matchers, false);
-        }
-        if let Some(spec) = value.strip_prefix("ext-domain:") {
-            return self.parse_external_geosite_matchers(spec, path, max_matchers, false);
-        }
-        if let Some(spec) = value.strip_prefix("ext:") {
-            return self.parse_external_geosite_matchers(spec, path, max_matchers, false);
-        }
-
-        let Some((kind, domain)) = value.split_once(':') else {
-            return Some(vec![DomainMatcher::Keyword(value.to_owned())]);
-        };
-        if domain.is_empty() && kind != "dotless" {
-            self.error(path, "routing domain cannot be empty");
-            return None;
-        }
-
-        match kind {
-            "domain" => Some(vec![DomainMatcher::Suffix(domain.to_owned())]),
-            "full" => Some(vec![DomainMatcher::Full(domain.to_owned())]),
-            "keyword" => Some(vec![DomainMatcher::Keyword(domain.to_owned())]),
-            "dotless" => {
-                if domain.contains('.') {
-                    self.error(path, "dotless domain matcher must not contain a dot");
-                    return None;
-                }
-                match RegexMatcher::new(format!("^[^.]*{domain}[^.]*$")) {
-                    Ok(matcher) => Some(vec![DomainMatcher::Regex(matcher)]),
-                    Err(error) => {
-                        self.error(path, error.to_string());
-                        None
-                    }
-                }
-            }
-            "regexp" => match RegexMatcher::new(domain.to_owned()) {
-                Ok(matcher) => Some(vec![DomainMatcher::Regex(matcher)]),
-                Err(error) => {
-                    self.error(path, error.to_string());
-                    None
-                }
-            },
-            _ => {
-                self.error(path, format!("unsupported routing domain matcher `{kind}`"));
-                None
-            }
-        }
-    }
-
     fn parse_external_geosite_matchers(
         &mut self,
         spec: &str,
         path: &str,
         max_matchers: usize,
-        allow_empty: bool,
     ) -> Option<Vec<DomainMatcher>> {
         let (file_name, code_spec) = self.parse_external_geodata_ref(spec, path)?;
-        self.parse_geosite_matchers(file_name, code_spec, path, max_matchers, allow_empty)
+        self.parse_geosite_matchers(file_name, code_spec, path, max_matchers)
     }
 
-    /// The domains a geosite code selects. Without `allow_empty`, a
-    /// selection of no domains is an error; routing allows it, as Xray-core
-    /// does, and keeps it as a condition no domain meets.
+    /// The domains a geosite code selects. As in Xray-core, a code whose
+    /// attributes select no domain is allowed, and the rule it makes matches
+    /// no domain.
     fn parse_geosite_matchers(
         &mut self,
         file_name: &str,
         code_spec: &str,
         path: &str,
         max_matchers: usize,
-        allow_empty: bool,
     ) -> Option<Vec<DomainMatcher>> {
         let (code, attrs) = self.parse_geosite_code_and_attrs(code_spec, path)?;
         match self
             .geodata_loader
             .load_site_matchers(file_name, code, &attrs, max_matchers)
         {
-            Ok(matchers) if matchers.is_empty() && !allow_empty => {
-                self.error(
-                    path,
-                    format!("geosite `{file_name}:{code}` produced no domain matchers"),
-                );
-                None
-            }
             Ok(matchers) => Some(matchers),
             Err(error) => {
                 self.error(path, error.to_string());
@@ -1883,106 +1820,6 @@ impl Parser<'_> {
         Some(cidr)
     }
 
-    fn parse_u16_selector_ranges(
-        &mut self,
-        raw: Option<&Value>,
-        path: &str,
-        kind: U16SelectorKind,
-    ) -> Option<Vec<(u16, u16)>> {
-        let mut ranges = Vec::new();
-        match raw {
-            None | Some(Value::Null) => return Some(ranges),
-            Some(Value::Number(value)) => {
-                if !self.consume_u16_selector(kind, path) {
-                    return None;
-                }
-                let Some(value) = value.as_u64().and_then(|value| u16::try_from(value).ok()) else {
-                    self.error(
-                        path,
-                        format!("{} must fit in u16", u16_selector_label(kind)),
-                    );
-                    return None;
-                };
-                // Xray's shared PortList treats a numeric zero as an empty list.
-                if value != 0 {
-                    ranges.push((value, value));
-                }
-            }
-            Some(Value::String(values)) => {
-                for (index, raw_range) in values.split(',').enumerate() {
-                    let item_path = format!("{path}[{index}]");
-                    if !self.consume_u16_selector(kind, &item_path) {
-                        return None;
-                    }
-                    let raw_range = raw_range.trim();
-                    if raw_range.is_empty() {
-                        continue;
-                    }
-                    let range = self.parse_u16_selector_range(raw_range, &item_path, kind)?;
-                    ranges.push(range);
-                }
-            }
-            Some(_) => {
-                self.error(
-                    path,
-                    format!(
-                        "{} must be an integer, comma-separated range string, or null",
-                        u16_selector_label(kind)
-                    ),
-                );
-                return None;
-            }
-        }
-        Some(normalize_u16_ranges(ranges))
-    }
-
-    fn parse_u16_selector_range(
-        &mut self,
-        raw: &str,
-        path: &str,
-        kind: U16SelectorKind,
-    ) -> Option<(u16, u16)> {
-        if raw.starts_with("env:") {
-            self.error(
-                path,
-                format!(
-                    "{} environment references are not supported",
-                    u16_selector_label(kind)
-                ),
-            );
-            return None;
-        }
-        let (start, end) = match raw.split_once('-') {
-            Some((start, end)) => (start, end),
-            None => (raw, raw),
-        };
-        let Some(start) = start.parse::<u16>().ok() else {
-            self.error(
-                path,
-                format!("invalid {} range `{raw}`", u16_selector_label(kind)),
-            );
-            return None;
-        };
-        let Some(end) = end.parse::<u16>().ok() else {
-            self.error(
-                path,
-                format!("invalid {} range `{raw}`", u16_selector_label(kind)),
-            );
-            return None;
-        };
-        if start > end {
-            self.error(
-                path,
-                format!(
-                    "invalid {} range `{raw}`: start exceeds end",
-                    u16_selector_label(kind)
-                ),
-            );
-            return None;
-        }
-        Some((start, end))
-    }
-
     fn consume_u16_selector(&mut self, kind: U16SelectorKind, path: &str) -> bool {
         let consumed = match kind {
             U16SelectorKind::DnsQType => self.selector_budget.consume_dns_qtype_selector(),
@@ -2153,13 +1990,6 @@ impl Parser<'_> {
             Some(_) => self.error(path, format!("field `{key}` is unsupported")),
             None => self.error(path, format!("field `{key}` must be an array")),
         }
-    }
-}
-
-fn u16_selector_label(kind: U16SelectorKind) -> &'static str {
-    match kind {
-        U16SelectorKind::DnsQType => "dns outbound qtype",
-        U16SelectorKind::RoutingPort => "routing port",
     }
 }
 

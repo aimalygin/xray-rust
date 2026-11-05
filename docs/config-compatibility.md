@@ -2081,9 +2081,17 @@ unbracketed IPv6, and zero ports. In an object entry, the port embedded in the
 stream URI is authoritative and the separate `port` field is ignored after validation,
 matching Xray-core's effective behavior. The Xray object subset requires `address`, supports
 `port` (`0` or omission means `53`), `domains`, `skipFallback`, per-server
-`queryStrategy`, `finalQuery`, `tag`, and `timeoutMs`. `domains` may be an array or one
-comma-separated string and supports bare keyword, `keyword:`, `domain:`,
-`full:`, `regexp:`, `dotless:`, `geosite:`, `ext:`, and `ext-domain:` rules.
+`queryStrategy`, `finalQuery`, `tag`, and `timeoutMs`. `domains` is Xray's
+`StringList`: an array, `null`, or one string split at commas without
+trimming, where a `null` entry reads as an empty string. Its entries are domain
+rules as Xray-core v26.10.31's `geodata.ParseDomainRules` reads them:
+`keyword:`, `domain:`, `full:`, `regexp:`, `dotless:`, `geosite:`, and `ext:`
+with its `ext-domain:` and `ext-site:` spellings. Anything else, even text
+with a colon such as `foo:bar`, is a substring, and a prefix may have an empty
+value: an empty entry, `keyword:` or `regexp:` puts every name first, while
+`domain:` and `full:` put none, because names lose their terminal dot before
+matching. A geosite selection with no domains is accepted and puts no name
+first.
 Top-level `disableFallback`, `disableFallbackIfMatch`, `disableCache`,
 `serveStale`, and `serveExpiredTTL` are also supported. `serveStale: true`
 requires caching plus an explicit `serveExpiredTTL` from 1 through 86400
@@ -2344,15 +2352,21 @@ Xray DNS client.
 The compatibility aliases `network`/`address`/`port` override their
 `rewrite*` counterparts exactly as in Xray; a zero port preserves the original
 port. `action` is case-insensitive and must be Direct, Drop, Return, or Hijack.
-`qType` accepts a number or comma/range string over `0..=65535`; ranges stay
-compact and are normalized instead of being eagerly expanded. `rCode` accepts
-`0..=65535`, defaults to zero, and is used by Return and by Hijack when the
-selected query is not A/AAAA. Domain accepts a string or array and supports the
-same `keyword`, `domain`, `full`, `regexp`, `dotless`, `geosite`, and `ext`
-grammar as other DNS matchers. Bare values are keywords. Rules are ordered,
-selectors inside a rule are ANDed, and empty QTYPE/domain selectors are
-wildcards. A miss Hijacks A/AAAA and Returns an empty NOERROR response for
-other types.
+`qType` is Xray's `PortList`: a number, or a comma-separated string of types
+and `from-to` ranges over `0..=65535`, where empty entries add nothing. A
+single type reads as a JSON integer, with no sign or leading zero, and a
+range's ends as decimal digits. As in Xray-core, a reversed range such as
+`"24-23"` adds no type, and a rule left with no type answers every type, as
+does `"qType": 0`. Ranges stay compact and are normalized instead of being
+eagerly expanded. Deliberately, a number above 65535 is rejected: Xray-core
+keeps it and truncates it to 16 bits, so 65617 would answer type 81. `rCode`
+accepts `0..=65535`, defaults to zero, and is used by Return and by Hijack when
+the selected query is not A/AAAA. `domain` is a `StringList` of the same
+domain rules as a server's `domains`, plain text being a substring. An absent,
+`null`, or empty list sets no condition; any entry sets one, even a geosite
+selection with no domains, which then matches no name. Rules are ordered,
+selectors inside a rule are ANDed, and a miss Hijacks A/AAAA and Returns an
+empty NOERROR response for other types.
 
 Lower-case `qtype` remains an input-only compatibility alias and emits a
 warning; supplying non-null `qType` and `qtype` together is rejected as
@@ -2461,14 +2475,23 @@ session at the routing layer.
 `dns.hosts` maps supported domain matchers to a single IP string, an alias
 domain string, or a nonempty ordered array containing only IP strings. Every IP
 in an array is retained as a resolution candidate. Names are canonicalized to
-lowercase without a terminal dot at the managed resolver boundary. As in
-Xray-core, an unprefixed `dns.hosts` key is an exact/full matcher rather than a
-routing-style keyword; explicit `full:` mappings have the same exact semantics
-and take precedence over broader matching rules. Alias
-resolution is bounded to eight hops; static IP candidates use the shared
-10-second hosts TTL. If that bound is reached, the terminal alias still uses
-the configured DNS-server plan; only a configuration without DNS servers may
-send it to the operating-system fallback.
+lowercase without a terminal dot at the managed resolver boundary. Keys are
+domain rules as Xray-core's `geodata.ParseDomainRule` reads them, with the
+whole name as the plain form: an unprefixed key, even one with a colon such as
+`foo:bar`, is an exact name rather than a routing-style keyword. Prefixes may
+have empty values, so `keyword:` maps every name, while an empty key, `full:`
+or `domain:` maps none. `ext-site:` spells `ext:`, and a geosite selection with
+no domains maps nothing. Explicit `full:` mappings take precedence over
+broader matching rules. Alias resolution is bounded to eight hops; static IP
+candidates use the shared 10-second hosts TTL. If that bound is reached, the
+terminal alias still uses the configured DNS-server plan; only a configuration
+without DNS servers may send it to the operating-system fallback.
+
+Deliberately, a `full:` or `domain:` pattern in `dns.hosts`, a server's
+`domains` or a DNS outbound rule drops its terminal dot too, so
+`full:x.test.` matches `x.test`. Xray-core drops the dot from the query but
+not from the pattern, so there such a pattern never matches.
+
 `dns.fakeIp` supports `enabled`, an IPv4 `ipv4Pool`, optional positive
 `poolSize`, and a positive `ttl` for the core-wide DNS runtime. `poolSize`
 defaults to the smaller of 32768 and the usable pool capacity. The bounded
