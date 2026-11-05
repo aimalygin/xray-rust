@@ -399,6 +399,25 @@ header on every open, including native UDP and Mux parents, as Xray-core does.
 VMess, Shadowsocks, and VLESS UDP and Mux parent opens still send the header
 eagerly.
 
+## Outbound URL probes
+
+Xray-core's observatory probes with Go's `net/http` client: a `GET` of the
+probe URL carrying `utils.TryDefaultHeadersWith(req.Header, "nav")`, the same
+Chrome navigation persona as its other masqueraded requests, and any response
+counts as alive, the status is never read (`app/observatory/observer.go`
+lines 177-200; `burstObservatory` does the same in
+`app/observatory/burst/ping.go`). xray-rust's observatory now does both: the
+request head is Xray's `nav` persona in `net/http` order (`Host`,
+`User-Agent`, the sorted map, then the transport's `Accept-Encoding: gzip`),
+and a `503` from the probe URL keeps the outbound healthy. The startup probe
+and the on-demand `probeOutboundUrl` send the same head, so no probe names the
+client, but they are xray-rust APIs with no Go counterpart and keep their
+documented 2xx/3xx rule and `HTTP_STATUS` failure.
+
+Differences: probes still speak HTTP/1.1 over a TLS handshake without ALPN,
+where Go's transport offers `h2, http/1.1` for an `https` probe URL, and they
+stop reading after the status line.
+
 ## Follow-up checks
 
 - [x] Integrate the #87 review follow-up, including both relay-address fixes,

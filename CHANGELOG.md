@@ -26,6 +26,12 @@ long-term supported release series.
   Xray-core: 500 ms for VLESS, 100 ms for Trojan. With Vision, the empty
   padding frame is now sent only in that case, behind the header, instead of
   on every connection.
+- Outbound URL probes no longer announce themselves. The observatory, startup
+  and on-demand probes used to send `User-Agent: xray-rust-…-probe`; they now
+  send Xray-core's Chrome navigation headers in Go's order. As in Xray-core,
+  the observatory counts any HTTP response as alive, so a probe URL answering
+  `503` no longer marks working outbounds unhealthy. The startup and
+  on-demand probes keep their 2xx/3xx rule.
 
 - The release fuzz campaign also covers the decoders that read server data:
   gRPC and WebSocket framing, Shadowsocks TCP responses, VLESS responses with

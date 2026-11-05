@@ -727,9 +727,15 @@ async fn spawn_http_status_times(
         let mut requests = Vec::with_capacity(times);
         for _ in 0..times {
             let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = vec![0; 512];
-            let read = stream.read(&mut request).await.unwrap();
-            requests.push(String::from_utf8_lossy(&request[..read]).into_owned());
+            // The masqueraded browser head is larger than one small read.
+            let mut request = Vec::new();
+            let mut chunk = [0; 1024];
+            while !request.ends_with(b"\r\n\r\n") {
+                let read = stream.read(&mut chunk).await.unwrap();
+                assert_ne!(read, 0, "probe closed before the end of its head");
+                request.extend_from_slice(&chunk[..read]);
+            }
+            requests.push(String::from_utf8_lossy(&request).into_owned());
             let response = format!("HTTP/1.1 {status} Test\r\nContent-Length: 0\r\n\r\n");
             stream.write_all(response.as_bytes()).await.unwrap();
         }
@@ -800,7 +806,15 @@ async fn outbound_probe_reports_delay_through_tagged_and_default_leaves() {
         .unwrap();
     for request in requests {
         assert!(request.starts_with("GET /health HTTP/1.1\r\n"), "{request}");
-        assert!(request.contains("\r\nUser-Agent: xray-rust-outbound-probe\r\n"));
+        assert!(
+            request.contains("\r\nUser-Agent: Mozilla/5.0 "),
+            "{request}"
+        );
+        assert!(
+            request.contains("\r\nSec-Fetch-Mode: navigate\r\n"),
+            "{request}"
+        );
+        assert!(!request.to_ascii_lowercase().contains("xray"), "{request}");
     }
     assert_eq!(core.outbound_health_snapshot(), health_before);
     assert_eq!(core.state(), CoreState::Running);
