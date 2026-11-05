@@ -789,12 +789,15 @@ impl Parser<'_> {
         })
     }
 
+    /// An inbound's `sniffing`, read as Xray-core v26.10.31 builds it: every
+    /// field is checked whether or not sniffing is enabled.
     fn parse_inbound_sniffing(
         &mut self,
         inbound: &Value,
         index: usize,
     ) -> Option<InboundSniffingConfig> {
-        let sniffing = inbound.get("sniffing")?;
+        // Go leaves a `null` object unset.
+        let sniffing = inbound.get("sniffing").filter(|value| !value.is_null())?;
         let sniffing_path = format!("$.inbounds[{index}].sniffing");
         if !sniffing.is_object() {
             self.error(sniffing_path, "inbound sniffing must be an object");
@@ -808,71 +811,87 @@ impl Parser<'_> {
             format!("{sniffing_path}.excludedDomains"),
             false,
         );
-        self.validate_ignored_string_array(
-            sniffing,
-            "domainsExcluded",
-            format!("{sniffing_path}.domainsExcluded"),
-            true,
-        );
 
         let enabled = self
             .optional_bool_at(sniffing, "enabled", format!("{sniffing_path}.enabled"))
             .unwrap_or(false);
-        if !enabled {
-            return None;
-        }
+        let metadata_only = self
+            .optional_bool_at(
+                sniffing,
+                "metadataOnly",
+                format!("{sniffing_path}.metadataOnly"),
+            )
+            .unwrap_or(false);
+        let route_only = self
+            .optional_bool_at(sniffing, "routeOnly", format!("{sniffing_path}.routeOnly"))
+            .unwrap_or(false);
+        let dest_override = self.parse_sniffing_dest_override(sniffing, &sniffing_path);
+        let domains_excluded = self.domain_rule_list(
+            sniffing.get("domainsExcluded"),
+            &format!("{sniffing_path}.domainsExcluded"),
+            DomainNameMode::Routing,
+        );
+        let ips_excluded = self.sniffing_ips_excluded(sniffing, &sniffing_path);
 
-        Some(InboundSniffingConfig {
+        let config = InboundSniffingConfig {
             enabled,
-            dest_override: self.parse_sniffing_dest_override(sniffing, &sniffing_path)?,
-            metadata_only: self
-                .optional_bool_at(
-                    sniffing,
-                    "metadataOnly",
-                    format!("{sniffing_path}.metadataOnly"),
-                )
-                .unwrap_or(false),
-            route_only: self
-                .optional_bool_at(sniffing, "routeOnly", format!("{sniffing_path}.routeOnly"))
-                .unwrap_or(false),
-        })
+            dest_override: dest_override?,
+            metadata_only,
+            route_only,
+            domains_excluded: domains_excluded?.unwrap_or_default(),
+            ips_excluded: ips_excluded?,
+        };
+        enabled.then_some(config)
     }
 
+    /// `destOverride`, a `StringList` of protocol names Xray-core reads
+    /// case-insensitively, `https` and `ssl` being `tls`. `fakedns` and
+    /// `fakedns+others` add nothing: a fake IP is turned back into its domain
+    /// whenever `dns.fakeIp` is enabled.
     fn parse_sniffing_dest_override(
         &mut self,
         sniffing: &Value,
         sniffing_path: &str,
     ) -> Option<Vec<SniffingDestination>> {
-        let Some(raw_values) = sniffing.get("destOverride") else {
+        let path = format!("{sniffing_path}.destOverride");
+        let Some(entries) = self.string_list(sniffing.get("destOverride"), &path)? else {
             return Some(Vec::new());
         };
-        let Some(values) = raw_values.as_array() else {
-            self.error(
-                format!("{sniffing_path}.destOverride"),
-                "field `destOverride` must be an array",
-            );
-            return None;
-        };
-
-        let mut parsed = Vec::with_capacity(values.len());
-        for (index, value) in values.iter().enumerate() {
-            let path = format!("{sniffing_path}.destOverride[{index}]");
-            match value.as_str() {
-                Some("http") => parsed.push(SniffingDestination::Http),
-                Some("tls") => parsed.push(SniffingDestination::Tls),
-                Some("quic") => parsed.push(SniffingDestination::Quic),
-                Some(value) => {
-                    self.error(path, format!("unsupported sniffing destOverride `{value}`"));
-                    return None;
-                }
-                None => {
-                    self.error(path, "sniffing destOverride must be a string");
+        let mut parsed = Vec::with_capacity(entries.len());
+        for entry in entries {
+            match entry.text.to_lowercase().as_str() {
+                "http" => parsed.push(SniffingDestination::Http),
+                "tls" | "https" | "ssl" => parsed.push(SniffingDestination::Tls),
+                "quic" => parsed.push(SniffingDestination::Quic),
+                "fakedns" | "fakedns+others" => {}
+                _ => {
+                    self.error(
+                        &entry.path,
+                        format!("unknown sniffing destOverride `{}`", entry.text),
+                    );
                     return None;
                 }
             }
         }
-
         Some(parsed)
+    }
+
+    /// `ipsExcluded`, a `StringList` of IP rules as `geodata.ParseIPRules`
+    /// reads them.
+    fn sniffing_ips_excluded(
+        &mut self,
+        sniffing: &Value,
+        sniffing_path: &str,
+    ) -> Option<IpMatcherSet> {
+        let path = format!("{sniffing_path}.ipsExcluded");
+        let Some(entries) = self.string_list(sniffing.get("ipsExcluded"), &path)? else {
+            return Some(IpMatcherSet::default());
+        };
+        self.routing_ip_matcher_set(
+            entries
+                .into_iter()
+                .map(|entry| (Some(entry.text), entry.path)),
+        )
     }
 
     fn validate_ignored_string_array(

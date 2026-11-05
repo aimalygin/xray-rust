@@ -88,7 +88,7 @@ pub(crate) fn sniff_tcp_initial_payload(
             SniffingDestination::Quic => None,
         };
         if let Some(domain) = domain {
-            return Some(sniffed_target(config, original, domain, *override_kind));
+            return sniffed_target(config, original, domain, *override_kind);
         }
     }
 
@@ -138,35 +138,44 @@ impl<'a> UdpSniffer<'a> {
             return UdpSniffProgress::Done(None);
         }
         match self.quic.feed(datagram) {
-            QuicSniff::Domain(domain) => UdpSniffProgress::Done(Some(sniffed_target(
+            QuicSniff::Domain(domain) => UdpSniffProgress::Done(sniffed_target(
                 self.config,
                 self.original,
                 domain,
                 SniffingDestination::Quic,
-            ))),
+            )),
             QuicSniff::NeedMore => UdpSniffProgress::NeedMore,
             QuicSniff::NoDomain => UdpSniffProgress::Done(None),
         }
     }
 }
 
+/// The target a sniffed `domain` makes of `original`, or `None` when
+/// `domainsExcluded` or `ipsExcluded` keeps `original`.
 fn sniffed_target(
     config: &InboundSniffingConfig,
     original: &Target,
     domain: String,
     protocol: SniffingDestination,
-) -> SniffedTarget {
+) -> Option<SniffedTarget> {
+    let original_ip = match original.addr {
+        TargetAddr::Ip(ip) => Some(ip),
+        TargetAddr::Domain(_) => None,
+    };
+    if config.excludes(original_ip, &domain) {
+        return None;
+    }
     let route_target = Target::new(TargetAddr::Domain(domain), original.port, original.network);
     let dial_target = if config.route_only {
         original.clone()
     } else {
         route_target.clone()
     };
-    SniffedTarget {
+    Some(SniffedTarget {
         route_target,
         dial_target,
         protocol,
-    }
+    })
 }
 
 fn sniff_http_host(payload: &[u8]) -> Option<String> {
@@ -780,6 +789,7 @@ mod tests {
             dest_override: vec![SniffingDestination::Http, SniffingDestination::Tls],
             metadata_only: false,
             route_only,
+            ..Default::default()
         }
     }
 
@@ -955,6 +965,7 @@ mod tests {
             dest_override: vec![SniffingDestination::Quic],
             metadata_only: false,
             route_only,
+            ..Default::default()
         }
     }
 
@@ -1008,6 +1019,76 @@ mod tests {
             sniff_tcp_initial_payload(&sniffing_config(true), &original_ip_target(), payload)
                 .is_none()
         );
+    }
+
+    /// `config` with `domainsExcluded` of `domains` and `ipsExcluded` of
+    /// `ips`.
+    fn excluding(
+        config: InboundSniffingConfig,
+        domains: &[xray_config::DomainMatcher],
+        ips: &[&str],
+    ) -> InboundSniffingConfig {
+        let mut ips_excluded = xray_config::IpMatcherSet::builder();
+        for ip in ips {
+            ips_excluded.insert_ip(ip.parse().unwrap(), false);
+        }
+        InboundSniffingConfig {
+            domains_excluded: xray_config::compile_domain_matchers(domains).unwrap(),
+            ips_excluded: ips_excluded.build(),
+            ..config
+        }
+    }
+
+    #[test]
+    fn excluded_domains_keep_the_original_destination() {
+        let config = excluding(
+            sniffing_config(true),
+            &[xray_config::DomainMatcher::Keyword(
+                "push.apple.com".to_owned(),
+            )],
+            &[],
+        );
+        let excluded = b"GET / HTTP/1.1\r\nHost: Courier.Push.Apple.Com\r\n\r\n";
+        assert!(sniff_tcp_initial_payload(&config, &original_ip_target(), excluded).is_none());
+        let tls = tls_client_hello_with_sni("courier.push.apple.com");
+        assert!(sniff_tcp_initial_payload(&config, &original_ip_target(), &tls).is_none());
+
+        let other = b"GET / HTTP/1.1\r\nHost: routed.example\r\n\r\n";
+        assert!(sniff_tcp_initial_payload(&config, &original_ip_target(), other).is_some());
+    }
+
+    #[test]
+    fn excluded_destination_ips_keep_whatever_is_sniffed_away() {
+        let config = excluding(sniffing_config(false), &[], &["127.0.0.1"]);
+        let payload = b"GET / HTTP/1.1\r\nHost: routed.example\r\n\r\n";
+        assert!(sniff_tcp_initial_payload(&config, &original_ip_target(), payload).is_none());
+
+        // Only an IP destination is checked, as in Xray-core.
+        let by_name = Target::new(
+            TargetAddr::Domain("localhost".to_owned()),
+            443,
+            Network::Tcp,
+        );
+        assert!(sniff_tcp_initial_payload(&config, &by_name, payload).is_some());
+        let elsewhere = Target::new(
+            TargetAddr::Ip("192.0.2.1".parse().unwrap()),
+            443,
+            Network::Tcp,
+        );
+        assert!(sniff_tcp_initial_payload(&config, &elsewhere, payload).is_some());
+    }
+
+    #[test]
+    fn quic_sniffing_honors_domain_exclusions() {
+        let config = excluding(
+            quic_sniffing_config(true),
+            &[xray_config::DomainMatcher::Full("quic.example".to_owned())],
+            &[],
+        );
+        let payload = quic_initial_packet_with_sni("quic.example");
+        assert!(sniff_udp_initial_payload(&config, &original_udp_target(), &payload).is_none());
+        let other = quic_initial_packet_with_sni("other.example");
+        assert!(sniff_udp_initial_payload(&config, &original_udp_target(), &other).is_some());
     }
 
     #[test]

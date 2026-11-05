@@ -1081,8 +1081,7 @@
     },
     {
       "name": "sniffing-domain-exclusion",
-      "accepted": false,
-      "errorPath": "$.inbounds[0].sniffing.domainsExcluded",
+      "accepted": true,
       "base": "loopback-policy",
       "set": {
         "/inbounds/0/sniffing/domainsExcluded": [
@@ -3338,6 +3337,49 @@
       },
       "accepted": false,
       "errorPath": "$.outbounds[1].settings.rules[0].qType"
+    },
+    {
+      "name": "sniffing-xray-fields",
+      "base": "loopback-policy",
+      "set": {
+        "/inbounds/0/sniffing": {
+          "enabled": true,
+          "destOverride": "HTTP,ssl,fakedns+others",
+          "routeOnly": true,
+          "domainsExcluded": [
+            "courier.push.apple.com",
+            "keyword:push",
+            null
+          ],
+          "ipsExcluded": "10.0.0.0/8,!192.0.2.0/24"
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "sniffing-unknown-dest-override-while-disabled",
+      "base": "loopback-policy",
+      "set": {
+        "/inbounds/0/sniffing": {
+          "enabled": false,
+          "destOverride": [
+            "bittorrent"
+          ]
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.inbounds[0].sniffing.destOverride[0]"
+    },
+    {
+      "name": "sniffing-invalid-ip-exclusion",
+      "base": "loopback-policy",
+      "set": {
+        "/inbounds/0/sniffing/ipsExcluded": [
+          "10.0.0.0/33"
+        ]
+      },
+      "accepted": false,
+      "errorPath": "$.inbounds[0].sniffing.ipsExcluded[0]"
     }
   ]
 }

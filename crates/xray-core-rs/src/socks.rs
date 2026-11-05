@@ -2086,6 +2086,7 @@ mod tests {
             dest_override: vec![SniffingDestination::Http],
             metadata_only: false,
             route_only,
+            ..Default::default()
         }
     }
 

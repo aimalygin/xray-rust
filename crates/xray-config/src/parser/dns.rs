@@ -700,36 +700,9 @@ impl Parser<'_> {
         path: &str,
     ) -> Option<DomainMatcherSet> {
         let domains_path = format!("{path}.domains");
-        let Some(entries) = self.string_list(server.get("domains"), &domains_path)? else {
-            return Some(DomainMatcherSet::default());
-        };
-        let mut matchers = DomainMatcherSet::builder();
-        for entry in entries {
-            self.push_dns_domain_rule(entry.text, &entry.path, &mut matchers)?;
-        }
-        self.build_domain_matcher_set(matchers, &domains_path)
-    }
-
-    /// Adds one domain rule of a server's `domains` or of a DNS outbound
-    /// rule's `domain` to `matchers`.
-    fn push_dns_domain_rule(
-        &mut self,
-        rule: &str,
-        path: &str,
-        matchers: &mut DomainMatcherSetBuilder,
-    ) -> Option<()> {
-        let remaining = self.matcher_budget.remaining_domain_matchers();
-        if remaining == 0 {
-            self.domain_matcher_budget_error(path);
-            return None;
-        }
-        let parsed = self.domain_rule(rule, path, remaining, PlainDomain::Substring)?;
-        if !self.matcher_budget.consume_domain_matchers(parsed.len()) {
-            self.domain_matcher_budget_error(path);
-            return None;
-        }
-        insert_domain_matchers(matchers, &parsed, DomainNameMode::Dns);
-        Some(())
+        let domains =
+            self.domain_rule_list(server.get("domains"), &domains_path, DomainNameMode::Dns)?;
+        Some(domains.unwrap_or_default())
     }
 
     pub(super) fn build_domain_matcher_set(
@@ -1303,18 +1276,7 @@ impl Parser<'_> {
         raw: Option<&Value>,
         rule_path: &str,
     ) -> Option<Option<DomainMatcherSet>> {
-        let path = format!("{rule_path}.domain");
-        let Some(entries) = self.string_list(raw, &path)? else {
-            return Some(None);
-        };
-        if entries.is_empty() {
-            return Some(None);
-        }
-        let mut matchers = DomainMatcherSet::builder();
-        for entry in entries {
-            self.push_dns_domain_rule(entry.text, &entry.path, &mut matchers)?;
-        }
-        self.build_domain_matcher_set(matchers, &path).map(Some)
+        self.domain_rule_list(raw, &format!("{rule_path}.domain"), DomainNameMode::Dns)
     }
 
     pub(super) fn parse_legacy_dns_outbound_rules(
