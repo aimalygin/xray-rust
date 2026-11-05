@@ -467,6 +467,17 @@ fn runtime_socks_config_with_level_0_policy(policy: PolicyLevelConfig) -> CoreCo
     config
 }
 
+/// Fake IP allocation starts at a random point of the pool, so a test can
+/// only expect an address inside the 198.18.0.0/15 pool its config sets.
+fn assert_in_fake_ip_pool(ip: Ipv4Addr) {
+    const POOL_HOST_BITS: u32 = 32 - 15;
+    assert_eq!(
+        u32::from(ip) >> POOL_HOST_BITS,
+        u32::from(Ipv4Addr::new(198, 18, 0, 0)) >> POOL_HOST_BITS,
+        "{ip} is outside the 198.18.0.0/15 fake IP pool"
+    );
+}
+
 fn runtime_tun_config_with_freedom_outbound() -> CoreConfig {
     CoreConfig {
         inbounds: vec![InboundConfig {
@@ -5471,7 +5482,7 @@ async fn run_tun_fake_dns_udp_domain_routing_scenario() {
     let fake_ip = ipv4_udp_payload(&dns_reply)
         .and_then(dns_response_answer_ipv4)
         .unwrap();
-    assert_eq!(fake_ip, Ipv4Addr::new(198, 18, 0, 3));
+    assert_in_fake_ip_pool(fake_ip);
 
     let request = ipv4_udp_packet(
         client_addr,
@@ -9217,15 +9228,12 @@ async fn run_tun_fake_dns_tcp_scenario(dns_destination: Ipv4Addr) {
     .await;
     let responses = complete_dns_tcp_messages(&received).unwrap();
     assert_eq!(&responses[0][0..2], &0x2301_u16.to_be_bytes());
-    assert_eq!(
-        dns_response_answer_ipv4(&responses[0]),
-        Some(Ipv4Addr::new(198, 18, 0, 3))
-    );
+    let first = dns_response_answer_ipv4(&responses[0]).expect("first fake IP");
+    assert_in_fake_ip_pool(first);
     assert_eq!(&responses[1][0..2], &0x2302_u16.to_be_bytes());
-    assert_eq!(
-        dns_response_answer_ipv4(&responses[1]),
-        Some(Ipv4Addr::new(198, 18, 0, 4))
-    );
+    let second = dns_response_answer_ipv4(&responses[1]).expect("second fake IP");
+    assert_in_fake_ip_pool(second);
+    assert_ne!(first, second, "each name gets its own fake IP");
     assert!(client.is_open());
 
     core.stop().await.unwrap();
@@ -9317,7 +9325,7 @@ async fn run_tun_fake_dns_udp_resolved_ip_routed_freedom_scenario(strategy: Rout
     let fake_ip = ipv4_udp_payload(&dns_reply)
         .and_then(dns_response_answer_ipv4)
         .unwrap();
-    assert_eq!(fake_ip, Ipv4Addr::new(198, 18, 0, 3));
+    assert_in_fake_ip_pool(fake_ip);
 
     let request = ipv4_udp_packet(
         client_addr,
