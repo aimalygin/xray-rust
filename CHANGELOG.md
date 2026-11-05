@@ -251,6 +251,11 @@ long-term supported release series.
   the larger one, and a fragment with a new fragment count starts a new
   packet. Both used to discard the incomplete datagram, and the second one its
   own fragment too.
+- WireGuard: opening a TCP connection or UDP flow waits for room in the
+  32-command queue it shares with UDP sends, within the 10-second open
+  deadline. With more than 32 busy UDP flows a new connection used to fail as
+  if the flow limits (16 TCP, 512 UDP) were reached; only those limits fail an
+  open now.
 - DNS: a bare `"localhost"` or `"fakedns"` string in `dns.servers` (any case)
   is now a configuration error, as the object form already was. Xray's
   system-resolver and FakeDNS clients are not implemented, and these strings
