@@ -10,6 +10,16 @@ long-term supported release series.
 
 ## Unreleased
 
+- The Android and Apple VLESS link importers accept more common links. They
+  used to reject them with an unsupported `type` or `security` error.
+  - Raw TCP with TLS, with or without `flow=xtls-rprx-vision`.
+  - WebSocket and HTTPUpgrade with TLS, keeping `host` and `path`.
+  - gRPC with TLS or REALITY, keeping `serviceName`, `authority` and
+    `mode=gun` or `mode=multi`.
+  - As in Xray-core, Vision over WebSocket, HTTPUpgrade or gRPC needs VLESS
+    encryption, and REALITY works only over raw TCP, XHTTP and gRPC. Links
+    that turn off certificate checks with `allowInsecure` on these transports,
+    or carry another transport's fields, are still rejected.
 - Routing rules can check where a connection comes from, with Xray-core's
   `sourceIP` (or `source`), `sourcePort`, `localIP`, `localPort` and `user`.
   Profiles with them used to fail to parse.

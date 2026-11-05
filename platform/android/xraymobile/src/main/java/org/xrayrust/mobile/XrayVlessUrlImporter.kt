@@ -44,10 +44,12 @@ data class XrayImportedProfile(
 /**
  * Imports the same fail-closed VLESS share-link subset as the Apple adapter.
  *
- * Supported transports are raw/TCP with REALITY (or none/TLS for encrypted
- * 1-RTT links) and XHTTP/SplitHTTP with
- * none, TLS, or REALITY security. The result is a self-contained TUN profile;
- * persistence, UI, and Android VPN consent remain host responsibilities.
+ * Supported transports are raw/TCP with TLS or REALITY (or none for encrypted
+ * links), XHTTP/SplitHTTP with none, TLS, or REALITY security, WebSocket and
+ * HTTPUpgrade with TLS, and gRPC with TLS or REALITY (WebSocket, HTTPUpgrade
+ * and gRPC also take none for encrypted links). The result is a self-contained
+ * TUN profile; persistence, UI, and Android VPN consent remain host
+ * responsibilities.
  */
 object XrayVlessUrlImporter {
     private const val VISION_FLOW = "xtls-rprx-vision"
@@ -63,6 +65,8 @@ object XrayVlessUrlImporter {
         "host",
         "path",
         "mode",
+        "serviceName",
+        "authority",
         "sni",
         "fp",
         "alpn",
@@ -163,12 +167,7 @@ object XrayVlessUrlImporter {
                         query.rejectParameters("sni", "fp", "alpn", "allowInsecure")
                         StreamSecurity.None
                     }
-                    "tls" -> {
-                        query.rejectParameters("pbk", "sid", "spx", "pqv")
-                        val tls = tlsParameters(query, host)
-                        if (tls.allowInsecure == true) throw unsupportedValue("allowInsecure", "true", "false")
-                        StreamSecurity.Tls(tls)
-                    }
+                    "tls" -> verifiedTls(query, host)
                     "reality" -> {
                         validateRealityCompatibilityValues(query)
                         StreamSecurity.Reality(xhttpRealityParameters(query, host))
@@ -178,11 +177,10 @@ object XrayVlessUrlImporter {
                 Transport.Raw(rawSecurity, flow.ifEmpty { null })
             }
             network in networkAliases -> {
-                requireValue(security, "security", listOf("reality"))
                 if (flow.isNotEmpty()) {
                     requireValue(flow, "flow", listOf(VISION_FLOW, VISION_UDP_443_FLOW))
                 }
-                Transport.Raw(StreamSecurity.Reality(rawRealityParameters(query, flow.ifEmpty { null })), flow.ifEmpty { null })
+                Transport.Raw(rawSecurity(query, host, security, flow.ifEmpty { null }), flow.ifEmpty { null })
             }
 
             network in xhttpNetworkAliases -> {
@@ -220,11 +218,14 @@ object XrayVlessUrlImporter {
                 )
             }
 
-            else -> throw unsupportedValue(
-                "type",
-                network,
-                (networkAliases + xhttpNetworkAliases).joinToString(" or "),
-            )
+            else -> {
+                val carrier = FramedCarrier.of(network) ?: throw unsupportedValue(
+                    "type",
+                    network,
+                    (networkAliases + xhttpNetworkAliases + FramedCarrier.aliases).joinToString(" or "),
+                )
+                framedTransport(carrier, query, host, encrypted = encryption != "none", security, flow)
+            }
         }
 
         val profileName = uri.rawFragment
@@ -232,6 +233,83 @@ object XrayVlessUrlImporter {
             ?.let(::decodeComponent)
             ?: "$host:$port"
         return Endpoint(userId, host, port, encryption, transport, profileName)
+    }
+
+    private fun rawSecurity(query: QueryValues, host: String, security: String, flow: String?): StreamSecurity =
+        when (security) {
+            "tls" -> {
+                query.rejectParameters("pcs", "vcn", "ech", "echQuery", rejectEmpty = false)
+                query.rejectParameters("host", "path", "mode", "extra")
+                verifiedTls(query, host)
+            }
+            "reality" -> StreamSecurity.Reality(rawRealityParameters(query, flow))
+            else -> throw unsupportedValue("security", security, "tls or reality")
+        }
+
+    private fun framedTransport(
+        carrier: FramedCarrier,
+        query: QueryValues,
+        host: String,
+        encrypted: Boolean,
+        security: String,
+        flow: String,
+    ): Transport.Framed {
+        if (!encrypted && flow.isNotEmpty()) throw unsupportedValue("flow", flow, "empty")
+        requireValue(flow, "flow", listOf("", VISION_FLOW, VISION_UDP_443_FLOW))
+        query.rejectParameters("pcs", "vcn", "ech", "echQuery", rejectEmpty = false)
+        query.rejectParameters("extra")
+        val settings = carrierSettings(carrier, query)
+        val securities = listOfNotNull(
+            "none".takeIf { encrypted },
+            "tls",
+            "reality".takeIf { carrier.supportsReality },
+        )
+        requireValue(security, "security", securities)
+        val streamSecurity = when (security) {
+            "tls" -> verifiedTls(query, host)
+            "reality" -> {
+                validateRealityCompatibilityValues(query)
+                StreamSecurity.Reality(xhttpRealityParameters(query, host))
+            }
+            else -> {
+                query.rejectParameters("pbk", "sid", "spx", "pqv")
+                query.rejectParameters("sni", "fp", "alpn", "allowInsecure")
+                StreamSecurity.None
+            }
+        }
+        return Transport.Framed(carrier, settings, streamSecurity, flow.ifEmpty { null })
+    }
+
+    private fun carrierSettings(carrier: FramedCarrier, query: QueryValues): JSONObject = when (carrier) {
+        FramedCarrier.WebSocket, FramedCarrier.HttpUpgrade -> {
+            query.rejectParameters("mode", "serviceName", "authority", rejectEmpty = false)
+            JSONObject()
+                .putQueryValue(query, "host")
+                .putQueryValue(query, "path")
+        }
+        FramedCarrier.Grpc -> {
+            query.rejectParameters("host", "path", rejectEmpty = false)
+            val multiMode = when (val mode = query.optional("mode", "")) {
+                "", "gun" -> false
+                "multi" -> true
+                else -> throw unsupportedValue("mode", mode, "gun or multi")
+            }
+            JSONObject()
+                .putQueryValue(query, "serviceName")
+                .putQueryValue(query, "authority")
+                .also { if (multiMode) it.put("multiMode", true) }
+        }
+    }
+
+    private fun JSONObject.putQueryValue(query: QueryValues, name: String): JSONObject = apply {
+        query.value(name)?.let { put(name, it) }
+    }
+
+    private fun verifiedTls(query: QueryValues, host: String): StreamSecurity.Tls {
+        query.rejectParameters("pbk", "sid", "spx", "pqv")
+        val tls = tlsParameters(query, host)
+        if (tls.allowInsecure == true) throw unsupportedValue("allowInsecure", "true", "false")
+        return StreamSecurity.Tls(tls)
     }
 
     private fun tlsParameters(query: QueryValues, defaultServerName: String): TlsParameters {
@@ -440,6 +518,11 @@ object XrayVlessUrlImporter {
                     selected.flow?.let { user.put("flow", it) }
                     selected.parameters.toStreamSettingsJson()
                 }
+
+                is Transport.Framed -> {
+                    selected.flow?.let { user.put("flow", it) }
+                    selected.toStreamSettingsJson()
+                }
             }
             val inbound = JSONObject()
                 .put("tag", "tun-in")
@@ -511,6 +594,35 @@ object XrayVlessUrlImporter {
         data class Raw(val security: StreamSecurity, val flow: String?) : Transport()
 
         data class Xhttp(val parameters: XhttpParameters, val flow: String?) : Transport()
+
+        class Framed(
+            val carrier: FramedCarrier,
+            val settings: JSONObject,
+            val security: StreamSecurity,
+            val flow: String?,
+        ) : Transport() {
+            fun toStreamSettingsJson(): JSONObject = security.toJson()
+                .put("network", carrier.network)
+                .also { json -> if (settings.length() > 0) json.put(carrier.settingsKey, settings) }
+        }
+    }
+
+    private enum class FramedCarrier(
+        val network: String,
+        val settingsKey: String,
+        val supportsReality: Boolean,
+        val networkAliases: Set<String> = setOf(network),
+    ) {
+        WebSocket("ws", "wsSettings", supportsReality = false, networkAliases = setOf("ws", "websocket")),
+        HttpUpgrade("httpupgrade", "httpupgradeSettings", supportsReality = false),
+        Grpc("grpc", "grpcSettings", supportsReality = true),
+        ;
+
+        companion object {
+            val aliases: List<String> = entries.flatMap { it.networkAliases }
+
+            fun of(network: String): FramedCarrier? = entries.firstOrNull { network in it.networkAliases }
+        }
     }
 
     private data class RealityParameters(

@@ -563,7 +563,8 @@ still apply; REALITY remains unavailable on WebSocket/HTTPUpgrade. A missing enc
 non-string values fail. Malformed ML-KEM coefficients and low-order X25519
 keys fail before dialing. Swift/Kotlin share-link import supports the same
 bounded shape over `tcp`/`raw` and XHTTP/SplitHTTP with none/TLS/REALITY security,
-including both Vision flows. WS/HTTPUpgrade/gRPC links still require JSON.
+including both Vision flows, and over WS/HTTPUpgrade/gRPC with none or TLS
+security (gRPC also REALITY).
 Encrypted links reject irrelevant transport/security fields and insecure TLS
 verification; unsupported encryption errors redact the value. A 0-RTT ticket
 is memory-only, is invalidated on rejected/cancelled resumption, and never

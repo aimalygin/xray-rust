@@ -236,7 +236,8 @@ Development `0.6` also imports bounded
 `mlkem768x25519plus.{native|xorpub|random}.{1rtt|0rtt}` with one-to-eight
 canonical X25519/ML-KEM-768 relay keys and optional bounded padding over
 `tcp`/`raw` and `xhttp`/`splithttp`, with none, TLS, or REALITY security and
-optional Vision/Vision-UDP443. WS/HTTPUpgrade/gRPC profiles use JSON. Encrypted
+optional Vision/Vision-UDP443, and over WS/HTTPUpgrade/gRPC with none or TLS
+(gRPC also REALITY). Encrypted
 links reject irrelevant raw transport fields and insecure TLS. Key encodings,
 padding limits, and low-order/modulus checks match shared Rust fixtures; error
 messages redact rejected encryption values. This does not change the published
@@ -251,13 +252,19 @@ and requires real IP DNS servers from the file or the `dnsServers` argument.
 Use a matching rebuilt XCFramework; sample-app UI integration remains separate.
 See the [accepted formats, limits and tests](../../docs/v07-profile-import.md).
 
-The VLESS URL importer accepts raw/TCP + REALITY links and `xhttp`/`splithttp`
-links with `security=none`, TLS, or REALITY. XHTTP `host`, `path`, and `mode`
-remain outer settings. TLS imports preserve `sni`, `fp`, comma-separated
+The VLESS URL importer accepts raw/TCP links with TLS or REALITY (including
+Vision over TLS), `xhttp`/`splithttp` links with `security=none`, TLS, or
+REALITY, `ws`/`websocket` and `httpupgrade` links with TLS, and `grpc` links
+with TLS or REALITY. XHTTP `host`, `path`, and `mode` remain outer settings.
+WebSocket and HTTPUpgrade take `host` and `path`; gRPC takes `serviceName`,
+`authority`, and `mode=gun` or `mode=multi` (`multiMode`). A field that belongs
+to another transport fails closed, as does `allowInsecure=true` on raw TLS,
+WebSocket, HTTPUpgrade, and gRPC. TLS imports preserve `sni`, `fp`, comma-separated
 `alpn`, and a valid legacy `allowInsecure`; absent `sni` and `fp` use the share
 format defaults (the remote host and `chrome`). REALITY imports preserve
 `pbk`, `fp`, `sni`, `sid`, `spx`, and `pqv`; an absent `sni` also defaults to
-the remote host. XHTTP Vision requires VLESS encryption.
+the remote host. Vision on XHTTP, WebSocket,
+HTTPUpgrade, or gRPC requires VLESS encryption, as in Xray-core.
 
 An XHTTP `extra` JSON object is decoded from the usual single URL encoding or
 one additional percent-encoding layer and passed to the core for Xray-compatible
@@ -265,7 +272,8 @@ replacement. The importer caps `extra` at 64 KiB, never logs its contents, and
 does not recursively percent-decode it. Duplicate security-critical query
 fields and non-empty unsupported `pcs`, `vcn`, or ECH settings fail closed
 rather than producing a partial config; explicitly empty values are harmless
-no-ops. Unencrypted raw/TCP + `security=none` remains rejected.
+no-ops. Unencrypted raw/TCP, WebSocket, HTTPUpgrade, and gRPC with `security=none`
+remain rejected.
 
 The reference XrayClient UI includes a sample-only **DNS Testing** section.
 `Config JSON` adds no DNS override and leaves DNS behavior to the stored JSON.
