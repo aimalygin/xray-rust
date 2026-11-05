@@ -265,6 +265,20 @@ pub(super) fn parse_dns_tcp_server_port(port: &str) -> Result<u16, String> {
     Ok(port)
 }
 
+/// A field read as Go reads Xray-core's `StringList`, for the policy key only:
+/// an array of strings, `null` entries empty; one string split at commas; or
+/// nothing. The field's own parser reports what it refuses.
+fn go_string_list(value: Option<&Value>) -> Vec<String> {
+    match value {
+        Some(Value::String(text)) => text.split(',').map(str::to_owned).collect(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|item| item.as_str().unwrap_or_default().to_owned())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 pub(super) fn dns_stream_server_policy(
     transport: DnsServerTransport,
     endpoint: DnsServerEndpoint,
@@ -283,6 +297,7 @@ pub(super) fn dns_stream_server_policy(
         query_strategy: DnsQueryStrategy::UseIp,
         final_query: false,
         client_ip: None,
+        policy_key: crate::DEFAULT_DNS_POLICY_KEY.to_owned(),
     }))
 }
 
@@ -384,6 +399,17 @@ impl Parser<'_> {
                 )
                 .unwrap_or(false),
             client_ip: self.parse_dns_client_ip(dns.get("clientIp"), "$.dns.clientIp"),
+            // Go reads a JSON null into a bool as false.
+            enable_parallel_query: match dns.get("enableParallelQuery") {
+                None | Some(Value::Null) => false,
+                Some(_) => self
+                    .optional_bool_at(
+                        dns,
+                        "enableParallelQuery",
+                        "$.dns.enableParallelQuery".to_owned(),
+                    )
+                    .unwrap_or(false),
+            },
         }
     }
 
@@ -560,6 +586,16 @@ impl Parser<'_> {
             return None;
         }
 
+        let tag = self
+            .nullable_string_at(server, "tag", format!("{path}.tag"))
+            .unwrap_or_default()
+            .to_owned();
+        let skip_fallback = self
+            .optional_bool_at(server, "skipFallback", format!("{path}.skipFallback"))
+            .unwrap_or(false);
+        let client_ip =
+            self.parse_dns_client_ip(server.get("clientIp"), &format!("{path}.clientIp"));
+        let policy_key = Self::dns_policy_key(server, client_ip, skip_fallback, &tag);
         Some(DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
             endpoint,
             transport,
@@ -567,20 +603,64 @@ impl Parser<'_> {
             domains,
             expected_ips,
             unexpected_ips,
-            tag: self
-                .nullable_string_at(server, "tag", format!("{path}.tag"))
-                .unwrap_or_default()
-                .to_owned(),
+            tag,
             timeout_ms,
-            skip_fallback: self
-                .optional_bool_at(server, "skipFallback", format!("{path}.skipFallback"))
-                .unwrap_or(false),
+            skip_fallback,
             query_strategy,
             final_query: self
                 .optional_bool_at(server, "finalQuery", format!("{path}.finalQuery"))
                 .unwrap_or(false),
-            client_ip: self.parse_dns_client_ip(server.get("clientIp"), &format!("{path}.clientIp")),
+            client_ip,
+            policy_key,
         })))
+    }
+
+    /// The policy key Xray-core v26.10.31's config builder writes for an
+    /// object server: its own `clientIp`, `skipFallback`, `queryStrategy` and
+    /// `tag` (trimmed and lowercased), then its `domains`, `expectedIPs`,
+    /// `expectIPs` and `unexpectedIPs` as written, each trimmed, lowercased
+    /// and sorted.
+    fn dns_policy_key(
+        server: &Value,
+        client_ip: Option<IpAddr>,
+        skip_fallback: bool,
+        tag: &str,
+    ) -> String {
+        let normalize = |text: &str| text.trim().to_lowercase();
+        // Go's Address.String() puts an IPv6 address in brackets.
+        let mut key = match client_ip {
+            Some(IpAddr::V4(ip)) => format!("client={ip}|"),
+            Some(IpAddr::V6(ip)) => format!("client=[{ip}]|"),
+            None => "client=none|".to_owned(),
+        };
+        key.push_str(if skip_fallback { "skip=1|" } else { "skip=0|" });
+        let query_strategy = server
+            .get("queryStrategy")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        key.push_str(&format!(
+            "qs={}|tag={}|",
+            normalize(query_strategy),
+            normalize(tag)
+        ));
+        for (field, name) in [
+            ("domains", "domains"),
+            ("expectedIPs", "expected"),
+            ("expectIPs", "expect"),
+            ("unexpectedIPs", "unexpected"),
+        ] {
+            let mut values: Vec<String> = go_string_list(server.get(field))
+                .into_iter()
+                .map(|value| normalize(&value))
+                .collect();
+            if values.is_empty() {
+                key.push_str(&format!("{name}=[]|"));
+            } else {
+                values.sort();
+                key.push_str(&format!("{name}={}|", values.join(",")));
+            }
+        }
+        key
     }
 
     pub(super) fn parse_dns_server_ip_filters(
