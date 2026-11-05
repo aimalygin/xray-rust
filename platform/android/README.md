@@ -647,7 +647,10 @@ identity. Android versions below 10 cannot provide this enforcement; the helper
 rejects construction rather than claiming protection.
 
 The callback runs on up to four native host workers, never on the packet loop.
-It may run concurrently and must not call core lifecycle methods. The default
+It may run concurrently and must not call core lifecycle methods. Each worker,
+like each native thread that calls socket protection, is attached to the JVM
+as a daemon thread on its first call and detached when it exits, so
+`Thread.currentThread()` stays the same across its calls. The default
 100 ms timeout denies; `failOpen` is explicit. Java exceptions deny even when
 fail-open is selected. Timeout and core close do not interrupt a blocked host
 callback; JNI retains its object until the call returns. Use the bounded native

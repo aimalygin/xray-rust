@@ -20,6 +20,10 @@ long-term supported release series.
     encryption, and REALITY works only over raw TCP, XHTTP and gRPC. Links
     that turn off certificate checks with `allowInsecure` on these transports,
     or carry another transport's fields, are still rejected.
+- On Android, the TUN admission callback and socket protection no longer
+  attach the calling native thread to the JVM and detach it again on every
+  call. Each native thread is attached once, as a daemon thread, and detached
+  when it exits. Threads the JVM already owns are left as they are.
 - Routing rules can check where a connection comes from, with Xray-core's
   `sourceIP` (or `source`), `sourcePort`, `localIP`, `localPort` and `user`.
   Profiles with them used to fail to parse.
