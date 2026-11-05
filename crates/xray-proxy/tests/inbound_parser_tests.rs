@@ -8,8 +8,8 @@ use xray_proxy::inbound::{
     negotiate_socks5_no_auth, parse_http_connect, parse_http_connect_request, parse_socks4_connect,
     parse_socks5_connect, parse_socks5_request, parse_socks5_request_message,
     parse_socks5_udp_datagram, write_socks5_command_not_supported, write_socks5_failure,
-    write_socks5_success, write_socks5_success_with_bind, HttpParseError, SocksAccount,
-    SocksCommand, SocksInboundAuth, SocksParseError, MAX_SOCKS_CREDENTIAL_LENGTH,
+    write_socks5_success, write_socks5_success_with_bind, HttpInboundAccounts, HttpParseError,
+    SocksAccount, SocksCommand, SocksInboundAuth, SocksParseError, MAX_SOCKS_CREDENTIAL_LENGTH,
 };
 use xray_routing::{Network, Target, TargetAddr};
 
@@ -509,15 +509,6 @@ async fn rejects_http_non_connect_method() {
 }
 
 #[tokio::test]
-async fn rejects_http_missing_port() {
-    let raw = b"CONNECT example.com HTTP/1.1\r\n\r\n";
-
-    let err = parse_http_connect(Cursor::new(raw)).await.unwrap_err();
-
-    assert_eq!(err, HttpParseError::MissingPort);
-}
-
-#[tokio::test]
 async fn rejects_http_invalid_port() {
     let raw = b"CONNECT example.com:https HTTP/1.1\r\n\r\n";
 
@@ -656,9 +647,10 @@ fn decodes_http_basic_credentials_like_go() {
 }
 
 #[tokio::test]
-async fn http_connect_keeps_the_last_proxy_authorization() {
+async fn http_connect_keeps_the_first_proxy_authorization() {
+    // Go's `Header.Get` returns a header's first value.
     let request = parse_http_connect_request(Cursor::new(
-        b"CONNECT example.test:443 HTTP/1.1\r\nProxy-Authorization: Basic Zmlyc3Q6Zmlyc3Q=\r\nPROXY-AUTHORIZATION:\tBasic dXNlcjpwYXNz \r\nHost: example.test:443\r\n\r\n".to_vec(),
+        b"CONNECT example.test:443 HTTP/1.1\r\nProxy-Authorization:\tBasic dXNlcjpwYXNz \r\nPROXY-AUTHORIZATION: Basic Zmlyc3Q6Zmlyc3Q=\r\nHost: example.test:443\r\n\r\n".to_vec(),
     ))
     .await
     .unwrap();
@@ -667,10 +659,18 @@ async fn http_connect_keeps_the_last_proxy_authorization() {
         Some(&b"Basic dXNlcjpwYXNz"[..])
     );
     let auth = SocksInboundAuth::Password(vec![SocksAccount::new(b"user", b"pass").unwrap()]);
-    assert!(auth.admits_http_basic(request.proxy_authorization.as_deref().map(Vec::as_slice)));
-    assert!(!auth.admits_http_basic(Some(b"Basic Zmlyc3Q6Zmlyc3Q=")));
-    assert!(!auth.admits_http_basic(None));
-    assert!(SocksInboundAuth::NoAuth.admits_http_basic(None));
+    let accounts = HttpInboundAccounts::from(&auth);
+    let user = accounts
+        .basic_user(request.proxy_authorization.as_deref().map(Vec::as_slice))
+        .expect("the first credentials are admitted")
+        .expect("an account names the user");
+    assert_eq!(user.as_str(), "user");
+    assert!(accounts
+        .basic_user(Some(b"Basic Zmlyc3Q6Zmlyc3Q="))
+        .is_none());
+    assert!(accounts.basic_user(None).is_none());
+    let none = HttpInboundAccounts::from(&SocksInboundAuth::NoAuth);
+    assert!(matches!(none.basic_user(None), Some(None)));
 
     let anonymous = parse_http_connect_request(Cursor::new(
         b"CONNECT example.test:443 HTTP/1.1\r\n\r\n".to_vec(),
@@ -678,4 +678,156 @@ async fn http_connect_keeps_the_last_proxy_authorization() {
     .await
     .unwrap();
     assert_eq!(anonymous.proxy_authorization, None);
+}
+
+#[test]
+fn http_accounts_keep_one_password_per_name() {
+    // As Xray-core's accounts map: the later password replaces the earlier.
+    let mut accounts = HttpInboundAccounts::default();
+    accounts.insert(b"a", b"old");
+    accounts.insert(b"a", b"new");
+    accounts.insert(b"", b"");
+    assert!(accounts.basic_user(Some(b"Basic YTpvbGQ=")).is_none());
+    assert!(accounts.basic_user(Some(b"Basic YTpuZXc=")).is_some());
+    // Empty names and passwords are accounts too.
+    assert!(accounts.basic_user(Some(b"Basic Og==")).is_some());
+    assert_eq!(
+        format!("{accounts:?}"),
+        "HttpInboundAccounts { accounts: 2 }"
+    );
+}
+
+#[tokio::test]
+async fn http_requests_read_as_go_reads_them() {
+    let target = |raw: &'static [u8]| async move {
+        parse_http_connect_request(Cursor::new(raw.to_vec()))
+            .await
+            .map(|request| request.target)
+    };
+    let domain = |name: &str, port| {
+        Ok(Some(Target::new(
+            TargetAddr::Domain(name.to_owned()),
+            port,
+            Network::Tcp,
+        )))
+    };
+    // A missing or empty port is port 80, a long one is cut to 16 bits.
+    assert_eq!(
+        target(b"CONNECT example.com HTTP/1.1\r\n\r\n").await,
+        domain("example.com", 80)
+    );
+    assert_eq!(
+        target(b"CONNECT example.com: HTTP/1.1\r\n\r\n").await,
+        domain("example.com", 80)
+    );
+    assert_eq!(
+        target(b"CONNECT [::1] HTTP/1.1\r\n\r\n").await,
+        Ok(Some(Target::new(
+            TargetAddr::Ip(IpAddr::V6(Ipv6Addr::LOCALHOST)),
+            80,
+            Network::Tcp
+        )))
+    );
+    assert_eq!(
+        target(b"CONNECT example.com:70000 HTTP/1.1\r\n\r\n").await,
+        domain("example.com", 4464)
+    );
+    // Versions Go reads, and headers written with `\n` alone.
+    assert_eq!(
+        target(b"CONNECT example.com:443 HTTP/2.0\r\n\r\n").await,
+        domain("example.com", 443)
+    );
+    assert_eq!(
+        target(b"CONNECT example.com:443 HTTP/1.1\nHost: x\n\n").await,
+        domain("example.com", 443)
+    );
+    // A name with a space before its colon is kept, uncanonicalized.
+    assert_eq!(
+        target(b"CONNECT example.com:443 HTTP/1.1\r\nHost : x\r\n\r\n").await,
+        domain("example.com", 443)
+    );
+    // Another method has no target here.
+    assert_eq!(
+        target(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n").await,
+        Ok(None)
+    );
+    assert_eq!(
+        target(b"connect example.com:443 HTTP/1.1\r\n\r\n").await,
+        Ok(None)
+    );
+
+    for (raw, error) in [
+        (
+            &b"CONNECT example.com:443\r\n\r\n"[..],
+            HttpParseError::Malformed,
+        ),
+        (
+            b"CONNECT example.com:443 HTTP/10.0\r\n\r\n",
+            HttpParseError::Malformed,
+        ),
+        (
+            b"CONNECT example.com:443 HTTP/1.1 x\r\n\r\n",
+            HttpParseError::Malformed,
+        ),
+        (
+            b"CONNECT  example.com:443 HTTP/1.1\r\n\r\n",
+            HttpParseError::Malformed,
+        ),
+        (b"\x01\x02garbage\r\n\r\n", HttpParseError::Malformed),
+        (
+            b"CONNECT example.com:443 HTTP/1.1\r\nNoColon\r\n\r\n",
+            HttpParseError::Malformed,
+        ),
+        (
+            b"CONNECT example.com:443 HTTP/1.1\r\n: x\r\n\r\n",
+            HttpParseError::Malformed,
+        ),
+        (
+            b"CONNECT example.com:443 HTTP/1.1\r\nBad\x01Name: x\r\n\r\n",
+            HttpParseError::Malformed,
+        ),
+        (
+            b"CONNECT example.com:443 HTTP/1.1\r\n folded\r\n\r\n",
+            HttpParseError::Malformed,
+        ),
+        (
+            b"CONNECT example.com:443 HTTP/1.1\r\nHost: a\r\nhost: b\r\n\r\n",
+            HttpParseError::Malformed,
+        ),
+        (
+            b"CONNECT example.com:+80 HTTP/1.1\r\n\r\n",
+            HttpParseError::InvalidPort,
+        ),
+        (
+            b"CONNECT example.com:65536 HTTP/1.1\r\n\r\n",
+            HttpParseError::InvalidPort,
+        ),
+        (
+            b"CONNECT example.com:99999999999999999999 HTTP/1.1\r\n\r\n",
+            HttpParseError::InvalidPort,
+        ),
+        (
+            b"CONNECT ::1:443 HTTP/1.1\r\n\r\n",
+            HttpParseError::InvalidAuthority,
+        ),
+        (
+            b"CONNECT exa%41mple.com:443 HTTP/1.1\r\n\r\n",
+            HttpParseError::InvalidAuthority,
+        ),
+        (
+            b"CONNECT exa[mple.com:443 HTTP/1.1\r\n\r\n",
+            HttpParseError::InvalidAuthority,
+        ),
+        (
+            b"CONNECT [::1]x:443 HTTP/1.1\r\n\r\n",
+            HttpParseError::InvalidAuthority,
+        ),
+    ] {
+        assert_eq!(
+            parse_http_connect_request(Cursor::new(raw.to_vec())).await,
+            Err(error),
+            "{:?}",
+            String::from_utf8_lossy(raw)
+        );
+    }
 }

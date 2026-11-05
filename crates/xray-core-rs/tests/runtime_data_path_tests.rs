@@ -80,6 +80,8 @@ mod blackhole;
 mod freedom_domain_strategy;
 #[path = "runtime_data_path_tests/freedom_settings.rs"]
 mod freedom_settings;
+#[path = "runtime_data_path_tests/http_inbound.rs"]
+mod http_inbound;
 #[path = "runtime_data_path_tests/routing_attributes.rs"]
 mod routing_attributes;
 #[path = "runtime_data_path_tests/routing_origin.rs"]
@@ -1109,7 +1111,7 @@ fn runtime_http_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
     CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("http-in".to_owned()),
-            protocol: InboundProtocol::Http,
+            protocol: InboundProtocol::Http(Default::default()),
             listen: "127.0.0.1".to_owned(),
             port: 0,
             allow_unauthenticated_lan: false,
@@ -2083,7 +2085,7 @@ async fn http_tcp_connection_is_visible_and_host_close_cancels_the_relay() {
     timeout(Duration::from_secs(2), async {
         let (echo_addr, echo_handle) = spawn_echo_server().await;
         let mut config = runtime_config_with_freedom_outbound();
-        config.inbounds[0].protocol = InboundProtocol::Http;
+        config.inbounds[0].protocol = InboundProtocol::Http(Default::default());
         config.inbounds[0].tag = Some("http-in".to_owned());
         let mut core = Core::new(config).unwrap();
         core.start().await.unwrap();
@@ -2092,6 +2094,9 @@ async fn http_tcp_connection_is_visible_and_host_close_cancels_the_relay() {
             .await
             .unwrap();
         http_connect(&mut client, echo_addr).await;
+        // As in Xray-core, the 200 comes before routing, so the tunnel is
+        // open once bytes come back through it.
+        assert_echoes(&mut client, b"open").await;
         let snapshot = core.connection_snapshot();
         assert_eq!(snapshot.connections.len(), 1);
         assert_eq!(snapshot.connections[0].state, ConnectionState::Active);
@@ -4066,7 +4071,7 @@ async fn run_socks_inbound_mixed_scenario() {
         &format!("CONNECT {echo_addr} HTTP/1.1\r\nHost: {echo_addr}\r\n\r\n"),
     )
     .await;
-    assert_eq!(head, "HTTP/1.1 200 Connection Established\r\n\r\n");
+    assert_eq!(head, "HTTP/1.1 200 Connection established\r\n\r\n");
     assert_echoes(&mut client, b"hello http on socks").await;
     drop(client);
     timeout(Duration::from_secs(1), echo_handle)
@@ -4122,7 +4127,7 @@ async fn run_password_socks_inbound_mixed_scenario() {
         ),
     )
     .await;
-    assert_eq!(head, "HTTP/1.1 200 Connection Established\r\n\r\n");
+    assert_eq!(head, "HTTP/1.1 200 Connection established\r\n\r\n");
     assert_echoes(&mut client, b"hello basic auth").await;
     drop(client);
     core.stop().await.unwrap();
@@ -6518,7 +6523,7 @@ async fn run_http_dns_outbound_direct_udp_scenario() {
         ..DnsOutboundSettings::default()
     };
     let config = runtime_listener_config_with_dns_outbound(
-        InboundProtocol::Http,
+        InboundProtocol::Http(Default::default()),
         "http-in",
         settings,
         vec![Network::Tcp],
@@ -6605,7 +6610,7 @@ async fn run_core_wide_fake_dns_socks_to_http_scenario() {
     );
     config.inbounds.push(InboundConfig {
         tag: Some("http-in".to_owned()),
-        protocol: InboundProtocol::Http,
+        protocol: InboundProtocol::Http(Default::default()),
         listen: "127.0.0.1".to_owned(),
         port: 0,
         allow_unauthenticated_lan: false,
@@ -9947,7 +9952,7 @@ async fn run_http_to_resolved_ip_routed_freedom_echo_scenario(strategy: RoutingD
     };
     let (dns_server, dns_handle) = spawn_udp_dns_a_responder(echo_ip).await;
     let mut config = runtime_config_with_ip_if_non_match_routed_freedom_outbound(
-        InboundProtocol::Http,
+        InboundProtocol::Http(Default::default()),
         "http-in",
         allocate_unused_loopback_port(),
     );
@@ -12395,7 +12400,7 @@ async fn http_connect_authority(client: &mut TcpStream, authority: &str) {
     let response = read_http_response_head(client).await;
     let response = std::str::from_utf8(&response).unwrap();
     assert!(
-        response.starts_with("HTTP/1.1 200 Connection Established\r\n"),
+        response.starts_with("HTTP/1.1 200 Connection established\r\n"),
         "unexpected HTTP CONNECT response: {response:?}"
     );
 }

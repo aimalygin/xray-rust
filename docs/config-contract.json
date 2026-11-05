@@ -778,16 +778,26 @@
       "notes": "acceptProxyProtocol is ignored on the client. headers must not contain Host. REALITY is unsupported."
     },
     {
+      "context": "$.inbounds[].settings.accounts[] (http)",
+      "fields": [
+        "user",
+        "pass"
+      ],
+      "id": "HTTP_ACCOUNT",
+      "notes": "Proxy-Authorization: Basic credentials, as Xray-core reads them: strings of any length, absent or null reading as empty; a later account replaces an earlier one with the same user. Credentials are redacted."
+    },
+    {
       "context": "$.inbounds[].settings (http)",
       "fields": [
         "timeout",
         "accounts",
+        "users",
         "allowTransparent",
         "userLevel",
         "allowUnauthenticatedLan"
       ],
       "id": "HTTP_SETTINGS",
-      "notes": "accounts must be empty; allowTransparent cannot be true. timeout is accepted for compatibility."
+      "notes": "accounts (or users, read only when accounts is absent or null) lists at most 64 accounts, of which a request must name one; an empty list needs none. allowTransparent cannot be true. timeout is accepted for compatibility."
     },
     {
       "context": "$.outbounds[].settings (http)",

@@ -1,30 +1,24 @@
 use std::sync::Arc;
 
-use bytes::Bytes;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use tokio::task::JoinSet;
-use xray_config::CoreConfig;
-use xray_proxy::inbound::parse_http_connect;
+use xray_config::{CoreConfig, InboundSniffingConfig};
+use xray_proxy::inbound::{parse_http_connect_request, HttpInboundAccounts};
 use xray_transport::TransportDialer;
 
-use crate::connection::wait_for_connection_close;
 use crate::dns::RuntimeDnsResolvers;
-use crate::outbound::{
-    open_tcp_stream_with_resolvers_and_dialer, InboundSource, TcpSessionOutbound,
-};
-use crate::policy::{
-    accept_error_wants_backoff, copy_bidirectional_with_idle_timeout_and_traffic,
-    effective_policy_for_level, AcceptBackoff, EffectivePolicy,
-};
-use crate::{ConnectionRegistry, OutboundRouter, RuntimeLogger, TcpOutbound};
+use crate::policy::{accept_error_wants_backoff, AcceptBackoff, EffectivePolicy};
+use crate::{ConnectionRegistry, OutboundRouter, RuntimeLogger};
 
-pub(crate) const HTTP_CONNECT_ESTABLISHED: &[u8] = b"HTTP/1.1 200 Connection Established\r\n\r\n";
-pub(crate) const HTTP_BAD_REQUEST: &[u8] = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
+/// Xray's answer to `CONNECT`, byte for byte, sent before routing.
+pub(crate) const HTTP_CONNECT_ESTABLISHED: &[u8] = b"HTTP/1.1 200 Connection established\r\n\r\n";
+/// Xray's answer to a request it does not tunnel, byte for byte.
+pub(crate) const HTTP_BAD_REQUEST: &[u8] =
+    b"HTTP/1.1 400 Bad Request\r\nConnection: close\r\nProxy-Connection: close\r\nContent-Length: 0\r\n\r\n";
 /// Xray's reply to missing or wrong `Proxy-Authorization`, byte for byte.
 pub(crate) const HTTP_PROXY_AUTH_REQUIRED: &[u8] = b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"proxy\"\r\n\r\n";
-const HTTP_BAD_GATEWAY: &[u8] = b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n";
 
 #[expect(
     clippy::too_many_arguments,
@@ -32,11 +26,13 @@ const HTTP_BAD_GATEWAY: &[u8] = b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\
 )]
 pub async fn serve_http_listener(
     listener: TcpListener,
+    accounts: Arc<HttpInboundAccounts>,
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
     dns_resolvers: RuntimeDnsResolvers,
     transport_dialer: Arc<TransportDialer>,
+    sniffing: Option<InboundSniffingConfig>,
     policy: EffectivePolicy,
     runtime_logger: RuntimeLogger,
     connection_registry: Arc<ConnectionRegistry>,
@@ -84,21 +80,25 @@ pub async fn serve_http_listener(
                     }
                 };
                 accept_backoff.reset();
+                let accounts = Arc::clone(&accounts);
                 let inbound_tag = inbound_tag.clone();
                 let config = Arc::clone(&config);
                 let outbound_router = Arc::clone(&outbound_router);
                 let dns_resolvers = dns_resolvers.clone();
                 let transport_dialer = Arc::clone(&transport_dialer);
+                let sniffing = sniffing.clone();
                 let runtime_logger = runtime_logger.clone();
                 let connection_registry = Arc::clone(&connection_registry);
                 connections.spawn(async move {
-                    handle_http_connection(
+                    serve_http_proxy_connection(
                         stream,
+                        &accounts,
                         inbound_tag,
                         config,
                         outbound_router,
                         dns_resolvers,
                         transport_dialer,
+                        sniffing,
                         policy,
                         runtime_logger,
                         connection_registry,
@@ -115,270 +115,73 @@ pub async fn serve_http_listener(
     while connections.join_next().await.is_some() {}
 }
 
+/// Serves one request on an HTTP inbound, or on a SOCKS port, as Xray-core's
+/// HTTP server does. A request that does not parse is closed without a
+/// reply, and one without the accounts' credentials gets the 407. `CONNECT`
+/// is answered before routing, so a tunnel that cannot open only closes;
+/// then it routes and sniffs as a SOCKS `CONNECT` does. Other methods ask for
+/// plain HTTP forwarding, which is not implemented, and get a 400.
 #[expect(
     clippy::too_many_arguments,
     reason = "connection tasks receive shared runtime dependencies explicitly"
 )]
-async fn handle_http_connection(
+pub(crate) async fn serve_http_proxy_connection(
     mut inbound: TcpStream,
+    accounts: &HttpInboundAccounts,
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
     dns_resolvers: RuntimeDnsResolvers,
     transport_dialer: Arc<TransportDialer>,
+    sniffing: Option<InboundSniffingConfig>,
     policy: EffectivePolicy,
     runtime_logger: RuntimeLogger,
     connection_registry: Arc<ConnectionRegistry>,
 ) {
-    let source = runtime_logger.is_enabled().then(|| {
-        inbound
-            .peer_addr()
-            .map_or_else(|_| "unknown".to_owned(), |addr| addr.to_string())
-    });
-    let raw_target =
-        match tokio::time::timeout(policy.handshake, parse_http_connect(&mut inbound)).await {
-            Ok(Ok(target)) => target,
-            _ => {
-                let _ = inbound.write_all(HTTP_BAD_REQUEST).await;
-                return;
-            }
-        };
-    let target = dns_resolvers
-        .outbound
-        .restore_client_target(&raw_target)
-        .target;
-
-    let route = xray_config::RouteContext {
-        attributes: None,
-        protocol: None,
-        inbound_tag: inbound_tag.as_deref(),
-        source: inbound.peer_addr().ok(),
-        local: inbound.local_addr().ok(),
-        user: None,
+    let Ok(Ok(request)) =
+        tokio::time::timeout(policy.handshake, parse_http_connect_request(&mut inbound)).await
+    else {
+        drain_arrived(&inbound);
+        return;
     };
-    let selected = match outbound_router
-        .select_tcp_session_outbound_with_tag_and_resolver(
-            &route,
-            &target,
-            true,
-            dns_resolvers.destination.as_ref(),
-        )
-        .await
-    {
-        Ok(outbound) => outbound,
-        Err(error) => {
-            if let Some(source) = source.as_deref() {
-                crate::debug_log::log_access_rejected(&runtime_logger, source, &target, error);
-            }
-            let _ = inbound.write_all(HTTP_BAD_GATEWAY).await;
-            return;
-        }
+    let Some(user) = accounts.basic_user(request.proxy_authorization.as_deref().map(Vec::as_slice))
+    else {
+        let _ = inbound.write_all(HTTP_PROXY_AUTH_REQUIRED).await;
+        return;
     };
-    let connection =
-        connection_registry.register(inbound_tag.clone(), selected.tag.clone(), target.clone());
-    let mut connection_close = connection.close_receiver();
-    let connection_traffic = connection.traffic();
-
-    if runtime_logger.is_enabled() {
-        let selected_outbound = match &selected.outbound {
-            TcpSessionOutbound::Transport(outbound) => {
-                crate::debug_log::tcp_outbound_label(outbound)
-            }
-            TcpSessionOutbound::Dns(_) => "dns",
-            TcpSessionOutbound::Blackhole(_) => "blackhole",
-        };
-        crate::debug_log::log_route_decision(
-            &runtime_logger,
-            crate::debug_log::RouteDecisionLog {
-                inbound_tag: inbound_tag.as_deref(),
-                network: target.network,
-                original_target: &raw_target,
-                sniffed_protocol: None,
-                route_target: &target,
-                dial_target: &target,
-                selected_outbound,
-            },
-        );
-    }
-
-    let outbound = match selected.outbound {
-        TcpSessionOutbound::Transport(outbound) => outbound,
-        TcpSessionOutbound::Dns(outbound) => {
-            if let Some(source) = source.as_deref() {
-                crate::debug_log::log_access_accepted(&runtime_logger, source, &target, "dns");
-            }
-            if inbound.write_all(HTTP_CONNECT_ESTABLISHED).await.is_err() {
-                return;
-            }
-            connection.mark_active();
-            let served = tokio::select! {
-                result = dns_resolvers.outbound.serve_tcp_stream(
-                    &mut inbound,
-                    Bytes::new(),
-                    &outbound,
-                    &target,
-                    policy.conn_idle,
-                ) => Some(result),
-                () = wait_for_connection_close(&mut connection_close) => None,
-            };
-            let _ = served;
-            connection.finish();
-            return;
-        }
-        TcpSessionOutbound::Blackhole(blackhole) => {
-            if let Some(source) = source.as_deref() {
-                crate::debug_log::log_access_accepted(
-                    &runtime_logger,
-                    source,
-                    &target,
-                    "blackhole",
-                );
-            }
-            // Xray's HTTP inbound answers CONNECT before dispatching, so the
-            // blackhole response, if any, arrives inside the tunnel.
-            if inbound.write_all(HTTP_CONNECT_ESTABLISHED).await.is_err() {
-                return;
-            }
-            tokio::select! {
-                () = blackhole.finish_stream(&mut inbound) => {}
-                () = wait_for_connection_close(&mut connection_close) => {}
-            }
-            connection.finish();
-            return;
-        }
+    let Some(target) = request.target else {
+        let _ = inbound.write_all(HTTP_BAD_REQUEST).await;
+        return;
     };
-
-    let (open_timeout, tunnel_idle, relay_buffer_size) = match outbound.primary() {
-        // Freedom's own timer runs at its level beside the inbound's, so the
-        // shorter idle timeout wins, as in Xray-core.
-        TcpOutbound::Freedom(freedom) => (
-            policy.handshake,
-            policy
-                .conn_idle
-                .min(effective_policy_for_level(&config, Some(freedom.level())).conn_idle),
-            policy.relay_buffer_size(),
-        ),
-        TcpOutbound::Vless(outbound) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(outbound.user().level));
-            (
-                outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
-                outbound_policy.relay_buffer_size(),
-            )
-        }
-        TcpOutbound::Trojan(outbound) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
-            (
-                outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
-                outbound_policy.relay_buffer_size(),
-            )
-        }
-        TcpOutbound::Socks(outbound) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
-            (
-                outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
-                outbound_policy.relay_buffer_size(),
-            )
-        }
-        TcpOutbound::Http(outbound) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
-            (
-                outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
-                outbound_policy.relay_buffer_size(),
-            )
-        }
-        TcpOutbound::Vmess(outbound) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
-            (
-                outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
-                outbound_policy.relay_buffer_size(),
-            )
-        }
-        TcpOutbound::Shadowsocks2022(outbound) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
-            (
-                outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
-                outbound_policy.relay_buffer_size(),
-            )
-        }
-        TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
-            let outbound_policy = effective_policy_for_level(&config, Some(0));
-            (
-                outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
-                outbound_policy.relay_buffer_size(),
-            )
-        }
-        TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
-    };
-    let outbound_label = crate::debug_log::tcp_outbound_label(&outbound);
-    let client = outbound
-        .writes_proxy_protocol()
-        .then(|| inbound.peer_addr().ok().map(InboundSource::tcp))
-        .flatten();
-    let opened = tokio::select! {
-        result = tokio::time::timeout(
-            open_timeout,
-            open_tcp_stream_with_resolvers_and_dialer(
-                &outbound,
-                &target,
-                dns_resolvers.destination.as_ref(),
-                dns_resolvers.bootstrap.as_ref(),
-                transport_dialer.as_ref(),
-                client.as_ref(),
-            ),
-        ) => Some(result),
-        () = wait_for_connection_close(&mut connection_close) => None,
-    };
-    let mut outbound_stream = match opened {
-        None => return,
-        Some(result) => match result {
-            Ok(Ok(stream)) => stream,
-            Ok(Err(error)) => {
-                if let Some(source) = source.as_deref() {
-                    crate::debug_log::log_access_rejected(&runtime_logger, source, &target, error);
-                }
-                let _ = inbound.write_all(HTTP_BAD_GATEWAY).await;
-                return;
-            }
-            Err(_) => {
-                if let Some(source) = source.as_deref() {
-                    crate::debug_log::log_access_rejected(
-                        &runtime_logger,
-                        source,
-                        &target,
-                        "outbound open timed out",
-                    );
-                }
-                let _ = inbound.write_all(HTTP_BAD_GATEWAY).await;
-                return;
-            }
-        },
-    };
-    if let Some(source) = source.as_deref() {
-        crate::debug_log::log_access_accepted(&runtime_logger, source, &target, outbound_label);
-    }
-
     if inbound.write_all(HTTP_CONNECT_ESTABLISHED).await.is_err() {
         return;
     }
-    connection.mark_active();
+    crate::socks::handle_socks_connect::<false>(
+        inbound,
+        target,
+        user,
+        inbound_tag,
+        config,
+        outbound_router,
+        dns_resolvers,
+        transport_dialer,
+        sniffing,
+        policy,
+        runtime_logger,
+        connection_registry,
+    )
+    .await;
+}
 
-    let copied = tokio::select! {
-        result = copy_bidirectional_with_idle_timeout_and_traffic(
-            &mut inbound,
-            &mut outbound_stream,
-            tunnel_idle,
-            relay_buffer_size,
-            connection_traffic.as_ref(),
-        ) => Some(result),
-        () = wait_for_connection_close(&mut connection_close) => None,
-    };
-    let _ = copied;
-    connection.finish();
+/// Reads what has already arrived, as Xray-core's buffered reader has by the
+/// time it gives up on a request, so closing ends the connection instead of
+/// resetting it over unread bytes.
+fn drain_arrived(stream: &TcpStream) {
+    let mut buffer = [0; 4096];
+    for _ in 0..16 {
+        match stream.try_read(&mut buffer) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+    }
 }

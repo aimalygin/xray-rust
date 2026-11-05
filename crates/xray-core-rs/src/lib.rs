@@ -1214,7 +1214,7 @@ impl Core {
                     tproxy_inbounds.push((socks::tproxy::bind(inbound, settings)?, inbound));
                     continue;
                 }
-                InboundProtocol::Socks(_) | InboundProtocol::Http => {}
+                InboundProtocol::Socks(_) | InboundProtocol::Http(_) => {}
                 InboundProtocol::Tun => {
                     tun_inbounds.push((
                         inbound.tag.clone(),
@@ -1287,13 +1287,15 @@ impl Core {
                     Arc::clone(&self.connection_registry),
                     self.shutdown.subscribe(),
                 )),
-                InboundProtocol::Http => tokio::spawn(http::serve_http_listener(
+                InboundProtocol::Http(settings) => tokio::spawn(http::serve_http_listener(
                     listener,
+                    Arc::new(settings.accounts),
                     inbound_tag,
                     Arc::clone(&config),
                     Arc::clone(&outbound_router),
                     dns_resolvers,
                     transport_dialer,
+                    sniffing,
                     policy,
                     self.runtime_logger.clone(),
                     Arc::clone(&self.connection_registry),

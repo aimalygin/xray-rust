@@ -813,7 +813,7 @@ async fn http_connect(client: &mut TcpStream, target: SocketAddr) {
         .await
         .expect("write http connect");
 
-    let expected = b"HTTP/1.1 200 Connection Established\r\n\r\n";
+    let expected = b"HTTP/1.1 200 Connection established\r\n\r\n";
     let mut response = vec![0; expected.len()];
     client
         .read_exact(&mut response)

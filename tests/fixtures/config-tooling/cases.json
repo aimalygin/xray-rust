@@ -135,6 +135,37 @@
       }
     },
     {
+      "name": "http-accounts",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "http-in",
+            "protocol": "http",
+            "listen": "127.0.0.1",
+            "port": 1081,
+            "settings": {
+              "accounts": [
+                {
+                  "user": "synthetic-user",
+                  "pass": "synthetic-pass"
+                }
+              ]
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "freedom",
+            "tag": "direct"
+          }
+        ]
+      },
+      "objects": {
+        "HTTP_ACCOUNT": "/inbounds/0/settings/accounts/0"
+      }
+    },
+    {
       "name": "dns-policy",
       "config": {
         "dns": {
@@ -3499,6 +3530,50 @@
       },
       "accepted": false,
       "errorPath": "$.routing.rules[0].attrs.user-agent"
+    },
+    {
+      "name": "http-accounts-users",
+      "base": "http-accounts",
+      "set": {
+        "/inbounds/0/settings": {
+          "users": [
+            {
+              "user": "synthetic-user",
+              "pass": "synthetic-pass"
+            }
+          ]
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "http-accounts-not-an-object",
+      "base": "http-accounts",
+      "set": {
+        "/inbounds/0/settings": {
+          "accounts": [
+            null
+          ]
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.inbounds[0].settings.accounts[0]"
+    },
+    {
+      "name": "http-accounts-user-not-a-string",
+      "base": "http-accounts",
+      "set": {
+        "/inbounds/0/settings": {
+          "accounts": [
+            {
+              "user": 5,
+              "pass": "x"
+            }
+          ]
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.inbounds[0].settings.accounts[0].user"
     }
   ]
 }
