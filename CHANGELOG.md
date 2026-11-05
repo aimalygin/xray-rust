@@ -227,6 +227,10 @@ long-term supported release series.
   stats), and a TUN host gets an ICMP fragmentation-needed or packet-too-big
   with the path MTU, which senders that set DF (QUIC, PMTU discovery) follow. This already
   affected WireGuard outbounds at the default 1500-byte TUN.
+- TUN UDP: when a flow's 256-datagram queue is full, only the new datagram is
+  dropped (counted in `udp_channel_dropped_packets`, as before) and the flow
+  keeps its outbound, as in Xray-core. A burst used to end the flow, so the
+  next datagram opened a new outbound with a fresh handshake.
 - DNS: a bare `"localhost"` or `"fakedns"` string in `dns.servers` (any case)
   is now a configuration error, as the object form already was. Xray's
   system-resolver and FakeDNS clients are not implemented, and these strings

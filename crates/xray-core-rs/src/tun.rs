@@ -4437,8 +4437,25 @@ fn handle_udp_packet(
         UdpFlowAdmission::Drop => return,
     }
 
-    if let Some(flow) = flows.get(&key) {
-        if flow.to_remote.try_send(packet.payload).is_err() {
+    forward_udp_payload(flows, key, packet.payload, flow_budget_state);
+}
+
+/// Queues one datagram for an admitted flow. A full queue drops only this
+/// datagram and keeps the flow, as Xray's TUN packet queue does; a closed
+/// queue means the bridge task ended, so the flow is forgotten.
+fn forward_udp_payload(
+    flows: &mut HashMap<UdpFlowKey, UdpFlow>,
+    key: UdpFlowKey,
+    payload: Bytes,
+    flow_budget_state: &mut FlowBudgetState,
+) {
+    let Some(flow) = flows.get(&key) else {
+        return;
+    };
+    match flow.to_remote.try_send(payload) {
+        Ok(()) => {}
+        Err(mpsc::error::TrySendError::Full(_)) => flow_budget_state.record_udp_channel_drop(),
+        Err(mpsc::error::TrySendError::Closed(_)) => {
             flow_budget_state.record_udp_channel_drop();
             flows.remove(&key);
         }
