@@ -246,6 +246,11 @@ long-term supported release series.
 - Hysteria UDP: an empty datagram is skipped and the flow stays up. Every
   Hysteria parser, Xray-core's included, drops a message without data. It
   used to end the whole UDP flow, so the next datagram opened a new session.
+- Hysteria UDP reassembly follows Xray-core: an unfragmented datagram that
+  arrives between the fragments of a larger one is delivered without dropping
+  the larger one, and a fragment with a new fragment count starts a new
+  packet. Both used to discard the incomplete datagram, and the second one its
+  own fragment too.
 - DNS: a bare `"localhost"` or `"fakedns"` string in `dns.servers` (any case)
   is now a configuration error, as the object form already was. Xray's
   system-resolver and FakeDNS clients are not implemented, and these strings

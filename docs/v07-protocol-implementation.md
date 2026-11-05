@@ -28,9 +28,11 @@ discovery are available through ABI 1.5; release acceptance remains pending.
   checked 255-fragment ceiling. The caller assigns packet IDs and serializes
   each borrowed fragment into a QUIC datagram.
 - Reassembly tied to one session on one authenticated connection. It accepts
-  out-of-order/identical duplicate fragments, discards an incomplete packet
-  when a different packet ID arrives, and checks address, count and duplicate
-  payload consistency. A completed packet immediately releases partial state.
+  out-of-order/identical duplicate fragments and, like Xray's Defragger,
+  restarts with the new packet when a fragment with a different packet ID or
+  fragment count arrives, while an unfragmented message passes through without
+  touching the incomplete packet. It checks address and duplicate payload
+  consistency. A completed packet immediately releases partial state.
 
 Bounds: 2,048 address bytes, 2,048 response-message bytes and 4,096 padding
 bytes match the pinned proxy codec. UDP payload/reassembly is capped at 65,535
