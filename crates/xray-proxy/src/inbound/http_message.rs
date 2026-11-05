@@ -194,10 +194,10 @@ pub struct HttpRequestHead {
 
 /// Reads a request head as Go's `http.ReadRequest` does. Its request line is
 /// three parts split at single spaces: a token, a target without control
-/// characters, and an HTTP version Go reads. Header lines are read as
-/// [`read_header_block`] reads them, with at most one `Host`. As there,
-/// `Pragma: no-cache` adds `Cache-Control: no-cache`, and a body Go cannot
-/// delimit refuses the request.
+/// characters, and an HTTP version Go reads. Header lines are read as Go's
+/// `textproto` reads them, with at most one `Host`. As there, `Pragma:
+/// no-cache` adds `Cache-Control: no-cache`, and a body Go cannot delimit
+/// refuses the request.
 pub async fn read_http_request_head<R: AsyncRead + Unpin>(
     reader: &mut R,
 ) -> Result<HttpRequestHead, HttpParseError> {
