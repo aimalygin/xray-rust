@@ -7,9 +7,10 @@ use xray_proxy::inbound::{
     decode_http_basic_credentials, encode_socks5_udp_datagram, negotiate_socks5,
     negotiate_socks5_no_auth, parse_http_connect, parse_http_connect_request, parse_socks4_connect,
     parse_socks5_connect, parse_socks5_request, parse_socks5_request_message,
-    parse_socks5_udp_datagram, write_socks5_command_not_supported, write_socks5_failure,
-    write_socks5_success, write_socks5_success_with_bind, HttpInboundAccounts, HttpParseError,
-    SocksAccount, SocksCommand, SocksInboundAuth, SocksParseError, MAX_SOCKS_CREDENTIAL_LENGTH,
+    parse_socks5_udp_datagram, read_socks5_command, read_socks5_target,
+    write_socks5_command_not_supported, write_socks5_failure, write_socks5_success,
+    write_socks5_success_with_bind, HttpInboundAccounts, HttpParseError, SocksAccount,
+    SocksCommand, SocksInboundAuth, SocksParseError, MAX_SOCKS_CREDENTIAL_LENGTH,
 };
 use xray_routing::{Network, Target, TargetAddr};
 
@@ -159,7 +160,8 @@ async fn socks5_password_auth_rejects_wrong_credentials() {
         let mut status = [0; 2];
         client.read_exact(&mut status).await.unwrap();
 
-        assert_eq!(status, [1, 1]);
+        // Xray-core answers a failed login with 0xFF.
+        assert_eq!(status, [1, 0xff]);
         assert_eq!(
             server_task.await.unwrap(),
             Err(SocksParseError::AuthenticationFailed)
@@ -184,22 +186,22 @@ async fn socks5_password_auth_never_selects_no_auth() {
 }
 
 #[tokio::test]
-async fn socks5_password_auth_rejects_unknown_subnegotiation_version() {
+async fn socks5_password_auth_ignores_the_subnegotiation_version() {
     let (mut client, server) = tokio::io::duplex(64);
     let server_task = tokio::spawn(async move { negotiate_socks5(server, &password_auth()).await });
 
     client.write_all(&[5, 1, 2]).await.unwrap();
     let mut selection = [0; 2];
     client.read_exact(&mut selection).await.unwrap();
-    client.write_all(&[5]).await.unwrap();
+    // Xray-core does not check the version byte.
+    let mut request = password_request(b"synthetic-user", b"synthetic-pass");
+    request[0] = 5;
+    client.write_all(&request).await.unwrap();
     let mut status = [0; 2];
     client.read_exact(&mut status).await.unwrap();
 
-    assert_eq!(status, [1, 1]);
-    assert_eq!(
-        server_task.await.unwrap(),
-        Err(SocksParseError::UnsupportedAuthVersion(5))
-    );
+    assert_eq!(status, [1, 0]);
+    assert!(server_task.await.unwrap().is_ok());
 }
 
 #[tokio::test]
@@ -218,8 +220,8 @@ fn socks_accounts_enforce_rfc1929_lengths_and_redact_debug() {
     let longest = vec![b'a'; MAX_SOCKS_CREDENTIAL_LENGTH];
     let too_long = vec![b'a'; MAX_SOCKS_CREDENTIAL_LENGTH + 1];
     assert!(SocksAccount::new(&longest, &longest).is_some());
-    assert!(SocksAccount::new(b"", b"synthetic-pass").is_none());
-    assert!(SocksAccount::new(b"synthetic-user", b"").is_none());
+    // Xray-core keeps empty credentials, which the wire can carry.
+    assert!(SocksAccount::new(b"", b"").is_some());
     assert!(SocksAccount::new(&too_long, b"synthetic-pass").is_none());
     assert!(SocksAccount::new(b"synthetic-user", &too_long).is_none());
 
@@ -240,7 +242,7 @@ async fn socks5_negotiate_no_auth_reads_greeting_with_two_io_reads() {
 }
 
 #[tokio::test]
-async fn socks5_request_parser_reads_ipv4_request_with_two_io_reads() {
+async fn socks5_request_parser_reads_ipv4_request_with_three_io_reads() {
     let mut reader = CountingIo::new([5, 1, 0, 1, 192, 0, 2, 1, 0, 80]);
 
     let request = parse_socks5_request_message(&mut reader).await.unwrap();
@@ -251,7 +253,8 @@ async fn socks5_request_parser_reads_ipv4_request_with_two_io_reads() {
         request.target.addr,
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)))
     );
-    assert_eq!(reader.read_calls, 2);
+    // The command is read before the address, so it can be refused first.
+    assert_eq!(reader.read_calls, 3);
 }
 
 #[tokio::test]
@@ -386,15 +389,6 @@ async fn parses_socks5_request_ipv6_target() {
 }
 
 #[tokio::test]
-async fn rejects_socks5_unsupported_version() {
-    let bytes = [0x04, 0x01, 0x00, 0x01, 127, 0, 0, 1, 0, 80];
-
-    let err = parse_socks5_request(Cursor::new(bytes)).await.unwrap_err();
-
-    assert_eq!(err, SocksParseError::UnsupportedVersion(0x04));
-}
-
-#[tokio::test]
 async fn rejects_socks5_unsupported_command() {
     let bytes = [0x05, 0x02, 0x00, 0x01, 127, 0, 0, 1, 0, 80];
 
@@ -404,15 +398,16 @@ async fn rejects_socks5_unsupported_command() {
 }
 
 #[tokio::test]
-async fn rejects_socks5_nonzero_reserved_byte() {
+async fn socks5_requests_ignore_their_version_and_reserved_bytes() {
+    // Xray-core checks only the command byte.
     let bytes = [
-        0x05, 0x01, 0x01, 0x03, 0x0b, b'e', b'x', b'a', b'm', b'p', b'l', b'e', b'.', b'c', b'o',
+        0x04, 0x01, 0x01, 0x03, 0x0b, b'e', b'x', b'a', b'm', b'p', b'l', b'e', b'.', b'c', b'o',
         b'm', 0x01, 0xbb,
     ];
 
-    let err = parse_socks5_request(Cursor::new(bytes)).await.unwrap_err();
+    let target = parse_socks5_request(Cursor::new(bytes)).await.unwrap();
 
-    assert_eq!(err, SocksParseError::InvalidReserved(0x01));
+    assert_eq!(target.addr, TargetAddr::Domain("example.com".to_owned()));
 }
 
 #[tokio::test]
@@ -826,5 +821,154 @@ async fn http_requests_read_as_go_reads_them() {
             "{:?}",
             String::from_utf8_lossy(raw)
         );
+    }
+}
+
+/// The target of a SOCKS5 `CONNECT` to the domain `name`.
+async fn socks5_domain_target(name: &[u8]) -> Result<Target, SocksParseError> {
+    let mut request = vec![5, 1, 0, 3, u8::try_from(name.len()).unwrap()];
+    request.extend_from_slice(name);
+    request.extend_from_slice(&443_u16.to_be_bytes());
+    parse_socks5_request(&request[..]).await
+}
+
+fn ip(text: &str) -> Result<TargetAddr, SocksParseError> {
+    Ok(TargetAddr::Ip(text.parse().unwrap()))
+}
+
+fn domain(text: &str) -> Result<TargetAddr, SocksParseError> {
+    Ok(TargetAddr::Domain(text.to_owned()))
+}
+
+#[tokio::test]
+async fn socks5_domains_read_as_xray_core_reads_them() {
+    for (name, expected) in [
+        // A name that starts with a digit or `[` and is an IP literal to Go's
+        // net.ParseAddress is that IP.
+        (b"192.0.2.7".as_slice(), ip("192.0.2.7")),
+        (b"[2001:db8::1]", ip("2001:db8::1")),
+        (b"[192.0.2.7]", ip("192.0.2.7")),
+        (b"2001:db8::1", ip("2001:db8::1")),
+        (b"0::ffff:192.0.2.7", ip("192.0.2.7")),
+        (b"192.0.2.7 ", ip("192.0.2.7")),
+        (b"192.0.2.7\t\n", ip("192.0.2.7")),
+        // Other names keep to letters, digits, `-`, `.` and `_`.
+        (b"1password.example", domain("1password.example")),
+        (b"Under_Score-1.example.", domain("Under_Score-1.example.")),
+        (b"192.0.2.256", domain("192.0.2.256")),
+        (b"::1", Err(SocksParseError::InvalidDomain)),
+        (b" 192.0.2.7", Err(SocksParseError::InvalidDomain)),
+        (b"[example.com]", Err(SocksParseError::InvalidDomain)),
+        (b"[]", Err(SocksParseError::InvalidDomain)),
+        (b"exa mple.com", Err(SocksParseError::InvalidDomain)),
+        (b"example.com:443", Err(SocksParseError::InvalidDomain)),
+        (b"a/b", Err(SocksParseError::InvalidDomain)),
+        (
+            "\u{43f}\u{440}\u{438}\u{43c}\u{435}\u{440}.\u{440}\u{444}".as_bytes(),
+            Err(SocksParseError::InvalidDomain),
+        ),
+        (b"\xff.example", Err(SocksParseError::InvalidDomain)),
+    ] {
+        let target = socks5_domain_target(name).await.map(|target| target.addr);
+        assert_eq!(target, expected, "{}", String::from_utf8_lossy(name));
+    }
+}
+
+#[tokio::test]
+async fn socks5_ipv4_mapped_addresses_read_as_ipv4() {
+    let mut request = vec![5, 1, 0, 4];
+    request.extend_from_slice(&"::ffff:192.0.2.7".parse::<Ipv6Addr>().unwrap().octets());
+    request.extend_from_slice(&80_u16.to_be_bytes());
+    let target = parse_socks5_request(&request[..]).await.unwrap();
+    assert_eq!(Ok(target.addr), ip("192.0.2.7"));
+
+    let mut datagram = vec![0, 0, 0, 4];
+    datagram.extend_from_slice(&"::ffff:192.0.2.7".parse::<Ipv6Addr>().unwrap().octets());
+    datagram.extend_from_slice(&53_u16.to_be_bytes());
+    datagram.extend_from_slice(b"payload");
+    let decoded = parse_socks5_udp_datagram(&datagram).unwrap();
+    assert_eq!(Ok(decoded.target.addr), ip("192.0.2.7"));
+}
+
+#[tokio::test]
+async fn socks5_tor_resolve_commands_read_as_connect() {
+    for command in [0xf0, 0xf1] {
+        let bytes = [5, command, 0, 1, 192, 0, 2, 7, 0, 80];
+        let request = parse_socks5_request_message(&bytes[..]).await.unwrap();
+        assert_eq!(request.command, SocksCommand::Connect);
+        assert_eq!(request.target.network, Network::Tcp);
+    }
+}
+
+#[tokio::test]
+async fn socks5_commands_are_refused_before_their_address() {
+    // BIND and unknown commands fail on the three bytes before the address.
+    for command in [2, 4, 0xff] {
+        let mut reader = CountingIo::new([5, command, 0]);
+        assert_eq!(
+            read_socks5_command(&mut reader).await,
+            Err(SocksParseError::UnsupportedCommand(command))
+        );
+    }
+    let mut reader = CountingIo::new([5, 3, 0]);
+    assert_eq!(
+        read_socks5_command(&mut reader).await,
+        Ok(SocksCommand::UdpAssociate)
+    );
+    let mut reader = CountingIo::new([1, 192, 0, 2, 7, 0, 53]);
+    let target = read_socks5_target(&mut reader, SocksCommand::UdpAssociate)
+        .await
+        .unwrap();
+    assert_eq!(target.network, Network::Udp);
+}
+
+#[test]
+fn socks5_udp_datagrams_read_as_xray_core_reads_them() {
+    let datagram = |head: [u8; 3], name: &[u8]| {
+        let mut datagram = head.to_vec();
+        datagram.push(3);
+        datagram.push(u8::try_from(name.len()).unwrap());
+        datagram.extend_from_slice(name);
+        datagram.extend_from_slice(&53_u16.to_be_bytes());
+        datagram.extend_from_slice(b"payload");
+        parse_socks5_udp_datagram(&datagram).map(|decoded| decoded.target.addr)
+    };
+    // The reserved bytes are not checked; a fragment is refused.
+    assert_eq!(
+        datagram([0xff, 0xff, 0], b"example.com"),
+        domain("example.com")
+    );
+    assert_eq!(
+        datagram([0, 0, 1], b"example.com"),
+        Err(SocksParseError::UnsupportedUdpFragment)
+    );
+    assert_eq!(datagram([0, 0, 0], b"192.0.2.7"), ip("192.0.2.7"));
+    assert_eq!(
+        datagram([0, 0, 0], b"exa mple.com"),
+        Err(SocksParseError::InvalidDomain)
+    );
+}
+
+#[tokio::test]
+async fn socks4a_domains_read_through_go_parse_address() {
+    let socks4a = |name: &[u8]| {
+        let mut body = vec![1, 0, 80, 0, 0, 0, 1, 0];
+        body.extend_from_slice(name);
+        body.push(0);
+        body
+    };
+    for (name, expected) in [
+        (b"[2001:db8::1]".as_slice(), ip("2001:db8::1")),
+        (b"::ffff:192.0.2.7", ip("192.0.2.7")),
+        (b" 192.0.2.7 ", ip("192.0.2.7")),
+        // Unlike SOCKS5, the name is not checked, only trimmed.
+        (b" exa mple.com ", domain("exa mple.com")),
+        (b"[example.com]", domain("example.com")),
+        (b" ", Err(SocksParseError::InvalidDomain)),
+    ] {
+        let target = parse_socks4_connect(&socks4a(name)[..])
+            .await
+            .map(|target| target.addr);
+        assert_eq!(target, expected, "{}", String::from_utf8_lossy(name));
     }
 }

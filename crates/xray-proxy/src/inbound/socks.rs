@@ -15,9 +15,15 @@ pub(crate) const METHOD_PASSWORD: u8 = 0x02;
 pub(crate) const METHOD_NONE_ACCEPTABLE: u8 = 0xff;
 pub(crate) const PASSWORD_AUTH_VERSION: u8 = 0x01;
 pub(crate) const PASSWORD_AUTH_SUCCESS: u8 = 0x00;
-const PASSWORD_AUTH_FAILURE: u8 = 0x01;
+/// Xray-core refuses a login with `0xFF`; RFC 1929 asks only for nonzero.
+const PASSWORD_AUTH_FAILURE: u8 = 0xff;
 const REPLY_GENERAL_FAILURE: u8 = 0x01;
 const REPLY_COMMAND_NOT_SUPPORTED: u8 = 0x07;
+const SOCKS5_CONNECT: u8 = 0x01;
+const SOCKS5_UDP_ASSOCIATE: u8 = 0x03;
+/// Tor's `RESOLVE` and `RESOLVE_PTR`, which Xray-core takes for `CONNECT`.
+const SOCKS5_TOR_RESOLVE: u8 = 0xf0;
+const SOCKS5_TOR_RESOLVE_PTR: u8 = 0xf1;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum SocksParseError {
@@ -25,8 +31,6 @@ pub enum SocksParseError {
     UnsupportedVersion(u8),
     #[error("unsupported socks command {0}")]
     UnsupportedCommand(u8),
-    #[error("invalid socks reserved byte {0}")]
-    InvalidReserved(u8),
     #[error("unsupported socks address type {0}")]
     UnsupportedAddressType(u8),
     #[error("invalid socks domain")]
@@ -39,8 +43,6 @@ pub enum SocksParseError {
     PayloadTooLarge,
     #[error("no acceptable socks authentication methods")]
     NoAcceptableMethods,
-    #[error("unsupported socks username/password version {0}")]
-    UnsupportedAuthVersion(u8),
     #[error("socks username/password authentication failed")]
     AuthenticationFailed,
     #[error("io error")]
@@ -73,21 +75,22 @@ pub struct SocksAccount {
 }
 
 impl SocksAccount {
-    /// Returns `None` unless both values contain 1..=255 bytes.
+    /// Returns `None` when either value is longer than the 255 bytes RFC 1929
+    /// can carry. Empty values are kept, as Xray-core keeps them.
     pub fn new(user: &[u8], pass: &[u8]) -> Option<Self> {
-        let valid = |value: &[u8]| (1..=MAX_SOCKS_CREDENTIAL_LENGTH).contains(&value.len());
+        let valid = |value: &[u8]| value.len() <= MAX_SOCKS_CREDENTIAL_LENGTH;
         (valid(user) && valid(pass)).then(|| Self {
             user: Zeroizing::new(user.to_vec()),
             pass: Zeroizing::new(pass.to_vec()),
         })
     }
 
-    /// The username, 1..=255 bytes. It is a credential: never log it.
+    /// The username, at most 255 bytes. It is a credential: never log it.
     pub fn user(&self) -> &[u8] {
         &self.user
     }
 
-    /// The password, 1..=255 bytes. It is a credential: never log it.
+    /// The password, at most 255 bytes. It is a credential: never log it.
     pub fn pass(&self) -> &[u8] {
         &self.pass
     }
@@ -138,7 +141,8 @@ impl fmt::Debug for InboundUser {
 pub enum SocksInboundAuth {
     #[default]
     NoAuth,
-    /// RFC 1929 username/password; the list is never empty when built by the parser.
+    /// RFC 1929 username/password. The parser never builds an empty list,
+    /// and keeps one account per name, the last given, as Xray-core does.
     Password(Vec<SocksAccount>),
 }
 
@@ -224,6 +228,7 @@ where
 }
 
 /// RFC 1929: `VER=1 | ULEN | UNAME | PLEN | PASSWD`, answered with `VER=1 | STATUS`.
+/// As in Xray-core, `VER` is not checked.
 async fn verify_password<S>(
     stream: &mut S,
     accounts: &[SocksAccount],
@@ -231,13 +236,7 @@ async fn verify_password<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let version = stream.read_u8().await.map_err(|_| SocksParseError::Io)?;
-    if version != PASSWORD_AUTH_VERSION {
-        let _ = stream
-            .write_all(&[PASSWORD_AUTH_VERSION, PASSWORD_AUTH_FAILURE])
-            .await;
-        return Err(SocksParseError::UnsupportedAuthVersion(version));
-    }
+    stream.read_u8().await.map_err(|_| SocksParseError::Io)?;
     let user = read_credential(stream).await?;
     let pass = read_credential(stream).await?;
     let accepted = accounts_admit(accounts, &user, &pass);
@@ -269,41 +268,48 @@ async fn read_credential<R: AsyncRead + Unpin>(
     Ok(value)
 }
 
+/// Reads a SOCKS5 request: [`read_socks5_command`], then
+/// [`read_socks5_target`].
 pub async fn parse_socks5_request_message<R: AsyncRead + Unpin>(
     mut reader: R,
 ) -> Result<SocksRequest, SocksParseError> {
-    let mut head = [0; 4];
+    let command = read_socks5_command(&mut reader).await?;
+    let target = read_socks5_target(&mut reader, command).await?;
+    Ok(SocksRequest { command, target })
+}
+
+/// Reads the `VER | CMD | RSV` that opens a SOCKS5 request, as Xray-core
+/// v26.10.31 reads it: only the command is checked, and Tor's `RESOLVE` and
+/// `RESOLVE_PTR` are taken for `CONNECT`. Any other command is
+/// [`SocksParseError::UnsupportedCommand`], which Xray-core refuses before
+/// reading the address.
+pub async fn read_socks5_command<R: AsyncRead + Unpin>(
+    mut reader: R,
+) -> Result<SocksCommand, SocksParseError> {
+    let mut head = [0; 3];
     reader
         .read_exact(&mut head)
         .await
         .map_err(|_| SocksParseError::Io)?;
-
-    let request_version = head[0];
-    if request_version != 5 {
-        return Err(SocksParseError::UnsupportedVersion(request_version));
+    match head[1] {
+        SOCKS5_CONNECT | SOCKS5_TOR_RESOLVE | SOCKS5_TOR_RESOLVE_PTR => Ok(SocksCommand::Connect),
+        SOCKS5_UDP_ASSOCIATE => Ok(SocksCommand::UdpAssociate),
+        other => Err(SocksParseError::UnsupportedCommand(other)),
     }
+}
 
-    let command = match head[1] {
-        1 => SocksCommand::Connect,
-        3 => SocksCommand::UdpAssociate,
-        other => return Err(SocksParseError::UnsupportedCommand(other)),
-    };
-
-    let reserved = head[2];
-    if reserved != 0 {
-        return Err(SocksParseError::InvalidReserved(reserved));
-    }
-
+/// Reads the `ATYP | DST.ADDR | DST.PORT` that follows a request's command.
+pub async fn read_socks5_target<R: AsyncRead + Unpin>(
+    mut reader: R,
+    command: SocksCommand,
+) -> Result<Target, SocksParseError> {
+    let address_type = reader.read_u8().await.map_err(|_| SocksParseError::Io)?;
+    let (addr, port) = read_socks5_address(&mut reader, address_type).await?;
     let network = match command {
         SocksCommand::Connect => Network::Tcp,
         SocksCommand::UdpAssociate => Network::Udp,
     };
-    let (addr, port) = read_socks5_address(&mut reader, head[3]).await?;
-
-    Ok(SocksRequest {
-        command,
-        target: Target::new(addr, port, network),
-    })
+    Ok(Target::new(addr, port, network))
 }
 
 pub async fn parse_socks5_request<R: AsyncRead + Unpin>(
@@ -393,12 +399,11 @@ pub fn encode_socks5_udp_datagram(
     Ok(datagram)
 }
 
+/// Reads a SOCKS5 UDP datagram as Xray-core does: its two reserved bytes are
+/// not checked, and a fragment is refused.
 pub fn parse_socks5_udp_datagram(raw: &[u8]) -> Result<SocksUdpDatagram, SocksParseError> {
     if raw.len() < 4 {
         return Err(SocksParseError::TruncatedUdpDatagram);
-    }
-    if raw[0] != 0 || raw[1] != 0 {
-        return Err(SocksParseError::InvalidReserved(raw[1]));
     }
     if raw[2] != 0 {
         return Err(SocksParseError::UnsupportedUdpFragment);
@@ -418,9 +423,54 @@ pub fn parse_socks5_udp_datagram(raw: &[u8]) -> Result<SocksUdpDatagram, SocksPa
 /// Why a SOCKS5 `ADDR | PORT` field could not be read.
 pub(crate) enum AddressReadError {
     Io(std::io::Error),
-    /// A zero-length or non-UTF-8 domain.
+    /// A domain that [`socks_domain_address`] refuses.
     InvalidDomain,
     UnsupportedType(u8),
+}
+
+/// A SOCKS5 domain address as Xray-core's address parser reads it. A name
+/// that starts with `[` or a digit and is an IP literal to Go's
+/// `net.ParseAddress` is that IP. Any other name may hold only ASCII letters,
+/// digits, `-`, `.` and `_`.
+fn socks_domain_address(raw: &[u8]) -> Option<TargetAddr> {
+    let first = *raw.first()?;
+    if first == b'[' || first.is_ascii_digit() {
+        let ip = std::str::from_utf8(raw)
+            .ok()
+            .and_then(|text| go_address_text(text).parse::<IpAddr>().ok());
+        if let Some(ip) = ip {
+            return Some(TargetAddr::Ip(ip.to_canonical()));
+        }
+    }
+    raw.iter()
+        .all(|&byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_'))
+        .then(|| TargetAddr::Domain(raw.iter().map(|&byte| char::from(byte)).collect()))
+}
+
+/// Go's `net.ParseAddress`: an IP literal, an IPv4-mapped one as IPv4, or
+/// else a domain of the text that [`go_address_text`] leaves.
+pub(crate) fn go_parse_address(text: &str) -> TargetAddr {
+    let text = go_address_text(text);
+    match text.parse::<IpAddr>() {
+        Ok(ip) => TargetAddr::Ip(ip.to_canonical()),
+        Err(_) => TargetAddr::Domain(text.to_owned()),
+    }
+}
+
+/// The text Go's `net.ParseAddress` reads: without enclosing brackets, and
+/// trimmed of white space. Go trims only a text that starts or ends with
+/// neither a letter nor a digit, which is the only kind with any to trim.
+fn go_address_text(text: &str) -> &str {
+    text.strip_prefix('[')
+        .and_then(|inner| inner.strip_suffix(']'))
+        .unwrap_or(text)
+        .trim()
+}
+
+/// An IPv6 address field, which Xray-core reads as IPv4 when it is
+/// IPv4-mapped.
+fn socks_ipv6_address(octets: [u8; 16]) -> TargetAddr {
+    TargetAddr::Ip(IpAddr::V6(Ipv6Addr::from(octets)).to_canonical())
 }
 
 impl From<AddressReadError> for SocksParseError {
@@ -464,10 +514,9 @@ pub(crate) async fn read_socks5_address<R: AsyncRead + Unpin>(
                 .await
                 .map_err(AddressReadError::Io)?;
             let port = u16::from_be_bytes([domain_and_port[len], domain_and_port[len + 1]]);
-            domain_and_port.truncate(len);
-            let domain =
-                String::from_utf8(domain_and_port).map_err(|_| AddressReadError::InvalidDomain)?;
-            Ok((TargetAddr::Domain(domain), port))
+            let addr = socks_domain_address(&domain_and_port[..len])
+                .ok_or(AddressReadError::InvalidDomain)?;
+            Ok((addr, port))
         }
         4 => {
             let mut raw = [0; 18];
@@ -478,7 +527,7 @@ pub(crate) async fn read_socks5_address<R: AsyncRead + Unpin>(
             let mut octets = [0; 16];
             octets.copy_from_slice(&raw[..16]);
             Ok((
-                TargetAddr::Ip(IpAddr::V6(Ipv6Addr::from(octets))),
+                socks_ipv6_address(octets),
                 u16::from_be_bytes([raw[16], raw[17]]),
             ))
         }
@@ -542,13 +591,8 @@ fn parse_target_addr(raw: &[u8], offset: usize) -> Result<(TargetAddr, usize), S
             let domain = raw
                 .get(start..end)
                 .ok_or(SocksParseError::TruncatedUdpDatagram)?;
-            Ok((
-                TargetAddr::Domain(
-                    String::from_utf8(domain.to_vec())
-                        .map_err(|_| SocksParseError::InvalidDomain)?,
-                ),
-                end,
-            ))
+            let addr = socks_domain_address(domain).ok_or(SocksParseError::InvalidDomain)?;
+            Ok((addr, end))
         }
         4 => {
             let start = offset + 1;
@@ -558,7 +602,7 @@ fn parse_target_addr(raw: &[u8], offset: usize) -> Result<(TargetAddr, usize), S
                 .ok_or(SocksParseError::TruncatedUdpDatagram)?;
             let mut addr = [0; 16];
             addr.copy_from_slice(octets);
-            Ok((TargetAddr::Ip(IpAddr::V6(Ipv6Addr::from(addr))), end))
+            Ok((socks_ipv6_address(addr), end))
         }
         other => Err(SocksParseError::UnsupportedAddressType(other)),
     }
@@ -577,7 +621,9 @@ const MAX_SOCKS4_STRING: usize = 255;
 
 /// Reads a SOCKS 4 or 4a `CONNECT` after its version byte, as Xray-core
 /// accepts it: the user ID is ignored, and an address whose first byte is zero
-/// is followed by a domain (4a). Other commands are refused.
+/// is followed by a domain (4a), read with Go's `net.ParseAddress`. Other
+/// commands are refused, as are a 4a domain that is empty or not UTF-8,
+/// which Xray-core grants and then fails to dial.
 pub async fn parse_socks4_connect<R>(mut reader: R) -> Result<Target, SocksParseError>
 where
     R: AsyncRead + Unpin,
@@ -593,10 +639,11 @@ where
     let addr = if ip[0] == 0 {
         let domain = read_socks4_string(&mut reader).await?;
         let domain = String::from_utf8(domain).map_err(|_| SocksParseError::InvalidDomain)?;
-        match domain.parse::<IpAddr>() {
-            Ok(ip) => TargetAddr::Ip(ip),
-            Err(_) if !domain.is_empty() => TargetAddr::Domain(domain),
-            Err(_) => return Err(SocksParseError::InvalidDomain),
+        match go_parse_address(&domain) {
+            TargetAddr::Domain(name) if name.is_empty() => {
+                return Err(SocksParseError::InvalidDomain)
+            }
+            addr => addr,
         }
     } else {
         TargetAddr::Ip(IpAddr::V4(Ipv4Addr::from(ip)))

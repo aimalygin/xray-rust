@@ -1011,10 +1011,6 @@ fn rejects_socks_password_account_limits() {
     for (accounts, path) in [
         (accounts(65), "$.inbounds[0].settings.accounts"),
         (
-            r#"{ "user": "synthetic-user" }"#.to_owned(),
-            "$.inbounds[0].settings.accounts[0]",
-        ),
-        (
             format!(
                 r#"{{ "user": "synthetic-user", "pass": "{}" }}"#,
                 "p".repeat(256)
@@ -7343,4 +7339,121 @@ fn mixed_is_xrays_alias_of_the_socks_inbound() {
             udp: false,
         })
     );
+}
+
+/// The accounts a SOCKS inbound with these settings admits, as
+/// `(user, pass)` pairs.
+fn socks_accounts(settings: &str) -> Vec<(String, String)> {
+    let parsed = parse_xray_json(&raw_with_socks_settings(settings))
+        .unwrap_or_else(|error| panic!("{settings}: {:?}", error.diagnostics));
+    let InboundProtocol::Socks(socks) = &parsed.config.inbounds[0].protocol else {
+        panic!("expected a socks inbound");
+    };
+    let SocksInboundAuth::Password(accounts) = &socks.auth else {
+        return Vec::new();
+    };
+    accounts
+        .iter()
+        .map(|account| {
+            (
+                String::from_utf8(account.user().to_vec()).unwrap(),
+                String::from_utf8(account.pass().to_vec()).unwrap(),
+            )
+        })
+        .collect()
+}
+
+fn pairs(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+    pairs
+        .iter()
+        .map(|(user, pass)| ((*user).to_owned(), (*pass).to_owned()))
+        .collect()
+}
+
+#[test]
+fn socks_accounts_read_as_xray_core_reads_them() {
+    // `users` is Xray-core's other name, replaced by a non-null `accounts`.
+    assert_eq!(
+        socks_accounts(r#""auth": "password", "users": [{"user": "a", "pass": "1"}]"#),
+        pairs(&[("a", "1")])
+    );
+    assert_eq!(
+        socks_accounts(
+            r#""auth": "password", "accounts": null, "users": [{"user": "a", "pass": "1"}]"#
+        ),
+        pairs(&[("a", "1")])
+    );
+    assert_eq!(
+        socks_accounts(
+            r#""auth": "password", "accounts": [{"user": "b", "pass": "2"}],
+                "users": [{"user": "a", "pass": "1"}, null]"#
+        ),
+        pairs(&[("b", "2")])
+    );
+    // A later account of the same name wins, as in Xray-core's map.
+    assert_eq!(
+        socks_accounts(
+            r#""auth": "password", "accounts": [{"user": "a", "pass": "1"},
+                {"user": "b", "pass": "2"}, {"user": "a", "pass": "3"}]"#
+        ),
+        pairs(&[("a", "3"), ("b", "2")])
+    );
+    // Absent or null credentials read as empty.
+    assert_eq!(
+        socks_accounts(r#""auth": "password", "accounts": [{"user": "a"}, {"pass": null}]"#),
+        pairs(&[("a", ""), ("", "")])
+    );
+    // An absent or null `auth` is noauth, as are null settings.
+    for settings in [r#""auth": null"#, r#""auth": """#, ""] {
+        assert_eq!(socks_accounts(settings), pairs(&[]), "{settings}");
+    }
+    let parsed = parse_xray_json(&raw_with_inbound_extra(r#""settings": null"#)).unwrap();
+    let InboundProtocol::Socks(socks) = &parsed.config.inbounds[0].protocol else {
+        panic!("expected a socks inbound");
+    };
+    assert_eq!(socks.auth, SocksInboundAuth::NoAuth);
+    assert!(socks.udp);
+    // A null `udp` keeps UDP enabled, as an absent one does.
+    let parsed = parse_xray_json(&raw_with_socks_settings(r#""udp": null"#)).unwrap();
+    let InboundProtocol::Socks(socks) = &parsed.config.inbounds[0].protocol else {
+        panic!("expected a socks inbound");
+    };
+    assert!(socks.udp);
+}
+
+#[test]
+fn socks_accounts_reject_what_the_parser_refuses() {
+    let base = "$.inbounds[0].settings";
+    for (settings, path) in [
+        // As with `accounts`, `users` under noauth would be ignored.
+        (
+            r#""auth": "noauth", "users": [{"user": "a", "pass": "1"}]"#,
+            format!("{base}.users"),
+        ),
+        (
+            r#""auth": "password", "users": []"#,
+            format!("{base}.users"),
+        ),
+        (
+            r#""auth": "password", "users": null"#,
+            format!("{base}.accounts"),
+        ),
+        (
+            r#""auth": "password", "users": "a""#,
+            format!("{base}.users"),
+        ),
+        // Xray-core panics on a null entry in the list it uses.
+        (
+            r#""auth": "password", "users": [null]"#,
+            format!("{base}.users[0]"),
+        ),
+        (
+            r#""auth": "password", "accounts": [{"user": 1, "pass": "1"}]"#,
+            format!("{base}.accounts[0].user"),
+        ),
+        (r#""auth": "Password""#, format!("{base}.auth")),
+        (r#""udp": "yes""#, format!("{base}.udp")),
+    ] {
+        assert_parse_error_path(&raw_with_socks_settings(settings), &path);
+    }
 }

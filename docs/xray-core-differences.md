@@ -147,16 +147,11 @@ password inbounds; `CONNECT` is unchanged. The
 `socks_udp_false_refuses_udp_associate_without_relay_or_dial`,
 `socks_password_udp_false_refuses_udp_associate_after_login` and
 `socks_udp_true_or_absent_keeps_relaying` cover this with a counting socket
-protector. Two differences remain:
-
-- An absent `udp` keeps `UDP ASSOCIATE` enabled; Xray-core refuses it.
-  Adopting the reference default would turn UDP off for existing profiles that
-  omit the field, so it is left for a maintainer decision rather than changed
-  silently.
-- Xray-core replies as soon as it has read the command byte; xray-rust first
-  reads the complete request, including the address. A client that sends the
-  request in one write sees the same bytes. A malformed address after the UDP
-  command gets the general failure reply (`0x01`) here.
+protector. As in Xray-core, the refusal goes out once the command byte is
+read, before the address. One difference remains: an absent `udp` keeps
+`UDP ASSOCIATE` enabled; Xray-core refuses it. Adopting the reference default
+would turn UDP off for existing profiles that omit the field, so it is left
+for a maintainer decision rather than changed silently.
 
 ## SOCKS outbound: supported subset and evidence
 
