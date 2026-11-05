@@ -213,7 +213,7 @@ pub(crate) async fn serve_http_proxy_connection(
 /// Reads what has already arrived, as Xray-core's buffered reader has by the
 /// time it gives up on a request, so closing ends the connection instead of
 /// resetting it over unread bytes.
-fn drain_arrived(stream: &TcpStream) {
+pub(crate) fn drain_arrived(stream: &TcpStream) {
     let mut buffer = [0; 4096];
     for _ in 0..16 {
         match stream.try_read(&mut buffer) {

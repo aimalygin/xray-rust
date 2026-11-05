@@ -1091,13 +1091,41 @@
     },
     {
       "name": "socks-account-empty-pass",
+      "accepted": true,
+      "base": "socks-password",
+      "set": {
+        "/inbounds/0/settings/accounts/0": {
+          "user": "synthetic-user",
+          "pass": ""
+        }
+      }
+    },
+    {
+      "name": "socks-users-alias",
+      "accepted": true,
+      "base": "socks-password",
+      "set": {
+        "/inbounds/0/settings": {
+          "auth": "password",
+          "accounts": null,
+          "users": [
+            {
+              "user": "synthetic-user",
+              "pass": "synthetic-pass"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "socks-account-pass-too-long",
       "accepted": false,
       "errorPath": "$.inbounds[0].settings.accounts[0]",
       "base": "socks-password",
       "set": {
         "/inbounds/0/settings/accounts/0": {
           "user": "synthetic-user",
-          "pass": ""
+          "pass": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
         }
       }
     },

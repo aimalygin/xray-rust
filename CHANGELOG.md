@@ -10,6 +10,22 @@ long-term supported release series.
 
 ## Unreleased
 
+- The SOCKS inbound reads its handshake as Xray-core v26.10.31 does.
+  - A domain that is an IP literal, such as `127.0.0.1` or `[::1]`, is that
+    IP, so `ip` rules match it. An IPv4-mapped address is IPv4.
+  - A domain with characters other than letters, digits, `-`, `.` and `_`
+    closes the connection without a reply, as any request that does not
+    parse now does. Such requests used to get a general failure reply.
+  - Tor's `RESOLVE` commands connect. `BIND` and unknown commands get
+    `REP = 0x07` before the address is read.
+  - The request's version and reserved bytes, and the login's version byte,
+    are not checked. A failed login gets status `0xFF`.
+  - The whole handshake shares one `handshake` timeout.
+  - UDP datagrams without a payload are dropped, and their reserved bytes
+    are not checked.
+- The SOCKS inbound reads `users` as another name for `accounts`, keeps the
+  last account of a name, and accepts empty or missing credentials and
+  `null` settings, as Xray-core does.
 - Freedom's `noises` send their datagrams before each UDP flow's first, as
   Xray-core's do, with Xray-core's deprecation warning. Profiles with them
   used to fail to parse. The removed `noise` object fails, as in Xray-core.

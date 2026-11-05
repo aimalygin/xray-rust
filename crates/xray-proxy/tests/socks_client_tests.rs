@@ -310,7 +310,8 @@ async fn round_trip_reports_a_rejected_password() {
 
     let (client, server) = round_trip(auth, Some(&account()), &ipv4_target()).await;
 
-    assert_eq!(client, Err(SocksClientError::AuthRejected(1)));
+    // The inbound refuses with Xray-core's 0xFF.
+    assert_eq!(client, Err(SocksClientError::AuthRejected(0xff)));
     assert_eq!(server, Err(SocksParseError::AuthenticationFailed));
 }
 
@@ -768,7 +769,7 @@ fn udp_replies_from_the_relay_are_decoded() {
 fn udp_replies_that_are_foreign_fragmented_or_malformed_are_dropped() {
     let relay = SocketAddr::from(([198, 51, 100, 1], 8080));
     let valid = [0, 0, 0, 1, 192, 0, 2, 10, 0, 53, b'o', b'k'];
-    let cases: [(SocketAddr, &[u8], SocksUdpDrop); 8] = [
+    let cases: [(SocketAddr, &[u8], SocksUdpDrop); 7] = [
         (
             SocketAddr::from(([198, 51, 100, 1], 8081)),
             &valid,
@@ -788,11 +789,6 @@ fn udp_replies_that_are_foreign_fragmented_or_malformed_are_dropped() {
         (relay, &[0, 0, 0, 1, 192, 0, 2], SocksUdpDrop::Malformed),
         (relay, &[0, 0, 0, 9, 0, 0], SocksUdpDrop::Malformed),
         (relay, &[0, 0, 0, 3, 0, 0, 53], SocksUdpDrop::Malformed),
-        (
-            relay,
-            &[1, 0, 0, 1, 192, 0, 2, 10, 0, 53],
-            SocksUdpDrop::Malformed,
-        ),
     ];
     for (source, raw, expected) in cases {
         assert_eq!(
@@ -801,4 +797,6 @@ fn udp_replies_that_are_foreign_fragmented_or_malformed_are_dropped() {
             "{raw:?} from {source}"
         );
     }
+    // As in Xray-core, the reserved bytes are not checked.
+    assert!(decode_socks5_udp_reply(relay, relay, &[1, 0, 0, 1, 192, 0, 2, 10, 0, 53]).is_ok());
 }

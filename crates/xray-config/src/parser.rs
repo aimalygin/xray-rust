@@ -931,6 +931,10 @@ impl Parser<'_> {
 
     fn validate_socks_inbound_settings(&mut self, settings: &Value, index: usize) {
         let settings_path = format!("$.inbounds[{index}].settings");
+        // Xray-core reads `null` settings as none.
+        if settings.is_null() {
+            return;
+        }
         if !settings.is_object() {
             self.error(settings_path, "socks inbound settings must be an object");
             return;
