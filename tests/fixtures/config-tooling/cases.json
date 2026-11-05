@@ -3427,6 +3427,37 @@
       },
       "accepted": false,
       "errorPath": "$.routing.rules[0].sourcePort"
+    },
+    {
+      "name": "dns-hosts-rcode-accepted",
+      "config": {
+        "dns": {
+          "servers": [
+            "192.0.2.53"
+          ],
+          "hosts": {
+            "domain:ads.example.com": "#3",
+            "empty.example.com": "#0",
+            "refused.example.com": "#5"
+          }
+        },
+        "outbounds": [
+          {
+            "tag": "direct",
+            "protocol": "freedom"
+          }
+        ]
+      },
+      "accepted": true
+    },
+    {
+      "name": "dns-hosts-rcode-out-of-header-range",
+      "base": "dns-hosts-rcode-accepted",
+      "set": {
+        "/dns/hosts/refused.example.com": "#16"
+      },
+      "accepted": false,
+      "errorPath": "$.dns.hosts.refused.example.com"
     }
   ]
 }

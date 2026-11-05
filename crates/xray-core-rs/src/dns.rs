@@ -1010,6 +1010,7 @@ pub(crate) fn static_dns_host_target_from_index(
         match target {
             DnsHostTarget::Ip(ip) => return Some(DnsHostTarget::Ip(*ip)),
             DnsHostTarget::Ips(ips) => return Some(DnsHostTarget::Ips(ips.clone())),
+            DnsHostTarget::Rcode(rcode) => return Some(DnsHostTarget::Rcode(*rcode)),
             DnsHostTarget::Domain(alias) => {
                 let alias = normalize_dns_name(alias)?;
                 if alias == current {

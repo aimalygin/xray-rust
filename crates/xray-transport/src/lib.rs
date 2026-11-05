@@ -140,6 +140,10 @@ pub enum TransportError {
     DnsNameError(String, u16),
     #[error("dns server returned no A or AAAA records for {0}:{1}")]
     DnsNoData(String, u16),
+    /// A DNS answer with an RCODE other than NOERROR or NXDOMAIN, such as a
+    /// `dns.hosts` `"#N"` target.
+    #[error("dns answered {0}:{1} with rcode {2}")]
+    DnsRcode(String, u16, u8),
     #[error("dns lookup returned no addresses for {0}:{1}")]
     NoResolvedAddress(String, u16),
     #[error("tcp connect failed: {0}")]
