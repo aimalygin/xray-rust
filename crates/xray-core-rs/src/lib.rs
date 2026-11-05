@@ -1525,6 +1525,7 @@ enum DnsResolverRole {
 fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServerPolicies> {
     ensure_effective_dns_tag(config);
     let global_dns_tag = config.dns.tag.clone();
+    let global_client_ip = config.dns.client_ip;
     let name_servers = config
         .dns
         .servers
@@ -1549,6 +1550,8 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
             };
             let query_strategy = transport_dns_query_strategy(server.query_strategy());
             let final_query = server.final_query();
+            // A server's own clientIp replaces the global one, as in Xray-core.
+            let client_ip = server.client_ip().or(global_client_ip);
             let timeout = Some(Duration::from_millis(server.timeout_ms()));
             let tag = server.effective_tag(&global_dns_tag).to_owned();
             let (domains, expected_ips, unexpected_ips) = match server {
@@ -1575,6 +1578,7 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
                 skip_fallback,
                 query_strategy,
                 final_query,
+                client_ip,
             })
         })
         .collect();

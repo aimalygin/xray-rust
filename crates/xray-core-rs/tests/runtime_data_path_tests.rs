@@ -222,6 +222,7 @@ fn tagged_dns_server_with_transport(
         skip_fallback: false,
         query_strategy: DnsQueryStrategy::UseIp,
         final_query: false,
+        client_ip: None,
     }))
 }
 
@@ -3185,6 +3186,16 @@ async fn tun_dns_hijack_udp_uses_a_only_matched_policy_and_cache() {
     timeout(
         Duration::from_secs(2),
         run_tun_dns_hijack_udp_matched_policy_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn tun_dns_hijack_sends_each_servers_client_subnet() {
+    timeout(
+        Duration::from_secs(2),
+        run_tun_dns_hijack_client_subnet_scenario(),
     )
     .await
     .unwrap();
@@ -6965,6 +6976,7 @@ async fn run_tun_dns_hijack_udp_matched_policy_scenario() {
             skip_fallback: false,
             query_strategy: DnsQueryStrategy::UseIp,
             final_query: false,
+            client_ip: None,
         })),
     ];
     let mut core = Core::new(config).unwrap();
@@ -7004,6 +7016,100 @@ async fn run_tun_dns_hijack_udp_matched_policy_scenario() {
     core.stop().await.unwrap();
     default.stop().await;
     matched.stop().await;
+}
+
+/// `dns.clientIp` goes to every server without its own, and a server's own
+/// replaces it, as the EDNS client subnet of each query.
+async fn run_tun_dns_hijack_client_subnet_scenario() {
+    let default = spawn_observed_udp_dns_a_server(Ipv4Addr::new(192, 0, 2, 20)).await;
+    let own = spawn_observed_udp_dns_a_server(Ipv4Addr::new(192, 0, 2, 21)).await;
+    let (default_probe, own_probe) = (default.probe(), own.probe());
+    let matched = "own-subnet.example";
+    let mut config = runtime_tun_config_with_freedom_outbound();
+    config.dns.client_ip = Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 77)));
+    config.dns.servers = vec![
+        DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
+            endpoint: DnsServerEndpoint::Ip(own.addr()),
+            transport: xray_config::DnsServerTransport::Classic,
+            https_path: None,
+            domains: compile_dns_domain_matchers(&[DomainMatcher::Full(matched.to_owned())])
+                .unwrap(),
+            expected_ips: Default::default(),
+            unexpected_ips: Default::default(),
+            tag: String::new(),
+            timeout_ms: 0,
+            skip_fallback: true,
+            query_strategy: DnsQueryStrategy::UseIp,
+            final_query: false,
+            client_ip: Some("2001:db8::1".parse().unwrap()),
+        })),
+        DnsServerConfig::Ip(default.addr()),
+    ];
+    let mut core = Core::new(config).unwrap();
+    core.start().await.unwrap();
+
+    let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+    let anchor = Ipv4Addr::new(198, 18, 0, 1);
+    for (transaction_id, client_port, domain, answer) in [
+        (0x2251, 53_051, matched, Ipv4Addr::new(192, 0, 2, 21)),
+        (
+            0x2252,
+            53_052,
+            "other-subnet.example",
+            Ipv4Addr::new(192, 0, 2, 20),
+        ),
+    ] {
+        let query = build_dns_a_query(transaction_id, domain);
+        core.tun()
+            .push_inbound(Bytes::from(ipv4_udp_packet(
+                client_addr,
+                client_port,
+                anchor,
+                53,
+                &query,
+            )))
+            .await
+            .unwrap();
+        poll_tun_outbound_until(core.tun(), |packet| {
+            ipv4_udp_payload(packet).is_some_and(|payload| {
+                payload.get(0..2) == Some(&transaction_id.to_be_bytes())
+                    && dns_response_answer_ipv4(payload) == Some(answer)
+            })
+        })
+        .await;
+    }
+
+    // Root name, OPT, a 1350-byte payload size, Xray-core's TTL with the DO
+    // bit, and the client subnet cut to /96 or /24.
+    let own_record = [
+        &[
+            0, 0, 41, 5, 70, 0xE0, 0, 0x80, 0, 0, 20, 0, 8, 0, 16, 0, 2, 96, 0,
+        ][..],
+        &[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0],
+    ]
+    .concat();
+    let global_record = [
+        0, 0, 41, 5, 70, 0xE0, 0, 0x80, 0, 0, 11, 0, 8, 0, 7, 0, 1, 24, 0, 203, 0, 113,
+    ];
+    for (probe, record) in [
+        (own_probe, own_record.as_slice()),
+        (default_probe, &global_record[..]),
+    ] {
+        let queries = probe.snapshot();
+        assert_eq!(queries.len(), 1);
+        let query = &queries[0];
+        let question = dns_query_question(query);
+        assert_eq!(
+            &query[10..12],
+            &1_u16.to_be_bytes(),
+            "one additional record"
+        );
+        assert_eq!(&query[question.len()..], record);
+    }
+
+    core.stop().await.unwrap();
+    default.stop().await;
+    own.stop().await;
 }
 
 async fn run_tun_dns_proxy_udp_scenario() {
@@ -8360,6 +8466,7 @@ async fn run_tun_dns_hijack_tcp_mixed_pipeline_scenario() {
             skip_fallback: false,
             query_strategy: DnsQueryStrategy::UseIp,
             final_query: false,
+            client_ip: None,
         })),
         DnsServerConfig::Ip(raw_server.addr()),
     ];
@@ -11728,7 +11835,15 @@ async fn spawn_udp_tcp_dns_a_responder(answer: Ipv4Addr) -> (SocketAddr, JoinHan
     (addr, handle)
 }
 
+/// The query up to the end of its question: a responder answers that, so an
+/// OPT record in the query never lands in front of the answer.
+fn dns_query_question(query: &[u8]) -> &[u8] {
+    let end = dns_test_wire_name_end(query, 12).map_or(query.len(), |end| end + 4);
+    &query[..end.min(query.len())]
+}
+
 fn build_dns_a_response_for_query(query: &[u8], answer: Ipv4Addr) -> Vec<u8> {
+    let query = dns_query_question(query);
     let mut response = Vec::with_capacity(query.len() + 16);
     response.extend_from_slice(&query[..2]);
     response.extend_from_slice(&0x8180_u16.to_be_bytes());
@@ -11765,6 +11880,7 @@ fn build_dns_aaaa_response_for_query(query: &[u8], answer: Ipv6Addr) -> Vec<u8> 
 }
 
 fn build_dns_nodata_response_for_query(query: &[u8]) -> Vec<u8> {
+    let query = dns_query_question(query);
     let mut response = Vec::with_capacity(query.len());
     response.extend_from_slice(&query[..2]);
     response.extend_from_slice(&0x8180_u16.to_be_bytes());

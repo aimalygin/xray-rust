@@ -10,6 +10,9 @@ long-term supported release series.
 
 ## Unreleased
 
+- `dns.clientIp` and a DNS server's own `clientIp` are sent as the EDNS
+  client subnet of every query, as Xray-core sends them. Profiles with them
+  used to fail to parse. DoH queries now carry Xray-core's EDNS padding.
 - The SOCKS inbound reads its handshake as Xray-core v26.10.31 does.
   - A domain that is an IP literal, such as `127.0.0.1` or `[::1]`, is that
     IP, so `ip` rules match it. An IPv4-mapped address is IPv4.

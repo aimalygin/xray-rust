@@ -2698,6 +2698,7 @@ fn parses_tcp_dns_string_shorthand_as_default_policy() {
             skip_fallback: false,
             query_strategy: DnsQueryStrategy::UseIp,
             final_query: false,
+            client_ip: None,
         }))]
     );
 }
@@ -3163,6 +3164,7 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
             skip_fallback: false,
             query_strategy: DnsQueryStrategy::UseIp,
             final_query: false,
+            client_ip: None,
         }
     );
     assert!(second.domains.matches("my-corp-zone.example"));
