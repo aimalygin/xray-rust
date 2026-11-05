@@ -3,6 +3,7 @@ package org.xrayrust.mobile
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.net.URI
 import java.net.URISyntaxException
 import java.net.URLDecoder
@@ -55,6 +56,7 @@ object XrayVlessUrlImporter {
     private const val VISION_FLOW = "xtls-rprx-vision"
     private const val VISION_UDP_443_FLOW = "xtls-rprx-vision-udp443"
     private const val MAX_XHTTP_EXTRA_BYTES = 64 * 1024
+    private const val END_OF_INPUT = '\u0000'
     private val networkAliases = setOf("tcp", "raw")
     private val xhttpNetworkAliases = setOf("xhttp", "splithttp")
     private val criticalQueryNames = listOf(
@@ -80,6 +82,7 @@ object XrayVlessUrlImporter {
         "vcn",
         "ech",
         "echQuery",
+        "fm",
     )
     private val schemePattern = Regex("vless://", RegexOption.IGNORE_CASE)
     private val authorityPattern = Regex(
@@ -228,11 +231,12 @@ object XrayVlessUrlImporter {
             }
         }
 
+        val finalMask = query.value("fm")?.takeIf(String::isNotEmpty)?.let(::decodeFinalMask)
         val profileName = uri.rawFragment
             ?.takeIf(String::isNotEmpty)
             ?.let(::decodeComponent)
             ?: "$host:$port"
-        return Endpoint(userId, host, port, encryption, transport, profileName)
+        return Endpoint(userId, host, port, encryption, transport, finalMask, profileName)
     }
 
     private fun rawSecurity(query: QueryValues, host: String, security: String, flow: String?): StreamSecurity =
@@ -403,6 +407,22 @@ object XrayVlessUrlImporter {
         return parseJsonObject(decoded) ?: throw invalidXhttpExtra()
     }
 
+    /**
+     * Remnawave writes the host's Xray `streamSettings.finalmask` object as a
+     * percent-encoded JSON `fm` value. It is copied verbatim; the core parser
+     * validates the masks when the profile loads.
+     */
+    private fun decodeFinalMask(raw: String): JSONObject {
+        val tokener = JSONTokener(raw)
+        val value = try {
+            tokener.nextValue()
+        } catch (_: JSONException) {
+            null
+        }
+        return (value as? JSONObject)?.takeIf { tokener.nextClean() == END_OF_INPUT }
+            ?: throw unsupportedValue("fm", "<redacted>", "JSON object")
+    }
+
     private fun requireBoundedExtra(value: String) {
         if (value.toByteArray(StandardCharsets.UTF_8).size > MAX_XHTTP_EXTRA_BYTES) {
             throw importError(
@@ -502,6 +522,7 @@ object XrayVlessUrlImporter {
         val port: Int,
         val encryption: String,
         val transport: Transport,
+        val finalMask: JSONObject?,
         val profileName: String,
     ) {
         fun mobileConfigJson(): String {
@@ -524,6 +545,7 @@ object XrayVlessUrlImporter {
                     selected.toStreamSettingsJson()
                 }
             }
+            finalMask?.let { streamSettings.put("finalmask", it) }
             val inbound = JSONObject()
                 .put("tag", "tun-in")
                 .put("protocol", "tun")

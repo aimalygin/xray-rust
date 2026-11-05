@@ -275,6 +275,11 @@ rather than producing a partial config; explicitly empty values are harmless
 no-ops. Unencrypted raw/TCP, WebSocket, HTTPUpgrade, and gRPC with `security=none`
 remain rejected.
 
+An `fm` value (Remnawave's percent-encoded `streamSettings.finalmask`) must be
+a JSON object and is copied unchanged into `streamSettings.finalmask` on every
+transport; the core validates the masks when the profile loads. An empty `fm`
+is ignored, and a non-object or repeated `fm` fails closed.
+
 The reference XrayClient UI includes a sample-only **DNS Testing** section.
 `Config JSON` adds no DNS override and leaves DNS behavior to the stored JSON.
 `Default DNS` is an explicit convenience preset for manual testing: it creates

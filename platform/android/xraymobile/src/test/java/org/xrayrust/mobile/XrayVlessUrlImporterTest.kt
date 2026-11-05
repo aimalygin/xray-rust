@@ -414,6 +414,42 @@ class XrayVlessUrlImporterTest {
     }
 
     @Test
+    fun copiesFinalMaskVerbatimIntoEveryTransport() {
+        val finalMask = """{"tcp":[{"type":"fragment","settings":{"packets":"tlshello","length":"100-200"}}]}"""
+        val links = listOf(
+            "vless://$TEST_USER_ID@203.0.113.10:443?type=tcp&security=tls",
+            "vless://$TEST_USER_ID@203.0.113.10:443?type=tcp&security=reality&pbk=$PUBLIC_KEY&fp=chrome&sni=example.com&sid=0123",
+            "vless://$TEST_USER_ID@203.0.113.10:443?type=xhttp&security=tls&path=%2F",
+            "vless://$TEST_USER_ID@203.0.113.10:443?type=ws&security=tls&path=%2Fws",
+            "vless://$TEST_USER_ID@203.0.113.10:443?type=grpc&security=tls&serviceName=svc",
+        )
+        for (link in links) {
+            val stream = proxy(XrayVlessUrlImporter.profile("$link&FM=${encode(finalMask)}"))
+                .getJSONObject("streamSettings")
+            assertEquals(link, JSONObject(finalMask).toString(), stream.getJSONObject("finalmask").toString())
+        }
+    }
+
+    @Test
+    fun emptyFinalMaskIsAbsent() {
+        val stream = proxy(XrayVlessUrlImporter.profile("vless://$TEST_USER_ID@203.0.113.10:443?type=tcp&security=tls&fm="))
+            .getJSONObject("streamSettings")
+        assertFalse(stream.has("finalmask"))
+    }
+
+    @Test
+    fun rejectsNonObjectOrDuplicateFinalMask() {
+        val base = "vless://$TEST_USER_ID@203.0.113.10:443?type=tcp&security=tls"
+        for (value in listOf("%5B%5D", "null", "7", "%22mask%22", "%7Bbroken", "%7B%7Dtrailing", encode(encode("{}")))) {
+            val error = assertImportError("$base&fm=$value", XrayVlessUrlImportErrorCode.UnsupportedQueryValue)
+            assertEquals(value, "fm", error.parameter)
+            assertEquals(value, "<redacted>", error.rejectedValue)
+        }
+        val duplicate = assertImportError("$base&fm=%7B%7D&fm=%7B%7D", XrayVlessUrlImportErrorCode.DuplicateQueryValue)
+        assertEquals("fm", duplicate.parameter)
+    }
+
+    @Test
     fun rejectsInvalidUuidMissingPortAndMissingRealityFields() {
         assertImportError(
             "vless://not-a-uuid@example.com:443?type=tcp&security=reality",

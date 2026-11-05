@@ -154,6 +154,7 @@ private struct VlessEndpoint {
     var port: Int
     var encryption: String
     private var transport: Transport
+    private var finalMask: [String: Any]?
     var profileName: String
 
     init(rawURL: String) throws {
@@ -185,7 +186,7 @@ private struct VlessEndpoint {
         try query.rejectDuplicates([
             "type", "encryption", "security", "flow", "host", "path", "mode",
             "serviceName", "authority", "sni", "fp", "alpn", "allowInsecure", "pbk", "sid", "spx", "pqv",
-            "extra", "pcs", "vcn", "ech", "echQuery",
+            "extra", "pcs", "vcn", "ech", "echQuery", "fm",
         ])
         let network = query.optional("type", default: Self.canonicalNetwork)
 
@@ -322,6 +323,8 @@ private struct VlessEndpoint {
         self.port = port
         self.encryption = encryption
         self.transport = transport
+        let rawFinalMask = query.optional("fm", default: "")
+        self.finalMask = try rawFinalMask.isEmpty ? nil : Self.decodeFinalMask(rawFinalMask)
         self.profileName = components.fragment?.isEmpty == false
             ? components.fragment!
             : "\(host):\(port)"
@@ -332,7 +335,7 @@ private struct VlessEndpoint {
             "id": userID,
             "encryption": encryption,
         ]
-        let streamSettings: [String: Any]
+        var streamSettings: [String: Any]
         switch transport {
         case let .raw(security, flow):
             if let flow { user["flow"] = flow }
@@ -363,6 +366,9 @@ private struct VlessEndpoint {
                 framedStreamSettings[framed.carrier.settingsKey] = framed.settings
             }
             streamSettings = framedStreamSettings
+        }
+        if let finalMask {
+            streamSettings["finalmask"] = finalMask
         }
 
         let root: [String: Any] = [
@@ -732,7 +738,7 @@ private struct VlessEndpoint {
             throw XrayVlessURLImportError.xhttpExtraTooLarge
         }
 
-        if let object = xhttpJSONObject(rawValue) {
+        if let object = jsonObject(rawValue) {
             return object
         }
         guard let decoded = rawValue.removingPercentEncoding else {
@@ -741,13 +747,25 @@ private struct VlessEndpoint {
         guard decoded.utf8.count <= maximumXHTTPExtraBytes else {
             throw XrayVlessURLImportError.xhttpExtraTooLarge
         }
-        guard decoded != rawValue, let object = xhttpJSONObject(decoded) else {
+        guard decoded != rawValue, let object = jsonObject(decoded) else {
             throw XrayVlessURLImportError.invalidXHTTPExtra
         }
         return object
     }
 
-    private static func xhttpJSONObject(_ rawValue: String) -> [String: Any]? {
+    /// Remnawave writes the host's Xray `streamSettings.finalmask` object as a
+    /// percent-encoded JSON `fm` value. It is copied verbatim; the core parser
+    /// validates the masks when the profile loads.
+    private static func decodeFinalMask(_ value: String) throws -> [String: Any] {
+        guard let object = jsonObject(value) else {
+            throw XrayVlessURLImportError.unsupportedQueryValue(
+                name: "fm", value: "<redacted>", expected: "JSON object"
+            )
+        }
+        return object
+    }
+
+    private static func jsonObject(_ rawValue: String) -> [String: Any]? {
         guard let data = rawValue.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data),
               let dictionary = object as? [String: Any]

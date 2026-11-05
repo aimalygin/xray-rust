@@ -20,6 +20,12 @@ long-term supported release series.
     encryption, and REALITY works only over raw TCP, XHTTP and gRPC. Links
     that turn off certificate checks with `allowInsecure` on these transports,
     or carry another transport's fields, are still rejected.
+- The Android and Apple VLESS link importers read `fm`, the percent-encoded
+  JSON of Xray's `streamSettings.finalmask` that Remnawave puts in links. It
+  used to be dropped silently. The object is copied unchanged into the
+  profile, and the core checks the masks when the profile loads. An empty
+  `fm` is ignored; a value that is not a JSON object, or a repeated `fm`,
+  fails the import.
 - On Android, the TUN admission callback and socket protection no longer
   attach the calling native thread to the JVM and detach it again on every
   call. Each native thread is attached once, as a daemon thread, and detached

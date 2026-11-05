@@ -157,7 +157,9 @@ pasted text, or a scheme-less UUID authority. The supported subset matches the
 Apple importer: `tcp`/`raw` with TLS (optionally Vision) or REALITY,
 `xhttp`/`splithttp` with no security, TLS, or REALITY, `ws`/`websocket` and
 `httpupgrade` with TLS (`host`, `path`), and `grpc` with TLS or REALITY
-(`serviceName`, `authority`, `mode=gun|multi`). The generated profile uses the TUN inbound, VLESS
+(`serviceName`, `authority`, `mode=gun|multi`). A JSON-object `fm` (Remnawave's
+percent-encoded `streamSettings.finalmask`) is copied unchanged and validated
+by the core when the profile loads. The generated profile uses the TUN inbound, VLESS
 `proxy`, private-address Freedom split, and bounded IPv4 fake-IP defaults.
 
 Development `0.6` also imports bounded

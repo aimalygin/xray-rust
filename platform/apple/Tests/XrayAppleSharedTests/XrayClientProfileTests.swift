@@ -1156,6 +1156,52 @@ final class XrayClientProfileTests: XCTestCase {
         }
     }
 
+    func testVlessURLImporterCopiesFinalMaskVerbatimIntoEveryTransport() throws {
+        let finalMaskJSON = #"{"tcp":[{"type":"fragment","settings":{"packets":"tlshello","length":"100-200"}}]}"#
+        let encoded = try XCTUnwrap(finalMaskJSON.addingPercentEncoding(withAllowedCharacters: .alphanumerics))
+        let expected = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(finalMaskJSON.utf8)) as? [String: Any]
+        )
+        let links = [
+            "?type=tcp&security=tls",
+            "?type=tcp&security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=example.com&sid=0123",
+            "?type=xhttp&security=tls&path=%2F",
+            "?type=ws&security=tls&path=%2Fws",
+            "?type=grpc&security=tls&serviceName=svc",
+        ]
+        for query in links {
+            let url = "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:443\(query)&FM=\(encoded)"
+            let streamSettings = try Self.importedStreamSettings(XrayVlessURLImporter.profile(from: url))
+            let finalMask = try XCTUnwrap(streamSettings["finalmask"] as? [String: Any], query)
+            XCTAssertTrue(NSDictionary(dictionary: finalMask).isEqual(to: expected), query)
+        }
+    }
+
+    func testVlessURLImporterTreatsEmptyFinalMaskAsAbsent() throws {
+        let streamSettings = try Self.importedStreamSettings(
+            XrayVlessURLImporter.profile(
+                from: "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:443?type=tcp&security=tls&fm="
+            )
+        )
+        XCTAssertNil(streamSettings["finalmask"])
+    }
+
+    func testVlessURLImporterRejectsNonObjectFinalMask() throws {
+        let encodedTwice = try XCTUnwrap(
+            "%7B%7D".addingPercentEncoding(withAllowedCharacters: .alphanumerics)
+        )
+        for value in ["%5B%5D", "null", "7", "%22mask%22", "%7Bbroken", "%7B%7Dtrailing", encodedTwice] {
+            let url = "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:443"
+                + "?type=tcp&security=tls&fm=\(value)"
+            XCTAssertThrowsError(try XrayVlessURLImporter.profile(from: url), value) { error in
+                XCTAssertEqual(
+                    error as? XrayVlessURLImportError,
+                    .unsupportedQueryValue(name: "fm", value: "<redacted>", expected: "JSON object")
+                )
+            }
+        }
+    }
+
     func testVlessURLImporterBoundsXHTTPExtraBeforeJSONParsing() {
         let oversized = String(repeating: "a", count: 64 * 1024 + 1)
         let url = "vless://11111111-1111-4111-8111-111111111111@203.0.113.20:80"
@@ -1329,6 +1375,7 @@ final class XrayClientProfileTests: XCTestCase {
             ("alpn", "security=tls&alpn=h2&alpn=http%2F1.1"),
             ("allowInsecure", "security=tls&allowInsecure=0&allowInsecure=1"),
             ("extra", "security=none&extra=%7B%7D&extra=%7B%7D"),
+            ("fm", "security=none&fm=%7B%7D&fm=%7B%7D"),
             (
                 "pbk",
                 "security=reality&pbk=first&pbk=second&fp=chrome&sid="
