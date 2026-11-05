@@ -159,6 +159,22 @@ fn rejects_apple_importer_tls_allow_insecure_fail_closed() {
 }
 
 #[test]
+fn rejects_reality_spider_x_without_leading_slash_like_xray_core() {
+    let raw = include_str!("../../../tests/fixtures/configs/vless_xhttp_reality_importer.json");
+    for spider_x in ["spider", "?p=1", " /spider"] {
+        let raw = raw.replace(r#""/spider""#, &format!("{spider_x:?}"));
+        assert!(raw.contains(&format!("{spider_x:?}")));
+        assert_parse_error_path(
+            &raw,
+            "$.outbounds[0].streamSettings.realitySettings.spiderX",
+        );
+    }
+    // Xray-core reads an empty spiderX as `/`.
+    let empty = raw.replace(r#""/spider""#, r#""""#);
+    parse_xray_json(&empty).expect("empty spiderX should parse");
+}
+
+#[test]
 fn parses_apple_importer_vless_xhttp_reality_fields_and_extra() {
     let raw = include_str!("../../../tests/fixtures/configs/vless_xhttp_reality_importer.json");
     let parsed = parse_xray_json(raw).expect("Apple XHTTP+REALITY config should parse");

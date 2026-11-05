@@ -114,12 +114,16 @@ pull request.
 
 ## Release-candidate fuzz gate
 
-Eight `cargo-fuzz` targets cover the configuration parser, DNS wire parser and
-response builder, Vision plus UDP/XUDP framing, SOCKS/HTTP inbound parsing,
-QUIC Initial sniffing, XHTTP HTTP/1.1 response framing, the bounded TUN queue,
-and the public FFI lifecycle. The corpus and targets live under `fuzz/`. The
-release command runs each target for 60 seconds with AddressSanitizer and keeps
-all generated corpus/artifact files outside the worktree:
+The `cargo-fuzz` targets cover, among others, the configuration parser, DNS
+wire parser and response builder, Vision plus UDP/XUDP framing, SOCKS/HTTP
+inbound parsing, QUIC Initial sniffing, XHTTP HTTP/1.1 response framing, the
+bounded TUN queue, and the public FFI lifecycle. `stream_decoders` feeds
+server-to-client gRPC Hunk and WebSocket frames, Shadowsocks AEAD and 2022 TCP
+responses, and VLESS responses with Vision unpadding in read sizes chosen by
+the input, and parses the same bytes as REALITY server records for the
+ServerHello capture. The corpus and targets live under `fuzz/`. The release
+command runs each target for 60 seconds with AddressSanitizer and keeps all
+generated corpus/artifact files outside the worktree:
 
 ```sh
 cargo install cargo-fuzz --version 0.13.2 --locked
@@ -414,8 +418,9 @@ non-empty `vcn` because it has no explicit host-policy seam; ECH remains
 fail-closed in both paths. An explicitly empty share parameter is treated as
 absent. Canonical `allowInsecure: true`, including
 legacy importer output, is rejected. XHTTP with a Vision flow requires VLESS
-encryption. Swift/Kotlin importers support encrypted raw and XHTTP links;
-WS/HTTPUpgrade/gRPC use canonical JSON. The importer also retains its
+encryption. Swift/Kotlin importers also project raw TLS (with or without
+Vision), WS/HTTPUpgrade with TLS, and gRPC with TLS or REALITY; on those
+non-raw carriers Vision and `security=none` require VLESS encryption. The importer also retains its
 pre-existing case-insensitive query-name lookup even though the current share
 proposal specifies case-sensitive names; duplicate consumed fields are rejected.
 

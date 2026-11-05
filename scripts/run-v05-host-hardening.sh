@@ -86,6 +86,7 @@ run_fuzz() (
     inbound_wire \
     quic_sniff \
     xhttp_framing \
+    stream_decoders \
     tun_queue \
     vless_encryption_records \
     vless_encryption_handshake \

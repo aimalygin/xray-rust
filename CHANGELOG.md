@@ -26,6 +26,107 @@ long-term supported release series.
 - The SOCKS inbound reads `users` as another name for `accounts`, keeps the
   last account of a name, and accepts empty or missing credentials and
   `null` settings, as Xray-core does.
+- A Mux pool no longer refuses new connections once its parent connections
+  have each opened 128 children while a few long-lived children keep them
+  open. Such parents now finish their remaining children while new
+  connections go to a new parent, with at most 16 parents per pool.
+
+- SOCKS and HTTP proxy connections honor `uplinkOnly` and `downlinkOnly` from
+  policy levels, as in Xray-core. After one side finished sending, the
+  connection now closes once the other side has been quiet for that time,
+  instead of waiting for `connIdle` (300 s by default). `downlinkOnly` now
+  defaults to 1 s like Xray-core, also for TUN; it used to be 2 s.
+- A REALITY server that answers with a real certificate no longer gets an
+  aborted handshake. As in Xray-core, a certificate valid for the server name
+  completes TLS, the client crawls `spiderX` over HTTP/2 like a browser
+  (honouring its `p`, `c`, `t`, `i` and `r` parameters, within limits), and
+  the connection then fails without sending any user data. An invalid
+  certificate still aborts the handshake. A `spiderX` that is neither empty
+  nor starts with `/` is now a configuration error, as in Xray-core, and
+  share links with such an `spx` are refused at import.
+- VLESS (with or without Vision) and Trojan outbounds no longer send the
+  request header on its own. As in Xray-core, the header waits for the first
+  payload and leaves in the same write, so over TLS or REALITY the first
+  record is no longer a header-only record of a predictable size. When the
+  app sends nothing first, the header goes out after the same wait as
+  Xray-core: 500 ms for VLESS, 100 ms for Trojan. With Vision, the empty
+  padding frame is now sent only in that case, behind the header, instead of
+  on every connection.
+- Outbound URL probes no longer announce themselves. The observatory, startup
+  and on-demand probes used to send `User-Agent: xray-rust-…-probe`; they now
+  send Xray-core's Chrome navigation headers in Go's order. As in Xray-core,
+  the observatory counts any HTTP response as alive, so a probe URL answering
+  `503` no longer marks working outbounds unhealthy. The startup and
+  on-demand probes keep their 2xx/3xx rule.
+- The XHTTP HTTP/2 client opens with the SETTINGS frame Xray-core's Go
+  client sends: push disabled, a 1 MiB maximum frame and a 10 MiB header
+  list limit next to the stream window, in Go's order. It used to announce
+  the stream window alone.
+- The XHTTP HTTP/3 client announces Xray-core's 10 MiB header limit instead
+  of 2^62-1 and no longer lists datagram, extended CONNECT and WebTransport
+  settings that are off.
+
+- The release fuzz campaign also covers the decoders that read server data:
+  gRPC and WebSocket framing, Shadowsocks TCP responses, VLESS responses with
+  Vision, and the REALITY ServerHello capture. Reads are split at arbitrary
+  boundaries.
+- The Android and Apple VLESS link importers accept more common links. They
+  used to reject them with an unsupported `type` or `security` error.
+  - Raw TCP with TLS, with or without `flow=xtls-rprx-vision`.
+  - WebSocket and HTTPUpgrade with TLS, keeping `host` and `path`.
+  - gRPC with TLS or REALITY, keeping `serviceName`, `authority` and
+    `mode=gun` or `mode=multi`.
+  - As in Xray-core, Vision over WebSocket, HTTPUpgrade or gRPC needs VLESS
+    encryption, and REALITY works only over raw TCP, XHTTP and gRPC. Links
+    that turn off certificate checks with `allowInsecure` on these transports,
+    or carry another transport's fields, are still rejected.
+- The Android and Apple VLESS link importers read `fm`, the percent-encoded
+  JSON of Xray's `streamSettings.finalmask` that Remnawave puts in links. It
+  used to be dropped silently. The object is copied unchanged into the
+  profile, and the core checks the masks when the profile loads. An empty
+  `fm` is ignored; a value that is not a JSON object, or a repeated `fm`,
+  fails the import.
+- On Android, the TUN admission callback and socket protection no longer
+  attach the calling native thread to the JVM and detach it again on every
+  call. Each native thread is attached once, as a daemon thread, and detached
+  when it exits. Threads the JVM already owns are left as they are.
+- Remnawave XRAY_JSON profiles no longer fail on the fields the panel adds to
+  them. Every profile in such a subscription used to fail to parse.
+  - The root `remarks` label and `meta` object are type-checked and ignored.
+  - `tlsSettings.enableSessionResumption` takes a boolean. As in Xray-core, a
+    uTLS-shaped handshake never resumes, whatever its value.
+  - Shadowsocks `uot` and `UoTVersion`, which 3x-ui also writes, are ignored
+    as in Xray-core. UDP stays native, and `uot: true` raises a warning.
+- `trojan://` and `vmess://` links from Remnawave and similar panels import.
+  Every Remnawave Trojan gRPC link used to fail, because it always carries
+  `mode=gun`.
+  - gRPC `mode=multi` turns on `multiMode`; WebSocket `heartbeatPeriod`, XHTTP
+    `extra` and the TLS certificate checks `pcs` (`pinnedPeerCertSha256`) and
+    `vcn` (`verifyPeerCertByName`) are carried into the profile.
+  - `headerType=none` imports. `headerType=http`, other gRPC modes and TLS
+    `cs` (cipher suites) are still refused, and the error now names the
+    parameter.
+  - `fm`, the percent-encoded JSON of the host's `finalmask`, becomes
+    `streamSettings.finalmask` and is checked as canonical JSON is. A mask the
+    core does not implement fails with an error naming `fm` instead of failing
+    the whole link as unsupported.
+- `hy2://` links with a certificate pin (`pinSHA256`) import, so Hysteria
+  servers with a self-signed certificate can be added from a link. The pin
+  maps to `pinnedPeerCertSha256` and is checked as Xray-core checks it.
+  `insecure=1` (or `true`) is accepted next to a pin and still refused without
+  one; `insecure=false` now imports. Remnawave's `fm` (the host's
+  `finalmask`) imports too; its Salamander entry must match `obfs` and
+  `obfs-password`, which the panel derives from it, and appears once.
+- `dns.hosts` supports Xray-core's `"#N"` values, such as
+  `"ads.example.com": "#3"` to answer NXDOMAIN and block a domain. Such a value
+  used to be read as an alias to the name `#3`, so the domain was still
+  resolved.
+  - DNS hijacked through TUN or a DNS outbound answers A and AAAA queries for
+    the name with that RCODE and no records; routing, `domainStrategy` and
+    freedom treat the name as having no addresses. `"#0"` gives an empty
+    answer, as in Xray-core.
+  - `N` must be from 0 to 15, the range the DNS header holds; other values,
+    which Xray-core accepts and writes over the header flags, are rejected.
 - Freedom's `noises` send their datagrams before each UDP flow's first, as
   Xray-core's do, with Xray-core's deprecation warning. Profiles with them
   used to fail to parse. The removed `noise` object fails, as in Xray-core.
@@ -287,6 +388,35 @@ long-term supported release series.
   stats), and a TUN host gets an ICMP fragmentation-needed or packet-too-big
   with the path MTU, which senders that set DF (QUIC, PMTU discovery) follow. This already
   affected WireGuard outbounds at the default 1500-byte TUN.
+- TUN UDP: when a flow's 256-datagram queue is full, only the new datagram is
+  dropped (counted in `udp_channel_dropped_packets`, as before) and the flow
+  keeps its outbound, as in Xray-core. A burst used to end the flow, so the
+  next datagram opened a new outbound with a fresh handshake.
+- Shadowsocks UDP (either family): a datagram too large for Xray's 8192-byte
+  UDP buffer once framed (8153 bytes of payload for `aes-128-gcm` and 8142 for
+  `2022-blake3-aes-128-gcm` to an IPv4 address), or for one Mux frame over
+  Mux, is now dropped alone like on the other UDP paths, counted in
+  `udp_oversize_datagrams`, and answered with an ICMP fragmentation-needed or
+  packet-too-big on TUN. It used to end the whole UDP flow, so the next
+  datagram opened a new association.
+- Fake IP: each `Core` starts allocating at a random address of
+  `dns.fakeIp.ipv4Pool` and continues sequentially from there, as Xray-core
+  starts from the current time within the pool. It always started at the
+  pool's first free address, so after a tunnel restart an app still holding an
+  old fake IP was routed and dialed as whichever new domain got that address.
+- Hysteria UDP: an empty datagram is skipped and the flow stays up. Every
+  Hysteria parser, Xray-core's included, drops a message without data. It
+  used to end the whole UDP flow, so the next datagram opened a new session.
+- Hysteria UDP reassembly follows Xray-core: an unfragmented datagram that
+  arrives between the fragments of a larger one is delivered without dropping
+  the larger one, and a fragment with a new fragment count starts a new
+  packet. Both used to discard the incomplete datagram, and the second one its
+  own fragment too.
+- WireGuard: opening a TCP connection or UDP flow waits for room in the
+  32-command queue it shares with UDP sends, within the 10-second open
+  deadline. With more than 32 busy UDP flows a new connection used to fail as
+  if the flow limits (16 TCP, 512 UDP) were reached; only those limits fail an
+  open now.
 - DNS: a bare `"localhost"` or `"fakedns"` string in `dns.servers` (any case)
   is now a configuration error, as the object form already was. Xray's
   system-resolver and FakeDNS clients are not implemented, and these strings

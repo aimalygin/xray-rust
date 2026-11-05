@@ -351,8 +351,11 @@ What grows with the MTU:
 - UDP datagrams the host may send. A connection-oriented UDP path carries less
   than a jumbo MTU allows: VLESS UDP (length-prefixed or XUDP, since Xray
   servers read a datagram into one 8 KiB buffer), Mux/XUDP and Trojan 8192
-  bytes, native VMess 8094, and a WireGuard outbound its own tunnel MTU less
-  28/48 (1392 at the default 1420, already below a 1500-byte TUN). A larger
+  bytes, native VMess 8094, native Shadowsocks of either family 8192 bytes
+  including its framing (8153 for `aes-128-gcm` and 8142 for
+  `2022-blake3-aes-128-gcm` to an IPv4 address), and a WireGuard outbound its
+  own tunnel MTU less 28/48 (1392 at the default 1420, already below a
+  1500-byte TUN). A larger
   datagram is dropped on its own, the flow stays up, `udp_oversize_datagrams`
   counts it (Kotlin `XrayTunStats.udpOversizeDatagrams`, Swift
   `udpOversizeDatagrams`), and the host gets an ICMP "fragmentation needed"
@@ -360,8 +363,8 @@ What grows with the MTU:
   Senders that set DF, such as QUIC stacks and sockets with PMTU discovery,
   then shrink their datagrams. Others may fragment the next ones locally, and
   the TUN stack does not reassemble IPv4 fragments, so those datagrams stay
-  lost, as before. SOCKS, Shadowsocks 2022, Hysteria2 (which fragments) and
-  freedom carry any datagram of a 9000-byte TUN. Before ABI 1.16 such a
+  lost, as before. SOCKS, Hysteria2 (which fragments) and freedom carry any
+  datagram of a 9000-byte TUN. Before ABI 1.16 such a
   datagram ended the whole UDP flow, or, over length-prefixed VLESS, reached
   the target split in two.
 

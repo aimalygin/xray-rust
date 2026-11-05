@@ -3107,6 +3107,7 @@ dependencies = [
  "xray-core-rs",
  "xray-ffi",
  "xray-proxy",
+ "xray-routing",
  "xray-transport",
  "xray-tun",
  "xray-vless-encryption",

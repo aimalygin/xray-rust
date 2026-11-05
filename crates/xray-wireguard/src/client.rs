@@ -291,27 +291,43 @@ impl Client {
         });
         Ok((flow, permit))
     }
+    /// Hands an open to the actor and waits for its reply. The command queue
+    /// is shared with UDP sends, so a full queue is waited out within the open
+    /// deadline rather than failing as `Busy`, which means an exhausted flow
+    /// budget.
+    async fn open(
+        &self,
+        command: Command,
+        ready: oneshot::Receiver<Result<(), Error>>,
+    ) -> Result<(), Error> {
+        let open = async {
+            let slot = self.0.commands.reserve().await.map_err(|_| Error::Closed)?;
+            slot.send(command);
+            ready.await.map_err(|_| Error::Closed)?
+        };
+        tokio::select! { biased;
+            _ = self.0.stop.cancelled() => Err(Error::Closed),
+            result = tokio::time::timeout(OPEN_TIMEOUT, open) => result.map_err(|_| Error::Timeout)?,
+        }
+    }
     pub async fn connect(&self, remote: SocketAddr) -> Result<TcpStream, Error> {
         let local = self.0.config.local_for(remote)?;
         let (flow, permit) = self.lease(true)?;
         let guard = FlowGuard(flow.clone());
         let (reply, ready) = oneshot::channel();
         let (stream, bridge) = tokio::io::duplex(STREAM_BUFFER);
-        self.0
-            .commands
-            .try_send(Command::Tcp {
+        self.open(
+            Command::Tcp {
                 local,
                 remote,
                 bridge,
                 reply,
                 flow: flow.clone(),
                 permit,
-            })
-            .map_err(|_| Error::Busy)?;
-        tokio::select! { biased;
-            _ = self.0.stop.cancelled() => return Err(Error::Closed),
-            result = tokio::time::timeout(OPEN_TIMEOUT, ready) => result.map_err(|_| Error::Timeout)?.map_err(|_| Error::Closed)??,
-        }
+            },
+            ready,
+        )
+        .await?;
         Ok(TcpStream {
             stream,
             _guard: guard,
@@ -323,21 +339,18 @@ impl Client {
         let guard = FlowGuard(flow.clone());
         let (reply, ready) = oneshot::channel();
         let (incoming, packets) = mpsc::channel(PACKET_QUEUE);
-        self.0
-            .commands
-            .try_send(Command::Udp {
+        self.open(
+            Command::Udp {
                 local,
                 remote,
                 incoming,
                 reply,
                 flow: flow.clone(),
                 permit,
-            })
-            .map_err(|_| Error::Busy)?;
-        tokio::select! { biased;
-            _ = self.0.stop.cancelled() => return Err(Error::Closed),
-            result = tokio::time::timeout(OPEN_TIMEOUT, ready) => result.map_err(|_| Error::Timeout)?.map_err(|_| Error::Closed)??,
-        }
+            },
+            ready,
+        )
+        .await?;
         Ok(UdpSession {
             remote,
             flow,

@@ -571,7 +571,7 @@
         "disableFallbackIfMatch"
       ],
       "id": "DNS",
-      "notes": "At most eight servers. Managed selection, cache/fallback policy and IPv4 fake IP only. hosts keys are domain rules as Xray-core reads them, plain text being the whole name. Hosts and server URL semantics require the executable validator."
+      "notes": "At most eight servers. Managed selection, cache/fallback policy and IPv4 fake IP only. hosts keys are domain rules as Xray-core reads them, plain text being the whole name; a \"#N\" value answers with DNS RCODE N from 0 to 15. Hosts and server URL semantics require the executable validator."
     },
     {
       "context": "$.outbounds[].settings (dns)",
@@ -936,7 +936,7 @@
         "xudpProxyUDP443"
       ],
       "id": "MUX",
-      "notes": "Enabled Mux supports VLESS, Trojan, Shadowsocks (2022 and AEAD) and VMess. TCP concurrency 0 defaults to 8; negative disables TCP. XHTTP and VLESS Vision require negative TCP concurrency because the pinned server accepts only UDP children there. XUDP concurrency 0 shares TCP, negative uses native UDP. Positive concurrency is capped at 64. UDP/443: reject (default), allow, skip. Each pool has four parents and 128 lifetime children per parent."
+      "notes": "Enabled Mux supports VLESS, Trojan, Shadowsocks (2022 and AEAD) and VMess. TCP concurrency 0 defaults to 8; negative disables TCP. XHTTP and VLESS Vision require negative TCP concurrency because the pinned server accepts only UDP children there. XUDP concurrency 0 shares TCP, negative uses native UDP. Positive concurrency is capped at 64. UDP/443: reject (default), allow, skip. Each pool opens children on four parents with 128 lifetime children each; exhausted parents finish their children, up to 16 parents in all."
     },
     {
       "context": "$.observatory",
@@ -1060,10 +1060,12 @@
         "routing",
         "observatory",
         "dns",
-        "policy"
+        "policy",
+        "remarks",
+        "meta"
       ],
       "id": "ROOT",
-      "notes": "log is accepted and ignored. Missing/non-array inbounds and outbounds currently normalize to empty lists. Non-object JSON roots also normalize to an empty model. Parse success alone does not establish runtime usability."
+      "notes": "log is accepted and ignored. remarks (a string) and meta (an object) are subscription labels, such as Remnawave's, which Xray-core does not read; they are type-checked and ignored. Missing/non-array inbounds and outbounds currently normalize to empty lists. Non-object JSON roots also normalize to an empty model. Parse success alone does not establish runtime usability."
     },
     {
       "context": "$.routing",
@@ -1213,10 +1215,11 @@
         "fingerprint",
         "alpn",
         "pinnedPeerCertSha256",
-        "verifyPeerCertByName"
+        "verifyPeerCertByName",
+        "enableSessionResumption"
       ],
       "id": "TLS",
-      "notes": "allowInsecure=true is rejected. fromMitm is unsupported. Fingerprints, certificate pins and name constraints use parser validation."
+      "notes": "allowInsecure=true is rejected. fromMitm is unsupported. Fingerprints, certificate pins and name constraints use parser validation. enableSessionResumption is a boolean with no effect on a uTLS-shaped handshake, which never resumes here or in Xray-core; with fingerprint unsafe, and on QUIC, rustls resumes sessions whatever its value."
     },
     {
       "context": "$.outbounds[].settings (wireguard)",
@@ -1293,10 +1296,12 @@
         "level",
         "email",
         "method",
+        "uot",
+        "UoTVersion",
         "servers"
       ],
       "id": "SHADOWSOCKS",
-      "notes": "One flattened server or exactly one servers entry; mixing forms is rejected. Methods are case-insensitive. SS2022: three blake3 methods; base64 PSKs, at most 8192 encoded bytes and 8 AES identity keys. ChaCha requires one key. Oversized keys retain legacy normalization; v26.10.21 requires exact-length keys, so portable profiles must use exact lengths. AEAD: aes-128-gcm, aes-256-gcm, chacha20-poly1305 and xchacha20-poly1305 with Xray aliases (aead_*, chacha20-ietf-poly1305, xchacha20-ietf-poly1305); nonempty password via EVP_BytesToKey. none/plain and stream ciphers are rejected, as in v26.10.21."
+      "notes": "One flattened server or exactly one servers entry; mixing forms is rejected. uot and UoTVersion are sing-box UDP-over-TCP options that Xray-core does not read; they are type-checked and ignored, and uot true warns that UDP stays native. Methods are case-insensitive. SS2022: three blake3 methods; base64 PSKs, at most 8192 encoded bytes and 8 AES identity keys. ChaCha requires one key. Oversized keys retain legacy normalization; v26.10.21 requires exact-length keys, so portable profiles must use exact lengths. AEAD: aes-128-gcm, aes-256-gcm, chacha20-poly1305 and xchacha20-poly1305 with Xray aliases (aead_*, chacha20-ietf-poly1305, xchacha20-ietf-poly1305); nonempty password via EVP_BytesToKey. none/plain and stream ciphers are rejected, as in v26.10.21."
     },
     {
       "context": "$.outbounds[].settings.servers[0] (shadowsocks)",
@@ -1306,10 +1311,12 @@
         "password",
         "level",
         "email",
-        "method"
+        "method",
+        "uot",
+        "UoTVersion"
       ],
       "id": "SHADOWSOCKS_SERVER",
-      "notes": "Nonempty address, nonzero port, level 0..255. Email is type-checked and ignored. TCP uses streamSettings; UDP is native encrypted datagrams of at most 8192 bytes, matching the pinned peer."
+      "notes": "Nonempty address, nonzero port, level 0..255. Email, uot and UoTVersion are type-checked and ignored. TCP uses streamSettings; UDP is native encrypted datagrams of at most 8192 bytes, matching the pinned peer."
     },
     {
       "context": "$.outbounds[].settings (vmess)",

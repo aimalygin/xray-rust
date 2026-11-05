@@ -178,22 +178,34 @@ impl Shadowsocks2022Outbound {
             .into())
     }
 }
+/// Xray receives native UDP in an 8192-byte buffer, including the
+/// Shadowsocks framing of either family. Oversized ciphertext would be
+/// silently truncated (and Xray's own AEAD-2017 encoder cannot build it).
+const PEER_UDP_BUFFER: usize = 8192;
 pub(crate) struct NativeUdpSession {
     socket: UdpSocket,
     codec: Mutex<wire::UdpSession>,
     reader: AsyncMutex<Vec<u8>>,
 }
 impl NativeUdpSession {
+    /// The largest payload whose datagram to `target` fits the peer's
+    /// buffer under this method's salt or headers and tag.
+    fn max_payload(&self, target: &Target) -> usize {
+        self.codec
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .overhead(target)
+            .map_or(usize::MAX, |overhead| {
+                PEER_UDP_BUFFER.saturating_sub(overhead)
+            })
+    }
     pub(super) async fn send(&self, target: &Target, payload: &[u8]) -> Result<(), CoreError> {
         let bytes = self
             .codec
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .encode(target, payload)?;
-        // Xray receives native UDP in an 8192-byte buffer, including the
-        // Shadowsocks framing of either family. Oversized ciphertext would be
-        // silently truncated (and Xray's own AEAD-2017 encoder cannot build it).
-        if bytes.len() > 8192 {
+        if bytes.len() > PEER_UDP_BUFFER {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Shadowsocks packet exceeds pinned peer UDP limit",
@@ -231,6 +243,12 @@ pub(crate) enum UdpSession {
     Mux(Box<super::mux::UdpSession>),
 }
 impl UdpSession {
+    pub(super) fn max_payload(&self, target: &Target) -> usize {
+        match self {
+            Self::Native(s) => s.max_payload(target),
+            Self::Mux(_) => xray_proxy::mux::MAX_PAYLOAD,
+        }
+    }
     pub(super) async fn send(&self, target: &Target, payload: &[u8]) -> Result<(), CoreError> {
         match self {
             Self::Native(s) => s.send(target, payload).await,
@@ -242,5 +260,78 @@ impl UdpSession {
             Self::Native(s) => s.recv().await,
             Self::Mux(s) => s.recv().await,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::Bytes;
+
+    #[tokio::test]
+    async fn oversize_native_datagram_is_dropped_and_the_flow_keeps_relaying() {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let method = Method::new("aes-128-gcm", "synthetic").unwrap();
+            let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            socket.connect(server.local_addr().unwrap()).await.unwrap();
+            let session = datagram::Session::Shadowsocks2022(Box::new(UdpSession::Native(
+                Box::new(NativeUdpSession {
+                    socket,
+                    codec: Mutex::new(wire::UdpSession::new(&method).unwrap()),
+                    reader: AsyncMutex::new(vec![0; wire::MAX_UDP_WIRE_LENGTH + 1]),
+                }),
+            )));
+            let target = Target::new(
+                RoutingTargetAddr::Domain("example.test".into()),
+                443,
+                RoutingNetwork::Udp,
+            );
+            let mut peer = wire::UdpSession::new(&method).unwrap();
+            let max = PEER_UDP_BUFFER - peer.overhead(&target).unwrap();
+            assert_eq!(session.max_payload(&target), max);
+
+            let (input, ingress) = tokio::sync::mpsc::channel(4);
+            input.send(Bytes::from(vec![1; max])).await.unwrap();
+            input.send(Bytes::from_static(b"after")).await.unwrap();
+            drop(input);
+            let mut rejected = Vec::new();
+            datagram::relay_udp(
+                session,
+                &target,
+                ingress.into(),
+                Bytes::from(vec![0; max + 1]),
+                &crate::connection::ConnectionTraffic::default(),
+                std::time::Duration::from_secs(1),
+                None,
+                |payload: Bytes, max_payload| {
+                    rejected.push((payload.len(), max_payload));
+                    async {}
+                },
+                |_, _| async { Ok(()) },
+            )
+            .await
+            .unwrap();
+            assert_eq!(rejected, [(max + 1, max)]);
+
+            let mut buffer = vec![0; wire::MAX_UDP_WIRE_LENGTH + 1];
+            let len = server.recv(&mut buffer).await.unwrap();
+            assert_eq!(
+                len, PEER_UDP_BUFFER,
+                "the largest payload fills Xray's buffer"
+            );
+            assert_eq!(
+                peer.decode(&buffer[..len]).unwrap(),
+                (target.clone(), vec![1; max])
+            );
+            let len = server.recv(&mut buffer).await.unwrap();
+            assert_eq!(
+                peer.decode(&buffer[..len]).unwrap(),
+                (target.clone(), b"after".to_vec())
+            );
+            assert!(server.try_recv(&mut buffer).is_err());
+        })
+        .await
+        .unwrap();
     }
 }

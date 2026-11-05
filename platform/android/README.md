@@ -154,15 +154,20 @@ Use a matching freshly built native library, header and JNI bridge.
 display name, server address, and JSON config ready for `XrayCore.create` or
 `XrayVpnService.startXrayTunnel`. It accepts a bare link, a link embedded in
 pasted text, or a scheme-less UUID authority. The supported subset matches the
-Apple importer: `tcp`/`raw` with REALITY, and `xhttp`/`splithttp` with no
-security, TLS, or REALITY. The generated profile uses the TUN inbound, VLESS
+Apple importer: `tcp`/`raw` with TLS (optionally Vision) or REALITY,
+`xhttp`/`splithttp` with no security, TLS, or REALITY, `ws`/`websocket` and
+`httpupgrade` with TLS (`host`, `path`), and `grpc` with TLS or REALITY
+(`serviceName`, `authority`, `mode=gun|multi`). A JSON-object `fm` (Remnawave's
+percent-encoded `streamSettings.finalmask`) is copied unchanged and validated
+by the core when the profile loads. The generated profile uses the TUN inbound, VLESS
 `proxy`, private-address Freedom split, and bounded IPv4 fake-IP defaults.
 
 Development `0.6` also imports bounded
 `mlkem768x25519plus.{native|xorpub|random}.{1rtt|0rtt}` with one-to-eight
 canonical X25519/ML-KEM-768 relay keys and optional bounded padding over
 `tcp`/`raw` and `xhttp`/`splithttp`, with none, TLS, or REALITY security and
-optional Vision/Vision-UDP443. WS/HTTPUpgrade/gRPC profiles use JSON. Encrypted
+optional Vision/Vision-UDP443, and over WS/HTTPUpgrade/gRPC with none or TLS
+(gRPC also REALITY). Encrypted
 links reject irrelevant raw transport fields and insecure TLS. Key encodings,
 padding limits, and low-order/modulus checks match shared Rust fixtures; error
 messages redact rejected encryption values. This does not change the published
@@ -644,7 +649,10 @@ identity. Android versions below 10 cannot provide this enforcement; the helper
 rejects construction rather than claiming protection.
 
 The callback runs on up to four native host workers, never on the packet loop.
-It may run concurrently and must not call core lifecycle methods. The default
+It may run concurrently and must not call core lifecycle methods. Each worker,
+like each native thread that calls socket protection, is attached to the JVM
+as a daemon thread on its first call and detached when it exits, so
+`Thread.currentThread()` stays the same across its calls. The default
 100 ms timeout denies; `failOpen` is explicit. Java exceptions deny even when
 fail-open is selected. Timeout and core close do not interrupt a blocked host
 callback; JNI retains its object until the call returns. Use the bounded native

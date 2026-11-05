@@ -120,9 +120,11 @@ impl TrojanOutbound {
         let header = wire::encode_request_header(&self.0.auth, target)?;
         let mut stream = self.0.carrier.open(candidates, download, dialer).await?;
         stream.release_record_alignment();
-        stream.write_all(header.as_bytes()).await?;
-        stream.flush().await?;
-        Ok(stream)
+        Ok(Box::new(FirstPayloadDeadline::new(
+            HeldHeader::new(stream, header.as_bytes()),
+            TROJAN_FIRST_PAYLOAD_WAIT,
+            flush_header_alone,
+        )))
     }
 
     pub(super) async fn open_udp(

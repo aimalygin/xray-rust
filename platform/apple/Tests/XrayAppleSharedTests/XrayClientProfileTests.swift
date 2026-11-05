@@ -1156,6 +1156,52 @@ final class XrayClientProfileTests: XCTestCase {
         }
     }
 
+    func testVlessURLImporterCopiesFinalMaskVerbatimIntoEveryTransport() throws {
+        let finalMaskJSON = #"{"tcp":[{"type":"fragment","settings":{"packets":"tlshello","length":"100-200"}}]}"#
+        let encoded = try XCTUnwrap(finalMaskJSON.addingPercentEncoding(withAllowedCharacters: .alphanumerics))
+        let expected = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(finalMaskJSON.utf8)) as? [String: Any]
+        )
+        let links = [
+            "?type=tcp&security=tls",
+            "?type=tcp&security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=example.com&sid=0123",
+            "?type=xhttp&security=tls&path=%2F",
+            "?type=ws&security=tls&path=%2Fws",
+            "?type=grpc&security=tls&serviceName=svc",
+        ]
+        for query in links {
+            let url = "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:443\(query)&FM=\(encoded)"
+            let streamSettings = try Self.importedStreamSettings(XrayVlessURLImporter.profile(from: url))
+            let finalMask = try XCTUnwrap(streamSettings["finalmask"] as? [String: Any], query)
+            XCTAssertTrue(NSDictionary(dictionary: finalMask).isEqual(to: expected), query)
+        }
+    }
+
+    func testVlessURLImporterTreatsEmptyFinalMaskAsAbsent() throws {
+        let streamSettings = try Self.importedStreamSettings(
+            XrayVlessURLImporter.profile(
+                from: "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:443?type=tcp&security=tls&fm="
+            )
+        )
+        XCTAssertNil(streamSettings["finalmask"])
+    }
+
+    func testVlessURLImporterRejectsNonObjectFinalMask() throws {
+        let encodedTwice = try XCTUnwrap(
+            "%7B%7D".addingPercentEncoding(withAllowedCharacters: .alphanumerics)
+        )
+        for value in ["%5B%5D", "null", "7", "%22mask%22", "%7Bbroken", "%7B%7Dtrailing", encodedTwice] {
+            let url = "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:443"
+                + "?type=tcp&security=tls&fm=\(value)"
+            XCTAssertThrowsError(try XrayVlessURLImporter.profile(from: url), value) { error in
+                XCTAssertEqual(
+                    error as? XrayVlessURLImportError,
+                    .unsupportedQueryValue(name: "fm", value: "<redacted>", expected: "JSON object")
+                )
+            }
+        }
+    }
+
     func testVlessURLImporterBoundsXHTTPExtraBeforeJSONParsing() {
         let oversized = String(repeating: "a", count: 64 * 1024 + 1)
         let url = "vless://11111111-1111-4111-8111-111111111111@203.0.113.20:80"
@@ -1240,6 +1286,25 @@ final class XrayClientProfileTests: XCTestCase {
                     .unsupportedQueryParameter(name)
                 )
             }
+        }
+    }
+
+    func testVlessURLImporterRejectsRealitySpiderXWithoutLeadingSlashLikeXrayCore() {
+        for url in [Self.sampleVlessURL, Self.sampleXHTTPRealityURL] {
+            let base = url
+                .components(separatedBy: "#")[0]
+                .replacingOccurrences(of: "&spx=%2F", with: "")
+            XCTAssertThrowsError(try XrayVlessURLImporter.profile(from: base + "&spx=crawl")) { error in
+                XCTAssertEqual(
+                    error as? XrayVlessURLImportError,
+                    .unsupportedQueryValue(
+                        name: "spx",
+                        value: "crawl",
+                        expected: "empty or a path starting with /"
+                    )
+                )
+            }
+            XCTAssertNoThrow(try XrayVlessURLImporter.profile(from: base + "&spx="))
         }
     }
 
@@ -1329,6 +1394,7 @@ final class XrayClientProfileTests: XCTestCase {
             ("alpn", "security=tls&alpn=h2&alpn=http%2F1.1"),
             ("allowInsecure", "security=tls&allowInsecure=0&allowInsecure=1"),
             ("extra", "security=none&extra=%7B%7D&extra=%7B%7D"),
+            ("fm", "security=none&fm=%7B%7D&fm=%7B%7D"),
             (
                 "pbk",
                 "security=reality&pbk=first&pbk=second&fp=chrome&sid="
@@ -1531,13 +1597,159 @@ final class XrayClientProfileTests: XCTestCase {
     func testVlessURLImporterRejectsUnsupportedSecurity() {
         XCTAssertThrowsError(
             try XrayVlessURLImporter.profile(
-                from: "vless://11111111-1111-4111-8111-111111111111@example.com:443?type=tcp&security=tls&encryption=none"
+                from: "vless://11111111-1111-4111-8111-111111111111@example.com:443?type=tcp&security=none&encryption=none"
             )
         ) { error in
             XCTAssertEqual(
                 error.localizedDescription,
-                "Unsupported VLESS security `tls`. Expected `reality`."
+                "Unsupported VLESS security `none`. Expected `tls or reality`."
             )
         }
+    }
+
+    func testVlessURLImporterBuildsRawTLSProfileWithAndWithoutVision() throws {
+        let vision = try XrayVlessURLImporter.profile(
+            from: "vless://11111111-1111-4111-8111-111111111111@203.0.113.30:443"
+                + "?type=tcp&security=tls&flow=xtls-rprx-vision&sni=origin.example"
+                + "&fp=firefox&alpn=h2%2Chttp%2F1.1&allowInsecure=0&headerType=none#vision-tls"
+        )
+        let stream = try Self.importedStreamSettings(vision)
+        let tls = try XCTUnwrap(stream["tlsSettings"] as? [String: Any])
+
+        XCTAssertEqual(vision.name, "vision-tls")
+        XCTAssertEqual(stream["network"] as? String, "tcp")
+        XCTAssertEqual(stream["security"] as? String, "tls")
+        XCTAssertEqual(tls["serverName"] as? String, "origin.example")
+        XCTAssertEqual(tls["fingerprint"] as? String, "firefox")
+        XCTAssertEqual(tls["alpn"] as? [String], ["h2", "http/1.1"])
+        XCTAssertEqual(tls["allowInsecure"] as? Bool, false)
+        XCTAssertNil(stream["realitySettings"])
+        XCTAssertEqual(try Self.importedUser(vision)["flow"] as? String, "xtls-rprx-vision")
+
+        let plain = try XrayVlessURLImporter.profile(
+            from: "vless://11111111-1111-4111-8111-111111111111@origin.example:443?type=raw&security=tls"
+        )
+        let plainStream = try Self.importedStreamSettings(plain)
+        let plainTLS = try XCTUnwrap(plainStream["tlsSettings"] as? [String: Any])
+        XCTAssertEqual(plainStream["network"] as? String, "tcp")
+        XCTAssertEqual(plainTLS["serverName"] as? String, "origin.example")
+        XCTAssertEqual(plainTLS["fingerprint"] as? String, "chrome")
+        XCTAssertNil(try Self.importedUser(plain)["flow"])
+    }
+
+    func testVlessURLImporterBuildsWebSocketAndHTTPUpgradeTLSProfiles() throws {
+        for (type, network) in [("ws", "ws"), ("websocket", "ws"), ("httpupgrade", "httpupgrade")] {
+            let profile = try XrayVlessURLImporter.profile(
+                from: "vless://11111111-1111-4111-8111-111111111111@203.0.113.31:443"
+                    + "?type=\(type)&security=tls&host=cdn.example&path=%2Fws%3Fed%3D2048"
+                    + "&sni=cdn.example&fp=chrome&alpn=http%2F1.1"
+            )
+            let stream = try Self.importedStreamSettings(profile)
+            let tls = try XCTUnwrap(stream["tlsSettings"] as? [String: Any], type)
+            let settings = try XCTUnwrap(stream["\(network)Settings"] as? [String: Any], type)
+
+            XCTAssertEqual(stream["network"] as? String, network, type)
+            XCTAssertEqual(stream["security"] as? String, "tls", type)
+            XCTAssertEqual(tls["serverName"] as? String, "cdn.example", type)
+            XCTAssertEqual(tls["alpn"] as? [String], ["http/1.1"], type)
+            XCTAssertEqual(settings["host"] as? String, "cdn.example", type)
+            XCTAssertEqual(settings["path"] as? String, "/ws?ed=2048", type)
+            XCTAssertNil(try Self.importedUser(profile)["flow"], type)
+        }
+
+        let bare = try XrayVlessURLImporter.profile(
+            from: "vless://11111111-1111-4111-8111-111111111111@cdn.example:443?type=ws&security=tls"
+        )
+        XCTAssertNil(try Self.importedStreamSettings(bare)["wsSettings"])
+    }
+
+    func testVlessURLImporterBuildsGRPCTLSAndRealityProfiles() throws {
+        let tls = try Self.importedStreamSettings(
+            XrayVlessURLImporter.profile(
+                from: "vless://11111111-1111-4111-8111-111111111111@203.0.113.32:443"
+                    + "?type=grpc&security=tls&serviceName=tunnel&authority=cdn.example&mode=gun"
+            )
+        )
+        let tlsGRPC = try XCTUnwrap(tls["grpcSettings"] as? [String: Any])
+        XCTAssertEqual(tls["network"] as? String, "grpc")
+        XCTAssertEqual(tls["security"] as? String, "tls")
+        XCTAssertEqual(tlsGRPC["serviceName"] as? String, "tunnel")
+        XCTAssertEqual(tlsGRPC["authority"] as? String, "cdn.example")
+        XCTAssertNil(tlsGRPC["multiMode"])
+
+        let reality = try Self.importedStreamSettings(
+            XrayVlessURLImporter.profile(
+                from: "vless://11111111-1111-4111-8111-111111111111@203.0.113.32:443"
+                    + "?type=grpc&security=reality&serviceName=tunnel&mode=multi"
+                    + "&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=example.com&sid=0123456789ab"
+            )
+        )
+        let realitySettings = try XCTUnwrap(reality["realitySettings"] as? [String: Any])
+        let realityGRPC = try XCTUnwrap(reality["grpcSettings"] as? [String: Any])
+        XCTAssertEqual(reality["security"] as? String, "reality")
+        XCTAssertEqual(realitySettings["serverName"] as? String, "example.com")
+        XCTAssertEqual(realityGRPC["multiMode"] as? Bool, true)
+        XCTAssertNil(reality["tlsSettings"])
+    }
+
+    func testVlessURLImporterRejectsUnsupportedFramedAndRawTLSCombinations() {
+        let publicKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        let values: [(String, String)] = [
+            ("type=kcp&security=tls", "type"),
+            ("type=tcp&security=none", "security"),
+            ("type=ws&security=none", "security"),
+            ("type=httpupgrade&security=reality&pbk=\(publicKey)&fp=chrome&sid=", "security"),
+            ("type=ws&security=reality&pbk=\(publicKey)&fp=chrome&sid=", "security"),
+            ("type=ws&security=tls&flow=xtls-rprx-vision", "flow"),
+            ("type=grpc&security=tls&flow=xtls-rprx-vision", "flow"),
+            ("type=grpc&security=tls&mode=guna", "mode"),
+            ("type=tcp&security=tls&allowInsecure=1", "allowInsecure"),
+            ("type=ws&security=tls&allowInsecure=true", "allowInsecure"),
+        ]
+        for (query, parameter) in values {
+            let url = "vless://11111111-1111-4111-8111-111111111111@203.0.113.33:443?\(query)"
+            XCTAssertThrowsError(try XrayVlessURLImporter.profile(from: url), query) { error in
+                guard case let .unsupportedQueryValue(name, _, _) = error as? XrayVlessURLImportError else {
+                    return XCTFail("Unexpected error \(error) for \(query)")
+                }
+                XCTAssertEqual(name, parameter, query)
+            }
+        }
+    }
+
+    func testVlessURLImporterRejectsFieldsOfAnotherCarrierOrSecurity() {
+        let values: [(String, String)] = [
+            ("type=tcp&security=tls&path=%2Fignored", "path"),
+            ("type=tcp&security=tls&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "pbk"),
+            ("type=tcp&security=tls&ech=sensitive", "ech"),
+            ("type=ws&security=tls&extra=%7B%7D", "extra"),
+            ("type=ws&security=tls&serviceName=tunnel", "serviceName"),
+            ("type=httpupgrade&security=tls&mode=multi", "mode"),
+            ("type=grpc&security=tls&host=cdn.example", "host"),
+            ("type=grpc&security=tls&sid=", "sid"),
+        ]
+        for (query, parameter) in values {
+            let url = "vless://11111111-1111-4111-8111-111111111111@203.0.113.33:443?\(query)"
+            XCTAssertThrowsError(try XrayVlessURLImporter.profile(from: url), query) { error in
+                XCTAssertEqual(error as? XrayVlessURLImportError, .unsupportedQueryParameter(parameter), query)
+            }
+        }
+    }
+
+    private static func importedOutbound(_ profile: XrayClientProfile) throws -> [String: Any] {
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(profile.configJSON.utf8)) as? [String: Any]
+        )
+        return try XCTUnwrap((root["outbounds"] as? [[String: Any]])?.first)
+    }
+
+    private static func importedStreamSettings(_ profile: XrayClientProfile) throws -> [String: Any] {
+        try XCTUnwrap(importedOutbound(profile)["streamSettings"] as? [String: Any])
+    }
+
+    private static func importedUser(_ profile: XrayClientProfile) throws -> [String: Any] {
+        let settings = try XCTUnwrap(importedOutbound(profile)["settings"] as? [String: Any])
+        let server = try XCTUnwrap((settings["vnext"] as? [[String: Any]])?.first)
+        return try XCTUnwrap((server["users"] as? [[String: Any]])?.first)
     }
 }

@@ -17,7 +17,10 @@ use tokio::{
 };
 use xray_proxy::mux::{self as wire, Frame, Status};
 
+/// Parents that can still open children.
 const MAX_PARENTS: usize = 4;
+/// All parents, including exhausted ones that only finish their children.
+const MAX_LIVE_PARENTS: usize = 16;
 const MAX_CHILDREN_EVER: u16 = 128;
 /// Frames buffered per child and direction (at most 64 KiB of payload). Xray-core
 /// bounds the same downlink by its per-connection buffer policy: 4 KiB on arm64,
@@ -189,7 +192,7 @@ impl Pool {
             parents.retain(|p| {
                 let retire = {
                     let state = lock(&p.shared.state);
-                    state.closed || state.next >= MAX_CHILDREN_EVER && state.children.is_empty()
+                    state.closed || state.exhausted() && state.children.is_empty()
                 };
                 if retire {
                     p.close();
@@ -199,7 +202,13 @@ impl Pool {
                     true
                 }
             });
-            if parents.len() >= MAX_PARENTS {
+            // An exhausted parent only finishes its remaining children, so a
+            // long-lived child must not block new parents.
+            let open = parents
+                .iter()
+                .filter(|p| !lock(&p.shared.state).exhausted())
+                .count();
+            if open >= MAX_PARENTS || parents.len() >= MAX_LIVE_PARENTS {
                 return Err(full().into());
             }
             retired
@@ -277,6 +286,12 @@ struct State {
     cursor: u16,
     closed: bool,
 }
+impl State {
+    /// Session IDs are never recycled, so the parent opens no more children.
+    fn exhausted(&self) -> bool {
+        self.next >= MAX_CHILDREN_EVER
+    }
+}
 #[derive(Debug)]
 struct Packet {
     source: Option<Target>,
@@ -337,10 +352,7 @@ impl Parent {
         global_id: [u8; 8],
     ) -> Option<Child> {
         let mut state = lock(&self.shared.state);
-        if state.closed
-            || state.children.len() >= usize::from(concurrency)
-            || state.next >= MAX_CHILDREN_EVER
-        {
+        if state.closed || state.children.len() >= usize::from(concurrency) || state.exhausted() {
             return None;
         }
         state.next += 1;
@@ -879,6 +891,52 @@ mod tests {
         assert!(pending.await.is_err());
         pool.join().await;
         assert!(lock(&pool.parents).is_empty());
+    }
+
+    #[tokio::test]
+    async fn mux_exhausted_parents_with_live_children_do_not_block_new_parents() {
+        let pool = Pool::new(8);
+        let target = destination(RoutingNetwork::Tcp);
+        let mut peers = Vec::new();
+        let mut children = Vec::new();
+        async fn open(
+            pool: &Pool,
+            target: &Target,
+            peers: &mut Vec<DuplexStream>,
+        ) -> Result<Child, CoreError> {
+            let (stream, peer) = pair();
+            peers.push(peer);
+            pool.open(target, async { Ok(stream) }).await
+        }
+        // Each parent has used every session ID and keeps one long-lived child.
+        for _ in 0..MAX_LIVE_PARENTS {
+            let child = open(&pool, &target, &mut peers).await.unwrap();
+            lock(&child.token.parent.shared.state).next = MAX_CHILDREN_EVER;
+            children.push(child);
+        }
+        assert!(
+            matches!(open(&pool, &target, &mut peers).await,Err(CoreError::Io(e)) if e.kind()==io::ErrorKind::WouldBlock)
+        );
+        assert_eq!(lock(&pool.parents).len(), MAX_LIVE_PARENTS);
+        for child in &children {
+            assert!(!lock(&child.token.parent.shared.state).closed);
+        }
+        // A parent whose last child ended is retired, freeing its slot.
+        let parent = children[0].token.parent.clone();
+        drop(children.remove(0));
+        timeout(Duration::from_secs(5), async {
+            while !lock(&parent.shared.state).children.is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        drop(parent);
+        let child = open(&pool, &target, &mut peers).await.unwrap();
+        assert!(!lock(&child.token.parent.shared.state).exhausted());
+        assert_eq!(lock(&pool.parents).len(), MAX_LIVE_PARENTS);
+        pool.close();
+        pool.join().await;
     }
 
     fn keep(id: u16, payload: &[u8]) -> Vec<u8> {

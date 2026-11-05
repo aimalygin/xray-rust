@@ -38,6 +38,10 @@ pub enum ImportError {
     Syntax,
     #[error("profile contains an unsupported setting")]
     Unsupported,
+    /// A known link parameter whose value asks for behaviour the core does
+    /// not implement. Carries the parameter name, never its value.
+    #[error("profile contains an unsupported value for `{0}`")]
+    UnsupportedParameter(&'static str),
     #[error("profile contains a duplicate setting")]
     Duplicate,
     #[error("invalid profile name (1..128 UTF-8 bytes, no control characters)")]
@@ -174,12 +178,40 @@ fn finish(
     server_address: String,
     root: &Value,
 ) -> Result<ImportedProfile, ImportError> {
+    finish_masked(format, name, server_address, root, false)
+}
+/// `fm` carries a whole `streamSettings.finalmask`. The parser validates it as
+/// it validates canonical JSON; with `fm` supplied, a finalmask diagnostic the
+/// import cannot carry names `fm`.
+fn finish_masked(
+    format: ProfileFormat,
+    name: String,
+    server_address: String,
+    root: &Value,
+    fm: bool,
+) -> Result<ImportedProfile, ImportError> {
     validate_name(&name)?;
     let config_json =
         Zeroizing::new(serde_json::to_string(root).map_err(|_| ImportError::Configuration)?);
-    let parsed = crate::parse_xray_json(&config_json).map_err(|_| ImportError::Configuration)?;
-    if !parsed.diagnostics.iter().all(is_import_advisory) {
-        return Err(ImportError::Configuration);
+    let diagnostics = match crate::parse_xray_json(&config_json) {
+        Ok(parsed) => parsed.diagnostics,
+        Err(error) => error.diagnostics,
+    };
+    let mut blocking = diagnostics
+        .iter()
+        .filter(|d| !is_import_advisory(d))
+        .peekable();
+    if blocking.peek().is_some() {
+        let masked = |d: &crate::Diagnostic| {
+            d.path
+                .as_deref()
+                .is_some_and(|path| path.contains(".streamSettings.finalmask"))
+        };
+        return Err(if fm && blocking.any(masked) {
+            ImportError::UnsupportedParameter("fm")
+        } else {
+            ImportError::Configuration
+        });
     }
     Ok(ImportedProfile {
         format,
@@ -212,6 +244,16 @@ fn is_wireguard_dns_advisory(diagnostic: &crate::Diagnostic) -> bool {
             .path
             .as_deref()
             .is_some_and(|path| path.ends_with(".settings.remoteDNS"))
+}
+/// Remnawave's `fm`: the percent-decoded JSON of a host's
+/// `streamSettings.finalmask`. It must be an object; its content is left to
+/// the parser.
+fn final_mask(text: &str) -> Result<Value, ImportError> {
+    let mask: Value = serde_json::from_str(text).map_err(|_| ImportError::Syntax)?;
+    if !mask.is_object() {
+        return Err(ImportError::Syntax);
+    }
+    Ok(mask)
 }
 fn validate_name(name: &str) -> Result<(), ImportError> {
     if name.is_empty()
