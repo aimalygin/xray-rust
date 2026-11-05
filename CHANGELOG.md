@@ -10,6 +10,16 @@ long-term supported release series.
 
 ## Unreleased
 
+- `dns.hosts` supports Xray-core's `"#N"` values, such as
+  `"ads.example.com": "#3"` to answer NXDOMAIN and block a domain. Such a value
+  used to be read as an alias to the name `#3`, so the domain was still
+  resolved.
+  - DNS hijacked through TUN or a DNS outbound answers A and AAAA queries for
+    the name with that RCODE and no records; routing, `domainStrategy` and
+    freedom treat the name as having no addresses. `"#0"` gives an empty
+    answer, as in Xray-core.
+  - `N` must be from 0 to 15, the range the DNS header holds; other values,
+    which Xray-core accepts and writes over the header flags, are rejected.
 - Freedom's `noises` send their datagrams before each UDP flow's first, as
   Xray-core's do, with Xray-core's deprecation warning. Profiles with them
   used to fail to parse. The removed `noise` object fails, as in Xray-core.

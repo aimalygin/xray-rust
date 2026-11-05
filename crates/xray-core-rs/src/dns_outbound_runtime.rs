@@ -925,6 +925,7 @@ impl DnsOutboundRuntime {
                 Some(DnsHostTarget::Ips(addresses)) => {
                     return Some(static_host_hijack_resolution(parsed.qtype(), addresses));
                 }
+                Some(DnsHostTarget::Rcode(rcode)) => return Some(HijackResolution::Rcode(rcode)),
                 Some(DnsHostTarget::Domain(alias)) => alias,
                 None => parsed.domain().to_owned(),
             };
@@ -1162,6 +1163,7 @@ enum HijackResolution {
     NameError,
     NoData,
     ServerFailure,
+    Rcode(u8),
 }
 
 async fn resolve_hijack(
@@ -1184,6 +1186,7 @@ async fn resolve_hijack(
         {
             Ok(lookup) => hijack_lookup(parsed.qtype(), lookup),
             Err(TransportError::DnsNameError(_, _)) => HijackResolution::NameError,
+            Err(TransportError::DnsRcode(_, _, rcode)) => HijackResolution::Rcode(rcode),
             Err(TransportError::DnsNoData(_, _) | TransportError::NoResolvedAddress(_, _)) => {
                 HijackResolution::NoData
             }
@@ -1230,6 +1233,7 @@ fn build_hijack_response(
         HijackResolution::NameError => (Vec::new(), 0, DNS_RCODE_NXDOMAIN),
         HijackResolution::NoData => (Vec::new(), 0, DNS_RCODE_NOERROR),
         HijackResolution::ServerFailure => (Vec::new(), 0, DNS_RCODE_SERVFAIL),
+        HijackResolution::Rcode(rcode) => (Vec::new(), 0, u16::from(rcode & 0x0f)),
     };
     let answer_size = match parsed.qtype() {
         DNS_TYPE_A => 16usize,
@@ -1340,7 +1344,7 @@ mod tests {
         DnsOutboundSettings, DomainMatcher, IpCidr, Network, TargetAddr as ConfigTargetAddr,
     };
     use xray_routing::{Network as RoutingNetwork, TargetAddr};
-    use xray_transport::{SystemDnsResolver, TransportDialer};
+    use xray_transport::{ConfiguredDnsResolver, SystemDnsResolver, TransportDialer};
 
     use super::*;
 
@@ -1550,6 +1554,86 @@ mod tests {
             &response[question_end + 12..question_end + 16],
             &static_ip.octets()
         );
+        assert_eq!(mapper.lock().unwrap().mapping_count(), 0);
+    }
+
+    async fn hijack_reply(runtime: &DnsOutboundRuntime, request: Bytes) -> Bytes {
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(5),
+            runtime.execute_message(
+                &hijack_outbound(),
+                &udp_dns_target(),
+                request,
+                DnsClientTransport::Udp {
+                    path_payload_cap: 1_232,
+                },
+            ),
+        )
+        .await
+        .expect("static hosts Hijack must not wait");
+        let DnsMessageOutcome::Reply(response) = outcome else {
+            panic!("static hosts Hijack must reply");
+        };
+        response
+    }
+
+    fn rcode_hosts() -> Arc<DomainHostIndex<DnsHostTarget>> {
+        Arc::new(DomainHostIndex::from_iter([
+            (
+                DomainMatcher::Full("ads.example.com".to_owned()),
+                DnsHostTarget::Rcode(3),
+            ),
+            (
+                DomainMatcher::Full("refused.test".to_owned()),
+                DnsHostTarget::Rcode(5),
+            ),
+            (
+                DomainMatcher::Full("empty.test".to_owned()),
+                DnsHostTarget::Rcode(0),
+            ),
+        ]))
+    }
+
+    #[tokio::test]
+    async fn static_rcode_hosts_answer_a_and_aaaa_hijack_with_that_rcode() {
+        let hosts = rcode_hosts();
+        let resolver: Arc<dyn DnsResolver> = Arc::new(ConfiguredDnsResolver::new(
+            Arc::clone(&hosts),
+            Vec::new(),
+            Arc::new(SystemDnsResolver),
+        ));
+        let mut runtime = DnsOutboundRuntime::new(
+            resolver,
+            Arc::new(SystemDnsResolver),
+            Arc::new(TransportDialer::system().expect("build test DNS dialer")),
+            Vec::new(),
+            8,
+        );
+        runtime.static_hosts = hosts;
+
+        for (domain, rcode) in [
+            ("ads.example.com", 3),
+            ("refused.test", 5),
+            ("empty.test", 0),
+        ] {
+            for qtype in [DNS_TYPE_A, DNS_TYPE_AAAA] {
+                let request = query_with_flags_and_type(0x2210, domain, 0x0100, qtype);
+                let response = hijack_reply(&runtime, request).await;
+                assert_eq!(response[3] & 0x0f, rcode, "{domain} {qtype}");
+                assert_eq!(u16::from_be_bytes([response[6], response[7]]), 0);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn static_rcode_host_precedes_fake_ip_without_allocating_a_mapping() {
+        let (mut runtime, mapper) = test_runtime_with_fake_ip();
+        runtime.static_hosts = rcode_hosts();
+
+        let response = hijack_reply(&runtime, query(0x2211, "ads.example.com")).await;
+
+        assert_eq!(response[3] & 0x0f, DNS_RCODE_NXDOMAIN as u8);
+        assert_eq!(u16::from_be_bytes([response[6], response[7]]), 0);
         assert_eq!(mapper.lock().unwrap().mapping_count(), 0);
     }
 

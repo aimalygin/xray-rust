@@ -34,7 +34,7 @@ objects! {
         "type is required and case-insensitive: none, http (Xray's fixed HTTP 403 reply) or custom. custom sends customResponseData, standard padded base64 of at most 65,535 bytes; absent or null sends nothing. Other types ignore it. Null, empty and unknown responses fail closed, matching Xray."),
     DNS: ("$.dns",
         ["fakeIp", "servers", "hosts", "tag", "queryStrategy", "disableCache", "serveStale", "serveExpiredTTL", "disableFallback", "disableFallbackIfMatch"],
-        "At most eight servers. Managed selection, cache/fallback policy and IPv4 fake IP only. hosts keys are domain rules as Xray-core reads them, plain text being the whole name. Hosts and server URL semantics require the executable validator."),
+        "At most eight servers. Managed selection, cache/fallback policy and IPv4 fake IP only. hosts keys are domain rules as Xray-core reads them, plain text being the whole name; a \"#N\" value answers with DNS RCODE N from 0 to 15. Hosts and server URL semantics require the executable validator."),
     DNS_OUTBOUND: ("$.outbounds[].settings (dns)",
         ["rewriteNetwork", "rewriteAddress", "rewritePort", "network", "address", "port", "userLevel", "rules", "nonIPQuery", "blockTypes"],
         "network/address/port aliases override rewrite* values. Deprecated nonIPQuery/blockTypes cannot be combined with rules."),

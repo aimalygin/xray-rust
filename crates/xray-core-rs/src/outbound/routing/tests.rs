@@ -8,8 +8,10 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::{Notify, Semaphore};
 use xray_config::{parse_xray_json, CoreConfig};
-use xray_routing::{Network as RoutingNetwork, TargetAddr};
-use xray_transport::{CachingDnsResolver, DnsLookup, TransportError};
+use xray_routing::{
+    DnsHostTarget, DomainHostIndex, DomainMatcher, Network as RoutingNetwork, TargetAddr,
+};
+use xray_transport::{CachingDnsResolver, ConfiguredDnsResolver, DnsLookup, TransportError};
 
 use super::super::OutboundRouter;
 use super::*;
@@ -195,6 +197,30 @@ async fn ip_on_demand_empty_success_does_not_retry_or_skip_later_domain_rules() 
     let resolver = Resolver::new(vec![]);
     assert_eq!(selected_tag(&router, &target(), &resolver).await, "domain");
     assert_eq!(resolver.calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn ip_on_demand_treats_static_rcode_host_as_no_addresses() {
+    let router = OutboundRouter::new(Arc::new(on_demand_config()));
+    for rcode in [0, 3, 5] {
+        let fallback = Arc::new(Resolver::new(vec!["203.0.113.7".parse().unwrap()]));
+        let resolver = ConfiguredDnsResolver::new(
+            DomainHostIndex::from_iter([(
+                DomainMatcher::Full("example.test".into()),
+                DnsHostTarget::Rcode(rcode),
+            )]),
+            Vec::new(),
+            fallback.clone(),
+        );
+        let selected = tokio::time::timeout(
+            Duration::from_secs(5),
+            selected_tag(&router, &target(), &resolver),
+        )
+        .await
+        .expect("static rcode routing lookup must not wait");
+        assert_eq!(selected, "domain", "#{rcode}");
+        assert_eq!(fallback.calls.load(Ordering::SeqCst), 0, "#{rcode}");
+    }
 }
 
 struct ActiveLookup<'a>(&'a AtomicUsize);

@@ -2642,8 +2642,9 @@ the default outbound; it does not discard the original domain or fail the
 session at the routing layer.
 
 `dns.hosts` maps supported domain matchers to a single IP string, an alias
-domain string, or a nonempty ordered array containing only IP strings. Every IP
-in an array is retained as a resolution candidate. Names are canonicalized to
+domain string, an Xray-core `"#N"` RCODE string, or a nonempty ordered array
+containing only IP strings. Every IP in an array is retained as a resolution
+candidate. Names are canonicalized to
 lowercase without a terminal dot at the managed resolver boundary. Keys are
 domain rules as Xray-core's `geodata.ParseDomainRule` reads them, with the
 whole name as the plain form: an unprefixed key, even one with a colon such as
@@ -2655,6 +2656,19 @@ broader matching rules. Alias resolution is bounded to eight hops; static IP
 candidates use the shared 10-second hosts TTL. If that bound is reached, the
 terminal alias still uses the configured DNS-server plan; only a configuration
 without DNS servers may send it to the operating-system fallback.
+
+A `"#N"` value, as in Xray-core's `app/dns/hosts.go`, answers the name with
+DNS RCODE `N` and no records instead of resolving it; `"#3"` (NXDOMAIN) is the
+usual way to block a domain. It applies to the name itself and to names that
+alias to it. The DNS outbound Hijack, the TUN DNS hijack and the fake IP Hijack
+answer A and AAAA queries with that RCODE before any server or fake IP is
+used, and routing (`IPOnDemand`, `IPIfNonMatch`), `domainStrategy` and freedom
+lookups see a failed lookup with no addresses. `"#0"` is an empty NOERROR
+answer, as Xray-core turns it into an empty response. `N` is read like Go's
+`strconv.Atoi` (so `"#+5"` and `"#05"` are 5), but must be 0 through 15: the
+DNS header holds a 4-bit RCODE, and Xray-core writes a larger value over the
+neighbouring header flags. `"#"`, a non-integer, a negative value or one above
+15 is rejected with a config error. An array keeps accepting only IP strings.
 
 Deliberately, a `full:` or `domain:` pattern in `dns.hosts`, a server's
 `domains` or a DNS outbound rule drops its terminal dot too, so
