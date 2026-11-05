@@ -84,6 +84,8 @@ mod freedom_noises;
 mod freedom_settings;
 #[path = "runtime_data_path_tests/http_inbound.rs"]
 mod http_inbound;
+#[path = "runtime_data_path_tests/loopback_outbound.rs"]
+mod loopback_outbound;
 #[path = "runtime_data_path_tests/routing_attributes.rs"]
 mod routing_attributes;
 #[path = "runtime_data_path_tests/routing_origin.rs"]

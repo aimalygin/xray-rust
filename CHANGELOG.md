@@ -10,6 +10,10 @@ long-term supported release series.
 
 ## Unreleased
 
+- The `loopback` outbound routes a connection again, as if it came from the
+  inbound tag it names, as Xray-core's does. Its own `sniffing` cannot be
+  enabled yet. A chain of more than 8 loopbacks fails the connection, where
+  Xray-core would crash.
 - Freedom's `noises` send their datagrams before each UDP flow's first, as
   Xray-core's do, with Xray-core's deprecation warning. Profiles with them
   used to fail to parse. The removed `noise` object fails, as in Xray-core.

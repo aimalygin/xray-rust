@@ -1209,6 +1209,7 @@ enum CachedOutboundError {
     InvalidXhttpConfiguration(String),
     UnsupportedOutboundProxyNetwork(&'static str),
     BlackholeOutbound,
+    LoopbackOutbound,
 }
 
 impl CachedOutboundError {
@@ -1232,6 +1233,7 @@ impl CachedOutboundError {
                 Self::UnsupportedOutboundProxyNetwork(network)
             }
             CoreError::BlackholeOutbound => Self::BlackholeOutbound,
+            CoreError::LoopbackOutbound => Self::LoopbackOutbound,
             other => unreachable!("outbound compilation returned non-cacheable error: {other}"),
         }
     }
@@ -1256,6 +1258,7 @@ impl CachedOutboundError {
                 CoreError::UnsupportedOutboundProxyNetwork(network)
             }
             Self::BlackholeOutbound => CoreError::BlackholeOutbound,
+            Self::LoopbackOutbound => CoreError::LoopbackOutbound,
         }
     }
 }
@@ -1294,6 +1297,7 @@ pub enum OutboundNodeKind {
     Shadowsocks2022,
     Dns,
     Blackhole,
+    Loopback,
     Socks,
     Http,
     Selector,
@@ -1509,6 +1513,7 @@ impl OutboundGraph {
                     OutboundSettings::Wireguard(_) => OutboundNodeKind::Wireguard,
                     OutboundSettings::Dns(_) => OutboundNodeKind::Dns,
                     OutboundSettings::Blackhole(_) => OutboundNodeKind::Blackhole,
+                    OutboundSettings::Loopback(_) => OutboundNodeKind::Loopback,
                     OutboundSettings::Socks(_) => OutboundNodeKind::Socks,
                     OutboundSettings::Http(_) => OutboundNodeKind::Http,
                 },
@@ -1677,6 +1682,15 @@ impl OutboundGraph {
         }
         self.config.outbounds.get(id.index)
     }
+
+    /// The `inboundTag` a loopback outbound routes its connections from
+    /// again, or `None` for any other node.
+    fn loopback_inbound_tag(&self, id: OutboundNodeId) -> Option<&str> {
+        match &self.configured_outbound(id)?.settings {
+            OutboundSettings::Loopback(settings) => Some(&settings.inbound_tag),
+            _ => None,
+        }
+    }
 }
 
 fn build_outbound_proxy_edges(
@@ -1736,6 +1750,7 @@ fn build_outbound_proxy_edges(
             }
             (OutboundSettings::Dns(_), _) => Some("DNS outbounds are not TCP carriers"),
             (OutboundSettings::Blackhole(_), _) => Some("blackhole outbounds are not TCP carriers"),
+            (OutboundSettings::Loopback(_), _) => Some("loopback outbounds are not TCP carriers"),
             (OutboundSettings::Hysteria(_), _) => Some("Hysteria chaining is unsupported"),
             (OutboundSettings::Wireguard(_), _) => Some("WireGuard chaining is unsupported"),
             (
@@ -2866,15 +2881,18 @@ impl OutboundRouter {
         self.factory.cached_tcp_outbound(node)
     }
 
+    /// Selects the outbound of a TCP session routed by `target` that goes to
+    /// `dial_target`, which loopbacks route again.
     pub(crate) async fn select_tcp_session_outbound_with_tag_and_resolver(
         &self,
         route: &RouteContext<'_>,
         target: &Target,
+        dial_target: &Target,
         include_tag: bool,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<SelectedTcpSessionOutbound, CoreError> {
         let node = self
-            .select_configured_node_with_resolver(route, target, dns_resolver)
+            .select_session_node_with_resolver(route, target, dial_target, dns_resolver)
             .await?;
         let tag = include_tag
             .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
@@ -2996,7 +3014,13 @@ impl OutboundRouter {
             return Ok(None);
         }
         let node = self
-            .select_configured_node_with_resolver_in_policy(&policy, route, target, dns_resolver)
+            .select_configured_node_with_resolver_in_policy(
+                &policy,
+                route,
+                target,
+                target,
+                dns_resolver,
+            )
             .await?;
         if !self
             .graph()
@@ -3059,15 +3083,18 @@ impl OutboundRouter {
         self.factory.cached_udp_outbound(node)
     }
 
+    /// Selects the outbound of a UDP session routed by `target` that goes to
+    /// `dial_target`, which loopbacks route again.
     pub(crate) async fn select_udp_session_outbound_with_tag_and_resolver(
         &self,
         route: &RouteContext<'_>,
         target: &Target,
+        dial_target: &Target,
         include_tag: bool,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<SelectedUdpSessionOutbound, CoreError> {
         let node = self
-            .select_configured_node_with_resolver(route, target, dns_resolver)
+            .select_session_node_with_resolver(route, target, dial_target, dns_resolver)
             .await?;
         let tag = include_tag
             .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
@@ -3117,6 +3144,34 @@ impl OutboundRouter {
         target_network: Option<Network>,
         target_port: Option<u16>,
     ) -> Result<OutboundNodeId, CoreError> {
+        let node = self.route_once_in_policy(
+            policy,
+            route,
+            target_domain,
+            target_ip,
+            target_network,
+            target_port,
+        )?;
+        self.follow_loopbacks(
+            policy,
+            node,
+            route,
+            target_domain,
+            target_ip,
+            target_network,
+            target_port,
+        )
+    }
+
+    fn route_once_in_policy(
+        &self,
+        policy: &RoutingPolicyState,
+        route: &RouteContext<'_>,
+        target_domain: Option<&str>,
+        target_ip: Option<&IpAddr>,
+        target_network: Option<Network>,
+        target_port: Option<u16>,
+    ) -> Result<OutboundNodeId, CoreError> {
         let routed_target = select_routed_target(
             &policy.routing,
             route,
@@ -3128,6 +3183,53 @@ impl OutboundRouter {
         match routed_target {
             Some(target) => self.node_for_target(target),
             None => self.select_default_configured_node(),
+        }
+    }
+
+    /// Follows loopback outbounds from `node`, as Xray-core's loopback
+    /// dispatches its connection again. Routing then sees the loopback's
+    /// `inboundTag` with the source, local address and user it had, but no
+    /// sniffed protocol or attributes, and checks the target given, the
+    /// address the connection goes to, without the DNS lookups of
+    /// `IPIfNonMatch` and `IPOnDemand`. Xray-core sets no limit to how many
+    /// loopbacks follow one another, and recurses until it crashes on a loop;
+    /// here more than [`MAX_LOOPBACK_HOPS`] fail the connection.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "routing takes the target in the parts the synchronous selectors have"
+    )]
+    fn follow_loopbacks(
+        &self,
+        policy: &RoutingPolicyState,
+        mut node: OutboundNodeId,
+        route: &RouteContext<'_>,
+        target_domain: Option<&str>,
+        target_ip: Option<&IpAddr>,
+        target_network: Option<Network>,
+        target_port: Option<u16>,
+    ) -> Result<OutboundNodeId, CoreError> {
+        for _ in 0..MAX_LOOPBACK_HOPS {
+            let Some(inbound_tag) = self.graph().loopback_inbound_tag(node) else {
+                return Ok(node);
+            };
+            let again = RouteContext {
+                inbound_tag: Some(inbound_tag),
+                protocol: None,
+                attributes: None,
+                ..*route
+            };
+            node = self.route_once_in_policy(
+                policy,
+                &again,
+                target_domain,
+                target_ip,
+                target_network,
+                target_port,
+            )?;
+        }
+        match self.graph().loopback_inbound_tag(node) {
+            Some(_) => Err(CoreError::LoopbackChainTooLong(MAX_LOOPBACK_HOPS)),
+            None => Ok(node),
         }
     }
 
@@ -3174,11 +3276,30 @@ impl OutboundRouter {
         target: &Target,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<OutboundNodeId, CoreError> {
+        self.select_session_node_with_resolver(route, target, target, dns_resolver)
+            .await
+    }
+
+    /// Routes a session by `target`, then follows loopbacks by `dial_target`,
+    /// the address it goes to, which Xray-core's loopback routes again.
+    async fn select_session_node_with_resolver(
+        &self,
+        route: &RouteContext<'_>,
+        target: &Target,
+        dial_target: &Target,
+        dns_resolver: &dyn DnsResolver,
+    ) -> Result<OutboundNodeId, CoreError> {
         // Retain one immutable policy snapshot across any DNS await so a flow
         // never observes rules from two revisions.
         let policy = self.routing_policy_state();
-        self.select_configured_node_with_resolver_in_policy(&policy, route, target, dns_resolver)
-            .await
+        self.select_configured_node_with_resolver_in_policy(
+            &policy,
+            route,
+            target,
+            dial_target,
+            dns_resolver,
+        )
+        .await
     }
 
     async fn select_configured_node_with_resolver_in_policy(
@@ -3186,14 +3307,25 @@ impl OutboundRouter {
         policy: &RoutingPolicyState,
         route: &RouteContext<'_>,
         target: &Target,
+        dial_target: &Target,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<OutboundNodeId, CoreError> {
-        match select_routed_target_with_resolver(&policy.routing, route, target, dns_resolver)
-            .await?
-        {
-            Some(target) => self.node_for_target(target),
-            None => self.select_default_configured_node(),
-        }
+        let node =
+            match select_routed_target_with_resolver(&policy.routing, route, target, dns_resolver)
+                .await?
+            {
+                Some(target) => self.node_for_target(target)?,
+                None => self.select_default_configured_node()?,
+            };
+        self.follow_loopbacks(
+            policy,
+            node,
+            route,
+            target_domain(dial_target),
+            target_ip(dial_target),
+            Some(target_network(dial_target)),
+            Some(dial_target.port),
+        )
     }
 
     fn select_configured_node_direct(
@@ -3225,6 +3357,9 @@ impl OutboundRouter {
         }
     }
 }
+
+/// How many loopback outbounds one connection may pass in a row.
+pub(crate) const MAX_LOOPBACK_HOPS: usize = 8;
 
 impl OutboundFactory {
     pub(crate) fn cached_tcp_outbound(
@@ -3545,6 +3680,7 @@ impl OutboundFactory {
                 .map(TcpOutbound::Http)
                 .map_err(CachedOutboundError::from_core_error),
             OutboundSettings::Blackhole(_) => Err(CachedOutboundError::BlackholeOutbound),
+            OutboundSettings::Loopback(_) => Err(CachedOutboundError::LoopbackOutbound),
             OutboundSettings::Freedom(settings) => {
                 if !stream_transport_is_dialable(&outbound.stream) {
                     return Err(CachedOutboundError::UnsupportedOutboundNetwork);
@@ -3615,6 +3751,7 @@ impl OutboundFactory {
                 .map_err(CachedOutboundError::from_core_error),
             OutboundSettings::Http(_) => Err(CachedOutboundError::UnsupportedOutboundNetwork),
             OutboundSettings::Blackhole(_) => Err(CachedOutboundError::BlackholeOutbound),
+            OutboundSettings::Loopback(_) => Err(CachedOutboundError::LoopbackOutbound),
             OutboundSettings::Freedom(settings) => {
                 if !stream_transport_is_dialable(&outbound.stream) {
                     return Err(CachedOutboundError::UnsupportedOutboundNetwork);
@@ -3669,6 +3806,7 @@ impl OutboundFactory {
                     .map_err(CachedOutboundError::from_core_error)
             }
             OutboundSettings::Blackhole(_) => Err(CachedOutboundError::BlackholeOutbound),
+            OutboundSettings::Loopback(_) => Err(CachedOutboundError::LoopbackOutbound),
             OutboundSettings::Freedom(_)
             | OutboundSettings::Vless(_)
             | OutboundSettings::Hysteria(_)
@@ -3724,6 +3862,7 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
         OutboundSettings::Socks(_) => SocksOutbound::new(outbound).map(TcpOutbound::Socks),
         OutboundSettings::Http(_) => HttpOutbound::new(outbound).map(TcpOutbound::Http),
         OutboundSettings::Blackhole(_) => Err(CoreError::BlackholeOutbound),
+        OutboundSettings::Loopback(_) => Err(CoreError::LoopbackOutbound),
         OutboundSettings::Freedom(settings) => {
             if !stream_transport_is_dialable(&outbound.stream) {
                 return Err(CoreError::UnsupportedOutboundNetwork);
@@ -3754,6 +3893,7 @@ fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreErro
         OutboundSettings::Socks(_) => SocksOutbound::new(outbound).map(UdpOutbound::Socks),
         OutboundSettings::Http(_) => Err(CoreError::UnsupportedOutboundNetwork),
         OutboundSettings::Blackhole(_) => Err(CoreError::BlackholeOutbound),
+        OutboundSettings::Loopback(_) => Err(CoreError::LoopbackOutbound),
         OutboundSettings::Freedom(settings) => {
             if !stream_transport_is_dialable(&outbound.stream) {
                 return Err(CoreError::UnsupportedOutboundNetwork);

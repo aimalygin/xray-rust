@@ -5,6 +5,7 @@ mod freedom;
 mod http_inbound;
 mod http_outbound;
 mod hysteria;
+mod loopback;
 mod noise;
 mod routing;
 mod shadowsocks;
@@ -802,11 +803,24 @@ impl Parser<'_> {
         inbound: &Value,
         index: usize,
     ) -> Option<InboundSniffingConfig> {
+        self.parse_sniffing(
+            inbound.get("sniffing"),
+            &format!("$.inbounds[{index}].sniffing"),
+        )
+    }
+
+    /// Xray-core's `SniffingConfig`, as inbounds and loopback outbounds take
+    /// it: `None` unless it is enabled.
+    fn parse_sniffing(
+        &mut self,
+        sniffing: Option<&Value>,
+        sniffing_path: &str,
+    ) -> Option<InboundSniffingConfig> {
         // Go leaves a `null` object unset.
-        let sniffing = inbound.get("sniffing").filter(|value| !value.is_null())?;
-        let sniffing_path = format!("$.inbounds[{index}].sniffing");
+        let sniffing = sniffing.filter(|value| !value.is_null())?;
+        let sniffing_path = sniffing_path.to_owned();
         if !sniffing.is_object() {
-            self.error(sniffing_path, "inbound sniffing must be an object");
+            self.error(sniffing_path, "sniffing must be an object");
             return None;
         }
 
@@ -1011,6 +1025,7 @@ impl Parser<'_> {
             Some("hysteria") => OutboundProtocol::Hysteria,
             Some("wireguard") => OutboundProtocol::Wireguard,
             Some("blackhole" | "block") => OutboundProtocol::Blackhole,
+            Some("loopback") => OutboundProtocol::Loopback,
             Some("socks") => OutboundProtocol::Socks,
             Some("http") => OutboundProtocol::Http,
             Some(protocol) => {
@@ -1054,6 +1069,9 @@ impl Parser<'_> {
             }
             OutboundProtocol::Blackhole => {
                 OutboundSettings::Blackhole(self.parse_blackhole_settings(outbound, index)?)
+            }
+            OutboundProtocol::Loopback => {
+                OutboundSettings::Loopback(self.parse_loopback_settings(outbound, index)?)
             }
             OutboundProtocol::Socks => {
                 OutboundSettings::Socks(self.parse_socks_outbound_settings(outbound, index)?)
@@ -1152,6 +1170,7 @@ impl Parser<'_> {
             | OutboundSettings::Shadowsocks2022(_)
             | OutboundSettings::Wireguard(_)
             | OutboundSettings::Blackhole(_)
+            | OutboundSettings::Loopback(_)
             // SOCKS5 and HTTP proxies are commonly plaintext; RFC 1929 and
             // Basic credentials then travel in cleartext, which is
             // documented, not rejected.

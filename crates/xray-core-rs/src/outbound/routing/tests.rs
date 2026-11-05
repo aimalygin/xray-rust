@@ -517,3 +517,220 @@ async fn ip_on_demand_checks_attributes_before_the_lookup() {
         ("ip".to_owned(), 1)
     );
 }
+
+/// Outbounds for loopback tests: `lb` routes again from `again`, and `spin`
+/// from `spin`.
+fn loopback_config(routing: Value) -> CoreConfig {
+    parse_xray_json(
+        &json!({
+            "inbounds": [],
+            "outbounds": [
+                {"tag": "default", "protocol": "freedom"},
+                {"tag": "lb", "protocol": "loopback", "settings": {"inboundTag": "again"}},
+                {"tag": "direct", "protocol": "freedom"},
+                {"tag": "second", "protocol": "freedom"},
+                {"tag": "spin", "protocol": "loopback", "settings": {"inboundTag": "spin"}},
+            ],
+            "routing": routing,
+        })
+        .to_string(),
+    )
+    .unwrap()
+    .config
+}
+
+fn ip_target() -> Target {
+    Target::new(
+        TargetAddr::Ip("203.0.113.7".parse().unwrap()),
+        443,
+        RoutingNetwork::Tcp,
+    )
+}
+
+/// The tag a session from `route` to `target`, going to `dial_target`, ends
+/// at, and how many lookups routing made.
+async fn loopback_selection(
+    router: &OutboundRouter,
+    route: &xray_config::RouteContext<'_>,
+    target: &Target,
+    dial_target: &Target,
+) -> (Result<String, CoreError>, usize) {
+    let resolver = Resolver::new(vec!["203.0.113.7".parse().unwrap()]);
+    let node = router
+        .select_session_node_with_resolver(route, target, dial_target, &resolver)
+        .await
+        .map(|node| router.graph().node(node).unwrap().tag().unwrap().to_owned());
+    (node, resolver.calls.load(Ordering::SeqCst))
+}
+
+#[tokio::test]
+async fn loopbacks_route_again_from_their_inbound_tag() {
+    let router = OutboundRouter::new(Arc::new(loopback_config(json!({"rules": [
+        {"inboundTag": ["socks-in"], "outboundTag": "lb"},
+        {"inboundTag": ["again"], "user": ["alice"], "outboundTag": "second"},
+        {"inboundTag": ["again"], "protocol": ["tls"], "outboundTag": "second"},
+        {"inboundTag": ["again"], "attrs": {":method": "GET"}, "outboundTag": "second"},
+        {"inboundTag": ["again"], "outboundTag": "direct"}
+    ]}))));
+    let socks = xray_config::RouteContext::inbound(Some("socks-in"));
+    assert_eq!(
+        loopback_selection(&router, &socks, &target(), &target())
+            .await
+            .0
+            .unwrap(),
+        "direct"
+    );
+    // The user stays, as Xray-core's loopback copies the inbound.
+    let alice = xray_config::RouteContext {
+        user: Some("alice"),
+        ..socks
+    };
+    assert_eq!(
+        loopback_selection(&router, &alice, &target(), &target())
+            .await
+            .0
+            .unwrap(),
+        "second"
+    );
+    // A sniffed protocol and attrs do not: the loopback starts a new
+    // content.
+    let mut get = xray_config::ContentAttributes::default();
+    get.set(":method", "GET".to_owned());
+    let sniffed = xray_config::RouteContext {
+        protocol: Some("tls"),
+        attributes: Some(&get),
+        ..socks
+    };
+    assert_eq!(
+        loopback_selection(&router, &sniffed, &target(), &target())
+            .await
+            .0
+            .unwrap(),
+        "direct"
+    );
+}
+
+#[test]
+fn a_loopback_cannot_join_a_transport_chain() {
+    for raw in [
+        r#"{"outbounds": [
+            {"tag": "direct", "protocol": "freedom", "proxySettings": {"tag": "lb", "transportLayer": true}},
+            {"tag": "lb", "protocol": "loopback"}
+        ]}"#,
+        r#"{"outbounds": [
+            {"tag": "direct", "protocol": "freedom"},
+            {"tag": "lb", "protocol": "loopback", "proxySettings": {"tag": "direct", "transportLayer": true}}
+        ]}"#,
+    ] {
+        let parsed = parse_xray_json(raw).expect("chain shape parses");
+        let graph = super::super::OutboundGraph::new(Arc::new(parsed.config));
+        assert!(matches!(
+            graph.validate_proxy_chains(),
+            Err(super::super::OutboundProxyGraphError::UnsupportedNode { outbound, reason })
+                if outbound == "lb" && reason.contains("loopback")
+        ));
+    }
+}
+
+#[tokio::test]
+async fn loopbacks_route_the_dial_target_without_lookups() {
+    let router = OutboundRouter::new(Arc::new(loopback_config(json!({
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+            {"inboundTag": ["socks-in"], "outboundTag": "lb"},
+            {"inboundTag": ["again"], "ip": ["203.0.113.7/32"], "outboundTag": "second"},
+            {"inboundTag": ["again"], "domain": ["full:example.test"], "outboundTag": "direct"}
+        ]
+    }))));
+    let socks = xray_config::RouteContext::inbound(Some("socks-in"));
+    // Routing again checks the address the session goes to.
+    let (selected, lookups) = loopback_selection(&router, &socks, &target(), &ip_target()).await;
+    assert_eq!((selected.unwrap(), lookups), ("second".to_owned(), 0));
+    // A domain is not looked up for the IP rule, as Xray-core's loopback
+    // skips DNS resolution.
+    let (selected, lookups) = loopback_selection(&router, &socks, &ip_target(), &target()).await;
+    assert_eq!((selected.unwrap(), lookups), ("direct".to_owned(), 0));
+}
+
+#[tokio::test]
+async fn a_default_loopback_routes_again_too() {
+    let router = OutboundRouter::new(Arc::new(
+        parse_xray_json(
+            &json!({
+                "inbounds": [],
+                "outbounds": [
+                    {"tag": "lb", "protocol": "loopback", "settings": {"inboundTag": "again"}},
+                    {"tag": "direct", "protocol": "freedom"},
+                ],
+                "routing": {"rules": [{"inboundTag": ["again"], "outboundTag": "direct"}]},
+            })
+            .to_string(),
+        )
+        .unwrap()
+        .config,
+    ));
+    let socks = xray_config::RouteContext::inbound(Some("socks-in"));
+    assert_eq!(
+        loopback_selection(&router, &socks, &target(), &target())
+            .await
+            .0
+            .unwrap(),
+        "direct"
+    );
+}
+
+#[tokio::test]
+async fn a_loopback_chain_ends_after_the_hop_limit() {
+    // `hN` loops back from `inN` to the next; the last goes to freedom.
+    let chain = |hops: usize| {
+        let mut outbounds = vec![json!({"tag": "direct", "protocol": "freedom"})];
+        let mut rules = vec![json!({"inboundTag": ["socks-in"], "outboundTag": "h1"})];
+        for hop in 1..=hops {
+            outbounds.push(json!({"tag": format!("h{hop}"), "protocol": "loopback",
+                "settings": {"inboundTag": format!("in{hop}")}}));
+            let next = if hop == hops {
+                "direct".to_owned()
+            } else {
+                format!("h{}", hop + 1)
+            };
+            rules.push(json!({"inboundTag": [format!("in{hop}")], "outboundTag": next}));
+        }
+        OutboundRouter::new(Arc::new(
+            parse_xray_json(
+                &json!({"inbounds": [], "outbounds": outbounds, "routing": {"rules": rules}})
+                    .to_string(),
+            )
+            .unwrap()
+            .config,
+        ))
+    };
+    let socks = xray_config::RouteContext::inbound(Some("socks-in"));
+    let router = chain(super::super::MAX_LOOPBACK_HOPS);
+    assert_eq!(
+        loopback_selection(&router, &socks, &target(), &target())
+            .await
+            .0
+            .unwrap(),
+        "direct"
+    );
+    let router = chain(super::super::MAX_LOOPBACK_HOPS + 1);
+    assert!(matches!(
+        loopback_selection(&router, &socks, &target(), &target())
+            .await
+            .0,
+        Err(CoreError::LoopbackChainTooLong(
+            super::super::MAX_LOOPBACK_HOPS
+        ))
+    ));
+
+    // A loopback that routes back to itself fails the same way.
+    let router = OutboundRouter::new(Arc::new(loopback_config(
+        json!({"rules": [{"outboundTag": "spin", "network": "tcp,udp"}]}),
+    )));
+    assert!(matches!(
+        loopback_selection(&router, &socks, &target(), &target())
+            .await
+            .0,
+        Err(CoreError::LoopbackChainTooLong(_))
+    ));
+}
