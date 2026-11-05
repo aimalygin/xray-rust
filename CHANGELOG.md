@@ -26,6 +26,11 @@ long-term supported release series.
   - `headerType=none` imports. `headerType=http`, other gRPC modes and TLS
     `cs` (cipher suites) are still refused, and the error now names the
     parameter.
+- `hy2://` links with a certificate pin (`pinSHA256`) import, so Hysteria
+  servers with a self-signed certificate can be added from a link. The pin
+  maps to `pinnedPeerCertSha256` and is checked as Xray-core checks it.
+  `insecure=1` (or `true`) is accepted next to a pin and still refused without
+  one; `insecure=false` now imports.
 - Routing rules can check where a connection comes from, with Xray-core's
   `sourceIP` (or `source`), `sourcePort`, `localIP`, `localPort` and `user`.
   Profiles with them used to fail to parse.

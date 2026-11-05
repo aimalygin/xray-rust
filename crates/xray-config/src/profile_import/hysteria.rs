@@ -38,7 +38,8 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
     let mut obfs_password = None;
     let mut mport_seen = false;
     let mut sni = None;
-    let mut insecure_seen = false;
+    let mut insecure = None;
+    let mut pin = None;
     if !query.is_empty() {
         if query.split('&').count() > 16 {
             return Err(ImportError::TooLarge);
@@ -57,12 +58,20 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
                     sni = Some(value);
                 }
                 "insecure" => {
-                    if insecure_seen {
+                    // Go's strconv.ParseBool spellings, as Hysteria's client
+                    // reads them; it ignores anything else, which is refused here.
+                    let value = match value.as_str() {
+                        "0" | "f" | "F" | "false" | "FALSE" | "False" => false,
+                        "1" | "t" | "T" | "true" | "TRUE" | "True" => true,
+                        _ => return Err(ImportError::Syntax),
+                    };
+                    if insecure.replace(value).is_some() {
                         return Err(ImportError::Duplicate);
                     }
-                    insecure_seen = true;
-                    if value.as_str() != "0" {
-                        return Err(ImportError::Unsupported);
+                }
+                "pinSHA256" => {
+                    if pin.replace(value).is_some() {
+                        return Err(ImportError::Duplicate);
                     }
                 }
                 "obfs" => {
@@ -90,6 +99,18 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
                 _ => return Err(ImportError::Unsupported),
             }
         }
+    }
+    // Hysteria's client lowercases the pin and strips `:` and `-`; Xray reads
+    // a comma-separated list and strips `:`. Accept both, and let the parser
+    // check each digest as it checks canonical JSON.
+    let pin = pin
+        .map(|pin| Zeroizing::new(pin.replace('-', "")))
+        .filter(|pin| pin.split(',').any(|v| !v.trim().is_empty()));
+    // A matching leaf pin replaces the CA check, as Xray's pinnedPeerCertSha256
+    // does, so `insecure=1` adds nothing to it. Without a pin it would skip
+    // verification, which the core refuses.
+    if insecure == Some(true) && pin.is_none() {
+        return Err(ImportError::Unsupported);
     }
     // Hysteria's URIs carry no Gecko sizes, so its client pads Gecko to its
     // defaults, 512..=1200 bytes.
@@ -129,6 +150,10 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
             mask["settings"]["packetSize"] = json!(size);
         }
         masks.push(mask);
+    }
+    if let Some(pin) = &pin {
+        root.0["outbounds"][0]["streamSettings"]["tlsSettings"]["pinnedPeerCertSha256"] =
+            json!(pin.as_str());
     }
     root.0["dns"] = if dns.is_empty() {
         json!({"queryStrategy":"UseIPv4","fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16","poolSize":32768,"ttl":60}})

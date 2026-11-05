@@ -136,6 +136,12 @@ fn hysteria_rejects_unsupported_or_ambiguous_links_with_redacted_errors() {
         "hy2://secret@server.example?insecure=1",
         "hy2://secret@server.example?obfs=salamander",
         "hy2://secret@server.example?pinSHA256=secret",
+        "hy2://secret@server.example?pinSHA256=00ff&insecure=1",
+        "hy2://secret@server.example?pinSHA256=&insecure=1",
+        "hy2://secret@server.example?pinSHA256=%2C&insecure=1",
+        "hy2://secret@server.example?insecure=true",
+        "hy2://secret@server.example?insecure=yes",
+        "hy2://secret@server.example?insecure=1&insecure=0",
         "hy2://secret@server.example?ech=secret",
         "hy2://secret@server.example?upmbps=10",
         "hy2://secret@server.example?sni=x&s%6ei=y",
@@ -160,6 +166,68 @@ fn hysteria_rejects_unsupported_or_ambiguous_links_with_redacted_errors() {
         assert!(!error.to_string().contains("secret"));
         assert!(!format!("{error:?}").contains(text));
     }
+}
+/// Self-signed Hysteria servers are shared with a certificate pin. It maps to
+/// Xray's pinnedPeerCertSha256 in both clients' spellings; `insecure=1` is
+/// accepted only when a pin still checks the certificate.
+#[test]
+fn hysteria_pin_sha256_maps_to_pinned_peer_cert() {
+    const COLONS: &str = "00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF";
+    const COMPACT: &str = "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100";
+    let dashes = COLONS.replace(':', "-");
+    for (query, pinned) in [
+        (format!("pinSHA256={COLONS}"), COLONS.to_owned()),
+        (
+            format!("pinSHA256={COMPACT}&insecure=1"),
+            COMPACT.to_owned(),
+        ),
+        (
+            format!("insecure=0&pinSHA256={dashes}"),
+            COLONS.replace(':', ""),
+        ),
+        (
+            format!("insecure=True&pinSHA256={COMPACT}"),
+            COMPACT.to_owned(),
+        ),
+        (
+            format!("pinSHA256={COLONS}%2C{COMPACT}"),
+            format!("{COLONS},{COMPACT}"),
+        ),
+    ] {
+        let root = config(
+            ProfileFormat::Hysteria2,
+            &format!("hy2://secret@server.example?sni=tls.example&{query}"),
+        );
+        assert_eq!(
+            root["outbounds"][0]["streamSettings"]["tlsSettings"],
+            json!({"serverName":"tls.example","alpn":["h3"],"pinnedPeerCertSha256":pinned}),
+            "{query}"
+        );
+    }
+    // An empty pin is no pin, as in Hysteria's client, and `insecure` takes
+    // Go's ParseBool spellings.
+    for link in [
+        "hy2://secret@server.example?pinSHA256=",
+        "hy2://secret@server.example?insecure=false",
+    ] {
+        let root = config(ProfileFormat::Hysteria2, link);
+        assert!(
+            root["outbounds"][0]["streamSettings"]["tlsSettings"]
+                .get("pinnedPeerCertSha256")
+                .is_none(),
+            "{link}"
+        );
+    }
+    assert_eq!(
+        import_profile(
+            ProfileFormat::Hysteria2,
+            "hy2://secret@server.example?insecure=1",
+            None,
+            &[]
+        )
+        .unwrap_err(),
+        ImportError::Unsupported
+    );
 }
 #[test]
 fn wireguard_keeps_multi_peer_psk_and_split_routes() {
