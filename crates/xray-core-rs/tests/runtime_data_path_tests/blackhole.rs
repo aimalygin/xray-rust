@@ -8,7 +8,7 @@ use super::*;
 
 /// Xray-core v26.7.28 `proxy/blackhole` HTTP response, as captured from the
 /// pinned reference binary through a raw dokodemo-door inbound.
-const XRAY_BLACKHOLE_HTTP_RESPONSE: &[u8] = b"HTTP/1.1 403 Forbidden\nConnection: close\nCache-Control: max-age=3600, public\nContent-Length: 0\n\n\n";
+const XRAY_BLACKHOLE_HTTP_RESPONSE: &[u8] = b"HTTP/1.1 403 Forbidden\r\nCache-Control: max-age=3600, public\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
 
 const BLACKHOLE_CONFIG: &str = r#"{
     "inbounds": [

@@ -10,6 +10,9 @@ long-term supported release series.
 
 ## Unreleased
 
+- A blackhole's `http` reply is the one Xray-core v26.10.31 writes, with CRLF
+  line endings and its headers in Go's order, instead of the older one with
+  LF line endings.
 - The HTTP inbound answers as Xray-core's HTTP server does. HTTP on a SOCKS
   port answers the same way.
   - It sniffs its tunnels, so `destOverride`, `protocol` and `attrs` apply.

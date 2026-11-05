@@ -793,7 +793,7 @@ Differences from Xray-core:
 
 ### Blackhole outbound
 
-`blackhole` follows Xray-core v26.7.28 and is commonly the `block` target of
+`blackhole` follows Xray-core v26.10.31 and is commonly the `block` target of
 deny rules (ads, QUIC on UDP/443, other traffic a profile refuses):
 
 ```json
@@ -818,10 +818,10 @@ The handler never resolves a destination, dials, or opens a socket:
 
 - SOCKS and HTTP `CONNECT` are acknowledged first (SOCKS success, HTTP
   `200 Connection established`), as Xray's inbounds do before dispatching.
-  `none` then closes the connection. `http` writes Xray's fixed reply
-  byte-for-byte (`HTTP/1.1 403 Forbidden`, `Connection: close`,
-  `Cache-Control: max-age=3600, public`, `Content-Length: 0`, with LF line
-  endings) and half-closes; `custom` writes its bytes the same way. Xray holds the link for one second after that
+  `none` then closes the connection. `http` writes Xray's reply
+  byte-for-byte, as Go's `http.Response.Write` builds it (`HTTP/1.1 403
+  Forbidden`, `Cache-Control: max-age=3600, public`, `Connection: close`,
+  `Content-Length: 0`, with CRLF line endings), and half-closes; `custom` writes its bytes the same way. Xray holds the link for one second after that
   reply; xray-rust instead discards late client bytes for at most one second,
   so unread input does not turn the close into a reset.
 - TUN TCP completes the client handshake in the userspace stack, as Xray's TUN
