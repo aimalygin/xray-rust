@@ -47,7 +47,7 @@ recorded with its original RC identity.
 
 | Capability | Status | Verification boundary |
 | --- | --- | --- |
-| SOCKS5 no-auth or RFC 1929 password TCP `CONNECT` | Supported | Local echo, authentication failure, and routing integration tests |
+| SOCKS5 no-auth or RFC 1929 password TCP `CONNECT` | Supported | Local echo, authentication failure, and routing integration tests. Since 0.10.0 the handshake is read as Xray-core v26.10.31 reads it: IP-literal domains route as IPs, refused names and commands close or get `REP = 0x07` as there, Tor `RESOLVE` connects, and `users` is accepted; checked live against Xray-core |
 | SOCKS5 `UDP ASSOCIATE` | Supported | Freedom, VLESS datagram, XUDP, and Vision XUDP tests; password mode requires a declared client endpoint and rejects other local senders, including one arriving first; `"udp": false` refuses the request with Xray-core's `REP = 0x07` reply and no relay or dial |
 | HTTP `CONNECT` | Supported | Local VLESS and routing integration tests |
 | Platform-neutral TUN packet boundary | Supported | TCP, UDP, routing, backpressure, malformed-packet, and ICMP tests |
