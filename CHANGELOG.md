@@ -32,6 +32,10 @@ long-term supported release series.
   the observatory counts any HTTP response as alive, so a probe URL answering
   `503` no longer marks working outbounds unhealthy. The startup and
   on-demand probes keep their 2xx/3xx rule.
+- The XHTTP HTTP/2 client opens with the SETTINGS frame Xray-core's Go
+  client sends: push disabled, a 1 MiB maximum frame and a 10 MiB header
+  list limit next to the stream window, in Go's order. It used to announce
+  the stream window alone.
 
 - The release fuzz campaign also covers the decoders that read server data:
   gRPC and WebSocket framing, Shadowsocks TCP responses, VLESS responses with

@@ -418,6 +418,23 @@ Differences: probes still speak HTTP/1.1 over a TLS handshake without ALPN,
 where Go's transport offers `h2, http/1.1` for an `https` probe URL, and they
 stop reading after the status line.
 
+## XHTTP HTTP/2 connection preface
+
+Xray's XHTTP client dials HTTP/2 with a bare `golang.org/x/net/http2`
+`Transport` (`transport/internet/splithttp/dialer.go`, only `IdleConnTimeout`
+and `ReadIdleTimeout` set). With x/net v0.61.0, the version v26.10.31 pins,
+its first SETTINGS frame is ENABLE_PUSH=0, INITIAL_WINDOW_SIZE=4 MiB,
+MAX_FRAME_SIZE=1 MiB, MAX_HEADER_LIST_SIZE=10 MiB, in that order
+(`http2/transport.go` `newClientConn`). xray-rust's XHTTP HTTP/2 client sends
+the same four settings in the same order (INITIAL_WINDOW_SIZE follows
+`xhttpSettings` when a smaller stream window is configured).
+
+Differences: the connection WINDOW_UPDATE that follows opens 16 MiB of credit
+where Go opens 1 GiB, a deliberate memory bound; h2 writes the client preface
+in its own write where Go buffers it together with SETTINGS and
+WINDOW_UPDATE; and h2 sends that WINDOW_UPDATE once the read side goes idle,
+so a server SETTINGS that is already buffered is acknowledged first.
+
 ## Follow-up checks
 
 - [x] Integrate the #87 review follow-up, including both relay-address fixes,
