@@ -205,7 +205,13 @@ impl HysteriaUdpSession {
 
     pub async fn send(&self, target: &Target, payload: &[u8]) -> Result<(), HysteriaError> {
         let address = super::address(target, Network::Udp)?;
-        if payload.is_empty() || payload.len() > self.shared.limits.udp_payload_bytes {
+        if payload.is_empty() {
+            // Every Hysteria parser, Xray's and the reference server's,
+            // requires a data byte and skips such a message, so the flow
+            // stays up as in Xray-core without sending it.
+            return Ok(());
+        }
+        if payload.len() > self.shared.limits.udp_payload_bytes {
             return Err(HysteriaError::DatagramSize);
         }
         if !self.shared.is_live() {

@@ -243,6 +243,9 @@ long-term supported release series.
   starts from the current time within the pool. It always started at the
   pool's first free address, so after a tunnel restart an app still holding an
   old fake IP was routed and dialed as whichever new domain got that address.
+- Hysteria UDP: an empty datagram is skipped and the flow stays up. Every
+  Hysteria parser, Xray-core's included, drops a message without data. It
+  used to end the whole UDP flow, so the next datagram opened a new session.
 - DNS: a bare `"localhost"` or `"fakedns"` string in `dns.servers` (any case)
   is now a configuration error, as the object form already was. Xray's
   system-resolver and FakeDNS clients are not implemented, and these strings
