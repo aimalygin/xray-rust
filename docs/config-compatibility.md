@@ -355,7 +355,8 @@ All three use the shared raw/WS/HTTPUpgrade/gRPC/XHTTP stream carrier and core
 routing, accounting, SOCKS/HTTP/TUN and DNS paths. SS2022 ordinary UDP uses a
 separate native UDP socket, independently of its TCP carrier; classic AEAD
 does the same. Either family's datagram is limited to 8192 bytes including
-framing, the pinned peer's receive buffer. VMess ordinary
+framing, the pinned peer's receive buffer; a larger one is dropped alone and
+the flow stays up, as on other UDP paths. VMess ordinary
 UDP uses per-association XUDP except destinations on ports 53/443. Outer TLS
 verification cannot be disabled. Live tests cover REALITY over raw/gRPC/XHTTP,
 XHTTP H1/H2/H3 with independent downloads, and transport-layer chains among
@@ -374,9 +375,12 @@ for VLESS ([below](#vless-mux)). TCP `concurrency` defaults to 8 (including zero
 multiplexing. `xudpConcurrency: 0` shares the TCP pool, a positive value creates
 a separate UDP pool, and a negative value uses the native protocol UDP path.
 Positive concurrency is limited to 64. `xudpProxyUDP443` is `reject` by default,
-or `allow`/`skip`; `skip` bypasses Mux for UDP/443. Each pool has at most four
-parents, 128 lifetime child IDs per parent, bounded per-child queues (eight
-frames, at most 64 KiB, per direction) and a 30-second empty-parent timeout.
+or `allow`/`skip`; `skip` bypasses Mux for UDP/443. Each pool opens children
+on at most four parents, with 128 lifetime child IDs per parent. A parent that
+has used all 128 IDs keeps serving its remaining children without counting
+toward the four, so a long-lived child does not block new connections; a pool
+holds at most 16 parents in all. Per-child queues are bounded (eight frames, at
+most 64 KiB, per direction) and an empty parent times out after 30 seconds.
 A child whose receive queue is full pauses its parent's reader until the child
 drains, ends or is closed, as Xray-core's Mux client blocks on the session
 pipe. A slow child is therefore never reset, but, as in Xray-core, it delays
@@ -2752,6 +2756,13 @@ Freedom split rules remain valid with a default VLESS because an unresolved
 Level objects parse `handshake`, `connIdle`, `uplinkOnly`, `downlinkOnly`,
 `bufferSize`, `statsUserUplink`, and `statsUserDownlink`. Runtime connection
 timeouts and relay buffer size use the applicable inbound/VLESS user level.
+SOCKS and HTTP relays follow Xray-core's half-close timer: `connIdle` while
+both directions are open, `downlinkOnly` once the client finished sending, and
+`uplinkOnly` once the server finished sending. Each phase uses the shorter of
+the inbound and outbound level values. TUN TCP applies `downlinkOnly` after
+the app finished sending and closes the flow when the server finished sending.
+Missing values default to Xray-core's `connIdle` 300 s and `uplinkOnly` and
+`downlinkOnly` 1 s.
 System statistics flags are modeled for config compatibility, but this is not
 the Xray statistics service.
 

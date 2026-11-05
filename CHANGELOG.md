@@ -10,6 +10,16 @@ long-term supported release series.
 
 ## Unreleased
 
+- A Mux pool no longer refuses new connections once its parent connections
+  have each opened 128 children while a few long-lived children keep them
+  open. Such parents now finish their remaining children while new
+  connections go to a new parent, with at most 16 parents per pool.
+
+- SOCKS and HTTP proxy connections honor `uplinkOnly` and `downlinkOnly` from
+  policy levels, as in Xray-core. After one side finished sending, the
+  connection now closes once the other side has been quiet for that time,
+  instead of waiting for `connIdle` (300 s by default). `downlinkOnly` now
+  defaults to 1 s like Xray-core, also for TUN; it used to be 2 s.
 - A REALITY server that answers with a real certificate no longer gets an
   aborted handshake. As in Xray-core, a certificate valid for the server name
   completes TLS, the client crawls `spiderX` over HTTP/2 like a browser
@@ -362,6 +372,35 @@ long-term supported release series.
   stats), and a TUN host gets an ICMP fragmentation-needed or packet-too-big
   with the path MTU, which senders that set DF (QUIC, PMTU discovery) follow. This already
   affected WireGuard outbounds at the default 1500-byte TUN.
+- TUN UDP: when a flow's 256-datagram queue is full, only the new datagram is
+  dropped (counted in `udp_channel_dropped_packets`, as before) and the flow
+  keeps its outbound, as in Xray-core. A burst used to end the flow, so the
+  next datagram opened a new outbound with a fresh handshake.
+- Shadowsocks UDP (either family): a datagram too large for Xray's 8192-byte
+  UDP buffer once framed (8153 bytes of payload for `aes-128-gcm` and 8142 for
+  `2022-blake3-aes-128-gcm` to an IPv4 address), or for one Mux frame over
+  Mux, is now dropped alone like on the other UDP paths, counted in
+  `udp_oversize_datagrams`, and answered with an ICMP fragmentation-needed or
+  packet-too-big on TUN. It used to end the whole UDP flow, so the next
+  datagram opened a new association.
+- Fake IP: each `Core` starts allocating at a random address of
+  `dns.fakeIp.ipv4Pool` and continues sequentially from there, as Xray-core
+  starts from the current time within the pool. It always started at the
+  pool's first free address, so after a tunnel restart an app still holding an
+  old fake IP was routed and dialed as whichever new domain got that address.
+- Hysteria UDP: an empty datagram is skipped and the flow stays up. Every
+  Hysteria parser, Xray-core's included, drops a message without data. It
+  used to end the whole UDP flow, so the next datagram opened a new session.
+- Hysteria UDP reassembly follows Xray-core: an unfragmented datagram that
+  arrives between the fragments of a larger one is delivered without dropping
+  the larger one, and a fragment with a new fragment count starts a new
+  packet. Both used to discard the incomplete datagram, and the second one its
+  own fragment too.
+- WireGuard: opening a TCP connection or UDP flow waits for room in the
+  32-command queue it shares with UDP sends, within the 10-second open
+  deadline. With more than 32 busy UDP flows a new connection used to fail as
+  if the flow limits (16 TCP, 512 UDP) were reached; only those limits fail an
+  open now.
 - DNS: a bare `"localhost"` or `"fakedns"` string in `dns.servers` (any case)
   is now a configuration error, as the object form already was. Xray's
   system-resolver and FakeDNS clients are not implemented, and these strings
