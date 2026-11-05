@@ -4,7 +4,7 @@
 mod tests;
 
 use std::net::{IpAddr, SocketAddr};
-use xray_config::{Network, RoutingConfig, RoutingDomainStrategy, RoutingRuleTarget};
+use xray_config::{Network, RouteContext, RoutingConfig, RoutingDomainStrategy, RoutingRuleTarget};
 use xray_routing::Target;
 use xray_transport::DnsResolver;
 
@@ -17,19 +17,19 @@ const MAX_IP_ON_DEMAND_ADDRESSES: usize = 256;
 
 pub(super) async fn select_routed_target_with_resolver<'a>(
     routing: &'a RoutingConfig,
-    inbound_tag: Option<&str>,
+    route: &RouteContext<'_>,
     target: &Target,
     dns_resolver: &dyn DnsResolver,
 ) -> Result<Option<&'a RoutingRuleTarget>, CoreError> {
     if routing.domain_strategy == RoutingDomainStrategy::IpOnDemand {
         if let Some(domain) = target_domain(target) {
-            return select_on_demand(routing, inbound_tag, domain, target, dns_resolver).await;
+            return select_on_demand(routing, route, domain, target, dns_resolver).await;
         }
     }
 
     if let Some(selected) = select_routed_target(
         routing,
-        inbound_tag,
+        route,
         target_domain(target),
         target_ip(target),
         Some(target_network(target)),
@@ -43,7 +43,7 @@ pub(super) async fn select_routed_target_with_resolver<'a>(
             if let Ok(resolved) = dns_resolver.resolve_all(domain, target.port).await {
                 return Ok(select_routed_target_with_resolved_ips(
                     routing,
-                    inbound_tag,
+                    route,
                     Some(domain),
                     resolved.socket_addrs(),
                     Some(target_network(target)),
@@ -57,7 +57,7 @@ pub(super) async fn select_routed_target_with_resolver<'a>(
 
 async fn select_on_demand<'a>(
     routing: &'a RoutingConfig,
-    inbound_tag: Option<&str>,
+    route: &RouteContext<'_>,
     domain: &str,
     target: &Target,
     dns_resolver: &dyn DnsResolver,
@@ -67,13 +67,15 @@ async fn select_on_demand<'a>(
     // cancellation drops it and the caller retains one policy revision.
     let mut resolution = None;
     for rule in &routing.rules {
-        // Xray v26.7.28 BuildCondition checks these before destination IP,
-        // then domain. A domain mismatch in a combined rule must not suppress
-        // its DNS lookup. An earlier matching domain-only rule still wins.
+        // Xray-core v26.10.31's BuildCondition checks these before the
+        // destination IP, then the source and local IPs, then the domain. A
+        // later mismatch in a combined rule must not suppress its DNS lookup.
+        // An earlier matching domain-only rule still wins.
         if !rule.matches_local_os()
-            || !rule.matches_inbound(inbound_tag)
+            || !rule.matches_inbound(route.inbound_tag)
             || !rule.matches_network(Some(target_network(target)))
             || !rule.matches_port(Some(target.port))
+            || !rule.origin.matches_ports_and_user(route)
         {
             continue;
         }
@@ -98,7 +100,7 @@ async fn select_on_demand<'a>(
                 continue;
             }
         }
-        if rule.matches_domain(Some(domain)) {
+        if rule.origin.matches_ips(route) && rule.matches_domain(Some(domain)) {
             return Ok(Some(&rule.target));
         }
     }
@@ -107,7 +109,7 @@ async fn select_on_demand<'a>(
 
 pub(super) fn select_routed_target<'a>(
     routing: &'a RoutingConfig,
-    inbound_tag: Option<&str>,
+    route: &RouteContext<'_>,
     target_domain: Option<&str>,
     target_ip: Option<&IpAddr>,
     target_network: Option<Network>,
@@ -117,20 +119,14 @@ pub(super) fn select_routed_target<'a>(
         .rules
         .iter()
         .find(|rule| {
-            rule.matches_target(
-                inbound_tag,
-                target_domain,
-                target_ip,
-                target_network,
-                target_port,
-            )
+            rule.matches_route(route, target_domain, target_ip, target_network, target_port)
         })
         .map(|rule| &rule.target)
 }
 
 pub(super) fn select_routed_target_with_resolved_ips<'a>(
     routing: &'a RoutingConfig,
-    inbound_tag: Option<&str>,
+    route: &RouteContext<'_>,
     target_domain: Option<&str>,
     target_addrs: &[SocketAddr],
     target_network: Option<Network>,
@@ -141,8 +137,8 @@ pub(super) fn select_routed_target_with_resolved_ips<'a>(
         .iter()
         .find(|rule| {
             target_addrs.iter().any(|target_addr| {
-                rule.matches_target(
-                    inbound_tag,
+                rule.matches_route(
+                    route,
                     target_domain,
                     Some(&target_addr.ip()),
                     target_network,

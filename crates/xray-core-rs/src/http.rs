@@ -148,9 +148,15 @@ async fn handle_http_connection(
         .restore_client_target(&raw_target)
         .target;
 
+    let route = xray_config::RouteContext {
+        inbound_tag: inbound_tag.as_deref(),
+        source: inbound.peer_addr().ok(),
+        local: inbound.local_addr().ok(),
+        user: None,
+    };
     let selected = match outbound_router
         .select_tcp_session_outbound_with_tag_and_resolver(
-            inbound_tag.as_deref(),
+            &route,
             &target,
             true,
             dns_resolvers.destination.as_ref(),

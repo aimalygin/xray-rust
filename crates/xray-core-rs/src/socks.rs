@@ -13,12 +13,14 @@ use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{AbortHandle, Id as TaskId, JoinSet};
-use xray_config::{CoreConfig, DomainStrategy, InboundSniffingConfig, SocksInboundSettings};
+use xray_config::{
+    CoreConfig, DomainStrategy, InboundSniffingConfig, RouteContext, SocksInboundSettings,
+};
 use xray_proxy::inbound::{
     encode_socks5_udp_datagram, negotiate_socks5, parse_http_connect_request, parse_socks4_connect,
     parse_socks5_request_message, parse_socks5_udp_datagram, write_socks5_command_not_supported,
     write_socks5_failure, write_socks5_success, write_socks5_success_with_bind, SocksCommand,
-    SocksInboundAuth, SOCKS4_GRANTED, SOCKS4_REJECTED, SOCKS4_VERSION,
+    SocksInboundAuth, SocksUser, SOCKS4_GRANTED, SOCKS4_REJECTED, SOCKS4_VERSION,
 };
 use xray_proxy::vless::{
     encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet, read_xudp_packet,
@@ -110,6 +112,12 @@ impl SocksUdpBudgetExhaustionLog {
 struct SocksUdpFlowContext {
     reply: UdpReply,
     client_addr: SocketAddr,
+    /// The address routing sees as the flow's local one: the association's
+    /// relay socket, as in Xray-core.
+    local_addr: Option<SocketAddr>,
+    /// The user the control connection logged in as, which Xray-core gives
+    /// routing for the association's flows too.
+    user: Option<SocksUser>,
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
@@ -371,14 +379,13 @@ async fn handle_socks_connection(
             return;
         }
     }
-    if tokio::time::timeout(policy.handshake, negotiate_socks5(&mut inbound, auth))
+    let Some(user) = tokio::time::timeout(policy.handshake, negotiate_socks5(&mut inbound, auth))
         .await
         .ok()
         .and_then(Result::ok)
-        .is_none()
-    {
+    else {
         return;
-    }
+    };
 
     let request =
         match tokio::time::timeout(policy.handshake, parse_socks5_request_message(&mut inbound))
@@ -396,6 +403,7 @@ async fn handle_socks_connection(
             handle_socks_connect::<true>(
                 inbound,
                 request.target,
+                user,
                 inbound_tag,
                 config,
                 outbound_router,
@@ -429,6 +437,7 @@ async fn handle_socks_connection(
             handle_socks_udp_associate(
                 inbound,
                 client_lock,
+                user,
                 inbound_tag,
                 config,
                 outbound_router,
@@ -484,6 +493,7 @@ async fn handle_socks4_connection(
     handle_socks_connect::<false>(
         inbound,
         target,
+        None,
         inbound_tag,
         config,
         outbound_router,
@@ -529,12 +539,14 @@ async fn handle_socks_http_connection(
             return;
         }
     };
-    if !auth.admits_http_basic(request.proxy_authorization.as_deref().map(Vec::as_slice)) {
+    let Some(user) =
+        auth.http_basic_user(request.proxy_authorization.as_deref().map(Vec::as_slice))
+    else {
         let _ = inbound
             .write_all(crate::http::HTTP_PROXY_AUTH_REQUIRED)
             .await;
         return;
-    }
+    };
     if inbound
         .write_all(crate::http::HTTP_CONNECT_ESTABLISHED)
         .await
@@ -545,6 +557,7 @@ async fn handle_socks_http_connection(
     handle_socks_connect::<false>(
         inbound,
         request.target,
+        user,
         inbound_tag,
         config,
         outbound_router,
@@ -565,6 +578,7 @@ async fn handle_socks_http_connection(
 async fn handle_socks_connect<const SOCKS_REPLY: bool>(
     mut inbound: TcpStream,
     target: Target,
+    user: Option<SocksUser>,
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
@@ -607,9 +621,15 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
         }
     }
 
+    let route = RouteContext {
+        inbound_tag: inbound_tag.as_deref(),
+        source: inbound.peer_addr().ok(),
+        local: inbound.local_addr().ok(),
+        user: user.as_ref().map(SocksUser::as_str),
+    };
     let selected = match outbound_router
         .select_tcp_session_outbound_with_tag_and_resolver(
-            inbound_tag.as_deref(),
+            &route,
             &route_target,
             true,
             dns_resolvers.destination.as_ref(),
@@ -921,6 +941,7 @@ async fn read_socks_tcp_sniff_payload(
 async fn handle_socks_udp_associate(
     mut control: TcpStream,
     client_lock: Option<SocksUdpClientLock>,
+    user: Option<SocksUser>,
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
@@ -1036,6 +1057,8 @@ async fn handle_socks_udp_associate(
                 let context = SocksUdpFlowContext {
                     reply: UdpReply::Socks(Arc::clone(&socket)),
                     client_addr,
+                    local_addr: Some(bind),
+                    user: user.clone(),
                     inbound_tag: inbound_tag.clone(),
                     config: Arc::clone(&config),
                     outbound_router: Arc::clone(&outbound_router),
@@ -1245,10 +1268,16 @@ async fn bridge_socks_udp_flow(
     let sniffed_protocol = sniffed_target.sniffed_protocol;
     let route_target = sniffed_target.route_target;
     let dial_target = sniffed_target.dial_target;
+    let route = RouteContext {
+        inbound_tag: context.inbound_tag.as_deref(),
+        source: Some(context.client_addr),
+        local: context.local_addr,
+        user: context.user.as_ref().map(SocksUser::as_str),
+    };
     let selected = match context
         .outbound_router
         .select_udp_session_outbound_with_tag_and_resolver(
-            context.inbound_tag.as_deref(),
+            &route,
             &route_target,
             true,
             context.dns_resolvers.destination.as_ref(),

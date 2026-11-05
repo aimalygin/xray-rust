@@ -1889,7 +1889,8 @@ Supported routing configuration:
 - `domainStrategy`: `AsIs`, `IPIfNonMatch`, or `IPOnDemand` (since `0.6.0-dev.0`);
 - rule `type`: not read, as in Xray-core v26.10.31, so it may be absent or
   hold anything;
-- selectors: `inboundTag`, `domain`/`domains`, `ip`, `network`, `port`, and
+- selectors: `inboundTag`, `domain`/`domains`, `ip`, `network`, `port`,
+  `sourceIP`/`source`, `sourcePort`, `localIP`, `localPort`, `user`, and
   `localOS`;
 - destination: `outboundTag`, or `balancerTag` when `outboundTag` is absent
   or empty, as in Xray-core;
@@ -1915,6 +1916,25 @@ Rule fields read as Xray-core v26.10.31 reads them:
   selection with no domains.
 - A rule with no condition at all is refused, as Xray-core refuses it, rather
   than taking every connection.
+
+Rules can also check where a connection comes from:
+
+- `sourceIP` (or `source`, read only when `sourceIP` is absent or `null`) and
+  `sourcePort` match the peer: a SOCKS or HTTP client, or for TUN the app.
+  `localIP` and `localPort` match the address the connection arrived on. The
+  IP fields are IP rule lists like `ip`, and the ports read like `port`. As in
+  Xray-core, a connection whose address is unknown, such as a query of the
+  built-in DNS, matches no IP rule and has port 0. A TUN flow has no local
+  address.
+- `user` matches the account a SOCKS client logged in with, also over HTTP
+  `CONNECT` on a SOCKS port with Basic credentials, and the flows of its UDP
+  association. Entries are exact, case-sensitive names, or `regexp:` patterns
+  matched anywhere in the name. As in Xray-core, an empty name matches nothing
+  and a pattern that does not compile is ignored, here with a warning. The
+  HTTP inbound has no accounts yet, so its flows have no user.
+- On a SOCKS UDP flow, as in Xray-core, the source is the client's UDP
+  endpoint and the local address is the association's relay socket, on its
+  own port.
 
 `localOS` limits a rule to operating systems named as Go's `runtime.GOOS`,
 compared case-insensitively: `darwin` on macOS, `ios` on iOS, its simulators

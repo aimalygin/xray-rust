@@ -3235,7 +3235,7 @@ async fn open_raw_dns_tcp_candidate(
         context
             .outbound_router
             .select_tcp_outbound_for_session_with_tag(
-                Some(routing_inbound_tag),
+                &xray_config::RouteContext::inbound(Some(routing_inbound_tag)),
                 &target,
                 collect_tcp_timings,
             )
@@ -3554,7 +3554,7 @@ async fn proxy_udp_payload(
                     context
                         .outbound_router
                         .select_tcp_outbound_for_session_with_tag(
-                            Some(upstream.inbound_tag()),
+                            &xray_config::RouteContext::inbound(Some(upstream.inbound_tag())),
                             &target,
                             false,
                         )

@@ -77,6 +77,12 @@ impl RegexMatcher {
         &self.regex
     }
 
+    /// Matches `text` as written, as Go's `regexp.MatchString` does: unlike
+    /// [`Self::matches`], nothing is lowercased.
+    pub fn is_match(&self, text: &str) -> bool {
+        self.regex.is_match(text)
+    }
+
     /// Matches the ASCII-lowercased domain; the pattern itself is not
     /// lowercased and carries no case-insensitive flag.
     pub fn matches(&self, domain: &str) -> bool {

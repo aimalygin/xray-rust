@@ -1,14 +1,16 @@
 //! Routing configuration, selectors, and their bounded parser budgets.
 
+use super::xray_lists::ListEntry;
 use super::{parse_xray_duration, Parser, U16SelectorKind, OBSERVATORY_PROBE_TIMEOUT};
 use crate::surface;
 use crate::{
     DomainNameMode, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
-    RoutingLeastLoadCost, RoutingLeastLoadSettings, RoutingRule, RoutingRuleTarget,
+    RoutingLeastLoadCost, RoutingLeastLoadSettings, RoutingOrigin, RoutingRule, RoutingRuleTarget,
+    RoutingUsers,
 };
 use serde_json::Value;
 use std::collections::HashSet;
-use xray_routing::DomainMatcherSet;
+use xray_routing::{DomainMatcherSet, IpMatcherSet, RegexMatcher};
 
 const MAX_ROUTING_BALANCERS: usize = 256;
 const MAX_ROUTING_BALANCER_SELECTORS: usize = 4_096;
@@ -572,6 +574,7 @@ impl Parser<'_> {
             _ => None,
         };
         let local_os = self.parse_routing_local_os(rule, &rule_path)?;
+        let origin = self.routing_rule_origin(rule, &rule_path)?;
 
         let rule = RoutingRule {
             inbound_tags,
@@ -580,6 +583,7 @@ impl Parser<'_> {
             domain_matchers,
             ip_matchers,
             local_os,
+            origin,
             target,
         };
         if !rule.has_condition() {
@@ -587,6 +591,87 @@ impl Parser<'_> {
             return None;
         }
         Some(rule)
+    }
+
+    /// `sourceIP` (or `source`), `sourcePort`, `localIP`, `localPort` and
+    /// `user`, read as Xray-core v26.10.31 reads them.
+    fn routing_rule_origin(&mut self, rule: &Value, rule_path: &str) -> Option<RoutingOrigin> {
+        // Go decodes both, but reads `source` only when `sourceIP` is absent
+        // or null.
+        let source_ip = self.string_list(rule.get("sourceIP"), &format!("{rule_path}.sourceIP"))?;
+        let source = self.string_list(rule.get("source"), &format!("{rule_path}.source"))?;
+        let source_ips = self.routing_ip_list(source_ip.or(source))?;
+        let local_ips = {
+            let local = self.string_list(rule.get("localIP"), &format!("{rule_path}.localIP"))?;
+            self.routing_ip_list(local)?
+        };
+        let source_ports = self
+            .port_list(
+                rule.get("sourcePort"),
+                &format!("{rule_path}.sourcePort"),
+                U16SelectorKind::RoutingPort,
+            )?
+            .map(|list| list.ranges);
+        let local_ports = self
+            .port_list(
+                rule.get("localPort"),
+                &format!("{rule_path}.localPort"),
+                U16SelectorKind::RoutingPort,
+            )?
+            .map(|list| list.ranges);
+        let users = self.routing_users(rule.get("user"), &format!("{rule_path}.user"))?;
+        Some(RoutingOrigin {
+            source_ips,
+            source_ports,
+            local_ips,
+            local_ports,
+            users,
+        })
+    }
+
+    /// IP rules from a `StringList`; an absent, `null` or empty list sets no
+    /// condition.
+    fn routing_ip_list(
+        &mut self,
+        entries: Option<Vec<ListEntry<'_>>>,
+    ) -> Option<Option<IpMatcherSet>> {
+        match entries {
+            Some(entries) if !entries.is_empty() => Some(Some(
+                self.routing_ip_matcher_set(
+                    entries
+                        .into_iter()
+                        .map(|entry| (Some(entry.text), entry.path)),
+                )?,
+            )),
+            _ => Some(None),
+        }
+    }
+
+    /// `user`: names, and `regexp:` patterns longer than the prefix. As in
+    /// Xray-core, any entry sets a condition, empty names are dropped, and a
+    /// pattern that does not compile is ignored, here with a warning.
+    fn routing_users(&mut self, raw: Option<&Value>, path: &str) -> Option<Option<RoutingUsers>> {
+        let Some(entries) = self.string_list(raw, path)? else {
+            return Some(None);
+        };
+        if entries.is_empty() {
+            return Some(None);
+        }
+        let mut users = RoutingUsers::default();
+        for entry in entries {
+            match entry.text.strip_prefix("regexp:") {
+                Some(pattern) if !pattern.is_empty() => match RegexMatcher::new(pattern) {
+                    Ok(pattern) => users.patterns.push(pattern),
+                    Err(error) => self.warning(
+                        &entry.path,
+                        format!("ignoring the user pattern, as Xray-core does: {error}"),
+                    ),
+                },
+                _ if entry.text.is_empty() => {}
+                _ => users.names.push(entry.text.to_owned()),
+            }
+        }
+        Some(Some(users))
     }
 
     /// `outboundTag` or `balancerTag`: a string, or empty when absent or

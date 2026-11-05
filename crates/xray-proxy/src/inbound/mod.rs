@@ -10,8 +10,8 @@ pub use socks::{
     parse_socks5_connect, parse_socks5_request, parse_socks5_request_message,
     parse_socks5_udp_datagram, write_socks5_command_not_supported, write_socks5_failure,
     write_socks5_success, write_socks5_success_with_bind, SocksAccount, SocksCommand,
-    SocksInboundAuth, SocksParseError, SocksRequest, SocksUdpDatagram, MAX_SOCKS_CREDENTIAL_LENGTH,
-    SOCKS4_GRANTED, SOCKS4_REJECTED, SOCKS4_VERSION,
+    SocksInboundAuth, SocksParseError, SocksRequest, SocksUdpDatagram, SocksUser,
+    MAX_SOCKS_CREDENTIAL_LENGTH, SOCKS4_GRANTED, SOCKS4_REJECTED, SOCKS4_VERSION,
 };
 pub(crate) use socks::{
     encode_target_addr, read_socks5_address, AddressReadError, METHOD_NONE_ACCEPTABLE,

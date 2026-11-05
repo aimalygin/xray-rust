@@ -8777,6 +8777,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
                 );
             }
             RoutingRule {
+                origin: Default::default(),
                 inbound_tags: vec!["bench-in".to_owned()],
                 networks: Some(vec![ConfigNetwork::Udp]),
                 port_ranges: Some(vec![RoutingPortRange::single(53)]),
@@ -9270,6 +9271,7 @@ fn phase2_selector_config(member_count: usize) -> CoreConfig {
         default_outbound_tag: Some("proxy-0000".to_owned()),
         routing: RoutingConfig {
             rules: vec![RoutingRule {
+                origin: Default::default(),
                 inbound_tags: vec!["bench-in".to_owned()],
                 networks: Some(vec![ConfigNetwork::Tcp]),
                 port_ranges: None,
@@ -10728,6 +10730,7 @@ fn route_probe_config(
         // Each rule sets only the condition it fills; an empty set would
         // match nothing.
         routing_rules.push(RoutingRule {
+            origin: Default::default(),
             inbound_tags: vec!["bench-in".to_owned()],
             networks: None,
             port_ranges: None,

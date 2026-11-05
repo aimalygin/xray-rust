@@ -111,6 +111,28 @@ impl fmt::Debug for SocksAccount {
     }
 }
 
+/// The account name a client authenticated with, which Xray-core gives
+/// routing as the user's email. It is a credential: never log it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SocksUser(Zeroizing<String>);
+
+impl SocksUser {
+    fn new(user: &[u8]) -> Self {
+        Self(Zeroizing::new(String::from_utf8_lossy(user).into_owned()))
+    }
+
+    /// The name, its invalid UTF-8 replaced.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for SocksUser {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SocksUser(<redacted>)")
+    }
+}
+
 /// Authentication required by a SOCKS inbound.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum SocksInboundAuth {
@@ -137,11 +159,18 @@ impl SocksInboundAuth {
     /// inbound hands other protocols to an HTTP server that requires its
     /// accounts as `Proxy-Authorization: Basic` credentials.
     pub fn admits_http_basic(&self, proxy_authorization: Option<&[u8]>) -> bool {
+        self.http_basic_user(proxy_authorization).is_some()
+    }
+
+    /// Who an HTTP request on this SOCKS port proceeds as: `None` when it is
+    /// refused, `Some(None)` when the inbound has no accounts.
+    pub fn http_basic_user(&self, proxy_authorization: Option<&[u8]>) -> Option<Option<SocksUser>> {
         match self {
-            Self::NoAuth => true,
+            Self::NoAuth => Some(None),
             Self::Password(accounts) => proxy_authorization
                 .and_then(crate::inbound::decode_http_basic_credentials)
-                .is_some_and(|(user, pass)| accounts_admit(accounts, &user, &pass)),
+                .filter(|(user, pass)| accounts_admit(accounts, user, pass))
+                .map(|(user, _)| Some(SocksUser::new(&user))),
         }
     }
 
@@ -158,15 +187,18 @@ pub async fn negotiate_socks5_no_auth<S>(stream: S) -> Result<(), SocksParseErro
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    negotiate_socks5(stream, &SocksInboundAuth::NoAuth).await
+    negotiate_socks5(stream, &SocksInboundAuth::NoAuth)
+        .await
+        .map(|_| ())
 }
 
 /// Runs SOCKS5 method selection and, for [`SocksInboundAuth::Password`], the
 /// RFC 1929 sub-negotiation. Only the method matching `auth` is ever selected.
+/// Returns the user the client authenticated as, if `auth` has accounts.
 pub async fn negotiate_socks5<S>(
     mut stream: S,
     auth: &SocksInboundAuth,
-) -> Result<(), SocksParseError>
+) -> Result<Option<SocksUser>, SocksParseError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -203,8 +235,10 @@ where
         .map_err(|_| SocksParseError::Io)?;
 
     match auth {
-        SocksInboundAuth::NoAuth => Ok(()),
-        SocksInboundAuth::Password(accounts) => verify_password(&mut stream, accounts).await,
+        SocksInboundAuth::NoAuth => Ok(None),
+        SocksInboundAuth::Password(accounts) => {
+            verify_password(&mut stream, accounts).await.map(Some)
+        }
     }
 }
 
@@ -212,7 +246,7 @@ where
 async fn verify_password<S>(
     stream: &mut S,
     accounts: &[SocksAccount],
-) -> Result<(), SocksParseError>
+) -> Result<SocksUser, SocksParseError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -236,7 +270,7 @@ where
         .await
         .map_err(|_| SocksParseError::Io)?;
     if accepted {
-        Ok(())
+        Ok(SocksUser::new(&user))
     } else {
         Err(SocksParseError::AuthenticationFailed)
     }
