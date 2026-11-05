@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::net::IpAddr;
 
 use aes::cipher::{BlockCipherEncrypt, KeyInit};
@@ -169,16 +170,19 @@ pub(crate) fn sniff_tcp_initial_payload(
 
     match begins_with_http_method(payload) {
         Some(true) => {
-            if !complete && find_subslice(payload, b"\r\n\r\n").is_none() {
+            if !complete && !has_http_header_end(payload) {
                 return TcpSniff::NeedMore;
             }
-            let target = sniff_http_host(payload).and_then(|domain| {
-                override_target(config, original, domain, SniffingDestination::Http)
-            });
-            return TcpSniff::Found(Sniffed {
-                protocol: SniffedProtocol::Http1,
-                target,
-            });
+            // Xray-core names a request only by a host it can parse.
+            if let Some(host) = sniff_http_host(payload) {
+                let target = normalize_host(&host).and_then(|domain| {
+                    override_target(config, original, domain, SniffingDestination::Http)
+                });
+                return TcpSniff::Found(Sniffed {
+                    protocol: SniffedProtocol::Http1,
+                    target,
+                });
+            }
         }
         None => undecided = true,
         Some(false) => {}
@@ -210,6 +214,12 @@ pub(crate) fn sniff_tcp_initial_payload(
     } else {
         TcpSniff::Unknown
     }
+}
+
+/// Whether a request's headers have ended: with a blank line, or with an
+/// empty one, which is where Xray-core's HTTP sniffer stops.
+fn has_http_header_end(payload: &[u8]) -> bool {
+    find_subslice(payload, b"\r\n\r\n").is_some() || find_subslice(payload, b"\n\n").is_some()
 }
 
 /// How much of a TLS record the payload holds, read as Xray-core's
@@ -394,44 +404,117 @@ fn sniffed_target(
     })
 }
 
+/// The host Xray-core's `SniffHTTP` names a request by: its last `Host`
+/// header's, without the port. Every line after the first, split at `\n`, is
+/// a header when it holds a colon, up to an empty line: past the `\r` line
+/// that ends headers written with `\r\n`, into the body. A header's name is
+/// not trimmed, and a `Host` that does not parse rules HTTP out.
 fn sniff_http_host(payload: &[u8]) -> Option<String> {
-    let header_end = find_subslice(payload, b"\r\n\r\n")?;
-    let head = std::str::from_utf8(&payload[..header_end]).ok()?;
-    let mut lines = head.split("\r\n");
-    let request_line = lines.next()?;
-    if !is_http_request_line(request_line) {
-        return None;
-    }
-
-    for line in lines {
-        let Some((name, value)) = line.split_once(':') else {
+    let mut host = None;
+    for line in payload.split(|&byte| byte == b'\n').skip(1) {
+        if line.is_empty() {
+            break;
+        }
+        let Some(colon) = line.iter().position(|&byte| byte == b':') else {
             continue;
         };
-        if name.trim().eq_ignore_ascii_case("host") {
-            return normalize_host(value.trim());
+        // No character outside ASCII lowercases into `host` in Go.
+        if !line[..colon].eq_ignore_ascii_case(b"host") {
+            continue;
         }
+        let value = go_string(&line[colon + 1..]);
+        // Xray-core lowercases the value first, which changes nothing
+        // checked here.
+        host = xray_parse_host(value.trim())?.map(str::to_owned);
     }
-
-    None
+    host
 }
 
-fn is_http_request_line(line: &str) -> bool {
-    let mut parts = line.split_ascii_whitespace();
-    let Some(method) = parts.next() else {
-        return false;
+/// Bytes as Go reads them as a string, where each byte of invalid UTF-8
+/// stands for U+FFFD.
+fn go_string(bytes: &[u8]) -> Cow<'_, str> {
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return Cow::Borrowed(text);
+    }
+    let mut text = String::with_capacity(bytes.len() + 8);
+    for chunk in bytes.utf8_chunks() {
+        text.push_str(chunk.valid());
+        text.extend(chunk.invalid().iter().map(|_| char::REPLACEMENT_CHARACTER));
+    }
+    Cow::Owned(text)
+}
+
+/// Xray-core's `ParseHost` on a `Host` value: `None` when it does not parse,
+/// otherwise its host without the port, when it names one. As with Go's
+/// `net.SplitHostPort`, a value with no port is a host as a whole. A port is
+/// read with Go's `strconv.Atoi`, which takes a sign and any decimal that
+/// fits 64 bits, as `i64`'s parser does; the port is then cut to 16 bits.
+fn xray_parse_host(raw: &str) -> Option<Option<&str>> {
+    let host = match go_split_host_port(raw) {
+        Ok((host, port)) => {
+            if !port.is_empty() {
+                port.parse::<i64>().ok()?;
+            }
+            host
+        }
+        Err(SplitHostPort::MissingPort) => raw,
+        Err(SplitHostPort::Invalid) => return None,
     };
-    let Some(_) = parts.next() else {
-        return false;
+    Some((!xray_address_is_empty(host)).then_some(host))
+}
+
+enum SplitHostPort {
+    MissingPort,
+    Invalid,
+}
+
+/// Go's `net.SplitHostPort`.
+fn go_split_host_port(hostport: &str) -> Result<(&str, &str), SplitHostPort> {
+    let Some(colon) = hostport.rfind(':') else {
+        return Err(SplitHostPort::MissingPort);
     };
-    let Some(version) = parts.next() else {
-        return false;
+    let (host, open_from, close_from) = if hostport.starts_with('[') {
+        let Some(end) = hostport.find(']') else {
+            return Err(SplitHostPort::Invalid);
+        };
+        if end + 1 == hostport.len() {
+            return Err(SplitHostPort::MissingPort);
+        }
+        if end + 1 != colon {
+            return Err(if hostport.as_bytes()[end + 1] == b':' {
+                SplitHostPort::Invalid
+            } else {
+                SplitHostPort::MissingPort
+            });
+        }
+        (&hostport[1..end], 1, end + 1)
+    } else {
+        let host = &hostport[..colon];
+        if host.contains(':') {
+            return Err(SplitHostPort::Invalid);
+        }
+        (host, 0, 0)
     };
-    parts.next().is_none()
-        && matches!(
-            method,
-            "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS" | "TRACE" | "CONNECT"
-        )
-        && version.starts_with("HTTP/")
+    if hostport[open_from..].contains('[') || hostport[close_from..].contains(']') {
+        return Err(SplitHostPort::Invalid);
+    }
+    Ok((host, &hostport[colon + 1..]))
+}
+
+/// Whether Xray-core's `net.ParseAddress` makes an empty address of `host`:
+/// it strips brackets, then trims whitespace when the host starts or ends
+/// with anything but a letter or digit.
+fn xray_address_is_empty(host: &str) -> bool {
+    let mut address = host
+        .strip_prefix('[')
+        .and_then(|inner| inner.strip_suffix(']'))
+        .unwrap_or(host);
+    let alphanumeric = |byte: Option<&u8>| byte.is_some_and(u8::is_ascii_alphanumeric);
+    let bytes = address.as_bytes();
+    if !(alphanumeric(bytes.first()) && alphanumeric(bytes.last())) {
+        address = address.trim();
+    }
+    address.is_empty()
 }
 
 fn sniff_tls_client_hello_sni(payload: &[u8]) -> Option<String> {
@@ -1366,6 +1449,112 @@ mod tests {
         let payload = b"GET / HTTP/1.1\r\nHost: :443\r\n\r\n";
 
         assert!(sniff_tcp_target(&sniffing_config(true), &original_ip_target(), payload).is_none());
+    }
+
+    #[test]
+    fn http_requests_are_named_by_their_host_as_xray_core_names_them() {
+        let config = sniffing_config(true);
+        let original = original_ip_target();
+        // Whether the request is named, and the domain it would route to.
+        let sniff = |payload: &[u8]| {
+            sniff_tcp_initial_payload(&config, &original, payload, true)
+                .found()
+                .map(|sniffed| {
+                    assert_eq!(sniffed.protocol, SniffedProtocol::Http1);
+                    sniffed.target.map(|target| match target.route_target.addr {
+                        TargetAddr::Domain(domain) => domain,
+                        other => panic!("sniffing produced a non-domain target {other:?}"),
+                    })
+                })
+        };
+        let request = |host: &str| format!("GET / HTTP/1.1\r\nHost: {host}\r\nAccept: */*\r\n\r\n");
+
+        // Without a host, or with one Go's `SplitHostPort` or `Atoi`
+        // refuses, Xray-core does not name the request, and nothing more
+        // that arrives can.
+        let hostless = b"GET / HTTP/1.0\r\nAccept: */*\r\n\r\n";
+        assert_eq!(sniff(hostless), None);
+        assert_eq!(
+            sniff_tcp_initial_payload(&config, &original, hostless, false),
+            TcpSniff::Unknown
+        );
+        for host in [
+            "",
+            ":80",
+            "[]",
+            "a:b:c",
+            "::1",
+            "[::1",
+            "exa[mple.com:80",
+            "example.com:abc",
+            "example.com:0x50",
+            "example.com:1_000",
+            "example.com:+",
+            "example.com:9223372036854775808",
+        ] {
+            assert_eq!(sniff(request(host).as_bytes()), None, "{host:?}");
+        }
+
+        // Ports as Go's `Atoi` reads them; IP hosts are named but replace
+        // nothing.
+        for (host, domain) in [
+            ("example.com:080", Some("example.com")),
+            ("example.com:65536", Some("example.com")),
+            ("example.com:+80", Some("example.com")),
+            ("example.com:-1", Some("example.com")),
+            ("example.com:", Some("example.com")),
+            ("Example.COM", Some("example.com")),
+            ("[::1]:80", None),
+            ("[::1]", None),
+            ("192.0.2.1:8080", None),
+        ] {
+            assert_eq!(
+                sniff(request(host).as_bytes()),
+                Some(domain.map(str::to_owned)),
+                "{host:?}"
+            );
+        }
+
+        // The last `Host` counts, even one past the headers; a name is not
+        // trimmed; neither the method's case nor the request line's shape
+        // matters.
+        let named = |domain: &str| Some(Some(domain.to_owned()));
+        assert_eq!(
+            sniff(b"GET / HTTP/1.1\r\nHost: first.example\r\nHost: last.example\r\n\r\n"),
+            named("last.example")
+        );
+        assert_eq!(
+            sniff(b"POST / HTTP/1.1\r\nHost: header.example\r\n\r\nhost: body.example"),
+            named("body.example")
+        );
+        assert_eq!(
+            sniff(b"GET / HTTP/1.1\r\nHost : spaced.example\r\n\r\n"),
+            None
+        );
+        assert_eq!(
+            sniff(b"get /a b HTTP/1.1\r\nhost: lower.example\r\n\r\n"),
+            named("lower.example")
+        );
+        // Headers written with `\n` alone end at the first empty line.
+        assert_eq!(
+            sniff(b"GET / HTTP/1.1\nHost: lf.example\n\nHost: ignored.example"),
+            named("lf.example")
+        );
+        let lf = b"GET / HTTP/1.1\nHost: lf.example\n\n";
+        assert!(matches!(
+            sniff_tcp_initial_payload(&config, &original, lf, false),
+            TcpSniff::Found(_)
+        ));
+    }
+
+    #[test]
+    fn invalid_utf8_reads_as_go_reads_it() {
+        assert_eq!(go_string(b"plain"), "plain");
+        // Each byte of an invalid sequence stands for one U+FFFD.
+        assert_eq!(
+            go_string(b"a\xe2\x82b\xf0\x90\x80"),
+            "a\u{fffd}\u{fffd}b\u{fffd}\u{fffd}\u{fffd}"
+        );
     }
 
     /// `config` with `domainsExcluded` of `domains` and `ipsExcluded` of

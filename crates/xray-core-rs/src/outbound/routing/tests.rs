@@ -439,3 +439,36 @@ async fn ip_on_demand_checks_origin_conditions_in_xray_core_order() {
         ("second".to_owned(), 1)
     );
 }
+
+/// Under `IPOnDemand`, `protocol` holds as everywhere else, and is checked
+/// before the destination IP, so a flow it rules out looks nothing up.
+#[tokio::test]
+async fn ip_on_demand_checks_the_sniffed_protocol() {
+    let config = config(json!({"domainStrategy": "IPOnDemand", "rules": [
+        {"protocol": ["bittorrent"], "outboundTag": "second"},
+        {"protocol": ["tls"], "ip": ["203.0.113.7/32"], "outboundTag": "ip"},
+        {"domain": ["full:example.test"], "outboundTag": "domain"}
+    ]}));
+    let router = OutboundRouter::new(Arc::new(config));
+    let selected = |protocol: Option<&'static str>| {
+        let router = &router;
+        async move {
+            let resolver = Resolver::new(vec!["203.0.113.7".parse().unwrap()]);
+            let route = xray_config::RouteContext {
+                protocol,
+                ..xray_config::RouteContext::inbound(Some("socks-in"))
+            };
+            let node = router
+                .select_configured_node_with_resolver(&route, &target(), &resolver)
+                .await
+                .unwrap();
+            (
+                router.graph().node(node).unwrap().tag().unwrap().to_owned(),
+                resolver.calls.load(Ordering::SeqCst),
+            )
+        }
+    };
+    assert_eq!(selected(None).await, ("domain".to_owned(), 0));
+    assert_eq!(selected(Some("bittorrent")).await, ("second".to_owned(), 0));
+    assert_eq!(selected(Some("tls")).await, ("ip".to_owned(), 1));
+}
