@@ -6,8 +6,8 @@ use std::num::NonZeroU16;
 
 use serde_json::{json, Value};
 use xray_config::{
-    parse_xray_json, DiagnosticSeverity, FreedomOutboundSettings, FreedomRedirect,
-    OutboundSettings, TargetAddr,
+    parse_xray_json, DiagnosticSeverity, FreedomNoise, FreedomNoiseFamily, FreedomNoisePacket,
+    FreedomOutboundSettings, FreedomRedirect, OutboundSettings, TargetAddr,
 };
 
 fn parse(settings: Value) -> FreedomOutboundSettings {
@@ -401,4 +401,164 @@ fn an_empty_condition_matches_nothing_and_an_absent_one_everything() {
         Some(&port)
     );
     assert_eq!(deciding_final_rule(&rules[..2], Network::Tcp, ip, 61), None);
+}
+
+fn noise(item: Value) -> FreedomNoise {
+    parse(json!({ "noises": [item] })).noises.remove(0)
+}
+
+#[test]
+fn noises_read_as_xray_core_reads_them() {
+    let bytes = |item| match noise(item).packet {
+        FreedomNoisePacket::Bytes(bytes) => bytes,
+        other => panic!("not bytes: {other:?}"),
+    };
+    // The packet is trimmed, then read as its type says.
+    assert_eq!(
+        bytes(json!({"type": "str", "packet": "  spaced  "})),
+        b"spaced"
+    );
+    assert_eq!(bytes(json!({"type": "str", "packet": null})), b"");
+    assert_eq!(
+        bytes(json!({"type": "hex", "packet": "48656C6c6f"})),
+        b"Hello"
+    );
+    // Base64 in either alphabet, padding anywhere ignored, line breaks too.
+    for packet in ["SGVsbG8=", "SGVsbG8", "SG=VsbG8", "SGVs\nbG8"] {
+        assert_eq!(
+            bytes(json!({"type": "base64", "packet": packet})),
+            b"Hello",
+            "{packet}"
+        );
+    }
+    assert_eq!(
+        bytes(json!({"type": "base64", "packet": "+/+/"})),
+        [0xfb, 0xff, 0xbf]
+    );
+    assert_eq!(
+        bytes(json!({"type": "base64", "packet": "-_-_"})),
+        [0xfb, 0xff, 0xbf]
+    );
+    // A random length keeps the order written.
+    assert_eq!(
+        noise(json!({"type": "rand", "packet": "32-16"})).packet,
+        FreedomNoisePacket::Random(32, 16)
+    );
+    assert_eq!(
+        noise(json!({"type": "rand", "packet": " 7 "})).packet,
+        FreedomNoisePacket::Random(7, 7)
+    );
+
+    // Delays order their bounds; applyTo ignores case.
+    let timed = noise(json!({"type": "str", "packet": "x", "delay": "10-5", "applyTo": "IPv6"}));
+    assert_eq!(timed.delay_ms, (5, 10));
+    assert_eq!(timed.apply_to, FreedomNoiseFamily::Ipv6);
+    let plain = noise(json!({"type": "str", "packet": "x", "delay": 3, "applyTo": "all"}));
+    assert_eq!(plain.delay_ms, (3, 3));
+    assert_eq!(plain.apply_to, FreedomNoiseFamily::Ip);
+    assert_eq!(
+        noise(json!({"type": "str", "packet": "x"})).delay_ms,
+        (0, 0)
+    );
+
+    // The bounds themselves are accepted.
+    let most = vec![json!({"type": "str", "packet": "x"}); 16];
+    assert_eq!(parse(json!({ "noises": most })).noises.len(), 16);
+    let longest = "x".repeat(4096);
+    assert_eq!(bytes(json!({"type": "str", "packet": longest})).len(), 4096);
+    assert_eq!(
+        noise(json!({"type": "rand", "packet": "4096-1"})).packet,
+        FreedomNoisePacket::Random(4096, 1)
+    );
+    assert_eq!(
+        noise(json!({"type": "str", "packet": "x", "delay": "1000-0"})).delay_ms,
+        (0, 1000)
+    );
+}
+
+#[test]
+fn noises_warn_that_they_are_deprecated() {
+    let raw = json!({"outbounds": [{"protocol": "freedom",
+        "settings": {"noises": [{"type": "str", "packet": "x"}]}}]})
+    .to_string();
+    let parsed = parse_xray_json(&raw).unwrap();
+    assert!(parsed.diagnostics.iter().any(|diagnostic| {
+        diagnostic.severity == DiagnosticSeverity::Warning
+            && diagnostic.path.as_deref() == Some("$.outbounds[0].settings.noises")
+    }));
+    // `null` and `[]` set none.
+    assert!(parse(json!({"noises": null})).noises.is_empty());
+    assert!(parse(json!({"noises": []})).noises.is_empty());
+}
+
+#[test]
+fn noises_reject_what_xray_core_rejects() {
+    let base = "$.outbounds[0].settings";
+    for (settings, path) in [
+        // The `noise` object is removed in Xray-core.
+        (json!({"noise": {}}), format!("{base}.noise")),
+        (json!({"noises": "x"}), format!("{base}.noises")),
+        // Xray-core panics on a `null` entry.
+        (json!({"noises": [null]}), format!("{base}.noises[0]")),
+        (
+            json!({"noises": [{"type": "RAND", "packet": "5"}]}),
+            format!("{base}.noises[0].type"),
+        ),
+        (
+            json!({"noises": [{"packet": "x"}]}),
+            format!("{base}.noises[0].type"),
+        ),
+        (
+            json!({"noises": [{"type": "rand", "packet": "0-10"}]}),
+            format!("{base}.noises[0].packet"),
+        ),
+        (
+            json!({"noises": [{"type": "rand", "packet": ""}]}),
+            format!("{base}.noises[0].packet"),
+        ),
+        (
+            json!({"noises": [{"type": "hex", "packet": "abc"}]}),
+            format!("{base}.noises[0].packet"),
+        ),
+        (
+            json!({"noises": [{"type": "base64", "packet": "!!"}]}),
+            format!("{base}.noises[0].packet"),
+        ),
+        (
+            json!({"noises": [{"type": "str", "packet": "x", "delay": 1.5}]}),
+            format!("{base}.noises[0].delay"),
+        ),
+        (
+            json!({"noises": [{"type": "str", "packet": "x", "applyTo": "ipv5"}]}),
+            format!("{base}.noises[0].applyTo"),
+        ),
+        // Bounds Xray-core does not set.
+        (
+            json!({"noises": [{"type": "rand", "packet": "-5"}]}),
+            format!("{base}.noises[0].packet"),
+        ),
+        (
+            json!({"noises": [{"type": "rand", "packet": "4097"}]}),
+            format!("{base}.noises[0].packet"),
+        ),
+        (
+            json!({"noises": [{"type": "str", "packet": "x", "delay": 1001}]}),
+            format!("{base}.noises[0].delay"),
+        ),
+        (
+            json!({"noises": [{"type": "str", "packet": "x", "delay": -1}]}),
+            format!("{base}.noises[0].delay"),
+        ),
+        (
+            json!({"noises": [{"type": "str", "packet": "x".repeat(4097)}]}),
+            format!("{base}.noises[0].packet"),
+        ),
+    ] {
+        assert_eq!(rejection(settings.clone()).0, path, "{settings}");
+    }
+    let many = vec![json!({"type": "str", "packet": "x"}); 17];
+    assert_eq!(
+        rejection(json!({ "noises": many })).0,
+        format!("{base}.noises")
+    );
 }

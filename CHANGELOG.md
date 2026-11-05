@@ -10,6 +10,9 @@ long-term supported release series.
 
 ## Unreleased
 
+- Freedom's `noises` send their datagrams before each UDP flow's first, as
+  Xray-core's do, with Xray-core's deprecation warning. Profiles with them
+  used to fail to parse. The removed `noise` object fails, as in Xray-core.
 - The HTTP inbound, and HTTP on a SOCKS port, forward plain HTTP requests
   such as `GET http://example.com/`, as Xray-core does; they used to answer
   them with a `400`.

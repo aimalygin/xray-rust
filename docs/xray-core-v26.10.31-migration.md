@@ -34,8 +34,8 @@ their original source identities.
   already sent, now carries uploads; `xhttp_options_uplink_interop` covers
   packet-up, stream-up and stream-one over H1, plus H2 and H3.
 - **Freedom `fragment`/`noises` deprecated** in favour of FinalMask. The
-  bounded `fragment` subset parses with the same deprecation warning; `noises`
-  was never supported and still fails closed.
+  bounded `fragment` subset parses with the same deprecation warning. Since
+  0.10.0 `noises` does too, and the removed `noise` object fails as upstream.
 - **MPTCP off by default on listeners** (security release, Linux kernel MPTCP
   issue). xray-rust never enables MPTCP on its SOCKS, HTTP or TPROXY listeners
   and does not accept `tcpMptcp`; no change.

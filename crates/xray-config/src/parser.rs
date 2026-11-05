@@ -1382,6 +1382,7 @@ impl Parser<'_> {
             proxy_protocol: self
                 .freedom_proxy_protocol(settings, &format!("{settings_path}.proxyProtocol")),
             final_rules: self.freedom_final_rules(settings, &format!("{settings_path}.finalRules")),
+            noises: self.freedom_noises(settings, &settings_path),
         }
     }
 

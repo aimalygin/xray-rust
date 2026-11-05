@@ -191,7 +191,7 @@ in a dedicated `freedom` outbound's `settings`, then reference its tag with
 `streamSettings.sockopt.dialerProxy`. That handler must use raw TCP with no
 security, socket overrides, mux or proxy chain. The parser normalizes its sole
 fragment transform into the caller's stream. Ordinary `dialerProxy` chaining
-is supported separately below. Combining two fragment masks, legacy freedom UDP noises, QUIC/H3 fragmentation and split XHTTP
+is supported separately below. Combining two fragment masks, QUIC/H3 fragmentation and split XHTTP
 downloads remain unsupported. A raw freedom outbound can also fragment an
 application's first complete TLS record directly.
 
@@ -226,8 +226,9 @@ per datagram, 1000 ms delay per item and 10 seconds total are accepted. Random
 length is `rand`; optional `randRange` bounds byte values (default 0..255).
 Literal encodings are `str` (UTF-8 without trimming), `hex`, standard padded
 `base64`, or a byte array with absent/`array` type. Random and literal packets
-cannot be combined. These are FinalMask spellings; legacy `type: "rand"` with
-`packet: "16-32"` and freedom `settings.noises` remain unsupported.
+cannot be combined. These are FinalMask spellings; the legacy `type: "rand"`
+with `packet: "16-32"` is read only in freedom's `settings.noises` (see
+[Freedom outbound](#freedom-outbound)).
 
 Each delay follows its noise packet, including the last packet before the
 first QUIC datagram. No wrapper is installed when absent. With `reset: 0`,
@@ -717,8 +718,8 @@ Xray-core v26.10.31's `redirect`, `userLevel`, `proxyProtocol` and
 [domain strategy socket option](#domain-strategy-socket-option)), and the
 legacy `fragment` (see [TLS ClientHello
 fragmentation](#v08-tls-clienthello-fragmentation)). As in Xray-core, the
-removed `ipsBlocked` is accepted with a warning and ignored. `noises` is still
-rejected.
+removed `ipsBlocked` is accepted with a warning and ignored. The deprecated
+`noises`, below, work, also with a warning.
 
 `redirect` sends every connection and UDP flow to another destination. It is
 `host:port`, read as Xray-core reads it with Go's `net.SplitHostPort`: an IPv6
@@ -789,17 +790,43 @@ that no rule matches is allowed.
 - Xray-core's default rules, which block private addresses for connections
   from its server inbounds, do not arise: xray-rust has only client inbounds.
 
+Each item of `noises` is a datagram sent before a UDP flow's first payload,
+after any PROXY protocol header, as Xray-core's freedom sends it. Xray-core
+deprecates `noises` for the FinalMask noise mask and refuses the removed
+`noise` object; so does the parser.
+
+```json
+"noises": [
+  {"type": "rand", "packet": "16-32", "delay": "10-20", "applyTo": "ipv4"},
+  {"type": "base64", "packet": "AAEC"}
+]
+```
+
+- `type`, case-sensitive, says how the trimmed `packet` reads: `rand` a length
+  or `min-max` range of random bytes, `str` the text itself, `hex` hex digits,
+  and `base64` either alphabet, with or without padding. A range is drawn as
+  Xray-core draws it, from its lower bound up to, but not including, its upper.
+- `delay` is milliseconds, a number or range drawn the same way, waited after
+  the item is sent.
+- `applyTo`, case-insensitive, is `ip` (also `all`, or empty) for any
+  destination, or `ipv4` or `ipv6` for one family. The family is that of the
+  address the flow goes to, after `redirect`, which also receives the noises.
+- Nothing is sent when `redirect` names port 53, as in Xray-core. A flow to
+  port 53 still sends them when no redirect names that port. TCP is
+  unaffected.
+
 Differences from Xray-core:
 
 - Queries that the built-in DNS client or the TUN DNS proxy route to a freedom
   outbound go to their DNS server even when that outbound has a `redirect`,
-  `proxyProtocol` or `finalRules`. Xray-core's DNS client dispatches them
-  through freedom.
+  `proxyProtocol`, `finalRules` or `noises`. Xray-core's DNS client dispatches
+  them through freedom.
 - A host that trims to nothing, such as `" :53"`, is rejected. Xray-core
   accepts it as an empty domain that never resolves.
 - Xray-core's UDP is full cone: one freedom flow serves every destination a
   client source sends to, so only the first destination gets the PROXY protocol
-  header. Here each destination is a flow of its own and gets the header.
+  header and the noises. Here each destination is a flow of its own and gets
+  both.
 - With a FinalMask fragment instead of freedom's own `fragment`, Xray-core
   writes the header through the fragmenter, which then leaves the TLS hello
   unfragmented. Here the header always goes beneath the fragmenter.
@@ -811,6 +838,9 @@ Differences from Xray-core:
   Xray-core accepts both, wraps the latter, and on a negative delay later
   panics or closes at once. An unknown field in a rule is rejected rather than
   ignored.
+- `noises` takes at most 16 items, 4096 bytes per packet and 1000 ms per
+  delay, and refuses a negative delay and an unknown field. Xray-core sets no
+  bounds and ignores unknown fields.
 
 ### Blackhole outbound
 

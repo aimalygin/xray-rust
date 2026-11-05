@@ -1796,6 +1796,16 @@ async fn bridge_socks_udp_freedom_flow(
             return;
         }
     }
+    // Xray-core's noise writer goes after the header, before the payload.
+    let noise_sent = tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = freedom.send_udp_noises(&remote_socket, target_addr) => result,
+    };
+    let Ok(noise_len) = noise_sent else {
+        return;
+    };
+    traffic.record_uplink(noise_len);
     let first_payload_len = first_payload.len();
     let first_sent = tokio::select! {
         biased;

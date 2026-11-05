@@ -5050,8 +5050,23 @@ async fn bridge_udp_freedom_flow(
             return;
         }
     }
+    // Xray-core's noise writer goes after the header, before the payload.
+    let noise_sent = tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = freedom.send_udp_noises(&socket, target_addr) => result,
+    };
+    let Ok(noise_len) = noise_sent else {
+        context.tun.record_udp_remote_write_error();
+        let _ = context
+            .stack_tx
+            .send(StackEvent::UdpClosed { key, generation })
+            .await;
+        return;
+    };
     connection.mark_active();
     let traffic = connection.traffic();
+    traffic.record_uplink(noise_len);
     context.tun.record_udp_remote_open(target.port == 443);
     if context.runtime_logger.is_enabled() {
         crate::debug_log::log_access_accepted(&context.runtime_logger, "tun", &target, "freedom");

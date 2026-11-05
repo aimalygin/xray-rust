@@ -363,6 +363,8 @@ pub struct FreedomOutbound {
     proxy_protocol: Option<ProxyProtocolVersion>,
     /// Present only when there are rules.
     final_rules: Option<Arc<[FreedomFinalRule]>>,
+    /// Present only when there are noises.
+    noises: Option<Arc<[xray_config::FreedomNoise]>>,
 }
 
 #[derive(Debug, Clone)]
@@ -681,6 +683,32 @@ impl VlessTcpOutbound {
     }
 }
 
+/// Xray-core's `crypto.RandBetween`: from the lower bound up to, but not
+/// including, the upper, or the bound itself when they are equal.
+fn xray_rand_between(first: u32, second: u32) -> u32 {
+    let (low, high) = if first > second {
+        (second, first)
+    } else {
+        (first, second)
+    };
+    if low == high {
+        low
+    } else {
+        rand::thread_rng().gen_range(low..high)
+    }
+}
+
+/// Whether a noise for `family` goes to `target`. Xray-core reads an
+/// IPv4-mapped address as IPv4.
+fn noise_applies(family: xray_config::FreedomNoiseFamily, target: IpAddr) -> bool {
+    let ipv4 = target.to_canonical().is_ipv4();
+    match family {
+        xray_config::FreedomNoiseFamily::Ip => true,
+        xray_config::FreedomNoiseFamily::Ipv4 => ipv4,
+        xray_config::FreedomNoiseFamily::Ipv6 => !ipv4,
+    }
+}
+
 impl FreedomOutbound {
     fn new(settings: &FreedomOutboundSettings, stream: &StreamSettings) -> Result<Self, CoreError> {
         Ok(Self {
@@ -701,7 +729,52 @@ impl FreedomOutbound {
             proxy_protocol: settings.proxy_protocol,
             final_rules: (!settings.final_rules.is_empty())
                 .then(|| settings.final_rules.as_slice().into()),
+            noises: (!settings.noises.is_empty()).then(|| settings.noises.as_slice().into()),
         }
+    }
+
+    /// Sends `noises` before a UDP flow's first datagram, as Xray-core's
+    /// `NoisePacketWriter` does: to `target`, the address the flow goes to,
+    /// in order, skipping those for the other address family, and waiting
+    /// out each one's delay. Nothing is sent when `redirect` sends the flow
+    /// to port 53, as there. Returns the bytes sent.
+    pub(crate) async fn send_udp_noises(
+        &self,
+        socket: &tokio::net::UdpSocket,
+        target: SocketAddr,
+    ) -> io::Result<u64> {
+        let Some(noises) = self.noises.as_deref() else {
+            return Ok(0);
+        };
+        if self
+            .redirect
+            .as_deref()
+            .and_then(|redirect| redirect.port)
+            .is_some_and(|port| port.get() == 53)
+        {
+            return Ok(0);
+        }
+        let mut sent = 0;
+        for noise in noises {
+            if !noise_applies(noise.apply_to, target.ip()) {
+                continue;
+            }
+            let packet = match &noise.packet {
+                xray_config::FreedomNoisePacket::Bytes(bytes) => bytes.clone(),
+                xray_config::FreedomNoisePacket::Random(first, second) => {
+                    let mut bytes = vec![0; xray_rand_between(*first, *second) as usize];
+                    rand::thread_rng().fill(bytes.as_mut_slice());
+                    bytes
+                }
+            };
+            sent += socket.send_to(&packet, target).await? as u64;
+            let (min, max) = noise.delay_ms;
+            if (min, max) != (0, 0) {
+                let delay = xray_rand_between(min, max);
+                tokio::time::sleep(Duration::from_millis(u64::from(delay))).await;
+            }
+        }
+        Ok(sent)
     }
 
     /// `finalRules`, in order.
@@ -6300,6 +6373,94 @@ mod tests {
             assert_eq!(*connector.candidates.lock().unwrap(), [vec![expected]]);
             assert_eq!(resolver.calls(), server_lookups);
         }
+    }
+
+    #[test]
+    fn rand_between_reads_as_xray_core_draws() {
+        // The upper bound is left out, and bounds one apart give the lower.
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..200 {
+            let drawn = xray_rand_between(16, 20);
+            assert!((16..20).contains(&drawn), "{drawn}");
+            seen.insert(drawn);
+            assert_eq!(xray_rand_between(10, 11), 10);
+            assert_eq!(xray_rand_between(11, 10), 10);
+            assert_eq!(xray_rand_between(7, 7), 7);
+            let reversed = xray_rand_between(20, 16);
+            assert!((16..20).contains(&reversed), "{reversed}");
+            seen.insert(reversed);
+        }
+        assert_eq!(seen.into_iter().collect::<Vec<_>>(), [16, 17, 18, 19]);
+    }
+
+    #[test]
+    fn noises_read_a_mapped_address_as_ipv4() {
+        use xray_config::FreedomNoiseFamily::{Ip, Ipv4, Ipv6};
+        for (target, ipv4) in [
+            ("192.0.2.1", true),
+            ("::ffff:192.0.2.1", true),
+            ("2001:db8::1", false),
+        ] {
+            let target: IpAddr = target.parse().unwrap();
+            assert!(noise_applies(Ip, target));
+            assert_eq!(noise_applies(Ipv4, target), ipv4, "{target}");
+            assert_eq!(noise_applies(Ipv6, target), !ipv4, "{target}");
+        }
+    }
+
+    #[tokio::test]
+    async fn freedom_sends_noises_as_xray_core_does() {
+        use xray_config::{FreedomNoise, FreedomNoiseFamily, FreedomNoisePacket};
+        let noise = |packet: &[u8], apply_to| FreedomNoise {
+            packet: FreedomNoisePacket::Bytes(packet.to_vec()),
+            delay_ms: (0, 0),
+            apply_to,
+        };
+        let freedom = |redirect| {
+            let mut configured = direct_selection_freedom("direct");
+            configured.settings = OutboundSettings::Freedom(FreedomOutboundSettings {
+                redirect,
+                noises: vec![
+                    noise(b"any", FreedomNoiseFamily::Ip),
+                    noise(b"v6", FreedomNoiseFamily::Ipv6),
+                    FreedomNoise {
+                        packet: FreedomNoisePacket::Random(3, 4),
+                        delay_ms: (1, 1),
+                        apply_to: FreedomNoiseFamily::Ipv4,
+                    },
+                ],
+                ..FreedomOutboundSettings::default()
+            });
+            let UdpOutbound::Freedom(freedom) = build_udp_outbound(&configured).unwrap() else {
+                panic!("freedom compiles to freedom");
+            };
+            freedom
+        };
+        let sink = tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let socket = tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let target = sink.local_addr().unwrap();
+
+        let sent = freedom(FreedomRedirect::default())
+            .send_udp_noises(&socket, target)
+            .await
+            .unwrap();
+        assert_eq!(sent, 6);
+        let mut buffer = [0; 64];
+        let first = sink.recv(&mut buffer).await.unwrap();
+        assert_eq!(&buffer[..first], b"any");
+        // The IPv6 noise is skipped for an IPv4 destination.
+        assert_eq!(sink.recv(&mut buffer).await.unwrap(), 3);
+
+        // Nothing goes when `redirect` sends the flow to port 53.
+        let sent = freedom(redirect_to(None, 53))
+            .send_udp_noises(&socket, target)
+            .await
+            .unwrap();
+        assert_eq!(sent, 0);
     }
 
     #[test]
