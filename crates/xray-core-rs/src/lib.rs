@@ -372,6 +372,13 @@ pub enum CoreError {
     /// Session inbounds handle blackhole selection themselves and never dial.
     #[error("traffic was routed to a blackhole outbound")]
     BlackholeOutbound,
+    /// A path with no destination to route again, such as a probe of the
+    /// outbound itself, reached a `loopback` outbound.
+    #[error("traffic was routed to a loopback outbound with nothing to route again")]
+    LoopbackOutbound,
+    /// A connection met more loopback outbounds in a row than it may pass.
+    #[error("traffic passed through more than {0} loopback outbounds in a row")]
+    LoopbackChainTooLong(usize),
     #[error("outbound selector group {0:?} was not found")]
     OutboundSelectorGroupNotFound(String),
     #[error("outbound {outbound:?} is not a candidate of selector group {group:?}")]

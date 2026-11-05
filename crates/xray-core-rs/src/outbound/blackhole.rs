@@ -265,6 +265,7 @@ mod tests {
             .select_tcp_session_outbound_with_tag_and_resolver(
                 &xray_config::RouteContext::default(),
                 &target([203, 0, 113, 5], 80, RoutingNetwork::Tcp),
+                &target([203, 0, 113, 5], 80, RoutingNetwork::Tcp),
                 true,
                 &resolver,
             )
@@ -284,6 +285,7 @@ mod tests {
         let selected = router
             .select_udp_session_outbound_with_tag_and_resolver(
                 &xray_config::RouteContext::default(),
+                &target([203, 0, 113, 5], 443, RoutingNetwork::Udp),
                 &target([203, 0, 113, 5], 443, RoutingNetwork::Udp),
                 true,
                 &resolver,
@@ -397,6 +399,7 @@ mod tests {
             .select_tcp_session_outbound_with_tag_and_resolver(
                 &xray_config::RouteContext::default(),
                 &target([192, 0, 2, 10], 80, RoutingNetwork::Tcp),
+                &target([192, 0, 2, 10], 80, RoutingNetwork::Tcp),
                 true,
                 &resolver,
             )
@@ -412,6 +415,7 @@ mod tests {
             .select_udp_session_outbound_with_tag_and_resolver(
                 &xray_config::RouteContext::default(),
                 &target([198, 51, 100, 7], 443, RoutingNetwork::Udp),
+                &target([198, 51, 100, 7], 443, RoutingNetwork::Udp),
                 true,
                 &resolver,
             )
@@ -426,6 +430,7 @@ mod tests {
         let selected = router
             .select_tcp_session_outbound_with_tag_and_resolver(
                 &xray_config::RouteContext::default(),
+                &target([198, 51, 100, 7], 443, RoutingNetwork::Tcp),
                 &target([198, 51, 100, 7], 443, RoutingNetwork::Tcp),
                 true,
                 &resolver,
@@ -487,6 +492,7 @@ mod tests {
             .select_tcp_session_outbound_with_tag_and_resolver(
                 &xray_config::RouteContext::default(),
                 &target([203, 0, 113, 5], 443, RoutingNetwork::Tcp),
+                &target([203, 0, 113, 5], 443, RoutingNetwork::Tcp),
                 true,
                 &resolver,
             )
@@ -501,6 +507,7 @@ mod tests {
         let selected = router
             .select_udp_session_outbound_with_tag_and_resolver(
                 &xray_config::RouteContext::default(),
+                &target([203, 0, 113, 5], 443, RoutingNetwork::Udp),
                 &target([203, 0, 113, 5], 443, RoutingNetwork::Udp),
                 true,
                 &resolver,

@@ -81,6 +81,7 @@ pub(crate) async fn forward_plain_request(
         .select_tcp_session_outbound_with_tag_and_resolver(
             &route,
             &route_target,
+            &dial_target,
             true,
             context.dns.destination.as_ref(),
         )

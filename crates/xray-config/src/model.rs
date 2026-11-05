@@ -1070,6 +1070,7 @@ pub enum OutboundProtocol {
     Hysteria,
     Wireguard,
     Blackhole,
+    Loopback,
     Socks,
     Http,
 }
@@ -1085,6 +1086,7 @@ pub enum OutboundSettings {
     Hysteria(HysteriaOutboundSettings),
     Wireguard(WireguardOutboundSettings),
     Blackhole(BlackholeOutboundSettings),
+    Loopback(LoopbackOutboundSettings),
     Socks(SocksOutboundSettings),
     Http(HttpOutboundSettings),
 }
@@ -1101,10 +1103,18 @@ impl OutboundSettings {
             Self::Hysteria(_) => OutboundProtocol::Hysteria,
             Self::Wireguard(_) => OutboundProtocol::Wireguard,
             Self::Blackhole(_) => OutboundProtocol::Blackhole,
+            Self::Loopback(_) => OutboundProtocol::Loopback,
             Self::Socks(_) => OutboundProtocol::Socks,
             Self::Http(_) => OutboundProtocol::Http,
         }
     }
+}
+
+/// Xray `loopback` outbound settings. The handler never dials: it routes the
+/// connection again, as if it came from an inbound tagged `inbound_tag`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LoopbackOutboundSettings {
+    pub inbound_tag: String,
 }
 
 /// Xray `blackhole` outbound settings. The handler never dials: TCP sessions
