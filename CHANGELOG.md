@@ -15,6 +15,11 @@ long-term supported release series.
   open. Such parents now finish their remaining children while new
   connections go to a new parent, with at most 16 parents per pool.
 
+- SOCKS and HTTP proxy connections honor `uplinkOnly` and `downlinkOnly` from
+  policy levels, as in Xray-core. After one side finished sending, the
+  connection now closes once the other side has been quiet for that time,
+  instead of waiting for `connIdle` (300 s by default). `downlinkOnly` now
+  defaults to 1 s like Xray-core, also for TUN; it used to be 2 s.
 - Routing rules can check where a connection comes from, with Xray-core's
   `sourceIP` (or `source`), `sourcePort`, `localIP`, `localPort` and `user`.
   Profiles with them used to fail to parse.

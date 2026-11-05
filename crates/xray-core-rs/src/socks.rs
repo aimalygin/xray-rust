@@ -730,21 +730,19 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
         }
     };
 
-    let (open_timeout, tunnel_idle, relay_buffer_size) = match outbound.primary() {
+    let (open_timeout, relay_timeouts, relay_buffer_size) = match outbound.primary() {
         // Freedom's own timer runs at its level beside the inbound's, so the
-        // shorter idle timeout wins, as in Xray-core.
+        // shorter timeout wins in each phase, as in Xray-core.
         TcpOutbound::Freedom(freedom) => (
             policy.handshake,
-            policy
-                .conn_idle
-                .min(effective_policy_for_level(&config, Some(freedom.level())).conn_idle),
+            policy.relay_timeouts(effective_policy_for_level(&config, Some(freedom.level()))),
             policy.relay_buffer_size(),
         ),
         TcpOutbound::Vless(vless) => {
             let outbound_policy = effective_policy_for_level(&config, Some(vless.user().level));
             (
                 outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
+                policy.relay_timeouts(outbound_policy),
                 outbound_policy.relay_buffer_size(),
             )
         }
@@ -752,7 +750,7 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
             let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
             (
                 outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
+                policy.relay_timeouts(outbound_policy),
                 outbound_policy.relay_buffer_size(),
             )
         }
@@ -760,7 +758,7 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
             let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
             (
                 outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
+                policy.relay_timeouts(outbound_policy),
                 outbound_policy.relay_buffer_size(),
             )
         }
@@ -768,7 +766,7 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
             let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
             (
                 outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
+                policy.relay_timeouts(outbound_policy),
                 outbound_policy.relay_buffer_size(),
             )
         }
@@ -776,7 +774,7 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
             let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
             (
                 outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
+                policy.relay_timeouts(outbound_policy),
                 outbound_policy.relay_buffer_size(),
             )
         }
@@ -784,7 +782,7 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
             let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
             (
                 outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
+                policy.relay_timeouts(outbound_policy),
                 outbound_policy.relay_buffer_size(),
             )
         }
@@ -792,7 +790,7 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
             let outbound_policy = effective_policy_for_level(&config, Some(0));
             (
                 outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
+                policy.relay_timeouts(outbound_policy),
                 outbound_policy.relay_buffer_size(),
             )
         }
@@ -878,7 +876,7 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
                 outbound_router.factory().parallel_vmess_budget(),
                 inbound.into_split(),
                 halves,
-                tunnel_idle,
+                relay_timeouts,
                 relay_buffer_size,
                 connection_traffic,
                 wait_for_connection_close(&mut connection_close),
@@ -893,7 +891,7 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
         result = copy_bidirectional_with_idle_timeout_and_traffic(
             &mut inbound,
             &mut outbound_stream,
-            tunnel_idle,
+            relay_timeouts,
             relay_buffer_size,
             connection_traffic.as_ref(),
         ) => Some(result),

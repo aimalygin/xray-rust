@@ -2573,6 +2573,13 @@ Freedom split rules remain valid with a default VLESS because an unresolved
 Level objects parse `handshake`, `connIdle`, `uplinkOnly`, `downlinkOnly`,
 `bufferSize`, `statsUserUplink`, and `statsUserDownlink`. Runtime connection
 timeouts and relay buffer size use the applicable inbound/VLESS user level.
+SOCKS and HTTP relays follow Xray-core's half-close timer: `connIdle` while
+both directions are open, `downlinkOnly` once the client finished sending, and
+`uplinkOnly` once the server finished sending. Each phase uses the shorter of
+the inbound and outbound level values. TUN TCP applies `downlinkOnly` after
+the app finished sending and closes the flow when the server finished sending.
+Missing values default to Xray-core's `connIdle` 300 s and `uplinkOnly` and
+`downlinkOnly` 1 s.
 System statistics flags are modeled for config compatibility, but this is not
 the Xray statistics service.
 

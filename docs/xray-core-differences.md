@@ -82,6 +82,7 @@ This establishes the listed tests on the combined tree, not NAT or device proof.
 | #79: HTTP outbound | HTTP/1.1 CONNECT, optional Basic auth, flat or legacy settings, raw TCP with none/TLS (`http/1.1` ALPN), TCP only | Tested subset of the pinned Xray client; status 200 only, no HTTP/2 or custom headers, bounded head, early bytes kept |
 | #86: mobile SOCKS bootstrap | Android and Apple prepare SOCKS carrier hosts/literals before VPN setup; Apple excludes carrier routes | Integration gap fixed; destination DNS remains at the proxy |
 | SOCKS inbound `udp` | `"udp": false` refuses `UDP ASSOCIATE` without a relay; an absent `udp` keeps it enabled | Explicit `false` matches the reference; the absent default differs and is an open question below |
+| Policy half-close timeouts | SOCKS and HTTP relays switch from `connIdle` to `downlinkOnly` after the client finished sending and to `uplinkOnly` after the server did; both default to 1 s | Source-derived from the outbound timers (`proxy/freedom/freedom.go`, `proxy/vless/outbound/outbound.go`) and `SessionDefault` in `features/policy/policy.go`; covered by paused-clock unit tests, not by interop. Stricter: the inbound level also bounds each phase, while the reference SOCKS/HTTP inbounds run no timer of their own |
 
 ## Password-protected SOCKS UDP: deliberate restriction
 
