@@ -308,7 +308,107 @@ pub struct RoutingRule {
     /// named as Go's `runtime.GOOS` and compared case-insensitively. Empty
     /// applies everywhere.
     pub local_os: Vec<String>,
+    /// Conditions on where the connection comes from.
+    pub origin: RoutingOrigin,
     pub target: RoutingRuleTarget,
+}
+
+/// What Xray-core's routing context tells a rule about where a connection
+/// comes from, besides its destination.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RouteContext<'a> {
+    pub inbound_tag: Option<&'a str>,
+    /// The peer the connection came from: a SOCKS or HTTP client, or for TUN
+    /// the app.
+    pub source: Option<SocketAddr>,
+    /// The address the connection arrived on.
+    pub local: Option<SocketAddr>,
+    /// The authenticated user, which Xray-core names by email: for SOCKS and
+    /// HTTP, the username.
+    pub user: Option<&'a str>,
+}
+
+impl<'a> RouteContext<'a> {
+    /// A context that knows only the inbound, as for the built-in DNS.
+    pub const fn inbound(inbound_tag: Option<&'a str>) -> Self {
+        Self {
+            inbound_tag,
+            source: None,
+            local: None,
+            user: None,
+        }
+    }
+}
+
+/// A routing rule's conditions on where a connection comes from: `sourceIP`
+/// (or `source`), `sourcePort`, `localIP`, `localPort` and `user`. Each is
+/// `None` when the rule sets none.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RoutingOrigin {
+    pub source_ips: Option<IpMatcherSet>,
+    pub source_ports: Option<Vec<RoutingPortRange>>,
+    pub local_ips: Option<IpMatcherSet>,
+    pub local_ports: Option<Vec<RoutingPortRange>>,
+    pub users: Option<RoutingUsers>,
+}
+
+impl RoutingOrigin {
+    pub fn is_empty(&self) -> bool {
+        self.source_ips.is_none()
+            && self.source_ports.is_none()
+            && self.local_ips.is_none()
+            && self.local_ports.is_none()
+            && self.users.is_none()
+    }
+
+    /// `sourcePort`, `localPort` and `user`, which Xray-core checks before
+    /// the destination IP. As there, an unknown port reads as 0.
+    pub fn matches_ports_and_user(&self, route: &RouteContext<'_>) -> bool {
+        ports_contain(&self.source_ports, route.source)
+            && ports_contain(&self.local_ports, route.local)
+            && self
+                .users
+                .as_ref()
+                .is_none_or(|users| users.matches(route.user))
+    }
+
+    /// `sourceIP` and `localIP`, which Xray-core checks after the
+    /// destination IP. An unknown address matches no rule.
+    pub fn matches_ips(&self, route: &RouteContext<'_>) -> bool {
+        ips_contain(&self.source_ips, route.source) && ips_contain(&self.local_ips, route.local)
+    }
+}
+
+fn ports_contain(ranges: &Option<Vec<RoutingPortRange>>, address: Option<SocketAddr>) -> bool {
+    let port = address.map_or(0, |address| address.port());
+    ranges
+        .as_ref()
+        .is_none_or(|ranges| ranges.iter().any(|range| range.contains(port)))
+}
+
+fn ips_contain(matchers: &Option<IpMatcherSet>, address: Option<SocketAddr>) -> bool {
+    matchers
+        .as_ref()
+        .is_none_or(|matchers| address.is_some_and(|address| matchers.matches(address.ip())))
+}
+
+/// A rule's `user`: exact names and `regexp:` patterns, matched against the
+/// whole name as written. As in Xray-core, empty names are dropped, and no
+/// pattern matches a connection without a user.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RoutingUsers {
+    pub names: Vec<String>,
+    pub patterns: Vec<RegexMatcher>,
+}
+
+impl RoutingUsers {
+    pub fn matches(&self, user: Option<&str>) -> bool {
+        let Some(user) = user.filter(|user| !user.is_empty()) else {
+            return false;
+        };
+        self.names.iter().any(|name| name == user)
+            || self.patterns.iter().any(|pattern| pattern.is_match(user))
+    }
 }
 
 /// The running platform as Go's `runtime.GOOS` names it, which Xray's
@@ -352,6 +452,8 @@ impl RoutingRule {
         self.matches_target(inbound_tag, target_domain, target_ip, None, None)
     }
 
+    /// Matches a connection that only its inbound tag describes; see
+    /// [`Self::matches_route`].
     pub fn matches_target(
         &self,
         inbound_tag: Option<&str>,
@@ -360,12 +462,32 @@ impl RoutingRule {
         target_network: Option<Network>,
         target_port: Option<u16>,
     ) -> bool {
+        self.matches_route(
+            &RouteContext::inbound(inbound_tag),
+            target_domain,
+            target_ip,
+            target_network,
+            target_port,
+        )
+    }
+
+    /// Whether every condition holds, checked in Xray-core's order.
+    pub fn matches_route(
+        &self,
+        route: &RouteContext<'_>,
+        target_domain: Option<&str>,
+        target_ip: Option<&IpAddr>,
+        target_network: Option<Network>,
+        target_port: Option<u16>,
+    ) -> bool {
         self.matches_local_os()
-            && self.matches_inbound(inbound_tag)
+            && self.matches_inbound(route.inbound_tag)
             && self.matches_network(target_network)
             && self.matches_port(target_port)
-            && self.matches_domain(target_domain)
+            && self.origin.matches_ports_and_user(route)
             && self.matches_ip(target_ip)
+            && self.origin.matches_ips(route)
+            && self.matches_domain(target_domain)
     }
 
     /// Whether `localOS` admits the running platform, fixed for the process
@@ -446,6 +568,7 @@ impl RoutingRule {
             || self.port_ranges.is_some()
             || self.domain_matchers.is_some()
             || self.ip_matchers.is_some()
+            || !self.origin.is_empty()
     }
 }
 

@@ -425,7 +425,11 @@ impl RoutedDnsQueryTransport {
         }
         let selected = self
             .outbound_router
-            .select_tcp_outbound_for_session_with_tag(metadata.inbound_tag, &target, false)
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::inbound(metadata.inbound_tag),
+                &target,
+                false,
+            )
             .map_err(io::Error::other)?;
 
         Ok(match selected.outbound {
@@ -1228,6 +1232,7 @@ mod tests {
             default_outbound_tag: Some("direct".to_owned()),
             routing: RoutingConfig {
                 rules: vec![RoutingRule {
+                    origin: Default::default(),
                     inbound_tags: Vec::new(),
                     networks: Some(vec![network]),
                     port_ranges: None,

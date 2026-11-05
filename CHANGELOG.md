@@ -10,6 +10,18 @@ long-term supported release series.
 
 ## Unreleased
 
+- Routing rules can check where a connection comes from, with Xray-core's
+  `sourceIP` (or `source`), `sourcePort`, `localIP`, `localPort` and `user`.
+  Profiles with them used to fail to parse.
+  - The source is the SOCKS or HTTP client, or for TUN the app; the local
+    address is where the connection arrived. On a SOCKS UDP flow they are the
+    client's UDP endpoint and the association's relay socket, as in
+    Xray-core.
+  - `user` matches the account a SOCKS client logged in with, by exact name or
+    `regexp:` pattern, also for HTTP `CONNECT` on a SOCKS port and for the
+    flows of its UDP association.
+  - As in Xray-core, any `sourcePort` or `localPort` given sets a condition,
+    an unknown port reads as 0, and an unknown address matches no IP rule.
 - Inbound sniffing reads as Xray-core v26.10.31 reads it. Profiles it accepts
   no longer fail to parse.
   - `domainsExcluded` and `ipsExcluded` are supported. Profiles with a

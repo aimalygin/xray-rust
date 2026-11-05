@@ -4,7 +4,8 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use serde_json::{json, Value};
 use xray_config::{
-    parse_xray_json, DiagnosticSeverity, Network, RoutingPortRange, RoutingRule, RoutingRuleTarget,
+    parse_xray_json, DiagnosticSeverity, Network, RouteContext, RoutingPortRange, RoutingRule,
+    RoutingRuleTarget,
 };
 
 fn config(rules: Value) -> String {
@@ -247,4 +248,152 @@ fn domains_replaces_domain_but_both_must_parse() {
     assert!(both.matches_domain(Some("only-domains.test")));
     let raw = json!({"domain": ["regexp:("], "domains": ["a.test"], "outboundTag": "direct"});
     assert_eq!(rejection(raw), "$.routing.rules[0].domain[0]");
+}
+
+fn route<'a>(source: &str, local: &str, user: Option<&'a str>) -> RouteContext<'a> {
+    RouteContext {
+        inbound_tag: Some("socks-in"),
+        source: Some(source.parse().unwrap()),
+        local: Some(local.parse().unwrap()),
+        user,
+    }
+}
+
+fn applies(rule: &RoutingRule, route: &RouteContext<'_>) -> bool {
+    rule.matches_route(route, None, Some(&LOOPBACK), Some(Network::Tcp), Some(443))
+}
+
+#[test]
+fn source_ip_falls_back_to_source_only_when_absent_or_null() {
+    let client = route("10.1.2.3:5000", "127.0.0.1:1080", None);
+    let other = route("192.0.2.1:5000", "127.0.0.1:1080", None);
+    for raw in [
+        json!({"source": ["10.0.0.0/8"], "outboundTag": "direct"}),
+        json!({"sourceIP": "10.0.0.0/8", "outboundTag": "direct"}),
+        json!({"sourceIP": null, "source": "10.0.0.0/8", "outboundTag": "direct"}),
+        json!({"sourceIP": ["10.0.0.0/8"], "source": ["192.0.2.0/24"], "outboundTag": "direct"}),
+    ] {
+        let parsed = rule(raw.clone());
+        assert!(applies(&parsed, &client), "{raw}");
+        assert!(!applies(&parsed, &other), "{raw}");
+    }
+    // A given `sourceIP`, even empty, hides `source`; with nothing else the
+    // rule has no condition.
+    assert_eq!(
+        rejection(json!({"sourceIP": [], "source": ["192.0.2.0/24"], "outboundTag": "direct"})),
+        "$.routing.rules[0]"
+    );
+    // Go still decodes the hidden `source`.
+    assert_eq!(
+        rejection(json!({"sourceIP": ["10.0.0.0/8"], "source": 5, "outboundTag": "direct"})),
+        "$.routing.rules[0].source"
+    );
+    // A v4-mapped source is the IPv4 address.
+    let mapped = route("[::ffff:10.1.2.3]:5000", "127.0.0.1:1080", None);
+    assert!(applies(
+        &rule(json!({"source": "10.0.0.0/8", "outboundTag": "direct"})),
+        &mapped
+    ));
+    // A connection without a source matches no source rule.
+    let unknown = RouteContext::inbound(Some("socks-in"));
+    assert!(!applies(
+        &rule(json!({"source": "0.0.0.0/0", "outboundTag": "direct"})),
+        &unknown
+    ));
+}
+
+#[test]
+fn source_and_local_ports_read_as_port_lists() {
+    let client = route("10.1.2.3:5000", "127.0.0.1:1080", None);
+    let ports =
+        rule(json!({"sourcePort": "4000-6000", "localPort": 1080, "outboundTag": "direct"}));
+    assert!(applies(&ports, &client));
+    assert!(!applies(
+        &ports,
+        &route("10.1.2.3:7000", "127.0.0.1:1080", None)
+    ));
+    assert!(!applies(
+        &ports,
+        &route("10.1.2.3:5000", "127.0.0.1:1081", None)
+    ));
+    // As for `port`, any value sets a condition, so 0 matches no port.
+    let zero = rule(json!({"sourcePort": 0, "outboundTag": "direct"}));
+    assert!(!applies(&zero, &client));
+    // An unknown port reads as 0, as in Xray-core.
+    let from_zero = rule(json!({"localPort": "0", "outboundTag": "direct"}));
+    assert!(applies(
+        &from_zero,
+        &RouteContext::inbound(Some("socks-in"))
+    ));
+    assert!(!applies(&from_zero, &client));
+
+    let rules = "$.routing.rules[0]";
+    for (raw, path) in [
+        (
+            json!({"sourcePort": "053", "outboundTag": "direct"}),
+            "sourcePort[0]",
+        ),
+        (
+            json!({"localPort": 65536, "outboundTag": "direct"}),
+            "localPort",
+        ),
+        (
+            json!({"localIP": ["10.0.0.0/33"], "outboundTag": "direct"}),
+            "localIP[0]",
+        ),
+    ] {
+        assert_eq!(rejection(raw.clone()), format!("{rules}.{path}"), "{raw}");
+    }
+}
+
+#[test]
+fn local_ip_matches_the_address_the_connection_arrived_on() {
+    let parsed = rule(json!({"localIP": ["127.0.0.0/8"], "outboundTag": "direct"}));
+    assert!(applies(
+        &parsed,
+        &route("10.1.2.3:5000", "127.0.0.1:1080", None)
+    ));
+    assert!(!applies(
+        &parsed,
+        &route("10.1.2.3:5000", "192.0.2.1:1080", None)
+    ));
+    assert!(!applies(&parsed, &RouteContext::inbound(Some("socks-in"))));
+}
+
+#[test]
+fn users_are_names_and_patterns() {
+    let users =
+        rule(json!({"user": ["alice", "regexp:^team-", "", "regexp:"], "outboundTag": "direct"}));
+    let as_user = |user| route("10.1.2.3:5000", "127.0.0.1:1080", Some(user));
+    assert!(applies(&users, &as_user("alice")));
+    assert!(applies(&users, &as_user("team-blue")));
+    assert!(!applies(&users, &as_user("Alice")));
+    assert!(!applies(&users, &as_user("my-team-blue")));
+    // `regexp:` with nothing after it is a name.
+    assert!(applies(&users, &as_user("regexp:")));
+    assert!(!applies(
+        &users,
+        &route("10.1.2.3:5000", "127.0.0.1:1080", None)
+    ));
+
+    // Any entry sets a condition, though an empty name matches no user.
+    let empty = rule(json!({"user": [""], "outboundTag": "direct"}));
+    assert!(!applies(&empty, &as_user("alice")));
+    assert_eq!(
+        rejection(json!({"user": [], "outboundTag": "direct"})),
+        "$.routing.rules[0]"
+    );
+
+    // A pattern that does not compile is ignored with a warning, as Xray-core
+    // ignores it.
+    let raw = config(json!([{"user": ["regexp:(", "bob"], "outboundTag": "direct"}]));
+    let parsed = parse_xray_json(&raw).expect("an invalid user pattern is ignored");
+    assert_eq!(
+        parsed.diagnostics[0].path.as_deref(),
+        Some("$.routing.rules[0].user[0]")
+    );
+    assert_eq!(parsed.diagnostics[0].severity, DiagnosticSeverity::Warning);
+    let ignored = &parsed.config.routing.rules[0];
+    assert!(applies(ignored, &as_user("bob")));
+    assert!(!applies(ignored, &as_user("(")));
 }

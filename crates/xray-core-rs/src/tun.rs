@@ -1368,7 +1368,11 @@ async fn process_tun_packet(
             }
         }
         let dns_selection = match context
-            .selected_dns_outbound_with_resolver(udp_packet.target, RoutingNetwork::Udp)
+            .selected_dns_outbound_with_resolver(
+                udp_packet.target,
+                RoutingNetwork::Udp,
+                Some(endpoint_socket_addr(udp_packet.client)),
+            )
             .await
         {
             Ok(outbound) => outbound,
@@ -1633,16 +1637,25 @@ impl TunRuntimeContext {
         Some(self.dns_outbound_runtime.restore_client_target(&target))
     }
 
+    /// The route of an app's flow: the TUN inbound and the app's address.
+    fn app_route(&self, client: Option<SocketAddr>) -> xray_config::RouteContext<'_> {
+        xray_config::RouteContext {
+            source: client,
+            ..xray_config::RouteContext::inbound(self.inbound_tag.as_deref())
+        }
+    }
+
     fn selected_dns_outbound(
         &self,
         endpoint: IpEndpoint,
         network: RoutingNetwork,
+        client: Option<SocketAddr>,
     ) -> Result<Option<(DnsOutbound, Target)>, crate::CoreError> {
         let Some(target) = self.target_from_endpoint(endpoint, network) else {
             return Ok(None);
         };
         self.outbound_router
-            .select_dns_outbound_for_session(self.inbound_tag.as_deref(), &target)
+            .select_dns_outbound_for_route(&self.app_route(client), &target)
             .map(|outbound| outbound.map(|outbound| (outbound, target)))
     }
 
@@ -1650,13 +1663,14 @@ impl TunRuntimeContext {
         &self,
         endpoint: IpEndpoint,
         network: RoutingNetwork,
+        client: Option<SocketAddr>,
     ) -> Result<Option<(DnsOutbound, Target)>, crate::CoreError> {
         let Some(target) = self.target_from_endpoint(endpoint, network) else {
             return Ok(None);
         };
         self.outbound_router
-            .select_dns_outbound_for_session_with_resolver(
-                self.inbound_tag.as_deref(),
+            .select_dns_outbound_for_route_with_resolver(
+                &self.app_route(client),
                 &target,
                 self.dns_resolver.as_ref(),
             )
@@ -1971,7 +1985,9 @@ fn open_ready_tcp_flows(
             let Some(local_endpoint) = socket.local_endpoint() else {
                 return Some((*endpoint, ReadyTcpFlow::Closed));
             };
-            let dns_selection = context.selected_dns_outbound(local_endpoint, RoutingNetwork::Tcp);
+            let client = socket.remote_endpoint().map(endpoint_socket_addr);
+            let dns_selection =
+                context.selected_dns_outbound(local_endpoint, RoutingNetwork::Tcp, client);
             let ready = match dns_selection {
                 Err(_) => ReadyTcpFlow::Reject("TUN DNS outbound selection failed"),
                 Ok(dns_selection) => {
@@ -3022,13 +3038,14 @@ async fn bridge_tcp_flow(
 
     if let TcpBridgeDestination::Standard(restored) = &destination {
         let client_target = &restored.target;
+        let route = context.app_route(client);
         let selected_dns_outbound = tokio::select! {
             biased;
             () = wait_for_tun_shutdown(&mut shutdown) => return,
             result = context
                 .outbound_router
-                .select_dns_outbound_for_session_with_resolver(
-                    context.inbound_tag.as_deref(),
+                .select_dns_outbound_for_route_with_resolver(
+                    &route,
                     client_target,
                     context.dns_resolver.as_ref(),
                 ) => result,
@@ -3241,6 +3258,14 @@ async fn bridge_tcp_flow_inner(
             .as_ref()
             .map(dns_proxy::DnsProxyUpstream::inbound_tag)
             .or(context.inbound_tag.as_deref());
+        // A query sent on to a configured DNS server is the built-in DNS's
+        // own, with no app behind it.
+        let route = xray_config::RouteContext {
+            source: source
+                .filter(|_| dns_upstream.is_none())
+                .map(|source| source.addr),
+            ..xray_config::RouteContext::inbound(routing_inbound_tag)
+        };
         let candidate_deadline = dns_deadline.map(|total_deadline| {
             let now = TokioInstant::now();
             let remaining = total_deadline.saturating_duration_since(now);
@@ -3272,7 +3297,7 @@ async fn bridge_tcp_flow_inner(
                             context
                                 .outbound_router
                                 .select_tcp_outbound_for_session_with_tag(
-                                    routing_inbound_tag,
+                                    &route,
                                     &dial_target,
                                     true,
                                 )
@@ -3282,7 +3307,7 @@ async fn bridge_tcp_flow_inner(
                         } else {
                             context.outbound_router
                                 .select_tcp_session_outbound_with_tag_and_resolver(
-                                    routing_inbound_tag,
+                                    &route,
                                     &dial_target,
                                     true,
                                     context.dns_resolver.as_ref(),
@@ -4469,10 +4494,14 @@ async fn bridge_udp_flow(
     let sniffed_protocol = sniffed_target.sniffed_protocol;
     let route_target = sniffed_target.route_target;
     let dial_target = sniffed_target.dial_target;
+    let route = xray_config::RouteContext {
+        source: Some(key.client.socket_addr()),
+        ..xray_config::RouteContext::inbound(context.inbound_tag.as_deref())
+    };
     let selected = match context
         .outbound_router
         .select_udp_session_outbound_with_tag_and_resolver(
-            context.inbound_tag.as_deref(),
+            &route,
             &route_target,
             true,
             context.dns_resolver.as_ref(),

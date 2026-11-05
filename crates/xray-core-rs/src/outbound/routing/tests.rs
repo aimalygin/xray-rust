@@ -81,7 +81,11 @@ async fn selected_tag(
     resolver: &dyn DnsResolver,
 ) -> String {
     let node = router
-        .select_configured_node_with_resolver(Some("socks-in"), target, resolver)
+        .select_configured_node_with_resolver(
+            &xray_config::RouteContext::inbound(Some("socks-in")),
+            target,
+            resolver,
+        )
         .await
         .unwrap();
     router.graph().node(node).unwrap().tag().unwrap().to_owned()
@@ -128,7 +132,11 @@ async fn domain_strategy_matches_pinned_go_routing_oracle() {
         let tag = if case["skipDNSResolve"].as_bool().unwrap() {
             // Exercise the actual resolver-free internal DNS client path.
             router
-                .select_tcp_outbound_for_session_with_tag(Some("socks-in"), &target, true)
+                .select_tcp_outbound_for_session_with_tag(
+                    &xray_config::RouteContext::inbound(Some("socks-in")),
+                    &target,
+                    true,
+                )
                 .unwrap()
                 .tag
                 .unwrap()
@@ -163,7 +171,11 @@ async fn ip_on_demand_checks_the_last_address_at_the_limit_and_rejects_overflow(
     );
     addresses.push("192.0.2.1".parse().unwrap());
     let error = router
-        .select_configured_node_with_resolver(None, &target(), &Resolver::new(addresses))
+        .select_configured_node_with_resolver(
+            &xray_config::RouteContext::default(),
+            &target(),
+            &Resolver::new(addresses),
+        )
         .await
         .unwrap_err();
     assert!(matches!(
@@ -356,7 +368,11 @@ async fn local_os_rules_apply_only_on_their_platforms() {
         RoutingNetwork::Tcp,
     );
     let selected = router
-        .select_tcp_outbound_for_session_with_tag(Some("socks-in"), &address, true)
+        .select_tcp_outbound_for_session_with_tag(
+            &xray_config::RouteContext::inbound(Some("socks-in")),
+            &address,
+            true,
+        )
         .unwrap();
     assert_eq!(selected.tag.as_deref(), Some("ip"));
     // Excluded everywhere, the last rule never routes; the first outbound does.
@@ -366,7 +382,59 @@ async fn local_os_rules_apply_only_on_their_platforms() {
         RoutingNetwork::Tcp,
     );
     let selected = router
-        .select_tcp_outbound_for_session_with_tag(Some("socks-in"), &other, true)
+        .select_tcp_outbound_for_session_with_tag(
+            &xray_config::RouteContext::inbound(Some("socks-in")),
+            &other,
+            true,
+        )
         .unwrap();
     assert_eq!(selected.tag.as_deref(), Some("default"));
+}
+
+/// Under `IPOnDemand`, a rule whose ports or user fail is skipped before the
+/// lookup, while source and local IPs are checked after the destination IP,
+/// in Xray-core's condition order.
+#[tokio::test]
+async fn ip_on_demand_checks_origin_conditions_in_xray_core_order() {
+    let config = config(json!({"domainStrategy": "IPOnDemand", "rules": [
+        {"user": ["alice"], "ip": ["203.0.113.7/32"], "outboundTag": "ip"},
+        {"source": ["10.0.0.0/8"], "ip": ["203.0.113.7/32"], "outboundTag": "second"},
+        {"domain": ["full:example.test"], "outboundTag": "domain"}
+    ]}));
+    let router = OutboundRouter::new(Arc::new(config));
+    let selected = |route: xray_config::RouteContext<'static>| {
+        let router = &router;
+        async move {
+            let resolver = Resolver::new(vec!["203.0.113.7".parse().unwrap()]);
+            let node = router
+                .select_configured_node_with_resolver(&route, &target(), &resolver)
+                .await
+                .unwrap();
+            (
+                router.graph().node(node).unwrap().tag().unwrap().to_owned(),
+                resolver.calls.load(Ordering::SeqCst),
+            )
+        }
+    };
+    let elsewhere = Some("192.0.2.1:5000".parse().unwrap());
+    let route = |source, user| xray_config::RouteContext {
+        inbound_tag: Some("socks-in"),
+        source,
+        local: None,
+        user,
+    };
+    // Only the second rule looks the name up, and its source then misses.
+    assert_eq!(
+        selected(route(elsewhere, None)).await,
+        ("domain".to_owned(), 1)
+    );
+    assert_eq!(
+        selected(route(elsewhere, Some("alice"))).await,
+        ("ip".to_owned(), 1)
+    );
+    let inside = Some("10.1.2.3:5000".parse().unwrap());
+    assert_eq!(
+        selected(route(inside, None)).await,
+        ("second".to_owned(), 1)
+    );
 }

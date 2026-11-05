@@ -3380,6 +3380,53 @@
       },
       "accepted": false,
       "errorPath": "$.inbounds[0].sniffing.ipsExcluded[0]"
+    },
+    {
+      "name": "routing-origin-fields",
+      "base": "routing-xray-string-lists",
+      "set": {
+        "/routing/rules/0": {
+          "sourceIP": [
+            "10.0.0.0/8"
+          ],
+          "source": "192.0.2.0/24",
+          "sourcePort": "1024-65535",
+          "localIP": "127.0.0.1",
+          "localPort": 1080,
+          "user": [
+            "alice",
+            "regexp:^team-"
+          ],
+          "outboundTag": "block"
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "routing-origin-invalid-source",
+      "base": "routing-xray-string-lists",
+      "set": {
+        "/routing/rules/0": {
+          "source": [
+            "10.0.0.0/33"
+          ],
+          "outboundTag": "block"
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.routing.rules[0].source[0]"
+    },
+    {
+      "name": "routing-origin-source-port-truncated",
+      "base": "routing-xray-string-lists",
+      "set": {
+        "/routing/rules/0": {
+          "sourcePort": 65617,
+          "outboundTag": "block"
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.routing.rules[0].sourcePort"
     }
   ]
 }

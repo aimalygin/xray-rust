@@ -216,7 +216,7 @@ async fn serve_tcp(
                 if stream.set_nodelay(true).is_err() { continue; }
                 let ctx=context.clone();
                 connections.spawn(async move {
-                    handle_socks_connect::<false>(stream,target(destination,Network::Tcp),ctx.inbound_tag,ctx.config,
+                    handle_socks_connect::<false>(stream,target(destination,Network::Tcp),None,ctx.inbound_tag,ctx.config,
                         ctx.router,ctx.dns,ctx.dialer,ctx.sniffing,ctx.policy,ctx.logger,ctx.registry).await;
                 });
             }
@@ -266,7 +266,7 @@ async fn serve_udp(
                 let Ok(reply)=reply_socket(destination,mark) else {continue;};
                 let (sender,receiver)=mpsc::channel(UDP_FLOW_QUEUE);
                 if sender.try_send(Bytes::copy_from_slice(&buffer[..len])).is_err(){continue;}
-                let ctx=SocksUdpFlowContext {reply:UdpReply::Transparent(reply),client_addr:client,
+                let ctx=SocksUdpFlowContext {reply:UdpReply::Transparent(reply),client_addr:client,local_addr:None,user:None,
                     inbound_tag:context.inbound_tag.clone(),config:context.config.clone(),outbound_router:context.router.clone(),
                     dns_resolvers:context.dns.clone(),transport_dialer:context.dialer.clone(),sniffing:context.sniffing.clone(),
                     runtime_logger:context.logger.clone(),connection_registry:context.registry.clone()};

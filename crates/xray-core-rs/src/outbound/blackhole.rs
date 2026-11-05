@@ -262,7 +262,7 @@ mod tests {
         let resolver = NoLookupResolver;
         let selected = router
             .select_tcp_session_outbound_with_tag_and_resolver(
-                None,
+                &xray_config::RouteContext::default(),
                 &target([203, 0, 113, 5], 80, RoutingNetwork::Tcp),
                 true,
                 &resolver,
@@ -282,7 +282,7 @@ mod tests {
 
         let selected = router
             .select_udp_session_outbound_with_tag_and_resolver(
-                None,
+                &xray_config::RouteContext::default(),
                 &target([203, 0, 113, 5], 443, RoutingNetwork::Udp),
                 true,
                 &resolver,
@@ -394,7 +394,7 @@ mod tests {
 
         let selected = router
             .select_tcp_session_outbound_with_tag_and_resolver(
-                None,
+                &xray_config::RouteContext::default(),
                 &target([192, 0, 2, 10], 80, RoutingNetwork::Tcp),
                 true,
                 &resolver,
@@ -409,7 +409,7 @@ mod tests {
 
         let selected = router
             .select_udp_session_outbound_with_tag_and_resolver(
-                None,
+                &xray_config::RouteContext::default(),
                 &target([198, 51, 100, 7], 443, RoutingNetwork::Udp),
                 true,
                 &resolver,
@@ -424,7 +424,7 @@ mod tests {
 
         let selected = router
             .select_tcp_session_outbound_with_tag_and_resolver(
-                None,
+                &xray_config::RouteContext::default(),
                 &target([198, 51, 100, 7], 443, RoutingNetwork::Tcp),
                 true,
                 &resolver,
@@ -443,7 +443,11 @@ mod tests {
         let router = router(ROUTED_CONFIG);
         let blocked = target([192, 0, 2, 10], 53, RoutingNetwork::Tcp);
         assert!(matches!(
-            router.select_tcp_outbound_for_session_with_tag(None, &blocked, true),
+            router.select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &blocked,
+                true
+            ),
             Err(CoreError::BlackholeOutbound)
         ));
         assert!(matches!(
@@ -480,7 +484,7 @@ mod tests {
         let resolver = NoLookupResolver;
         let selected = router
             .select_tcp_session_outbound_with_tag_and_resolver(
-                None,
+                &xray_config::RouteContext::default(),
                 &target([203, 0, 113, 5], 443, RoutingNetwork::Tcp),
                 true,
                 &resolver,
@@ -495,7 +499,7 @@ mod tests {
         ));
         let selected = router
             .select_udp_session_outbound_with_tag_and_resolver(
-                None,
+                &xray_config::RouteContext::default(),
                 &target([203, 0, 113, 5], 443, RoutingNetwork::Udp),
                 true,
                 &resolver,

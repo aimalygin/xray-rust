@@ -51,9 +51,9 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_config::{
     CoreConfig, DnsOutboundSettings, DomainStrategy, FreedomFinalRule, FreedomOutboundSettings,
     FreedomRedirect, Network, OutboundConfig, OutboundSettings, ProxyProtocolVersion,
-    QuicParamsSettings, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
-    RoutingLeastLoadSettings, RoutingRule, RoutingRuleTarget, StreamSecurity, StreamSettings,
-    StreamTransport, TargetAddr, VlessUser, XhttpSettings,
+    QuicParamsSettings, RouteContext, RoutingBalancerStrategy, RoutingConfig,
+    RoutingDomainStrategy, RoutingLeastLoadSettings, RoutingRule, RoutingRuleTarget,
+    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, VlessUser, XhttpSettings,
 };
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
@@ -2670,7 +2670,7 @@ impl OutboundRouter {
     }
 
     pub fn select_tcp_outbound(&self) -> Result<TcpOutbound, CoreError> {
-        let node = self.select_configured_node(None, None, None, None, None)?;
+        let node = self.select_configured_node(&RouteContext::default(), None, None, None, None)?;
         self.factory.cached_tcp_outbound(node)
     }
 
@@ -2688,7 +2688,7 @@ impl OutboundRouter {
         target: &Target,
     ) -> Result<TcpOutbound, CoreError> {
         let node = self.select_configured_node(
-            inbound_tag,
+            &RouteContext::inbound(inbound_tag),
             target_domain(target),
             target_ip(target),
             Some(target_network(target)),
@@ -2706,12 +2706,12 @@ impl OutboundRouter {
     /// resolving the name server that is needed to perform the lookup.
     pub(crate) fn select_tcp_outbound_for_session_with_tag(
         &self,
-        inbound_tag: Option<&str>,
+        route: &RouteContext<'_>,
         target: &Target,
         include_tag: bool,
     ) -> Result<SelectedTcpOutbound, CoreError> {
         let node = self.select_configured_node(
-            inbound_tag,
+            route,
             target_domain(target),
             target_ip(target),
             Some(target_network(target)),
@@ -2732,8 +2732,11 @@ impl OutboundRouter {
         resolved_ip: Option<&IpAddr>,
         include_tag: bool,
     ) -> Result<SelectedTcpOutbound, CoreError> {
-        let node =
-            self.select_configured_node_with_resolved_ip(inbound_tag, target, resolved_ip)?;
+        let node = self.select_configured_node_with_resolved_ip(
+            &RouteContext::inbound(inbound_tag),
+            target,
+            resolved_ip,
+        )?;
         let tag = include_tag
             .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
             .flatten();
@@ -2748,20 +2751,24 @@ impl OutboundRouter {
         dns_resolver: &dyn DnsResolver,
     ) -> Result<TcpOutbound, CoreError> {
         let node = self
-            .select_configured_node_with_resolver(inbound_tag, target, dns_resolver)
+            .select_configured_node_with_resolver(
+                &RouteContext::inbound(inbound_tag),
+                target,
+                dns_resolver,
+            )
             .await?;
         self.factory.cached_tcp_outbound(node)
     }
 
     pub(crate) async fn select_tcp_session_outbound_with_tag_and_resolver(
         &self,
-        inbound_tag: Option<&str>,
+        route: &RouteContext<'_>,
         target: &Target,
         include_tag: bool,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<SelectedTcpSessionOutbound, CoreError> {
         let node = self
-            .select_configured_node_with_resolver(inbound_tag, target, dns_resolver)
+            .select_configured_node_with_resolver(route, target, dns_resolver)
             .await?;
         let tag = include_tag
             .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
@@ -2792,7 +2799,11 @@ impl OutboundRouter {
         dns_resolver: &dyn DnsResolver,
     ) -> Result<SelectedTcpOutbound, CoreError> {
         let node = self
-            .select_configured_node_with_resolver(inbound_tag, target, dns_resolver)
+            .select_configured_node_with_resolver(
+                &RouteContext::inbound(inbound_tag),
+                target,
+                dns_resolver,
+            )
             .await?;
         let tag = include_tag
             .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
@@ -2807,7 +2818,7 @@ impl OutboundRouter {
         target: &Target,
     ) -> Result<UdpOutbound, CoreError> {
         let node = self.select_configured_node(
-            inbound_tag,
+            &RouteContext::inbound(inbound_tag),
             target_domain(target),
             target_ip(target),
             Some(target_network(target)),
@@ -2824,13 +2835,21 @@ impl OutboundRouter {
         inbound_tag: Option<&str>,
         target: &Target,
     ) -> Result<Option<DnsOutbound>, CoreError> {
+        self.select_dns_outbound_for_route(&RouteContext::inbound(inbound_tag), target)
+    }
+
+    pub(crate) fn select_dns_outbound_for_route(
+        &self,
+        route: &RouteContext<'_>,
+        target: &Target,
+    ) -> Result<Option<DnsOutbound>, CoreError> {
         let policy = self.routing_policy_state();
-        if !self.may_select_dns_outbound_in_policy(&policy, inbound_tag, target) {
+        if !self.may_select_dns_outbound_in_policy(&policy, route.inbound_tag, target) {
             return Ok(None);
         }
         let node = self.select_configured_node_in_policy(
             &policy,
-            inbound_tag,
+            route,
             target_domain(target),
             target_ip(target),
             Some(target_network(target)),
@@ -2852,17 +2871,26 @@ impl OutboundRouter {
         target: &Target,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<Option<DnsOutbound>, CoreError> {
+        self.select_dns_outbound_for_route_with_resolver(
+            &RouteContext::inbound(inbound_tag),
+            target,
+            dns_resolver,
+        )
+        .await
+    }
+
+    pub(crate) async fn select_dns_outbound_for_route_with_resolver(
+        &self,
+        route: &RouteContext<'_>,
+        target: &Target,
+        dns_resolver: &dyn DnsResolver,
+    ) -> Result<Option<DnsOutbound>, CoreError> {
         let policy = self.routing_policy_state();
-        if !self.may_select_dns_outbound_in_policy(&policy, inbound_tag, target) {
+        if !self.may_select_dns_outbound_in_policy(&policy, route.inbound_tag, target) {
             return Ok(None);
         }
         let node = self
-            .select_configured_node_with_resolver_in_policy(
-                &policy,
-                inbound_tag,
-                target,
-                dns_resolver,
-            )
+            .select_configured_node_with_resolver_in_policy(&policy, route, target, dns_resolver)
             .await?;
         if !self
             .graph()
@@ -2916,20 +2944,24 @@ impl OutboundRouter {
         dns_resolver: &dyn DnsResolver,
     ) -> Result<UdpOutbound, CoreError> {
         let node = self
-            .select_configured_node_with_resolver(inbound_tag, target, dns_resolver)
+            .select_configured_node_with_resolver(
+                &RouteContext::inbound(inbound_tag),
+                target,
+                dns_resolver,
+            )
             .await?;
         self.factory.cached_udp_outbound(node)
     }
 
     pub(crate) async fn select_udp_session_outbound_with_tag_and_resolver(
         &self,
-        inbound_tag: Option<&str>,
+        route: &RouteContext<'_>,
         target: &Target,
         include_tag: bool,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<SelectedUdpSessionOutbound, CoreError> {
         let node = self
-            .select_configured_node_with_resolver(inbound_tag, target, dns_resolver)
+            .select_configured_node_with_resolver(route, target, dns_resolver)
             .await?;
         let tag = include_tag
             .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
@@ -2953,7 +2985,7 @@ impl OutboundRouter {
 
     fn select_configured_node(
         &self,
-        inbound_tag: Option<&str>,
+        route: &RouteContext<'_>,
         target_domain: Option<&str>,
         target_ip: Option<&IpAddr>,
         target_network: Option<Network>,
@@ -2962,7 +2994,7 @@ impl OutboundRouter {
         let policy = self.routing_policy_state();
         self.select_configured_node_in_policy(
             &policy,
-            inbound_tag,
+            route,
             target_domain,
             target_ip,
             target_network,
@@ -2973,7 +3005,7 @@ impl OutboundRouter {
     fn select_configured_node_in_policy(
         &self,
         policy: &RoutingPolicyState,
-        inbound_tag: Option<&str>,
+        route: &RouteContext<'_>,
         target_domain: Option<&str>,
         target_ip: Option<&IpAddr>,
         target_network: Option<Network>,
@@ -2981,7 +3013,7 @@ impl OutboundRouter {
     ) -> Result<OutboundNodeId, CoreError> {
         let routed_target = select_routed_target(
             &policy.routing,
-            inbound_tag,
+            route,
             target_domain,
             target_ip,
             target_network,
@@ -2996,14 +3028,14 @@ impl OutboundRouter {
     #[cfg(test)]
     fn select_configured_node_with_resolved_ip(
         &self,
-        inbound_tag: Option<&str>,
+        route: &RouteContext<'_>,
         target: &Target,
         resolved_ip: Option<&IpAddr>,
     ) -> Result<OutboundNodeId, CoreError> {
         let policy = self.routing_policy_state();
         if let Some(routed_target) = select_routed_target(
             &policy.routing,
-            inbound_tag,
+            route,
             target_domain(target),
             target_ip(target),
             Some(target_network(target)),
@@ -3016,7 +3048,7 @@ impl OutboundRouter {
             if let Some(resolved_ip) = resolved_ip {
                 if let Some(routed_target) = select_routed_target(
                     &policy.routing,
-                    inbound_tag,
+                    route,
                     target_domain(target),
                     Some(resolved_ip),
                     Some(target_network(target)),
@@ -3032,30 +3064,25 @@ impl OutboundRouter {
 
     async fn select_configured_node_with_resolver(
         &self,
-        inbound_tag: Option<&str>,
+        route: &RouteContext<'_>,
         target: &Target,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<OutboundNodeId, CoreError> {
         // Retain one immutable policy snapshot across any DNS await so a flow
         // never observes rules from two revisions.
         let policy = self.routing_policy_state();
-        self.select_configured_node_with_resolver_in_policy(
-            &policy,
-            inbound_tag,
-            target,
-            dns_resolver,
-        )
-        .await
+        self.select_configured_node_with_resolver_in_policy(&policy, route, target, dns_resolver)
+            .await
     }
 
     async fn select_configured_node_with_resolver_in_policy(
         &self,
         policy: &RoutingPolicyState,
-        inbound_tag: Option<&str>,
+        route: &RouteContext<'_>,
         target: &Target,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<OutboundNodeId, CoreError> {
-        match select_routed_target_with_resolver(&policy.routing, inbound_tag, target, dns_resolver)
+        match select_routed_target_with_resolver(&policy.routing, route, target, dns_resolver)
             .await?
         {
             Some(target) => self.node_for_target(target),
@@ -4513,6 +4540,7 @@ mod tests {
             default_outbound_tag: Some("proxy".to_owned()),
             routing: RoutingConfig {
                 rules: vec![RoutingRule {
+                    origin: Default::default(),
                     inbound_tags: Vec::new(),
                     networks: None,
                     port_ranges: None,
@@ -4649,6 +4677,7 @@ mod tests {
 
     fn ip_rule(tag: &str, ip: Ipv4Addr) -> RoutingRule {
         RoutingRule {
+            origin: Default::default(),
             inbound_tags: Vec::new(),
             networks: None,
             port_ranges: None,
@@ -4661,6 +4690,7 @@ mod tests {
 
     fn domain_and_ip_rule(tag: &str, domain: &str, ip: Ipv4Addr) -> RoutingRule {
         RoutingRule {
+            origin: Default::default(),
             inbound_tags: Vec::new(),
             networks: None,
             port_ranges: None,
@@ -4675,6 +4705,7 @@ mod tests {
 
     fn inbound_rule(inbound_tag: &str, outbound_tag: &str) -> RoutingRule {
         RoutingRule {
+            origin: Default::default(),
             inbound_tags: vec![inbound_tag.to_owned()],
             networks: None,
             port_ranges: None,
@@ -4691,6 +4722,7 @@ mod tests {
         port_range: RoutingPortRange,
     ) -> RoutingRule {
         RoutingRule {
+            origin: Default::default(),
             inbound_tags: Vec::new(),
             networks: Some(vec![network]),
             port_ranges: Some(vec![port_range]),
@@ -5272,6 +5304,7 @@ mod tests {
             .collect::<Vec<_>>();
         inbound_tags.extend(inbound_tags.clone());
         config.routing.rules = vec![RoutingRule {
+            origin: Default::default(),
             inbound_tags,
             networks: Some(vec![Network::Udp]),
             port_ranges: Some(
@@ -5490,7 +5523,7 @@ mod tests {
 
         let selected = router
             .select_tcp_outbound_for_session_with_tag(
-                None,
+                &xray_config::RouteContext::default(),
                 &domain_tcp_target("example.test"),
                 true,
             )
@@ -6415,6 +6448,7 @@ mod tests {
             fallback_tag: Some("direct".to_owned()),
         }];
         config.routing.rules = vec![RoutingRule {
+            origin: Default::default(),
             inbound_tags: Vec::new(),
             networks: None,
             port_ranges: None,
@@ -6436,7 +6470,11 @@ mod tests {
         assert_eq!(initial.rule_count, 1);
         assert_eq!(
             router
-                .select_tcp_outbound_for_session_with_tag(None, &target, true)
+                .select_tcp_outbound_for_session_with_tag(
+                    &xray_config::RouteContext::default(),
+                    &target,
+                    true
+                )
                 .unwrap()
                 .tag
                 .as_deref(),
@@ -6451,7 +6489,11 @@ mod tests {
         );
         assert_eq!(
             router
-                .select_tcp_outbound_for_session_with_tag(None, &target, true)
+                .select_tcp_outbound_for_session_with_tag(
+                    &xray_config::RouteContext::default(),
+                    &target,
+                    true
+                )
                 .unwrap()
                 .tag
                 .as_deref(),
@@ -6616,13 +6658,25 @@ mod tests {
         let target = domain_tcp_target("example.test");
 
         let first = first_router
-            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &target,
+                true,
+            )
             .unwrap();
         let second = second_router
-            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &target,
+                true,
+            )
             .unwrap();
         let third = first_router
-            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &target,
+                true,
+            )
             .unwrap();
 
         assert_eq!(first.tag.as_deref(), Some("proxy-a"));
@@ -6644,7 +6698,11 @@ mod tests {
             .selection()
             .record_health_failure(proxy_a, OutboundHealthFailure::Timeout, 1_000);
         let selected = router
-            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &target,
+                true,
+            )
             .unwrap();
         assert_eq!(selected.tag.as_deref(), Some("proxy-b"));
 
@@ -6674,7 +6732,11 @@ mod tests {
             .selection()
             .record_health_success(proxy_b, Duration::from_millis(10), 1_000);
         let selected = router
-            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &target,
+                true,
+            )
             .unwrap();
         assert_eq!(selected.tag.as_deref(), Some("proxy-b"));
 
@@ -6682,7 +6744,11 @@ mod tests {
             .selection()
             .record_health_success(proxy_a, Duration::from_millis(10), 2_000);
         let selected = router
-            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &target,
+                true,
+            )
             .unwrap();
         assert_eq!(selected.tag.as_deref(), Some("proxy-a"));
     }
@@ -6712,7 +6778,11 @@ mod tests {
             .record_health_success(proxy_b, Duration::from_millis(100), 2_000);
 
         let selected = router
-            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &target,
+                true,
+            )
             .unwrap();
         assert_eq!(selected.tag.as_deref(), Some("proxy-b"));
     }
@@ -6743,7 +6813,11 @@ mod tests {
 
         for _ in 0..64 {
             let selected = router
-                .select_tcp_outbound_for_session_with_tag(None, &target, true)
+                .select_tcp_outbound_for_session_with_tag(
+                    &xray_config::RouteContext::default(),
+                    &target,
+                    true,
+                )
                 .unwrap();
             assert!(matches!(
                 selected.tag.as_deref(),
@@ -6779,7 +6853,11 @@ mod tests {
         }
 
         let selected = router
-            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &target,
+                true,
+            )
             .unwrap();
         assert_eq!(selected.tag.as_deref(), Some("proxy-b"));
     }
@@ -6896,7 +6974,7 @@ mod tests {
             .unwrap();
         let selected = router
             .select_tcp_outbound_for_session_with_tag(
-                None,
+                &xray_config::RouteContext::default(),
                 &domain_tcp_target("example.test"),
                 true,
             )
@@ -6923,7 +7001,11 @@ mod tests {
             1
         );
         let first = first_router
-            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &target,
+                true,
+            )
             .unwrap();
         assert_eq!(first.tag.as_deref(), Some("proxy-a"));
 
@@ -6935,7 +7017,11 @@ mod tests {
             2
         );
         let second = first_router
-            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &target,
+                true,
+            )
             .unwrap();
         assert_eq!(second.tag.as_deref(), Some("proxy-b"));
 
@@ -6944,7 +7030,11 @@ mod tests {
             .set_override("automatic", "proxy-a")
             .unwrap();
         let first_again = second_router
-            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &target,
+                true,
+            )
             .unwrap();
         let (TcpOutbound::Vless(first), TcpOutbound::Vless(first_again)) =
             (first.outbound, first_again.outbound)
@@ -8578,7 +8668,7 @@ mod tests {
 
         let selected = router
             .select_tcp_outbound_for_session_with_tag(
-                None,
+                &xray_config::RouteContext::default(),
                 &domain_tcp_target("dns-upstream.example"),
                 true,
             )
