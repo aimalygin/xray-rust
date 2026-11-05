@@ -310,6 +310,7 @@ it reads the parameters panels such as Remnawave write on every link:
 | TLS `pcs` | `tlsSettings.pinnedPeerCertSha256` | Xray's comma-separated SHA-256 hex, with or without colons |
 | TLS `vcn` | `tlsSettings.verifyPeerCertByName` | Xray's comma-separated names |
 | TLS `cs` | none | always fails with an error naming `cs`: `cipherSuites` is not supported |
+| `fm` | `streamSettings.finalmask` | the percent-encoded JSON object Remnawave writes from the host's `finalMask`, validated like canonical JSON; masks the core does not implement fail with an error naming `fm`. Empty means absent |
 
 The base64 JSON `vmess://` form keeps the gRPC mode in `type`, as v2rayN
 writes it; for other carriers `type` must be absent, empty or `none`. Any other

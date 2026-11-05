@@ -26,11 +26,17 @@ long-term supported release series.
   - `headerType=none` imports. `headerType=http`, other gRPC modes and TLS
     `cs` (cipher suites) are still refused, and the error now names the
     parameter.
+  - `fm`, the percent-encoded JSON of the host's `finalmask`, becomes
+    `streamSettings.finalmask` and is checked as canonical JSON is. A mask the
+    core does not implement fails with an error naming `fm` instead of failing
+    the whole link as unsupported.
 - `hy2://` links with a certificate pin (`pinSHA256`) import, so Hysteria
   servers with a self-signed certificate can be added from a link. The pin
   maps to `pinnedPeerCertSha256` and is checked as Xray-core checks it.
   `insecure=1` (or `true`) is accepted next to a pin and still refused without
-  one; `insecure=false` now imports.
+  one; `insecure=false` now imports. Remnawave's `fm` (the host's
+  `finalmask`) imports too; its Salamander entry must match `obfs` and
+  `obfs-password`, which the panel derives from it, and appears once.
 - Routing rules can check where a connection comes from, with Xray-core's
   `sourceIP` (or `source`), `sourcePort`, `localIP`, `localPort` and `user`.
   Profiles with them used to fail to parse.

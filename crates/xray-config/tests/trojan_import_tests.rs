@@ -243,3 +243,63 @@ fn trojan_uri_maps_tls_pins_and_rejects_cipher_suites() {
         ImportError::UnsupportedParameter("cs")
     );
 }
+
+/// Percent-encodes a finalmask as Remnawave's `encodeURIComponent` does.
+fn fm(mask: &Value) -> String {
+    mask.to_string()
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'!' | b'~' => {
+                char::from(b).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+/// Remnawave writes a host's whole finalmask as `fm`; it lands verbatim in
+/// `streamSettings.finalmask`, and the parser decides what the core can carry.
+#[test]
+fn trojan_uri_maps_fm_to_finalmask_through_the_shared_validator() {
+    let mask = serde_json::json!({"tcp":[{"type":"fragment","settings":{
+        "packets":"tlshello","length":"100-200","delay":"10-20"}}]});
+    let tls = stream(&format!("security=tls&sni=example.test&fm={}", fm(&mask)));
+    assert_eq!(tls["finalmask"], mask);
+    // VMess URIs share the stream mapping.
+    let profile = import_profile(
+        ProfileFormat::Vmess,
+        &format!(
+            "vmess://8a7c5d4e-1b2c-4d3e-8f9a-0b1c2d3e4f5a@example.test:443?security=tls&fm={}",
+            fm(&mask)
+        ),
+        None,
+        &[],
+    )
+    .unwrap();
+    let config: Value = serde_json::from_str(&profile.config_json).unwrap();
+    assert_eq!(config["outbounds"][0]["streamSettings"]["finalmask"], mask);
+    // An empty `fm` is no mask.
+    assert!(stream("fm=").get("finalmask").is_none());
+
+    for text in ["%7B", "%5B%5D", "1", "%22tcp%22", "null"] {
+        assert_eq!(
+            import_error(&format!("fm={text}")),
+            ImportError::Syntax,
+            "{text}"
+        );
+    }
+    assert_eq!(import_error("fm=%7B%7D&fm=%7B%7D"), ImportError::Duplicate);
+    // What the core does not implement names `fm` instead of being dropped.
+    for mask in [
+        serde_json::json!({"udp":[{"type":"noise","settings":{"noise":[{"rand":"10-20"}]}}]}),
+        serde_json::json!({"tcp":[{"type":"fragment","settings":{"packets":"1-3","length":"100-200"}}]}),
+        serde_json::json!({"tcp":[{"type":"header-custom","settings":{}}]}),
+        serde_json::json!({"unknown":[]}),
+    ] {
+        assert_eq!(
+            import_error(&format!("fm={}", fm(&mask))),
+            ImportError::UnsupportedParameter("fm"),
+            "{mask}"
+        );
+    }
+}

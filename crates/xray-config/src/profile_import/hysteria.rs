@@ -40,6 +40,7 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
     let mut sni = None;
     let mut insecure = None;
     let mut pin = None;
+    let mut fm = None;
     if !query.is_empty() {
         if query.split('&').count() > 16 {
             return Err(ImportError::TooLarge);
@@ -71,6 +72,11 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
                 }
                 "pinSHA256" => {
                     if pin.replace(value).is_some() {
+                        return Err(ImportError::Duplicate);
+                    }
+                }
+                "fm" => {
+                    if fm.replace(value).is_some() {
                         return Err(ImportError::Duplicate);
                     }
                 }
@@ -127,6 +133,50 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
         }
         _ => return Err(ImportError::Unsupported),
     };
+    let mut mask = fm
+        .filter(|v| !v.is_empty())
+        .map(|text| final_mask(&text).map(SecretJson))
+        .transpose()?;
+    if let Some(mask) = &mut mask {
+        // The import acknowledges the missing ChromeParrot shaping, as it does
+        // without `fm`; any other value is left for the parser to refuse.
+        match mask.0.get_mut("quicParams") {
+            None | Some(Value::Null) => mask.0["quicParams"] = json!({"disableChromeParrot":true}),
+            Some(Value::Object(quic)) => {
+                quic.entry("disableChromeParrot").or_insert(json!(true));
+            }
+            Some(_) => {}
+        }
+        match mask.0.get("udp") {
+            None | Some(Value::Null) => mask.0["udp"] = json!([]),
+            Some(Value::Array(_)) => {}
+            Some(_) => return Err(ImportError::UnsupportedParameter("fm")),
+        }
+    }
+    // Remnawave derives `obfs` from the mask's Salamander entry for Hysteria's
+    // own client, which ignores `fm`. Both must describe the same mask, which
+    // then appears once.
+    let salamander = match (&mask, salamander) {
+        (Some(mask), Some((password, gecko))) => {
+            let found = mask.0["udp"].as_array().is_some_and(|masks| {
+                masks.iter().any(|m| {
+                    m.get("type")
+                        .and_then(Value::as_str)
+                        .is_some_and(|t| t.eq_ignore_ascii_case("salamander"))
+                        && m.pointer("/settings/password").and_then(Value::as_str)
+                            == Some(password.as_str())
+                        && m.pointer("/settings/packetSize")
+                            .is_some_and(|v| !v.is_null())
+                            == gecko.is_some()
+                })
+            });
+            if !found {
+                return Err(ImportError::UnsupportedParameter("obfs"));
+            }
+            None
+        }
+        (_, salamander) => salamander,
+    };
     let mut root = SecretJson(json!({
         "inbounds":[inbound()],
         "outbounds":[{"tag":"proxy","protocol":"hysteria",
@@ -137,12 +187,19 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
                 "finalmask":{"quicParams":{"disableChromeParrot":true},"udp":[]}}}],
         "routing":{"domainStrategy":"AsIs","rules":[]}
     }));
+    let has_mask = mask.is_some();
+    if let Some(mask) = &mut mask {
+        root.0["outbounds"][0]["streamSettings"]["finalmask"] = mask.0.take();
+    }
     let masks = root.0["outbounds"][0]["streamSettings"]["finalmask"]["udp"]
         .as_array_mut()
         .unwrap();
     if let Some(ports) = hopping_ports {
-        masks.push(json!({"type":"udphop","settings":{
-            "mode":"intervalLocal,intervalRemote","remotePorts":ports}}));
+        masks.insert(
+            0,
+            json!({"type":"udphop","settings":{
+            "mode":"intervalLocal,intervalRemote","remotePorts":ports}}),
+        );
     }
     if let Some((password, gecko)) = salamander {
         let mut mask = json!({"type":"salamander", "settings":{"password":password.as_str()}});
@@ -160,7 +217,7 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
     } else {
         json!({"servers":dns_ips(dns)?})
     };
-    finish(ProfileFormat::Hysteria2, name, host, &root.0)
+    finish_masked(ProfileFormat::Hysteria2, name, host, &root.0, has_mask)
 }
 
 pub(super) fn decode(value: &str) -> Result<Zeroizing<String>, ImportError> {

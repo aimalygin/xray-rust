@@ -215,6 +215,7 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
     if !params.is_empty() {
         return Err(ImportError::Unsupported);
     }
+    let fm = stream.0.get("finalmask").is_some();
     let mut root = SecretJson(
         json!({"inbounds":[inbound()],"outbounds":[{"tag":"proxy","protocol":"vmess","settings":{"address":host,"port":port,"id":id.as_str(),"security":cipher.as_str(),"experiments":experiments.as_str()},"streamSettings":stream.0.take()}],"routing":{"domainStrategy":"AsIs","rules":[]}}),
     );
@@ -223,5 +224,5 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
     } else {
         json!({"servers":dns_ips(dns)?})
     };
-    finish(ProfileFormat::Vmess, name, host, &root.0)
+    finish_masked(ProfileFormat::Vmess, name, host, &root.0, fm)
 }

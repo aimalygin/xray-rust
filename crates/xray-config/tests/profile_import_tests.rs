@@ -82,6 +82,117 @@ fn hysteria_gecko_links_pad_to_hysterias_default_sizes() {
     );
     assert!(!format!("{imported:?}").contains("test+pass"));
 }
+/// Percent-encodes a finalmask as Remnawave's `encodeURIComponent` does.
+fn fm(mask: &Value) -> String {
+    mask.to_string()
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'!' | b'~' => {
+                char::from(b).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+/// Remnawave writes the host's finalmask as `fm` and, for Hysteria's own
+/// client, its Salamander entry again as `obfs`. The mask lands once; `obfs`
+/// must describe the same entry.
+#[test]
+fn hysteria_fm_carries_the_finalmask_and_must_agree_with_obfs() {
+    let salamander = json!({"type":"salamander","settings":{"password":"test+pass"}});
+    let noise = json!({"type":"noise","settings":{"noise":[{"rand":"10-20"}]}});
+    let mask = json!({"udp":[salamander, noise]});
+    let finalmask = |query: &str| {
+        config(
+            ProfileFormat::Hysteria2,
+            &format!("hysteria2://secret@server.example:443/?{query}"),
+        )["outbounds"][0]["streamSettings"]["finalmask"]
+            .clone()
+    };
+    let expected = json!({"quicParams":{"disableChromeParrot":true},"udp":[salamander, noise]});
+    assert_eq!(finalmask(&format!("fm={}", fm(&mask))), expected);
+    assert_eq!(
+        finalmask(&format!(
+            "obfs=salamander&obfs-password=test%2Bpass&sni=tls.example&fm={}",
+            fm(&mask)
+        )),
+        expected
+    );
+    // Port hopping from the link joins the mask; its quicParams are kept.
+    let quic = json!({"quicParams":{"brutalUp":"50 mbps"},"udp":[salamander]});
+    assert_eq!(
+        finalmask(&format!("mport=443%2C8443&fm={}", fm(&quic))),
+        json!({"quicParams":{"brutalUp":"50 mbps","disableChromeParrot":true},"udp":[
+            {"type":"udphop","settings":{"mode":"intervalLocal,intervalRemote","remotePorts":"443,8443"}},
+            salamander]})
+    );
+    assert_eq!(
+        finalmask("fm="),
+        json!({"quicParams":{"disableChromeParrot":true},"udp":[]})
+    );
+    let gecko = json!({"udp":[{"type":"salamander","settings":{"password":"test+pass","packetSize":"100-900"}}]});
+    assert_eq!(
+        finalmask(&format!(
+            "obfs=gecko&obfs-password=test%2Bpass&fm={}",
+            fm(&gecko)
+        ))["udp"],
+        gecko["udp"]
+    );
+
+    let error = |query: String| {
+        import_profile(
+            ProfileFormat::Hysteria2,
+            &format!("hy2://secret@server.example?{query}"),
+            None,
+            &[],
+        )
+        .unwrap_err()
+    };
+    // `obfs` naming another mask, or none in `fm`, would connect Hysteria's
+    // client and Xray's differently.
+    for (obfs, mask) in [
+        ("obfs=salamander&obfs-password=other-pass", &mask),
+        (
+            "obfs=salamander&obfs-password=test%2Bpass",
+            &json!({"udp":[noise]}),
+        ),
+        ("obfs=salamander&obfs-password=test%2Bpass", &json!({})),
+        ("obfs=gecko&obfs-password=test%2Bpass", &mask),
+        ("obfs=salamander&obfs-password=test%2Bpass", &gecko),
+    ] {
+        assert_eq!(
+            error(format!("{obfs}&fm={}", fm(mask))),
+            ImportError::UnsupportedParameter("obfs"),
+            "{obfs} {mask}"
+        );
+    }
+    for text in ["%5B%5D", "%7B", "true"] {
+        assert_eq!(error(format!("fm={text}")), ImportError::Syntax, "{text}");
+    }
+    assert_eq!(error("fm=%7B%7D&fm=%7B%7D".into()), ImportError::Duplicate);
+    for mask in [
+        json!({"udp":{}}),
+        json!({"udp":[{"type":"salamander","settings":{"password":"abc"}}]}),
+        json!({"udp":[{"type":"wireguard","settings":{}}]}),
+        json!({"quicParams":{"disableChromeParrot":false}}),
+        json!({"tcp":[{"type":"fragment","settings":{"packets":"tlshello","length":"1-2"}}]}),
+        json!({"udp":[{"type":"udphop","settings":{"remotePorts":"443-445"}}]}),
+    ] {
+        let fm = fm(&mask);
+        assert_eq!(
+            error(format!("fm={fm}")),
+            ImportError::UnsupportedParameter("fm"),
+            "{mask}"
+        );
+        if mask["udp"][0]["type"] == "udphop" {
+            // Two hopping masks are refused rather than one dropped.
+            assert_eq!(
+                error(format!("mport=443-445&fm={fm}")),
+                ImportError::UnsupportedParameter("fm")
+            );
+        }
+    }
+}
 fn config(format: ProfileFormat, text: &str) -> Value {
     serde_json::from_str(&import_profile(format, text, None, &[]).unwrap().config_json).unwrap()
 }

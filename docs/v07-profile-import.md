@@ -113,6 +113,17 @@ within the implemented runtime subset:
   `true`, `0`, `false` and so on), as Hysteria's client does; a true value
   imports only with a nonempty pin, where it changes nothing. An empty
   `pinSHA256` means no pin.
+- `fm`, Remnawave's percent-encoded JSON of the host's `finalMask`, becomes
+  `streamSettings.finalmask`, validated like canonical JSON; masks the core
+  does not implement fail with an error naming `fm`, and an empty `fm` is
+  absent. The import still sets `quicParams.disableChromeParrot=true` when the
+  mask leaves it out, and adds the link's port hopping as an `udphop` mask (a
+  second hopping mask in `fm` is refused). Remnawave also writes the mask's
+  Salamander entry as `obfs`/`obfs-password` for Hysteria's own client, which
+  ignores `fm`: with both present, `fm` must contain a Salamander entry with
+  the same password (with `packetSize` exactly when `obfs=gecko`), which
+  appears once; a mismatch fails with an error naming `obfs`, since the two
+  clients would otherwise connect differently.
 - A true `insecure` without a pin, other `insecure` values, ECH, other
   obfuscation modes, bandwidth parameters and every unknown query field fail explicitly. Settings are never silently dropped to weaken verification or
   change the transport. Scoped IPv6 and nontrivial URL paths are unsupported.
