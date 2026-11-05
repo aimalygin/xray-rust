@@ -80,6 +80,18 @@ impl UdpSession {
             .map_err(|_| invalid("Shadowsocks 2022 random source failed"))?;
         self.encode_at(target, payload, now()?, nonce)
     }
+    /// Bytes `encode` adds to a payload for `target`: the separate header
+    /// (with the XChaCha nonce or the identity headers), the 11-byte main
+    /// header without padding, the address and the tag. Kept in step with
+    /// `encode_at` by its tests.
+    pub fn overhead(&self, target: &Target) -> io::Result<usize> {
+        let extra = if self.method.cipher == Cipher::ChaCha20Poly1305 {
+            24
+        } else {
+            (self.method.keys.len() - 1) * 16
+        };
+        Ok(16 + extra + 11 + encode_address(target)?.len() + TAG_LENGTH)
+    }
     fn encode_at(
         &mut self,
         target: &Target,
@@ -238,14 +250,16 @@ mod tests {
                 fixed.copy_from_slice(&nonce);
             }
             let target = Target::new(TargetAddr::Domain("example.test".into()), 443, Network::Udp);
+            let payload = unhex(case["udpPayload"].as_str().unwrap());
             let wire = session
-                .encode_at(
-                    &target,
-                    &unhex(case["udpPayload"].as_str().unwrap()),
-                    1700000000,
-                    fixed,
-                )
+                .encode_at(&target, &payload, 1700000000, fixed)
                 .unwrap();
+            assert_eq!(
+                wire.len(),
+                session.overhead(&target).unwrap() + payload.len(),
+                "{}",
+                case["method"]
+            );
             assert_eq!(
                 wire,
                 unhex(case["udpWire"].as_str().unwrap()),

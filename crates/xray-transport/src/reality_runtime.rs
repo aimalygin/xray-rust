@@ -85,10 +85,11 @@ impl DeferredRuntimeRealityConnection {
             context_provider,
         } = *self;
         let connector = RealityConnector::new(config.clone());
-        let session = session_provider.create_session(RealityClientHelloRequest {
+        let mut session = session_provider.create_session(RealityClientHelloRequest {
             server_name: &config.server_name,
             fingerprint: &config.fingerprint,
         })?;
+        session.set_spider_x(&config.spider_x);
         let prepared_client_hello = session.prepared_client_hello()?;
         let context = context_provider.context();
         let prepared_handshake =

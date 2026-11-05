@@ -524,3 +524,50 @@ fn fin_waits_for_deferred_tail_before_closing_the_local_tcp_socket() {
     assert!(flows[&handle].pending_remote_delivery.is_none());
     assert_eq!(budget.pending_total_bytes(), 0);
 }
+
+#[test]
+fn full_udp_queue_drops_the_datagram_but_keeps_the_flow() {
+    let key = UdpFlowKey::new(
+        IpEndpoint::new(IpAddress::v4(198, 18, 0, 2), 12000),
+        IpEndpoint::new(IpAddress::v4(192, 0, 2, 1), 443),
+    );
+    let (to_remote, mut from_stack) = mpsc::channel(UDP_BRIDGE_CHANNEL_DEPTH);
+    let mut flows = HashMap::from([(
+        key,
+        UdpFlow {
+            to_remote,
+            generation: 7,
+            last_used_sequence: 0,
+            task: None,
+        },
+    )]);
+    let mut budget = FlowBudgetState::new(MOBILE_FLOW_BUDGET_POLICY);
+    for _ in 0..UDP_BRIDGE_CHANNEL_DEPTH {
+        forward_udp_payload(&mut flows, key, Bytes::from_static(b"burst"), &mut budget);
+    }
+    assert_eq!(budget.udp_channel_dropped_packets(), 0);
+
+    forward_udp_payload(&mut flows, key, Bytes::from_static(b"over"), &mut budget);
+    assert_eq!(budget.udp_channel_dropped_packets(), 1);
+    assert_eq!(flows[&key].generation, 7, "a full queue must keep the flow");
+
+    from_stack.try_recv().unwrap();
+    assert_eq!(
+        budget.admit_udp_flow(&mut flows, key),
+        UdpFlowAdmission::Existing,
+        "the next datagram must reuse the flow instead of opening a new one"
+    );
+    forward_udp_payload(&mut flows, key, Bytes::from_static(b"later"), &mut budget);
+    let queued: Vec<_> = std::iter::from_fn(|| from_stack.try_recv().ok()).collect();
+    assert_eq!(queued.len(), UDP_BRIDGE_CHANNEL_DEPTH);
+    assert_eq!(queued.last().unwrap().as_ref(), b"later");
+    assert_eq!(budget.udp_channel_dropped_packets(), 1);
+
+    drop(from_stack);
+    forward_udp_payload(&mut flows, key, Bytes::from_static(b"closed"), &mut budget);
+    assert!(
+        flows.is_empty(),
+        "a closed queue means the bridge ended, so the flow is forgotten"
+    );
+    assert_eq!(budget.udp_channel_dropped_packets(), 2);
+}

@@ -1,6 +1,9 @@
 use std::{
     fmt,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use async_trait::async_trait;
@@ -8,12 +11,12 @@ use rustls::{
     client::{
         danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
         CapturesClientHello, ClientHelloContext, ClientHelloCustomizer, ClientHelloPlan,
-        ClientHelloSessionId, FinalizesClientHello, FixedX25519KeyShare,
+        ClientHelloSessionId, FinalizesClientHello, FixedX25519KeyShare, WebPkiServerVerifier,
     },
     crypto::{self, CryptoProvider, GetRandomFailed},
     pki_types::{CertificateDer, ServerName, UnixTime},
     CertificateError, ClientConfig, ClientConnection, DigitallySignedStruct, Error as RustlsError,
-    SignatureScheme,
+    RootCertStore, SignatureScheme,
 };
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector as TokioTlsConnector;
@@ -26,6 +29,7 @@ use crate::{
         RealityHandshakeInput, RealityMldsa65CertificateInput, RealityPreparedClientHello,
     },
     reality_connector::{RealityClientHelloRequest, RealityTlsSession, RealityTlsSessionProvider},
+    reality_spider::{spider, RealitySpider},
     utls_profiles::{reality_profile_for_fingerprint, UtlsClientHelloProfile},
     utls_shaping::{apply_utls_profile, retain_profile_certificate_decompressors},
     BoxedTransportStream, CapturedStream, PenetratingTlsStream, ServerReadLog, TransportError,
@@ -66,6 +70,8 @@ impl RealityTlsSessionProvider for RustlsRealityTlsSessionProvider {
             fingerprint: request.fingerprint.to_owned(),
             plan,
             prepared_client_hello: prepared,
+            spider: RealitySpider::parse(""),
+            roots: None,
         }))
     }
 }
@@ -191,6 +197,7 @@ impl RustlsRealityPlan {
                 auth_key,
                 client_hello: None,
             },
+            None,
             None,
             Some(customizer),
             profile,
@@ -464,6 +471,10 @@ struct RustlsRealityTlsSession {
     fingerprint: String,
     plan: RustlsRealityPlan,
     prepared_client_hello: RealityPreparedClientHello,
+    spider: RealitySpider,
+    /// Trust anchors for a server that answers with a real certificate;
+    /// `None` is the bundled Web PKI roots. Tests substitute their own.
+    roots: Option<Arc<RootCertStore>>,
 }
 
 impl fmt::Debug for RustlsRealityTlsSession {
@@ -473,12 +484,17 @@ impl fmt::Debug for RustlsRealityTlsSession {
             .field("server_name", &self.server_name)
             .field("fingerprint", &self.fingerprint)
             .field("plan", &self.plan)
+            .field("spider", &self.spider)
             .finish()
     }
 }
 
 #[async_trait]
 impl RealityTlsSession for RustlsRealityTlsSession {
+    fn set_spider_x(&mut self, spider_x: &str) {
+        self.spider = RealitySpider::parse(spider_x);
+    }
+
     fn prepared_client_hello(&self) -> Result<RealityPreparedClientHello, RealityError> {
         Ok(RealityPreparedClientHello {
             fingerprint: self.prepared_client_hello.fingerprint.clone(),
@@ -550,9 +566,14 @@ impl RustlsRealityTlsSession {
             None,
             Some(finalizer),
         ));
+        let real_certificate = Arc::new(RealCertificateFallback {
+            roots: self.roots.clone(),
+            accepted: AtomicBool::new(false),
+        });
         let config = Arc::new(reality_client_config(
             RealityVerificationMaterial::Finalized(finalized_state),
             mldsa65,
+            Some(real_certificate.clone()),
             Some(customizer),
             profile,
         )?);
@@ -563,6 +584,14 @@ impl RustlsRealityTlsSession {
         let connect = connector.connect(server_name, tcp_stream);
         let stream = connect.await.map_err(TransportError::Tls)?;
 
+        if real_certificate.accepted.load(Ordering::Acquire) {
+            // Xray-core finishes this handshake and crawls the real site
+            // before failing (`reality.go` `UClient`, lines 207-298). The
+            // stream goes to the crawl; no user data is ever written to it.
+            spider(stream, &self.server_name, &self.spider).await;
+            return Err(RealityError::RealCertificate.into());
+        }
+
         Ok(Box::new(PenetratingTlsStream::new(stream)))
     }
 }
@@ -570,6 +599,7 @@ impl RustlsRealityTlsSession {
 fn reality_client_config(
     material: RealityVerificationMaterial,
     mldsa65: Option<RealityMldsa65VerifierContext>,
+    real_certificate: Option<Arc<RealCertificateFallback>>,
     client_hello_customizer: Option<Arc<dyn ClientHelloCustomizer>>,
     profile: &'static UtlsClientHelloProfile,
 ) -> Result<ClientConfig, TransportError> {
@@ -577,7 +607,11 @@ fn reality_client_config(
     let builder = ClientConfig::builder_with_provider(provider)
         .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])
         .map_err(|error| TransportError::TlsConfig(error.to_string()))?;
-    let verifier = RealityServerVerifier { material, mldsa65 };
+    let verifier = RealityServerVerifier {
+        material,
+        mldsa65,
+        real_certificate,
+    };
     let mut config = builder
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(verifier))
@@ -599,6 +633,13 @@ fn reality_crypto_provider() -> CryptoProvider {
         crypto::aws_lc_rs::kx_group::SECP384R1,
     ];
     provider
+}
+
+/// Exercises the ServerHello capture without exposing it in normal builds.
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub fn extract_server_hello_for_fuzzing(records: &[u8]) -> Option<Vec<u8>> {
+    extract_server_hello(records).ok()
 }
 
 fn extract_server_hello(records: &[u8]) -> Result<Vec<u8>, TransportError> {
@@ -738,9 +779,58 @@ impl fmt::Debug for RealityMldsa65VerifierContext {
     }
 }
 
+/// What `UConn.VerifyPeerCertificate` does when the certificate is not a
+/// REALITY one: verify it as an ordinary certificate for the server name
+/// against the system roots (`reality.go` lines 129-139). Only a certificate
+/// that passes lets the handshake finish, and `accepted` records it so the
+/// caller crawls instead of using the connection.
+struct RealCertificateFallback {
+    roots: Option<Arc<RootCertStore>>,
+    accepted: AtomicBool,
+}
+
+impl fmt::Debug for RealCertificateFallback {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RealCertificateFallback")
+            .field("custom_roots", &self.roots.is_some())
+            .field("accepted", &self.accepted)
+            .finish()
+    }
+}
+
+impl RealCertificateFallback {
+    fn verify(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp_response: &[u8],
+        now: UnixTime,
+    ) -> Result<ServerCertVerified, RustlsError> {
+        let roots = self.roots.clone().unwrap_or_else(|| {
+            Arc::new(RootCertStore {
+                roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+            })
+        });
+        let verified =
+            WebPkiServerVerifier::builder_with_provider(roots, Arc::new(reality_crypto_provider()))
+                .build()
+                .map_err(|_| {
+                    RustlsError::InvalidCertificate(
+                        CertificateError::ApplicationVerificationFailure,
+                    )
+                })?
+                .verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)?;
+        self.accepted.store(true, Ordering::Release);
+        Ok(verified)
+    }
+}
+
 struct RealityServerVerifier {
     material: RealityVerificationMaterial,
     mldsa65: Option<RealityMldsa65VerifierContext>,
+    real_certificate: Option<Arc<RealCertificateFallback>>,
 }
 
 impl fmt::Debug for RealityServerVerifier {
@@ -749,6 +839,7 @@ impl fmt::Debug for RealityServerVerifier {
             .debug_struct("RealityServerVerifier")
             .field("material", &self.material)
             .field("mldsa65", &self.mldsa65)
+            .field("real_certificate", &self.real_certificate)
             .finish()
     }
 }
@@ -757,10 +848,10 @@ impl ServerCertVerifier for RealityServerVerifier {
     fn verify_server_cert(
         &self,
         end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: UnixTime,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp_response: &[u8],
+        now: UnixTime,
     ) -> Result<ServerCertVerified, RustlsError> {
         let material = self.material.snapshot()?;
         let server_hello;
@@ -793,9 +884,16 @@ impl ServerCertVerifier for RealityServerVerifier {
             Ok(crate::reality::RealityCertificateVerification::Verified) => {
                 Ok(ServerCertVerified::assertion())
             }
-            Ok(crate::reality::RealityCertificateVerification::NotReality) => Err(
-                RustlsError::InvalidCertificate(CertificateError::ApplicationVerificationFailure),
-            ),
+            Ok(crate::reality::RealityCertificateVerification::NotReality) => {
+                match &self.real_certificate {
+                    Some(fallback) => {
+                        fallback.verify(end_entity, intermediates, server_name, ocsp_response, now)
+                    }
+                    None => Err(RustlsError::InvalidCertificate(
+                        CertificateError::ApplicationVerificationFailure,
+                    )),
+                }
+            }
             Err(_) => Err(RustlsError::InvalidCertificate(
                 CertificateError::BadEncoding,
             )),
@@ -804,13 +902,28 @@ impl ServerCertVerifier for RealityServerVerifier {
 
     fn verify_tls12_signature(
         &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, RustlsError> {
-        Err(RustlsError::InvalidCertificate(
-            CertificateError::ApplicationVerificationFailure,
-        ))
+        // A REALITY server never speaks TLS 1.2; only a real certificate that
+        // already passed Web PKI verification gets this far, as uTLS allows.
+        if !self
+            .real_certificate
+            .as_ref()
+            .is_some_and(|fallback| fallback.accepted.load(Ordering::Acquire))
+        {
+            return Err(RustlsError::InvalidCertificate(
+                CertificateError::ApplicationVerificationFailure,
+            ));
+        }
+        let provider = crypto::ring::default_provider();
+        crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &provider.signature_verification_algorithms,
+        )
     }
 
     fn verify_tls13_signature(
@@ -840,6 +953,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
+    use crate::reality::{prepare_reality_handshake, RealityHandshakeInput};
     use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSecret};
 
     #[test]
@@ -856,6 +970,7 @@ mod tests {
                     auth_key: [0; 32],
                     client_hello: None,
                 },
+                None,
                 None,
                 None,
                 profile,
@@ -909,5 +1024,188 @@ mod tests {
         );
         assert_ne!(finalized.session_id, [0; REALITY_SESSION_ID_LEN]);
         assert_ne!(finalized.auth_key, [0; 32]);
+    }
+
+    const SPIDER_SERVER_NAME: &str = "spider.example.com";
+
+    struct SpiderRequest {
+        path: String,
+        referer: Option<String>,
+        cookies: Vec<String>,
+        user_agent: Option<String>,
+    }
+
+    fn real_certificate_server() -> (Arc<rustls::ServerConfig>, CertificateDer<'static>) {
+        let certified = rcgen::generate_simple_self_signed(vec![SPIDER_SERVER_NAME.to_owned()])
+            .expect("generate an ordinary certificate");
+        let cert = certified.cert.der().clone();
+        let key =
+            rustls::pki_types::PrivateKeyDer::Pkcs8(certified.signing_key.serialize_der().into());
+        let mut config = rustls::ServerConfig::builder_with_provider(Arc::new(
+            crypto::aws_lc_rs::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .expect("server protocol versions")
+        .with_no_client_auth()
+        .with_single_cert(vec![cert.clone()], key)
+        .expect("server certificate");
+        config.alpn_protocols = vec![b"h2".to_vec()];
+        (Arc::new(config), cert)
+    }
+
+    /// Serves the real site over HTTP/2 and reports every request it sees.
+    async fn serve_real_site(
+        listener: tokio::net::TcpListener,
+        config: Arc<rustls::ServerConfig>,
+        requests: tokio::sync::mpsc::UnboundedSender<SpiderRequest>,
+    ) {
+        let (tcp, _) = listener.accept().await.expect("accept");
+        let Ok(tls) = tokio_rustls::TlsAcceptor::from(config).accept(tcp).await else {
+            return;
+        };
+        let mut connection = h2::server::handshake(tls)
+            .await
+            .expect("the crawl speaks HTTP/2 after the handshake");
+        while let Some(Ok((request, mut respond))) = connection.accept().await {
+            let header = |name: http::header::HeaderName| {
+                request
+                    .headers()
+                    .get(name)
+                    .map(|value| value.to_str().expect("ASCII header").to_owned())
+            };
+            let _ = requests.send(SpiderRequest {
+                path: request.uri().path_and_query().expect("path").to_string(),
+                referer: header(http::header::REFERER),
+                cookies: request
+                    .headers()
+                    .get_all(http::header::COOKIE)
+                    .iter()
+                    .map(|value| value.to_str().expect("ASCII cookie").to_owned())
+                    .collect(),
+                user_agent: header(http::header::USER_AGENT),
+            });
+            let response = http::Response::builder()
+                .status(200)
+                .body(())
+                .expect("response");
+            let mut body = respond.send_response(response, false).expect("respond");
+            let _ = body.send_data(
+                bytes::Bytes::from_static(br#"<a href="/learned">x</a><a href="/style.css">y</a>"#),
+                true,
+            );
+        }
+    }
+
+    fn real_certificate_session(
+        roots: Option<Arc<RootCertStore>>,
+    ) -> (
+        Box<RustlsRealityTlsSession>,
+        crate::reality::RealityPreparedHandshake,
+    ) {
+        let plan = RustlsRealityPlan::random().expect("REALITY entropy");
+        let prepared_client_hello = plan
+            .prepare_client_hello(RealityClientHelloRequest {
+                server_name: SPIDER_SERVER_NAME,
+                fingerprint: "chrome",
+            })
+            .expect("prepared ClientHello");
+        let session = RustlsRealityTlsSession {
+            server_name: SPIDER_SERVER_NAME.to_owned(),
+            fingerprint: "chrome".to_owned(),
+            plan,
+            prepared_client_hello,
+            spider: RealitySpider::parse("/probe?c=1&t=1"),
+            roots,
+        };
+        let prepared = prepare_reality_handshake(RealityHandshakeInput {
+            version: [26, 10, 31],
+            unix_time: 1_700_000_000,
+            short_id: vec![0xaa, 0xbb],
+            server_public_key: X25519PublicKey::from(&X25519StaticSecret::from([7u8; 32]))
+                .to_bytes(),
+            prepared_client_hello: session
+                .prepared_client_hello()
+                .expect("prepared ClientHello"),
+        })
+        .expect("sealed ClientHello");
+        (Box::new(session), prepared)
+    }
+
+    async fn next_request(
+        requests: &mut tokio::sync::mpsc::UnboundedReceiver<SpiderRequest>,
+    ) -> SpiderRequest {
+        tokio::time::timeout(std::time::Duration::from_secs(10), requests.recv())
+            .await
+            .expect("the crawl sends its requests")
+            .expect("request")
+    }
+
+    #[tokio::test]
+    async fn real_certificate_completes_handshake_then_crawls_spider_x_and_fails() {
+        let (config, cert) = real_certificate_server();
+        let mut roots = RootCertStore::empty();
+        roots.add(cert).expect("trust the test certificate");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("local addr");
+        let (requests_tx, mut requests) = tokio::sync::mpsc::unbounded_channel();
+        let server = tokio::spawn(serve_real_site(listener, config, requests_tx));
+        let (session, prepared) = real_certificate_session(Some(Arc::new(roots)));
+        let tcp = TcpStream::connect(addr).await.expect("connect");
+
+        let result = session.complete_over(tcp, prepared, None).await;
+
+        assert!(
+            matches!(
+                result,
+                Err(TransportError::Reality(RealityError::RealCertificate))
+            ),
+            "a real certificate must never yield a usable stream"
+        );
+        let first = next_request(&mut requests).await;
+        assert_eq!(first.path, "/probe");
+        assert_eq!(first.referer, None);
+        assert_eq!(first.cookies, ["padding="]);
+        assert!(first
+            .user_agent
+            .is_some_and(|agent| agent.starts_with("Mozilla/5.0")));
+
+        // `c=1&t=1`: one follow-up from the remembered paths, which now hold
+        // the link without a dot and not the stylesheet.
+        let second = next_request(&mut requests).await;
+        assert!(
+            ["/probe", "/learned"].contains(&second.path.as_str()),
+            "{}",
+            second.path
+        );
+        assert_eq!(
+            second.referer.as_deref(),
+            Some("https://spider.example.com/probe")
+        );
+        assert_eq!(second.cookies, ["padding="]);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn untrusted_real_certificate_still_aborts_the_handshake() {
+        let (config, _) = real_certificate_server();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("local addr");
+        let (requests_tx, mut requests) = tokio::sync::mpsc::unbounded_channel();
+        let server = tokio::spawn(serve_real_site(listener, config, requests_tx));
+        let (session, prepared) = real_certificate_session(None);
+        let tcp = TcpStream::connect(addr).await.expect("connect");
+
+        let result = session.complete_over(tcp, prepared, None).await;
+
+        assert!(
+            matches!(result, Err(TransportError::Tls(_))),
+            "Go fails x509 verification of an untrusted certificate during the handshake"
+        );
+        server.await.expect("server task");
+        assert!(requests.recv().await.is_none(), "nothing is crawled");
     }
 }

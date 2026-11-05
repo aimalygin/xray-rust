@@ -217,3 +217,83 @@ async fn idle_carrier_receive_follows_rebind_and_releases_old_sockets() {
     .await
     .expect("idle receive must wake on carrier replacement");
 }
+
+fn queue_test_client(commands: mpsc::Sender<Command>, udp_limit: usize) -> Client {
+    Client(Arc::new(Owner {
+        config: Config {
+            secret_key: KeyMaterial::parse(&"42".repeat(32)).unwrap(),
+            peers: vec![crate::PeerConfig {
+                public_key: KeyMaterial::parse(&"53".repeat(32)).unwrap(),
+                preshared_key: None,
+                endpoint: "127.0.0.1:51820".parse().unwrap(),
+                allowed_ips: vec!["0.0.0.0/0".parse().unwrap()],
+                keepalive: 0,
+            }],
+            addresses: vec!["10.44.0.2".parse().unwrap()],
+            mtu: 1420,
+        },
+        commands,
+        stop: Stop::new(),
+        finished: watch::channel(false).1,
+        wake: Arc::new(Notify::new()),
+        rebind: Arc::default(),
+        tcp: Arc::new(Semaphore::new(TCP_LIMIT)),
+        udp: Arc::new(Semaphore::new(udp_limit)),
+        next: AtomicU64::new(1),
+    }))
+}
+
+// Sends of busy UDP flows share the actor's command queue with opens. A full
+// queue is backpressure, not an exhausted flow budget.
+#[tokio::test]
+async fn opens_wait_for_a_full_command_queue_and_busy_means_no_flow_slot() {
+    use std::future::Future;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let (commands, mut requests) = mpsc::channel(COMMAND_QUEUE);
+        let client = queue_test_client(commands.clone(), UDP_LIMIT);
+        for _ in 0..COMMAND_QUEUE {
+            commands
+                .try_send(Command::Send {
+                    id: 0,
+                    payload: Bytes::new(),
+                    reply: oneshot::channel().0,
+                })
+                .unwrap();
+        }
+        let mut udp = Box::pin(client.open_udp("198.51.100.7:53".parse().unwrap()));
+        let mut tcp = Box::pin(client.connect("198.51.100.7:443".parse().unwrap()));
+        std::future::poll_fn(|cx| {
+            assert!(udp.as_mut().poll(cx).is_pending(), "UDP open waits");
+            assert!(tcp.as_mut().poll(cx).is_pending(), "TCP open waits");
+            Poll::Ready(())
+        })
+        .await;
+
+        let actor = tokio::spawn(async move {
+            let mut opened = 0;
+            while let Some(command) = requests.recv().await {
+                if let Command::Tcp { reply, .. } | Command::Udp { reply, .. } = command {
+                    reply.send(Ok(())).unwrap();
+                    opened += 1;
+                    if opened == 2 {
+                        break;
+                    }
+                }
+            }
+            opened
+        });
+        let (udp, tcp) = tokio::join!(udp, tcp);
+        assert!(udp.is_ok());
+        assert!(tcp.is_ok());
+        assert_eq!(actor.await.unwrap(), 2);
+
+        let (commands, _requests) = mpsc::channel(COMMAND_QUEUE);
+        let exhausted = queue_test_client(commands, 0);
+        assert!(matches!(
+            exhausted.open_udp("198.51.100.7:53".parse().unwrap()).await,
+            Err(Error::Busy)
+        ));
+    })
+    .await
+    .unwrap();
+}

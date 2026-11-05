@@ -295,8 +295,27 @@ resource bounds and remaining release gates. The active reference is Xray-core v
 | Outbound | Settings | Import |
 | --- | --- | --- |
 | `trojan` | Flat `address`, `port`, `password`, optional `level`; or exactly one entry in `servers` | `trojan://password@host:port` with supported stream/security parameters; TLS default |
-| `shadowsocks` | Flat `address`, `port`, `method`, `password`, optional `level`; or exactly one entry in `servers` | SIP002 `ss://` base64url or percent-encoded plain userinfo, SS2022 and AEAD methods; no SIP003 plugins or legacy all-base64 form |
+| `shadowsocks` | Flat `address`, `port`, `method`, `password`, optional `level`; or exactly one entry in `servers`. sing-box `uot`/`UoTVersion` are ignored, as in Xray-core, with a warning when `uot` is `true` | SIP002 `ss://` base64url or percent-encoded plain userinfo, SS2022 and AEAD methods; no SIP003 plugins or legacy all-base64 form |
 | `vmess` | Flat `address`, `port`, `id`, optional `security`, `alterId`, `experiments`, `level`, `email`; or one `vnext` server with exactly one `users` entry | Common v2 base64 JSON and UUID-authority `vmess://` URI |
+
+`trojan://` and URI-form `vmess://` links share one stream mapping. Besides
+`type`, `security`, `host`, `path`, `serviceName`, `authority` and XHTTP `mode`,
+it reads the parameters panels such as Remnawave write on every link:
+
+| Parameter | Maps to | Accepted values |
+| --- | --- | --- |
+| gRPC `mode` | `grpcSettings.multiMode` | `gun` (default) or `multi`; others fail with an error naming `mode` |
+| RAW `headerType` | none | absent, empty or `none`; `http` fails with an error naming `headerType` |
+| WebSocket `heartbeatPeriod` | `wsSettings.heartbeatPeriod` | decimal seconds, 0..4294967295 |
+| XHTTP `extra` | `xhttpSettings.extra` | a JSON object, validated like canonical JSON |
+| TLS `pcs` | `tlsSettings.pinnedPeerCertSha256` | Xray's comma-separated SHA-256 hex, with or without colons |
+| TLS `vcn` | `tlsSettings.verifyPeerCertByName` | Xray's comma-separated names |
+| TLS `cs` | none | always fails with an error naming `cs`: `cipherSuites` is not supported |
+| `fm` | `streamSettings.finalmask` | the percent-encoded JSON object Remnawave writes from the host's `finalMask`, validated like canonical JSON; masks the core does not implement fail with an error naming `fm`. Empty means absent |
+
+The base64 JSON `vmess://` form keeps the gRPC mode in `type`, as v2rayN
+writes it; for other carriers `type` must be absent, empty or `none`. Any other
+query parameter still fails the import.
 
 Flat and legacy settings cannot be mixed. Trojan passwords are 1–4096 UTF-8
 bytes, with no nonempty `flow`; public plaintext servers are rejected. SS2022
@@ -336,7 +355,8 @@ All three use the shared raw/WS/HTTPUpgrade/gRPC/XHTTP stream carrier and core
 routing, accounting, SOCKS/HTTP/TUN and DNS paths. SS2022 ordinary UDP uses a
 separate native UDP socket, independently of its TCP carrier; classic AEAD
 does the same. Either family's datagram is limited to 8192 bytes including
-framing, the pinned peer's receive buffer. VMess ordinary
+framing, the pinned peer's receive buffer; a larger one is dropped alone and
+the flow stays up, as on other UDP paths. VMess ordinary
 UDP uses per-association XUDP except destinations on ports 53/443. Outer TLS
 verification cannot be disabled. Live tests cover REALITY over raw/gRPC/XHTTP,
 XHTTP H1/H2/H3 with independent downloads, and transport-layer chains among
@@ -355,9 +375,12 @@ for VLESS ([below](#vless-mux)). TCP `concurrency` defaults to 8 (including zero
 multiplexing. `xudpConcurrency: 0` shares the TCP pool, a positive value creates
 a separate UDP pool, and a negative value uses the native protocol UDP path.
 Positive concurrency is limited to 64. `xudpProxyUDP443` is `reject` by default,
-or `allow`/`skip`; `skip` bypasses Mux for UDP/443. Each pool has at most four
-parents, 128 lifetime child IDs per parent, bounded per-child queues (eight
-frames, at most 64 KiB, per direction) and a 30-second empty-parent timeout.
+or `allow`/`skip`; `skip` bypasses Mux for UDP/443. Each pool opens children
+on at most four parents, with 128 lifetime child IDs per parent. A parent that
+has used all 128 IDs keeps serving its remaining children without counting
+toward the four, so a long-lived child does not block new connections; a pool
+holds at most 16 parents in all. Per-child queues are bounded (eight frames, at
+most 64 KiB, per direction) and an empty parent times out after 30 seconds.
 A child whose receive queue is full pauses its parent's reader until the child
 drains, ends or is closed, as Xray-core's Mux client blocks on the session
 pipe. A slow child is therefore never reset, but, as in Xray-core, it delays
@@ -439,6 +462,7 @@ exposes an unauthenticated proxy to the network.
 | `dns` | Hosts, string/object servers with managed selection policy, global `queryStrategy`, and `fakeIp` subset |
 | `policy` | Level/system fields are parsed; runtime timeout/buffer behavior is a subset |
 | `log` | Accepted for input compatibility, but runtime file logging is configured through the embedding API |
+| `remarks`, `meta` | Subscription labels, such as those in Remnawave's XRAY_JSON format; `remarks` must be a string and `meta` an object (or null), and both are ignored, as in Xray-core |
 
 Other top-level keys are rejected.
 
@@ -612,7 +636,8 @@ still apply; REALITY remains unavailable on WebSocket/HTTPUpgrade. A missing enc
 non-string values fail. Malformed ML-KEM coefficients and low-order X25519
 keys fail before dialing. Swift/Kotlin share-link import supports the same
 bounded shape over `tcp`/`raw` and XHTTP/SplitHTTP with none/TLS/REALITY security,
-including both Vision flows. WS/HTTPUpgrade/gRPC links still require JSON.
+including both Vision flows, and over WS/HTTPUpgrade/gRPC with none or TLS
+security (gRPC also REALITY).
 Encrypted links reject irrelevant transport/security fields and insecure TLS
 verification; unsupported encryption errors redact the value. A 0-RTT ticket
 is memory-only, is invalidated on rejected/cancelled resumption, and never
@@ -633,7 +658,12 @@ TCP transport to `raw` and XHTTP from `splithttp`; both pairs are accepted alias
   v26.7.28;
 - `reality`, with `serverName`, a supported `fingerprint`, base64url
   `publicKey`, hexadecimal `shortId`, optional `spiderX`, and optional
-  `mldsa65Verify`.
+  `mldsa65Verify`. `spiderX` is the path crawled when the server answers
+  with a real certificate instead of a REALITY one: empty means `/`, and any
+  other value must start with `/`, as in Xray-core; its `p`, `c`, `t`, `i` and
+  `r` query parameters set padding, concurrency, repeats, interval and return
+  delay as in Xray-core, within the bounds listed in
+  [REALITY real-certificate crawl](xray-core-differences.md#reality-real-certificate-crawl).
 
 `tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
 empty, or `none`. Generic HTTP/2, QUIC, KCP and other stream transports are not
@@ -1711,6 +1741,14 @@ name is a shape an accepted name already reaches.
 `fingerprint: "unsafe"` is Xray's own escape hatch, spelled the same way: it
 disables shaping and sends the TLS stack's own ClientHello.
 
+`tlsSettings.enableSessionResumption` is a boolean (or null). A shaped
+handshake never resumes a session, whatever its value: a resumed ClientHello
+would carry `pre_shared_key` outside the profile's shape. Xray-core behaves the
+same, because its uTLS path does not pass the session cache on to uTLS. With
+`fingerprint: "unsafe"`, and on the QUIC paths (XHTTP HTTP/3, Hysteria), stock
+rustls keeps its session cache whatever the value, while Xray-core resumes
+there only when the value is `true`.
+
 `tlsSettings.alpn` is an array of strings; a non-string entry is rejected with
 an indexed path. Where the configured list lands follows Xray rather than
 approximating it: uTLS takes ALPN from the fingerprint profile and overwrites
@@ -2150,10 +2188,11 @@ HTTPS URLs accepted by the startup-probe parser are allowed.
 `probeInterval` uses Xray/Go duration syntax such as `10s`, `1m30s`, or
 `1.5s`. Missing, empty, or `0s` selects the 10-second Xray default; explicit
 values are bounded to 1 second through 24 hours. Each probe has a fixed
-5-second timeout and considers HTTP 2xx/3xx healthy. Sequential mode sleeps
-for the interval after each outbound, matching Xray's pacing. Concurrent mode
-probes at most four outbounds at once, then sleeps for the interval after the
-full round.
+5-second timeout and, as in Xray-core, considers any HTTP response healthy,
+whatever its status; the request carries Xray's Chrome navigation headers.
+Sequential mode sleeps for the interval after each outbound, matching Xray's
+pacing. Concurrent mode probes at most four outbounds at once, then sleeps for
+the interval after the full round.
 
 The observer starts only after the core and any configured startup probe have
 started successfully. It dials each leaf directly by tag, so routing rules and
@@ -2642,8 +2681,9 @@ the default outbound; it does not discard the original domain or fail the
 session at the routing layer.
 
 `dns.hosts` maps supported domain matchers to a single IP string, an alias
-domain string, or a nonempty ordered array containing only IP strings. Every IP
-in an array is retained as a resolution candidate. Names are canonicalized to
+domain string, an Xray-core `"#N"` RCODE string, or a nonempty ordered array
+containing only IP strings. Every IP in an array is retained as a resolution
+candidate. Names are canonicalized to
 lowercase without a terminal dot at the managed resolver boundary. Keys are
 domain rules as Xray-core's `geodata.ParseDomainRule` reads them, with the
 whole name as the plain form: an unprefixed key, even one with a colon such as
@@ -2655,6 +2695,19 @@ broader matching rules. Alias resolution is bounded to eight hops; static IP
 candidates use the shared 10-second hosts TTL. If that bound is reached, the
 terminal alias still uses the configured DNS-server plan; only a configuration
 without DNS servers may send it to the operating-system fallback.
+
+A `"#N"` value, as in Xray-core's `app/dns/hosts.go`, answers the name with
+DNS RCODE `N` and no records instead of resolving it; `"#3"` (NXDOMAIN) is the
+usual way to block a domain. It applies to the name itself and to names that
+alias to it. The DNS outbound Hijack, the TUN DNS hijack and the fake IP Hijack
+answer A and AAAA queries with that RCODE before any server or fake IP is
+used, and routing (`IPOnDemand`, `IPIfNonMatch`), `domainStrategy` and freedom
+lookups see a failed lookup with no addresses. `"#0"` is an empty NOERROR
+answer, as Xray-core turns it into an empty response. `N` is read like Go's
+`strconv.Atoi` (so `"#+5"` and `"#05"` are 5), but must be 0 through 15: the
+DNS header holds a 4-bit RCODE, and Xray-core writes a larger value over the
+neighbouring header flags. `"#"`, a non-integer, a negative value or one above
+15 is rejected with a config error. An array keeps accepting only IP strings.
 
 Deliberately, a `full:` or `domain:` pattern in `dns.hosts`, a server's
 `domains` or a DNS outbound rule drops its terminal dot too, so
@@ -2703,6 +2756,13 @@ Freedom split rules remain valid with a default VLESS because an unresolved
 Level objects parse `handshake`, `connIdle`, `uplinkOnly`, `downlinkOnly`,
 `bufferSize`, `statsUserUplink`, and `statsUserDownlink`. Runtime connection
 timeouts and relay buffer size use the applicable inbound/VLESS user level.
+SOCKS and HTTP relays follow Xray-core's half-close timer: `connIdle` while
+both directions are open, `downlinkOnly` once the client finished sending, and
+`uplinkOnly` once the server finished sending. Each phase uses the shorter of
+the inbound and outbound level values. TUN TCP applies `downlinkOnly` after
+the app finished sending and closes the flow when the server finished sending.
+Missing values default to Xray-core's `connIdle` 300 s and `uplinkOnly` and
+`downlinkOnly` 1 s.
 System statistics flags are modeled for config compatibility, but this is not
 the Xray statistics service.
 

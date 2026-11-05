@@ -347,6 +347,57 @@ async fn drain_request(mut body: RecvStream) -> Vec<u8> {
     output
 }
 
+/// The first client frames are what x/net/http2's `Transport.newClientConn`
+/// writes for Xray's XHTTP `http2.Transport` (checked against v0.61.0, the
+/// version Xray-core v26.10.31 pins): SETTINGS with ENABLE_PUSH=0,
+/// INITIAL_WINDOW_SIZE=4 MiB, MAX_FRAME_SIZE=1 MiB and
+/// MAX_HEADER_LIST_SIZE=10 MiB in that order, then the connection
+/// WINDOW_UPDATE. That increment is the one deliberate difference: Go opens
+/// 1 GiB of connection credit, we keep the 16 MiB bound.
+#[tokio::test]
+async fn client_opening_settings_match_go_x_net_transport() {
+    timeout(DEADLINE, async {
+        let (_client, _server, writes) = recording_pair(None).await;
+        settle_client_settings_exchange(&writes).await;
+        let writes = writes.lock().expect("recorded client writes lock").clone();
+        assert!(writes.starts_with(CLIENT_CONNECTION_PREFACE));
+        let frames = &writes[CLIENT_CONNECTION_PREFACE.len()..];
+
+        let settings_len = usize::from(frames[1]) << 8 | usize::from(frames[2]);
+        assert_eq!((frames[3], frames[4]), (0x4, 0x0), "SETTINGS first");
+        let settings: Vec<(u16, u32)> = frames[9..9 + settings_len]
+            .chunks_exact(6)
+            .map(|setting| {
+                (
+                    u16::from_be_bytes([setting[0], setting[1]]),
+                    u32::from_be_bytes([setting[2], setting[3], setting[4], setting[5]]),
+                )
+            })
+            .collect();
+        assert_eq!(
+            settings,
+            [(0x2, 0), (0x4, 4 << 20), (0x5, 1 << 20), (0x6, 10 << 20)]
+        );
+
+        // h2 flushes the connection WINDOW_UPDATE once the read side goes
+        // idle; the duplex peer's SETTINGS is already readable here, so its
+        // ACK may come first, where on a real link the update follows the
+        // SETTINGS frame as Go's does.
+        let mut rest = &frames[9 + settings_len..];
+        let mut increment = None;
+        while rest.len() >= 9 && increment.is_none() {
+            let len = usize::from(rest[1]) << 8 | usize::from(rest[2]);
+            if rest[3] == 0x8 && rest[5..9] == [0, 0, 0, 0] {
+                increment = Some(u32::from_be_bytes([rest[9], rest[10], rest[11], rest[12]]));
+            }
+            rest = &rest[9 + len..];
+        }
+        assert_eq!(increment, Some((16 << 20) - 65_535));
+    })
+    .await
+    .expect("opening frames within the deadline");
+}
+
 #[tokio::test]
 async fn empty_get_ends_on_headers_without_a_zero_length_data_frame() {
     let (client, mut server) = pair().await;

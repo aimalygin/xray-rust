@@ -467,6 +467,17 @@ fn runtime_socks_config_with_level_0_policy(policy: PolicyLevelConfig) -> CoreCo
     config
 }
 
+/// Fake IP allocation starts at a random point of the pool, so a test can
+/// only expect an address inside the 198.18.0.0/15 pool its config sets.
+fn assert_in_fake_ip_pool(ip: Ipv4Addr) {
+    const POOL_HOST_BITS: u32 = 32 - 15;
+    assert_eq!(
+        u32::from(ip) >> POOL_HOST_BITS,
+        u32::from(Ipv4Addr::new(198, 18, 0, 0)) >> POOL_HOST_BITS,
+        "{ip} is outside the 198.18.0.0/15 fake IP pool"
+    );
+}
+
 fn runtime_tun_config_with_freedom_outbound() -> CoreConfig {
     CoreConfig {
         inbounds: vec![InboundConfig {
@@ -4314,7 +4325,16 @@ async fn run_socks_policy_conn_idle_timeout_scenario() {
 
 async fn run_socks_policy_vless_user_level_conn_idle_scenario() {
     let (echo_addr, echo_handle) = spawn_echo_server().await;
-    let (vless_addr, vless_handle) = spawn_fake_vless_server().await;
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let vless_addr = listener.local_addr().unwrap();
+    // The tunnel idles out before any payload, so, as in Xray-core, the held
+    // VLESS header is never sent.
+    let vless_handle = tokio::spawn(async move {
+        let (mut inbound, _) = listener.accept().await.unwrap();
+        let mut received = Vec::new();
+        inbound.read_to_end(&mut received).await.unwrap();
+        assert!(received.is_empty());
+    });
     let mut config = runtime_socks_config_with_vless_server_user_level(vless_addr, 8);
     config.policy = PolicyConfig {
         levels: BTreeMap::from([(
@@ -4347,10 +4367,7 @@ async fn run_socks_policy_vless_user_level_conn_idle_scenario() {
         .await
         .unwrap()
         .unwrap();
-    timeout(Duration::from_secs(1), echo_handle)
-        .await
-        .unwrap()
-        .unwrap();
+    echo_handle.abort();
 }
 
 async fn run_socks_udp_freedom_echo_scenario() {
@@ -5465,7 +5482,7 @@ async fn run_tun_fake_dns_udp_domain_routing_scenario() {
     let fake_ip = ipv4_udp_payload(&dns_reply)
         .and_then(dns_response_answer_ipv4)
         .unwrap();
-    assert_eq!(fake_ip, Ipv4Addr::new(198, 18, 0, 3));
+    assert_in_fake_ip_pool(fake_ip);
 
     let request = ipv4_udp_packet(
         client_addr,
@@ -9211,15 +9228,12 @@ async fn run_tun_fake_dns_tcp_scenario(dns_destination: Ipv4Addr) {
     .await;
     let responses = complete_dns_tcp_messages(&received).unwrap();
     assert_eq!(&responses[0][0..2], &0x2301_u16.to_be_bytes());
-    assert_eq!(
-        dns_response_answer_ipv4(&responses[0]),
-        Some(Ipv4Addr::new(198, 18, 0, 3))
-    );
+    let first = dns_response_answer_ipv4(&responses[0]).expect("first fake IP");
+    assert_in_fake_ip_pool(first);
     assert_eq!(&responses[1][0..2], &0x2302_u16.to_be_bytes());
-    assert_eq!(
-        dns_response_answer_ipv4(&responses[1]),
-        Some(Ipv4Addr::new(198, 18, 0, 4))
-    );
+    let second = dns_response_answer_ipv4(&responses[1]).expect("second fake IP");
+    assert_in_fake_ip_pool(second);
+    assert_ne!(first, second, "each name gets its own fake IP");
     assert!(client.is_open());
 
     core.stop().await.unwrap();
@@ -9311,7 +9325,7 @@ async fn run_tun_fake_dns_udp_resolved_ip_routed_freedom_scenario(strategy: Rout
     let fake_ip = ipv4_udp_payload(&dns_reply)
         .and_then(dns_response_answer_ipv4)
         .unwrap();
-    assert_eq!(fake_ip, Ipv4Addr::new(198, 18, 0, 3));
+    assert_in_fake_ip_pool(fake_ip);
 
     let request = ipv4_udp_packet(
         client_addr,
@@ -10107,14 +10121,15 @@ async fn run_domain_target_preservation_scenario(strategy: RoutingDomainStrategy
 
     let mut client = TcpStream::connect(socks_addr).await.unwrap();
     socks5_connect_domain(&mut client, "example.com", 443).await;
-
-    drop(client);
-    core.stop().await.unwrap();
-
+    // The VLESS header waits for the first payload, as in Xray-core.
+    client.write_all(b"x").await.unwrap();
     timeout(Duration::from_secs(1), vless_handle)
         .await
         .unwrap()
         .unwrap();
+
+    drop(client);
+    core.stop().await.unwrap();
 }
 
 struct TunTcpClient {

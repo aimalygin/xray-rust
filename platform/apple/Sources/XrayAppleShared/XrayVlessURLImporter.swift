@@ -106,9 +106,47 @@ private struct VlessEndpoint {
         var security: StreamSecurity
     }
 
+    private enum FramedCarrier: CaseIterable {
+        case webSocket
+        case httpUpgrade
+        case grpc
+
+        static var aliases: [String] { allCases.flatMap(\.networkAliases) }
+
+        init?(network: String) {
+            guard let carrier = Self.allCases.first(where: { $0.networkAliases.contains(network) }) else {
+                return nil
+            }
+            self = carrier
+        }
+
+        var network: String {
+            switch self {
+            case .webSocket: return "ws"
+            case .httpUpgrade: return "httpupgrade"
+            case .grpc: return "grpc"
+            }
+        }
+
+        var networkAliases: [String] {
+            self == .webSocket ? [network, "websocket"] : [network]
+        }
+
+        var settingsKey: String { "\(network)Settings" }
+
+        var supportsReality: Bool { self == .grpc }
+    }
+
+    private struct FramedParameters {
+        var carrier: FramedCarrier
+        var settings: [String: Any]
+        var security: StreamSecurity
+    }
+
     private enum Transport {
         case raw(StreamSecurity, flow: String?)
         case xhttp(XHTTPParameters, flow: String?)
+        case framed(FramedParameters, flow: String?)
     }
 
     var userID: String
@@ -116,6 +154,7 @@ private struct VlessEndpoint {
     var port: Int
     var encryption: String
     private var transport: Transport
+    private var finalMask: [String: Any]?
     var profileName: String
 
     init(rawURL: String) throws {
@@ -146,8 +185,8 @@ private struct VlessEndpoint {
         let query = QueryValues(items: components.queryItems ?? [])
         try query.rejectDuplicates([
             "type", "encryption", "security", "flow", "host", "path", "mode",
-            "sni", "fp", "alpn", "allowInsecure", "pbk", "sid", "spx", "pqv",
-            "extra", "pcs", "vcn", "ech", "echQuery",
+            "serviceName", "authority", "sni", "fp", "alpn", "allowInsecure", "pbk", "sid", "spx", "pqv",
+            "extra", "pcs", "vcn", "ech", "echQuery", "fm",
         ])
         let network = query.optional("type", default: Self.canonicalNetwork)
 
@@ -178,12 +217,7 @@ private struct VlessEndpoint {
                 }
                 rawSecurity = .none
             case "tls":
-                try Self.rejectRealityOnlyQueryValues(in: query)
-                let tls = try Self.tlsParameters(from: query, defaultServerName: host)
-                if tls.allowInsecure == true {
-                    throw XrayVlessURLImportError.unsupportedQueryValue(name: "allowInsecure", value: "true", expected: "false")
-                }
-                rawSecurity = .tls(tls)
+                rawSecurity = try Self.verifiedTLS(from: query, defaultServerName: host)
             case "reality":
                 try Self.validateRealityCompatibilityQueryValues(in: query)
                 rawSecurity = .reality(try Self.xhttpRealityParameters(from: query, defaultServerName: host))
@@ -192,7 +226,6 @@ private struct VlessEndpoint {
             }
             transport = .raw(rawSecurity, flow: flow.isEmpty ? nil : flow)
         } else if Self.networkAliases.contains(network) {
-            try Self.require(security, named: "security", toEqual: "reality")
             if !flow.isEmpty {
                 try Self.require(
                     flow,
@@ -200,10 +233,20 @@ private struct VlessEndpoint {
                     toEqualOneOf: [Self.visionFlow, Self.visionUdp443Flow]
                 )
             }
-            transport = .raw(
-                .reality(try Self.rawRealityParameters(from: query, flow: flow.isEmpty ? nil : flow)),
-                flow: flow.isEmpty ? nil : flow
-            )
+            let rawSecurity: StreamSecurity
+            switch security {
+            case "tls":
+                try Self.rejectUnsupportedSecurityQueryValues(in: query)
+                for name in ["host", "path", "mode", "extra"] where query.value(name) != nil {
+                    throw XrayVlessURLImportError.unsupportedQueryParameter(name)
+                }
+                rawSecurity = try Self.verifiedTLS(from: query, defaultServerName: host)
+            case "reality":
+                rawSecurity = .reality(try Self.rawRealityParameters(from: query, flow: flow.isEmpty ? nil : flow))
+            default:
+                throw XrayVlessURLImportError.unsupportedQueryValue(name: "security", value: security, expected: "tls or reality")
+            }
+            transport = .raw(rawSecurity, flow: flow.isEmpty ? nil : flow)
         } else if Self.xhttpNetworkAliases.contains(network) {
             if encryption == "none" && !flow.isEmpty {
                 throw XrayVlessURLImportError.unsupportedQueryValue(name: "flow", value: flow, expected: "empty")
@@ -254,11 +297,23 @@ private struct VlessEndpoint {
                 ),
                 flow: flow.isEmpty ? nil : flow
             )
+        } else if let carrier = FramedCarrier(network: network) {
+            transport = .framed(
+                try Self.framedParameters(
+                    carrier: carrier,
+                    query: query,
+                    host: host,
+                    encrypted: encryption != "none",
+                    security: security,
+                    flow: flow
+                ),
+                flow: flow.isEmpty ? nil : flow
+            )
         } else {
             throw XrayVlessURLImportError.unsupportedQueryValue(
                 name: "type",
                 value: network,
-                expected: (Self.networkAliases + Self.xhttpNetworkAliases)
+                expected: (Self.networkAliases + Self.xhttpNetworkAliases + FramedCarrier.aliases)
                     .joined(separator: " or ")
             )
         }
@@ -268,6 +323,8 @@ private struct VlessEndpoint {
         self.port = port
         self.encryption = encryption
         self.transport = transport
+        let rawFinalMask = query.optional("fm", default: "")
+        self.finalMask = try rawFinalMask.isEmpty ? nil : Self.decodeFinalMask(rawFinalMask)
         self.profileName = components.fragment?.isEmpty == false
             ? components.fragment!
             : "\(host):\(port)"
@@ -278,7 +335,7 @@ private struct VlessEndpoint {
             "id": userID,
             "encryption": encryption,
         ]
-        let streamSettings: [String: Any]
+        var streamSettings: [String: Any]
         switch transport {
         case let .raw(security, flow):
             if let flow { user["flow"] = flow }
@@ -301,6 +358,17 @@ private struct VlessEndpoint {
             ]
             xhttpStreamSettings.merge(Self.securitySettings(xhttp.security)) { _, new in new }
             streamSettings = xhttpStreamSettings
+        case let .framed(framed, flow):
+            if let flow { user["flow"] = flow }
+            var framedStreamSettings = Self.securitySettings(framed.security)
+            framedStreamSettings["network"] = framed.carrier.network
+            if !framed.settings.isEmpty {
+                framedStreamSettings[framed.carrier.settingsKey] = framed.settings
+            }
+            streamSettings = framedStreamSettings
+        }
+        if let finalMask {
+            streamSettings["finalmask"] = finalMask
         }
 
         let root: [String: Any] = [
@@ -385,6 +453,90 @@ private struct VlessEndpoint {
                 expected: expected
             )
         }
+    }
+
+    private static func framedParameters(
+        carrier: FramedCarrier,
+        query: QueryValues,
+        host: String,
+        encrypted: Bool,
+        security: String,
+        flow: String
+    ) throws -> FramedParameters {
+        if !encrypted && !flow.isEmpty {
+            throw XrayVlessURLImportError.unsupportedQueryValue(name: "flow", value: flow, expected: "empty")
+        }
+        try require(flow, named: "flow", toEqualOneOf: ["", visionFlow, visionUdp443Flow])
+        try rejectUnsupportedSecurityQueryValues(in: query)
+        if query.value("extra") != nil {
+            throw XrayVlessURLImportError.unsupportedQueryParameter("extra")
+        }
+        let settings = try carrierSettings(carrier, query: query)
+        let securities = (encrypted ? ["none"] : []) + ["tls"] + (carrier.supportsReality ? ["reality"] : [])
+        try require(security, named: "security", toEqualOneOf: securities)
+        let streamSecurity: StreamSecurity
+        switch security {
+        case "tls":
+            streamSecurity = try verifiedTLS(from: query, defaultServerName: host)
+        case "reality":
+            try validateRealityCompatibilityQueryValues(in: query)
+            streamSecurity = .reality(try xhttpRealityParameters(from: query, defaultServerName: host))
+        default:
+            try rejectRealityOnlyQueryValues(in: query)
+            for name in ["sni", "fp", "alpn", "allowInsecure"] where query.value(name) != nil {
+                throw XrayVlessURLImportError.unsupportedQueryParameter(name)
+            }
+            streamSecurity = .none
+        }
+        return FramedParameters(carrier: carrier, settings: settings, security: streamSecurity)
+    }
+
+    private static func carrierSettings(
+        _ carrier: FramedCarrier,
+        query: QueryValues
+    ) throws -> [String: Any] {
+        let crossCarrierNames: [String]
+        let settingNames: [String]
+        switch carrier {
+        case .webSocket, .httpUpgrade:
+            crossCarrierNames = ["mode", "serviceName", "authority"]
+            settingNames = ["host", "path"]
+        case .grpc:
+            crossCarrierNames = ["host", "path"]
+            settingNames = ["serviceName", "authority"]
+        }
+        for name in crossCarrierNames where query.value(name)?.isEmpty == false {
+            throw XrayVlessURLImportError.unsupportedQueryParameter(name)
+        }
+        var settings: [String: Any] = [:]
+        for name in settingNames {
+            if let value = query.value(name) {
+                settings[name] = value
+            }
+        }
+        if carrier == .grpc {
+            switch query.optional("mode", default: "") {
+            case "", "gun":
+                break
+            case "multi":
+                settings["multiMode"] = true
+            case let mode:
+                throw XrayVlessURLImportError.unsupportedQueryValue(name: "mode", value: mode, expected: "gun or multi")
+            }
+        }
+        return settings
+    }
+
+    private static func verifiedTLS(
+        from query: QueryValues,
+        defaultServerName: String
+    ) throws -> StreamSecurity {
+        try rejectRealityOnlyQueryValues(in: query)
+        let tls = try tlsParameters(from: query, defaultServerName: defaultServerName)
+        if tls.allowInsecure == true {
+            throw XrayVlessURLImportError.unsupportedQueryValue(name: "allowInsecure", value: "true", expected: "false")
+        }
+        return .tls(tls)
     }
 
     private static func tlsParameters(
@@ -486,7 +638,7 @@ private struct VlessEndpoint {
             fingerprint: try query.required("fp"),
             serverName: try query.required("sni"),
             shortID: try query.required("sid"),
-            spiderX: query.optional("spx", default: ""),
+            spiderX: try spiderX(from: query),
             mldsa65Verify: mldsa65Verify.isEmpty ? nil : mldsa65Verify,
             flow: flow
         )
@@ -513,10 +665,23 @@ private struct VlessEndpoint {
             fingerprint: fingerprint,
             serverName: serverName,
             shortID: try query.requiredPresent("sid"),
-            spiderX: query.optional("spx", default: ""),
+            spiderX: try spiderX(from: query),
             mldsa65Verify: mldsa65Verify.isEmpty ? nil : mldsa65Verify,
             flow: nil
         )
+    }
+
+    // Xray-core refuses a non-empty spiderX that is not an absolute path.
+    private static func spiderX(from query: QueryValues) throws -> String {
+        let spiderX = query.optional("spx", default: "")
+        guard spiderX.isEmpty || spiderX.hasPrefix("/") else {
+            throw XrayVlessURLImportError.unsupportedQueryValue(
+                name: "spx",
+                value: spiderX,
+                expected: "empty or a path starting with /"
+            )
+        }
+        return spiderX
     }
 
     private static func requireNonEmpty(_ value: String, named name: String) throws {
@@ -586,7 +751,7 @@ private struct VlessEndpoint {
             throw XrayVlessURLImportError.xhttpExtraTooLarge
         }
 
-        if let object = xhttpJSONObject(rawValue) {
+        if let object = jsonObject(rawValue) {
             return object
         }
         guard let decoded = rawValue.removingPercentEncoding else {
@@ -595,13 +760,25 @@ private struct VlessEndpoint {
         guard decoded.utf8.count <= maximumXHTTPExtraBytes else {
             throw XrayVlessURLImportError.xhttpExtraTooLarge
         }
-        guard decoded != rawValue, let object = xhttpJSONObject(decoded) else {
+        guard decoded != rawValue, let object = jsonObject(decoded) else {
             throw XrayVlessURLImportError.invalidXHTTPExtra
         }
         return object
     }
 
-    private static func xhttpJSONObject(_ rawValue: String) -> [String: Any]? {
+    /// Remnawave writes the host's Xray `streamSettings.finalmask` object as a
+    /// percent-encoded JSON `fm` value. It is copied verbatim; the core parser
+    /// validates the masks when the profile loads.
+    private static func decodeFinalMask(_ value: String) throws -> [String: Any] {
+        guard let object = jsonObject(value) else {
+            throw XrayVlessURLImportError.unsupportedQueryValue(
+                name: "fm", value: "<redacted>", expected: "JSON object"
+            )
+        }
+        return object
+    }
+
+    private static func jsonObject(_ rawValue: String) -> [String: Any]? {
         guard let data = rawValue.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data),
               let dictionary = object as? [String: Any]
