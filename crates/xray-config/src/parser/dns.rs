@@ -282,6 +282,7 @@ pub(super) fn dns_stream_server_policy(
         skip_fallback: false,
         query_strategy: DnsQueryStrategy::UseIp,
         final_query: false,
+        client_ip: None,
     }))
 }
 
@@ -382,6 +383,27 @@ impl Parser<'_> {
                     "$.dns.disableFallbackIfMatch".to_owned(),
                 )
                 .unwrap_or(false),
+            client_ip: self.parse_dns_client_ip(dns.get("clientIp"), "$.dns.clientIp"),
+        }
+    }
+
+    /// Xray-core's `clientIp`: an IP address, read as Xray-core reads an
+    /// address, that servers send as the EDNS client subnet. `null` or absent
+    /// is none, and a domain fails, as in Xray-core.
+    fn parse_dns_client_ip(&mut self, raw: Option<&Value>, path: &str) -> Option<IpAddr> {
+        match raw? {
+            Value::Null => None,
+            Value::String(text) => match parse_xray_ip_address(text) {
+                Some(ip) => Some(ip.to_canonical()),
+                None => {
+                    self.error(path, format!("dns clientIp `{text}` is not an IP address"));
+                    None
+                }
+            },
+            _ => {
+                self.error(path, "dns clientIp must be a string");
+                None
+            }
         }
     }
 
@@ -557,6 +579,7 @@ impl Parser<'_> {
             final_query: self
                 .optional_bool_at(server, "finalQuery", format!("{path}.finalQuery"))
                 .unwrap_or(false),
+            client_ip: self.parse_dns_client_ip(server.get("clientIp"), &format!("{path}.clientIp")),
         })))
     }
 

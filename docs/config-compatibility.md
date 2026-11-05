@@ -2345,8 +2345,22 @@ seconds. Xray treats zero as an unbounded stale lifetime; this mobile-oriented
 core rejects that value rather than silently retaining records forever.
 Per-server cache/stale overrides remain unsupported because the current cache
 is owned once per Core rather than once per upstream. Special
-`localhost`/`fakedns` clients, routed DoQ, `clientIp`, and parallel queries are rejected until their
+`localhost`/`fakedns` clients, routed DoQ, and parallel queries are rejected until their
 runtime semantics exist; they are not silently approximated as classic UDP.
+
+`clientIp`, at the top level and in an object server, is sent as the EDNS
+client subnet (RFC 7871) of every query, as Xray-core v26.10.31 sends it. A
+server's own value replaces the top-level one, and a `null` one means none, so
+the top-level value applies. The value is an IP address read as Xray-core reads
+an address: brackets and surrounding spaces are dropped, an IPv4-mapped
+address is IPv4, and a domain, `host:port` or a non-string fails the
+configuration. The query then carries Xray-core's OPT record byte for byte: a
+1350-byte UDP payload size, the DNSSEC OK bit, an extended RCODE byte of
+`0xE0` (from Go packing `SetEDNS0(1350, 0xfe00, true)`), and the address cut to
+/24 for IPv4 or /96 for IPv6. With the DNSSEC OK bit, servers may add
+signature records; answers keep only the addresses. Every DoH query carries
+EDNS padding (RFC 7830) of 100 to 299 zero bytes, drawn once per lookup for both
+families, as Xray-core pads it, with or without a client subnet.
 
 Object servers support Xray's `expectedIPs`, legacy `expectIPs` alias, and
 `unexpectedIPs`. Each accepts an array, one comma-separated string, or `null`.
@@ -2771,7 +2785,7 @@ SOCKS, or HTTP TCP/UDP flow targets a mapped fake address, the original domain
 is restored before routing. VLESS carries that domain for remote resolution;
 Freedom resolves it through the managed routed resolver, including in mobile
 `StaticOnly` mode. Managed `dns.servers` routed DoQ transport, per-server cache
-policy, `clientIp`, and the broader
+policy, and the broader
 Xray DNS feature set are not implemented. This does not limit the DNS
 outbound's documented TLS/REALITY `streamSettings`. The public resolver result
 carries every candidate and TTL metadata. An explicitly enabled

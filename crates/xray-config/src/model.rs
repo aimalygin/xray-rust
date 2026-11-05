@@ -147,6 +147,9 @@ pub struct DnsConfig {
     pub serve_expired_ttl: u32,
     pub disable_fallback: bool,
     pub disable_fallback_if_match: bool,
+    /// Xray-core's `clientIp`: the address sent as the EDNS client subnet by
+    /// every server without its own.
+    pub client_ip: Option<IpAddr>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -210,6 +213,8 @@ pub struct DnsNameServerConfig {
     pub skip_fallback: bool,
     pub query_strategy: DnsQueryStrategy,
     pub final_query: bool,
+    /// This server's own `clientIp`, which replaces `dns.clientIp`.
+    pub client_ip: Option<IpAddr>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -259,6 +264,14 @@ impl DnsServerConfig {
 
     pub fn final_query(&self) -> bool {
         matches!(self, Self::Policy(server) if server.final_query)
+    }
+
+    /// This server's own `clientIp`; only object entries can carry one.
+    pub fn client_ip(&self) -> Option<IpAddr> {
+        match self {
+            Self::Policy(server) => server.client_ip,
+            Self::Ip(_) | Self::Domain { .. } => None,
+        }
     }
 
     pub fn timeout_ms(&self) -> u64 {

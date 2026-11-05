@@ -10,6 +10,9 @@ long-term supported release series.
 
 ## Unreleased
 
+- `dns.clientIp` and a DNS server's own `clientIp` are sent as the EDNS
+  client subnet of every query, as Xray-core sends them. Profiles with them
+  used to fail to parse. DoH queries now carry Xray-core's EDNS padding.
 - The `loopback` outbound routes a connection again, as if it came from the
   inbound tag it names, as Xray-core's does. Its own `sniffing` cannot be
   enabled yet. A chain of more than 8 loopbacks fails the connection, where

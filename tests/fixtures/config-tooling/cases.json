@@ -1339,6 +1339,33 @@
       }
     },
     {
+      "name": "dns-client-ip-accepted",
+      "accepted": true,
+      "base": "dns-policy",
+      "set": {
+        "/dns/clientIp": "203.0.113.77",
+        "/dns/servers/0/clientIp": "2001:db8::1"
+      }
+    },
+    {
+      "name": "dns-client-ip-domain",
+      "accepted": false,
+      "errorPath": "$.dns.clientIp",
+      "base": "dns-policy",
+      "set": {
+        "/dns/clientIp": "example.com"
+      }
+    },
+    {
+      "name": "dns-server-client-ip-domain",
+      "accepted": false,
+      "errorPath": "$.dns.servers[0].clientIp",
+      "base": "dns-policy",
+      "set": {
+        "/dns/servers/0/clientIp": "example.com"
+      }
+    },
+    {
       "name": "fake-ip-pool-capacity",
       "accepted": false,
       "errorPath": "$.dns.fakeIp.poolSize",

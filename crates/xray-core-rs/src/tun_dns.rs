@@ -6390,6 +6390,7 @@ mod tests {
                     skip_fallback: true,
                     query_strategy: xray_config::DnsQueryStrategy::UseIpv6,
                     final_query: true,
+                    client_ip: None,
                 })),
                 DnsServerConfig::Ip(first),
                 DnsServerConfig::Ip(first),
