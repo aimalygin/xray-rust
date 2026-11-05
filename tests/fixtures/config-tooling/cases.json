@@ -3667,6 +3667,48 @@
       },
       "accepted": false,
       "errorPath": "$.dns.hosts.refused.example.com"
+    },
+    {
+      "name": "remnawave-labels-shadowsocks",
+      "base": "shadowsocks-legacy",
+      "set": {
+        "/remarks": "Example host",
+        "/meta": {
+          "serverDescription": "Synthetic description"
+        },
+        "/outbounds/0/settings/servers/0/uot": false,
+        "/outbounds/0/settings/servers/0/UoTVersion": 2,
+        "/outbounds/0/streamSettings/tlsSettings/enableSessionResumption": false
+      },
+      "accepted": true
+    },
+    {
+      "name": "shadowsocks-uot-ignored",
+      "base": "shadowsocks-legacy",
+      "set": {
+        "/outbounds/0/settings/servers/0/uot": true,
+        "/outbounds/0/settings/servers/0/UoTVersion": 1
+      },
+      "accepted": true,
+      "warningPath": "$.outbounds[0].settings.servers[0].uot"
+    },
+    {
+      "name": "remarks-not-string",
+      "base": "shadowsocks-legacy",
+      "set": {
+        "/remarks": 42
+      },
+      "accepted": false,
+      "errorPath": "$.remarks"
+    },
+    {
+      "name": "tls-session-resumption-not-boolean",
+      "base": "shadowsocks-legacy",
+      "set": {
+        "/outbounds/0/streamSettings/tlsSettings/enableSessionResumption": "false"
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.tlsSettings.enableSessionResumption"
     }
   ]
 }

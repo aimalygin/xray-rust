@@ -295,8 +295,27 @@ resource bounds and remaining release gates. The active reference is Xray-core v
 | Outbound | Settings | Import |
 | --- | --- | --- |
 | `trojan` | Flat `address`, `port`, `password`, optional `level`; or exactly one entry in `servers` | `trojan://password@host:port` with supported stream/security parameters; TLS default |
-| `shadowsocks` | Flat `address`, `port`, `method`, `password`, optional `level`; or exactly one entry in `servers` | SIP002 `ss://` base64url or percent-encoded plain userinfo, SS2022 and AEAD methods; no SIP003 plugins or legacy all-base64 form |
+| `shadowsocks` | Flat `address`, `port`, `method`, `password`, optional `level`; or exactly one entry in `servers`. sing-box `uot`/`UoTVersion` are ignored, as in Xray-core, with a warning when `uot` is `true` | SIP002 `ss://` base64url or percent-encoded plain userinfo, SS2022 and AEAD methods; no SIP003 plugins or legacy all-base64 form |
 | `vmess` | Flat `address`, `port`, `id`, optional `security`, `alterId`, `experiments`, `level`, `email`; or one `vnext` server with exactly one `users` entry | Common v2 base64 JSON and UUID-authority `vmess://` URI |
+
+`trojan://` and URI-form `vmess://` links share one stream mapping. Besides
+`type`, `security`, `host`, `path`, `serviceName`, `authority` and XHTTP `mode`,
+it reads the parameters panels such as Remnawave write on every link:
+
+| Parameter | Maps to | Accepted values |
+| --- | --- | --- |
+| gRPC `mode` | `grpcSettings.multiMode` | `gun` (default) or `multi`; others fail with an error naming `mode` |
+| RAW `headerType` | none | absent, empty or `none`; `http` fails with an error naming `headerType` |
+| WebSocket `heartbeatPeriod` | `wsSettings.heartbeatPeriod` | decimal seconds, 0..4294967295 |
+| XHTTP `extra` | `xhttpSettings.extra` | a JSON object, validated like canonical JSON |
+| TLS `pcs` | `tlsSettings.pinnedPeerCertSha256` | Xray's comma-separated SHA-256 hex, with or without colons |
+| TLS `vcn` | `tlsSettings.verifyPeerCertByName` | Xray's comma-separated names |
+| TLS `cs` | none | always fails with an error naming `cs`: `cipherSuites` is not supported |
+| `fm` | `streamSettings.finalmask` | the percent-encoded JSON object Remnawave writes from the host's `finalMask`, validated like canonical JSON; masks the core does not implement fail with an error naming `fm`. Empty means absent |
+
+The base64 JSON `vmess://` form keeps the gRPC mode in `type`, as v2rayN
+writes it; for other carriers `type` must be absent, empty or `none`. Any other
+query parameter still fails the import.
 
 Flat and legacy settings cannot be mixed. Trojan passwords are 1–4096 UTF-8
 bytes, with no nonempty `flow`; public plaintext servers are rejected. SS2022
@@ -439,6 +458,7 @@ exposes an unauthenticated proxy to the network.
 | `dns` | Hosts, string/object servers with managed selection policy, global `queryStrategy`, and `fakeIp` subset |
 | `policy` | Level/system fields are parsed; runtime timeout/buffer behavior is a subset |
 | `log` | Accepted for input compatibility, but runtime file logging is configured through the embedding API |
+| `remarks`, `meta` | Subscription labels, such as those in Remnawave's XRAY_JSON format; `remarks` must be a string and `meta` an object (or null), and both are ignored, as in Xray-core |
 
 Other top-level keys are rejected.
 
@@ -1710,6 +1730,14 @@ name is a shape an accepted name already reaches.
 
 `fingerprint: "unsafe"` is Xray's own escape hatch, spelled the same way: it
 disables shaping and sends the TLS stack's own ClientHello.
+
+`tlsSettings.enableSessionResumption` is a boolean (or null). A shaped
+handshake never resumes a session, whatever its value: a resumed ClientHello
+would carry `pre_shared_key` outside the profile's shape. Xray-core behaves the
+same, because its uTLS path does not pass the session cache on to uTLS. With
+`fingerprint: "unsafe"`, and on the QUIC paths (XHTTP HTTP/3, Hysteria), stock
+rustls keeps its session cache whatever the value, while Xray-core resumes
+there only when the value is `true`.
 
 `tlsSettings.alpn` is an array of strings; a non-string entry is rejected with
 an indexed path. Where the configured list lands follows Xray rather than

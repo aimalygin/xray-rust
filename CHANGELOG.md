@@ -10,6 +10,33 @@ long-term supported release series.
 
 ## Unreleased
 
+- Remnawave XRAY_JSON profiles no longer fail on the fields the panel adds to
+  them. Every profile in such a subscription used to fail to parse.
+  - The root `remarks` label and `meta` object are type-checked and ignored.
+  - `tlsSettings.enableSessionResumption` takes a boolean. As in Xray-core, a
+    uTLS-shaped handshake never resumes, whatever its value.
+  - Shadowsocks `uot` and `UoTVersion`, which 3x-ui also writes, are ignored
+    as in Xray-core. UDP stays native, and `uot: true` raises a warning.
+- `trojan://` and `vmess://` links from Remnawave and similar panels import.
+  Every Remnawave Trojan gRPC link used to fail, because it always carries
+  `mode=gun`.
+  - gRPC `mode=multi` turns on `multiMode`; WebSocket `heartbeatPeriod`, XHTTP
+    `extra` and the TLS certificate checks `pcs` (`pinnedPeerCertSha256`) and
+    `vcn` (`verifyPeerCertByName`) are carried into the profile.
+  - `headerType=none` imports. `headerType=http`, other gRPC modes and TLS
+    `cs` (cipher suites) are still refused, and the error now names the
+    parameter.
+  - `fm`, the percent-encoded JSON of the host's `finalmask`, becomes
+    `streamSettings.finalmask` and is checked as canonical JSON is. A mask the
+    core does not implement fails with an error naming `fm` instead of failing
+    the whole link as unsupported.
+- `hy2://` links with a certificate pin (`pinSHA256`) import, so Hysteria
+  servers with a self-signed certificate can be added from a link. The pin
+  maps to `pinnedPeerCertSha256` and is checked as Xray-core checks it.
+  `insecure=1` (or `true`) is accepted next to a pin and still refused without
+  one; `insecure=false` now imports. Remnawave's `fm` (the host's
+  `finalmask`) imports too; its Salamander entry must match `obfs` and
+  `obfs-password`, which the panel derives from it, and appears once.
 - `dns.hosts` supports Xray-core's `"#N"` values, such as
   `"ads.example.com": "#3"` to answer NXDOMAIN and block a domain. Such a value
   used to be read as an alias to the name `#3`, so the domain was still

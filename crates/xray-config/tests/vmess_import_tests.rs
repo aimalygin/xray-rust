@@ -3,7 +3,7 @@ use base64::{
     Engine,
 };
 use serde_json::{json, Value};
-use xray_config::profile_import::{import_profile, ProfileFormat};
+use xray_config::profile_import::{import_profile, ImportError, ProfileFormat};
 
 const ID: &str = "00112233-4455-6677-8899-aabbccddeeff";
 fn link() -> Value {
@@ -92,4 +92,59 @@ fn vmess_rejects_duplicate_aliases_legacy_auth_unsafe_tls_and_malformed_json() {
         assert!(!format!("{error:?}").contains(ID));
         assert!(!format!("{error:?}").contains("synthetic-secret"));
     }
+}
+/// v2rayN keeps the gRPC mode in the JSON `type` field.
+#[test]
+fn vmess_json_grpc_mode_and_header_type_name_the_rejected_field() {
+    let encode = |pairs: &[(&str, &str)]| {
+        let mut source = link();
+        for (k, v) in pairs {
+            source[*k] = json!(v);
+        }
+        format!("vmess://{}", STANDARD.encode(source.to_string()))
+    };
+    let grpc = [("net", "grpc"), ("path", "service"), ("alpn", "h2")];
+    let profile = import_profile(
+        ProfileFormat::Vmess,
+        &encode(&[grpc.as_slice(), &[("type", "multi")]].concat()),
+        None,
+        &[],
+    )
+    .unwrap();
+    let root: Value = serde_json::from_str(&profile.config_json).unwrap();
+    assert_eq!(
+        root["outbounds"][0]["streamSettings"]["grpcSettings"]["multiMode"],
+        true
+    );
+    assert_eq!(
+        import_profile(
+            ProfileFormat::Vmess,
+            &encode(&[grpc.as_slice(), &[("type", "guna")]].concat()),
+            None,
+            &[]
+        )
+        .unwrap_err(),
+        ImportError::UnsupportedParameter("mode")
+    );
+    assert_eq!(
+        import_profile(
+            ProfileFormat::Vmess,
+            &encode(&[("net", "tcp"), ("type", "http")]),
+            None,
+            &[]
+        )
+        .unwrap_err(),
+        ImportError::UnsupportedParameter("type")
+    );
+    let uri = format!("vmess://{ID}@example.test?type=grpc&serviceName=s&mode=multi&security=tls");
+    let root: Value = serde_json::from_str(
+        &import_profile(ProfileFormat::Vmess, &uri, None, &[])
+            .unwrap()
+            .config_json,
+    )
+    .unwrap();
+    assert_eq!(
+        root["outbounds"][0]["streamSettings"]["grpcSettings"]["multiMode"],
+        true
+    );
 }

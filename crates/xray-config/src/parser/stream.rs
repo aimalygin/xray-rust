@@ -1232,6 +1232,20 @@ impl Parser<'_> {
             );
         }
 
+        // Go reads a bool and, with a uTLS fingerprint, never hands its session
+        // cache to uTLS (transport/internet/tls/tls.go copyConfig), so a shaped
+        // handshake does not resume whatever the value. Shaped handshakes
+        // here disable resumption as well.
+        if settings
+            .get("enableSessionResumption")
+            .is_some_and(|value| !value.is_boolean() && !value.is_null())
+        {
+            self.error(
+                format!("{settings_path}.enableSessionResumption"),
+                "field `enableSessionResumption` must be a boolean",
+            );
+        }
+
         if let Some(alpn) = settings.get("alpn").filter(|alpn| !alpn.is_null()) {
             match alpn.as_array() {
                 None => self.error(format!("{settings_path}.alpn"), "tls alpn must be an array"),
