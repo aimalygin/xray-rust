@@ -2561,6 +2561,15 @@
       }
     },
     {
+      "name": "reality-spider-x-relative",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.realitySettings.spiderX",
+      "base": "reality-compatible-unknown",
+      "set": {
+        "/outbounds/0/streamSettings/realitySettings/spiderX": "crawl?p=1"
+      }
+    },
+    {
       "name": "vless-vision-xudp-mux",
       "accepted": true,
       "base": "reality-compatible-unknown",

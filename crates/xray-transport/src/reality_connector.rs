@@ -67,6 +67,11 @@ pub trait RealityTlsSessionProvider: Send + Sync {
 pub trait RealityTlsSession: Send {
     fn prepared_client_hello(&self) -> Result<RealityPreparedClientHello, RealityError>;
 
+    /// Hands the session the configured `spiderX`, crawled when the server
+    /// answers with a real certificate instead of a REALITY one. Sessions
+    /// that cannot crawl ignore it.
+    fn set_spider_x(&mut self, _spider_x: &str) {}
+
     async fn complete(
         self: Box<Self>,
         tcp_stream: TcpStream,

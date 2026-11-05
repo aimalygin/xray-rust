@@ -347,6 +347,24 @@ class XrayVlessUrlImporterTest {
     }
 
     @Test
+    fun rejectsRealitySpiderXWithoutLeadingSlashLikeXrayCore() {
+        val xhttpReality = "vless://$TEST_USER_ID@203.0.113.30:443" +
+            "?type=xhttp&security=reality&pbk=$PUBLIC_KEY&fp=chrome&sid=0123456789ab"
+        for (url in listOf(sampleRealityUrl, xhttpReality)) {
+            val base = url.substringBefore('#').replace("&spx=%2F", "")
+            val error = assertImportError(
+                "$base&spx=crawl",
+                XrayVlessUrlImportErrorCode.UnsupportedQueryValue,
+            )
+            assertEquals("spx", error.parameter)
+            val reality = proxy(XrayVlessUrlImporter.profile("$base&spx="))
+                .getJSONObject("streamSettings")
+                .getJSONObject("realitySettings")
+            assertEquals("", reality.getString("spiderX"))
+        }
+    }
+
+    @Test
     fun rejectsDuplicateSecurityCriticalFields() {
         val error = assertImportError(
             "vless://$TEST_USER_ID@example.com:443" +

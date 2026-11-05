@@ -1223,6 +1223,12 @@ column alone is the whole story, which is why both are here. On memory and CPU
 per gigabyte the ordering does not depend on the window: 4.9 MiB against
 132.5 MiB and 37.2 MiB, and 890 CPU-ms/GiB against 1160 and 3100.
 
+The xray-rust row predates its own VLESS header hold: the VLESS outbound now
+waits for a first client payload the same way (see
+[the header note](xray-core-differences.md#request-header-and-first-payload)),
+so on this server-first workload its 12 ms first byte is stale until the
+anchor is re-run.
+
 These are regression anchors for this machine, not published cross-engine
 claims: `grpc-bulk-throughput` is not one of the charted series and `chart`
 does not read it.

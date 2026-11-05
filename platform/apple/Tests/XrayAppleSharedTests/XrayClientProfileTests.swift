@@ -1289,6 +1289,25 @@ final class XrayClientProfileTests: XCTestCase {
         }
     }
 
+    func testVlessURLImporterRejectsRealitySpiderXWithoutLeadingSlashLikeXrayCore() {
+        for url in [Self.sampleVlessURL, Self.sampleXHTTPRealityURL] {
+            let base = url
+                .components(separatedBy: "#")[0]
+                .replacingOccurrences(of: "&spx=%2F", with: "")
+            XCTAssertThrowsError(try XrayVlessURLImporter.profile(from: base + "&spx=crawl")) { error in
+                XCTAssertEqual(
+                    error as? XrayVlessURLImportError,
+                    .unsupportedQueryValue(
+                        name: "spx",
+                        value: "crawl",
+                        expected: "empty or a path starting with /"
+                    )
+                )
+            }
+            XCTAssertNoThrow(try XrayVlessURLImporter.profile(from: base + "&spx="))
+        }
+    }
+
     func testVlessURLImporterRejectsMissingXHTTPRealityRequiredFields() {
         let requiredFields = [
             ("pbk", "pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),

@@ -159,3 +159,84 @@
  
  pub mod client;
  
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -116,19 +116,27 @@
+             frame::SettingId::MAX_HEADER_LIST_SIZE,
+             max_field_section_size,
+         )?;
+-        settings.insert(
+-            frame::SettingId::ENABLE_CONNECT_PROTOCOL,
+-            enable_extended_connect as u64,
+-        )?;
+-        settings.insert(
+-            frame::SettingId::ENABLE_WEBTRANSPORT,
+-            enable_webtransport as u64,
+-        )?;
+-        settings.insert(frame::SettingId::H3_DATAGRAM, enable_datagram as u64)?;
+-        settings.insert(
+-            frame::SettingId::WEBTRANSPORT_MAX_SESSIONS,
+-            max_webtransport_sessions,
+-        )?;
++        // xray-rust: an extension setting whose value is its default (0) is
++        // left out, as quic-go's http3 does, instead of being sent as 0.
++        for (id, value) in [
++            (
++                frame::SettingId::ENABLE_CONNECT_PROTOCOL,
++                enable_extended_connect as u64,
++            ),
++            (
++                frame::SettingId::ENABLE_WEBTRANSPORT,
++                enable_webtransport as u64,
++            ),
++            (frame::SettingId::H3_DATAGRAM, enable_datagram as u64),
++            (
++                frame::SettingId::WEBTRANSPORT_MAX_SESSIONS,
++                max_webtransport_sessions,
++            ),
++        ] {
++            if value != 0 {
++                settings.insert(id, value)?;
++            }
++        }
+ 
+         Ok(settings)
+     }
+@@ -177,3 +185,37 @@
+         }
+     }
+ }
++
++#[cfg(test)]
++mod xray_tests {
++    use super::*;
++
++    /// quic-go's http3 client sends MAX_FIELD_SECTION_SIZE and nothing else
++    /// when datagrams and extended CONNECT are off.
++    #[test]
++    fn default_extension_settings_are_left_out() {
++        let mut config = Config::default();
++        config.send_grease = false;
++        config.settings.max_field_section_size = 10 << 20;
++        let settings = frame::Settings::try_from(config).unwrap();
++        let mut encoded = Vec::new();
++        settings.encode(&mut encoded);
++        // SETTINGS (0x4), length 5, id 0x6, varint 10 MiB.
++        assert_eq!(encoded, [0x04, 0x05, 0x06, 0x80, 0xa0, 0x00, 0x00]);
++    }
++
++    #[test]
++    fn enabled_extension_settings_are_still_sent() {
++        let mut config = Config::default();
++        config.send_grease = false;
++        config.settings.enable_datagram = true;
++        config.settings.enable_extended_connect = true;
++        let settings = frame::Settings::try_from(config).unwrap();
++        assert_eq!(settings.get(frame::SettingId::H3_DATAGRAM), Some(1));
++        assert_eq!(
++            settings.get(frame::SettingId::ENABLE_CONNECT_PROTOCOL),
++            Some(1)
++        );
++        assert_eq!(settings.get(frame::SettingId::ENABLE_WEBTRANSPORT), None);
++    }
++}

@@ -8,6 +8,9 @@ repository.workspace = true
 publish.workspace = true
 description = "TCP, TLS, REALITY, DNS, and dialing transports for xray-rust"
 
+[features]
+fuzzing = []
+
 [dependencies]
 # Direct RustCrypto deps enable zeroize feature unification for AES-GCM internal state.
 aes.workspace = true

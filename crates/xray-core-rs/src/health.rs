@@ -7,7 +7,9 @@ use xray_config::{ObservatoryConfig, OBSERVATORY_PROBE_TIMEOUT};
 use xray_transport::{DnsResolver, TransportDialer};
 
 use crate::outbound::{OutboundNodeId, OutboundRouter, OutboundSelectionOverlay};
-use crate::startup_probe::{run_outbound_url_probe, StartupProbeError, StartupProbeOptions};
+use crate::startup_probe::{
+    run_outbound_url_probe, ProbeStatusPolicy, StartupProbeError, StartupProbeOptions,
+};
 
 const MAX_CONCURRENT_HEALTH_PROBES: usize = 4;
 
@@ -196,7 +198,7 @@ async fn probe_node(
         destination_resolver.as_ref(),
         bootstrap_resolver.as_ref(),
         transport_dialer,
-        "xray-rust-health-probe",
+        ProbeStatusPolicy::AnyResponse,
     )
     .await
 }

@@ -3,6 +3,7 @@ use std::{net::IpAddr, time::Duration};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::time::timeout;
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
+use xray_transport::stream::{apply_masquerade, serialize_request, HeaderMap};
 use xray_transport::{DnsResolver, TlsClientConfig, TlsConnector, TransportDialer};
 
 use crate::outbound::{
@@ -14,6 +15,23 @@ const MAX_HTTP_STATUS_LINE_LEN: usize = 1024;
 
 /// Upper bound for one host-requested [`crate::Core::probe_outbound_url`] call.
 pub const MAX_OUTBOUND_PROBE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Which HTTP responses prove that a probed outbound works.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProbeStatusPolicy {
+    /// Any parseable HTTP response, whatever its status. This is how Xray-core
+    /// counts a probe: `app/observatory/observer.go` and
+    /// `app/observatory/burst/ping.go` mark an outbound alive as soon as
+    /// `http.Client.Do` returns a response and never look at `StatusCode`,
+    /// because a `503` from the probe target still proves the outbound relayed
+    /// the request. Used by the observatory.
+    AnyResponse,
+    /// Only `2xx`/`3xx`. The startup probe and the on-demand
+    /// `Core::probe_outbound_url` are xray-rust APIs with no Go counterpart;
+    /// their documented FFI contract reports other statuses as `HttpStatus`,
+    /// and nothing about the status check is visible on the wire.
+    Success,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartupProbeOptions {
@@ -181,7 +199,7 @@ pub(crate) async fn run_startup_probe(
         destination_resolver,
         bootstrap_resolver,
         transport_dialer,
-        "xray-rust-startup-probe",
+        ProbeStatusPolicy::Success,
     )
     .await
     .map(|_| ())
@@ -193,7 +211,7 @@ pub(crate) async fn run_outbound_url_probe(
     destination_resolver: &dyn DnsResolver,
     bootstrap_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
-    user_agent: &str,
+    status_policy: ProbeStatusPolicy,
 ) -> Result<Duration, StartupProbeError> {
     let timeout_ms = options.timeout.as_millis();
     let url = diagnostic_probe_url(&options.url);
@@ -206,7 +224,7 @@ pub(crate) async fn run_outbound_url_probe(
             bootstrap_resolver,
             transport_dialer,
             None,
-            user_agent,
+            status_policy,
         ),
     )
     .await
@@ -226,7 +244,7 @@ async fn run_startup_probe_inner(
     bootstrap_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
     tls_connector: Option<&TlsConnector>,
-    user_agent: &str,
+    status_policy: ProbeStatusPolicy,
 ) -> Result<Duration, StartupProbeError> {
     let started_at = tokio::time::Instant::now();
     let parsed = parse_probe_url(&options.url)?;
@@ -301,12 +319,8 @@ async fn run_startup_probe_inner(
         })?;
     }
 
-    let host = host_header_value(&parsed);
-    let request = format!(
-        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: {}\r\nConnection: close\r\n\r\n",
-        parsed.path_and_query, host, user_agent
-    );
-    timeout(step_timeout, stream.write_all(request.as_bytes()))
+    let request = probe_request(&parsed);
+    timeout(step_timeout, stream.write_all(&request))
         .await
         .map_err(|_| StartupProbeError::Timeout {
             url: url.clone(),
@@ -330,11 +344,38 @@ async fn run_startup_probe_inner(
     let status_line = read_http_status_line(&mut stream, &url).await?;
     let status = parse_http_status_line(&status_line)
         .ok_or_else(|| StartupProbeError::MalformedHttpResponse(url.clone()))?;
-    if (200..400).contains(&status) {
-        Ok(started_at.elapsed())
-    } else {
-        Err(StartupProbeError::HttpStatus { url, status })
+    match status_policy {
+        ProbeStatusPolicy::Success if !(200..400).contains(&status) => {
+            Err(StartupProbeError::HttpStatus { url, status })
+        }
+        _ => Ok(started_at.elapsed()),
     }
+}
+
+/// The request Xray-core's observatory writes for a probe.
+///
+/// Both observers build `http.NewRequest(GET, probeURL, nil)` and then call
+/// `utils.TryDefaultHeadersWith(req.Header, "nav")`
+/// (`app/observatory/observer.go:181-182`, `app/observatory/burst/ping.go`),
+/// so the probe carries the same Chrome navigation persona as Xray's other
+/// masqueraded requests rather than a header naming the client. `net/http`
+/// then writes `Host`, `User-Agent`, the sorted header map and finally the
+/// transport's own `Accept-Encoding: gzip` (`Transport.DisableCompression` is
+/// unset and the persona sets no `Accept-Encoding`).
+fn probe_request(parsed: &ParsedProbeUrl) -> Vec<u8> {
+    let mut headers = HeaderMap::new();
+    apply_masquerade(&mut headers, "nav");
+    let mut request = serialize_request(
+        "GET",
+        &parsed.path_and_query,
+        &host_header_value(parsed),
+        &headers,
+    );
+    // `serialize_request` ends with the blank line; Go's extra transport
+    // headers go after the sorted map, so re-open the head to append them.
+    request.truncate(request.len() - 2);
+    request.extend_from_slice(b"Accept-Encoding: gzip\r\n\r\n");
+    request
 }
 
 fn host_header_value(parsed: &ParsedProbeUrl) -> String {
@@ -820,6 +861,48 @@ mod https_tests {
         }
     }
 
+    /// The probe must look like Xray-core's observatory GET: the Chrome
+    /// navigation persona in `net/http` order, with `Accept-Encoding: gzip`
+    /// last and nothing that names this client.
+    #[test]
+    fn probe_request_carries_xray_navigation_persona_in_go_order() {
+        let parsed = parse_probe_url("http://probe.test:8080/generate_204?x=1").unwrap();
+        let request = String::from_utf8(probe_request(&parsed)).unwrap();
+
+        assert!(!request.to_ascii_lowercase().contains("xray"), "{request}");
+        assert!(request.ends_with("\r\n\r\n"), "{request}");
+        let lines: Vec<&str> = request.trim_end().split("\r\n").collect();
+        assert_eq!(lines[0], "GET /generate_204?x=1 HTTP/1.1");
+        assert_eq!(lines[1], "Host: probe.test:8080");
+        assert!(
+            lines[2].starts_with("User-Agent: Mozilla/5.0 ") && lines[2].contains(" Chrome/"),
+            "{request}"
+        );
+        assert_eq!(lines.last(), Some(&"Accept-Encoding: gzip"));
+        let names: Vec<&str> = lines[3..lines.len() - 1]
+            .iter()
+            .map(|line| line.split_once(": ").unwrap().0)
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "Accept",
+                "Accept-Language",
+                "Cache-Control",
+                "DNT",
+                "Priority",
+                "Sec-CH-UA",
+                "Sec-CH-UA-Mobile",
+                "Sec-CH-UA-Platform",
+                "Sec-Fetch-Dest",
+                "Sec-Fetch-Mode",
+                "Sec-Fetch-Site",
+                "Sec-Fetch-User",
+                "Upgrade-Insecure-Requests",
+            ]
+        );
+    }
+
     fn tls_configs() -> (Arc<rustls::ClientConfig>, Arc<rustls::ServerConfig>) {
         let CertifiedKey { cert, signing_key } =
             generate_simple_self_signed(vec!["probe.test".to_owned()])
@@ -919,7 +1002,7 @@ mod https_tests {
                 &resolver,
                 &transport_dialer,
                 Some(&tls),
-                "xray-rust-startup-probe",
+                ProbeStatusPolicy::Success,
             ),
         )
         .await

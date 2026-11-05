@@ -10,6 +10,40 @@ long-term supported release series.
 
 ## Unreleased
 
+- A REALITY server that answers with a real certificate no longer gets an
+  aborted handshake. As in Xray-core, a certificate valid for the server name
+  completes TLS, the client crawls `spiderX` over HTTP/2 like a browser
+  (honouring its `p`, `c`, `t`, `i` and `r` parameters, within limits), and
+  the connection then fails without sending any user data. An invalid
+  certificate still aborts the handshake. A `spiderX` that is neither empty
+  nor starts with `/` is now a configuration error, as in Xray-core, and
+  share links with such an `spx` are refused at import.
+- VLESS (with or without Vision) and Trojan outbounds no longer send the
+  request header on its own. As in Xray-core, the header waits for the first
+  payload and leaves in the same write, so over TLS or REALITY the first
+  record is no longer a header-only record of a predictable size. When the
+  app sends nothing first, the header goes out after the same wait as
+  Xray-core: 500 ms for VLESS, 100 ms for Trojan. With Vision, the empty
+  padding frame is now sent only in that case, behind the header, instead of
+  on every connection.
+- Outbound URL probes no longer announce themselves. The observatory, startup
+  and on-demand probes used to send `User-Agent: xray-rust-…-probe`; they now
+  send Xray-core's Chrome navigation headers in Go's order. As in Xray-core,
+  the observatory counts any HTTP response as alive, so a probe URL answering
+  `503` no longer marks working outbounds unhealthy. The startup and
+  on-demand probes keep their 2xx/3xx rule.
+- The XHTTP HTTP/2 client opens with the SETTINGS frame Xray-core's Go
+  client sends: push disabled, a 1 MiB maximum frame and a 10 MiB header
+  list limit next to the stream window, in Go's order. It used to announce
+  the stream window alone.
+- The XHTTP HTTP/3 client announces Xray-core's 10 MiB header limit instead
+  of 2^62-1 and no longer lists datagram, extended CONNECT and WebTransport
+  settings that are off.
+
+- The release fuzz campaign also covers the decoders that read server data:
+  gRPC and WebSocket framing, Shadowsocks TCP responses, VLESS responses with
+  Vision, and the REALITY ServerHello capture. Reads are split at arbitrary
+  boundaries.
 - The Android and Apple VLESS link importers accept more common links. They
   used to reject them with an unsupported `type` or `security` error.
   - Raw TCP with TLS, with or without `flow=xtls-rprx-vision`.
