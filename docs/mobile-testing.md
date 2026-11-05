@@ -204,8 +204,9 @@ Hysteria/WireGuard preparation and topology tests. These run without a live
 server and do not replace physical-device acceptance.
 
 The Android library's `XrayVlessUrlImporter` unit matrix mirrors the portable
-Apple share-link subset: raw/TCP REALITY plus XHTTP/SplitHTTP with none, TLS,
-or REALITY security. Tests cover pasted and scheme-less links, canonical
+Apple share-link subset: raw/TCP TLS (with or without Vision) or REALITY,
+XHTTP/SplitHTTP with none, TLS, or REALITY security, WS/HTTPUpgrade with TLS,
+and gRPC with TLS or REALITY. Tests cover pasted and scheme-less links, canonical
 transport aliases, critical duplicate rejection, bounded single/double-encoded
 XHTTP `extra`, and redacted unsupported-security failures. The importer creates
 configuration only; a consuming app still owns secure storage, UI, and link

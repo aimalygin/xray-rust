@@ -111,8 +111,11 @@ pub(crate) async fn forward_plain_request(
 
     let outcome = match selected.outbound {
         TcpSessionOutbound::Transport(outbound) => {
-            let (open_timeout, idle, _) =
+            // A request and its response share the connIdle bound, with no
+            // half-close phase between them.
+            let (open_timeout, timeouts, _) =
                 crate::socks::tcp_relay_policy(context.config, &context.policy, &outbound);
+            let idle = timeouts.conn_idle;
             let client = outbound
                 .writes_proxy_protocol()
                 .then(|| inbound.peer_addr().ok().map(InboundSource::tcp))

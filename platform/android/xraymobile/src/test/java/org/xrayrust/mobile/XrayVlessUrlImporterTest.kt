@@ -202,7 +202,7 @@ class XrayVlessUrlImporterTest {
     @Test
     fun rejectsUnsupportedTransportSecurityModeAndFlow() {
         for ((query, parameter) in listOf(
-            "type=ws&security=none" to "type",
+            "type=kcp&security=tls" to "type",
             "type=xhttp&security=xtls" to "security",
             "type=xhttp&security=none&mode=burst" to "mode",
             "type=xhttp&security=none&flow=xtls-rprx-vision" to "flow",
@@ -212,6 +212,155 @@ class XrayVlessUrlImporterTest {
                 XrayVlessUrlImportErrorCode.UnsupportedQueryValue,
             )
             assertEquals(parameter, error.parameter)
+        }
+    }
+
+    @Test
+    fun buildsRawTlsProfileWithAndWithoutVision() {
+        val vision = XrayVlessUrlImporter.profile(
+            "vless://$TEST_USER_ID@203.0.113.30:443" +
+                "?type=tcp&security=tls&flow=xtls-rprx-vision&sni=origin.example" +
+                "&fp=firefox&alpn=h2%2Chttp%2F1.1&allowInsecure=0&headerType=none#vision-tls",
+        )
+        val stream = proxy(vision).getJSONObject("streamSettings")
+        val tls = stream.getJSONObject("tlsSettings")
+
+        assertEquals("vision-tls", vision.name)
+        assertEquals("tcp", stream.getString("network"))
+        assertEquals("tls", stream.getString("security"))
+        assertEquals("origin.example", tls.getString("serverName"))
+        assertEquals("firefox", tls.getString("fingerprint"))
+        assertEquals(listOf("h2", "http/1.1"), tls.getJSONArray("alpn").strings())
+        assertFalse(tls.getBoolean("allowInsecure"))
+        assertFalse(stream.has("realitySettings"))
+        assertEquals("xtls-rprx-vision", firstUser(vision).getString("flow"))
+
+        val plain = XrayVlessUrlImporter.profile(
+            "vless://$TEST_USER_ID@origin.example:443?type=raw&security=tls",
+        )
+        val plainStream = proxy(plain).getJSONObject("streamSettings")
+        assertEquals("tcp", plainStream.getString("network"))
+        assertEquals("origin.example", plainStream.getJSONObject("tlsSettings").getString("serverName"))
+        assertEquals("chrome", plainStream.getJSONObject("tlsSettings").getString("fingerprint"))
+        assertFalse(firstUser(plain).has("flow"))
+    }
+
+    @Test
+    fun buildsWebSocketAndHttpUpgradeTlsProfiles() {
+        for ((type, network) in listOf(
+            "ws" to "ws",
+            "websocket" to "ws",
+            "httpupgrade" to "httpupgrade",
+        )) {
+            val profile = XrayVlessUrlImporter.profile(
+                "vless://$TEST_USER_ID@203.0.113.31:443" +
+                    "?type=$type&security=tls&host=cdn.example&path=%2Fws%3Fed%3D2048" +
+                    "&sni=cdn.example&fp=chrome&alpn=http%2F1.1",
+            )
+            val stream = proxy(profile).getJSONObject("streamSettings")
+            val settings = stream.getJSONObject("${network}Settings")
+
+            assertEquals(type, network, stream.getString("network"))
+            assertEquals(type, "tls", stream.getString("security"))
+            assertEquals(type, "cdn.example", stream.getJSONObject("tlsSettings").getString("serverName"))
+            assertEquals(type, listOf("http/1.1"), stream.getJSONObject("tlsSettings").getJSONArray("alpn").strings())
+            assertEquals(type, "cdn.example", settings.getString("host"))
+            assertEquals(type, "/ws?ed=2048", settings.getString("path"))
+            assertFalse(type, firstUser(profile).has("flow"))
+        }
+
+        val bare = proxy(
+            XrayVlessUrlImporter.profile("vless://$TEST_USER_ID@cdn.example:443?type=ws&security=tls"),
+        ).getJSONObject("streamSettings")
+        assertFalse(bare.has("wsSettings"))
+    }
+
+    @Test
+    fun buildsGrpcTlsAndRealityProfiles() {
+        val tls = proxy(
+            XrayVlessUrlImporter.profile(
+                "vless://$TEST_USER_ID@203.0.113.32:443" +
+                    "?type=grpc&security=tls&serviceName=tunnel&authority=cdn.example&mode=gun",
+            ),
+        ).getJSONObject("streamSettings")
+        val tlsGrpc = tls.getJSONObject("grpcSettings")
+
+        assertEquals("grpc", tls.getString("network"))
+        assertEquals("tls", tls.getString("security"))
+        assertEquals("tunnel", tlsGrpc.getString("serviceName"))
+        assertEquals("cdn.example", tlsGrpc.getString("authority"))
+        assertFalse(tlsGrpc.has("multiMode"))
+
+        val reality = proxy(
+            XrayVlessUrlImporter.profile(
+                "vless://$TEST_USER_ID@203.0.113.32:443" +
+                    "?type=grpc&security=reality&serviceName=tunnel&mode=multi" +
+                    "&pbk=$PUBLIC_KEY&fp=chrome&sni=example.com&sid=0123456789ab",
+            ),
+        ).getJSONObject("streamSettings")
+
+        assertEquals("reality", reality.getString("security"))
+        assertEquals("example.com", reality.getJSONObject("realitySettings").getString("serverName"))
+        assertTrue(reality.getJSONObject("grpcSettings").getBoolean("multiMode"))
+        assertFalse(reality.has("tlsSettings"))
+    }
+
+    @Test
+    fun rejectsUnsupportedFramedAndRawTlsCombinations() {
+        for ((query, parameter) in listOf(
+            "type=tcp&security=none" to "security",
+            "type=ws&security=none" to "security",
+            "type=httpupgrade&security=reality&pbk=$PUBLIC_KEY&fp=chrome&sid=" to "security",
+            "type=ws&security=reality&pbk=$PUBLIC_KEY&fp=chrome&sid=" to "security",
+            "type=ws&security=tls&flow=xtls-rprx-vision" to "flow",
+            "type=grpc&security=tls&flow=xtls-rprx-vision" to "flow",
+            "type=grpc&security=tls&mode=guna" to "mode",
+            "type=tcp&security=tls&allowInsecure=1" to "allowInsecure",
+            "type=ws&security=tls&allowInsecure=true" to "allowInsecure",
+        )) {
+            val error = assertImportError(
+                "vless://$TEST_USER_ID@203.0.113.33:443?$query",
+                XrayVlessUrlImportErrorCode.UnsupportedQueryValue,
+            )
+            assertEquals(query, parameter, error.parameter)
+        }
+    }
+
+    @Test
+    fun rejectsFieldsThatBelongToAnotherCarrierOrSecurity() {
+        for ((query, parameter) in listOf(
+            "type=tcp&security=tls&path=%2Fignored" to "path",
+            "type=tcp&security=tls&pbk=$PUBLIC_KEY" to "pbk",
+            "type=tcp&security=tls&ech=sensitive" to "ech",
+            "type=ws&security=tls&extra=%7B%7D" to "extra",
+            "type=ws&security=tls&serviceName=tunnel" to "serviceName",
+            "type=httpupgrade&security=tls&mode=multi" to "mode",
+            "type=grpc&security=tls&host=cdn.example" to "host",
+            "type=grpc&security=tls&sid=" to "sid",
+        )) {
+            val error = assertImportError(
+                "vless://$TEST_USER_ID@203.0.113.33:443?$query",
+                XrayVlessUrlImportErrorCode.UnsupportedQueryParameter,
+            )
+            assertEquals(query, parameter, error.parameter)
+        }
+    }
+
+    @Test
+    fun rejectsRealitySpiderXWithoutLeadingSlashLikeXrayCore() {
+        val xhttpReality = "vless://$TEST_USER_ID@203.0.113.30:443" +
+            "?type=xhttp&security=reality&pbk=$PUBLIC_KEY&fp=chrome&sid=0123456789ab"
+        for (url in listOf(sampleRealityUrl, xhttpReality)) {
+            val base = url.substringBefore('#').replace("&spx=%2F", "")
+            val error = assertImportError(
+                "$base&spx=crawl",
+                XrayVlessUrlImportErrorCode.UnsupportedQueryValue,
+            )
+            assertEquals("spx", error.parameter)
+            val reality = proxy(XrayVlessUrlImporter.profile("$base&spx="))
+                .getJSONObject("streamSettings")
+                .getJSONObject("realitySettings")
+            assertEquals("", reality.getString("spiderX"))
         }
     }
 
@@ -280,6 +429,42 @@ class XrayVlessUrlImporterTest {
                 "?type=xhttp&security=none&extra=$oversized",
             XrayVlessUrlImportErrorCode.XhttpExtraTooLarge,
         )
+    }
+
+    @Test
+    fun copiesFinalMaskVerbatimIntoEveryTransport() {
+        val finalMask = """{"tcp":[{"type":"fragment","settings":{"packets":"tlshello","length":"100-200"}}]}"""
+        val links = listOf(
+            "vless://$TEST_USER_ID@203.0.113.10:443?type=tcp&security=tls",
+            "vless://$TEST_USER_ID@203.0.113.10:443?type=tcp&security=reality&pbk=$PUBLIC_KEY&fp=chrome&sni=example.com&sid=0123",
+            "vless://$TEST_USER_ID@203.0.113.10:443?type=xhttp&security=tls&path=%2F",
+            "vless://$TEST_USER_ID@203.0.113.10:443?type=ws&security=tls&path=%2Fws",
+            "vless://$TEST_USER_ID@203.0.113.10:443?type=grpc&security=tls&serviceName=svc",
+        )
+        for (link in links) {
+            val stream = proxy(XrayVlessUrlImporter.profile("$link&FM=${encode(finalMask)}"))
+                .getJSONObject("streamSettings")
+            assertEquals(link, JSONObject(finalMask).toString(), stream.getJSONObject("finalmask").toString())
+        }
+    }
+
+    @Test
+    fun emptyFinalMaskIsAbsent() {
+        val stream = proxy(XrayVlessUrlImporter.profile("vless://$TEST_USER_ID@203.0.113.10:443?type=tcp&security=tls&fm="))
+            .getJSONObject("streamSettings")
+        assertFalse(stream.has("finalmask"))
+    }
+
+    @Test
+    fun rejectsNonObjectOrDuplicateFinalMask() {
+        val base = "vless://$TEST_USER_ID@203.0.113.10:443?type=tcp&security=tls"
+        for (value in listOf("%5B%5D", "null", "7", "%22mask%22", "%7Bbroken", "%7B%7Dtrailing", encode(encode("{}")))) {
+            val error = assertImportError("$base&fm=$value", XrayVlessUrlImportErrorCode.UnsupportedQueryValue)
+            assertEquals(value, "fm", error.parameter)
+            assertEquals(value, "<redacted>", error.rejectedValue)
+        }
+        val duplicate = assertImportError("$base&fm=%7B%7D&fm=%7B%7D", XrayVlessUrlImportErrorCode.DuplicateQueryValue)
+        assertEquals("fm", duplicate.parameter)
     }
 
     @Test

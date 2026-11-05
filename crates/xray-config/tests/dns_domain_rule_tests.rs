@@ -155,6 +155,50 @@ fn hosts_key_errors_name_the_key() {
 }
 
 #[test]
+fn hosts_hash_values_are_xray_rcode_answers() {
+    let index = hosts(json!({
+        "ads.example.com": "#3",
+        "empty.test": "#0",
+        "refused.test": "#+5",
+        "max.test": "#15",
+        "alias.test": "ads.example.com"
+    }));
+    assert_eq!(
+        index.lookup("ads.example.com"),
+        Some(&DnsHostTarget::Rcode(3))
+    );
+    assert_eq!(index.lookup("empty.test"), Some(&DnsHostTarget::Rcode(0)));
+    assert_eq!(index.lookup("refused.test"), Some(&DnsHostTarget::Rcode(5)));
+    assert_eq!(index.lookup("max.test"), Some(&DnsHostTarget::Rcode(15)));
+    assert_eq!(
+        index.lookup("alias.test"),
+        Some(&DnsHostTarget::Domain("ads.example.com".to_owned()))
+    );
+}
+
+#[test]
+fn hosts_rcode_outside_the_header_field_is_rejected() {
+    for target in ["#", "#16", "#-1", "#65539", "#3.0", "#nx", "# 3"] {
+        let raw = dns_config(json!({ "hosts": { "ads.example.com": target } }));
+        let error = parse_xray_json(&raw).expect_err(&format!("{target} should be rejected"));
+        let diagnostic = error
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+            .expect("rcode error");
+        assert_eq!(
+            diagnostic.path.as_deref(),
+            Some("$.dns.hosts.ads.example.com"),
+            "{target}"
+        );
+        assert!(
+            diagnostic.message.contains("RCODE from 0 to 15"),
+            "{target}"
+        );
+    }
+}
+
+#[test]
 fn dns_outbound_domain_is_a_condition_once_it_has_an_entry() {
     let drop = |domain: Value| dns_outbound(json!([{"action": "drop", "domain": domain}]));
     // No list, `null` or `[]` sets no condition.

@@ -137,6 +137,14 @@ impl UdpSession {
             Self::Shadowsocks2022(s) => s.decode(wire),
         }
     }
+    /// Bytes [`Self::encode`] adds to any payload for `target`; neither
+    /// family pads datagrams.
+    pub fn overhead(&self, target: &Target) -> io::Result<usize> {
+        match self {
+            Self::Aead2017(s) => s.overhead(target),
+            Self::Shadowsocks2022(s) => s.overhead(target),
+        }
+    }
 }
 
 #[cfg(test)]

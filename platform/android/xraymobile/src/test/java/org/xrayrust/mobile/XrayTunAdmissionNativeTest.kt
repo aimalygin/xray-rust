@@ -4,6 +4,8 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.SocketTimeoutException
+import java.util.Collections
+import java.util.IdentityHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -47,6 +49,32 @@ class XrayTunAdmissionNativeTest {
                 assertEquals(41000, seen.get().source.port)
                 assertEquals(server.localPort, seen.get().destination.port)
             }
+        }
+    }
+
+    @Test fun nativeWorkersStayAttachedAcrossCallbacks() {
+        nativeAvailable()
+        val flows = 8
+        val threads = Collections.newSetFromMap(IdentityHashMap<Thread, Boolean>())
+        val calls = AtomicInteger()
+        DatagramSocket(0, InetAddress.getByName("127.0.0.1")).use { server ->
+            server.soTimeout = 1000
+            XrayCore.create(config, tunAdmission = XrayTunAdmissionOptions(XrayTunFlowAdmission {
+                synchronized(threads) { threads += Thread.currentThread() }
+                calls.incrementAndGet()
+                true
+            })).use { core ->
+                core.start()
+                repeat(flows) { flow ->
+                    core.pushPacket(packet(server.localPort, sourcePort = 42000 + flow))
+                    server.receive(DatagramPacket(ByteArray(64), 64))
+                }
+            }
+        }
+        assertEquals(flows, calls.get())
+        synchronized(threads) {
+            assertTrue("one Java thread per callback: ${threads.size}", threads.size < flows)
+            assertTrue(threads.all(Thread::isDaemon))
         }
     }
 
@@ -94,7 +122,7 @@ class XrayTunAdmissionNativeTest {
         assertTrue(retired.await(1, TimeUnit.SECONDS))
     }
 
-    private fun packet(port: Int): ByteArray {
+    private fun packet(port: Int, sourcePort: Int = 41000): ByteArray {
         val body = "admission".toByteArray()
         val packet = ByteArray(28 + body.size)
         fun put16(offset: Int, value: Int) { packet[offset] = (value ushr 8).toByte(); packet[offset + 1] = value.toByte() }
@@ -107,7 +135,7 @@ class XrayTunAdmissionNativeTest {
         for (i in 0 until 20 step 2) sum += ((packet[i].toInt() and 255) shl 8) or (packet[i + 1].toInt() and 255)
         while (sum > 65535) sum = (sum and 65535) + (sum ushr 16)
         put16(10, sum.inv() and 65535)
-        put16(20, 41000); put16(22, port); put16(24, 8 + body.size)
+        put16(20, sourcePort); put16(22, port); put16(24, 8 + body.size)
         body.copyInto(packet, 28)
         return packet
     }

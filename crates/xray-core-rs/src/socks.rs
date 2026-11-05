@@ -41,7 +41,7 @@ use crate::{
     open_vless_udp_stream_with_resolver_and_dialer,
     policy::{
         accept_error_wants_backoff, copy_bidirectional_with_idle_timeout_and_traffic,
-        effective_policy_for_level, AcceptBackoff, EffectivePolicy,
+        effective_policy_for_level, AcceptBackoff, EffectivePolicy, RelayTimeouts,
     },
     runtime_log::{monotonic_millis, LogThrottle},
     udp_ingress::{sniff_udp_flow, UdpIngress},
@@ -726,7 +726,7 @@ pub(crate) async fn handle_socks_connect<const SOCKS_REPLY: bool>(
         }
     };
 
-    let (open_timeout, tunnel_idle, relay_buffer_size) =
+    let (open_timeout, relay_timeouts, relay_buffer_size) =
         tcp_relay_policy(&config, &policy, &outbound);
     let outbound_label = crate::debug_log::tcp_outbound_label(&outbound);
     let client = outbound
@@ -808,7 +808,7 @@ pub(crate) async fn handle_socks_connect<const SOCKS_REPLY: bool>(
                 outbound_router.factory().parallel_vmess_budget(),
                 inbound.into_split(),
                 halves,
-                tunnel_idle,
+                relay_timeouts,
                 relay_buffer_size,
                 connection_traffic,
                 wait_for_connection_close(&mut connection_close),
@@ -823,7 +823,7 @@ pub(crate) async fn handle_socks_connect<const SOCKS_REPLY: bool>(
         result = copy_bidirectional_with_idle_timeout_and_traffic(
             &mut inbound,
             &mut outbound_stream,
-            tunnel_idle,
+            relay_timeouts,
             relay_buffer_size,
             connection_traffic.as_ref(),
         ) => Some(result),
@@ -840,22 +840,20 @@ pub(crate) fn tcp_relay_policy(
     config: &CoreConfig,
     policy: &EffectivePolicy,
     outbound: &TcpOutbound,
-) -> (Duration, Duration, usize) {
+) -> (Duration, RelayTimeouts, usize) {
     match outbound.primary() {
         // Freedom's own timer runs at its level beside the inbound's, so the
-        // shorter idle timeout wins, as in Xray-core.
+        // shorter timeout wins in each phase, as in Xray-core.
         TcpOutbound::Freedom(freedom) => (
             policy.handshake,
-            policy
-                .conn_idle
-                .min(effective_policy_for_level(config, Some(freedom.level())).conn_idle),
+            policy.relay_timeouts(effective_policy_for_level(config, Some(freedom.level()))),
             policy.relay_buffer_size(),
         ),
         TcpOutbound::Vless(vless) => {
             let outbound_policy = effective_policy_for_level(config, Some(vless.user().level));
             (
                 outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
+                policy.relay_timeouts(outbound_policy),
                 outbound_policy.relay_buffer_size(),
             )
         }
@@ -863,7 +861,7 @@ pub(crate) fn tcp_relay_policy(
             let outbound_policy = effective_policy_for_level(config, Some(outbound.level()));
             (
                 outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
+                policy.relay_timeouts(outbound_policy),
                 outbound_policy.relay_buffer_size(),
             )
         }
@@ -871,7 +869,7 @@ pub(crate) fn tcp_relay_policy(
             let outbound_policy = effective_policy_for_level(config, Some(outbound.level()));
             (
                 outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
+                policy.relay_timeouts(outbound_policy),
                 outbound_policy.relay_buffer_size(),
             )
         }
@@ -879,7 +877,7 @@ pub(crate) fn tcp_relay_policy(
             let outbound_policy = effective_policy_for_level(config, Some(outbound.level()));
             (
                 outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
+                policy.relay_timeouts(outbound_policy),
                 outbound_policy.relay_buffer_size(),
             )
         }
@@ -887,7 +885,7 @@ pub(crate) fn tcp_relay_policy(
             let outbound_policy = effective_policy_for_level(config, Some(outbound.level()));
             (
                 outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
+                policy.relay_timeouts(outbound_policy),
                 outbound_policy.relay_buffer_size(),
             )
         }
@@ -895,7 +893,7 @@ pub(crate) fn tcp_relay_policy(
             let outbound_policy = effective_policy_for_level(config, Some(outbound.level()));
             (
                 outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
+                policy.relay_timeouts(outbound_policy),
                 outbound_policy.relay_buffer_size(),
             )
         }
@@ -903,7 +901,7 @@ pub(crate) fn tcp_relay_policy(
             let outbound_policy = effective_policy_for_level(config, Some(0));
             (
                 outbound_policy.handshake,
-                policy.conn_idle.min(outbound_policy.conn_idle),
+                policy.relay_timeouts(outbound_policy),
                 outbound_policy.relay_buffer_size(),
             )
         }

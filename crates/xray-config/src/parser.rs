@@ -382,6 +382,23 @@ impl Parser<'_> {
 
     fn validate_top_level_fields(&mut self) {
         self.reject_unknown_fields(self.root, "$", &surface::ROOT);
+        // Subscription labels: Remnawave's XRAY_JSON names every profile in
+        // `remarks` and may describe it in `meta`. Xray-core decodes the root
+        // without these keys, so they never reach its runtime.
+        if self
+            .root
+            .get("remarks")
+            .is_some_and(|remarks| !remarks.is_string() && !remarks.is_null())
+        {
+            self.error("$.remarks", "field `remarks` must be a string or null");
+        }
+        if self
+            .root
+            .get("meta")
+            .is_some_and(|meta| !meta.is_object() && !meta.is_null())
+        {
+            self.error("$.meta", "field `meta` must be an object or null");
+        }
     }
 
     fn parse_observatory(&mut self) -> Option<ObservatoryConfig> {

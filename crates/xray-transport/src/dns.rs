@@ -255,6 +255,7 @@ enum InFlightDnsOutcome {
     },
     NameError(String, u16),
     NoData(String, u16),
+    Rcode(String, u16, u8),
     NoResolvedAddress(String, u16),
     Other(String),
 }
@@ -278,6 +279,9 @@ impl InFlightDnsOutcome {
                 Self::NameError(domain.clone(), *port)
             }
             Err(TransportError::DnsNoData(domain, port)) => Self::NoData(domain.clone(), *port),
+            Err(TransportError::DnsRcode(domain, port, rcode)) => {
+                Self::Rcode(domain.clone(), *port, *rcode)
+            }
             Err(TransportError::NoResolvedAddress(domain, port)) => {
                 Self::NoResolvedAddress(domain.clone(), *port)
             }
@@ -305,6 +309,7 @@ impl InFlightDnsOutcome {
             }),
             Self::NameError(domain, port) => Err(TransportError::DnsNameError(domain, port)),
             Self::NoData(domain, port) => Err(TransportError::DnsNoData(domain, port)),
+            Self::Rcode(domain, port, rcode) => Err(TransportError::DnsRcode(domain, port, rcode)),
             Self::NoResolvedAddress(domain, port) => {
                 Err(TransportError::NoResolvedAddress(domain, port))
             }
@@ -1759,6 +1764,12 @@ impl ConfiguredDnsResolver {
                             ttl_cap,
                         ));
                     }
+                    DnsHostTarget::Rcode(rcode) => {
+                        return ConfiguredLookupResult::Negative {
+                            domain: current_domain,
+                            negative: ConfiguredDnsNegative::from_static_rcode(*rcode),
+                        };
+                    }
                     DnsHostTarget::Domain(alias) => {
                         let alias = normalize_dns_name(alias).unwrap_or_else(|| alias.clone());
                         if alias == current_domain {
@@ -2022,6 +2033,10 @@ impl ConfiguredDnsResolver {
                     domain,
                     negative: ConfiguredDnsNegative::NoData,
                 } => Err(TransportError::DnsNoData(domain, port)),
+                ConfiguredLookupResult::Negative {
+                    domain,
+                    negative: ConfiguredDnsNegative::Rcode(rcode),
+                } => Err(TransportError::DnsRcode(domain, port, rcode)),
                 ConfiguredLookupResult::Unavailable { domain } => Err(TransportError::Dns {
                     domain,
                     port,
@@ -2088,6 +2103,18 @@ enum ConfiguredLookupResult {
 enum ConfiguredDnsNegative {
     NameError,
     NoData,
+    Rcode(u8),
+}
+
+impl ConfiguredDnsNegative {
+    /// A `dns.hosts` `"#N"` target. Like Xray-core, `#0` is an empty answer.
+    fn from_static_rcode(rcode: u8) -> Self {
+        match rcode {
+            0 => Self::NoData,
+            3 => Self::NameError,
+            rcode => Self::Rcode(rcode),
+        }
+    }
 }
 
 enum ConfiguredServerResult {
@@ -4376,6 +4403,56 @@ mod tests {
                 443,
             ))]
         );
+        assert_eq!(fallback.calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn configured_dns_static_rcode_host_is_terminal_like_xray_core() {
+        let fallback = Arc::new(DelayedCountingResolver {
+            calls: AtomicUsize::new(0),
+            result: Some(SocketAddr::from(([192, 0, 2, 93], 0))),
+        });
+        let resolver = ConfiguredDnsResolver::new(
+            hosts([
+                (full("ads.example.com"), DnsHostTarget::Rcode(3)),
+                (full("refused.test"), DnsHostTarget::Rcode(5)),
+                (full("empty.test"), DnsHostTarget::Rcode(0)),
+                (
+                    full("alias.test"),
+                    DnsHostTarget::Domain("refused.test".to_owned()),
+                ),
+            ]),
+            Vec::new(),
+            fallback.clone(),
+        );
+        let resolver = &resolver;
+        let resolve = |domain| async move {
+            tokio::time::timeout(Duration::from_secs(5), resolver.resolve_all(domain, 443))
+                .await
+                .expect("static rcode lookup must not wait")
+                .unwrap_err()
+        };
+
+        let error = resolve("ads.example.com").await;
+        assert!(matches!(
+            error,
+            TransportError::DnsNameError(domain, 443) if domain == "ads.example.com"
+        ));
+        let error = resolve("empty.test").await;
+        assert!(matches!(
+            error,
+            TransportError::DnsNoData(domain, 443) if domain == "empty.test"
+        ));
+        for domain in ["refused.test", "alias.test"] {
+            let error = resolve(domain).await;
+            assert!(
+                matches!(
+                    &error,
+                    TransportError::DnsRcode(domain, 443, 5) if domain == "refused.test"
+                ),
+                "{domain}: {error}"
+            );
+        }
         assert_eq!(fallback.calls.load(Ordering::Relaxed), 0);
     }
 

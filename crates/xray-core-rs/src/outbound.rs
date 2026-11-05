@@ -1,6 +1,11 @@
 mod vmess;
 pub use vmess::VmessOutbound;
+mod first_payload;
 mod protocol_stream;
+use first_payload::{
+    flush_header_alone, FirstPayloadDeadline, HeldHeader, TROJAN_FIRST_PAYLOAD_WAIT,
+    VLESS_FIRST_PAYLOAD_WAIT,
+};
 mod shadowsocks;
 pub use shadowsocks::Shadowsocks2022Outbound;
 mod blackhole;
@@ -4440,7 +4445,7 @@ async fn open_vless_tcp_stream_with_resolved_server_and_dialer(
         .carrier
         .open(resolved_server, resolved_download, transport_dialer)
         .await?;
-    let mut stream = encryption::wrap(stream, outbound.encryption(), flow.uses_vision()).await?;
+    let stream = encryption::wrap(stream, outbound.encryption(), flow.uses_vision()).await?;
     let request = VlessRequest {
         user_id: outbound.user().id,
         command: VlessCommand::Tcp,
@@ -4448,23 +4453,30 @@ async fn open_vless_tcp_stream_with_resolved_server_and_dialer(
         flow: flow.request_flow(),
     };
     let header = Zeroizing::new(encode_request_header(&request)?);
-
-    stream.write_all(&header).await?;
+    // Like Xray-core, hold the header until the first payload so both share
+    // one write; the deadline sends it alone when no payload arrives.
+    let mut stream: BoxedTransportStream = Box::new(HeldHeader::new(stream, &header));
 
     if flow.uses_vision() {
         let stream = VlessResponseStream::new(VisionTransportStream::new(stream));
-        let mut stream =
-            VisionStream::new(stream, *outbound.user().id.as_bytes(), DEFAULT_VISION_SEED);
-        stream.queue_empty_padding_frame()?;
-        stream.flush().await?;
-        return Ok(Box::new(VisionOutboundStream::new(stream)));
+        let stream = VisionStream::new(stream, *outbound.user().id.as_bytes(), DEFAULT_VISION_SEED);
+        // On timeout Xray-core pads an empty frame to hide the bare header.
+        return Ok(Box::new(FirstPayloadDeadline::new(
+            VisionOutboundStream::new(stream),
+            VLESS_FIRST_PAYLOAD_WAIT,
+            |stream| stream.inner.queue_empty_padding_frame(),
+        )));
     }
 
     // Without Vision there is no direct mode, so the transport never needs
     // record-aligned reads.
     stream.release_record_alignment();
     let stream = VlessResponseStream::new(stream);
-    Ok(Box::new(VlessOutboundStream::new(stream)))
+    Ok(Box::new(FirstPayloadDeadline::new(
+        VlessOutboundStream::new(stream),
+        VLESS_FIRST_PAYLOAD_WAIT,
+        flush_header_alone,
+    )))
 }
 
 pub async fn open_vless_udp_stream_with_resolver_and_dialer(
@@ -5974,7 +5986,9 @@ mod tests {
         .await
         .expect("fast failure should accelerate the next VLESS carrier candidate");
 
-        let _stream = opened.expect("open VLESS carrier through second candidate");
+        let mut stream = opened.expect("open VLESS carrier through second candidate");
+        // No payload follows, so flush the held request header on its own.
+        stream.flush().await.unwrap();
         let (mut accepted, _peer) = accepted.expect("accept VLESS fallback connection");
         let expected = encode_request_header(&VlessRequest {
             user_id: outbound.user().id,
@@ -6205,7 +6219,7 @@ mod tests {
             8443,
             RoutingNetwork::Tcp,
         );
-        let _stream = open_tcp_stream_with_resolver_and_dialer(
+        let mut stream = open_tcp_stream_with_resolver_and_dialer(
             &outbound,
             &target,
             &SystemDnsResolver,
@@ -6213,6 +6227,8 @@ mod tests {
         )
         .await
         .expect("open outer VLESS over nested carrier");
+        // No payload follows, so flush the held request headers on their own.
+        stream.flush().await.unwrap();
 
         let mut peer = connector.peers.lock().unwrap().pop().expect("nested peer");
         let primary = outbound.primary();
@@ -6702,7 +6718,7 @@ mod tests {
             8443,
             RoutingNetwork::Tcp,
         );
-        let _stream = open_tcp_stream_with_resolver_and_dialer(
+        let mut stream = open_tcp_stream_with_resolver_and_dialer(
             &outbound,
             &target,
             &SystemDnsResolver,
@@ -6710,6 +6726,8 @@ mod tests {
         )
         .await
         .expect("open multi-hop VLESS chain");
+        // No payload follows, so flush the held request headers on their own.
+        stream.flush().await.unwrap();
 
         let TcpOutbound::Chained {
             outbound: entry,
@@ -9292,6 +9310,9 @@ mod tests {
         )
         .await
         .expect("open VLESS over injected REALITY stream");
+        // The header waits for the first payload and leaves in front of it.
+        stream.write_all(b"vision payload").await.unwrap();
+        stream.flush().await.unwrap();
 
         let expected_header = encode_request_header(&VlessRequest {
             user_id: outbound.user().id,
@@ -9307,19 +9328,8 @@ mod tests {
             .expect("read VLESS header from protected stream");
         assert_eq!(received_header, expected_header);
 
-        let (header_padding, content_len, padding_len) =
-            read_vision_frame(&mut protected_side, true).await;
-        assert_eq!(content_len, 0);
-        assert!((900..=1399).contains(&padding_len));
-        let unpadded = unpad_vision_block(&header_padding, outbound.user().id.as_bytes()).unwrap();
-        assert_eq!(unpadded.command, VisionCommand::Continue);
-        assert!(unpadded.payload.is_empty());
-
-        stream.write_all(b"vision payload").await.unwrap();
-        stream.flush().await.unwrap();
-
-        let (padded, content_len, padding_len) =
-            read_vision_frame(&mut protected_side, false).await;
+        // No empty padding frame: the first frame carries the UUID and payload.
+        let (padded, content_len, padding_len) = read_vision_frame(&mut protected_side, true).await;
         assert_eq!(content_len, "vision payload".len());
         assert!(padding_len <= 255);
         let unpadded = unpad_vision_block(&padded, outbound.user().id.as_bytes()).unwrap();

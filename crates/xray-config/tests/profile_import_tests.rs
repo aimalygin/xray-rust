@@ -82,6 +82,117 @@ fn hysteria_gecko_links_pad_to_hysterias_default_sizes() {
     );
     assert!(!format!("{imported:?}").contains("test+pass"));
 }
+/// Percent-encodes a finalmask as Remnawave's `encodeURIComponent` does.
+fn fm(mask: &Value) -> String {
+    mask.to_string()
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'!' | b'~' => {
+                char::from(b).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+/// Remnawave writes the host's finalmask as `fm` and, for Hysteria's own
+/// client, its Salamander entry again as `obfs`. The mask lands once; `obfs`
+/// must describe the same entry.
+#[test]
+fn hysteria_fm_carries_the_finalmask_and_must_agree_with_obfs() {
+    let salamander = json!({"type":"salamander","settings":{"password":"test+pass"}});
+    let noise = json!({"type":"noise","settings":{"noise":[{"rand":"10-20"}]}});
+    let mask = json!({"udp":[salamander, noise]});
+    let finalmask = |query: &str| {
+        config(
+            ProfileFormat::Hysteria2,
+            &format!("hysteria2://secret@server.example:443/?{query}"),
+        )["outbounds"][0]["streamSettings"]["finalmask"]
+            .clone()
+    };
+    let expected = json!({"quicParams":{"disableChromeParrot":true},"udp":[salamander, noise]});
+    assert_eq!(finalmask(&format!("fm={}", fm(&mask))), expected);
+    assert_eq!(
+        finalmask(&format!(
+            "obfs=salamander&obfs-password=test%2Bpass&sni=tls.example&fm={}",
+            fm(&mask)
+        )),
+        expected
+    );
+    // Port hopping from the link joins the mask; its quicParams are kept.
+    let quic = json!({"quicParams":{"brutalUp":"50 mbps"},"udp":[salamander]});
+    assert_eq!(
+        finalmask(&format!("mport=443%2C8443&fm={}", fm(&quic))),
+        json!({"quicParams":{"brutalUp":"50 mbps","disableChromeParrot":true},"udp":[
+            {"type":"udphop","settings":{"mode":"intervalLocal,intervalRemote","remotePorts":"443,8443"}},
+            salamander]})
+    );
+    assert_eq!(
+        finalmask("fm="),
+        json!({"quicParams":{"disableChromeParrot":true},"udp":[]})
+    );
+    let gecko = json!({"udp":[{"type":"salamander","settings":{"password":"test+pass","packetSize":"100-900"}}]});
+    assert_eq!(
+        finalmask(&format!(
+            "obfs=gecko&obfs-password=test%2Bpass&fm={}",
+            fm(&gecko)
+        ))["udp"],
+        gecko["udp"]
+    );
+
+    let error = |query: String| {
+        import_profile(
+            ProfileFormat::Hysteria2,
+            &format!("hy2://secret@server.example?{query}"),
+            None,
+            &[],
+        )
+        .unwrap_err()
+    };
+    // `obfs` naming another mask, or none in `fm`, would connect Hysteria's
+    // client and Xray's differently.
+    for (obfs, mask) in [
+        ("obfs=salamander&obfs-password=other-pass", &mask),
+        (
+            "obfs=salamander&obfs-password=test%2Bpass",
+            &json!({"udp":[noise]}),
+        ),
+        ("obfs=salamander&obfs-password=test%2Bpass", &json!({})),
+        ("obfs=gecko&obfs-password=test%2Bpass", &mask),
+        ("obfs=salamander&obfs-password=test%2Bpass", &gecko),
+    ] {
+        assert_eq!(
+            error(format!("{obfs}&fm={}", fm(mask))),
+            ImportError::UnsupportedParameter("obfs"),
+            "{obfs} {mask}"
+        );
+    }
+    for text in ["%5B%5D", "%7B", "true"] {
+        assert_eq!(error(format!("fm={text}")), ImportError::Syntax, "{text}");
+    }
+    assert_eq!(error("fm=%7B%7D&fm=%7B%7D".into()), ImportError::Duplicate);
+    for mask in [
+        json!({"udp":{}}),
+        json!({"udp":[{"type":"salamander","settings":{"password":"abc"}}]}),
+        json!({"udp":[{"type":"wireguard","settings":{}}]}),
+        json!({"quicParams":{"disableChromeParrot":false}}),
+        json!({"tcp":[{"type":"fragment","settings":{"packets":"tlshello","length":"1-2"}}]}),
+        json!({"udp":[{"type":"udphop","settings":{"remotePorts":"443-445"}}]}),
+    ] {
+        let fm = fm(&mask);
+        assert_eq!(
+            error(format!("fm={fm}")),
+            ImportError::UnsupportedParameter("fm"),
+            "{mask}"
+        );
+        if mask["udp"][0]["type"] == "udphop" {
+            // Two hopping masks are refused rather than one dropped.
+            assert_eq!(
+                error(format!("mport=443-445&fm={fm}")),
+                ImportError::UnsupportedParameter("fm")
+            );
+        }
+    }
+}
 fn config(format: ProfileFormat, text: &str) -> Value {
     serde_json::from_str(&import_profile(format, text, None, &[]).unwrap().config_json).unwrap()
 }
@@ -136,6 +247,12 @@ fn hysteria_rejects_unsupported_or_ambiguous_links_with_redacted_errors() {
         "hy2://secret@server.example?insecure=1",
         "hy2://secret@server.example?obfs=salamander",
         "hy2://secret@server.example?pinSHA256=secret",
+        "hy2://secret@server.example?pinSHA256=00ff&insecure=1",
+        "hy2://secret@server.example?pinSHA256=&insecure=1",
+        "hy2://secret@server.example?pinSHA256=%2C&insecure=1",
+        "hy2://secret@server.example?insecure=true",
+        "hy2://secret@server.example?insecure=yes",
+        "hy2://secret@server.example?insecure=1&insecure=0",
         "hy2://secret@server.example?ech=secret",
         "hy2://secret@server.example?upmbps=10",
         "hy2://secret@server.example?sni=x&s%6ei=y",
@@ -160,6 +277,68 @@ fn hysteria_rejects_unsupported_or_ambiguous_links_with_redacted_errors() {
         assert!(!error.to_string().contains("secret"));
         assert!(!format!("{error:?}").contains(text));
     }
+}
+/// Self-signed Hysteria servers are shared with a certificate pin. It maps to
+/// Xray's pinnedPeerCertSha256 in both clients' spellings; `insecure=1` is
+/// accepted only when a pin still checks the certificate.
+#[test]
+fn hysteria_pin_sha256_maps_to_pinned_peer_cert() {
+    const COLONS: &str = "00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF";
+    const COMPACT: &str = "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100";
+    let dashes = COLONS.replace(':', "-");
+    for (query, pinned) in [
+        (format!("pinSHA256={COLONS}"), COLONS.to_owned()),
+        (
+            format!("pinSHA256={COMPACT}&insecure=1"),
+            COMPACT.to_owned(),
+        ),
+        (
+            format!("insecure=0&pinSHA256={dashes}"),
+            COLONS.replace(':', ""),
+        ),
+        (
+            format!("insecure=True&pinSHA256={COMPACT}"),
+            COMPACT.to_owned(),
+        ),
+        (
+            format!("pinSHA256={COLONS}%2C{COMPACT}"),
+            format!("{COLONS},{COMPACT}"),
+        ),
+    ] {
+        let root = config(
+            ProfileFormat::Hysteria2,
+            &format!("hy2://secret@server.example?sni=tls.example&{query}"),
+        );
+        assert_eq!(
+            root["outbounds"][0]["streamSettings"]["tlsSettings"],
+            json!({"serverName":"tls.example","alpn":["h3"],"pinnedPeerCertSha256":pinned}),
+            "{query}"
+        );
+    }
+    // An empty pin is no pin, as in Hysteria's client, and `insecure` takes
+    // Go's ParseBool spellings.
+    for link in [
+        "hy2://secret@server.example?pinSHA256=",
+        "hy2://secret@server.example?insecure=false",
+    ] {
+        let root = config(ProfileFormat::Hysteria2, link);
+        assert!(
+            root["outbounds"][0]["streamSettings"]["tlsSettings"]
+                .get("pinnedPeerCertSha256")
+                .is_none(),
+            "{link}"
+        );
+    }
+    assert_eq!(
+        import_profile(
+            ProfileFormat::Hysteria2,
+            "hy2://secret@server.example?insecure=1",
+            None,
+            &[]
+        )
+        .unwrap_err(),
+        ImportError::Unsupported
+    );
 }
 #[test]
 fn wireguard_keeps_multi_peer_psk_and_split_routes() {

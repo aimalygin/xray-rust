@@ -97,6 +97,26 @@ impl Parser<'_> {
         let password = zeroize::Zeroizing::new(password.to_owned());
         let method = method.to_owned();
         self.optional_string_at(server, "email", format!("{path}.email"));
+        // sing-box UDP-over-TCP options that panels such as Remnawave and
+        // 3x-ui write into Xray JSON. Xray-core's Shadowsocks client has no
+        // such fields and keeps UDP native, as this client does.
+        if server.get("uot").is_some_and(|uot| !uot.is_null())
+            && self.optional_bool_at(server, "uot", format!("{path}.uot")) == Some(true)
+        {
+            self.warning(
+                format!("{path}.uot"),
+                "uot is ignored, as in Xray-core: UDP is sent as native Shadowsocks datagrams, not over TCP",
+            );
+        }
+        if server
+            .get("UoTVersion")
+            .is_some_and(|version| !version.is_null() && version.as_u64().is_none())
+        {
+            self.error(
+                format!("{path}.UoTVersion"),
+                "field `UoTVersion` must be a nonnegative integer",
+            );
+        }
         let level = self
             .optional_u32_at(server, "level", format!("{path}.level"))
             .unwrap_or_default();

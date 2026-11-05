@@ -109,17 +109,21 @@ pub(crate) fn open_timed_out() -> CoreError {
     io::Error::new(io::ErrorKind::TimedOut, "outbound udp open timed out").into()
 }
 impl Session {
-    /// The largest datagram this session's path carries. A TUN with a jumbo
-    /// MTU admits datagrams beyond it, and they must not end the flow.
-    pub(crate) fn max_payload(&self) -> usize {
+    /// The largest datagram this session's path carries to `target`. A TUN
+    /// with a jumbo MTU admits datagrams beyond it, and they must not end
+    /// the flow.
+    pub(crate) fn max_payload(&self, target: &Target) -> usize {
         match self {
             Self::VlessMux(_) => xray_proxy::mux::MAX_PAYLOAD,
             Self::Trojan(_) => xray_proxy::trojan::MAX_UDP_PAYLOAD_LENGTH,
             Self::Vmess(session) => session.max_payload(),
             Self::Wireguard { session, .. } => session.max_payload(),
-            // SOCKS and Shadowsocks 2022 carry what fits one IP datagram, and
-            // Hysteria fragments a datagram across QUIC datagrams.
-            Self::Socks(_) | Self::Shadowsocks2022(_) | Self::Hysteria(_) => usize::MAX,
+            // Shadowsocks of either family: what fits Xray's 8192-byte UDP
+            // buffer after this method's framing for `target`, or one Mux frame.
+            Self::Shadowsocks2022(session) => session.max_payload(target),
+            // SOCKS carries what fits one IP datagram, and Hysteria fragments
+            // a datagram across QUIC datagrams.
+            Self::Socks(_) | Self::Hysteria(_) => usize::MAX,
         }
     }
     pub(crate) async fn send(&self, target: &Target, payload: &[u8]) -> Result<(), CoreError> {
@@ -203,7 +207,7 @@ where
     F: FnMut(Target, bytes::Bytes) -> Fut,
     Fut: Future<Output = io::Result<()>>,
 {
-    let max_payload = session.max_payload();
+    let max_payload = session.max_payload(target);
     let send = async |payload: &bytes::Bytes, oversize: &mut O| -> Result<(), CoreError> {
         if payload.len() > max_payload {
             oversize(payload.clone(), max_payload).await;
