@@ -1037,20 +1037,27 @@ model's debug output and are never echoed in diagnostics.
 - TCP uses `CONNECT`. UDP from SOCKS, TUN and DNS flows uses `UDP ASSOCIATE`
   (RFC 1928 section 7), one association per flow, with the same flow limits
   and idle timeout as the other UDP outbounds. The control connection goes
-  through `streamSettings`, so `tls` protects it, while the datagrams travel
-  over a plain UDP socket to the relay, protected like the other native UDP
-  outbounds. As in Xray, they are never encrypted, even with `tls`.
+  through `streamSettings`, so its transport and `tls` or `reality` apply to
+  it, while the datagrams travel over a plain UDP socket to the relay,
+  protected like the other native UDP outbounds. As in Xray, they are never
+  encrypted and never take the transport.
 - The request declares the relay socket's real port with an unspecified IP,
   where Xray always sends `0.0.0.0:0`. Servers that admit only the declared
   client endpoint, such as a password-protected xray-rust SOCKS inbound, pair
-  that port with the control connection's source IP; the control connection
-  and the socket therefore use the same address family, trying the server's
-  resolved families in order. A relay address of `0.0.0.0` or `::` means the
-  connected TCP peer's address, as in Xray; with Happy Eyeballs this may be a
-  later DNS candidate. IPv4-mapped IPv6 proxy literals use an IPv4 UDP socket,
-  matching TCP dialing and mobile carrier exclusions. A bound domain is accepted
-  only as an IP literal, and a relay of the other address family, a zero relay port or a
-  rejected request fails the flow.
+  that port with the control connection's source IP, and Xray-core's own
+  SOCKS server admits datagrams only from that IP; the control connection and
+  the socket therefore use the same address family, trying the server's
+  resolved families in order. A relay of the other family moves on to the
+  next family, since a gRPC or XHTTP connection shared between flows may
+  carry the control connection over either. A relay address of `0.0.0.0` or
+  `::` names the server: on `raw` without REALITY the connected TCP peer,
+  which with Happy Eyeballs may be a later DNS candidate; over the other
+  transports and REALITY, which do not expose their peer, the server's first
+  address of the socket's family, as Xray names the configured server
+  address. IPv4-mapped IPv6 proxy literals use an IPv4 UDP socket, matching
+  TCP dialing and mobile carrier exclusions. A bound domain is accepted only
+  as an IP literal, and a relay of the other family when no family is left, a
+  zero relay port or a rejected request fails the flow.
 - The flow ends when the server closes the control connection; Xray does not
   notice that and waits for its idle timer. Received datagrams that are
   malformed, fragmented (`FRAG` ≠ 0) or not from the relay are dropped one by
@@ -1059,13 +1066,15 @@ model's debug output and are never echoed in diagnostics.
   datagrams into, is refused with an error that ends the flow, instead of the
   empty datagram Xray sends.
 - Enabled `mux` fails parsing; SOCKS is not a Mux carrier.
-- `streamSettings` may select only the `raw`/`tcp` network, with `security`
-  `none` or `tls` (SOCKS over TLS). Other networks and REALITY fail parsing,
-  although Xray accepts any transport.
+- `streamSettings` may select any transport, as in Xray: `raw`/`tcp`,
+  WebSocket, HTTPUpgrade, gRPC or XHTTP, with `security` `none`, `tls`, or
+  `reality` on `raw`, gRPC and XHTTP.
 - Unlike Trojan and VLESS, a plaintext public server is accepted, because SOCKS5
-  proxies are usually plaintext. Without `tls`, RFC 1929 sends the username and
+  proxies are usually plaintext, and so is a plaintext XHTTP `downloadSettings`
+  leg to one. Without `tls` or `reality`, RFC 1929 sends the username and
   password in cleartext, so anyone on the path can read and replay them. Use
-  `tls`, or keep a credentialed proxy on loopback or a trusted network.
+  `tls` or `reality`, or keep a credentialed proxy on loopback or a trusted
+  network.
 - Chaining uses `sockopt.dialerProxy` (or the warned legacy `proxySettings` form).
   A SOCKS outbound can be the hop that carries another TCP outbound, and it can
   itself be carried over another outbound's TCP carrier. Chained UDP/DNS,
@@ -1083,6 +1092,13 @@ that the Go client authenticates for TCP but its undeclared UDP port remains
 refused by our password-protected inbound. Tests use loopback; they do not
 establish physical-device VPN routing, NAT behavior, an IPv6 proxy carrier,
 TCP chaining, or `probeOutboundUrl` interoperability.
+
+`scripts/check-v08-carrier-interop.sh` runs TCP, with a server-first greeting
+and a 128 KiB echo, and UDP at 1, 1200 and 4096 bytes through Xray-core
+v26.10.31's password-protected SOCKS inbound over WebSocket, HTTPUpgrade, gRPC
+and XHTTP (`packet-up`) in plaintext, the same four over TLS (XHTTP
+`stream-up` over HTTP/2), and REALITY over `raw`, gRPC and XHTTP
+(`stream-one`).
 
 Mobile carrier preparation is tracked separately in
 [PR #86](https://github.com/aimalygin/xray-rust/pull/86). UDP support does not

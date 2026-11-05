@@ -1166,7 +1166,6 @@ impl Parser<'_> {
         }
         self.validate_hysteria_pair(&settings, &stream, proxy_settings.is_some(), index);
         self.validate_trojan_stream(&settings, &stream, index);
-        self.validate_socks_outbound_stream(&settings, &stream, index);
         self.validate_http_outbound_stream(&settings, &stream, index);
 
         // Xray v26.7.28 applies this policy only to its simplified top-level

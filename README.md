@@ -73,7 +73,7 @@ lists the accepted values.
 | **Shadowsocks** 2022, classic AEAD³ | RAW, WebSocket, HTTPUpgrade, gRPC, XHTTP | ✅ | ✅ RAW, gRPC, XHTTP | ➖ | ✅ | ✅² |
 | **Hysteria 2** | Own QUIC carrier, Salamander, port hopping | QUIC | ➖ | ➖ | ✅ | ➖ |
 | **WireGuard** | Own UDP carrier | ➖ | ➖ | ➖ | ✅ | ➖ |
-| **SOCKS5** | RAW | ✅ | ❌ | ➖ | ✅ | ❌ |
+| **SOCKS5** | RAW, WebSocket, HTTPUpgrade, gRPC, XHTTP | ✅ | ✅ RAW, gRPC, XHTTP | ➖ | ✅ | ❌ |
 | **HTTP `CONNECT`** | RAW, HTTP/1.1 only | ✅ | ❌ | ➖ | ❌ | ❌ |
 | **Freedom, blackhole, DNS** | Direct | ➖ | ➖ | ➖ | ✅ | ➖ |
 

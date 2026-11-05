@@ -193,28 +193,4 @@ impl Parser<'_> {
             }
         }
     }
-
-    pub(super) fn validate_socks_outbound_stream(
-        &mut self,
-        settings: &OutboundSettings,
-        stream: &StreamSettings,
-        index: usize,
-    ) {
-        if !matches!(settings, OutboundSettings::Socks(_)) {
-            return;
-        }
-        let path = format!("$.outbounds[{index}].streamSettings");
-        if stream.transport != StreamTransport::Raw {
-            self.error(
-                format!("{path}.network"),
-                "SOCKS outbound supports only the raw (tcp) network",
-            );
-        }
-        if matches!(stream.security, StreamSecurity::Reality(_)) {
-            self.error(
-                format!("{path}.security"),
-                "SOCKS outbound supports only none or TLS security",
-            );
-        }
-    }
 }
