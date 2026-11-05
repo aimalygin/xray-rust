@@ -335,7 +335,8 @@ All three use the shared raw/WS/HTTPUpgrade/gRPC/XHTTP stream carrier and core
 routing, accounting, SOCKS/HTTP/TUN and DNS paths. SS2022 ordinary UDP uses a
 separate native UDP socket, independently of its TCP carrier; classic AEAD
 does the same. Either family's datagram is limited to 8192 bytes including
-framing, the pinned peer's receive buffer. VMess ordinary
+framing, the pinned peer's receive buffer; a larger one is dropped alone and
+the flow stays up, as on other UDP paths. VMess ordinary
 UDP uses per-association XUDP except destinations on ports 53/443. Outer TLS
 verification cannot be disabled. Live tests cover REALITY over raw/gRPC/XHTTP,
 XHTTP H1/H2/H3 with independent downloads, and transport-layer chains among

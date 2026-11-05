@@ -231,6 +231,13 @@ long-term supported release series.
   dropped (counted in `udp_channel_dropped_packets`, as before) and the flow
   keeps its outbound, as in Xray-core. A burst used to end the flow, so the
   next datagram opened a new outbound with a fresh handshake.
+- Shadowsocks UDP (either family): a datagram too large for Xray's 8192-byte
+  UDP buffer once framed (8153 bytes of payload for `aes-128-gcm` and 8142 for
+  `2022-blake3-aes-128-gcm` to an IPv4 address), or for one Mux frame over
+  Mux, is now dropped alone like on the other UDP paths, counted in
+  `udp_oversize_datagrams`, and answered with an ICMP fragmentation-needed or
+  packet-too-big on TUN. It used to end the whole UDP flow, so the next
+  datagram opened a new association.
 - DNS: a bare `"localhost"` or `"fakedns"` string in `dns.servers` (any case)
   is now a configuration error, as the object form already was. Xray's
   system-resolver and FakeDNS clients are not implemented, and these strings
