@@ -294,7 +294,7 @@ fn invalid_shapes_and_credentials_are_rejected_at_their_paths_without_secrets() 
 }
 
 #[test]
-fn stream_settings_allow_raw_with_none_or_http11_tls_only() {
+fn stream_settings_allow_raw_with_none_or_tls() {
     let with_stream = |stream: Value| {
         let mut raw = profile(flat());
         raw["outbounds"][0]["streamSettings"] = stream;
@@ -307,6 +307,11 @@ fn stream_settings_allow_raw_with_none_or_http11_tls_only() {
         json!({"network":"tcp","security":"tls","tlsSettings":{"serverName":"proxy.example"}}),
         json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","alpn":["http/1.1"]}}),
         json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","fingerprint":"chrome"}}),
+        // TLS offers what Xray-core offers; the proxy's pick decides the
+        // tunnel's HTTP version.
+        json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","alpn":["h2"]}}),
+        json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","alpn":["h2","http/1.1"]}}),
+        json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","alpn":["http/1.1","http/1.1"]}}),
     ] {
         settings(&with_stream(stream));
     }
@@ -329,18 +334,6 @@ fn stream_settings_allow_raw_with_none_or_http11_tls_only() {
                 "serverName":"proxy.example","fingerprint":"chrome",
                 "publicKey":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE","shortId":"02030405"}}),
             "security",
-        ),
-        (
-            json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","alpn":["h2"]}}),
-            "tlsSettings.alpn",
-        ),
-        (
-            json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","alpn":["h2","http/1.1"]}}),
-            "tlsSettings.alpn",
-        ),
-        (
-            json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","alpn":["http/1.1","http/1.1"]}}),
-            "tlsSettings.alpn",
         ),
     ] {
         rejects_at(

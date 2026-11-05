@@ -5,8 +5,8 @@ mod http_template;
 mod socks;
 
 pub use http::{
-    encode_connect_request, http_connect, HttpAccount, HttpClientError,
-    MAX_HTTP_CONNECT_RESPONSE_HEAD, MAX_HTTP_CREDENTIAL_LENGTH,
+    encode_connect_request, encode_http2_connect_request, http_connect, Http2ConnectRequest,
+    HttpAccount, HttpClientError, MAX_HTTP_CONNECT_RESPONSE_HEAD, MAX_HTTP_CREDENTIAL_LENGTH,
 };
 pub use http_template::HttpHeaderTemplate;
 pub use socks::{

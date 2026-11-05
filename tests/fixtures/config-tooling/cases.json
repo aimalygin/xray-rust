@@ -2618,8 +2618,7 @@
     },
     {
       "name": "http-outbound-h2-alpn",
-      "accepted": false,
-      "errorPath": "$.outbounds[0].streamSettings.tlsSettings.alpn",
+      "accepted": true,
       "base": "http-outbound-flat",
       "set": {
         "/outbounds/0/streamSettings/tlsSettings/alpn": [

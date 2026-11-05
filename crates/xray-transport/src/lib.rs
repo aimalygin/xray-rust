@@ -186,6 +186,8 @@ pub enum TransportError {
     Grpc(String),
     #[error("xhttp transport error: {0}")]
     Xhttp(String),
+    #[error(transparent)]
+    Http2Connect(#[from] stream::Http2ConnectError),
     #[error("reality handshake failed: {0}")]
     Reality(#[from] reality::RealityError),
     #[error("REALITY live TLS completion is not implemented")]
@@ -210,6 +212,14 @@ pub trait TransportStream: AsyncRead + AsyncWrite + Send + Unpin {
     /// into Vision direct mode, so any record-boundary read alignment kept
     /// for a lossless direct-mode unwrap can be dropped. Default: no-op.
     fn release_record_alignment(&mut self) {}
+
+    /// The application protocol that this stream's own TLS handshake
+    /// negotiated (ALPN). Only the raw transport's TLS reports one, the
+    /// session Xray-core's HTTP outbound reads it from; any other stream,
+    /// including TLS under an HTTP-based transport, reports `None`.
+    fn negotiated_alpn(&self) -> Option<&[u8]> {
+        None
+    }
 
     /// Consuming capability for independently owned protocol directions.
     fn take_parallel_halves(&mut self) -> Option<(ParallelRead, ParallelWrite)> {

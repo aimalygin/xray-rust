@@ -296,8 +296,8 @@ impl Parser<'_> {
         }
     }
 
-    /// Only HTTP/1.1 over raw/tcp with none or TLS is implemented, so TLS
-    /// must not offer another application protocol.
+    /// Only raw/tcp with none or TLS is implemented. TLS offers what
+    /// Xray-core offers, and the tunnel is HTTP/2 when the proxy picks `h2`.
     pub(super) fn validate_http_outbound_stream(
         &mut self,
         settings: &OutboundSettings,
@@ -315,15 +315,7 @@ impl Parser<'_> {
             );
         }
         match &stream.security {
-            StreamSecurity::None => {}
-            StreamSecurity::Tls(tls) => {
-                if tls.alpn.len() > 1 || tls.alpn.iter().any(|p| p != "http/1.1") {
-                    self.error(
-                        format!("{path}.tlsSettings.alpn"),
-                        "HTTP outbound supports only the `http/1.1` ALPN; HTTP/2 CONNECT is unsupported",
-                    );
-                }
-            }
+            StreamSecurity::None | StreamSecurity::Tls(_) => {}
             StreamSecurity::Reality(_) => self.error(
                 format!("{path}.security"),
                 "HTTP outbound supports only none or TLS security",

@@ -97,3 +97,13 @@ fn other_actions_are_refused() {
         assert!(HttpHeaderTemplate::parse(text).is_err(), "{text}");
     }
 }
+
+#[test]
+fn the_raw_value_is_what_http2_sends() {
+    let target = tcp(TargetAddr::Domain("example.com".into()), 443);
+    let template = HttpHeaderTemplate::parse("  one\r\n{{.Target.Port}}\t").unwrap();
+    // Go's HTTP/2 client sends the template's output as it is; only
+    // HTTP/1.1's Header.Write turns line breaks into spaces and trims.
+    assert_eq!(template.render_raw(None, &target), "  one\r\n443\t");
+    assert_eq!(template.render(None, &target), "one  443");
+}
