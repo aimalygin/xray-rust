@@ -579,7 +579,8 @@ impl Parser<'_> {
             final_query: self
                 .optional_bool_at(server, "finalQuery", format!("{path}.finalQuery"))
                 .unwrap_or(false),
-            client_ip: self.parse_dns_client_ip(server.get("clientIp"), &format!("{path}.clientIp")),
+            client_ip: self
+                .parse_dns_client_ip(server.get("clientIp"), &format!("{path}.clientIp")),
         })))
     }
 
