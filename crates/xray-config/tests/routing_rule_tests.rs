@@ -4,8 +4,8 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use serde_json::{json, Value};
 use xray_config::{
-    parse_xray_json, DiagnosticSeverity, Network, RouteContext, RoutingPortRange, RoutingRule,
-    RoutingRuleTarget,
+    go_lowercase, parse_xray_json, ContentAttributes, DiagnosticSeverity, Network, RouteContext,
+    RoutingPortRange, RoutingRule, RoutingRuleTarget,
 };
 
 fn config(rules: Value) -> String {
@@ -252,6 +252,7 @@ fn domains_replaces_domain_but_both_must_parse() {
 
 fn route<'a>(source: &str, local: &str, user: Option<&'a str>) -> RouteContext<'a> {
     RouteContext {
+        attributes: None,
         protocol: None,
         inbound_tag: Some("socks-in"),
         source: Some(source.parse().unwrap()),
@@ -430,4 +431,92 @@ fn protocols_match_the_sniffed_protocol_by_prefix() {
         rejection(json!({"protocol": [5], "outboundTag": "direct"})),
         "$.routing.rules[0].protocol[0]"
     );
+}
+
+fn attributes(entries: &[(&str, &str)]) -> ContentAttributes {
+    let mut attributes = ContentAttributes::default();
+    for (name, value) in entries {
+        attributes.set(name, (*value).to_owned());
+    }
+    attributes
+}
+
+#[test]
+fn attrs_match_every_named_attribute_by_pattern() {
+    let applies_to = |rule: &RoutingRule, attributes: Option<&ContentAttributes>| {
+        let route = RouteContext {
+            attributes,
+            ..RouteContext::inbound(Some("socks-in"))
+        };
+        rule.matches_route(&route, None, Some(&LOOPBACK), Some(Network::Tcp), Some(443))
+    };
+    // Names are lowercased; patterns match anywhere, case-sensitively.
+    let curl = rule(json!({
+        "attrs": {"User-Agent": "^curl/", ":method": "GET"},
+        "outboundTag": "direct"
+    }));
+    let request = attributes(&[
+        (":method", "GET"),
+        (":path", "/"),
+        ("user-agent", "curl/8.7"),
+    ]);
+    assert!(applies_to(&curl, Some(&request)));
+    let lower = attributes(&[(":method", "get"), ("user-agent", "curl/8.7")]);
+    assert!(!applies_to(&curl, Some(&lower)));
+    // Every named attribute must be there, and a flow without attributes
+    // matches no attrs at all.
+    let without_agent = attributes(&[(":method", "GET")]);
+    assert!(!applies_to(&curl, Some(&without_agent)));
+    assert!(!applies_to(&curl, None));
+
+    // An empty or `null` pattern only needs the attribute to be there.
+    let present = rule(json!({"attrs": {"cookie": null, "x-a": ""}, "outboundTag": "direct"}));
+    assert!(applies_to(
+        &present,
+        Some(&attributes(&[("cookie", ""), ("x-a", "1")]))
+    ));
+    assert!(!applies_to(&present, Some(&attributes(&[("cookie", "")]))));
+    // A later attribute replaces an earlier one of the same name.
+    let replaced = attributes(&[("Host", "a.example"), ("host", "b.example")]);
+    let host = rule(json!({"attrs": {"host": "^b"}, "outboundTag": "direct"}));
+    assert!(applies_to(&host, Some(&replaced)));
+}
+
+#[test]
+fn attrs_read_as_xray_core_reads_them() {
+    // `null` and `{}` set no condition, so the rule needs another.
+    for attrs in [json!(null), json!({})] {
+        assert_eq!(
+            rejection(json!({"attrs": attrs, "outboundTag": "direct"})),
+            "$.routing.rules[0]"
+        );
+        assert!(
+            rule(json!({"attrs": attrs, "port": 80, "outboundTag": "direct"}))
+                .attributes
+                .is_none()
+        );
+    }
+    for (attrs, path) in [
+        (json!([]), "$.routing.rules[0].attrs"),
+        (json!("x"), "$.routing.rules[0].attrs"),
+        (json!({"a": 5}), "$.routing.rules[0].attrs.a"),
+        (json!({"a": ["x"]}), "$.routing.rules[0].attrs.a"),
+        // Xray-core panics on a pattern that does not compile.
+        (json!({"a": "("}), "$.routing.rules[0].attrs.a"),
+    ] {
+        assert_eq!(
+            rejection(json!({"attrs": attrs, "outboundTag": "direct"})),
+            path,
+            "{attrs}"
+        );
+    }
+}
+
+#[test]
+fn names_lowercase_as_go_lowercases_them() {
+    assert_eq!(go_lowercase("X-Forwarded-For"), "x-forwarded-for");
+    assert_eq!(go_lowercase("user-agent"), "user-agent");
+    // Each character on its own, unlike Rust's `str::to_lowercase`.
+    assert_eq!(go_lowercase("İSTANBUL"), "istanbul");
+    assert_eq!(go_lowercase("ΟΔΟΣ"), "οδοσ");
 }

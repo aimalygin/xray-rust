@@ -80,6 +80,8 @@ mod blackhole;
 mod freedom_domain_strategy;
 #[path = "runtime_data_path_tests/freedom_settings.rs"]
 mod freedom_settings;
+#[path = "runtime_data_path_tests/routing_attributes.rs"]
+mod routing_attributes;
 #[path = "runtime_data_path_tests/routing_origin.rs"]
 mod routing_origin;
 #[path = "runtime_data_path_tests/routing_protocol.rs"]
@@ -488,6 +490,7 @@ fn runtime_tun_config_with_dns_outbound(
     let mut config = runtime_tun_config_with_freedom_outbound();
     config.outbounds.insert(0, dns_outbound(settings));
     config.routing.rules = vec![RoutingRule {
+        attributes: None,
         protocols: None,
         origin: Default::default(),
         inbound_tags: vec!["tun-in".to_owned()],
@@ -521,6 +524,7 @@ fn runtime_listener_config_with_dns_outbound(
         default_outbound_tag: Some("direct".to_owned()),
         routing: RoutingConfig {
             rules: vec![RoutingRule {
+                attributes: None,
                 protocols: None,
                 origin: Default::default(),
                 inbound_tags: vec![inbound_tag.to_owned()],
@@ -561,6 +565,7 @@ fn runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> Co
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig {
             rules: vec![RoutingRule {
+                attributes: None,
                 protocols: None,
                 origin: Default::default(),
                 inbound_tags: vec!["tun-in".to_owned()],
@@ -689,6 +694,7 @@ fn runtime_tun_dns_proxy_config_routing_second_upstream_to_freedom(
     config.outbounds.push(freedom_outbound());
     let prefix = if second.is_ipv4() { 32 } else { 128 };
     config.routing.rules = vec![RoutingRule {
+        attributes: None,
         protocols: None,
         origin: Default::default(),
         inbound_tags: vec!["dns-route".to_owned()],
@@ -892,6 +898,7 @@ fn runtime_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreCo
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig {
             rules: vec![RoutingRule {
+                attributes: None,
                 protocols: None,
                 origin: Default::default(),
                 inbound_tags: vec!["socks-in".to_owned()],
@@ -932,6 +939,7 @@ fn runtime_config_with_domain_routed_freedom_outbound(unused_proxy_port: u16) ->
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig {
             rules: vec![RoutingRule {
+                attributes: None,
                 protocols: None,
                 origin: Default::default(),
                 inbound_tags: Vec::new(),
@@ -1004,6 +1012,7 @@ fn runtime_config_with_ip_routed_freedom_outbound(unused_proxy_port: u16) -> Cor
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig {
             rules: vec![RoutingRule {
+                attributes: None,
                 protocols: None,
                 origin: Default::default(),
                 inbound_tags: Vec::new(),
@@ -1050,6 +1059,7 @@ fn runtime_config_with_ip_if_non_match_routed_freedom_outbound(
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig {
             rules: vec![RoutingRule {
+                attributes: None,
                 protocols: None,
                 origin: Default::default(),
                 inbound_tags: Vec::new(),
@@ -5502,6 +5512,7 @@ async fn run_tun_fake_dns_static_only_udp_freedom_scenario() {
     config.default_outbound_tag = Some("proxy".to_owned());
     config.routing.rules = vec![
         RoutingRule {
+            attributes: None,
             protocols: None,
             origin: Default::default(),
             inbound_tags: vec!["dns-route".to_owned()],
@@ -5513,6 +5524,7 @@ async fn run_tun_fake_dns_static_only_udp_freedom_scenario() {
             local_os: Vec::new(),
         },
         RoutingRule {
+            attributes: None,
             protocols: None,
             origin: Default::default(),
             inbound_tags: Vec::new(),
@@ -6601,6 +6613,7 @@ async fn run_core_wide_fake_dns_socks_to_http_scenario() {
         user_level: None,
     });
     config.routing.rules.push(RoutingRule {
+        attributes: None,
         protocols: None,
         origin: Default::default(),
         inbound_tags: vec!["http-in".to_owned()],
@@ -6612,6 +6625,7 @@ async fn run_core_wide_fake_dns_socks_to_http_scenario() {
         local_os: Vec::new(),
     });
     config.routing.rules.push(RoutingRule {
+        attributes: None,
         protocols: None,
         origin: Default::default(),
         inbound_tags: vec!["socks-in".to_owned()],
@@ -6725,6 +6739,7 @@ async fn run_tun_dns_outbound_fake_ip_domain_scenario(strategy: RoutingDomainStr
     let mut config = runtime_tun_config_with_freedom_outbound();
     config.outbounds.insert(0, dns_outbound(settings));
     config.routing.rules = vec![RoutingRule {
+        attributes: None,
         protocols: None,
         origin: Default::default(),
         inbound_tags: vec!["tun-in".to_owned()],
@@ -6804,6 +6819,7 @@ async fn run_tun_dns_outbound_tcp_fake_ip_domain_scenario(strategy: RoutingDomai
     let mut config = runtime_tun_config_with_freedom_outbound();
     config.outbounds.insert(0, dns_outbound(settings));
     config.routing.rules = vec![RoutingRule {
+        attributes: None,
         protocols: None,
         origin: Default::default(),
         inbound_tags: vec!["tun-in".to_owned()],
@@ -7905,6 +7921,7 @@ async fn run_tun_dns_proxy_udp_static_ip_skip_routing_scenario(strategy: Routing
     ));
     config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
     config.routing.rules = vec![RoutingRule {
+        attributes: None,
         protocols: None,
         origin: Default::default(),
         inbound_tags: vec!["dns-route".to_owned()],
@@ -7978,6 +7995,7 @@ async fn run_tun_dns_proxy_udp_dynamic_ip_skip_routing_scenario(strategy: Routin
     ));
     config.routing.domain_strategy = RoutingDomainStrategy::IpIfNonMatch;
     config.routing.rules = vec![RoutingRule {
+        attributes: None,
         protocols: None,
         origin: Default::default(),
         inbound_tags: vec!["dns-route".to_owned()],
@@ -8747,6 +8765,7 @@ async fn run_tun_dns_proxy_tcp_partial_response_failover_scenario() {
         tagged_dns_server(DnsServerEndpoint::Ip(fallback.addr()), "dns-vless"),
     ];
     config.routing.rules = vec![RoutingRule {
+        attributes: None,
         protocols: None,
         origin: Default::default(),
         inbound_tags: vec!["dns-vless".to_owned()],
@@ -9233,6 +9252,7 @@ async fn run_tun_fake_dns_udp_resolved_ip_routed_freedom_scenario(strategy: Rout
     config.routing.rules.insert(
         0,
         RoutingRule {
+            attributes: None,
             protocols: None,
             origin: Default::default(),
             inbound_tags: vec!["dns-route".to_owned()],
@@ -10062,6 +10082,7 @@ async fn run_domain_target_preservation_scenario(strategy: RoutingDomainStrategy
             DnsHostTarget::Ip("203.0.113.7".parse().unwrap()),
         )]);
         config.routing.rules = vec![RoutingRule {
+            attributes: None,
             protocols: None,
             origin: Default::default(),
             inbound_tags: Vec::new(),

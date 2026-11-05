@@ -149,6 +149,7 @@ async fn handle_http_connection(
         .target;
 
     let route = xray_config::RouteContext {
+        attributes: None,
         protocol: None,
         inbound_tag: inbound_tag.as_deref(),
         source: inbound.peer_addr().ok(),

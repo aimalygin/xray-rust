@@ -638,6 +638,7 @@ async fn startup_probe_uses_default_outbound_directly_without_routing_rules() {
     let mut config = config_with_outbounds(vec![freedom("direct")], Some("direct"));
     config.routing = RoutingConfig {
         rules: vec![RoutingRule {
+            attributes: None,
             protocols: None,
             origin: Default::default(),
             inbound_tags: Vec::new(),
@@ -755,6 +756,7 @@ fn outbound_probe_core(addr: SocketAddr) -> Core {
     // Routing would reject every flow; the host probe must dial leaves directly.
     config.routing = RoutingConfig {
         rules: vec![RoutingRule {
+            attributes: None,
             protocols: None,
             origin: Default::default(),
             inbound_tags: Vec::new(),

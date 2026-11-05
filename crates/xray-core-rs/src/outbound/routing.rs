@@ -77,6 +77,7 @@ async fn select_on_demand<'a>(
             || !rule.matches_protocol(route.protocol)
             || !rule.matches_port(Some(target.port))
             || !rule.origin.matches_ports_and_user(route)
+            || !rule.matches_attributes(route.attributes)
         {
             continue;
         }

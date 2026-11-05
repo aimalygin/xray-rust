@@ -4,9 +4,9 @@ use super::xray_lists::ListEntry;
 use super::{parse_xray_duration, Parser, U16SelectorKind, OBSERVATORY_PROBE_TIMEOUT};
 use crate::surface;
 use crate::{
-    DomainNameMode, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
-    RoutingLeastLoadCost, RoutingLeastLoadSettings, RoutingOrigin, RoutingRule, RoutingRuleTarget,
-    RoutingUsers,
+    DomainNameMode, RoutingAttributes, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig,
+    RoutingDomainStrategy, RoutingLeastLoadCost, RoutingLeastLoadSettings, RoutingOrigin,
+    RoutingRule, RoutingRuleTarget, RoutingUsers,
 };
 use serde_json::Value;
 use std::collections::HashSet;
@@ -586,6 +586,8 @@ impl Parser<'_> {
                     .map(|entry| entry.text.to_owned())
                     .collect()
             });
+        let attributes =
+            self.routing_attributes(rule.get("attrs"), &format!("{rule_path}.attrs"))?;
 
         let rule = RoutingRule {
             inbound_tags,
@@ -596,6 +598,7 @@ impl Parser<'_> {
             local_os,
             origin,
             protocols,
+            attributes,
             target,
         };
         if !rule.has_condition() {
@@ -684,6 +687,51 @@ impl Parser<'_> {
             }
         }
         Some(Some(users))
+    }
+
+    /// `attrs`, Go's `map[string]string` of attribute names to regular
+    /// expressions. As in Xray-core, `null` or `{}` sets no condition, a
+    /// `null` pattern reads as an empty one, and a pattern that does not
+    /// compile fails the config, where Xray-core panics.
+    fn routing_attributes(
+        &mut self,
+        raw: Option<&Value>,
+        path: &str,
+    ) -> Option<Option<RoutingAttributes>> {
+        let entries = match raw {
+            None | Some(Value::Null) => return Some(None),
+            Some(Value::Object(entries)) => entries,
+            Some(_) => {
+                self.error(path, "field `attrs` must be an object of strings");
+                return None;
+            }
+        };
+        if entries.is_empty() {
+            return Some(None);
+        }
+        let mut attributes = RoutingAttributes::default();
+        for (name, pattern) in entries {
+            let pattern_path = format!("{path}.{name}");
+            let pattern = match pattern {
+                Value::String(pattern) => pattern.as_str(),
+                Value::Null => "",
+                _ => {
+                    self.error(pattern_path, "an attribute pattern must be a string");
+                    return None;
+                }
+            };
+            match RegexMatcher::new(pattern) {
+                Ok(pattern) => attributes.insert(name, pattern),
+                Err(error) => {
+                    self.error(
+                        pattern_path,
+                        format!("attribute pattern does not compile: {}", error.message),
+                    );
+                    return None;
+                }
+            }
+        }
+        Some(Some(attributes))
     }
 
     /// `outboundTag` or `balancerTag`: a string, or empty when absent or
