@@ -2085,6 +2085,84 @@
       }
     },
     {
+      "name": "loopback-routing",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "direct",
+            "protocol": "freedom"
+          },
+          {
+            "tag": "again",
+            "protocol": "loopback",
+            "settings": {
+              "inboundTag": "loopback-in",
+              "sniffing": {
+                "enabled": false
+              }
+            }
+          }
+        ],
+        "routing": {
+          "rules": [
+            {
+              "type": "field",
+              "inboundTag": [
+                "socks-in"
+              ],
+              "outboundTag": "again"
+            },
+            {
+              "type": "field",
+              "inboundTag": [
+                "loopback-in"
+              ],
+              "outboundTag": "direct"
+            }
+          ]
+        }
+      },
+      "objects": {
+        "LOOPBACK_SETTINGS": "/outbounds/1/settings"
+      }
+    },
+    {
+      "name": "loopback-sniffing-enabled",
+      "accepted": false,
+      "errorPath": "$.outbounds[1].settings.sniffing",
+      "base": "loopback-routing",
+      "set": {
+        "/outbounds/1/settings/sniffing": {
+          "enabled": true,
+          "destOverride": [
+            "tls"
+          ]
+        }
+      }
+    },
+    {
+      "name": "loopback-inbound-tag-number",
+      "accepted": false,
+      "errorPath": "$.outbounds[1].settings.inboundTag",
+      "base": "loopback-routing",
+      "set": {
+        "/outbounds/1/settings/inboundTag": 1
+      }
+    },
+    {
       "name": "blackhole-unknown-response",
       "accepted": false,
       "errorPath": "$.outbounds[1].settings.response.type",
