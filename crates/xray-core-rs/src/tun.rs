@@ -2995,11 +2995,14 @@ async fn bridge_tcp_flow(
 ) {
     let mut client_already_opened = false;
     let mut initial_upload = VecDeque::new();
+    let mut protocol = None;
     if let TcpBridgeDestination::Standard(restored) = &destination {
+        let provenance = restored.provenance;
+        let routes_by_protocol = context.outbound_router.routes_by_protocol();
         let sniffing_config = context
             .sniffing
             .as_ref()
-            .filter(|config| should_sniff_tun_tcp(Some(config), restored.provenance));
+            .filter(|config| should_sniff_tun_tcp(Some(config), provenance, routes_by_protocol));
         if let Some(sniffing_config) = sniffing_config {
             let opened = tokio::select! {
                 biased;
@@ -3028,17 +3031,33 @@ async fn bridge_tcp_flow(
             };
             initial_upload = upload;
             if let Some(sniffed) = sniffed {
-                destination = TcpBridgeDestination::Standard(RestoredClientTarget {
-                    target: sniffed.route_target,
-                    provenance: FakeIpTargetProvenance::InPoolUnmapped,
-                });
+                protocol = Some(sniffed.protocol);
+                // Only an unmapped fake IP takes its sniffed domain; other
+                // flows are sniffed for their protocol alone.
+                if let Some(target) = sniffed
+                    .target
+                    .filter(|_| provenance == FakeIpTargetProvenance::InPoolUnmapped)
+                {
+                    destination = TcpBridgeDestination::Standard(RestoredClientTarget {
+                        target: target.route_target,
+                        provenance: FakeIpTargetProvenance::InPoolUnmapped,
+                    });
+                }
             }
         }
+        protocol = crate::sniffing::routing_protocol(
+            protocol,
+            provenance == FakeIpTargetProvenance::Mapped,
+            context.sniffing.as_ref(),
+        );
     }
 
     if let TcpBridgeDestination::Standard(restored) = &destination {
         let client_target = &restored.target;
-        let route = context.app_route(client);
+        let route = xray_config::RouteContext {
+            protocol: protocol.map(crate::sniffing::SniffedProtocol::name),
+            ..context.app_route(client)
+        };
         let selected_dns_outbound = tokio::select! {
             biased;
             () = wait_for_tun_shutdown(&mut shutdown) => return,
@@ -3122,16 +3141,20 @@ async fn bridge_tcp_flow(
         None,
         initial_upload,
         client.map(InboundSource::tcp),
+        protocol,
     )
     .await;
 }
 
+/// TUN opens a TCP flow before routing only to sniff an unmapped fake IP's
+/// domain, or any flow's protocol when routing asks for it.
 fn should_sniff_tun_tcp(
     config: Option<&InboundSniffingConfig>,
     provenance: FakeIpTargetProvenance,
+    routes_by_protocol: bool,
 ) -> bool {
-    provenance == FakeIpTargetProvenance::InPoolUnmapped
-        && crate::sniffing::should_sniff_tcp(config)
+    (provenance == FakeIpTargetProvenance::InPoolUnmapped || routes_by_protocol)
+        && crate::sniffing::should_sniff_tcp(config, routes_by_protocol)
 }
 
 async fn read_tun_tcp_sniff_payload(
@@ -3141,7 +3164,7 @@ async fn read_tun_tcp_sniff_payload(
     target: &Target,
 ) -> Option<(
     VecDeque<StackToRemoteData>,
-    Option<crate::sniffing::SniffedTarget>,
+    Option<crate::sniffing::Sniffed>,
 )> {
     let mut initial_upload = VecDeque::new();
     let mut sniff_buffer = BytesMut::with_capacity(TUN_TCP_SNIFF_BUFFER_SIZE);
@@ -3150,27 +3173,32 @@ async fn read_tun_tcp_sniff_payload(
 
     loop {
         let data = tokio::select! {
-            changed = shutdown.changed() => {
-                if changed.is_err() || *shutdown.borrow() {
-                    return None;
-                }
-                continue;
-            }
-            () = &mut timeout => return Some((initial_upload, None)),
-            data = from_stack.recv() => data?,
-        };
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow() {
+                            return None;
+                        }
+                        continue;
+                    }
+        () = &mut timeout => {
+                        let sniffed =
+                            crate::sniffing::sniff_tcp_initial_payload(config, target, &sniff_buffer, true)
+                                .found();
+                        return Some((initial_upload, sniffed));
+                    }
+                    data = from_stack.recv() => data?,
+                };
         let remaining = TUN_TCP_SNIFF_BUFFER_SIZE.saturating_sub(sniff_buffer.len());
         let inspected = data.data.len().min(remaining);
         sniff_buffer.extend_from_slice(&data.data[..inspected]);
         initial_upload.push_back(data);
 
-        if let Some(sniffed) =
-            crate::sniffing::sniff_tcp_initial_payload(config, target, &sniff_buffer)
-        {
-            return Some((initial_upload, Some(sniffed)));
-        }
-        if sniff_buffer.len() >= TUN_TCP_SNIFF_BUFFER_SIZE {
-            return Some((initial_upload, None));
+        let full = sniff_buffer.len() >= TUN_TCP_SNIFF_BUFFER_SIZE;
+        match crate::sniffing::sniff_tcp_initial_payload(config, target, &sniff_buffer, full) {
+            crate::sniffing::TcpSniff::Found(sniffed) => {
+                return Some((initial_upload, Some(sniffed)));
+            }
+            crate::sniffing::TcpSniff::Unknown => return Some((initial_upload, None)),
+            crate::sniffing::TcpSniff::NeedMore => {}
         }
     }
 }
@@ -3213,6 +3241,7 @@ async fn bridge_preopened_dns_tcp_flow(
         operation_timeout_override,
         initial_upload,
         None,
+        None,
     )
     .await;
 }
@@ -3237,6 +3266,7 @@ async fn bridge_tcp_flow_inner(
     operation_timeout_override: Option<Duration>,
     mut initial_upload: VecDeque<StackToRemoteData>,
     source: Option<InboundSource>,
+    protocol: Option<crate::sniffing::SniffedProtocol>,
 ) {
     let collect_tcp_timings = context.tun_runtime_options.collect_tcp_timings;
     let tcp_timing_start = collect_tcp_timings.then(StdInstant::now);
@@ -3264,6 +3294,9 @@ async fn bridge_tcp_flow_inner(
             source: source
                 .filter(|_| dns_upstream.is_none())
                 .map(|source| source.addr),
+            protocol: protocol
+                .filter(|_| dns_upstream.is_none())
+                .map(crate::sniffing::SniffedProtocol::name),
             ..xray_config::RouteContext::inbound(routing_inbound_tag)
         };
         let candidate_deadline = dns_deadline.map(|total_deadline| {
@@ -4496,6 +4529,9 @@ async fn bridge_udp_flow(
     let dial_target = sniffed_target.dial_target;
     let route = xray_config::RouteContext {
         source: Some(key.client.socket_addr()),
+        protocol: sniffed_target
+            .protocol
+            .map(crate::sniffing::SniffedProtocol::name),
         ..xray_config::RouteContext::inbound(context.inbound_tag.as_deref())
     };
     let selected = match context
@@ -4804,6 +4840,8 @@ struct TunUdpSniffedTarget {
     route_target: Target,
     dial_target: Target,
     sniffed_protocol: Option<xray_config::SniffingDestination>,
+    /// The protocol routing sees.
+    protocol: Option<crate::sniffing::SniffedProtocol>,
 }
 
 impl TunUdpSniffedTarget {
@@ -4812,19 +4850,24 @@ impl TunUdpSniffedTarget {
             route_target: target.clone(),
             dial_target: target.clone(),
             sniffed_protocol: None,
+            protocol: None,
         }
     }
 
     fn from_sniffed(
         target: &Target,
         provenance: FakeIpTargetProvenance,
-        sniffed: Option<crate::sniffing::SniffedTarget>,
+        sniffed: Option<crate::sniffing::Sniffed>,
     ) -> Self {
-        if provenance == FakeIpTargetProvenance::Mapped {
-            return Self::original(target);
-        }
-        let Some(mut sniffed) = sniffed else {
-            return Self::original(target);
+        let protocol = sniffed.as_ref().map(|sniffed| sniffed.protocol);
+        let Some(mut sniffed) = sniffed
+            .and_then(|sniffed| sniffed.target)
+            .filter(|_| provenance != FakeIpTargetProvenance::Mapped)
+        else {
+            return Self {
+                protocol,
+                ..Self::original(target)
+            };
         };
         if provenance == FakeIpTargetProvenance::InPoolUnmapped {
             sniffed.dial_target = sniffed.route_target.clone();
@@ -4834,6 +4877,7 @@ impl TunUdpSniffedTarget {
             route_target: sniffed.route_target,
             dial_target: sniffed.dial_target,
             sniffed_protocol,
+            protocol,
         }
     }
 }
@@ -4846,28 +4890,21 @@ async fn sniff_tun_udp_target(
     from_stack: mpsc::Receiver<Bytes>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> (TunUdpSniffedTarget, UdpIngress) {
-    if provenance == FakeIpTargetProvenance::Mapped {
-        return (
-            TunUdpSniffedTarget::from_sniffed(target, provenance, None),
-            from_stack.into(),
-        );
-    }
-    let Some(config) = context
+    let routes_by_protocol = context.outbound_router.routes_by_protocol();
+    let mapped = provenance == FakeIpTargetProvenance::Mapped;
+    let config = context
         .sniffing
         .as_ref()
-        .filter(|config| crate::sniffing::should_sniff_udp(Some(config)))
-    else {
-        return (TunUdpSniffedTarget::original(target), from_stack.into());
+        .filter(|_| !mapped || routes_by_protocol)
+        .filter(|config| crate::sniffing::should_sniff_udp(Some(config), routes_by_protocol));
+    let (sniffed, from_stack) = match config {
+        Some(config) => sniff_udp_flow(config, target, first_payload, from_stack, shutdown).await,
+        None => (None, from_stack.into()),
     };
-    let (sniffed, from_stack) =
-        sniff_udp_flow(config, target, first_payload, from_stack, shutdown).await;
-    let Some(sniffed) = sniffed else {
-        return (TunUdpSniffedTarget::original(target), from_stack);
-    };
-    (
-        TunUdpSniffedTarget::from_sniffed(target, provenance, Some(sniffed)),
-        from_stack,
-    )
+    let mut sniffed = TunUdpSniffedTarget::from_sniffed(target, provenance, sniffed);
+    sniffed.protocol =
+        crate::sniffing::routing_protocol(sniffed.protocol, mapped, context.sniffing.as_ref());
+    (sniffed, from_stack)
 }
 
 #[expect(
@@ -8594,12 +8631,19 @@ mod tests {
         let result = TunUdpSniffedTarget::from_sniffed(
             &mapped,
             FakeIpTargetProvenance::Mapped,
-            Some(tun_udp_sniffed_target(&mapped, "sniffed-b.example")),
+            Some(crate::sniffing::Sniffed {
+                protocol: crate::sniffing::SniffedProtocol::Quic,
+                target: Some(tun_udp_sniffed_target(&mapped, "sniffed-b.example")),
+            }),
         );
 
         assert_eq!(result.route_target, mapped);
         assert_eq!(result.dial_target, mapped);
         assert_eq!(result.sniffed_protocol, None);
+        assert_eq!(
+            result.protocol,
+            Some(crate::sniffing::SniffedProtocol::Quic)
+        );
     }
 
     #[test]
@@ -8615,10 +8659,18 @@ mod tests {
         assert!(!should_sniff_tun_tcp(
             Some(&config),
             FakeIpTargetProvenance::Mapped,
+            false,
         ));
         assert!(should_sniff_tun_tcp(
             Some(&config),
             FakeIpTargetProvenance::InPoolUnmapped,
+            false,
+        ));
+        // Routing by protocol opens any flow to sniff its protocol.
+        assert!(should_sniff_tun_tcp(
+            Some(&config),
+            FakeIpTargetProvenance::Outside,
+            true,
         ));
     }
 
@@ -8632,7 +8684,10 @@ mod tests {
         let result = TunUdpSniffedTarget::from_sniffed(
             &raw,
             FakeIpTargetProvenance::InPoolUnmapped,
-            Some(tun_udp_sniffed_target(&raw, "sniffed.example")),
+            Some(crate::sniffing::Sniffed {
+                protocol: crate::sniffing::SniffedProtocol::Quic,
+                target: Some(tun_udp_sniffed_target(&raw, "sniffed.example")),
+            }),
         );
 
         assert_eq!(result.dial_target, result.route_target);

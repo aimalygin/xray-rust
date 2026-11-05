@@ -3427,6 +3427,34 @@
       },
       "accepted": false,
       "errorPath": "$.routing.rules[0].sourcePort"
+    },
+    {
+      "name": "routing-protocol",
+      "base": "routing-xray-string-lists",
+      "set": {
+        "/routing/rules/0": {
+          "protocol": [
+            "bittorrent",
+            "http"
+          ],
+          "outboundTag": "block"
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "routing-protocol-not-a-list",
+      "base": "routing-xray-string-lists",
+      "set": {
+        "/routing/rules/0": {
+          "protocol": {
+            "name": "tls"
+          },
+          "outboundTag": "block"
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.routing.rules[0].protocol"
     }
   ]
 }

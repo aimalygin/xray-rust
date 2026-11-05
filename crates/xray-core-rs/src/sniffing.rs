@@ -46,60 +46,269 @@ pub(crate) struct SniffedTarget {
     pub protocol: SniffingDestination,
 }
 
-pub(crate) fn should_sniff_tcp(config: Option<&InboundSniffingConfig>) -> bool {
+/// A protocol Xray-core's sniffers recognize, which a routing rule's
+/// `protocol` matches by prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SniffedProtocol {
+    Http1,
+    Tls,
+    Quic,
+    Bittorrent,
+    /// A fake IP whose domain the fake DNS knows, when no content sniffer
+    /// named the flow.
+    FakeDns,
+}
+
+impl SniffedProtocol {
+    /// The name routing matches, as Xray-core's sniffers give it.
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::Http1 => "http1",
+            Self::Tls => "tls",
+            Self::Quic => "quic",
+            Self::Bittorrent => "bittorrent",
+            Self::FakeDns => "fakedns",
+        }
+    }
+}
+
+/// What sniffing the start of a flow found: its protocol and, when
+/// `destOverride` names it and no exclusion keeps the original, the target
+/// its sniffed domain makes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Sniffed {
+    pub protocol: SniffedProtocol,
+    pub target: Option<SniffedTarget>,
+}
+
+/// The protocol routing sees for a flow: what content sniffing named or, as
+/// Xray-core's fake DNS sniffer names it, `fakedns` for a fake IP whose
+/// domain is known, whenever sniffing is on.
+pub(crate) fn routing_protocol(
+    sniffed: Option<SniffedProtocol>,
+    mapped_fake_ip: bool,
+    config: Option<&InboundSniffingConfig>,
+) -> Option<SniffedProtocol> {
+    sniffed.or_else(|| {
+        (mapped_fake_ip && config.is_some_and(|config| config.enabled))
+            .then_some(SniffedProtocol::FakeDns)
+    })
+}
+
+/// Whether to read a TCP flow's first bytes: for `destOverride`, or for the
+/// protocol when routing has a `protocol` rule.
+pub(crate) fn should_sniff_tcp(
+    config: Option<&InboundSniffingConfig>,
+    routes_by_protocol: bool,
+) -> bool {
     let Some(config) = config else {
         return false;
     };
     config.enabled
         && !config.metadata_only
-        && config.dest_override.iter().any(|override_kind| {
-            matches!(
-                override_kind,
-                SniffingDestination::Http | SniffingDestination::Tls
-            )
-        })
+        && (routes_by_protocol
+            || config.dest_override.iter().any(|override_kind| {
+                matches!(
+                    override_kind,
+                    SniffingDestination::Http | SniffingDestination::Tls
+                )
+            }))
 }
 
-pub(crate) fn should_sniff_udp(config: Option<&InboundSniffingConfig>) -> bool {
+/// Whether to inspect a UDP flow's first datagrams, as for TCP.
+pub(crate) fn should_sniff_udp(
+    config: Option<&InboundSniffingConfig>,
+    routes_by_protocol: bool,
+) -> bool {
     let Some(config) = config else {
         return false;
     };
     config.enabled
         && !config.metadata_only
-        && config
-            .dest_override
-            .iter()
-            .any(|override_kind| matches!(override_kind, SniffingDestination::Quic))
+        && (routes_by_protocol
+            || config
+                .dest_override
+                .iter()
+                .any(|override_kind| matches!(override_kind, SniffingDestination::Quic)))
 }
 
+/// What a TCP flow's first bytes say so far.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TcpSniff {
+    /// A sniffer named the flow.
+    Found(Sniffed),
+    /// No sniffer can tell yet.
+    NeedMore,
+    /// Every sniffer ruled the flow out, so reading on cannot help.
+    Unknown,
+}
+
+impl TcpSniff {
+    pub(crate) fn found(self) -> Option<Sniffed> {
+        match self {
+            Self::Found(sniffed) => Some(sniffed),
+            Self::NeedMore | Self::Unknown => None,
+        }
+    }
+}
+
+/// Sniffs a TCP flow's first bytes with Xray-core's TCP sniffers, in their
+/// order: HTTP, TLS, BitTorrent. As there, the flow is unknown once every
+/// sniffer has ruled it out. `complete` says no more bytes will come, so an
+/// HTTP request whose headers were cut short is still named.
 pub(crate) fn sniff_tcp_initial_payload(
     config: &InboundSniffingConfig,
     original: &Target,
     payload: &[u8],
-) -> Option<SniffedTarget> {
-    if config.metadata_only || payload.is_empty() {
-        return None;
+    complete: bool,
+) -> TcpSniff {
+    if config.metadata_only {
+        return TcpSniff::Unknown;
+    }
+    let mut undecided = payload.is_empty();
+
+    match begins_with_http_method(payload) {
+        Some(true) => {
+            if !complete && find_subslice(payload, b"\r\n\r\n").is_none() {
+                return TcpSniff::NeedMore;
+            }
+            let target = sniff_http_host(payload).and_then(|domain| {
+                override_target(config, original, domain, SniffingDestination::Http)
+            });
+            return TcpSniff::Found(Sniffed {
+                protocol: SniffedProtocol::Http1,
+                target,
+            });
+        }
+        None => undecided = true,
+        Some(false) => {}
+    }
+    match tls_record(payload) {
+        TlsRecord::Complete => {
+            // Without a server name, Xray-core does not take it for TLS.
+            if let Some(domain) = sniff_tls_client_hello_sni(payload) {
+                return TcpSniff::Found(Sniffed {
+                    protocol: SniffedProtocol::Tls,
+                    target: override_target(config, original, domain, SniffingDestination::Tls),
+                });
+            }
+        }
+        TlsRecord::Partial => undecided = true,
+        TlsRecord::NotTls => {}
+    }
+    if payload.len() < 20 {
+        undecided = true;
+    } else if is_bittorrent_handshake(payload) {
+        return TcpSniff::Found(Sniffed {
+            protocol: SniffedProtocol::Bittorrent,
+            target: None,
+        });
     }
 
-    for override_kind in &config.dest_override {
-        let domain = match override_kind {
-            SniffingDestination::Http => sniff_http_host(payload),
-            SniffingDestination::Tls => sniff_tls_client_hello_sni(payload),
-            SniffingDestination::Quic => None,
-        };
-        if let Some(domain) = domain {
-            return sniffed_target(config, original, domain, *override_kind);
+    if undecided && !complete {
+        TcpSniff::NeedMore
+    } else {
+        TcpSniff::Unknown
+    }
+}
+
+/// How much of a TLS record the payload holds, read as Xray-core's
+/// `SniffTLS` reads its header.
+enum TlsRecord {
+    Complete,
+    Partial,
+    NotTls,
+}
+
+fn tls_record(payload: &[u8]) -> TlsRecord {
+    if payload.len() < 5 {
+        return TlsRecord::Partial;
+    }
+    if payload[0] != 0x16 || payload[1] != 3 {
+        return TlsRecord::NotTls;
+    }
+    let length = usize::from(u16::from_be_bytes([payload[3], payload[4]]));
+    if payload.len() < 5 + length {
+        TlsRecord::Partial
+    } else {
+        TlsRecord::Complete
+    }
+}
+
+/// Xray-core's `beginWithHTTPMethod`: one of seven methods,
+/// case-insensitively. `None` is a payload too short to tell, decided at the
+/// first method longer than it, as there.
+fn begins_with_http_method(payload: &[u8]) -> Option<bool> {
+    for method in [
+        &b"get"[..],
+        b"post",
+        b"head",
+        b"put",
+        b"delete",
+        b"options",
+        b"connect",
+    ] {
+        if payload.len() >= method.len() && payload[..method.len()].eq_ignore_ascii_case(method) {
+            return Some(true);
+        }
+        if payload.len() < method.len() {
+            return None;
         }
     }
+    Some(false)
+}
 
-    None
+/// The BitTorrent peer handshake's opening: a length of 19 and its name.
+fn is_bittorrent_handshake(payload: &[u8]) -> bool {
+    payload.len() >= 20 && payload[0] == 19 && &payload[1..20] == b"BitTorrent protocol"
+}
+
+/// Xray-core's `SniffUTP`: a uTP version 1 `ST_SYN` packet with no time
+/// difference yet, whose extensions, only selective ACK and extension bits,
+/// take up the rest of the datagram.
+fn is_utp_syn(datagram: &[u8]) -> bool {
+    if datagram.len() < 20 || datagram[0] != 0x41 || datagram[8..12] != [0; 4] {
+        return false;
+    }
+    let (mut extension, mut offset) = (datagram[1], 20);
+    while extension != 0 {
+        let Some(&length) = datagram.get(offset + 1) else {
+            return false;
+        };
+        let length = usize::from(length);
+        let valid = match extension {
+            1 => length >= 4 && length % 4 == 0,
+            2 => length == 8,
+            _ => false,
+        };
+        if !valid || datagram.len() < offset + 2 + length {
+            return false;
+        }
+        extension = datagram[offset];
+        offset += 2 + length;
+    }
+    datagram.len() == offset
+}
+
+/// The target `domain` makes of `original` when `destOverride` names `kind`.
+fn override_target(
+    config: &InboundSniffingConfig,
+    original: &Target,
+    domain: String,
+    kind: SniffingDestination,
+) -> Option<SniffedTarget> {
+    config
+        .dest_override
+        .contains(&kind)
+        .then(|| sniffed_target(config, original, domain, kind))
+        .flatten()
 }
 
 /// What sniffing the first datagrams of a UDP flow has established.
 #[derive(Debug)]
 pub(crate) enum UdpSniffProgress {
-    /// Sniffing is over: the sniffed target, or `None` to keep the original.
-    Done(Option<SniffedTarget>),
+    /// Sniffing is over: what it found, or `None` when nothing was named.
+    Done(Option<Sniffed>),
     /// A QUIC Initial matched, but its ClientHello continues in a later
     /// datagram.
     NeedMore,
@@ -115,6 +324,7 @@ pub(crate) struct UdpSniffer<'a> {
     config: &'a InboundSniffingConfig,
     original: &'a Target,
     quic: QuicCryptoAssembler,
+    first: bool,
 }
 
 impl<'a> UdpSniffer<'a> {
@@ -123,29 +333,35 @@ impl<'a> UdpSniffer<'a> {
             config,
             original,
             quic: QuicCryptoAssembler::default(),
+            first: true,
         }
     }
 
-    /// Feeds the flow's next datagram, starting with its first.
+    /// Feeds the flow's next datagram, starting with its first. QUIC is
+    /// sniffed as Xray-core sniffs it, then uTP, whose `ST_SYN` is one
+    /// datagram.
     pub(crate) fn feed(&mut self, datagram: &[u8]) -> UdpSniffProgress {
-        if self.config.metadata_only
-            || datagram.is_empty()
-            || !self
-                .config
-                .dest_override
-                .contains(&SniffingDestination::Quic)
-        {
+        if self.config.metadata_only || datagram.is_empty() {
             return UdpSniffProgress::Done(None);
         }
+        let first = std::mem::replace(&mut self.first, false);
         match self.quic.feed(datagram) {
-            QuicSniff::Domain(domain) => UdpSniffProgress::Done(sniffed_target(
-                self.config,
-                self.original,
-                domain,
-                SniffingDestination::Quic,
-            )),
+            QuicSniff::Domain(domain) => UdpSniffProgress::Done(Some(Sniffed {
+                protocol: SniffedProtocol::Quic,
+                target: override_target(
+                    self.config,
+                    self.original,
+                    domain,
+                    SniffingDestination::Quic,
+                ),
+            })),
             QuicSniff::NeedMore => UdpSniffProgress::NeedMore,
-            QuicSniff::NoDomain => UdpSniffProgress::Done(None),
+            QuicSniff::NoDomain => {
+                UdpSniffProgress::Done((first && is_utp_syn(datagram)).then_some(Sniffed {
+                    protocol: SniffedProtocol::Bittorrent,
+                    target: None,
+                }))
+            }
         }
     }
 }
@@ -815,9 +1031,20 @@ mod tests {
         payload: &[u8],
     ) -> Option<SniffedTarget> {
         match UdpSniffer::new(config, original).feed(payload) {
-            UdpSniffProgress::Done(sniffed) => sniffed,
+            UdpSniffProgress::Done(sniffed) => sniffed.and_then(|sniffed| sniffed.target),
             UdpSniffProgress::NeedMore => None,
         }
+    }
+
+    /// The target a complete TCP payload's sniffed domain makes.
+    fn sniff_tcp_target(
+        config: &InboundSniffingConfig,
+        original: &Target,
+        payload: &[u8],
+    ) -> Option<SniffedTarget> {
+        sniff_tcp_initial_payload(config, original, payload, true)
+            .found()
+            .and_then(|sniffed| sniffed.target)
     }
 
     /// Feeds the datagrams in order and records which ones left sniffing
@@ -832,9 +1059,11 @@ mod tests {
                 UdpSniffProgress::NeedMore => waited.push(true),
                 UdpSniffProgress::Done(sniffed) => {
                     waited.push(false);
-                    let domain = sniffed.map(|sniffed| match sniffed.route_target.addr {
-                        TargetAddr::Domain(domain) => domain,
-                        other => panic!("sniffing produced a non-domain target {other:?}"),
+                    let domain = sniffed.and_then(|sniffed| sniffed.target).map(|sniffed| {
+                        match sniffed.route_target.addr {
+                            TargetAddr::Domain(domain) => domain,
+                            other => panic!("sniffing produced a non-domain target {other:?}"),
+                        }
                     });
                     return (waited, domain);
                 }
@@ -970,11 +1199,133 @@ mod tests {
     }
 
     #[test]
+    fn http_methods_read_as_xray_core_reads_them() {
+        assert_eq!(begins_with_http_method(b"GET / HTTP/1.1"), Some(true));
+        assert_eq!(begins_with_http_method(b"oPtIoNs * HTTP/1.1"), Some(true));
+        assert_eq!(begins_with_http_method(b"PATCH / HTTP/1.1"), Some(false));
+        // Too short for the first method longer than the payload.
+        assert_eq!(begins_with_http_method(b"GE"), None);
+        assert_eq!(begins_with_http_method(b"PAT"), None);
+        // Five bytes cannot yet rule out `delete`, as in Xray-core.
+        assert_eq!(begins_with_http_method(b"\x16\x03\x01\x00\x10"), None);
+        assert_eq!(
+            begins_with_http_method(b"\x16\x03\x01\x00\x10\x01\x00"),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn names_the_protocol_without_overriding_what_dest_override_leaves_out() {
+        let tls_only = InboundSniffingConfig {
+            dest_override: vec![SniffingDestination::Tls],
+            ..sniffing_config(true)
+        };
+        let http = b"GET / HTTP/1.1\r\nHost: routed.example\r\n\r\n";
+        let sniffed = sniff_tcp_initial_payload(&tls_only, &original_ip_target(), http, false)
+            .found()
+            .expect("an HTTP request is named");
+        assert_eq!(sniffed.protocol, SniffedProtocol::Http1);
+        assert_eq!(sniffed.target, None);
+
+        // Headers cut short wait for more bytes, unless none will come.
+        let partial = b"GET / HTTP/1.1\r\nHost: routed.example\r\n";
+        assert_eq!(
+            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), partial, false),
+            TcpSniff::NeedMore
+        );
+        let named = sniff_tcp_initial_payload(&tls_only, &original_ip_target(), partial, true)
+            .found()
+            .expect("a cut-short request is still named");
+        assert_eq!(named.protocol, SniffedProtocol::Http1);
+
+        let mut handshake = vec![19];
+        handshake.extend_from_slice(b"BitTorrent protocol");
+        handshake.extend_from_slice(&[0; 8]);
+        let bittorrent =
+            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), &handshake, false)
+                .found()
+                .expect("a BitTorrent handshake is named");
+        assert_eq!(bittorrent.protocol, SniffedProtocol::Bittorrent);
+        assert_eq!(bittorrent.target, None);
+        assert_eq!(
+            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), &handshake[..19], false),
+            TcpSniff::NeedMore
+        );
+
+        // Once every sniffer has ruled it out, reading on cannot help.
+        let ssh = b"SSH-2.0-OpenSSH_9.6\r\n";
+        assert_eq!(
+            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), ssh, false),
+            TcpSniff::Unknown
+        );
+        assert_eq!(
+            sniff_tcp_initial_payload(&tls_only, &original_ip_target(), b"SSH-2.0", false),
+            TcpSniff::NeedMore
+        );
+    }
+
+    #[test]
+    fn a_mapped_fake_ip_is_named_fakedns_when_nothing_else_named_it() {
+        let on = sniffing_config(true);
+        let off = InboundSniffingConfig {
+            enabled: false,
+            ..sniffing_config(true)
+        };
+        assert_eq!(
+            routing_protocol(None, true, Some(&on)),
+            Some(SniffedProtocol::FakeDns)
+        );
+        assert_eq!(
+            routing_protocol(Some(SniffedProtocol::Tls), true, Some(&on)),
+            Some(SniffedProtocol::Tls)
+        );
+        assert_eq!(routing_protocol(None, true, Some(&off)), None);
+        assert_eq!(routing_protocol(None, true, None), None);
+        assert_eq!(routing_protocol(None, false, Some(&on)), None);
+    }
+
+    #[test]
+    fn utp_syn_reads_as_xray_core_reads_it() {
+        let mut syn = vec![0x41, 0];
+        syn.extend_from_slice(&[0; 18]);
+        assert!(is_utp_syn(&syn));
+        // A selective ACK extension, then extension bits.
+        let mut with_extensions = vec![0x41, 1];
+        with_extensions.extend_from_slice(&[0; 18]);
+        with_extensions.extend_from_slice(&[2, 4, 0, 0, 0, 0]);
+        with_extensions.extend_from_slice(&[0, 8, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert!(is_utp_syn(&with_extensions));
+
+        let mut timed = syn.clone();
+        timed[8] = 1;
+        assert!(!is_utp_syn(&timed));
+        let mut data = syn.clone();
+        data[0] = 0x01;
+        assert!(!is_utp_syn(&data));
+        let mut trailing = syn.clone();
+        trailing.push(0);
+        assert!(!is_utp_syn(&trailing));
+        let mut odd_ack = vec![0x41, 1];
+        odd_ack.extend_from_slice(&[0; 18]);
+        odd_ack.extend_from_slice(&[0, 3, 0, 0, 0]);
+        assert!(!is_utp_syn(&odd_ack));
+
+        let config = quic_sniffing_config(true);
+        let sniffed = match UdpSniffer::new(&config, &original_udp_target()).feed(&syn) {
+            UdpSniffProgress::Done(sniffed) => sniffed,
+            UdpSniffProgress::NeedMore => None,
+        };
+        assert_eq!(
+            sniffed.map(|sniffed| sniffed.protocol),
+            Some(SniffedProtocol::Bittorrent)
+        );
+    }
+
+    #[test]
     fn sniffs_http_host_header() {
         let payload = b"GET / HTTP/1.1\r\nHost: Routed.Example:443\r\nUser-Agent: test\r\n\r\n";
-        let sniffed =
-            sniff_tcp_initial_payload(&sniffing_config(true), &original_ip_target(), payload)
-                .expect("HTTP host should be sniffed");
+        let sniffed = sniff_tcp_target(&sniffing_config(true), &original_ip_target(), payload)
+            .expect("HTTP host should be sniffed");
 
         assert_eq!(
             sniffed.route_target.addr,
@@ -986,9 +1337,8 @@ mod tests {
     #[test]
     fn sniffs_tls_client_hello_sni() {
         let payload = tls_client_hello_with_sni("tls.example");
-        let sniffed =
-            sniff_tcp_initial_payload(&sniffing_config(true), &original_ip_target(), &payload)
-                .expect("TLS SNI should be sniffed");
+        let sniffed = sniff_tcp_target(&sniffing_config(true), &original_ip_target(), &payload)
+            .expect("TLS SNI should be sniffed");
 
         assert_eq!(
             sniffed.route_target.addr,
@@ -1001,7 +1351,7 @@ mod tests {
     fn route_only_keeps_original_target_for_dialing() {
         let original = original_ip_target();
         let payload = b"GET / HTTP/1.1\r\nHost: routed.example\r\n\r\n";
-        let sniffed = sniff_tcp_initial_payload(&sniffing_config(true), &original, payload)
+        let sniffed = sniff_tcp_target(&sniffing_config(true), &original, payload)
             .expect("HTTP host should be sniffed");
 
         assert_eq!(
@@ -1015,10 +1365,7 @@ mod tests {
     fn rejects_empty_http_host_after_stripping_port() {
         let payload = b"GET / HTTP/1.1\r\nHost: :443\r\n\r\n";
 
-        assert!(
-            sniff_tcp_initial_payload(&sniffing_config(true), &original_ip_target(), payload)
-                .is_none()
-        );
+        assert!(sniff_tcp_target(&sniffing_config(true), &original_ip_target(), payload).is_none());
     }
 
     /// `config` with `domainsExcluded` of `domains` and `ipsExcluded` of
@@ -1049,19 +1396,19 @@ mod tests {
             &[],
         );
         let excluded = b"GET / HTTP/1.1\r\nHost: Courier.Push.Apple.Com\r\n\r\n";
-        assert!(sniff_tcp_initial_payload(&config, &original_ip_target(), excluded).is_none());
+        assert!(sniff_tcp_target(&config, &original_ip_target(), excluded).is_none());
         let tls = tls_client_hello_with_sni("courier.push.apple.com");
-        assert!(sniff_tcp_initial_payload(&config, &original_ip_target(), &tls).is_none());
+        assert!(sniff_tcp_target(&config, &original_ip_target(), &tls).is_none());
 
         let other = b"GET / HTTP/1.1\r\nHost: routed.example\r\n\r\n";
-        assert!(sniff_tcp_initial_payload(&config, &original_ip_target(), other).is_some());
+        assert!(sniff_tcp_target(&config, &original_ip_target(), other).is_some());
     }
 
     #[test]
     fn excluded_destination_ips_keep_whatever_is_sniffed_away() {
         let config = excluding(sniffing_config(false), &[], &["127.0.0.1"]);
         let payload = b"GET / HTTP/1.1\r\nHost: routed.example\r\n\r\n";
-        assert!(sniff_tcp_initial_payload(&config, &original_ip_target(), payload).is_none());
+        assert!(sniff_tcp_target(&config, &original_ip_target(), payload).is_none());
 
         // Only an IP destination is checked, as in Xray-core.
         let by_name = Target::new(
@@ -1069,13 +1416,13 @@ mod tests {
             443,
             Network::Tcp,
         );
-        assert!(sniff_tcp_initial_payload(&config, &by_name, payload).is_some());
+        assert!(sniff_tcp_target(&config, &by_name, payload).is_some());
         let elsewhere = Target::new(
             TargetAddr::Ip("192.0.2.1".parse().unwrap()),
             443,
             Network::Tcp,
         );
-        assert!(sniff_tcp_initial_payload(&config, &elsewhere, payload).is_some());
+        assert!(sniff_tcp_target(&config, &elsewhere, payload).is_some());
     }
 
     #[test]
@@ -1095,7 +1442,7 @@ mod tests {
     fn non_route_only_replaces_dial_target() {
         let original = original_ip_target();
         let payload = b"GET / HTTP/1.1\r\nHost: routed.example\r\n\r\n";
-        let sniffed = sniff_tcp_initial_payload(&sniffing_config(false), &original, payload)
+        let sniffed = sniff_tcp_target(&sniffing_config(false), &original, payload)
             .expect("HTTP host should be sniffed");
 
         assert_eq!(sniffed.dial_target, sniffed.route_target);

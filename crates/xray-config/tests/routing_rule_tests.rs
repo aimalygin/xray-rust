@@ -252,6 +252,7 @@ fn domains_replaces_domain_but_both_must_parse() {
 
 fn route<'a>(source: &str, local: &str, user: Option<&'a str>) -> RouteContext<'a> {
     RouteContext {
+        protocol: None,
         inbound_tag: Some("socks-in"),
         source: Some(source.parse().unwrap()),
         local: Some(local.parse().unwrap()),
@@ -396,4 +397,37 @@ fn users_are_names_and_patterns() {
     let ignored = &parsed.config.routing.rules[0];
     assert!(applies(ignored, &as_user("bob")));
     assert!(!applies(ignored, &as_user("(")));
+}
+
+#[test]
+fn protocols_match_the_sniffed_protocol_by_prefix() {
+    let applies_to = |rule: &RoutingRule, protocol: Option<&str>| {
+        let route = RouteContext {
+            protocol,
+            ..RouteContext::inbound(Some("socks-in"))
+        };
+        rule.matches_route(&route, None, Some(&LOOPBACK), Some(Network::Tcp), Some(443))
+    };
+    let http = rule(json!({"protocol": ["http", "bittorrent"], "outboundTag": "direct"}));
+    assert!(applies_to(&http, Some("http1")));
+    assert!(applies_to(&http, Some("bittorrent")));
+    assert!(!applies_to(&http, Some("tls")));
+    // A flow without a sniffed protocol matches no protocol rule.
+    assert!(!applies_to(&http, None));
+
+    // A string is split at commas, untrimmed.
+    let split = rule(json!({"protocol": "tls, quic", "outboundTag": "direct"}));
+    assert!(applies_to(&split, Some("tls")));
+    assert!(!applies_to(&split, Some("quic")));
+    // Any entry sets a condition, though empty names match nothing.
+    let empty = rule(json!({"protocol": [""], "outboundTag": "direct"}));
+    assert!(!applies_to(&empty, Some("tls")));
+    assert_eq!(
+        rejection(json!({"protocol": [], "outboundTag": "direct"})),
+        "$.routing.rules[0]"
+    );
+    assert_eq!(
+        rejection(json!({"protocol": [5], "outboundTag": "direct"})),
+        "$.routing.rules[0].protocol[0]"
+    );
 }

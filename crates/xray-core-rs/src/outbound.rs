@@ -2484,6 +2484,13 @@ struct RoutingPolicyState {
     revision: u64,
     routing: RoutingConfig,
     dns_route_prefilter: DnsRoutePrefilter,
+    /// Whether a rule has a `protocol` condition, so inbounds sniff flows
+    /// for their protocol even where `destOverride` would not.
+    routes_by_protocol: bool,
+}
+
+fn routes_by_protocol(routing: &RoutingConfig) -> bool {
+    routing.rules.iter().any(|rule| rule.protocols.is_some())
 }
 
 impl DnsRoutePrefilter {
@@ -2541,6 +2548,7 @@ impl OutboundRouter {
         let routing_policy = RoutingPolicyState {
             revision: 0,
             dns_route_prefilter: Self::dns_route_prefilter(graph, &routing),
+            routes_by_protocol: routes_by_protocol(&routing),
             routing,
         };
         let default_is_dns = graph
@@ -2591,6 +2599,7 @@ impl OutboundRouter {
             .ok_or(CoreError::RoutingPolicyRevisionExhausted)?;
         let next = Arc::new(RoutingPolicyState {
             revision,
+            routes_by_protocol: routes_by_protocol(&routing),
             routing,
             dns_route_prefilter,
         });
@@ -2608,6 +2617,11 @@ impl OutboundRouter {
             rule_count: policy.routing.rules.len(),
             domain_strategy: policy.routing.domain_strategy,
         }
+    }
+
+    /// Whether the current rules route by sniffed protocol.
+    pub(crate) fn routes_by_protocol(&self) -> bool {
+        self.routing_policy_state().routes_by_protocol
     }
 
     fn routing_policy_state(&self) -> Arc<RoutingPolicyState> {
@@ -4540,6 +4554,7 @@ mod tests {
             default_outbound_tag: Some("proxy".to_owned()),
             routing: RoutingConfig {
                 rules: vec![RoutingRule {
+                    protocols: None,
                     origin: Default::default(),
                     inbound_tags: Vec::new(),
                     networks: None,
@@ -4677,6 +4692,7 @@ mod tests {
 
     fn ip_rule(tag: &str, ip: Ipv4Addr) -> RoutingRule {
         RoutingRule {
+            protocols: None,
             origin: Default::default(),
             inbound_tags: Vec::new(),
             networks: None,
@@ -4690,6 +4706,7 @@ mod tests {
 
     fn domain_and_ip_rule(tag: &str, domain: &str, ip: Ipv4Addr) -> RoutingRule {
         RoutingRule {
+            protocols: None,
             origin: Default::default(),
             inbound_tags: Vec::new(),
             networks: None,
@@ -4705,6 +4722,7 @@ mod tests {
 
     fn inbound_rule(inbound_tag: &str, outbound_tag: &str) -> RoutingRule {
         RoutingRule {
+            protocols: None,
             origin: Default::default(),
             inbound_tags: vec![inbound_tag.to_owned()],
             networks: None,
@@ -4722,6 +4740,7 @@ mod tests {
         port_range: RoutingPortRange,
     ) -> RoutingRule {
         RoutingRule {
+            protocols: None,
             origin: Default::default(),
             inbound_tags: Vec::new(),
             networks: Some(vec![network]),
@@ -5304,6 +5323,7 @@ mod tests {
             .collect::<Vec<_>>();
         inbound_tags.extend(inbound_tags.clone());
         config.routing.rules = vec![RoutingRule {
+            protocols: None,
             origin: Default::default(),
             inbound_tags,
             networks: Some(vec![Network::Udp]),
@@ -6448,6 +6468,7 @@ mod tests {
             fallback_tag: Some("direct".to_owned()),
         }];
         config.routing.rules = vec![RoutingRule {
+            protocols: None,
             origin: Default::default(),
             inbound_tags: Vec::new(),
             networks: None,

@@ -597,12 +597,14 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
     let sniffing_config = sniffing.as_ref();
     let restored_target = dns_resolvers.outbound.restore_client_target(&target);
     let provenance = restored_target.provenance;
-    let sniff_tcp = should_sniff_socks_tcp(sniffing_config, provenance);
+    let routes_by_protocol = outbound_router.routes_by_protocol();
+    let sniff_tcp = should_sniff_socks_tcp(sniffing_config, provenance, routes_by_protocol);
     let effective_target = restored_target.target;
     let mut route_target = effective_target.clone();
     let mut dial_target = effective_target;
     let mut initial_payload = Bytes::new();
     let mut sniffed_protocol = None;
+    let mut protocol = None;
 
     if sniff_tcp {
         if SOCKS_REPLY && write_socks5_success(&mut inbound).await.is_err() {
@@ -613,19 +615,32 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
                 read_socks_tcp_sniff_payload(&mut inbound, config, &dial_target).await;
             initial_payload = payload;
             if let Some(sniffed) = sniffed {
-                let sniffed = apply_fake_ip_sniffed_dial_precedence(provenance, sniffed);
-                sniffed_protocol = Some(sniffed.protocol);
-                route_target = sniffed.route_target;
-                dial_target = sniffed.dial_target;
+                protocol = Some(sniffed.protocol);
+                // A mapped fake IP keeps the domain the fake DNS gave it.
+                if let Some(sniffed) = sniffed
+                    .target
+                    .filter(|_| fake_ip_allows_content_sniffing(provenance))
+                {
+                    let sniffed = apply_fake_ip_sniffed_dial_precedence(provenance, sniffed);
+                    sniffed_protocol = Some(sniffed.protocol);
+                    route_target = sniffed.route_target;
+                    dial_target = sniffed.dial_target;
+                }
             }
         }
     }
+    let protocol = crate::sniffing::routing_protocol(
+        protocol,
+        provenance == FakeIpTargetProvenance::Mapped,
+        sniffing_config,
+    );
 
     let route = RouteContext {
         inbound_tag: inbound_tag.as_deref(),
         source: inbound.peer_addr().ok(),
         local: inbound.local_addr().ok(),
         user: user.as_ref().map(SocksUser::as_str),
+        protocol: protocol.map(crate::sniffing::SniffedProtocol::name),
     };
     let selected = match outbound_router
         .select_tcp_session_outbound_with_tag_and_resolver(
@@ -907,7 +922,7 @@ async fn read_socks_tcp_sniff_payload(
     inbound: &mut TcpStream,
     config: &InboundSniffingConfig,
     target: &Target,
-) -> (Bytes, Option<crate::sniffing::SniffedTarget>) {
+) -> (Bytes, Option<crate::sniffing::Sniffed>) {
     let deadline = tokio::time::Instant::now() + SOCKS_TCP_SNIFF_TIMEOUT;
     let mut buffer = Vec::with_capacity(SOCKS_TCP_SNIFF_BUFFER_SIZE);
 
@@ -925,12 +940,16 @@ async fn read_socks_tcp_sniff_payload(
         };
         buffer.extend_from_slice(&chunk[..len]);
 
-        if let Some(sniffed) = crate::sniffing::sniff_tcp_initial_payload(config, target, &buffer) {
-            return (Bytes::copy_from_slice(&buffer), Some(sniffed));
+        match crate::sniffing::sniff_tcp_initial_payload(config, target, &buffer, false) {
+            crate::sniffing::TcpSniff::Found(sniffed) => {
+                return (Bytes::copy_from_slice(&buffer), Some(sniffed));
+            }
+            crate::sniffing::TcpSniff::Unknown => return (Bytes::copy_from_slice(&buffer), None),
+            crate::sniffing::TcpSniff::NeedMore => {}
         }
     }
 
-    let sniffed = crate::sniffing::sniff_tcp_initial_payload(config, target, &buffer);
+    let sniffed = crate::sniffing::sniff_tcp_initial_payload(config, target, &buffer, true).found();
     (Bytes::copy_from_slice(&buffer), sniffed)
 }
 
@@ -1273,6 +1292,9 @@ async fn bridge_socks_udp_flow(
         source: Some(context.client_addr),
         local: context.local_addr,
         user: context.user.as_ref().map(SocksUser::as_str),
+        protocol: sniffed_target
+            .protocol
+            .map(crate::sniffing::SniffedProtocol::name),
     };
     let selected = match context
         .outbound_router
@@ -1600,6 +1622,8 @@ struct SocksUdpSniffedTarget {
     route_target: Target,
     dial_target: Target,
     sniffed_protocol: Option<xray_config::SniffingDestination>,
+    /// The protocol routing sees.
+    protocol: Option<crate::sniffing::SniffedProtocol>,
 }
 
 impl SocksUdpSniffedTarget {
@@ -1608,19 +1632,24 @@ impl SocksUdpSniffedTarget {
             route_target: target.clone(),
             dial_target: target.clone(),
             sniffed_protocol: None,
+            protocol: None,
         }
     }
 
     fn from_sniffed(
         target: &Target,
         provenance: FakeIpTargetProvenance,
-        sniffed: Option<crate::sniffing::SniffedTarget>,
+        sniffed: Option<crate::sniffing::Sniffed>,
     ) -> Self {
-        if !fake_ip_allows_content_sniffing(provenance) {
-            return Self::original(target);
-        }
-        let Some(sniffed) = sniffed else {
-            return Self::original(target);
+        let protocol = sniffed.as_ref().map(|sniffed| sniffed.protocol);
+        let Some(sniffed) = sniffed
+            .and_then(|sniffed| sniffed.target)
+            .filter(|_| fake_ip_allows_content_sniffing(provenance))
+        else {
+            return Self {
+                protocol,
+                ..Self::original(target)
+            };
         };
         let sniffed = apply_fake_ip_sniffed_dial_precedence(provenance, sniffed);
         let sniffed_protocol = Some(sniffed.protocol);
@@ -1628,6 +1657,7 @@ impl SocksUdpSniffedTarget {
             route_target: sniffed.route_target,
             dial_target: sniffed.dial_target,
             sniffed_protocol,
+            protocol,
         }
     }
 }
@@ -1636,11 +1666,14 @@ fn fake_ip_allows_content_sniffing(provenance: FakeIpTargetProvenance) -> bool {
     provenance != FakeIpTargetProvenance::Mapped
 }
 
+/// A mapped fake IP is sniffed only for its protocol, when routing asks.
 fn should_sniff_socks_tcp(
     config: Option<&InboundSniffingConfig>,
     provenance: FakeIpTargetProvenance,
+    routes_by_protocol: bool,
 ) -> bool {
-    fake_ip_allows_content_sniffing(provenance) && crate::sniffing::should_sniff_tcp(config)
+    (fake_ip_allows_content_sniffing(provenance) || routes_by_protocol)
+        && crate::sniffing::should_sniff_tcp(config, routes_by_protocol)
 }
 
 fn apply_fake_ip_sniffed_dial_precedence(
@@ -1661,28 +1694,23 @@ async fn sniff_socks_udp_target(
     from_client: mpsc::Receiver<Bytes>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> (SocksUdpSniffedTarget, UdpIngress) {
-    if !fake_ip_allows_content_sniffing(provenance) {
-        return (
-            SocksUdpSniffedTarget::from_sniffed(target, provenance, None),
-            from_client.into(),
-        );
-    }
-    let Some(config) = context
+    let routes_by_protocol = context.outbound_router.routes_by_protocol();
+    let config = context
         .sniffing
         .as_ref()
-        .filter(|config| crate::sniffing::should_sniff_udp(Some(config)))
-    else {
-        return (SocksUdpSniffedTarget::original(target), from_client.into());
+        .filter(|_| fake_ip_allows_content_sniffing(provenance) || routes_by_protocol)
+        .filter(|config| crate::sniffing::should_sniff_udp(Some(config), routes_by_protocol));
+    let (sniffed, from_client) = match config {
+        Some(config) => sniff_udp_flow(config, target, first_payload, from_client, shutdown).await,
+        None => (None, from_client.into()),
     };
-    let (sniffed, from_client) =
-        sniff_udp_flow(config, target, first_payload, from_client, shutdown).await;
-    let Some(sniffed) = sniffed else {
-        return (SocksUdpSniffedTarget::original(target), from_client);
-    };
-    (
-        SocksUdpSniffedTarget::from_sniffed(target, provenance, Some(sniffed)),
-        from_client,
-    )
+    let mut sniffed = SocksUdpSniffedTarget::from_sniffed(target, provenance, sniffed);
+    sniffed.protocol = crate::sniffing::routing_protocol(
+        sniffed.protocol,
+        provenance == FakeIpTargetProvenance::Mapped,
+        context.sniffing.as_ref(),
+    );
+    (sniffed, from_client)
 }
 
 #[expect(
@@ -2137,10 +2165,18 @@ mod tests {
         assert!(!should_sniff_socks_tcp(
             Some(&http_sniffing_config(false)),
             FakeIpTargetProvenance::Mapped,
+            false,
         ));
         assert!(should_sniff_socks_tcp(
             Some(&http_sniffing_config(false)),
             FakeIpTargetProvenance::Outside,
+            false,
+        ));
+        // Routing by protocol sniffs a mapped fake IP for its protocol.
+        assert!(should_sniff_socks_tcp(
+            Some(&http_sniffing_config(false)),
+            FakeIpTargetProvenance::Mapped,
+            true,
         ));
     }
 
@@ -2162,12 +2198,20 @@ mod tests {
         let result = SocksUdpSniffedTarget::from_sniffed(
             &mapped,
             FakeIpTargetProvenance::Mapped,
-            Some(sniffed_target(&mapped, "sniffed-b.example")),
+            Some(crate::sniffing::Sniffed {
+                protocol: crate::sniffing::SniffedProtocol::Quic,
+                target: Some(sniffed_target(&mapped, "sniffed-b.example")),
+            }),
         );
 
         assert_eq!(result.route_target, mapped);
         assert_eq!(result.dial_target, mapped);
         assert_eq!(result.sniffed_protocol, None);
+        // The protocol still reaches routing.
+        assert_eq!(
+            result.protocol,
+            Some(crate::sniffing::SniffedProtocol::Quic)
+        );
     }
 
     #[test]
@@ -2187,7 +2231,10 @@ mod tests {
         let udp = SocksUdpSniffedTarget::from_sniffed(
             &raw_udp,
             FakeIpTargetProvenance::InPoolUnmapped,
-            Some(sniffed_target(&raw_udp, "sniffed.example")),
+            Some(crate::sniffing::Sniffed {
+                protocol: crate::sniffing::SniffedProtocol::Quic,
+                target: Some(sniffed_target(&raw_udp, "sniffed.example")),
+            }),
         );
         assert_eq!(udp.dial_target, udp.route_target);
     }

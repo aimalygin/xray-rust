@@ -418,6 +418,7 @@ async fn ip_on_demand_checks_origin_conditions_in_xray_core_order() {
     };
     let elsewhere = Some("192.0.2.1:5000".parse().unwrap());
     let route = |source, user| xray_config::RouteContext {
+        protocol: None,
         inbound_tag: Some("socks-in"),
         source,
         local: None,

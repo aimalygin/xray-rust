@@ -9,7 +9,7 @@ use tokio::sync::{mpsc, watch};
 use xray_config::InboundSniffingConfig;
 use xray_routing::Target;
 
-use crate::sniffing::{SniffedTarget, UdpSniffProgress, UdpSniffer, QUIC_MAX_CRYPTO_STREAM_SIZE};
+use crate::sniffing::{Sniffed, UdpSniffProgress, UdpSniffer, QUIC_MAX_CRYPTO_STREAM_SIZE};
 
 /// Xray-core waits at most 200 ms in total for the rest of a ClientHello.
 const SNIFF_WAIT: Duration = Duration::from_millis(200);
@@ -46,7 +46,7 @@ impl UdpIngress {
 ///
 /// Like Xray-core, it waits at most [`SNIFF_WAIT`] in total and buffers at
 /// most as many bytes as a reassembled ClientHello may hold. Shutdown, a
-/// closed channel or either limit ends the wait without a sniffed target. Every
+/// closed channel or either limit ends the wait with nothing named. Every
 /// datagram read here is replayed, in order, by the returned ingress.
 pub(crate) async fn sniff_udp_flow(
     config: &InboundSniffingConfig,
@@ -54,7 +54,7 @@ pub(crate) async fn sniff_udp_flow(
     first: &[u8],
     rx: mpsc::Receiver<Bytes>,
     shutdown: &mut watch::Receiver<bool>,
-) -> (Option<SniffedTarget>, UdpIngress) {
+) -> (Option<Sniffed>, UdpIngress) {
     let mut ingress = UdpIngress::from(rx);
     let mut sniffer = UdpSniffer::new(config, original);
     let deadline = tokio::time::Instant::now() + SNIFF_WAIT;
@@ -119,11 +119,13 @@ mod tests {
         [datagrams.next().unwrap(), datagrams.next().unwrap()]
     }
 
-    fn sniffed_domain(sniffed: Option<SniffedTarget>) -> Option<String> {
-        sniffed.map(|sniffed| match sniffed.route_target.addr {
-            TargetAddr::Domain(domain) => domain,
-            other => panic!("sniffing produced a non-domain target {other:?}"),
-        })
+    fn sniffed_domain(sniffed: Option<Sniffed>) -> Option<String> {
+        sniffed
+            .and_then(|sniffed| sniffed.target)
+            .map(|sniffed| match sniffed.route_target.addr {
+                TargetAddr::Domain(domain) => domain,
+                other => panic!("sniffing produced a non-domain target {other:?}"),
+            })
     }
 
     #[tokio::test(start_paused = true)]
