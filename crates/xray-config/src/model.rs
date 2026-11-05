@@ -310,6 +310,10 @@ pub struct RoutingRule {
     pub local_os: Vec<String>,
     /// Conditions on where the connection comes from.
     pub origin: RoutingOrigin,
+    /// Sniffed protocols, matched as prefixes of the protocol Xray-core's
+    /// sniffers name, such as `http1`, `tls`, `quic` or `bittorrent`. Empty
+    /// names are dropped, so a list of only empty names matches nothing.
+    pub protocols: Option<Vec<String>>,
     pub target: RoutingRuleTarget,
 }
 
@@ -326,6 +330,9 @@ pub struct RouteContext<'a> {
     /// The authenticated user, which Xray-core names by email: for SOCKS and
     /// HTTP, the username.
     pub user: Option<&'a str>,
+    /// The protocol sniffing recognized, named as Xray-core's sniffers name
+    /// it.
+    pub protocol: Option<&'a str>,
 }
 
 impl<'a> RouteContext<'a> {
@@ -336,6 +343,7 @@ impl<'a> RouteContext<'a> {
             source: None,
             local: None,
             user: None,
+            protocol: None,
         }
     }
 }
@@ -483,6 +491,7 @@ impl RoutingRule {
         self.matches_local_os()
             && self.matches_inbound(route.inbound_tag)
             && self.matches_network(target_network)
+            && self.matches_protocol(route.protocol)
             && self.matches_port(target_port)
             && self.origin.matches_ports_and_user(route)
             && self.matches_ip(target_ip)
@@ -527,6 +536,21 @@ impl RoutingRule {
         target_network.is_some_and(|target| networks.contains(&target))
     }
 
+    /// As in Xray-core, a flow without a sniffed protocol matches no
+    /// protocol rule.
+    pub fn matches_protocol(&self, protocol: Option<&str>) -> bool {
+        let Some(protocols) = &self.protocols else {
+            return true;
+        };
+        protocol
+            .filter(|protocol| !protocol.is_empty())
+            .is_some_and(|protocol| {
+                protocols
+                    .iter()
+                    .any(|prefix| protocol.starts_with(prefix.as_str()))
+            })
+    }
+
     pub fn matches_port(&self, target_port: Option<u16>) -> bool {
         let Some(port_ranges) = &self.port_ranges else {
             return true;
@@ -569,6 +593,7 @@ impl RoutingRule {
             || self.domain_matchers.is_some()
             || self.ip_matchers.is_some()
             || !self.origin.is_empty()
+            || self.protocols.is_some()
     }
 }
 

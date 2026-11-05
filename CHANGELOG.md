@@ -10,6 +10,23 @@ long-term supported release series.
 
 ## Unreleased
 
+- Routing rules can match the sniffed protocol with Xray-core's `protocol`,
+  such as the common `{"protocol": ["bittorrent"], "outboundTag": "block"}`.
+  Profiles with it used to fail to parse.
+  - The names are Xray-core's: `http1`, `tls`, `quic`, `bittorrent` and
+    `fakedns`, matched by prefix. BitTorrent is recognized by its TCP
+    handshake and by a uTP `ST_SYN` over UDP.
+  - HTTP is read as Xray-core's sniffer reads it: a request is named only by
+    a `Host` header it can parse, the last one counting, and that header's
+    host, without a port in any form Go accepts, is the sniffed domain.
+  - With a `protocol` rule, flows are sniffed for their protocol even where
+    `destOverride` would not read them; `destOverride` still alone decides
+    whether a sniffed domain replaces the destination. On TUN such a TCP flow
+    is opened before routing.
+  - Sniffing stops reading once every sniffer has ruled a flow out, as in
+    Xray-core, instead of waiting up to 250 ms for more bytes.
+  - `protocol` holds under `domainStrategy` `IPOnDemand` too, checked before
+    the destination IP as in Xray-core.
 - Routing rules can check where a connection comes from, with Xray-core's
   `sourceIP` (or `source`), `sourcePort`, `localIP`, `localPort` and `user`.
   Profiles with them used to fail to parse.

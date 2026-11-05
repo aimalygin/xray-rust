@@ -74,6 +74,7 @@ async fn select_on_demand<'a>(
         if !rule.matches_local_os()
             || !rule.matches_inbound(route.inbound_tag)
             || !rule.matches_network(Some(target_network(target)))
+            || !rule.matches_protocol(route.protocol)
             || !rule.matches_port(Some(target.port))
             || !rule.origin.matches_ports_and_user(route)
         {

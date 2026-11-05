@@ -1890,8 +1890,8 @@ Supported routing configuration:
 - rule `type`: not read, as in Xray-core v26.10.31, so it may be absent or
   hold anything;
 - selectors: `inboundTag`, `domain`/`domains`, `ip`, `network`, `port`,
-  `sourceIP`/`source`, `sourcePort`, `localIP`, `localPort`, `user`, and
-  `localOS`;
+  `sourceIP`/`source`, `sourcePort`, `localIP`, `localPort`, `user`,
+  `protocol`, and `localOS`;
 - destination: `outboundTag`, or `balancerTag` when `outboundTag` is absent
   or empty, as in Xray-core;
 - `routing.balancers` with `tag`, prefix-based `selector`, optional
@@ -1936,6 +1936,23 @@ Rules can also check where a connection comes from:
   endpoint and the local address is the association's relay socket, on its
   own port.
 
+`protocol` matches the protocol sniffing named, by prefix: `http1`, `tls`,
+`quic`, `bittorrent` (a BitTorrent handshake over TCP, a uTP `ST_SYN` over
+UDP), or `fakedns` for a fake IP whose domain the fake DNS knows when no other
+sniffer named it, so `"http"` matches `http1`. As in Xray-core, a flow is named
+only when its inbound has sniffing enabled, every sniffer runs whatever
+`destOverride` lists, TLS and QUIC need a server name, and `metadataOnly`
+names only fake IPs. HTTP needs a `Host` header, read as Xray-core reads it:
+the last one counts, even past the headers, its name is not trimmed, and one
+whose port Go's `strconv.Atoi` refuses, such as `example.com:0x50`, keeps the
+request unnamed. A flow sniffing does not name matches no `protocol`
+rule. When a rule has `protocol`, flows are sniffed for it even where
+`destOverride` would not read them, though only `destOverride` decides whether
+a sniffed domain replaces the destination. On TUN that opens a TCP flow
+before routing it, as for an unmapped fake IP. A flow is read only until every
+sniffer has ruled it out, as in Xray-core, so a protocol no sniffer knows is
+routed as soon as its first bytes arrive.
+
 `localOS` limits a rule to operating systems named as Go's `runtime.GOOS`,
 compared case-insensitively: `darwin` on macOS, `ios` on iOS, its simulators
 and Mac Catalyst, `android`, `linux`, `windows`. Go has no tvOS, watchOS or
@@ -1951,8 +1968,8 @@ Differences from Xray-core:
   it to 16 bits when matching, so `65617` would match port 81.
 
 `IPOnDemand` resolves a domain when evaluation reaches an IP condition, after
-the rule's inbound/network/port predicates and before its domain predicate,
-matching the pinned Xray order. An earlier matching domain-only rule avoids
+the rule's inbound, network, protocol, port and user predicates and before its
+domain predicate, matching the pinned Xray order. An earlier matching domain-only rule avoids
 DNS entirely. A combined domain/IP rule can trigger DNS even when its domain
 predicate will not match. Every returned address is eligible, while rule order
 takes priority over address order and the outbound receives the original

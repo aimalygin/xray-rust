@@ -1232,6 +1232,7 @@ mod tests {
             default_outbound_tag: Some("direct".to_owned()),
             routing: RoutingConfig {
                 rules: vec![RoutingRule {
+                    protocols: None,
                     origin: Default::default(),
                     inbound_tags: Vec::new(),
                     networks: Some(vec![network]),

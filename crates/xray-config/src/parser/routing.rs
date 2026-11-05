@@ -575,6 +575,17 @@ impl Parser<'_> {
         };
         let local_os = self.parse_routing_local_os(rule, &rule_path)?;
         let origin = self.routing_rule_origin(rule, &rule_path)?;
+        // As in Xray-core, any entry sets a condition, and empty names drop.
+        let protocols = self
+            .string_list(rule.get("protocol"), &format!("{rule_path}.protocol"))?
+            .filter(|entries| !entries.is_empty())
+            .map(|entries| {
+                entries
+                    .into_iter()
+                    .filter(|entry| !entry.text.is_empty())
+                    .map(|entry| entry.text.to_owned())
+                    .collect()
+            });
 
         let rule = RoutingRule {
             inbound_tags,
@@ -584,6 +595,7 @@ impl Parser<'_> {
             ip_matchers,
             local_os,
             origin,
+            protocols,
             target,
         };
         if !rule.has_condition() {
