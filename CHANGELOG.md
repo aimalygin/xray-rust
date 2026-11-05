@@ -10,6 +10,11 @@ long-term supported release series.
 
 ## Unreleased
 
+- A Mux pool no longer refuses new connections once its parent connections
+  have each opened 128 children while a few long-lived children keep them
+  open. Such parents now finish their remaining children while new
+  connections go to a new parent, with at most 16 parents per pool.
+
 - Routing rules can check where a connection comes from, with Xray-core's
   `sourceIP` (or `source`), `sourcePort`, `localIP`, `localPort` and `user`.
   Profiles with them used to fail to parse.

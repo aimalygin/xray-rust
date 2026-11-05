@@ -354,9 +354,12 @@ for VLESS ([below](#vless-mux)). TCP `concurrency` defaults to 8 (including zero
 multiplexing. `xudpConcurrency: 0` shares the TCP pool, a positive value creates
 a separate UDP pool, and a negative value uses the native protocol UDP path.
 Positive concurrency is limited to 64. `xudpProxyUDP443` is `reject` by default,
-or `allow`/`skip`; `skip` bypasses Mux for UDP/443. Each pool has at most four
-parents, 128 lifetime child IDs per parent, bounded per-child queues (eight
-frames, at most 64 KiB, per direction) and a 30-second empty-parent timeout.
+or `allow`/`skip`; `skip` bypasses Mux for UDP/443. Each pool opens children
+on at most four parents, with 128 lifetime child IDs per parent. A parent that
+has used all 128 IDs keeps serving its remaining children without counting
+toward the four, so a long-lived child does not block new connections; a pool
+holds at most 16 parents in all. Per-child queues are bounded (eight frames, at
+most 64 KiB, per direction) and an empty parent times out after 30 seconds.
 A child whose receive queue is full pauses its parent's reader until the child
 drains, ends or is closed, as Xray-core's Mux client blocks on the session
 pipe. A slow child is therefore never reset, but, as in Xray-core, it delays
