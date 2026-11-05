@@ -2436,9 +2436,8 @@
       }
     },
     {
-      "name": "socks-outbound-non-raw-network",
-      "accepted": false,
-      "errorPath": "$.outbounds[0].streamSettings.network",
+      "name": "socks-outbound-websocket",
+      "accepted": true,
       "base": "socks-outbound-flat",
       "set": {
         "/outbounds/0/streamSettings/network": "ws"
@@ -2446,8 +2445,7 @@
     },
     {
       "name": "socks-outbound-reality",
-      "accepted": false,
-      "errorPath": "$.outbounds[0].streamSettings.security",
+      "accepted": true,
       "base": "socks-outbound-legacy",
       "set": {
         "/outbounds/0/streamSettings": {
@@ -2458,6 +2456,23 @@
             "fingerprint": "chrome",
             "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
             "shortId": "02030405"
+          }
+        }
+      }
+    },
+    {
+      "name": "socks-outbound-websocket-tls",
+      "accepted": true,
+      "base": "socks-outbound-legacy",
+      "set": {
+        "/outbounds/0/streamSettings": {
+          "network": "ws",
+          "security": "tls",
+          "tlsSettings": {
+            "serverName": "server.example"
+          },
+          "wsSettings": {
+            "path": "/socks"
           }
         }
       }

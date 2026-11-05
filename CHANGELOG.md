@@ -13,6 +13,18 @@ long-term supported release series.
 - `dns.clientIp` and a DNS server's own `clientIp` are sent as the EDNS
   client subnet of every query, as Xray-core sends them. Profiles with them
   used to fail to parse. DoH queries now carry Xray-core's EDNS padding.
+- The `socks` outbound runs over every transport, as Xray-core's does:
+  WebSocket, HTTPUpgrade, gRPC and XHTTP, with TLS, and REALITY over raw,
+  gRPC and XHTTP. Such profiles used to fail to parse.
+  - `UDP ASSOCIATE` sends its control connection through the transport. The
+    datagrams still travel over plain UDP, as there.
+  - A relay of the other address family moves on to the server's next
+    family instead of failing the flow.
+  - Over a transport other than raw, and under REALITY, a relay address of
+    `0.0.0.0` or `::` names the server's first address of the socket's
+    family, as Xray-core names the configured server.
+  - A plaintext XHTTP `downloadSettings` leg to a public server is accepted,
+    as a plaintext public SOCKS server is.
 - The SOCKS inbound reads its handshake as Xray-core v26.10.31 does.
   - A domain that is an IP literal, such as `127.0.0.1` or `[::1]`, is that
     IP, so `ip` rules match it. An IPv4-mapped address is IPv4.
