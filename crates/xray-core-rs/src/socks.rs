@@ -626,6 +626,7 @@ pub(crate) async fn handle_socks_connect<const SOCKS_REPLY: bool>(
         .select_tcp_session_outbound_with_tag_and_resolver(
             &route,
             &route_target,
+            &dial_target,
             true,
             dns_resolvers.destination.as_ref(),
         )
@@ -1302,6 +1303,7 @@ async fn bridge_socks_udp_flow(
         .select_udp_session_outbound_with_tag_and_resolver(
             &route,
             &route_target,
+            &dial_target,
             true,
             context.dns_resolvers.destination.as_ref(),
         )
