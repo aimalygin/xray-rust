@@ -852,8 +852,16 @@ pub enum SniffingDestination {
 pub enum InboundProtocol {
     Tproxy(TproxySettings),
     Socks(SocksInboundSettings),
-    Http,
+    Http(HttpInboundSettings),
     Tun,
+}
+
+/// HTTP inbound settings.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HttpInboundSettings {
+    /// The accounts `Proxy-Authorization: Basic` must name; none admits
+    /// every request.
+    pub accounts: xray_proxy::inbound::HttpInboundAccounts,
 }
 
 /// SOCKS5 inbound settings.

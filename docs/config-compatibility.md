@@ -446,7 +446,7 @@ Other top-level keys are rejected.
 | Protocol | Supported behavior | Unsupported or constrained behavior |
 | --- | --- | --- |
 | `socks` (alias `mixed`) | SOCKS5 `CONNECT`, `UDP ASSOCIATE` unless `"udp": false`, SOCKS 4/4a `CONNECT`, HTTP `CONNECT` on the same port, `userLevel`, sniffing; `auth` `noauth` or `password` with RFC 1929 `accounts` | GSSAPI; SOCKS 4 `BIND`; plain HTTP forwarding; `accounts` with `noauth`; an absent `udp` keeps `UDP ASSOCIATE` enabled, unlike Xray-core |
-| `http` | HTTP `CONNECT`, timeout-shaped policy, `userLevel`, sniffing | Accounts and transparent proxy mode |
+| `http` | HTTP `CONNECT`, `accounts` (Basic), timeout-shaped policy, `userLevel`, sniffing | Plain HTTP forwarding and transparent proxy mode |
 | `tun` | Platform packet boundary or registered fd; port may be omitted | Platform interface creation and routes are host responsibilities |
 
 `"auth": "password"` requires 1–64 `accounts` entries of `{"user", "pass"}`,
@@ -487,15 +487,42 @@ As in Xray-core, the first byte of a connection selects the protocol, and
   a user ID or domain over 255 bytes, and any SOCKS 4 request while the
   inbound requires a password are refused with `0x5B`; Xray refuses the last
   for the same reason, and allows user IDs up to 8 KiB.
-- Anything else is read as an HTTP request. `CONNECT` answers
-  `200 Connection Established` and then routes and sniffs like a SOCKS
-  `CONNECT`. Under `password`, it needs `Proxy-Authorization: Basic` with one
-  of the `accounts`, decoded as Go's `parseBasicAuth` does (case-sensitive
-  `Basic `, padded base64, split at the first colon) and compared in constant
-  time; otherwise the reply is Xray's
-  `407 Proxy Authentication Required` with `Proxy-Authenticate: Basic
-  realm="proxy"`. Other methods get `400 Bad Request`, as on the HTTP inbound:
-  plain HTTP forwarding is not implemented yet.
+- Anything else is an HTTP request, served as on the HTTP inbound below.
+  Under `password`, it needs `Proxy-Authorization: Basic` with one of the
+  `accounts`.
+
+The HTTP inbound, and HTTP on a SOCKS port, answer as Xray-core's HTTP
+server does:
+
+- The request head is read as Go's `http.ReadRequest` reads it. The request
+  line is three parts split at single spaces, ending in an HTTP version such
+  as `HTTP/1.1` or `HTTP/2.0`. Every header line holds a colon after a name of
+  token characters, or spaces, and at most one `Host` is given. A request
+  that does not parse is closed without a reply.
+- With accounts, `Proxy-Authorization: Basic` must name one, decoded as Go's
+  `parseBasicAuth` does (case-sensitive `Basic `, padded base64, split at the
+  first colon) and compared in constant time. Only the first
+  `Proxy-Authorization` counts, as Go's `Header.Get` reads it. Otherwise the
+  reply is Xray's `407 Proxy Authentication Required` with
+  `Proxy-Authenticate: Basic realm="proxy"`.
+- `CONNECT` is answered with `HTTP/1.1 200 Connection established` before
+  routing, so a tunnel that then cannot open only closes. The tunnel routes
+  and sniffs like a SOCKS `CONNECT`, under the user its credentials name.
+  Bytes sent after the request head are its first bytes.
+- A `CONNECT` target without a port, or with an empty one, goes to port 80,
+  as Go's `ParseHost` reads it. A port is decimal digits, cut to 16 bits as
+  Xray-core does, so `70000` is port 4464; one that is 0 after the cut, or
+  any other text, closes the request. A host with a colon needs brackets.
+- Other methods ask for plain HTTP forwarding, which is not implemented yet,
+  and get Xray's `400 Bad Request` with `Connection: close` and
+  `Proxy-Connection: close`.
+
+The HTTP inbound reads `accounts` as Xray-core does, or `users` when
+`accounts` is absent or `null`, so an empty `accounts` requires nothing. Each
+account is an object of a `user` and a `pass`, any strings, an absent or
+`null` field reading as empty. A later account replaces an earlier one with
+the same `user`. xray-rust takes at most 64 accounts, as for SOCKS; Xray-core
+has no limit.
 
 Common fields are `tag`, `protocol`, `listen`, `port`, `settings`, and
 `sniffing`. Sniffing reads `enabled`, `destOverride`, `metadataOnly`,
@@ -766,7 +793,7 @@ Differences from Xray-core:
 
 ### Blackhole outbound
 
-`blackhole` follows Xray-core v26.7.28 and is commonly the `block` target of
+`blackhole` follows Xray-core v26.10.31 and is commonly the `block` target of
 deny rules (ads, QUIC on UDP/443, other traffic a profile refuses):
 
 ```json
@@ -790,11 +817,11 @@ because nothing is dialed.
 The handler never resolves a destination, dials, or opens a socket:
 
 - SOCKS and HTTP `CONNECT` are acknowledged first (SOCKS success, HTTP
-  `200 Connection Established`), as Xray's inbounds do before dispatching.
-  `none` then closes the connection. `http` writes Xray's fixed reply
-  byte-for-byte (`HTTP/1.1 403 Forbidden`, `Connection: close`,
-  `Cache-Control: max-age=3600, public`, `Content-Length: 0`, with LF line
-  endings) and half-closes; `custom` writes its bytes the same way. Xray holds the link for one second after that
+  `200 Connection established`), as Xray's inbounds do before dispatching.
+  `none` then closes the connection. `http` writes Xray's reply
+  byte-for-byte, as Go's `http.Response.Write` builds it (`HTTP/1.1 403
+  Forbidden`, `Cache-Control: max-age=3600, public`, `Connection: close`,
+  `Content-Length: 0`, with CRLF line endings), and half-closes; `custom` writes its bytes the same way. Xray holds the link for one second after that
   reply; xray-rust instead discards late client bytes for at most one second,
   so unread input does not turn the close into a reset.
 - TUN TCP completes the client handshake in the userspace stack, as Xray's TUN
@@ -1928,10 +1955,10 @@ Rules can also check where a connection comes from:
   address.
 - `user` matches the account a SOCKS client logged in with, also over HTTP
   `CONNECT` on a SOCKS port with Basic credentials, and the flows of its UDP
-  association. Entries are exact, case-sensitive names, or `regexp:` patterns
-  matched anywhere in the name. As in Xray-core, an empty name matches nothing
-  and a pattern that does not compile is ignored, here with a warning. The
-  HTTP inbound has no accounts yet, so its flows have no user.
+  association, or the account of an HTTP inbound's Basic credentials.
+  Entries are exact, case-sensitive names, or `regexp:` patterns matched
+  anywhere in the name. As in Xray-core, an empty name matches nothing and a
+  pattern that does not compile is ignored, here with a warning.
 - On a SOCKS UDP flow, as in Xray-core, the source is the client's UDP
   endpoint and the local address is the association's relay socket, on its
   own port.

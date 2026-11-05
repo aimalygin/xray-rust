@@ -2,6 +2,7 @@ mod blackhole;
 mod dns;
 mod fragment;
 mod freedom;
+mod http_inbound;
 mod http_outbound;
 mod hysteria;
 mod noise;
@@ -645,7 +646,7 @@ impl Parser<'_> {
             Some("socks" | "mixed") => {
                 InboundProtocol::Socks(self.parse_socks_inbound_settings(inbound, index))
             }
-            Some("http") => InboundProtocol::Http,
+            Some("http") => InboundProtocol::Http(self.parse_http_inbound_settings(inbound, index)),
             Some("tun") => InboundProtocol::Tun,
             // Xray registers `tunnel` as the newer name of `dokodemo-door`.
             Some("dokodemo-door" | "tunnel") => {
@@ -678,8 +679,10 @@ impl Parser<'_> {
             .to_owned();
         let allow_unauthenticated_lan =
             self.parse_allow_unauthenticated_lan(inbound, index, &protocol);
-        if matches!(protocol, InboundProtocol::Socks(_) | InboundProtocol::Http)
-            && !is_loopback_listener(&listen)
+        if matches!(
+            protocol,
+            InboundProtocol::Socks(_) | InboundProtocol::Http(_)
+        ) && !is_loopback_listener(&listen)
         {
             if allow_unauthenticated_lan {
                 if !matches!(listen.as_str(), "0.0.0.0" | "::") {
@@ -719,7 +722,10 @@ impl Parser<'_> {
         index: usize,
         protocol: &InboundProtocol,
     ) -> bool {
-        if !matches!(protocol, InboundProtocol::Socks(_) | InboundProtocol::Http) {
+        if !matches!(
+            protocol,
+            InboundProtocol::Socks(_) | InboundProtocol::Http(_)
+        ) {
             return false;
         }
         let Some(settings) = inbound.get("settings").filter(|value| value.is_object()) else {
@@ -757,7 +763,7 @@ impl Parser<'_> {
 
         match protocol {
             InboundProtocol::Socks(_) => self.validate_socks_inbound_settings(settings, index),
-            InboundProtocol::Http => self.validate_http_inbound_settings(settings, index),
+            InboundProtocol::Http(_) => self.validate_http_inbound_settings(settings, index),
             InboundProtocol::Tun => self.validate_tun_inbound_settings(settings, index),
             InboundProtocol::Tproxy(_) => {}
         }
@@ -935,13 +941,16 @@ impl Parser<'_> {
 
     fn validate_http_inbound_settings(&mut self, settings: &Value, index: usize) {
         let settings_path = format!("$.inbounds[{index}].settings");
+        // Xray-core reads `null` settings as none.
+        if settings.is_null() {
+            return;
+        }
         if !settings.is_object() {
             self.error(settings_path, "http inbound settings must be an object");
             return;
         }
 
         self.reject_unknown_fields(settings, &settings_path, &surface::HTTP_SETTINGS);
-        self.reject_non_empty_array(settings, "accounts", format!("{settings_path}.accounts"));
 
         if matches!(
             self.optional_bool_at(
@@ -1997,17 +2006,6 @@ impl Parser<'_> {
                     format!("unsupported field `{key}`"),
                 );
             }
-        }
-    }
-
-    fn reject_non_empty_array(&mut self, value: &Value, key: &str, path: String) {
-        let Some(raw) = value.get(key) else {
-            return;
-        };
-        match raw.as_array() {
-            Some(values) if values.is_empty() => {}
-            Some(_) => self.error(path, format!("field `{key}` is unsupported")),
-            None => self.error(path, format!("field `{key}` must be an array")),
         }
     }
 }

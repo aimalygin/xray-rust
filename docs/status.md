@@ -102,7 +102,7 @@ Notable unsupported areas include:
 - reverse proxy, observatory command/API services, regex `leastLoad`
   costs, and outbound chaining outside the documented transport-layer TCP
   subset;
-- HTTP inbound authentication and HTTP transparent proxy mode;
+- HTTP inbound plain-HTTP forwarding and transparent proxy mode;
 - full Xray DNS, policy/statistics, sniffing, and routing semantics.
 
 ## Platform status

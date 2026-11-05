@@ -36,8 +36,8 @@ pub use model::{
     MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
 };
 pub use model::{
-    BlackholeOutboundSettings, BlackholeResponse, HttpOutboundSettings, SocksInboundSettings,
-    SocksOutboundSettings, TproxySettings, UdpNoiseItem, UdpNoiseSettings,
+    BlackholeOutboundSettings, BlackholeResponse, HttpInboundSettings, HttpOutboundSettings,
+    SocksInboundSettings, SocksOutboundSettings, TproxySettings, UdpNoiseItem, UdpNoiseSettings,
 };
 pub use parser::{
     parse_xray_json, parse_xray_json_with_exclusive_geodata_dirs, parse_xray_json_with_geodata_dir,

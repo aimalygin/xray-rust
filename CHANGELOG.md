@@ -10,6 +10,21 @@ long-term supported release series.
 
 ## Unreleased
 
+- A blackhole's `http` reply is the one Xray-core v26.10.31 writes, with CRLF
+  line endings and its headers in Go's order, instead of the older one with
+  LF line endings.
+- The HTTP inbound answers as Xray-core's HTTP server does. HTTP on a SOCKS
+  port answers the same way.
+  - It sniffs its tunnels, so `destOverride`, `protocol` and `attrs` apply.
+    Its `sniffing` used to be ignored.
+  - `accounts` (or `users`) require `Proxy-Authorization: Basic`, and name
+    the user for routing's `user`. Profiles with them used to fail to parse.
+  - `CONNECT` is answered with `200 Connection established` before routing,
+    as Xray-core answers it, instead of `200 Connection Established` once the
+    outbound opened, or a `502` when it did not.
+  - A `CONNECT` target without a port goes to port 80, and a request that
+    does not parse is closed without a reply. Only the first
+    `Proxy-Authorization` counts, as in Xray-core; the last one used to.
 - Routing rules can match an HTTP request's attributes with Xray-core's
   `attrs`, such as `{"attrs": {":method": "GET", "user-agent": "^curl/"}}`.
   Profiles with it used to fail to parse.

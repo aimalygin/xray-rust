@@ -114,10 +114,10 @@ impl fmt::Debug for SocksAccount {
 /// The account name a client authenticated with, which Xray-core gives
 /// routing as the user's email. It is a credential: never log it.
 #[derive(Clone, PartialEq, Eq)]
-pub struct SocksUser(Zeroizing<String>);
+pub struct InboundUser(Zeroizing<String>);
 
-impl SocksUser {
-    fn new(user: &[u8]) -> Self {
+impl InboundUser {
+    pub(crate) fn new(user: &[u8]) -> Self {
         Self(Zeroizing::new(String::from_utf8_lossy(user).into_owned()))
     }
 
@@ -127,9 +127,9 @@ impl SocksUser {
     }
 }
 
-impl fmt::Debug for SocksUser {
+impl fmt::Debug for InboundUser {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("SocksUser(<redacted>)")
+        formatter.write_str("InboundUser(<redacted>)")
     }
 }
 
@@ -153,25 +153,6 @@ fn accounts_admit(accounts: &[SocksAccount], user: &[u8], pass: &[u8]) -> bool {
 impl SocksInboundAuth {
     pub const fn requires_password(&self) -> bool {
         matches!(self, Self::Password(_))
-    }
-
-    /// Whether an HTTP request on this SOCKS port may proceed. Xray's SOCKS
-    /// inbound hands other protocols to an HTTP server that requires its
-    /// accounts as `Proxy-Authorization: Basic` credentials.
-    pub fn admits_http_basic(&self, proxy_authorization: Option<&[u8]>) -> bool {
-        self.http_basic_user(proxy_authorization).is_some()
-    }
-
-    /// Who an HTTP request on this SOCKS port proceeds as: `None` when it is
-    /// refused, `Some(None)` when the inbound has no accounts.
-    pub fn http_basic_user(&self, proxy_authorization: Option<&[u8]>) -> Option<Option<SocksUser>> {
-        match self {
-            Self::NoAuth => Some(None),
-            Self::Password(accounts) => proxy_authorization
-                .and_then(crate::inbound::decode_http_basic_credentials)
-                .filter(|(user, pass)| accounts_admit(accounts, user, pass))
-                .map(|(user, _)| Some(SocksUser::new(&user))),
-        }
     }
 
     /// The RFC 1928 method code this inbound selects.
@@ -198,7 +179,7 @@ where
 pub async fn negotiate_socks5<S>(
     mut stream: S,
     auth: &SocksInboundAuth,
-) -> Result<Option<SocksUser>, SocksParseError>
+) -> Result<Option<InboundUser>, SocksParseError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -246,7 +227,7 @@ where
 async fn verify_password<S>(
     stream: &mut S,
     accounts: &[SocksAccount],
-) -> Result<SocksUser, SocksParseError>
+) -> Result<InboundUser, SocksParseError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -270,7 +251,7 @@ where
         .await
         .map_err(|_| SocksParseError::Io)?;
     if accepted {
-        Ok(SocksUser::new(&user))
+        Ok(InboundUser::new(&user))
     } else {
         Err(SocksParseError::AuthenticationFailed)
     }
