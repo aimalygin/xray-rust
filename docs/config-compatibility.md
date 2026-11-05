@@ -584,7 +584,11 @@ TCP transport to `raw` and XHTTP from `splithttp`; both pairs are accepted alias
   v26.7.28;
 - `reality`, with `serverName`, a supported `fingerprint`, base64url
   `publicKey`, hexadecimal `shortId`, optional `spiderX`, and optional
-  `mldsa65Verify`.
+  `mldsa65Verify`. `spiderX` is the path crawled when the server answers
+  with a real certificate instead of a REALITY one; its `p`, `c`, `t`, `i` and
+  `r` query parameters set padding, concurrency, repeats, interval and return
+  delay as in Xray-core, within the bounds listed in
+  [REALITY real-certificate crawl](xray-core-differences.md#reality-real-certificate-crawl).
 
 `tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
 empty, or `none`. Generic HTTP/2, QUIC, KCP and other stream transports are not

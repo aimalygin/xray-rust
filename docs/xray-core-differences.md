@@ -348,6 +348,36 @@ cases against sing-box, but that run is not yet recorded; no physical-device
 run yet; the legacy fully-base64 `ss://` form and SIP003 plugins are not
 imported.
 
+## REALITY real-certificate crawl
+
+When a REALITY server answers with a real certificate instead of a REALITY
+one (an active prober, a MITM or a redirect to the real site), Xray-core's
+client does not hang up mid-handshake. It verifies the certificate as
+ordinary Web PKI for the server name, finishes TLS, crawls the site over
+HTTP/2 like a browser and only then fails the connection
+(`transport/internet/reality/reality.go` `UClient` and `VerifyPeerCertificate`,
+v26.10.31 lines 101-140 and 207-298). xray-rust does the same:
+
+- a certificate that fails Web PKI verification still aborts the handshake,
+  as Go's `x509` check does (against the bundled Web PKI roots the TLS
+  transport also uses, where Go reads the system roots); one that passes
+  completes it, and the
+  connection fails with "processed invalid connection" without carrying any
+  user data;
+- the crawl requests `spiderX` with Chrome's navigation headers, a `padding`
+  cookie per request and the `Referer` chain, learns `href` links without a
+  dot, shares them per server name across connections, and spawns `c`
+  follow-up crawlers of `t` requests each, `i` milliseconds apart; the error
+  is returned after `r` milliseconds.
+
+It is bounded where Go is not: `c` and `t` are capped at 32, the padding at
+16 KiB, each delay at 30 s, a scanned response body at 1 MiB, the remembered
+paths at 256 per server name, and the crawl's connection, which Go never
+closes itself, is closed after 120 s. The HTTP/2 client is the `h2` crate set
+to Go's transport window and header-list defaults, so its frames are close to,
+not byte-identical with, `golang.org/x/net/http2`. A `spiderX` without a
+leading slash, which Xray-core rejects at load time, is crawled as `/`.
+
 ## Follow-up checks
 
 - [x] Integrate the #87 review follow-up, including both relay-address fixes,

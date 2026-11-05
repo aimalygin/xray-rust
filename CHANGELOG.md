@@ -10,6 +10,12 @@ long-term supported release series.
 
 ## Unreleased
 
+- A REALITY server that answers with a real certificate no longer gets an
+  aborted handshake. As in Xray-core, a certificate valid for the server name
+  completes TLS, the client crawls `spiderX` over HTTP/2 like a browser
+  (honouring its `p`, `c`, `t`, `i` and `r` parameters, within limits), and
+  the connection then fails without sending any user data. An invalid
+  certificate still aborts the handshake.
 - Routing rules can check where a connection comes from, with Xray-core's
   `sourceIP` (or `source`), `sourcePort`, `localIP`, `localPort` and `user`.
   Profiles with them used to fail to parse.
