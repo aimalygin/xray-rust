@@ -1449,8 +1449,15 @@ mod tests {
             443,
             RoutingNetwork::Tcp,
         );
+        // The mapper draws its address anywhere in the pool, so the unmapped
+        // one is whichever of two candidates it did not hand out.
+        let unmapped_ip = [2, 3]
+            .map(|last| Ipv4Addr::new(198, 18, 0, last))
+            .into_iter()
+            .find(|ip| *ip != mapped_ip)
+            .unwrap();
         let in_pool_unmapped = Target::new(
-            TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 2))),
+            TargetAddr::Ip(IpAddr::V4(unmapped_ip)),
             443,
             RoutingNetwork::Tcp,
         );
