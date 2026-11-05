@@ -10,6 +10,9 @@ long-term supported release series.
 
 ## Unreleased
 
+- The HTTP outbound sends its `headers` as Xray-core does, Go templates
+  naming the connection's source and target included. Profiles with them
+  used to fail to parse.
 - Freedom's `noises` send their datagrams before each UDP flow's first, as
   Xray-core's do, with Xray-core's deprecation warning. Profiles with them
   used to fail to parse. The removed `noise` object fails, as in Xray-core.

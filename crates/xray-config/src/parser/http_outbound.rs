@@ -1,6 +1,11 @@
 use super::*;
 use crate::HttpOutboundSettings;
-use xray_proxy::outbound::{HttpAccount, MAX_HTTP_CREDENTIAL_LENGTH};
+use xray_proxy::inbound::canonical_header_key;
+use xray_proxy::outbound::{HttpAccount, HttpHeaderTemplate, MAX_HTTP_CREDENTIAL_LENGTH};
+
+/// Bounds a profile's custom headers; Xray-core sets no limit.
+const MAX_HTTP_OUTBOUND_HEADERS: usize = 64;
+const MAX_HTTP_OUTBOUND_HEADER_VALUE: usize = 8 * 1024;
 
 /// Settings keys of the flattened server form; `headers` belongs to both.
 const FLAT_SERVER_FIELDS: [&str; 6] = ["address", "port", "user", "pass", "level", "email"];
@@ -17,7 +22,18 @@ impl Parser<'_> {
             return None;
         };
         self.reject_unknown_fields(settings, &path, &surface::HTTP_OUTBOUND);
-        self.reject_http_outbound_headers(settings, &path);
+        let headers = self.parse_http_outbound_headers(settings, &path);
+        let mut parsed = self.parse_http_outbound_endpoint(settings, &path)?;
+        parsed.headers = headers?;
+        Some(parsed)
+    }
+
+    fn parse_http_outbound_endpoint(
+        &mut self,
+        settings: &Value,
+        path: &str,
+    ) -> Option<HttpOutboundSettings> {
+        let path = path.to_owned();
         let Some(servers) = settings.get("servers") else {
             return self.parse_http_outbound_server(settings, settings, &path, &path);
         };
@@ -79,22 +95,86 @@ impl Parser<'_> {
         self.parse_http_outbound_server(server, user, &path, &user_path)
     }
 
-    /// Xray sends custom headers, expanded as Go templates, with every
-    /// CONNECT. That is not implemented, so any header fails instead of
-    /// being dropped; `null` and `{}` configure none and are accepted.
-    fn reject_http_outbound_headers(&mut self, settings: &Value, path: &str) {
-        match settings.get("headers") {
-            None | Some(Value::Null) => {}
-            Some(Value::Object(headers)) if headers.is_empty() => {}
-            Some(Value::Object(_)) => self.error(
-                format!("{path}.headers"),
-                "HTTP outbound custom `headers` are unsupported",
-            ),
-            Some(_) => self.error(
-                format!("{path}.headers"),
-                "field `headers` must be an object",
-            ),
+    /// `headers`, which Xray-core sets on each `CONNECT` after the
+    /// credentials with Go's `Header.Set`, so a name is canonicalized and a
+    /// later one that canonicalizes alike replaces an earlier one. A `null`
+    /// value is empty. Each value is a Go template naming the connection's
+    /// `Source` and `Target`, read as [`HttpHeaderTemplate`] reads it.
+    ///
+    /// Unlike Xray-core, an invalid name, which Go would drop when writing,
+    /// a control character other than a tab or line break, which Go would
+    /// write as it is, and a template action other than those fields are
+    /// refused here, as are more than 64 headers or a value over 8 KiB.
+    fn parse_http_outbound_headers(
+        &mut self,
+        settings: &Value,
+        path: &str,
+    ) -> Option<Vec<(String, HttpHeaderTemplate)>> {
+        let path = format!("{path}.headers");
+        let entries = match settings.get("headers") {
+            None | Some(Value::Null) => return Some(Vec::new()),
+            Some(Value::Object(entries)) => entries,
+            Some(_) => {
+                self.error(path, "field `headers` must be an object");
+                return None;
+            }
+        };
+        if entries.len() > MAX_HTTP_OUTBOUND_HEADERS {
+            self.error(
+                path,
+                format!("an HTTP outbound takes at most {MAX_HTTP_OUTBOUND_HEADERS} headers"),
+            );
+            return None;
         }
+        let mut headers: Vec<(String, HttpHeaderTemplate)> = Vec::new();
+        let mut valid = true;
+        for (name, value) in entries {
+            let header_path = format!("{path}.{name}");
+            let text = match value {
+                Value::Null => "",
+                Value::String(text) => text,
+                _ => {
+                    self.error(header_path, "a header value must be a string or null");
+                    valid = false;
+                    continue;
+                }
+            };
+            let token =
+                |byte: u8| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte);
+            if name.is_empty() || !name.bytes().all(token) {
+                self.error(header_path, "a header name must be an HTTP token");
+                valid = false;
+                continue;
+            }
+            if text.len() > MAX_HTTP_OUTBOUND_HEADER_VALUE
+                || text
+                    .bytes()
+                    .any(|byte| byte.is_ascii_control() && !matches!(byte, b'\t' | b'\r' | b'\n'))
+            {
+                self.error(
+                    header_path,
+                    format!(
+                        "a header value holds at most {MAX_HTTP_OUTBOUND_HEADER_VALUE} bytes and no control characters but tabs and line breaks"
+                    ),
+                );
+                valid = false;
+                continue;
+            }
+            let template = match HttpHeaderTemplate::parse(text) {
+                Ok(template) => template,
+                Err(why) => {
+                    self.error(header_path, format!("invalid header template: {why}"));
+                    valid = false;
+                    continue;
+                }
+            };
+            let name = canonical_header_key(name).into_owned();
+            match headers.iter_mut().find(|(known, _)| *known == name) {
+                Some(known) => known.1 = template,
+                None => headers.push((name, template)),
+            }
+        }
+        valid.then_some(headers)
     }
 
     /// Parses the endpoint from `server` and the credentials, level and email
@@ -147,6 +227,7 @@ impl Parser<'_> {
             port,
             account,
             level,
+            headers: Vec::new(),
         })
     }
 

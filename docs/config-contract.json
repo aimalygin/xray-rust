@@ -36,6 +36,10 @@
       "semantics": "Dynamic header names with string/null values and carrier-specific Host rules."
     },
     {
+      "context": "$.outbounds[].settings.headers (http)",
+      "semantics": "Dynamic header names with string/null Go template values; see HTTP_OUTBOUND."
+    },
+    {
       "context": "xhttpSettings.downloadSettings; splithttpSettings.downloadSettings; effective extra.downloadSettings",
       "extends": "STREAM",
       "fields": [
@@ -825,7 +829,7 @@
         "servers"
       ],
       "id": "HTTP_OUTBOUND",
-      "notes": "One flattened server or exactly one servers entry; mixing forms is rejected, while headers belongs to both. Credentials are absent (no authentication) or a user of 1..1024 bytes without `:` plus an optional pass of at most 1024 bytes, neither with control characters (RFC 7617 Basic); a lone pass is rejected and credentials are redacted. Level 0..255; email is type-checked and ignored. headers is accepted only as null or an empty object. HTTP/1.1 CONNECT only, status 200 required, over raw/tcp with none or TLS whose ALPN is empty or http/1.1; no Mux or UDP. Without TLS the credentials travel in cleartext."
+      "notes": "One flattened server or exactly one servers entry; mixing forms is rejected, while headers belongs to both. Credentials are absent (no authentication) or a user of 1..1024 bytes without `:` plus an optional pass of at most 1024 bytes, neither with control characters (RFC 7617 Basic); a lone pass is rejected and credentials are redacted. Level 0..255; email is type-checked and ignored. headers are set on each CONNECT after the credentials, so a Proxy-Authorization among them replaces theirs; a name is canonicalized, a null value is empty, and each value is a Go template that may name {{.Source}} and {{.Target}} and their .Address, .Port, .Network and .NetAddr. Other template actions, invalid names, control characters other than tabs and line breaks, more than 64 headers and values over 8 KiB are refused. HTTP/1.1 CONNECT only, status 200 required, over raw/tcp with none or TLS whose ALPN is empty or http/1.1; no Mux or UDP. Without TLS the credentials travel in cleartext."
     },
     {
       "context": "$.outbounds[].settings.servers[0] (http)",

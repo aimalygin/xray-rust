@@ -1026,10 +1026,39 @@ a flat `pass` without `user`, ignores an empty `user`, and sends empty Basic
 credentials for `users: [{}]`; xray-rust rejects all three. Credentials are
 redacted from the parsed model's debug output and never echoed in diagnostics.
 
-Xray's `headers` map adds request headers whose values are Go templates. That
-is not implemented: `headers` is accepted only as `null` or `{}` and any header
-fails parsing. The `CONNECT` request is otherwise byte-for-byte the one the
-pinned Go client writes: `Host`, then `User-Agent`, then the remaining headers
+`headers` adds request headers, set on each `CONNECT` as Xray-core v26.10.31
+sets them:
+
+```json
+"headers": { "X-Forwarded-For": "{{.Source.Address}}", "X-Target": "{{.Target}}" }
+```
+
+- They are set after the credentials, so a `Proxy-Authorization` among them
+  replaces the account's, and before Xray's masquerade block, which a custom
+  `User-Agent` other than a browser keyword (`chrome`, `firefox`, `safari`,
+  `edge`, `curl`, `golang`) leaves out. `Host` and `Proxy-Connection` come
+  from the request itself, as in Xray-core, so theirs are ignored.
+- Names are canonicalized as Go's `Header.Set` does, so `x-target` is sent as
+  `X-Target`, and a later name that canonicalizes alike replaces an earlier
+  one. A `null` value is empty. Line breaks in a value become spaces, and
+  surrounding spaces and tabs are trimmed, as Go writes it.
+- Each value is a Go template. `{{.Target}}` is the destination the tunnel
+  goes to, as Xray-core prints it (`tcp:192.0.2.7:443`, `tcp:[2001:db8::1]:443`
+  or `tcp:example.com:443`), and `{{.Source}}` the client the connection came
+  from (`tcp:0.0.0.0:0` for one no inbound made, such as a probe). Each has
+  `.Address`, `.Port`, `.Network` (`TCP`) and `.NetAddr`. Comments and the
+  `{{-` and `-}}` trim markers are read as Go reads them. On a `dialerProxy`
+  hop, `{{.Target}}` is the next server.
+
+Unlike Xray-core, other template actions (functions, pipelines, conditions,
+other fields), a name that is not an HTTP token, which Go would drop, and a
+control character other than a tab or line break, which Go would send as it
+is, are refused when the configuration is read, where Xray-core would fail or
+send them on each connection. A profile takes at most 64 headers of at most
+8 KiB each.
+
+The `CONNECT` request is otherwise byte-for-byte the one the pinned Go client
+writes: `Host`, then `User-Agent`, then the remaining headers
 sorted by name, with `Proxy-Authorization`, `Proxy-Connection: Keep-Alive` and
 Xray's Chrome navigation masquerade block, whose browser versions are drawn as
 described [for WebSocket](#the-masqueraded-browser-version-is-redrawn-on-every-start).

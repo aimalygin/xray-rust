@@ -1354,6 +1354,9 @@ pub struct HttpOutboundSettings {
     pub port: u16,
     pub account: Option<xray_proxy::outbound::HttpAccount>,
     pub level: u32,
+    /// `headers`, set on each `CONNECT` after the credentials, by canonical
+    /// name; their values are redacted from `Debug`.
+    pub headers: Vec<(String, xray_proxy::outbound::HttpHeaderTemplate)>,
 }
 
 /// Settings of the `shadowsocks` outbound for both method families:

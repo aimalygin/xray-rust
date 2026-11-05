@@ -573,3 +573,105 @@ async fn http_runtime_request_matches_the_pinned_go_client() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn http_runtime_sends_custom_headers_naming_source_and_target() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let proxy = ScriptedProxy::start(Reply::Tunnel(b""), None, echo.ip()).await;
+        let mut settings = outbound_settings(Form::Flat, proxy.address.port(), None);
+        settings["headers"] = json!({
+            "x-target": "{{.Target}}",
+            "X-Source": "{{.Source}}",
+            "User-Agent": "synthetic-agent",
+        });
+        let (mut core, _, _) = core(profile(settings, None));
+        core.start().await.unwrap();
+        let socks = core.inbound_addr(Some("socks-in")).unwrap();
+        let (mut stream, reply) = connect(socks, Destination::Ip(echo)).await;
+        assert_eq!(reply, 0);
+        echo_round_trip(&mut stream, 1024).await;
+        let head = &proxy.captured()[0].head;
+        assert_eq!(
+            header(head, "X-Target"),
+            Some(format!("tcp:{echo}").as_str())
+        );
+        assert_eq!(
+            header(head, "X-Source"),
+            Some(format!("tcp:{}", stream.local_addr().unwrap()).as_str())
+        );
+        // A custom User-Agent other than a browser's name keeps the
+        // masquerade block out, as in Xray-core.
+        assert_eq!(header(head, "User-Agent"), Some("synthetic-agent"));
+        assert_eq!(header(head, "Sec-Fetch-Mode"), None);
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn http_runtime_hop_headers_name_the_client_the_chain_carries() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let proxy = ScriptedProxy::start(Reply::Tunnel(b""), None, echo.ip()).await;
+        let upstream_port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let entry = json!({"tag":"entry", "protocol":"socks", "settings":{
+            "address":"127.0.0.1", "port":upstream_port},
+            "proxySettings": {"tag":"hop", "transportLayer":true}});
+        let hop = json!({"tag":"hop", "protocol":"http", "settings":{
+            "address":"127.0.0.1", "port":proxy.address.port(),
+            "headers": {"X-Source": "{{.Source}}", "X-Target": "{{.Target}}"}}});
+        let (mut core, _, _) = core(chain_profile(entry, hop, upstream_port));
+        core.start().await.unwrap();
+        let socks_in = core.inbound_addr(Some("socks-in")).unwrap();
+        let (mut stream, reply) = connect(socks_in, Destination::Ip(echo)).await;
+        assert_eq!(reply, 0);
+        echo_round_trip(&mut stream, 1024).await;
+        let head = &proxy.captured()[0].head;
+        // The hop's target is the next server.
+        assert_eq!(
+            header(head, "X-Target"),
+            Some(format!("tcp:127.0.0.1:{upstream_port}").as_str())
+        );
+        assert_eq!(
+            header(head, "X-Source"),
+            Some(format!("tcp:{}", stream.local_addr().unwrap()).as_str())
+        );
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn http_runtime_custom_headers_keep_the_masquerade_without_a_user_agent() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let proxy = ScriptedProxy::start(Reply::Tunnel(b""), None, echo.ip()).await;
+        let mut settings = outbound_settings(Form::Flat, proxy.address.port(), Some((USER, PASS)));
+        settings["headers"] =
+            json!({"X-Extra": "1", "Proxy-Authorization": "Bearer synthetic-token"});
+        let (mut core, _, _) = core(profile(settings, None));
+        core.start().await.unwrap();
+        let socks = core.inbound_addr(Some("socks-in")).unwrap();
+        let (mut stream, reply) = connect(socks, Destination::Ip(echo)).await;
+        assert_eq!(reply, 0);
+        echo_round_trip(&mut stream, 1024).await;
+        let head = &proxy.captured()[0].head;
+        assert_eq!(header(head, "X-Extra"), Some("1"));
+        assert_eq!(header(head, "Sec-Fetch-Mode"), Some("navigate"));
+        // The custom credentials replace the account's.
+        assert_eq!(
+            header(head, "Proxy-Authorization"),
+            Some("Bearer synthetic-token")
+        );
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}

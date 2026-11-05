@@ -113,7 +113,7 @@ pub(crate) async fn forward_plain_request(
             let (open_timeout, idle, _) =
                 crate::socks::tcp_relay_policy(context.config, &context.policy, &outbound);
             let client = outbound
-                .writes_proxy_protocol()
+                .names_the_client()
                 .then(|| inbound.peer_addr().ok().map(InboundSource::tcp))
                 .flatten();
             let opened = tokio::select! {
