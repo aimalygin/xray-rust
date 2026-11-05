@@ -94,6 +94,8 @@ mod routing_origin;
 mod routing_protocol;
 #[path = "runtime_data_path_tests/socks_inbound_udp.rs"]
 mod socks_inbound_udp;
+#[path = "runtime_data_path_tests/socks_inbound_wire.rs"]
+mod socks_inbound_wire;
 #[path = "runtime_data_path_tests/socks_outbound.rs"]
 mod socks_outbound;
 
@@ -4159,9 +4161,10 @@ async fn run_socks_password_freedom_echo_scenario() {
     let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
 
     let mut rejected = TcpStream::connect(socks_addr).await.unwrap();
+    // Xray-core refuses a login with status 0xFF.
     assert_eq!(
         socks5_password_login(&mut rejected, b"synthetic-user", b"wrong-pass").await,
-        1
+        0xff
     );
     let mut byte = [0; 1];
     assert_eq!(rejected.read(&mut byte).await.unwrap(), 0);
