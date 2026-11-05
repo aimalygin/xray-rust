@@ -1,10 +1,12 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
+use tokio::io::BufReader;
 use tokio::runtime::Builder;
 use xray_proxy::inbound::{
-    encode_socks5_udp_datagram, parse_http_connect, parse_socks5_request_message,
-    parse_socks5_udp_datagram,
+    copy_body_chunked, encode_socks5_udp_datagram, parse_http_connect,
+    parse_socks5_request_message, parse_socks5_udp_datagram, read_http_request_head,
+    read_http_response, PlainHttpRequest,
 };
 
 fuzz_target!(|data: &[u8]| {
@@ -17,6 +19,24 @@ fuzz_target!(|data: &[u8]| {
 
         let mut http_reader = data;
         let _ = parse_http_connect(&mut http_reader).await;
+
+        // A plain request, rewritten as Xray-core forwards it.
+        let mut plain_reader = data;
+        if let Ok(head) = read_http_request_head(&mut plain_reader).await {
+            if let Ok(request) = PlainHttpRequest::new(&head) {
+                let _ = request.forwarded_head();
+                let _ = request.attributes().count();
+            }
+        }
+        // A response from a server, written back as Xray-core writes it.
+        for method in ["GET", "HEAD", "POST"] {
+            let mut response_reader = BufReader::new(data);
+            if let Ok(response) = read_http_response(&mut response_reader, method).await {
+                let _ = response.head.client_head(method);
+            }
+        }
+        let mut chunked_reader = data;
+        let _ = copy_body_chunked(&mut chunked_reader, &mut tokio::io::sink()).await;
 
         if let Ok(datagram) = parse_socks5_udp_datagram(data) {
             let _ = encode_socks5_udp_datagram(&datagram.target, &datagram.payload);

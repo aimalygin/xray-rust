@@ -1,0 +1,12 @@
+GET http://example.com/a%20b?q=1 HTTP/1.1
+Host: example.com
+User-Agent: curl/8
+Connection: X-Drop
+X-Drop: 1
+Proxy-Connection: keep-alive
+Transfer-Encoding: chunked
+
+5
+hello
+0
+

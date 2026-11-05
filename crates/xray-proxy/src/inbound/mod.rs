@@ -1,9 +1,15 @@
 mod http;
+mod http_message;
 mod socks;
 
 pub use http::{
     decode_http_basic_credentials, parse_http_connect, parse_http_connect_request,
     HttpBasicCredentials, HttpConnectRequest, HttpInboundAccounts, HttpParseError,
+};
+pub use http_message::{
+    canonical_header_key, copy_body_chunked, copy_body_length, read_http_request_head,
+    read_http_response, HttpBody, HttpHeaders, HttpRequestHead, HttpResponse, HttpResponseHead,
+    PlainHttpError, PlainHttpRequest,
 };
 pub use socks::{
     encode_socks5_udp_datagram, negotiate_socks5, negotiate_socks5_no_auth, parse_socks4_connect,

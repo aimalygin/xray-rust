@@ -5,10 +5,13 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use tokio::task::JoinSet;
 use xray_config::{CoreConfig, InboundSniffingConfig};
-use xray_proxy::inbound::{parse_http_connect_request, HttpInboundAccounts};
+use xray_proxy::inbound::{
+    read_http_request_head, HttpInboundAccounts, PlainHttpError, PlainHttpRequest,
+};
 use xray_transport::TransportDialer;
 
 use crate::dns::RuntimeDnsResolvers;
+use crate::http_forward::{forward_plain_request, ForwardContext};
 use crate::policy::{accept_error_wants_backoff, AcceptBackoff, EffectivePolicy};
 use crate::{ConnectionRegistry, OutboundRouter, RuntimeLogger};
 
@@ -115,12 +118,15 @@ pub async fn serve_http_listener(
     while connections.join_next().await.is_some() {}
 }
 
-/// Serves one request on an HTTP inbound, or on a SOCKS port, as Xray-core's
+/// Serves requests on an HTTP inbound, or on a SOCKS port, as Xray-core's
 /// HTTP server does. A request that does not parse is closed without a
 /// reply, and one without the accounts' credentials gets the 407. `CONNECT`
 /// is answered before routing, so a tunnel that cannot open only closes;
-/// then it routes and sniffs as a SOCKS `CONNECT` does. Other methods ask for
-/// plain HTTP forwarding, which is not implemented, and get a 400.
+/// then it routes and sniffs as a SOCKS `CONNECT` does. Other requests with
+/// an absolute target are forwarded, each routed on its own, and the
+/// connection takes another request after a response of known length when
+/// the client sent `Proxy-Connection: keep-alive`. A request without a host
+/// gets a 400.
 #[expect(
     clippy::too_many_arguments,
     reason = "connection tasks receive shared runtime dependencies explicitly"
@@ -138,39 +144,70 @@ pub(crate) async fn serve_http_proxy_connection(
     runtime_logger: RuntimeLogger,
     connection_registry: Arc<ConnectionRegistry>,
 ) {
-    let Ok(Ok(request)) =
-        tokio::time::timeout(policy.handshake, parse_http_connect_request(&mut inbound)).await
-    else {
-        drain_arrived(&inbound);
-        return;
-    };
-    let Some(user) = accounts.basic_user(request.proxy_authorization.as_deref().map(Vec::as_slice))
-    else {
-        let _ = inbound.write_all(HTTP_PROXY_AUTH_REQUIRED).await;
-        return;
-    };
-    let Some(target) = request.target else {
-        let _ = inbound.write_all(HTTP_BAD_REQUEST).await;
-        return;
-    };
-    if inbound.write_all(HTTP_CONNECT_ESTABLISHED).await.is_err() {
-        return;
+    loop {
+        let Ok(Ok(head)) =
+            tokio::time::timeout(policy.handshake, read_http_request_head(&mut inbound)).await
+        else {
+            drain_arrived(&inbound);
+            return;
+        };
+        let Some(user) =
+            accounts.basic_user(head.proxy_authorization.as_deref().map(Vec::as_slice))
+        else {
+            let _ = inbound.write_all(HTTP_PROXY_AUTH_REQUIRED).await;
+            return;
+        };
+        if let Some(target) = head.connect_target() {
+            let Ok(target) = target else {
+                drain_arrived(&inbound);
+                return;
+            };
+            if inbound.write_all(HTTP_CONNECT_ESTABLISHED).await.is_err() {
+                return;
+            }
+            crate::socks::handle_socks_connect::<false>(
+                inbound,
+                target,
+                user,
+                inbound_tag,
+                config,
+                outbound_router,
+                dns_resolvers,
+                transport_dialer,
+                sniffing,
+                policy,
+                runtime_logger,
+                connection_registry,
+            )
+            .await;
+            return;
+        }
+        let request = match PlainHttpRequest::new(&head) {
+            Ok(request) => request,
+            Err(PlainHttpError::NoHost) => {
+                let _ = inbound.write_all(HTTP_BAD_REQUEST).await;
+                return;
+            }
+            Err(PlainHttpError::Malformed) => {
+                drain_arrived(&inbound);
+                return;
+            }
+        };
+        let context = ForwardContext {
+            inbound_tag: inbound_tag.as_deref(),
+            config: &config,
+            router: &outbound_router,
+            dns: &dns_resolvers,
+            dialer: &transport_dialer,
+            policy,
+            logger: &runtime_logger,
+            registry: &connection_registry,
+        };
+        let reusable = forward_plain_request(&mut inbound, &request, user.as_ref(), &context).await;
+        if !(reusable && request.keep_alive) {
+            return;
+        }
     }
-    crate::socks::handle_socks_connect::<false>(
-        inbound,
-        target,
-        user,
-        inbound_tag,
-        config,
-        outbound_router,
-        dns_resolvers,
-        transport_dialer,
-        sniffing,
-        policy,
-        runtime_logger,
-        connection_registry,
-    )
-    .await;
 }
 
 /// Reads what has already arrived, as Xray-core's buffered reader has by the

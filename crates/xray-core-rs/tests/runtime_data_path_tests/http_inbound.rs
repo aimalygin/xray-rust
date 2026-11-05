@@ -9,7 +9,8 @@ const HTTP_INBOUND_CONFIG: &str = r#"{
          "sniffing": {"enabled": true, "destOverride": ["http"], "routeOnly": true}},
         {"tag": "auth-in", "protocol": "http", "listen": "127.0.0.1", "port": 0,
          "settings": {"accounts": [{"user": "alice", "pass": "secret"},
-                                   {"user": "bob", "pass": "secret"}]}}
+                                   {"user": "bob", "pass": "secret"}]}},
+        {"tag": "socks-in", "protocol": "socks", "listen": "127.0.0.1", "port": 0}
     ],
     "outbounds": [
         {"tag": "direct", "protocol": "freedom"},
@@ -17,6 +18,7 @@ const HTTP_INBOUND_CONFIG: &str = r#"{
     ],
     "routing": {"rules": [
         {"protocol": ["bittorrent"], "outboundTag": "block"},
+        {"protocol": ["http/1.1"], "attrs": {":method": "DELETE"}, "outboundTag": "block"},
         {"domain": ["full:blocked.example"], "outboundTag": "block"},
         {"port": "80", "outboundTag": "block"},
         {"user": ["bob"], "outboundTag": "block"}
@@ -147,6 +149,128 @@ async fn http_accounts_require_basic_credentials_and_name_the_user() {
         let (mut client, head) = connect(echo_addr, Some("Ym9iOnNlY3JldA==")).await;
         assert_eq!(head, ESTABLISHED);
         assert!(rest(&mut client).await.starts_with(b"HTTP/1.1 403"));
+    })
+    .await
+    .unwrap();
+}
+
+/// A server that takes one request, hands over what it read, and answers
+/// with `reply`.
+async fn spawn_origin(
+    reply: &'static [u8],
+) -> (SocketAddr, tokio::sync::oneshot::Receiver<Vec<u8>>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (sent, received) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        let mut buffer = [0; 1024];
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            let read = stream.read(&mut buffer).await.unwrap();
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&buffer[..read]);
+        }
+        stream.write_all(reply).await.unwrap();
+        let _ = sent.send(request);
+    });
+    (addr, received)
+}
+
+const ORIGIN_OK: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok";
+const KEPT_OK: &str = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\nKeep-Alive: timeout=60\r\nProxy-Connection: keep-alive\r\n\r\n";
+
+/// Reads a response head and the `length` body bytes after it.
+async fn read_response(client: &mut TcpStream, length: usize) -> (String, Vec<u8>) {
+    let mut head = Vec::new();
+    while !head.ends_with(b"\r\n\r\n") {
+        let mut byte = [0; 1];
+        if client.read(&mut byte).await.unwrap() == 0 {
+            break;
+        }
+        head.push(byte[0]);
+    }
+    let mut body = vec![0; length];
+    client.read_exact(&mut body).await.unwrap();
+    (String::from_utf8(head).unwrap(), body)
+}
+
+#[tokio::test]
+async fn plain_requests_are_forwarded_as_xray_core_forwards_them() {
+    timeout(Duration::from_secs(15), async {
+        let core = start_http_inbound_core().await;
+        for inbound in ["http-in", "socks-in"] {
+            let proxy = core.inbound_addr(Some(inbound)).unwrap();
+            let mut client = TcpStream::connect(proxy).await.unwrap();
+            // Two requests on one connection, as `Proxy-Connection` asks.
+            for path in ["first", "second"] {
+                let (origin, sent) = spawn_origin(ORIGIN_OK).await;
+                client
+                    .write_all(
+                        format!(
+                            "GET http://{origin}/{path} HTTP/1.1\r\nHost: elsewhere.example\r\nUser-Agent: test\r\nProxy-Connection: keep-alive\r\n\r\n"
+                        )
+                        .as_bytes(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(read_response(&mut client, 2).await, (KEPT_OK.to_owned(), b"ok".to_vec()));
+                assert_eq!(
+                    String::from_utf8(sent.await.unwrap()).unwrap(),
+                    format!("GET /{path} HTTP/1.1\r\nHost: {origin}\r\nUser-Agent: test\r\nConnection: close\r\n\r\n"),
+                    "{inbound}"
+                );
+            }
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn forwarded_requests_route_by_their_attributes() {
+    timeout(Duration::from_secs(15), async {
+        let core = start_http_inbound_core().await;
+        let http = core.inbound_addr(Some("http-in")).unwrap();
+        // A blackhole's reply comes back as a response, kept alive.
+        // Port 8443, so that only the `protocol` and `attrs` rule applies.
+        let (_, head) = http_proxy_head(
+            http,
+            "DELETE http://example.com:8443/item HTTP/1.1\r\nProxy-Connection: keep-alive\r\n\r\n",
+        )
+        .await;
+        assert_eq!(
+            head,
+            "HTTP/1.1 403 Forbidden\r\nCache-Control: max-age=3600, public\r\nConnection: keep-alive\r\nKeep-Alive: timeout=60\r\nProxy-Connection: keep-alive\r\nContent-Length: 0\r\n\r\n"
+        );
+
+        // Without `Proxy-Connection: keep-alive` the connection ends after
+        // the response.
+        let (origin, _sent) = spawn_origin(ORIGIN_OK).await;
+        let mut client = TcpStream::connect(http).await.unwrap();
+        client
+            .write_all(format!("GET http://{origin}/ HTTP/1.1\r\n\r\n").as_bytes())
+            .await
+            .unwrap();
+        assert_eq!(read_response(&mut client, 2).await, (KEPT_OK.to_owned(), b"ok".to_vec()));
+        let mut byte = [0; 1];
+        assert!(matches!(
+            timeout(Duration::from_secs(1), client.read(&mut byte)).await,
+            Ok(Ok(0))
+        ));
+
+        // A response that never comes is Xray-core's 503.
+        let closed = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let closed_addr = closed.local_addr().unwrap();
+        drop(closed);
+        let (_, head) =
+            http_proxy_head(http, &format!("GET http://{closed_addr}/ HTTP/1.1\r\n\r\n")).await;
+        assert_eq!(
+            head,
+            "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nProxy-Connection: close\r\nContent-Length: 0\r\n\r\n"
+        );
     })
     .await
     .unwrap();

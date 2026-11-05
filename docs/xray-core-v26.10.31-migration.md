@@ -53,8 +53,8 @@ their original source identities.
 - DNS outbound drops a hijacked A/AAAA reply larger than its buffer; ours
   bounds the reply and sets TC instead.
 - HTTP inbound forwards a short `100 Continue` promptly on its plain-HTTP
-  proxy path; the Rust HTTP inbound accepts only CONNECT and answers other
-  methods with 400.
+  proxy path; the Rust HTTP inbound forwards plain HTTP since 0.10.0 and
+  passes one informational head on the same way.
 - Not applicable: Darwin keepalive idle/interval swap (no `tcpKeepAlive*`
   support), Darwin and Windows TUN interface binding, WFP leak blocking, Linux
   IPv6 `process` routing, geodata download limits and gzip, inbound module

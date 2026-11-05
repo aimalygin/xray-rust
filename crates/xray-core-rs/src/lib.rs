@@ -31,6 +31,7 @@ mod dns_outbound_runtime;
 mod fake_dns;
 mod health;
 mod http;
+mod http_forward;
 mod outbound;
 mod policy;
 mod runtime_log;
