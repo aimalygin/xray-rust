@@ -1,9 +1,10 @@
 //! Xray-core v26.10.31's list grammars shared by routing rules, freedom's
-//! final rules, DNS and the DNS outbound: `StringList`, `NetworkList`,
-//! `PortList` and the domain rules `geodata.ParseDomainRule` reads.
+//! final rules, DNS, the DNS outbound and sniffing: `StringList`,
+//! `NetworkList`, `PortList` and the domain rules `geodata.ParseDomainRule`
+//! reads.
 
-use super::{normalize_u16_ranges, Parser, U16SelectorKind};
-use crate::{Network, RoutingPortRange};
+use super::{insert_domain_matchers, normalize_u16_ranges, Parser, U16SelectorKind};
+use crate::{DomainMatcherSet, DomainNameMode, Network, RoutingPortRange};
 use serde_json::Value;
 use xray_routing::{DomainMatcher, RegexMatcher};
 
@@ -237,6 +238,40 @@ impl Parser<'_> {
             }
         };
         Some(vec![matcher])
+    }
+
+    /// A `StringList` of domain rules as `geodata.ParseDomainRules` reads
+    /// them, plain text being a substring, compiled for `mode`. `None`
+    /// inside is an absent, `null` or empty list, which Xray-core treats as
+    /// no condition.
+    pub(super) fn domain_rule_list(
+        &mut self,
+        raw: Option<&Value>,
+        path: &str,
+        mode: DomainNameMode,
+    ) -> Option<Option<DomainMatcherSet>> {
+        let Some(entries) = self.string_list(raw, path)? else {
+            return Some(None);
+        };
+        if entries.is_empty() {
+            return Some(None);
+        }
+        let mut matchers = DomainMatcherSet::builder();
+        for entry in entries {
+            let remaining = self.matcher_budget.remaining_domain_matchers();
+            if remaining == 0 {
+                self.domain_matcher_budget_error(&entry.path);
+                return None;
+            }
+            let parsed =
+                self.domain_rule(entry.text, &entry.path, remaining, PlainDomain::Substring)?;
+            if !self.matcher_budget.consume_domain_matchers(parsed.len()) {
+                self.domain_matcher_budget_error(&entry.path);
+                return None;
+            }
+            insert_domain_matchers(&mut matchers, &parsed, mode);
+        }
+        Some(Some(self.build_domain_matcher_set(matchers, path)?))
     }
 
     fn domain_regex(&mut self, pattern: String, path: &str) -> Option<DomainMatcher> {

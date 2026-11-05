@@ -1,9 +1,6 @@
 //! Routing configuration, selectors, and their bounded parser budgets.
 
-use super::{
-    insert_domain_matchers, parse_xray_duration, Parser, PlainDomain, U16SelectorKind,
-    OBSERVATORY_PROBE_TIMEOUT,
-};
+use super::{parse_xray_duration, Parser, U16SelectorKind, OBSERVATORY_PROBE_TIMEOUT};
 use crate::surface;
 use crate::{
     DomainNameMode, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
@@ -634,28 +631,7 @@ impl Parser<'_> {
         raw: Option<&Value>,
         path: &str,
     ) -> Option<Option<DomainMatcherSet>> {
-        let Some(entries) = self.string_list(raw, path)? else {
-            return Some(None);
-        };
-        if entries.is_empty() {
-            return Some(None);
-        }
-        let mut matchers = DomainMatcherSet::builder();
-        for entry in entries {
-            let remaining = self.matcher_budget.remaining_domain_matchers();
-            if remaining == 0 {
-                self.domain_matcher_budget_error(&entry.path);
-                return None;
-            }
-            let parsed =
-                self.domain_rule(entry.text, &entry.path, remaining, PlainDomain::Substring)?;
-            if !self.matcher_budget.consume_domain_matchers(parsed.len()) {
-                self.domain_matcher_budget_error(&entry.path);
-                return None;
-            }
-            insert_domain_matchers(&mut matchers, &parsed, DomainNameMode::Routing);
-        }
-        Some(Some(self.build_domain_matcher_set(matchers, path)?))
+        self.domain_rule_list(raw, path, DomainNameMode::Routing)
     }
 
     /// Xray's `localOS` is a Go `StringList`: an array of strings, or one

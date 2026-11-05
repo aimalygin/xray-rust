@@ -557,12 +557,27 @@ pub struct InboundConfig {
     pub user_level: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct InboundSniffingConfig {
     pub enabled: bool,
     pub dest_override: Vec<SniffingDestination>,
     pub metadata_only: bool,
     pub route_only: bool,
+    /// Sniffed domains that never replace the destination, compiled with
+    /// routing semantics.
+    pub domains_excluded: DomainMatcherSet,
+    /// Destination IPs that a sniffed domain never replaces.
+    pub ips_excluded: IpMatcherSet,
+}
+
+impl InboundSniffingConfig {
+    /// Whether a sniffed `domain` leaves the destination alone, as Xray-core's
+    /// `shouldOverride` decides: the domain is in `domainsExcluded`, or the
+    /// destination is an IP, `destination_ip`, in `ipsExcluded`.
+    pub fn excludes(&self, destination_ip: Option<IpAddr>, domain: &str) -> bool {
+        self.domains_excluded.matches(domain)
+            || destination_ip.is_some_and(|ip| self.ips_excluded.matches(ip))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

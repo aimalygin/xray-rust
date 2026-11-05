@@ -498,9 +498,25 @@ As in Xray-core, the first byte of a connection selects the protocol, and
   plain HTTP forwarding is not implemented yet.
 
 Common fields are `tag`, `protocol`, `listen`, `port`, `settings`, and
-`sniffing`. Sniffing supports `enabled`, `destOverride` values `http`, `tls`,
-and `quic`, plus `metadataOnly` and `routeOnly`. This is a routing-oriented
-subset rather than full Xray sniffing behavior.
+`sniffing`. Sniffing reads `enabled`, `destOverride`, `metadataOnly`,
+`routeOnly`, `domainsExcluded` and `ipsExcluded` as Xray-core v26.10.31 builds
+them, checking every field even while sniffing is off; a `null` object is no
+sniffing. This is a routing-oriented subset rather than full Xray sniffing
+behavior.
+
+- `destOverride` is Xray's `StringList`: an array, or one string split at
+  commas without trimming. It names `http`, `tls` (also spelled `https` or
+  `ssl`) and `quic`, case-insensitively. `fakedns` and `fakedns+others` are
+  accepted and add nothing: a fake IP is turned back into its domain whenever
+  `dns.fakeIp` is enabled, with or without them. Any other name, including a
+  `null` entry, is an error.
+- `domainsExcluded` is a `StringList` of domain rules, read as a routing
+  rule's `domain` is: plain text is a substring, matched against the sniffed
+  name case-insensitively. A sniffed domain it matches never replaces the
+  destination, for routing or for dialing.
+- `ipsExcluded` is a `StringList` of IP rules, read as a routing rule's `ip`
+  is. When the destination is an IP it matches, a sniffed domain never
+  replaces it. A destination given as a name is not checked against it.
 
 QUIC sniffing reads the SNI from a client's Initial packets (QUIC v1, v2 and
 draft-29). A ClientHello larger than one datagram, such as Chrome's with a

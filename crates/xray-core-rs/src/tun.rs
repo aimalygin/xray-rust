@@ -8580,6 +8580,7 @@ mod tests {
             dest_override: vec![xray_config::SniffingDestination::Http],
             metadata_only: false,
             route_only: false,
+            ..Default::default()
         };
 
         assert!(!should_sniff_tun_tcp(

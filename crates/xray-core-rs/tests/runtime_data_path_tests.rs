@@ -576,6 +576,7 @@ fn runtime_tun_config_with_route_only_quic_sniffing(unused_proxy_port: u16) -> C
         dest_override: vec![SniffingDestination::Quic],
         metadata_only: false,
         route_only: true,
+        ..Default::default()
     });
     config.routing.rules[0].inbound_tags = Vec::new();
     config.routing.rules[0].domain_matchers =
@@ -590,6 +591,7 @@ fn runtime_tun_config_with_fake_ip_route_only_http_sniffing(unused_proxy_port: u
         dest_override: vec![SniffingDestination::Http],
         metadata_only: false,
         route_only: true,
+        ..Default::default()
     });
     config.routing.rules[0].domain_matchers =
         Some(compile_domain_matchers(&[DomainMatcher::Full("routed.example".to_owned())]).unwrap());
@@ -614,6 +616,7 @@ fn runtime_tun_config_with_fake_ip_quic_sniffing_routed_to_dns_outbound() -> Cor
         dest_override: vec![SniffingDestination::Quic],
         metadata_only: false,
         route_only: true,
+        ..Default::default()
     });
     config.routing.rules[0].port_ranges = None;
     config.routing.rules[0].domain_matchers = Some(
@@ -941,6 +944,7 @@ fn runtime_socks_config_with_route_only_http_sniffing(unused_proxy_port: u16) ->
         dest_override: vec![SniffingDestination::Http],
         metadata_only: false,
         route_only: true,
+        ..Default::default()
     });
     config.routing.rules[0].domain_matchers = Some(
         compile_domain_matchers(&[DomainMatcher::Suffix("routed.example".to_owned())]).unwrap(),
@@ -955,6 +959,7 @@ fn runtime_socks_config_with_route_only_quic_sniffing(unused_proxy_port: u16) ->
         dest_override: vec![SniffingDestination::Quic],
         metadata_only: false,
         route_only: true,
+        ..Default::default()
     });
     config.routing.rules[0].domain_matchers =
         Some(compile_domain_matchers(&[DomainMatcher::Suffix("quic.example".to_owned())]).unwrap());
@@ -9667,6 +9672,7 @@ async fn run_socks_mapped_fake_ip_http_sniffing_precedence_scenario() {
         dest_override: vec![SniffingDestination::Http],
         metadata_only: false,
         route_only: false,
+        ..Default::default()
     });
     config.dns.fake_ip = Some(DnsFakeIpConfig {
         enabled: true,

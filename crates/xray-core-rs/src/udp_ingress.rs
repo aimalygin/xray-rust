@@ -93,6 +93,7 @@ mod tests {
             dest_override: vec![SniffingDestination::Quic],
             metadata_only: false,
             route_only: true,
+            ..Default::default()
         }
     }
 

@@ -1078,10 +1078,11 @@
         "metadataOnly",
         "routeOnly",
         "domainsExcluded",
+        "ipsExcluded",
         "excludedDomains"
       ],
       "id": "SNIFFING",
-      "notes": "domainsExcluded rejects nonempty arrays; excludedDomains is ignored after string-array validation. destOverride supports http, tls and quic when enabled."
+      "notes": "Read as Xray-core v26.10.31 reads it, every field checked even when sniffing is off. destOverride, domainsExcluded and ipsExcluded take an array or a comma-separated string. destOverride names http, tls (or https, ssl) and quic case-insensitively; fakedns and fakedns+others are accepted, as fake IPs are turned back into domains whenever dns.fakeIp is on. A sniffed domain in domainsExcluded, or a destination IP in ipsExcluded, keeps the original destination. excludedDomains is ignored after string-array validation."
     },
     {
       "context": "streamSettings.sockopt",

@@ -10,6 +10,21 @@ long-term supported release series.
 
 ## Unreleased
 
+- Inbound sniffing reads as Xray-core v26.10.31 reads it. Profiles it accepts
+  no longer fail to parse.
+  - `domainsExcluded` and `ipsExcluded` are supported. Profiles with a
+    nonempty `domainsExcluded`, such as the common
+    `["courier.push.apple.com"]`, used to fail to parse. A sniffed domain in
+    `domainsExcluded`, or a destination IP in `ipsExcluded`, keeps the
+    connection on its original destination.
+  - `destOverride` names are case-insensitive, `https` and `ssl` spell `tls`,
+    and `fakedns` and `fakedns+others` are accepted. A fake IP is still turned
+    back into its domain whenever `dns.fakeIp` is enabled.
+  - `destOverride` and both exclusion lists also take a comma-separated
+    string.
+  - As in Xray-core, every field is checked even when sniffing is off, so a
+    disabled block with an unknown `destOverride` name is now rejected. A
+    `null` sniffing object means no sniffing.
 - DNS domain rules read as Xray-core v26.10.31 reads them: a server's
   `domains`, `dns.hosts` keys and the DNS outbound's rules. Profiles it accepts
   no longer fail to parse.
