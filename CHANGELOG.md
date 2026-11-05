@@ -10,6 +10,26 @@ long-term supported release series.
 
 ## Unreleased
 
+- The Android and Apple VLESS link importers accept more common links. They
+  used to reject them with an unsupported `type` or `security` error.
+  - Raw TCP with TLS, with or without `flow=xtls-rprx-vision`.
+  - WebSocket and HTTPUpgrade with TLS, keeping `host` and `path`.
+  - gRPC with TLS or REALITY, keeping `serviceName`, `authority` and
+    `mode=gun` or `mode=multi`.
+  - As in Xray-core, Vision over WebSocket, HTTPUpgrade or gRPC needs VLESS
+    encryption, and REALITY works only over raw TCP, XHTTP and gRPC. Links
+    that turn off certificate checks with `allowInsecure` on these transports,
+    or carry another transport's fields, are still rejected.
+- The Android and Apple VLESS link importers read `fm`, the percent-encoded
+  JSON of Xray's `streamSettings.finalmask` that Remnawave puts in links. It
+  used to be dropped silently. The object is copied unchanged into the
+  profile, and the core checks the masks when the profile loads. An empty
+  `fm` is ignored; a value that is not a JSON object, or a repeated `fm`,
+  fails the import.
+- On Android, the TUN admission callback and socket protection no longer
+  attach the calling native thread to the JVM and detach it again on every
+  call. Each native thread is attached once, as a daemon thread, and detached
+  when it exits. Threads the JVM already owns are left as they are.
 - Remnawave XRAY_JSON profiles no longer fail on the fields the panel adds to
   them. Every profile in such a subscription used to fail to parse.
   - The root `remarks` label and `meta` object are type-checked and ignored.

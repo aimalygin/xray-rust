@@ -414,8 +414,9 @@ non-empty `vcn` because it has no explicit host-policy seam; ECH remains
 fail-closed in both paths. An explicitly empty share parameter is treated as
 absent. Canonical `allowInsecure: true`, including
 legacy importer output, is rejected. XHTTP with a Vision flow requires VLESS
-encryption. Swift/Kotlin importers support encrypted raw and XHTTP links;
-WS/HTTPUpgrade/gRPC use canonical JSON. The importer also retains its
+encryption. Swift/Kotlin importers also project raw TLS (with or without
+Vision), WS/HTTPUpgrade with TLS, and gRPC with TLS or REALITY; on those
+non-raw carriers Vision and `security=none` require VLESS encryption. The importer also retains its
 pre-existing case-insensitive query-name lookup even though the current share
 proposal specifies case-sensitive names; duplicate consumed fields are rejected.
 
