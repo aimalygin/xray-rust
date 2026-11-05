@@ -6335,8 +6335,13 @@ mod tests {
             pool_size,
             ttl,
         };
-        FakeIpMapper::from_config(&config, query_strategy, &[TUN_DNS_ANCHOR, TUN_CLIENT_IPV4])
-            .unwrap()
+        FakeIpMapper::from_config_with_start(
+            &config,
+            query_strategy,
+            &[TUN_DNS_ANCHOR, TUN_CLIENT_IPV4],
+            0,
+        )
+        .unwrap()
     }
 
     #[derive(Debug, Default)]

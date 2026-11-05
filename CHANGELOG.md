@@ -238,6 +238,11 @@ long-term supported release series.
   `udp_oversize_datagrams`, and answered with an ICMP fragmentation-needed or
   packet-too-big on TUN. It used to end the whole UDP flow, so the next
   datagram opened a new association.
+- Fake IP: each `Core` starts allocating at a random address of
+  `dns.fakeIp.ipv4Pool` and continues sequentially from there, as Xray-core
+  starts from the current time within the pool. It always started at the
+  pool's first free address, so after a tunnel restart an app still holding an
+  old fake IP was routed and dialed as whichever new domain got that address.
 - DNS: a bare `"localhost"` or `"fakedns"` string in `dns.servers` (any case)
   is now a configuration error, as the object form already was. Xray's
   system-resolver and FakeDNS clients are not implemented, and these strings

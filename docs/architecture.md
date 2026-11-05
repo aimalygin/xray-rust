@@ -357,9 +357,11 @@ therefore visible to TUN reverse lookup and vice versa. The fixed TUN FakeIP
 mode is now another consumer of the same core-owned mapper rather than a
 separate allocation domain. Pool size, TTL, query strategy, reserved tunnel
 addresses, and the ordered lease-deadline index remain bounded per `Core`
-instance. Fake-IP addresses are never reassigned before their most recently
-advertised TTL; capacity exhaustion fails closed until the earliest lease
-expires.
+instance. Each mapper starts allocating at a random pool address and
+continues sequentially, so a restarted `Core` does not hand an address an app
+may still cache to a different domain. Fake-IP addresses are never reassigned
+before their most recently advertised TTL; capacity exhaustion fails closed
+until the earliest lease expires.
 
 The generic core and C ABI retain system bootstrap as their default for
 desktop, command-line, and future server embeddings. Mobile full-tunnel
