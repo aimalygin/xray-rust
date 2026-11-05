@@ -36,6 +36,9 @@ long-term supported release series.
   client sends: push disabled, a 1 MiB maximum frame and a 10 MiB header
   list limit next to the stream window, in Go's order. It used to announce
   the stream window alone.
+- The XHTTP HTTP/3 client announces Xray-core's 10 MiB header limit instead
+  of 2^62-1 and no longer lists datagram, extended CONNECT and WebTransport
+  settings that are off.
 
 - The release fuzz campaign also covers the decoders that read server data:
   gRPC and WebSocket framing, Shadowsocks TCP responses, VLESS responses with

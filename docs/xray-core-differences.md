@@ -435,6 +435,23 @@ in its own write where Go buffers it together with SETTINGS and
 WINDOW_UPDATE; and h2 sends that WINDOW_UPDATE once the read side goes idle,
 so a server SETTINGS that is already buffered is acknowledged first.
 
+## XHTTP HTTP/3 control stream
+
+quic-go's `http3` client, which Xray's XHTTP H3 dial uses, opens its control
+stream with a SETTINGS frame holding only MAX_FIELD_SECTION_SIZE = 10 MiB
+(`http3/client.go`, `defaultMaxResponseHeaderBytes`; datagrams and extended
+CONNECT are off, so their settings are absent). xray-rust now announces the
+same 10 MiB limit, where h3 used to announce 2^62-1, and the vendored h3 no
+longer sends ENABLE_CONNECT_PROTOCOL, ENABLE_WEBTRANSPORT, H3_DATAGRAM and
+WEBTRANSPORT_MAX_SESSIONS as 0 (`vendor/h3/XRAY-PATCH.md`).
+
+Difference: h3's GREASE is still on, so the frame also carries one reserved
+setting, the client opens one GREASE unidirectional stream and writes one
+GREASE frame on a request stream, none of which quic-go sends. Turning it off
+needs the h3-quinn adapter's `poll_finish` to report a STOP_SENDING that
+already arrived (quinn's `finish` maps it to success); today the GREASE write
+in h3's `finish` is what surfaces it for unknown-length uploads.
+
 ## Follow-up checks
 
 - [x] Integrate the #87 review follow-up, including both relay-address fixes,
