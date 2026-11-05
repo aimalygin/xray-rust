@@ -1436,15 +1436,25 @@ impl Parser<'_> {
             );
         }
 
+        // Xray-core reads an empty spiderX as `/` and rejects any other value
+        // that is not an absolute path (`infra/conf/transport_security.go`).
+        let spider_x = settings
+            .and_then(|settings| self.string_at(settings, "spiderX"))
+            .unwrap_or_default();
+        if !spider_x.is_empty() && !spider_x.starts_with('/') {
+            self.error(
+                format!("{base_path}.spiderX"),
+                "reality spiderX must start with `/`",
+            );
+            return None;
+        }
+
         Some(RealitySettings {
             server_name: server_name.to_owned(),
             fingerprint: fingerprint.to_owned(),
             public_key,
             short_id,
-            spider_x: settings
-                .and_then(|settings| self.string_at(settings, "spiderX"))
-                .unwrap_or_default()
-                .to_owned(),
+            spider_x: spider_x.to_owned(),
             mldsa65_verify: self
                 .parse_reality_mldsa65_verify(settings, &format!("{base_path}.mldsa65Verify"))?,
         })

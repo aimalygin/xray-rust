@@ -15,7 +15,9 @@ long-term supported release series.
   completes TLS, the client crawls `spiderX` over HTTP/2 like a browser
   (honouring its `p`, `c`, `t`, `i` and `r` parameters, within limits), and
   the connection then fails without sending any user data. An invalid
-  certificate still aborts the handshake.
+  certificate still aborts the handshake. A `spiderX` that is neither empty
+  nor starts with `/` is now a configuration error, as in Xray-core, and
+  share links with such an `spx` are refused at import.
 - VLESS (with or without Vision) and Trojan outbounds no longer send the
   request header on its own. As in Xray-core, the header waits for the first
   payload and leaves in the same write, so over TLS or REALITY the first

@@ -375,8 +375,9 @@ It is bounded where Go is not: `c` and `t` are capped at 32, the padding at
 paths at 256 per server name, and the crawl's connection, which Go never
 closes itself, is closed after 120 s. The HTTP/2 client is the `h2` crate set
 to Go's transport window and header-list defaults, so its frames are close to,
-not byte-identical with, `golang.org/x/net/http2`. A `spiderX` without a
-leading slash, which Xray-core rejects at load time, is crawled as `/`.
+not byte-identical with, `golang.org/x/net/http2`. As in Xray-core, an empty
+`spiderX` is crawled as `/` and any other value without a leading slash is a
+configuration error.
 
 ## Request header and first payload
 

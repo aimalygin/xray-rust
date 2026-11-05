@@ -271,7 +271,7 @@ object XrayVlessUrlImporter {
             fingerprint = query.required("fp"),
             serverName = query.required("sni"),
             shortId = query.required("sid"),
-            spiderX = query.optional("spx", ""),
+            spiderX = spiderX(query),
             mldsa65Verify = pqv,
             flow = flow,
         )
@@ -290,7 +290,7 @@ object XrayVlessUrlImporter {
             fingerprint = fingerprint,
             serverName = serverName,
             shortId = query.requiredPresent("sid"),
-            spiderX = query.optional("spx", ""),
+            spiderX = spiderX(query),
             mldsa65Verify = query.optional("pqv", "").ifEmpty { null },
             flow = null,
         )
@@ -346,6 +346,14 @@ object XrayVlessUrlImporter {
         "Invalid VLESS XHTTP `extra`. Expected a JSON object.",
         parameter = "extra",
     )
+
+    private fun spiderX(query: QueryValues): String {
+        val spiderX = query.optional("spx", "")
+        if (spiderX.isNotEmpty() && !spiderX.startsWith('/')) {
+            throw unsupportedValue("spx", spiderX, "empty or a path starting with /")
+        }
+        return spiderX
+    }
 
     private fun requireNonEmpty(value: String, name: String) {
         if (value.isEmpty()) {

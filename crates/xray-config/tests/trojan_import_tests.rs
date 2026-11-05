@@ -1,5 +1,5 @@
 use serde_json::Value;
-use xray_config::profile_import::{import_profile, ProfileFormat};
+use xray_config::profile_import::{import_profile, ImportError, ProfileFormat};
 
 #[test]
 fn trojan_uri_preserves_encoded_credentials_plus_ipv6_and_name() {
@@ -76,6 +76,28 @@ fn trojan_uri_keeps_reality_fingerprints_older_servers_accept() {
         &[],
     )
     .is_err());
+}
+
+/// A share link carries `spx` verbatim into `spiderX`, as v2rayN does, so a
+/// value Xray-core would refuse at load time is refused at import.
+#[test]
+fn trojan_uri_spider_x_follows_xray_core_rules() {
+    let reality = "security=reality&sni=www.example.com&pbk=AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE&sid=02030405&fp=chrome";
+    let import = |spx: &str| {
+        import_profile(
+            ProfileFormat::Trojan,
+            &format!("trojan://synthetic-trojan-test-secret@example.test?{reality}&spx={spx}"),
+            None,
+            &[],
+        )
+    };
+    let profile = import("%2Fcrawl%3Fp%3D1").unwrap();
+    let config: Value = serde_json::from_str(&profile.config_json).unwrap();
+    assert_eq!(
+        config["outbounds"][0]["streamSettings"]["realitySettings"]["spiderX"],
+        "/crawl?p=1"
+    );
+    assert!(matches!(import("crawl"), Err(ImportError::Configuration)));
 }
 
 #[test]

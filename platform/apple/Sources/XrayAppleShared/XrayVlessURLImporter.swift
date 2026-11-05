@@ -486,7 +486,7 @@ private struct VlessEndpoint {
             fingerprint: try query.required("fp"),
             serverName: try query.required("sni"),
             shortID: try query.required("sid"),
-            spiderX: query.optional("spx", default: ""),
+            spiderX: try spiderX(from: query),
             mldsa65Verify: mldsa65Verify.isEmpty ? nil : mldsa65Verify,
             flow: flow
         )
@@ -513,10 +513,23 @@ private struct VlessEndpoint {
             fingerprint: fingerprint,
             serverName: serverName,
             shortID: try query.requiredPresent("sid"),
-            spiderX: query.optional("spx", default: ""),
+            spiderX: try spiderX(from: query),
             mldsa65Verify: mldsa65Verify.isEmpty ? nil : mldsa65Verify,
             flow: nil
         )
+    }
+
+    // Xray-core refuses a non-empty spiderX that is not an absolute path.
+    private static func spiderX(from query: QueryValues) throws -> String {
+        let spiderX = query.optional("spx", default: "")
+        guard spiderX.isEmpty || spiderX.hasPrefix("/") else {
+            throw XrayVlessURLImportError.unsupportedQueryValue(
+                name: "spx",
+                value: spiderX,
+                expected: "empty or a path starting with /"
+            )
+        }
+        return spiderX
     }
 
     private static func requireNonEmpty(_ value: String, named name: String) throws {
