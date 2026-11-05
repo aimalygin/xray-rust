@@ -378,6 +378,26 @@ to Go's transport window and header-list defaults, so its frames are close to,
 not byte-identical with, `golang.org/x/net/http2`. A `spiderX` without a
 leading slash, which Xray-core rejects at load time, is crawled as `/`.
 
+## Request header and first payload
+
+VLESS (including Vision) and Trojan outbounds hold the request header until the
+first client payload and hand both to the carrier in one write, so TLS and
+REALITY seal them into one record. If no payload arrives, the header is sent
+alone after Xray-core's wait: 500 ms for VLESS
+(`proxy/vless/outbound/outbound.go:311-345`, `ReadMultiBufferTimeout`), 100 ms
+for Trojan (`proxy/trojan/client.go:102-123`, `buf.CopyOnceTimeout`). With
+Vision, the empty long-padding frame is written only on that timeout, behind
+the header, as in Xray-core; the first payload otherwise carries the UUID and
+the first padding block. Server-first flows therefore see the same first-byte
+delay as with Xray-core.
+
+Differences: the wait is driven from the stream's read side, which the relay
+always polls; a client that closes before sending anything still gets the
+header and a clean close, where Xray-core drops the request. Trojan holds the
+header on every open, including native UDP and Mux parents, as Xray-core does.
+VMess, Shadowsocks, and VLESS UDP and Mux parent opens still send the header
+eagerly.
+
 ## Follow-up checks
 
 - [x] Integrate the #87 review follow-up, including both relay-address fixes,

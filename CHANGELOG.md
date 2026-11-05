@@ -16,6 +16,15 @@ long-term supported release series.
   (honouring its `p`, `c`, `t`, `i` and `r` parameters, within limits), and
   the connection then fails without sending any user data. An invalid
   certificate still aborts the handshake.
+- VLESS (with or without Vision) and Trojan outbounds no longer send the
+  request header on its own. As in Xray-core, the header waits for the first
+  payload and leaves in the same write, so over TLS or REALITY the first
+  record is no longer a header-only record of a predictable size. When the
+  app sends nothing first, the header goes out after the same wait as
+  Xray-core: 500 ms for VLESS, 100 ms for Trojan. With Vision, the empty
+  padding frame is now sent only in that case, behind the header, instead of
+  on every connection.
+
 - Routing rules can check where a connection comes from, with Xray-core's
   `sourceIP` (or `source`), `sourcePort`, `localIP`, `localPort` and `user`.
   Profiles with them used to fail to parse.
