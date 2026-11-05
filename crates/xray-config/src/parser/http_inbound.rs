@@ -17,8 +17,11 @@ impl Parser<'_> {
             return HttpInboundSettings::default();
         };
         let path = format!("$.inbounds[{index}].settings");
-        let accounts = self.parse_http_accounts(settings, "accounts", &path);
-        let users = self.parse_http_accounts(settings, "users", &path);
+        let accounts_given = settings
+            .get("accounts")
+            .is_some_and(|value| !value.is_null());
+        let accounts = self.parse_http_accounts(settings, "accounts", &path, accounts_given);
+        let users = self.parse_http_accounts(settings, "users", &path, !accounts_given);
         HttpInboundSettings {
             accounts: accounts.or(users).unwrap_or_default(),
         }
@@ -26,12 +29,15 @@ impl Parser<'_> {
 
     /// One list of accounts: `None` when it is absent or `null`. Each entry is
     /// an object of a `user` and a `pass`, absent or `null` reading as empty,
-    /// and a later account replaces an earlier one of the same name.
+    /// and a later account replaces an earlier one of the same name. Go reads
+    /// a `null` entry as no account, which Xray-core panics on only in the
+    /// list it `used`.
     fn parse_http_accounts(
         &mut self,
         settings: &Value,
         key: &str,
         path: &str,
+        used: bool,
     ) -> Option<HttpInboundAccounts> {
         let path = format!("{path}.{key}");
         let entries = match settings.get(key)? {
@@ -52,6 +58,9 @@ impl Parser<'_> {
         let mut accounts = HttpInboundAccounts::default();
         for (index, entry) in entries.iter().enumerate() {
             let entry_path = format!("{path}[{index}]");
+            if entry.is_null() && !used {
+                continue;
+            }
             // Xray-core panics on a `null` entry and refuses any other value.
             if !entry.is_object() {
                 self.error(entry_path, "an HTTP account must be an object");

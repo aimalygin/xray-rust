@@ -167,7 +167,6 @@ fn parse_connect_target(authority: &str) -> Result<Target, HttpParseError> {
         }
     } else {
         match authority.rsplit_once(':') {
-            Some((host, _)) if host.contains(':') => return Err(HttpParseError::InvalidAuthority),
             Some((host, port)) => (host, Some(port)),
             None => (authority, None),
         }

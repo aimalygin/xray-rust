@@ -60,6 +60,11 @@ fn accounts_or_users_name_the_credentials() {
     let users = settings(json!({"accounts": null, "users": account}));
     assert!(admits(&users, "alice", "secret"));
     assert!(settings(json!({})).accounts.is_empty());
+    assert!(settings(Value::Null).accounts.is_empty());
+    // A `null` entry harms only the list in use.
+    assert!(settings(json!({"accounts": [], "users": [null]}))
+        .accounts
+        .is_empty());
 }
 
 #[test]
@@ -103,6 +108,7 @@ fn accounts_read_as_xray_core_reads_them() {
             json!({"accounts": [{"user": "a", "pass": "b", "email": "x"}]}),
             "$.inbounds[0].settings.accounts[0].email",
         ),
+        (json!({"users": [null]}), "$.inbounds[0].settings.users[0]"),
         // Both lists must parse, though `accounts` wins.
         (
             json!({"accounts": [], "users": 5}),
