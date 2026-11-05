@@ -37,6 +37,7 @@ pub mod reality;
 pub mod reality_connector;
 pub mod reality_runtime;
 mod reality_rustls;
+mod reality_spider;
 pub mod stream;
 mod tls;
 mod utls_profiles;
@@ -58,6 +59,9 @@ pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};
 pub use reality_runtime::{
     RealityHandshakeContextProvider, RealityRuntimeEngine, SystemRealityHandshakeContextProvider,
 };
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub use reality_rustls::extract_server_hello_for_fuzzing;
 pub use reality_rustls::RustlsRealityTlsSessionProvider;
 pub use tls::{plain_tls_client_hello_bytes, TlsConnector};
 pub use utls_profiles::draw_modern_fingerprint;
@@ -140,6 +144,10 @@ pub enum TransportError {
     DnsNameError(String, u16),
     #[error("dns server returned no A or AAAA records for {0}:{1}")]
     DnsNoData(String, u16),
+    /// A DNS answer with an RCODE other than NOERROR or NXDOMAIN, such as a
+    /// `dns.hosts` `"#N"` target.
+    #[error("dns answered {0}:{1} with rcode {2}")]
+    DnsRcode(String, u16, u8),
     #[error("dns lookup returned no addresses for {0}:{1}")]
     NoResolvedAddress(String, u16),
     #[error("tcp connect failed: {0}")]

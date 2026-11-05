@@ -1073,7 +1073,7 @@ impl Core {
                 dns.destination.as_ref(),
                 dns.bootstrap.as_ref(),
                 self.transport_dialer.as_ref(),
-                "xray-rust-outbound-probe",
+                startup_probe::ProbeStatusPolicy::Success,
             ) => result,
         };
         let outcome = match result {

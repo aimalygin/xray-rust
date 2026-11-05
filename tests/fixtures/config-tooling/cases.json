@@ -2573,6 +2573,15 @@
       }
     },
     {
+      "name": "reality-spider-x-relative",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.realitySettings.spiderX",
+      "base": "reality-compatible-unknown",
+      "set": {
+        "/outbounds/0/streamSettings/realitySettings/spiderX": "crawl?p=1"
+      }
+    },
+    {
       "name": "vless-vision-xudp-mux",
       "accepted": true,
       "base": "reality-compatible-unknown",
@@ -3648,6 +3657,79 @@
       },
       "accepted": false,
       "errorPath": "$.inbounds[0].settings.accounts[0].user"
+    },
+    {
+      "name": "dns-hosts-rcode-accepted",
+      "config": {
+        "dns": {
+          "servers": [
+            "192.0.2.53"
+          ],
+          "hosts": {
+            "domain:ads.example.com": "#3",
+            "empty.example.com": "#0",
+            "refused.example.com": "#5"
+          }
+        },
+        "outbounds": [
+          {
+            "tag": "direct",
+            "protocol": "freedom"
+          }
+        ]
+      },
+      "accepted": true
+    },
+    {
+      "name": "dns-hosts-rcode-out-of-header-range",
+      "base": "dns-hosts-rcode-accepted",
+      "set": {
+        "/dns/hosts/refused.example.com": "#16"
+      },
+      "accepted": false,
+      "errorPath": "$.dns.hosts.refused.example.com"
+    },
+    {
+      "name": "remnawave-labels-shadowsocks",
+      "base": "shadowsocks-legacy",
+      "set": {
+        "/remarks": "Example host",
+        "/meta": {
+          "serverDescription": "Synthetic description"
+        },
+        "/outbounds/0/settings/servers/0/uot": false,
+        "/outbounds/0/settings/servers/0/UoTVersion": 2,
+        "/outbounds/0/streamSettings/tlsSettings/enableSessionResumption": false
+      },
+      "accepted": true
+    },
+    {
+      "name": "shadowsocks-uot-ignored",
+      "base": "shadowsocks-legacy",
+      "set": {
+        "/outbounds/0/settings/servers/0/uot": true,
+        "/outbounds/0/settings/servers/0/UoTVersion": 1
+      },
+      "accepted": true,
+      "warningPath": "$.outbounds[0].settings.servers[0].uot"
+    },
+    {
+      "name": "remarks-not-string",
+      "base": "shadowsocks-legacy",
+      "set": {
+        "/remarks": 42
+      },
+      "accepted": false,
+      "errorPath": "$.remarks"
+    },
+    {
+      "name": "tls-session-resumption-not-boolean",
+      "base": "shadowsocks-legacy",
+      "set": {
+        "/outbounds/0/streamSettings/tlsSettings/enableSessionResumption": "false"
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.tlsSettings.enableSessionResumption"
     }
   ]
 }

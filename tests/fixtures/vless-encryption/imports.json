@@ -1745,8 +1745,7 @@
           "security": "none"
         }
       },
-      "rustAccepted": true,
-      "errorParameter": "type"
+      "rustAccepted": true
     },
     {
       "name": "network-grpc",
@@ -1773,8 +1772,199 @@
           "security": "none"
         }
       },
+      "rustAccepted": true
+    },
+    {
+      "name": "network-ws-tls-xtls-rprx-vision",
+      "url": "vless://11111111-1111-4111-8111-111111111111@edge.example.test:443?encryption=mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&type=ws&security=tls&flow=xtls-rprx-vision&host=cdn.example.test&path=%2Fencrypted%2F#encrypted-profile",
+      "outbound": {
+        "tag": "proxy",
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "edge.example.test",
+              "port": 443,
+              "users": [
+                {
+                  "id": "11111111-1111-4111-8111-111111111111",
+                  "encryption": "mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                  "flow": "xtls-rprx-vision"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "ws",
+          "security": "tls",
+          "tlsSettings": {
+            "serverName": "edge.example.test",
+            "fingerprint": "chrome"
+          },
+          "wsSettings": {
+            "host": "cdn.example.test",
+            "path": "/encrypted/"
+          }
+        }
+      },
+      "rustAccepted": true
+    },
+    {
+      "name": "network-httpupgrade-tls",
+      "url": "vless://11111111-1111-4111-8111-111111111111@edge.example.test:443?encryption=mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&type=httpupgrade&security=tls&sni=cdn.example.test&path=%2Fencrypted%2F#encrypted-profile",
+      "outbound": {
+        "tag": "proxy",
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "edge.example.test",
+              "port": 443,
+              "users": [
+                {
+                  "id": "11111111-1111-4111-8111-111111111111",
+                  "encryption": "mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "httpupgrade",
+          "security": "tls",
+          "tlsSettings": {
+            "serverName": "cdn.example.test",
+            "fingerprint": "chrome"
+          },
+          "httpupgradeSettings": {
+            "path": "/encrypted/"
+          }
+        }
+      },
+      "rustAccepted": true
+    },
+    {
+      "name": "network-grpc-reality-multi",
+      "url": "vless://11111111-1111-4111-8111-111111111111@edge.example.test:443?encryption=mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&type=grpc&security=reality&fp=chrome&pbk=CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sid=&sni=cover.example.test&serviceName=encrypted&mode=multi#encrypted-profile",
+      "outbound": {
+        "tag": "proxy",
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "edge.example.test",
+              "port": 443,
+              "users": [
+                {
+                  "id": "11111111-1111-4111-8111-111111111111",
+                  "encryption": "mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "grpc",
+          "security": "reality",
+          "realitySettings": {
+            "serverName": "cover.example.test",
+            "fingerprint": "chrome",
+            "publicKey": "CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "shortId": "",
+            "spiderX": ""
+          },
+          "grpcSettings": {
+            "serviceName": "encrypted",
+            "multiMode": true
+          }
+        }
+      },
+      "rustAccepted": true
+    },
+    {
+      "name": "network-ws-reality",
+      "url": "vless://11111111-1111-4111-8111-111111111111@edge.example.test:443?encryption=mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&type=ws&security=reality&fp=chrome&pbk=CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sid=&sni=cover.example.test#encrypted-profile",
+      "outbound": {
+        "tag": "proxy",
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "edge.example.test",
+              "port": 443,
+              "users": [
+                {
+                  "id": "11111111-1111-4111-8111-111111111111",
+                  "encryption": "mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "ws",
+          "security": "none"
+        }
+      },
       "rustAccepted": true,
-      "errorParameter": "type"
+      "errorParameter": "security"
+    },
+    {
+      "name": "network-grpc-insecure-tls",
+      "url": "vless://11111111-1111-4111-8111-111111111111@edge.example.test:443?encryption=mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&type=grpc&security=tls&serviceName=encrypted&allowInsecure=1#encrypted-profile",
+      "outbound": {
+        "tag": "proxy",
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "edge.example.test",
+              "port": 443,
+              "users": [
+                {
+                  "id": "11111111-1111-4111-8111-111111111111",
+                  "encryption": "mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "grpc",
+          "security": "none"
+        }
+      },
+      "rustAccepted": true,
+      "errorParameter": "allowInsecure"
+    },
+    {
+      "name": "network-ws-extra",
+      "url": "vless://11111111-1111-4111-8111-111111111111@edge.example.test:443?encryption=mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&type=ws&security=tls&extra=%7B%7D#encrypted-profile",
+      "outbound": {
+        "tag": "proxy",
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "edge.example.test",
+              "port": 443,
+              "users": [
+                {
+                  "id": "11111111-1111-4111-8111-111111111111",
+                  "encryption": "mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "ws",
+          "security": "none"
+        }
+      },
+      "rustAccepted": true,
+      "errorParameter": "extra"
     },
     {
       "name": "unexpected-allowInsecure",
@@ -3210,6 +3400,139 @@
       },
       "rustAccepted": false,
       "errorParameter": "allowInsecure"
+    },
+    {
+      "name": "raw-tls-finalmask-fragment",
+      "url": "vless://11111111-1111-4111-8111-111111111111@edge.example.test:443?encryption=mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&type=raw&security=tls&flow=xtls-rprx-vision&fm=%7B%22tcp%22%3A%5B%7B%22type%22%3A%22fragment%22%2C%22settings%22%3A%7B%22packets%22%3A%22tlshello%22%2C%22length%22%3A%22100-200%22%2C%22delay%22%3A%221-2%22%2C%22maxSplit%22%3A32%7D%7D%5D%7D#encrypted-profile",
+      "outbound": {
+        "tag": "proxy",
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "edge.example.test",
+              "port": 443,
+              "users": [
+                {
+                  "id": "11111111-1111-4111-8111-111111111111",
+                  "encryption": "mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                  "flow": "xtls-rprx-vision"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "security": "tls",
+          "tlsSettings": {
+            "serverName": "edge.example.test",
+            "fingerprint": "chrome"
+          },
+          "finalmask": {
+            "tcp": [
+              {
+                "type": "fragment",
+                "settings": {
+                  "packets": "tlshello",
+                  "length": "100-200",
+                  "delay": "1-2",
+                  "maxSplit": 32
+                }
+              }
+            ]
+          }
+        }
+      },
+      "rustAccepted": true
+    },
+    {
+      "name": "raw-tls-finalmask-unknown-mask",
+      "url": "vless://11111111-1111-4111-8111-111111111111@edge.example.test:443?encryption=mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&type=raw&security=tls&flow=xtls-rprx-vision&fm=%7B%22tcp%22%3A%5B%7B%22type%22%3A%22synthetic-unknown-mask%22%2C%22settings%22%3A%7B%7D%7D%5D%7D#encrypted-profile",
+      "outbound": {
+        "tag": "proxy",
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "edge.example.test",
+              "port": 443,
+              "users": [
+                {
+                  "id": "11111111-1111-4111-8111-111111111111",
+                  "encryption": "mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                  "flow": "xtls-rprx-vision"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "security": "tls",
+          "tlsSettings": {
+            "serverName": "edge.example.test",
+            "fingerprint": "chrome"
+          },
+          "finalmask": {
+            "tcp": [
+              {
+                "type": "synthetic-unknown-mask",
+                "settings": {}
+              }
+            ]
+          }
+        }
+      },
+      "rustAccepted": false
+    },
+    {
+      "name": "raw-tls-finalmask-array",
+      "url": "vless://11111111-1111-4111-8111-111111111111@edge.example.test:443?encryption=mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&type=raw&security=tls&flow=xtls-rprx-vision&fm=%5B%7B%22tcp%22%3A%5B%7B%22type%22%3A%22fragment%22%2C%22settings%22%3A%7B%22packets%22%3A%22tlshello%22%2C%22length%22%3A%22100-200%22%2C%22delay%22%3A%221-2%22%2C%22maxSplit%22%3A32%7D%7D%5D%7D%5D#encrypted-profile",
+      "outbound": {
+        "tag": "proxy",
+        "protocol": "vless",
+        "settings": {
+          "vnext": [
+            {
+              "address": "edge.example.test",
+              "port": 443,
+              "users": [
+                {
+                  "id": "11111111-1111-4111-8111-111111111111",
+                  "encryption": "mlkem768x25519plus.native.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                  "flow": "xtls-rprx-vision"
+                }
+              ]
+            }
+          ]
+        },
+        "streamSettings": {
+          "network": "tcp",
+          "security": "tls",
+          "tlsSettings": {
+            "serverName": "edge.example.test",
+            "fingerprint": "chrome"
+          },
+          "finalmask": [
+            {
+              "tcp": [
+                {
+                  "type": "fragment",
+                  "settings": {
+                    "packets": "tlshello",
+                    "length": "100-200",
+                    "delay": "1-2",
+                    "maxSplit": 32
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "rustAccepted": false,
+      "errorParameter": "fm"
     }
   ]
 }

@@ -1,6 +1,9 @@
 //! DNS selection, static hosts, fake IP and DNS outbound configuration.
 use super::*;
 
+/// DNS RCODE values that fit the 4-bit header field without an EDNS OPT record.
+const MAX_DNS_HOST_RCODE: u8 = 15;
+
 fn is_special_dns_server(address: &str) -> bool {
     address.eq_ignore_ascii_case("localhost") || address.eq_ignore_ascii_case("fakedns")
 }
@@ -866,6 +869,9 @@ impl Parser<'_> {
         path: &str,
     ) -> Option<DnsHostTarget> {
         if let Some(target) = target.as_str() {
+            if let Some(rcode) = target.strip_prefix('#') {
+                return self.parse_dns_host_rcode(rcode, path);
+            }
             return Some(match target.parse::<IpAddr>() {
                 Ok(ip) => DnsHostTarget::Ip(ip),
                 Err(_) => DnsHostTarget::Domain(target.to_owned()),
@@ -899,6 +905,22 @@ impl Parser<'_> {
         }
 
         Some(DnsHostTarget::Ips(ips))
+    }
+
+    /// Xray-core's `"#N"` hosts value (`app/dns/hosts.go`): answer with DNS
+    /// RCODE `N`. Go accepts any `strconv.Atoi` integer and ORs it into the
+    /// header flags; only the 4-bit RCODE range 0..=15 is accepted here.
+    fn parse_dns_host_rcode(&mut self, rcode: &str, path: &str) -> Option<DnsHostTarget> {
+        match rcode.parse::<i64>().map(u8::try_from) {
+            Ok(Ok(rcode)) if rcode <= MAX_DNS_HOST_RCODE => Some(DnsHostTarget::Rcode(rcode)),
+            _ => {
+                self.error(
+                    path,
+                    "dns host rcode target must be `#` followed by a DNS RCODE from 0 to 15",
+                );
+                None
+            }
+        }
     }
 
     pub(super) fn parse_dns_fake_ip(&mut self, dns: &Value) -> Option<DnsFakeIpConfig> {

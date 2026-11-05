@@ -8,6 +8,9 @@ pub enum DnsHostTarget {
     Ip(IpAddr),
     Ips(Vec<IpAddr>),
     Domain(String),
+    /// Xray-core's `"#N"` value: answer the name with DNS RCODE `N` (0..=15)
+    /// and no records. `#0` is an empty NOERROR answer.
+    Rcode(u8),
 }
 
 /// `dns.hosts`-style index from domain matchers to one target each.

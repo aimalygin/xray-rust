@@ -82,6 +82,7 @@ This establishes the listed tests on the combined tree, not NAT or device proof.
 | #79: HTTP outbound | HTTP/1.1 CONNECT, optional Basic auth, flat or legacy settings, raw TCP with none/TLS (`http/1.1` ALPN), TCP only | Tested subset of the pinned Xray client; status 200 only, no HTTP/2 or custom headers, bounded head, early bytes kept |
 | #86: mobile SOCKS bootstrap | Android and Apple prepare SOCKS carrier hosts/literals before VPN setup; Apple excludes carrier routes | Integration gap fixed; destination DNS remains at the proxy |
 | SOCKS inbound `udp` | `"udp": false` refuses `UDP ASSOCIATE` without a relay; an absent `udp` keeps it enabled | Explicit `false` matches the reference; the absent default differs and is an open question below |
+| Policy half-close timeouts | SOCKS and HTTP relays switch from `connIdle` to `downlinkOnly` after the client finished sending and to `uplinkOnly` after the server did; both default to 1 s | Source-derived from the outbound timers (`proxy/freedom/freedom.go`, `proxy/vless/outbound/outbound.go`) and `SessionDefault` in `features/policy/policy.go`; covered by paused-clock unit tests, not by interop. Stricter: the inbound level also bounds each phase, while the reference SOCKS/HTTP inbounds run no timer of their own |
 
 ## Password-protected SOCKS UDP: deliberate restriction
 
@@ -347,6 +348,158 @@ Pending: `check-v08-independent-interop.sh` now also runs the raw classic AEAD
 cases against sing-box, but that run is not yet recorded; no physical-device
 run yet; the legacy fully-base64 `ss://` form and SIP003 plugins are not
 imported.
+
+## DNS hosts `"#N"` RCODE answers
+
+`dns.hosts` reads a `"#N"` value as Xray-core's `app/dns/hosts.go` does: the
+name is answered with DNS RCODE `N` and no records, and internal lookups see
+it as a failed lookup with no addresses. `"#0"` is an empty answer.
+
+Deliberate differences, source-derived:
+
+- `N` must be 0 through 15. Xray-core accepts any `strconv.Atoi` integer and
+  casts it to `uint16`; `golang.org/x/net/dns/dnsmessage` then ORs that value
+  into the header flags, so a value above 15 also sets opcode, AA, TC, RD or
+  QR bits, and a negative value wraps. Here such a value is a config error.
+- One `dns.hosts` entry answers a name: an explicit `full:` key first, then the
+  first matching rule. Xray-core checks every matching rule and returns the
+  RCODE if any of them is `"#N"`.
+- An array value keeps accepting only IP strings. Xray-core would read a
+  non-IP first element, including `"#N"`, as the whole value.
+- The fixed TUN FakeDNS mode (`dns.fakeIp` without a DNS outbound) does not
+  read `dns.hosts`, for IP values as for `"#N"`.
+
+## Panel subscription fields Xray-core does not read
+
+Remnawave's XRAY_JSON subscriptions (`xray-json.generator.service.ts`) put a
+root `remarks` label on every profile, and a `meta` object for some clients.
+They write `tlsSettings.enableSessionResumption` into every TLS host, and
+sing-box `uot`/`UoTVersion` into every Shadowsocks server. 3x-ui offers the
+same Shadowsocks pair. These fields used to fail parsing. Source-derived from
+v26.10.31:
+
+- `remarks` and `meta` are absent from Xray-core's root `Config`
+  (`infra/conf/xray.go`), which is decoded without `DisallowUnknownFields`
+  (`infra/conf/serial/loader.go`). They are now type-checked and ignored.
+- `uot` and `UoTVersion` are absent from `ShadowsocksServerTarget` and
+  `ShadowsocksClientConfig` (`infra/conf/shadowsocks.go`); Xray-core sends UDP
+  as native Shadowsocks datagrams, as this client does. They are ignored, and
+  `uot: true` raises a warning. This client is stricter on types:
+  `uot` must be a boolean and `UoTVersion` a nonnegative integer.
+- `enableSessionResumption` sets `SessionTicketsDisabled` on Go's TLS config
+  (`transport/internet/tls/config.go`), but `copyConfig` does not pass the
+  session cache to uTLS (`transport/internet/tls/tls.go`), so shaped
+  handshakes never resume there. They never resume here either. The known
+  difference: with `fingerprint: "unsafe"`, and on XHTTP HTTP/3 and Hysteria,
+  rustls keeps its session cache whatever the value, while Xray-core resumes
+  only when the value is `true`.
+
+Other panel TLS fields, such as `cipherSuites` and `echConfigList`, are still
+rejected.
+
+## REALITY real-certificate crawl
+
+When a REALITY server answers with a real certificate instead of a REALITY
+one (an active prober, a MITM or a redirect to the real site), Xray-core's
+client does not hang up mid-handshake. It verifies the certificate as
+ordinary Web PKI for the server name, finishes TLS, crawls the site over
+HTTP/2 like a browser and only then fails the connection
+(`transport/internet/reality/reality.go` `UClient` and `VerifyPeerCertificate`,
+v26.10.31 lines 101-140 and 207-298). xray-rust does the same:
+
+- a certificate that fails Web PKI verification still aborts the handshake,
+  as Go's `x509` check does (against the bundled Web PKI roots the TLS
+  transport also uses, where Go reads the system roots); one that passes
+  completes it, and the
+  connection fails with "processed invalid connection" without carrying any
+  user data;
+- the crawl requests `spiderX` with Chrome's navigation headers, a `padding`
+  cookie per request and the `Referer` chain, learns `href` links without a
+  dot, shares them per server name across connections, and spawns `c`
+  follow-up crawlers of `t` requests each, `i` milliseconds apart; the error
+  is returned after `r` milliseconds.
+
+It is bounded where Go is not: `c` and `t` are capped at 32, the padding at
+16 KiB, each delay at 30 s, a scanned response body at 1 MiB, the remembered
+paths at 256 per server name, and the crawl's connection, which Go never
+closes itself, is closed after 120 s. The HTTP/2 client is the `h2` crate set
+to Go's transport window and header-list defaults, so its frames are close to,
+not byte-identical with, `golang.org/x/net/http2`. As in Xray-core, an empty
+`spiderX` is crawled as `/` and any other value without a leading slash is a
+configuration error.
+
+## Request header and first payload
+
+VLESS (including Vision) and Trojan outbounds hold the request header until the
+first client payload and hand both to the carrier in one write, so TLS and
+REALITY seal them into one record. If no payload arrives, the header is sent
+alone after Xray-core's wait: 500 ms for VLESS
+(`proxy/vless/outbound/outbound.go:311-345`, `ReadMultiBufferTimeout`), 100 ms
+for Trojan (`proxy/trojan/client.go:102-123`, `buf.CopyOnceTimeout`). With
+Vision, the empty long-padding frame is written only on that timeout, behind
+the header, as in Xray-core; the first payload otherwise carries the UUID and
+the first padding block. Server-first flows therefore see the same first-byte
+delay as with Xray-core.
+
+Differences: the wait is driven from the stream's read side, which the relay
+always polls; a client that closes before sending anything still gets the
+header and a clean close, where Xray-core drops the request. Trojan holds the
+header on every open, including native UDP and Mux parents, as Xray-core does.
+VMess, Shadowsocks, and VLESS UDP and Mux parent opens still send the header
+eagerly.
+
+## Outbound URL probes
+
+Xray-core's observatory probes with Go's `net/http` client: a `GET` of the
+probe URL carrying `utils.TryDefaultHeadersWith(req.Header, "nav")`, the same
+Chrome navigation persona as its other masqueraded requests, and any response
+counts as alive, the status is never read (`app/observatory/observer.go`
+lines 177-200; `burstObservatory` does the same in
+`app/observatory/burst/ping.go`). xray-rust's observatory now does both: the
+request head is Xray's `nav` persona in `net/http` order (`Host`,
+`User-Agent`, the sorted map, then the transport's `Accept-Encoding: gzip`),
+and a `503` from the probe URL keeps the outbound healthy. The startup probe
+and the on-demand `probeOutboundUrl` send the same head, so no probe names the
+client, but they are xray-rust APIs with no Go counterpart and keep their
+documented 2xx/3xx rule and `HTTP_STATUS` failure.
+
+Differences: probes still speak HTTP/1.1 over a TLS handshake without ALPN,
+where Go's transport offers `h2, http/1.1` for an `https` probe URL, and they
+stop reading after the status line.
+
+## XHTTP HTTP/2 connection preface
+
+Xray's XHTTP client dials HTTP/2 with a bare `golang.org/x/net/http2`
+`Transport` (`transport/internet/splithttp/dialer.go`, only `IdleConnTimeout`
+and `ReadIdleTimeout` set). With x/net v0.61.0, the version v26.10.31 pins,
+its first SETTINGS frame is ENABLE_PUSH=0, INITIAL_WINDOW_SIZE=4 MiB,
+MAX_FRAME_SIZE=1 MiB, MAX_HEADER_LIST_SIZE=10 MiB, in that order
+(`http2/transport.go` `newClientConn`). xray-rust's XHTTP HTTP/2 client sends
+the same four settings in the same order (INITIAL_WINDOW_SIZE follows
+`xhttpSettings` when a smaller stream window is configured).
+
+Differences: the connection WINDOW_UPDATE that follows opens 16 MiB of credit
+where Go opens 1 GiB, a deliberate memory bound; h2 writes the client preface
+in its own write where Go buffers it together with SETTINGS and
+WINDOW_UPDATE; and h2 sends that WINDOW_UPDATE once the read side goes idle,
+so a server SETTINGS that is already buffered is acknowledged first.
+
+## XHTTP HTTP/3 control stream
+
+quic-go's `http3` client, which Xray's XHTTP H3 dial uses, opens its control
+stream with a SETTINGS frame holding only MAX_FIELD_SECTION_SIZE = 10 MiB
+(`http3/client.go`, `defaultMaxResponseHeaderBytes`; datagrams and extended
+CONNECT are off, so their settings are absent). xray-rust now announces the
+same 10 MiB limit, where h3 used to announce 2^62-1, and the vendored h3 no
+longer sends ENABLE_CONNECT_PROTOCOL, ENABLE_WEBTRANSPORT, H3_DATAGRAM and
+WEBTRANSPORT_MAX_SESSIONS as 0 (`vendor/h3/XRAY-PATCH.md`).
+
+Difference: h3's GREASE is still on, so the frame also carries one reserved
+setting, the client opens one GREASE unidirectional stream and writes one
+GREASE frame on a request stream, none of which quic-go sends. Turning it off
+needs the h3-quinn adapter's `poll_finish` to report a STOP_SENDING that
+already arrived (quinn's `finish` maps it to success); today the GREASE write
+in h3's `finish` is what surfaces it for unknown-length uploads.
 
 ## Follow-up checks
 

@@ -47,8 +47,9 @@ struct PartialPacket {
 /// Bound to one live UDP session on one authenticated QUIC connection.
 ///
 /// Keeps at most one incomplete packet, like the pinned Xray Defragger. A new
-/// packet ID discards the previous partial packet. Addresses/counts must agree,
-/// duplicates do not extend the deadline, and payload bytes are copied into
+/// packet ID or fragment count discards the previous partial packet and starts
+/// the new one, while an unfragmented message passes through without touching
+/// it. Addresses must agree, duplicates do not extend the deadline, and payload bytes are copied into
 /// exactly owned buffers (never retaining an oversized network read buffer).
 /// The runtime must cap live sessions globally and call `expire` on its timer.
 pub struct Reassembler {
@@ -101,24 +102,27 @@ impl Reassembler {
         if message.session_id != self.session_id {
             return Err(ReassemblyError::Session);
         }
-        if message.payload.len() > self.max_payload {
-            self.clear();
-            return Err(ReassemblyError::Budget);
-        }
         if message.fragment_count == 1 {
-            self.clear();
+            // Xray's Defragger.Feed returns it as is: a datagram sent between
+            // the fragments of a larger one must not discard that one.
+            if message.payload.len() > self.max_payload {
+                return Err(ReassemblyError::Budget);
+            }
             return Ok(Some(ReassembledDatagram {
                 session_id: self.session_id,
                 address: message.address.to_owned(),
                 payload: message.payload.to_vec(),
             }));
         }
+        if message.payload.len() > self.max_payload {
+            self.clear();
+            return Err(ReassemblyError::Budget);
+        }
 
-        if self
-            .partial
-            .as_ref()
-            .is_none_or(|partial| partial.packet_id != message.packet_id)
-        {
+        if self.partial.as_ref().is_none_or(|partial| {
+            partial.packet_id != message.packet_id
+                || partial.fragments.len() != usize::from(message.fragment_count)
+        }) {
             self.partial = Some(PartialPacket {
                 packet_id: message.packet_id,
                 address: message.address.to_owned(),
@@ -129,9 +133,7 @@ impl Reassembler {
             });
         }
         let partial = self.partial.as_mut().expect("partial packet initialized");
-        if partial.address != message.address
-            || partial.fragments.len() != usize::from(message.fragment_count)
-        {
+        if partial.address != message.address {
             self.clear();
             return Err(ReassemblyError::Conflict);
         }

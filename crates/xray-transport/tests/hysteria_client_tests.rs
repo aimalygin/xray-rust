@@ -13,7 +13,7 @@ use support::{AUTH, DEADLINE};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
-use xray_proxy::hysteria::decode_tcp_request;
+use xray_proxy::hysteria::{decode_tcp_request, decode_udp_message};
 use xray_routing::{Network, Target, TargetAddr};
 use xray_transport::hysteria::{HysteriaClient, HysteriaConfig, HysteriaError};
 use xray_transport::{SocketHandle, SocketProtector, TlsConnector};
@@ -29,6 +29,7 @@ enum Mode {
     HalfClose,
     TcpRejected,
     TcpMalformed,
+    Udp,
 }
 
 struct Mock {
@@ -83,10 +84,10 @@ impl Mock {
             } else {
                 233
             };
-            let udp = if matches!(mode, Mode::Malformed) {
-                "invalid"
-            } else {
-                "false"
+            let udp = match mode {
+                Mode::Malformed => "invalid",
+                Mode::Udp => "true",
+                _ => "false",
             };
             response
                 .send_response(
@@ -248,6 +249,34 @@ async fn disabled_udp_last_clone_and_explicit_close_release_connection() {
 
 fn target() -> Target {
     Target::new(TargetAddr::Domain("example.com".into()), 443, Network::Tcp)
+}
+
+#[tokio::test]
+async fn empty_udp_datagram_is_skipped_and_the_session_keeps_sending() {
+    let (mut server, tls) = Mock::start(Mode::Udp);
+    let client = HysteriaClient::connect(server.config(), &tls)
+        .await
+        .unwrap();
+    let connection = server.connection().await;
+    let session = client.open_udp().unwrap();
+    let target = Target::new(TargetAddr::Domain("example.com".into()), 53, Network::Udp);
+
+    timeout(DEADLINE, session.send(&target, b""))
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(DEADLINE, session.send(&target, b"after"))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let wire = timeout(DEADLINE, connection.read_datagram())
+        .await
+        .unwrap()
+        .unwrap();
+    let message = decode_udp_message(&wire).unwrap();
+    assert_eq!(message.session_id, session.session_id());
+    assert_eq!(message.payload, b"after");
 }
 
 #[tokio::test]

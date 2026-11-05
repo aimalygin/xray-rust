@@ -31,6 +31,12 @@ impl UdpSession {
         self.encode_with_salt(target, payload, salt)
     }
 
+    /// Bytes `encode` adds to a payload for `target`: salt, address and tag.
+    /// Kept in step with `encode_with_salt` by its tests.
+    pub fn overhead(&self, target: &Target) -> io::Result<usize> {
+        Ok(self.method.cipher.key_len() + address::encode(target)?.len() + TAG_LENGTH)
+    }
+
     fn encode_with_salt(
         &self,
         target: &Target,
@@ -116,6 +122,7 @@ mod tests {
                 Network::Udp,
             );
             let wire = session.encode(&target, b"payload").unwrap();
+            assert_eq!(wire.len(), session.overhead(&target).unwrap() + 7);
             assert_ne!(session.encode(&target, b"payload").unwrap(), wire);
             for i in 0..wire.len() {
                 let mut bad = wire.clone();

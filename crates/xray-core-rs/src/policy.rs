@@ -15,7 +15,7 @@ pub(crate) use split_relay::copy_split_with_idle_timeout;
 const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_CONN_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 const DEFAULT_UPLINK_ONLY_TIMEOUT: Duration = Duration::from_secs(1);
-const DEFAULT_DOWNLINK_ONLY_TIMEOUT: Duration = Duration::from_secs(2);
+const DEFAULT_DOWNLINK_ONLY_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_COPY_BUFFER_SIZE: usize = 128 * 1024;
 const INITIAL_COPY_BUFFER_SIZE: usize = 4 * 1024;
 const MIN_COPY_BUFFER_SIZE: usize = 1024;
@@ -45,11 +45,43 @@ impl Default for EffectivePolicy {
 }
 
 impl EffectivePolicy {
+    /// Like the `connIdle` bound, each half-close phase takes the shorter of
+    /// the inbound and outbound levels.
+    pub(crate) fn relay_timeouts(self, outbound: Self) -> RelayTimeouts {
+        RelayTimeouts {
+            conn_idle: self.conn_idle.min(outbound.conn_idle),
+            uplink_only: self.uplink_only.min(outbound.uplink_only),
+            downlink_only: self.downlink_only.min(outbound.downlink_only),
+        }
+    }
+
     pub(crate) fn relay_buffer_size(self) -> usize {
         self.buffer_size
             .map(|size_kib| size_kib.saturating_mul(1024))
             .unwrap_or(DEFAULT_COPY_BUFFER_SIZE)
             .clamp(MIN_COPY_BUFFER_SIZE, MAX_COPY_BUFFER_SIZE)
+    }
+}
+
+/// Inactivity bounds of one relayed stream. As in Xray-core's outbound
+/// handlers, `conn_idle` applies while both directions are open; once the
+/// client finished sending, the timer switches to `downlink_only`, and once
+/// the server finished sending, to `uplink_only`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RelayTimeouts {
+    pub conn_idle: Duration,
+    pub uplink_only: Duration,
+    pub downlink_only: Duration,
+}
+
+impl RelayTimeouts {
+    #[cfg(test)]
+    pub(crate) fn uniform(timeout: Duration) -> Self {
+        Self {
+            conn_idle: timeout,
+            uplink_only: timeout,
+            downlink_only: timeout,
+        }
     }
 }
 
@@ -125,20 +157,20 @@ fn seconds(value: u32) -> Duration {
 pub(crate) async fn copy_bidirectional_with_idle_timeout<A, B>(
     a: &mut A,
     b: &mut B,
-    idle: Duration,
+    timeouts: RelayTimeouts,
     buffer_size: usize,
 ) -> io::Result<(u64, u64)>
 where
     A: AsyncRead + AsyncWrite + Unpin,
     B: AsyncRead + AsyncWrite + Unpin,
 {
-    copy_bidirectional_with_idle_timeout_inner(a, b, idle, buffer_size, None).await
+    copy_bidirectional_with_idle_timeout_inner(a, b, timeouts, buffer_size, None).await
 }
 
 pub(crate) async fn copy_bidirectional_with_idle_timeout_and_traffic<A, B>(
     a: &mut A,
     b: &mut B,
-    idle: Duration,
+    timeouts: RelayTimeouts,
     buffer_size: usize,
     traffic: &ConnectionTraffic,
 ) -> io::Result<(u64, u64)>
@@ -146,13 +178,13 @@ where
     A: AsyncRead + AsyncWrite + Unpin,
     B: AsyncRead + AsyncWrite + Unpin,
 {
-    copy_bidirectional_with_idle_timeout_inner(a, b, idle, buffer_size, Some(traffic)).await
+    copy_bidirectional_with_idle_timeout_inner(a, b, timeouts, buffer_size, Some(traffic)).await
 }
 
 async fn copy_bidirectional_with_idle_timeout_inner<A, B>(
     a: &mut A,
     b: &mut B,
-    idle: Duration,
+    timeouts: RelayTimeouts,
     buffer_size: usize,
     traffic: Option<&ConnectionTraffic>,
 ) -> io::Result<(u64, u64)>
@@ -180,6 +212,7 @@ where
     tokio::pin!(a_to_b, b_to_a);
     let mut a_to_b_result = None;
     let mut b_to_a_result = None;
+    let mut idle = timeouts.conn_idle;
     let idle_sleep = tokio::time::sleep(idle);
     tokio::pin!(idle_sleep);
 
@@ -187,9 +220,13 @@ where
         tokio::select! {
             result = &mut a_to_b, if a_to_b_result.is_none() => {
                 a_to_b_result = Some(result?);
+                idle = timeouts.downlink_only;
+                idle_sleep.as_mut().reset(tokio::time::Instant::now() + idle);
             }
             result = &mut b_to_a, if b_to_a_result.is_none() => {
                 b_to_a_result = Some(result?);
+                idle = timeouts.uplink_only;
+                idle_sleep.as_mut().reset(tokio::time::Instant::now() + idle);
             }
             activity = activity_rx.recv() => {
                 if activity.is_some() {
@@ -311,7 +348,7 @@ mod tests {
 
     use super::{
         copy_bidirectional_with_idle_timeout, copy_direction, effective_policy_for_level,
-        AcceptBackoff,
+        AcceptBackoff, RelayTimeouts,
     };
 
     #[derive(Default)]
@@ -456,7 +493,107 @@ mod tests {
 
         assert_eq!(policy.handshake, Duration::from_secs(10));
         assert_eq!(policy.conn_idle, Duration::from_secs(300));
+        // Xray-core features/policy SessionDefault: both half-close timeouts are 1 s.
+        assert_eq!(policy.uplink_only, Duration::from_secs(1));
+        assert_eq!(policy.downlink_only, Duration::from_secs(1));
         assert_eq!(policy.buffer_size, None);
+    }
+
+    #[test]
+    fn relay_timeouts_take_the_shorter_level_in_each_phase() {
+        let config = config_with_policy(
+            1,
+            PolicyLevelConfig {
+                conn_idle: Some(30),
+                uplink_only: Some(7),
+                downlink_only: Some(0),
+                ..Default::default()
+            },
+        );
+        let inbound = effective_policy_for_level(&config, Some(0));
+        let outbound = effective_policy_for_level(&config, Some(1));
+
+        assert_eq!(
+            inbound.relay_timeouts(outbound),
+            RelayTimeouts {
+                conn_idle: Duration::from_secs(30),
+                uplink_only: Duration::from_secs(1),
+                downlink_only: Duration::ZERO,
+            }
+        );
+    }
+
+    fn half_close_timeouts() -> RelayTimeouts {
+        RelayTimeouts {
+            conn_idle: Duration::from_secs(300),
+            uplink_only: Duration::from_secs(5),
+            downlink_only: Duration::from_secs(2),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn relay_uses_downlink_only_after_client_finishes_sending() {
+        let (mut left, mut client) = tokio::io::duplex(64);
+        let (mut right, mut server) = tokio::io::duplex(64);
+        let relay = tokio::spawn(async move {
+            copy_bidirectional_with_idle_timeout(&mut left, &mut right, half_close_timeouts(), 4096)
+                .await
+        });
+        client.write_all(b"request").await.unwrap();
+        client.shutdown().await.unwrap();
+        let mut request = Vec::new();
+        server.read_to_end(&mut request).await.unwrap();
+        assert_eq!(request, b"request");
+
+        // Response activity keeps refreshing the downlink-only deadline.
+        tokio::time::advance(Duration::from_millis(1900)).await;
+        server.write_all(b"reply").await.unwrap();
+        let mut reply = [0; 5];
+        client.read_exact(&mut reply).await.unwrap();
+        tokio::time::advance(Duration::from_millis(1900)).await;
+        tokio::task::yield_now().await;
+        assert!(!relay.is_finished());
+        tokio::time::advance(Duration::from_millis(101)).await;
+        // The paused clock would auto-advance to connIdle; the deadline is already due.
+        let relayed = tokio::time::timeout(Duration::from_millis(1), relay)
+            .await
+            .expect("half-close timeout");
+        assert_eq!(
+            relayed.unwrap().unwrap_err().kind(),
+            std::io::ErrorKind::TimedOut
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn relay_uses_uplink_only_after_server_finishes_sending() {
+        let (mut left, mut client) = tokio::io::duplex(64);
+        let (mut right, mut server) = tokio::io::duplex(64);
+        let relay = tokio::spawn(async move {
+            copy_bidirectional_with_idle_timeout(&mut left, &mut right, half_close_timeouts(), 4096)
+                .await
+        });
+        server.write_all(b"banner").await.unwrap();
+        server.shutdown().await.unwrap();
+        let mut banner = Vec::new();
+        client.read_to_end(&mut banner).await.unwrap();
+        assert_eq!(banner, b"banner");
+
+        tokio::time::advance(Duration::from_millis(4900)).await;
+        client.write_all(b"upload").await.unwrap();
+        let mut upload = [0; 6];
+        server.read_exact(&mut upload).await.unwrap();
+        tokio::time::advance(Duration::from_millis(4900)).await;
+        tokio::task::yield_now().await;
+        assert!(!relay.is_finished());
+        tokio::time::advance(Duration::from_millis(101)).await;
+        // The paused clock would auto-advance to connIdle; the deadline is already due.
+        let relayed = tokio::time::timeout(Duration::from_millis(1), relay)
+            .await
+            .expect("half-close timeout");
+        assert_eq!(
+            relayed.unwrap().unwrap_err().kind(),
+            std::io::ErrorKind::TimedOut
+        );
     }
 
     #[tokio::test]
@@ -467,7 +604,7 @@ mod tests {
         let error = copy_bidirectional_with_idle_timeout(
             &mut left,
             &mut right,
-            Duration::from_millis(1),
+            RelayTimeouts::uniform(Duration::from_millis(1)),
             8 * 1024,
         )
         .await
@@ -484,7 +621,7 @@ mod tests {
             copy_bidirectional_with_idle_timeout(
                 &mut left,
                 &mut right,
-                Duration::from_secs(10),
+                RelayTimeouts::uniform(Duration::from_secs(10)),
                 4096,
             )
             .await
@@ -523,7 +660,7 @@ mod tests {
             super::copy_bidirectional_with_idle_timeout_and_traffic(
                 &mut left,
                 &mut right,
-                Duration::from_secs(10),
+                RelayTimeouts::uniform(Duration::from_secs(10)),
                 4096,
                 &relay_traffic,
             )
@@ -557,7 +694,7 @@ mod tests {
             copy_bidirectional_with_idle_timeout(
                 &mut left,
                 &mut right,
-                Duration::from_secs(10),
+                RelayTimeouts::uniform(Duration::from_secs(10)),
                 4096,
             )
             .await

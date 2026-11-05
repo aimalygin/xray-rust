@@ -240,16 +240,6 @@ fn reassembly_rejects_cross_session_and_conflicting_fragments() {
     );
     assert_eq!(assembler.buffered_payload_bytes(), 0);
     assembler.feed(&fragments[0], now).unwrap();
-    assert_eq!(
-        assembler.feed(
-            &UdpMessage {
-                fragment_count: 3,
-                ..fragments[1]
-            },
-            now
-        ),
-        Err(ReassemblyError::Conflict)
-    );
     assembler.feed(&fragments[0], now).unwrap();
     assert_eq!(
         assembler.feed(
@@ -262,6 +252,49 @@ fn reassembly_rejects_cross_session_and_conflicting_fragments() {
         Err(ReassemblyError::Conflict)
     );
     assert_eq!(assembler.buffered_payload_bytes(), 0);
+}
+
+#[test]
+fn unfragmented_datagram_between_fragments_keeps_the_partial_packet() {
+    let full = message(b"abcdefgh");
+    let fragments = fragment_udp_message(&full, full.header_length() + 4).unwrap();
+    let now = Instant::now();
+    let mut assembler = Reassembler::new(7, 12, Duration::from_secs(5)).unwrap();
+    assert!(assembler.feed(&fragments[0], now).unwrap().is_none());
+
+    let passed = assembler.feed(&message(b"dns"), now).unwrap().unwrap();
+    assert_eq!(passed.payload, b"dns");
+    let oversize = message(b"0123456789abc");
+    assert_eq!(assembler.feed(&oversize, now), Err(ReassemblyError::Budget));
+    assert_eq!(assembler.buffered_payload_bytes(), 4);
+
+    let complete = assembler.feed(&fragments[1], now).unwrap().unwrap();
+    assert_eq!(complete.payload, full.payload);
+}
+
+#[test]
+fn new_fragment_count_for_the_same_packet_id_restarts_reassembly() {
+    let full = message(b"abcdefgh");
+    let fragments = fragment_udp_message(&full, full.header_length() + 4).unwrap();
+    let now = Instant::now();
+    let mut assembler = Reassembler::new(7, 12, Duration::from_secs(5)).unwrap();
+    assembler.feed(&fragments[0], now).unwrap();
+
+    let longer = message(b"ABCDEFGHIJ");
+    let restarted = fragment_udp_message(
+        &UdpMessage {
+            packet_id: fragments[0].packet_id,
+            ..longer
+        },
+        longer.header_length() + 4,
+    )
+    .unwrap();
+    assert_eq!(restarted.len(), 3);
+    assert!(assembler.feed(&restarted[2], now).unwrap().is_none());
+    assert_eq!(assembler.buffered_payload_bytes(), 2);
+    assert!(assembler.feed(&restarted[0], now).unwrap().is_none());
+    let complete = assembler.feed(&restarted[1], now).unwrap().unwrap();
+    assert_eq!(complete.payload, b"ABCDEFGHIJ");
 }
 
 #[test]

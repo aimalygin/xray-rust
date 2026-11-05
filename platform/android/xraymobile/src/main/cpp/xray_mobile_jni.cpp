@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <pthread.h>
 
 #include <cstdint>
 #include <limits>
@@ -42,26 +43,49 @@ struct AndroidSocketProtector {
   }
 };
 
-// Each worker attachment is scoped, including context destruction after close.
-class AdmissionEnv {
+void detach_exiting_thread(void *vm) {
+  static_cast<JavaVM *>(vm)->DetachCurrentThread();
+}
+
+// Holds the JavaVM of each native thread this bridge attached; its destructor
+// detaches the thread when it exits. Null when the key cannot be created.
+const pthread_key_t *attached_thread_key() {
+  static pthread_key_t key;
+  static const bool created = pthread_key_create(&key, detach_exiting_thread) == 0;
+  return created ? &key : nullptr;
+}
+
+// A native worker thread is attached as a daemon on its first callback and
+// stays attached until it exits, so callbacks do not attach and detach per
+// call. Threads the JVM already owns are used as they are and never detached
+// here. Without a thread key the attachment falls back to this scope.
+class ThreadEnv {
  public:
-  explicit AdmissionEnv(JavaVM *vm) : vm_(vm) {
+  explicit ThreadEnv(JavaVM *vm) : vm_(vm) {
     if (vm_ == nullptr) return;
     const jint status = vm_->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6);
-    if (status == JNI_EDETACHED) {
+    if (status == JNI_OK) return;
+    env = nullptr;
+    if (status != JNI_EDETACHED) return;
 #if defined(__ANDROID__)
-      attached_ = vm_->AttachCurrentThreadAsDaemon(&env, nullptr) == JNI_OK;
+    const jint attached = vm_->AttachCurrentThreadAsDaemon(&env, nullptr);
 #else
-      attached_ = vm_->AttachCurrentThreadAsDaemon(reinterpret_cast<void **>(&env), nullptr) == JNI_OK;
+    const jint attached = vm_->AttachCurrentThreadAsDaemon(reinterpret_cast<void **>(&env), nullptr);
 #endif
-      if (!attached_) env = nullptr;
-    } else if (status != JNI_OK) env = nullptr;
+    if (attached != JNI_OK) {
+      env = nullptr;
+      return;
+    }
+    const pthread_key_t *key = attached_thread_key();
+    scoped_ = key == nullptr || pthread_setspecific(*key, vm_) != 0;
   }
-  ~AdmissionEnv() { if (attached_) vm_->DetachCurrentThread(); }
+  ~ThreadEnv() { if (scoped_) vm_->DetachCurrentThread(); }
+  ThreadEnv(const ThreadEnv &) = delete;
+  ThreadEnv &operator=(const ThreadEnv &) = delete;
   JNIEnv *env = nullptr;
  private:
   JavaVM *vm_;
-  bool attached_ = false;
+  bool scoped_ = false;
 };
 
 struct AndroidTunAdmission {
@@ -69,14 +93,14 @@ struct AndroidTunAdmission {
   jobject object = nullptr;
   jmethodID method = nullptr;
   ~AndroidTunAdmission() {
-    AdmissionEnv scope(vm);
+    ThreadEnv scope(vm);
     if (scope.env != nullptr && object != nullptr) scope.env->DeleteGlobalRef(object);
   }
 };
 
 int32_t admit_tun_flow(const XrayTunFlow *flow, void *user_data) {
   auto *callback = static_cast<AndroidTunAdmission *>(user_data);
-  AdmissionEnv scope(callback->vm);
+  ThreadEnv scope(callback->vm);
   JNIEnv *env = scope.env;
   if (env == nullptr || env->PushLocalFrame(4) < 0) {
     if (env != nullptr && env->ExceptionCheck()) env->ExceptionClear();
@@ -417,20 +441,9 @@ int32_t protect_socket(int32_t fd, void *user_data) {
     return 0;
   }
 
-  JNIEnv *env = nullptr;
-  bool attached = false;
-  jint env_status =
-      protector->vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6);
-  if (env_status == JNI_EDETACHED) {
-#if defined(__ANDROID__)
-    if (protector->vm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
-#else
-    if (protector->vm->AttachCurrentThread(reinterpret_cast<void **>(&env), nullptr) != JNI_OK) {
-#endif
-      return 0;
-    }
-    attached = true;
-  } else if (env_status != JNI_OK) {
+  ThreadEnv scope(protector->vm);
+  JNIEnv *env = scope.env;
+  if (env == nullptr) {
     return 0;
   }
 
@@ -439,10 +452,6 @@ int32_t protect_socket(int32_t fd, void *user_data) {
   const bool has_exception = env->ExceptionCheck();
   if (has_exception) {
     env->ExceptionClear();
-  }
-
-  if (attached) {
-    protector->vm->DetachCurrentThread();
   }
 
   return !has_exception && protected_socket == JNI_TRUE ? 1 : 0;

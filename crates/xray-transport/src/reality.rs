@@ -255,6 +255,13 @@ pub enum RealityError {
     InvalidRealityCertificatePublicKey { len: usize },
     #[error("invalid reality ML-DSA-65 verify key length {len}")]
     InvalidRealityMldsa65VerifyKey { len: usize },
+    /// The server proved a real (Web PKI) certificate instead of a REALITY
+    /// one. The connection was handed to the spider and is never used for
+    /// user data, as Xray-core's "processed invalid connection".
+    #[error(
+        "received real certificate (potential MITM or redirection); processed invalid connection"
+    )]
+    RealCertificate,
 }
 
 pub fn validate_reality_fingerprint(fingerprint: &str) -> Result<&'static str, RealityError> {

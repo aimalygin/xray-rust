@@ -1,5 +1,5 @@
 //! Bounded, demand-driven parallelism for owned VMess codec halves.
-use super::{copy_direction_with_counter, CopyActivity};
+use super::{copy_direction_with_counter, CopyActivity, RelayTimeouts};
 use crate::connection::ConnectionTraffic;
 use std::{io, time::Duration};
 #[cfg(test)]
@@ -128,7 +128,7 @@ pub(crate) async fn copy_split_with_idle_timeout<R, W>(
     budget: std::sync::Arc<tokio::sync::Semaphore>,
     inbound: (R, W),
     outbound: (xray_transport::ParallelRead, xray_transport::ParallelWrite),
-    idle: Duration,
+    timeouts: RelayTimeouts,
     buffer_size: usize,
     traffic: std::sync::Arc<ConnectionTraffic>,
     close: impl std::future::Future<Output = ()>,
@@ -176,12 +176,28 @@ where
     let mut tasks = tokio::task::JoinSet::new();
     let mut admission: Option<AdmissionFuture> = None;
     let mut allow_parallel = tokio::runtime::Handle::current().metrics().num_workers() > 1;
+    let mut idle = timeouts.conn_idle;
+    // A half-close switches the timeout and, as in Xray-core, counts as activity.
+    let mut phase_start = tokio::time::Instant::now();
+    let mut phase = (false, false);
     let deadline = tokio::time::sleep(idle);
     tokio::pin!(deadline, close);
     let (mut up_total, mut down_total) = (None, None);
     let outcome = loop {
         if let (Some(up), Some(down)) = (up_total, down_total) {
             break Ok((up, down));
+        }
+        let finished = (up_total.is_some(), down_total.is_some());
+        if finished != phase {
+            phase = finished;
+            // Exactly one direction is done here; both done returned above.
+            idle = if finished.0 {
+                timeouts.downlink_only
+            } else {
+                timeouts.uplink_only
+            };
+            phase_start = tokio::time::Instant::now();
+            deadline.as_mut().reset(phase_start + idle);
         }
         let eligible =
             allow_parallel && upload.is_some() && down_total.is_none() && recent_duplex(&up, &down);
@@ -220,7 +236,7 @@ where
             },
             () = changed.notified() => {},
             () = &mut deadline => {
-                let expires = up.last().max(down.last()) + idle;
+                let expires = up.last().max(down.last()).max(phase_start) + idle;
                 if expires <= tokio::time::Instant::now() {
                     break Err(io::Error::new(io::ErrorKind::TimedOut, "connection idle timeout"));
                 }
@@ -261,7 +277,7 @@ mod tests {
             test_budget(),
             split(inbound),
             (Box::new(read), Box::new(write)),
-            Duration::from_secs(5),
+            RelayTimeouts::uniform(Duration::from_secs(5)),
             32768,
             traffic.clone(),
             std::future::pending(),
@@ -358,7 +374,7 @@ mod tests {
                 test_budget(),
                 split(inbound),
                 pending_halves(&dropped, reason == "error"),
-                Duration::from_secs(3),
+                RelayTimeouts::uniform(Duration::from_secs(3)),
                 8192,
                 Arc::default(),
                 close,
@@ -384,7 +400,7 @@ mod tests {
             budget.clone(),
             split(inbound),
             pending_halves(&dropped, false),
-            Duration::from_secs(60),
+            RelayTimeouts::uniform(Duration::from_secs(60)),
             8192,
             Arc::default(),
             std::future::pending(),
@@ -414,7 +430,7 @@ mod tests {
             test_budget(),
             split(inbound),
             (Box::new(read), Box::new(write)),
-            Duration::from_secs(2),
+            RelayTimeouts::uniform(Duration::from_secs(2)),
             8192,
             Arc::default(),
             std::future::pending(),
@@ -445,7 +461,7 @@ mod tests {
                 test_budget(),
                 split(inbound),
                 (Box::new(read), Box::new(write)),
-                Duration::from_secs(3),
+                RelayTimeouts::uniform(Duration::from_secs(3)),
                 8192,
                 Arc::default(),
                 std::future::pending(),
@@ -471,6 +487,52 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn parallel_half_close_switches_to_one_direction_timeout() {
+        let timeouts = RelayTimeouts {
+            conn_idle: Duration::from_secs(300),
+            uplink_only: Duration::from_secs(5),
+            downlink_only: Duration::from_secs(2),
+        };
+        for client_finishes in [true, false] {
+            let (mut client, inbound) = tokio::io::duplex(128);
+            let (outbound, mut server) = tokio::io::duplex(128);
+            let (read, write) = split(outbound);
+            let relay = tokio::spawn(copy_split_with_idle_timeout(
+                test_budget(),
+                split(inbound),
+                (Box::new(read), Box::new(write)),
+                timeouts,
+                8192,
+                Arc::default(),
+                std::future::pending(),
+            ));
+            let mut rest = Vec::new();
+            let limit = if client_finishes {
+                client.shutdown().await.unwrap();
+                server.read_to_end(&mut rest).await.unwrap();
+                timeouts.downlink_only
+            } else {
+                server.shutdown().await.unwrap();
+                client.read_to_end(&mut rest).await.unwrap();
+                timeouts.uplink_only
+            };
+            tokio::time::advance(limit - Duration::from_millis(100)).await;
+            tokio::task::yield_now().await;
+            assert!(!relay.is_finished());
+            tokio::time::advance(Duration::from_millis(101)).await;
+            // The paused clock would auto-advance to connIdle; the deadline is already due.
+            let relayed = tokio::time::timeout(Duration::from_millis(1), relay)
+                .await
+                .expect("half-close timeout");
+            assert_eq!(
+                relayed.unwrap().unwrap_err().kind(),
+                io::ErrorKind::TimedOut
+            );
+        }
+    }
+
     async fn wait_for_admission(budget: &tokio::sync::Semaphore, available: usize) {
         tokio::time::timeout(Duration::from_secs(2), async {
             while budget.available_permits() != available {
@@ -494,7 +556,7 @@ mod tests {
             budget.clone(),
             split(inbound),
             (Box::new(read), Box::new(write)),
-            Duration::from_secs(5),
+            RelayTimeouts::uniform(Duration::from_secs(5)),
             32768,
             traffic.clone(),
             std::future::pending(),
@@ -635,7 +697,7 @@ mod tests {
             budget.clone(),
             split(inbound),
             (Box::new(read), Box::new(write)),
-            Duration::from_secs(2),
+            RelayTimeouts::uniform(Duration::from_secs(2)),
             32768,
             Arc::default(),
             std::future::pending(),

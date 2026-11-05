@@ -42,3 +42,14 @@ allows those four.
 
 All other source is unchanged. Remove this copy and its `[patch.crates-io]`
 entry once a compatible h3 release bounds both reads.
+
+## Extension settings at their defaults
+
+`Config` used to put `ENABLE_CONNECT_PROTOCOL`, `ENABLE_WEBTRANSPORT`,
+`H3_DATAGRAM` and `WEBTRANSPORT_MAX_SESSIONS` into every SETTINGS frame, as 0
+when disabled. quic-go's `http3`, which Xray-core's XHTTP H3 client uses, only
+sends the ones that are enabled, so an XHTTP client that disables GREASE still
+announced four settings Xray never sends. Each of them now goes out only when
+nonzero; 0 is the protocol default for all four, so peers read the same
+configuration. `MAX_FIELD_SECTION_SIZE` and GREASE are unchanged.
+`xray_tests` in `src/config.rs` covers both cases.

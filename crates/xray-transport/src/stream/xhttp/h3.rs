@@ -65,6 +65,10 @@ const XHTTP_RECEIVE_BATCH: usize = 4;
 /// A constrained host reads two at a time, for at most 184 KiB per endpoint.
 const CONSTRAINED_XHTTP_RECEIVE_BATCH: usize = 2;
 
+/// quic-go's `defaultMaxResponseHeaderBytes`, its advertised
+/// SETTINGS_MAX_FIELD_SECTION_SIZE when `MaxResponseHeaderBytes` is unset.
+const QUIC_GO_MAX_FIELD_SECTION_SIZE: u64 = 10 << 20;
+
 type H3SendRequest = client::SendRequest<h3_quinn::OpenStreams, Bytes>;
 type H3SendHalf = client::RequestStream<h3_quinn::SendStream<Bytes>, Bytes>;
 type H3RecvHalf = client::RequestStream<h3_quinn::RecvStream, Bytes>;
@@ -980,10 +984,18 @@ pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
             wire_peer.port(),
         ))
     });
-    let (mut h3_connection, send_request) =
-        client::new(h3_quinn::Connection::new(connection.clone()))
-            .await
-            .map_err(H3Error::Http3Connection)?;
+    // quic-go's http3 client, which Xray's XHTTP H3 dial uses, opens its
+    // control stream with SETTINGS_MAX_FIELD_SECTION_SIZE = 10 MiB alone
+    // (`http3/client.go`, `defaultMaxResponseHeaderBytes`); h3 used to
+    // announce 2^62-1 next to four zero-valued extension settings. GREASE
+    // stays on for now: `drive_upload` learns of a STOP_SENDING that raced
+    // the request FIN only through the GREASE frame `finish` writes, because
+    // quinn's `finish` reports a stopped stream as success.
+    let (mut h3_connection, send_request) = client::builder()
+        .max_field_section_size(QUIC_GO_MAX_FIELD_SECTION_SIZE)
+        .build(h3_quinn::Connection::new(connection.clone()))
+        .await
+        .map_err(H3Error::Http3Connection)?;
     let task = tokio::spawn(async move { poll_fn(|cx| h3_connection.poll_close(cx)).await });
     let driver = Arc::new(H3ConnectionDriver {
         endpoint,
