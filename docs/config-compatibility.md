@@ -635,11 +635,11 @@ parsed, so a missing piece is never read as part of a name.
 
 ## Outbounds and streams
 
-`freedom` (alias `direct`), `vless`, `dns`, `blackhole` (alias `block`), `socks`,
-and `http` are supported. DNS
+`freedom` (alias `direct`), `vless`, `dns`, `blackhole` (alias `block`),
+`loopback`, `socks`, and `http` are supported. DNS
 outbound settings are described below, and [freedom](#freedom-outbound),
-[blackhole](#blackhole-outbound), [SOCKS](#socks-outbound) and
-[HTTP](#http-outbound) after the TLS notes. VLESS accepts one `vnext` server with one or more UUID users, but the
+[blackhole](#blackhole-outbound), [loopback](#loopback-outbound),
+[SOCKS](#socks-outbound) and [HTTP](#http-outbound) after the TLS notes. VLESS accepts one `vnext` server with one or more UUID users, but the
 runtime currently selects the first user. With `encryption: "none"`, optional
 `level` and these flow values are accepted:
 
@@ -961,6 +961,44 @@ with zero bytes. Paths that need a dialable transport fail closed with
 queries route to it, and a startup probe of it, fail without dialing;
 observatory probes record it as unhealthy. `proxySettings` chains to or from a
 blackhole are rejected by core compilation.
+
+### Loopback outbound
+
+`loopback` routes a connection again, as if it came from an inbound with the
+tag it names, as Xray-core v26.10.31's loopback does:
+
+```json
+{ "tag": "again", "protocol": "loopback", "settings": { "inboundTag": "loopback-in" } }
+```
+
+A rule can then match `"inboundTag": ["loopback-in"]` to send the connection
+on, for example after a first set of rules chose to treat it apart.
+
+- `settings` may be absent or `null`, and `inboundTag` a string or `null`; an
+  absent or `null` tag is empty, as in Xray-core. Unknown fields are refused.
+- Routing again keeps the connection's source, local address and user, but
+  not the protocol or `attrs` that sniffing found, since Xray-core's loopback
+  starts a new session content.
+- It checks the address the connection goes to, which differs from the one
+  routing checked when sniffing with `routeOnly` found a domain: routing
+  again then sees the IP.
+- It makes none of the DNS lookups of `IPIfNonMatch` and `IPOnDemand`, as
+  Xray-core skips DNS resolution for a loopback's connections.
+- TCP and UDP from SOCKS, HTTP and TUN go through loopbacks, as do DNS
+  queries that rules route to one. A loopback can be a rule's `outboundTag`,
+  the default first outbound, or a balancer candidate. Connection inventory
+  and accounting record the outbound the connection ends at.
+- Paths with nothing to route again, such as a probe of the loopback itself,
+  fail with `CoreError::LoopbackOutbound`. `proxySettings` chains to or from a
+  loopback are rejected by core compilation.
+
+Differences from Xray-core:
+
+- A connection may pass at most 8 loopbacks in a row; a longer chain, such as
+  a loopback that routes back to itself, fails it. Xray-core sets no limit
+  and, on a loop, recurses until it runs out of stack and exits.
+- The loopback's own `sniffing` is read as an inbound's, but enabling it is
+  refused for now; Xray-core sniffs the connection again with it.
 
 ### SOCKS outbound
 

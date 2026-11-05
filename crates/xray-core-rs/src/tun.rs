@@ -3355,6 +3355,7 @@ async fn bridge_tcp_flow_inner(
                                 .select_tcp_session_outbound_with_tag_and_resolver(
                                     &route,
                                     &dial_target,
+                                    &dial_target,
                                     true,
                                     context.dns_resolver.as_ref(),
                                 )
@@ -4569,6 +4570,7 @@ async fn bridge_udp_flow(
         .select_udp_session_outbound_with_tag_and_resolver(
             &route,
             &route_target,
+            &dial_target,
             true,
             context.dns_resolver.as_ref(),
         )
