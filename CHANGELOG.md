@@ -10,6 +10,18 @@ long-term supported release series.
 
 ## Unreleased
 
+- Android `XrayVpnService` can rebind Hysteria2 and WireGuard carriers on
+  network changes. A subclass opts in with `networkChangeRebindEnabled()` and
+  `ACCESS_NETWORK_STATE`; each session then runs `XrayNetworkChangeCoordinator`
+  on a private control worker and closes it before the core and TUN fd. The
+  carrier policy is `selectUnderlyingNetwork()`, by default the system default
+  network, and `onXrayNetworkRebind()` / `onXrayNetworkChangeError()` report
+  the outcome.
+- Android `startXrayTunnel` with different arguments while an earlier start is
+  in flight replaces it instead of being ignored; a call with the same
+  arguments is still ignored. The new `onXrayTunnelStartCancelled()` reports a
+  start that a stop or a replacing start cancelled, so every accepted start
+  ends in exactly one started, failed or cancelled callback.
 - The `udphop` UDP mask reads every Xray-core mode: `intervalLocal`,
   `intervalRemote` and `perConnRemote`, alone or together, and `remoteIPs`
   of IPs and prefixes. Only `intervalLocal,intervalRemote` with ports used to

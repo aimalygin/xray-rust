@@ -234,6 +234,22 @@ callback on the caller's thread. The coordinator releases the completed attempt
 before invoking either callback, so a callback may synchronously stop or retry
 without colliding with the previous start task.
 
+Every accepted start ends in exactly one of `onXrayTunnelStarted`,
+`onXrayTunnelStartFailed` or `onXrayTunnelStartCancelled`. The last one reports
+a start that `stopXrayTunnel()` or a replacing `startXrayTunnel` cancelled; it
+runs on the start worker, or on the thread of that stop/start call when the
+attempt never reached a worker. A `startXrayTunnel` call with different
+arguments while an earlier start is in flight replaces it: the earlier attempt
+is cancelled and reports `onXrayTunnelStartCancelled`, then the new attempt
+starts once the earlier one's cleanup has finished, so wrappers need not wait.
+Only the latest queued replacement runs; an older one also reports
+cancellation. A call with the same arguments as the start in flight, such as a
+redelivered intent, is ignored like before, as is a call while a session is
+running or stopping. A replacement whose worker cannot be scheduled reports
+`onXrayTunnelStartFailed`, or `onXrayTunnelStartCancelled` if it was stopped
+meanwhile, instead of throwing. The callbacks carry no attempt identity, and
+those of different attempts can arrive on different threads and interleave.
+
 An existing exact `full:` mapping is authoritative and is never overwritten.
 It may end in one IP or an ordered nonempty IP array. Domain aliases are
 followed to such a terminal target; cycles and chains longer than eight entries
@@ -243,8 +259,8 @@ share a five-second monotonic deadline that begins as soon as the lifecycle
 accepts the attempt. A stop during startup marks that attempt as cancelled,
 interrupts its wait, and returns without joining the start worker. The token is
 checked again after preflight and before publication, so a late resolver result
-cannot establish or publish a cancelled session. A new start remains rejected
-until pre-publication cleanup has finished.
+cannot establish or publish a cancelled session. A new start waits, queued as a
+replacement, until pre-publication cleanup has finished.
 
 Android's `InetAddress.getAllByName` is blocking and may ignore interruption.
 The deadline therefore bounds how long VPN startup waits, but cannot guarantee
@@ -309,8 +325,8 @@ path validation or handshakes. Idle outbounds return zero without connecting.
 
 Apps owning the TUN fd can opt into `XrayNetworkChangeCoordinator`. Add
 `android.permission.ACCESS_NETWORK_STATE` to the host manifest and supply the
-app's serial VPN control executor. The reference `XrayVpnService` does not enable
-this helper automatically. The
+app's serial VPN control executor. The reference `XrayVpnService` runs it only
+when a subclass opts in (below). The
 [compiled fd-session example](xraymobile/src/test/java/org/xrayrust/mobile/examples/NetworkChangeFdSession.kt)
 shows startup failure cleanup and the required teardown order.
 
@@ -378,6 +394,7 @@ a new core. The helper does not own the core, fd or executor.
 Socket protection remains mandatory. The helper does not bind sockets, select
 the host's carrier, call `bindProcessToNetwork`, or call `setUnderlyingNetworks`.
 For ordinary system-default routing, retain `setUnderlyingNetworks(null)`.
+
 An explicit list must reflect the networks actually used by the app's
 `Network.bindSocket` policy, including overlapping carriers during asynchronous
 replacement. As documented by
@@ -385,6 +402,43 @@ replacement. As documented by
 this list only reports routing to Android; updating it does not move sockets.
 The application must safely publish its binding policy for native socket
 protection callbacks before returning from `selectAndApply`.
+
+`XrayVpnService` subclasses opt in by overriding `networkChangeRebindEnabled()`
+to return `true` and declaring `ACCESS_NETWORK_STATE`; without the permission
+the start fails through `onXrayTunnelStartFailed` before the VPN interface is
+established. Each session then gets its own coordinator on a private serial
+control worker: it starts after the core and closes before the core stops and
+before the TUN descriptor closes, so a callback of an old session never reaches
+a new core.
+
+```kotlin
+class AppVpnService : XrayVpnService() {
+    override fun networkChangeRebindEnabled() = true
+
+    override fun onXrayNetworkRebind(result: XrayNetworkRebindResult) {
+        diagnostics.rebindRequests(result)
+    }
+}
+```
+
+`selectUnderlyingNetwork(candidates, previous)` is the carrier policy and runs
+on that worker. The default keeps `setUnderlyingNetworks(null)` and returns the
+network protected sockets follow: the system default network when it is a
+candidate, otherwise `previous` while it is still a candidate, otherwise the
+first validated candidate, otherwise the first candidate. It relies on the
+default `buildTunnel()` excluding the app from its own VPN, so `activeNetwork`
+is the underlying network. A `buildTunnel()` override that keeps the app inside
+its VPN sees the VPN as `activeNetwork`, so the choice sticks to `previous`:
+override `selectUnderlyingNetwork` too. Selection runs on candidate events
+only, not on a default-network switch that leaves every candidate unchanged.
+Override it to apply a host policy such as `setUnderlyingNetworks` before
+returning the choice. `onXrayNetworkRebind` receives the rebind requests and
+`onXrayNetworkChangeError` policy or scheduling failures.
+
+Unlike `XrayPacketTunnelProvider` on Apple platforms, which observes paths by
+default, debounces them and also rebinds when the addresses of the same
+interface change, Android observation is opt-in and ignores metadata-only
+updates of the selected network.
 
 Version 1 changes no C ABI, wire format, fd ownership, defaults or coroutine
 dependencies. It retains endpoints; DNS/NAT64 refresh and protocols without

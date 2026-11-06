@@ -1,6 +1,11 @@
 package org.xrayrust.mobile
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.pm.PackageManager.NameNotFoundException
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -17,6 +22,8 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.util.concurrent.Callable
 import java.util.concurrent.Executor
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.FutureTask
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadFactory
@@ -35,17 +42,41 @@ internal val DEFAULT_XRAY_TUN_BACKEND = XrayTunBackend.FileDescriptor
 
 internal sealed interface XrayTunnelStopAction<out Session> {
     data object None : XrayTunnelStopAction<Nothing>
-    data object CancelStart : XrayTunnelStopAction<Nothing>
+
+    /** [discardedQueuedStart]: a replacement start that never reached a worker was dropped as well. */
+    data class CancelStart(val discardedQueuedStart: Boolean = false) : XrayTunnelStopAction<Nothing>
     data class StopSession<Session>(val session: Session) : XrayTunnelStopAction<Session>
 }
 
+internal sealed interface XrayTunnelStartAdmission {
+    /** The lifecycle was stopped; the caller schedules [token] now. */
+    data class Started(val token: XrayTunnelStateMachine.StartToken) : XrayTunnelStartAdmission
+
+    /**
+     * An in-flight attempt was cancelled. Its release schedules the queued launch; [displacedQueuedStart]
+     * reports an older queued replacement that will never run.
+     */
+    data class Queued(
+        val cancelled: XrayTunnelStateMachine.StartToken,
+        val displacedQueuedStart: Boolean,
+    ) : XrayTunnelStartAdmission
+
+    /** A session is running or stopping, or the same request is already starting. */
+    data object Rejected : XrayTunnelStartAdmission
+}
+
 internal class XrayTunnelStateMachine<Session> {
-    class StartToken internal constructor() {
+    class StartToken internal constructor(internal val request: Any? = null) {
         internal var stopRequested = false
     }
 
+    private class QueuedStart(val token: StartToken, val launch: (StartToken) -> Unit)
+
     private val lock = Object()
     private var state: State<Session> = State.Stopped
+
+    // Only while an attempt that has been asked to stop is still releasing.
+    private var queuedStart: QueuedStart? = null
 
     fun beginStart(): StartToken? = synchronized(lock) {
         if (state !== State.Stopped) {
@@ -55,6 +86,37 @@ internal class XrayTunnelStateMachine<Session> {
             state = State.Starting(it)
         }
     }
+
+    /**
+     * Like [beginStart], but an in-flight attempt is cancelled and replaced: [launch] runs with a new
+     * token once that attempt has released the lifecycle, from the thread releasing it. A non-null
+     * [request] equal to the one still starting, or already queued, is rejected instead.
+     */
+    fun beginOrReplaceStart(
+        request: Any? = null,
+        launch: (StartToken) -> Unit,
+    ): XrayTunnelStartAdmission = synchronized(lock) {
+        val current = state
+        val starting = when (current) {
+            State.Stopped -> return@synchronized XrayTunnelStartAdmission.Started(
+                StartToken(request).also { state = State.Starting(it) },
+            )
+            is State.Starting -> current.token
+            is State.Stopping -> current.failedStartToken
+            is State.Running -> null
+        } ?: return@synchronized XrayTunnelStartAdmission.Rejected
+        if (current is State.Starting && request != null && request == pendingRequest(starting)) {
+            return@synchronized XrayTunnelStartAdmission.Rejected
+        }
+        starting.stopRequested = true
+        val displaced = queuedStart != null
+        queuedStart = QueuedStart(StartToken(request), launch)
+        XrayTunnelStartAdmission.Queued(cancelled = starting, displacedQueuedStart = displaced)
+    }
+
+    // The request that will run unless stopped: the queued replacement, else the live attempt.
+    private fun pendingRequest(starting: StartToken): Any? =
+        queuedStart?.token?.request ?: starting.request.takeUnless { starting.stopRequested }
 
     fun isStartActive(token: StartToken): Boolean = synchronized(lock) {
         val current = state
@@ -94,16 +156,21 @@ internal class XrayTunnelStateMachine<Session> {
         }
     }
 
-    fun failStart(token: StartToken) {
-        synchronized(lock) {
-            val current = state
-            if ((current is State.Starting && current.token === token) ||
-                (current is State.Stopping && current.failedStartToken === token)
-            ) {
-                state = State.Stopped
-            }
-            lock.notifyAll()
+    /**
+     * Releases [token]'s attempt. Returns the queued replacement, now Starting, which the caller must
+     * run after its own completion callback.
+     */
+    fun failStart(token: StartToken): (() -> Unit)? = synchronized(lock) {
+        val current = state
+        val owned = (current is State.Starting && current.token === token) ||
+            (current is State.Stopping && current.failedStartToken === token)
+        val next = queuedStart?.takeIf { owned }
+        if (owned) {
+            queuedStart = null
+            state = next?.let { State.Starting(it.token) } ?: State.Stopped
         }
+        lock.notifyAll()
+        next?.let { { it.launch(it.token) } }
     }
 
     fun requestStop(): XrayTunnelStopAction<Session> = synchronized(lock) {
@@ -111,7 +178,7 @@ internal class XrayTunnelStateMachine<Session> {
             State.Stopped -> XrayTunnelStopAction.None
             is State.Starting -> {
                 current.token.stopRequested = true
-                XrayTunnelStopAction.CancelStart
+                cancelStart()
             }
             is State.Running -> {
                 state = State.Stopping(failedStartToken = null)
@@ -123,10 +190,16 @@ internal class XrayTunnelStateMachine<Session> {
                     XrayTunnelStopAction.None
                 } else {
                     failedStartToken.stopRequested = true
-                    XrayTunnelStopAction.CancelStart
+                    cancelStart()
                 }
             }
         }
+    }
+
+    private fun cancelStart(): XrayTunnelStopAction<Nothing> {
+        val discarded = queuedStart != null
+        queuedStart = null
+        return XrayTunnelStopAction.CancelStart(discardedQueuedStart = discarded)
     }
 
     fun takeSessionForFailure(failedSession: Session): Session? = synchronized(lock) {
@@ -176,30 +249,47 @@ internal class XrayAsyncStartCoordinator<Session>(
     fun execute(
         token: XrayTunnelStateMachine.StartToken,
         block: () -> Unit,
-    ) = execute(token, block) {}
+    ) = execute(token, block, afterRelease = {})
 
+    /**
+     * Runs [block], releases [token], then calls [afterRelease] on the worker. A task cancelled before
+     * its worker began calls [onCancelledBeforeRun] on the cancelling thread instead. Either way a
+     * replacement queued on the lifecycle is launched last, after that callback. A scheduling failure
+     * is thrown with [token] still held: the caller releases it, reports, then launches the replacement.
+     */
     fun <Result> execute(
         token: XrayTunnelStateMachine.StartToken,
         block: () -> Result,
         afterRelease: (Result) -> Unit,
+        onCancelledBeforeRun: () -> Unit = {},
     ) {
-        val workerStarted = AtomicBoolean(false)
+        // The worker and the cancellation path race for one claim; only the winner releases and reports.
+        val claimed = AtomicBoolean(false)
         val task = object : FutureTask<Unit>(
             Callable {
-                workerStarted.set(true)
-                val result = try {
-                    block()
+                if (!claimed.compareAndSet(false, true)) return@Callable
+                var replacement: (() -> Unit)? = null
+                try {
+                    val result = try {
+                        block()
+                    } finally {
+                        clearActiveStart(token)
+                        replacement = lifecycle.failStart(token)
+                    }
+                    afterRelease(result)
                 } finally {
-                    clearActiveStart(token)
-                    lifecycle.failStart(token)
+                    replacement?.invoke()
                 }
-                afterRelease(result)
             },
         ) {
             override fun done() {
                 clearActiveStart(token)
-                if (!workerStarted.get()) {
-                    lifecycle.failStart(token)
+                if (!claimed.compareAndSet(false, true)) return
+                val replacement = lifecycle.failStart(token)
+                try {
+                    onCancelledBeforeRun()
+                } finally {
+                    replacement?.invoke()
                 }
             }
         }
@@ -211,6 +301,8 @@ internal class XrayAsyncStartCoordinator<Session>(
         try {
             executor.execute(task)
         } catch (error: Throwable) {
+            claimed.set(true)
+            clearActiveStart(token)
             task.cancel(false)
             throw error
         }
@@ -218,6 +310,12 @@ internal class XrayAsyncStartCoordinator<Session>(
 
     fun cancelActiveStart() {
         val task = synchronized(lock) { activeTask }
+        task?.cancel(true)
+    }
+
+    /** Cancels only [token]'s worker, never a replacement that has already been launched. */
+    fun cancelActiveStart(token: XrayTunnelStateMachine.StartToken) {
+        val task = synchronized(lock) { activeTask?.takeIf { activeToken === token } }
         task?.cancel(true)
     }
 
@@ -360,6 +458,40 @@ internal class XrayShutdownFailures {
 internal fun isRecoverablePacketPushFailure(error: Throwable): Boolean =
     error is XrayCoreException
 
+/** The default carrier choice of [XrayVpnService.selectUnderlyingNetwork]. */
+internal fun <Candidate, N> List<Candidate>.preferredUnderlyingNetwork(
+    network: (Candidate) -> N,
+    validated: (Candidate) -> Boolean,
+    systemDefault: N?,
+    previous: N?,
+): N? {
+    val networks = map(network)
+    return systemDefault?.takeIf { it in networks }
+        ?: previous?.takeIf { it in networks }
+        ?: firstOrNull(validated)?.let(network)
+        ?: networks.firstOrNull()
+}
+
+/**
+ * Releases [attempt] whose worker could not be scheduled, reports it, then launches the replacement
+ * queued meanwhile. An attempt already stopped or replaced reports cancellation, not failure.
+ */
+internal fun reportUnscheduledStart(
+    lifecycle: XrayTunnelStateMachine<*>,
+    attempt: XrayTunnelStateMachine.StartToken,
+    error: Throwable,
+    onFailed: (Throwable) -> Unit,
+    onCancelled: () -> Unit,
+) {
+    val reportable = lifecycle.isStartFailureReportable(attempt)
+    val next = lifecycle.failStart(attempt)
+    try {
+        if (reportable) onFailed(error) else onCancelled()
+    } finally {
+        next?.invoke()
+    }
+}
+
 /** A point-in-time, credential-free view of the reference VPN service runtime. */
 data class XrayVpnRuntimeSnapshot(
     val running: Boolean,
@@ -398,6 +530,12 @@ open class XrayVpnService : VpnService() {
         cancelPreflight = XrayCore::cancelStartupProbePreflight,
     )
     private val dnsBootstrapResolver = BoundedAndroidDnsBootstrapResolver()
+    private val networkControlLock = Any()
+    private var networkControlWorker: ExecutorService? = null
+
+    // Set by onDestroy before the workers shut down; a late start worker must not recreate them.
+    @Volatile
+    private var destroyed = false
     private val runtimeGeneration = AtomicLong()
     private val fatalTunErrors = AtomicLong()
 
@@ -412,10 +550,61 @@ open class XrayVpnService : VpnService() {
     protected open fun geodataSearchDirectory(): File? = null
 
     /**
+     * Opt-in Hysteria2/WireGuard carrier rebind on underlying-network changes. When true, each session
+     * runs an [XrayNetworkChangeCoordinator] on a private serial control worker, started after the
+     * core and closed before the core stops and before the TUN descriptor closes. The host manifest
+     * must declare `ACCESS_NETWORK_STATE`; without it the start fails with a [SecurityException]
+     * before the VPN interface is established. Read once per start, on the start worker.
+     */
+    protected open fun networkChangeRebindEnabled(): Boolean = false
+
+    /**
+     * The carrier policy of [networkChangeRebindEnabled], called on the control worker with copied
+     * snapshots of usable non-VPN Internet networks. Apply the host's carrier settings, such as
+     * `setUnderlyingNetworks`, before returning the selected [Network], or null while offline.
+     * It must be quick, idempotent and must not wait for another call on the same worker.
+     *
+     * The default keeps `setUnderlyingNetworks(null)` and returns the network protected sockets
+     * follow: the system default network when it is a candidate, otherwise [previous] while it
+     * remains a candidate, otherwise the first validated candidate, otherwise the first candidate.
+     * It is correct only while this package is excluded from its own VPN, as the default
+     * [buildTunnel] does: otherwise the system default is the VPN itself, the choice sticks to
+     * [previous], so override this method. Selection runs on candidate events only, not on
+     * default-network switches that leave every candidate unchanged.
+     */
+    protected open fun selectUnderlyingNetwork(
+        candidates: List<XrayUnderlyingNetwork>,
+        previous: Network?,
+    ): Network? = candidates.preferredUnderlyingNetwork(
+        network = { it.network },
+        validated = { it.capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) },
+        systemDefault = systemDefaultNetwork(),
+        previous = previous,
+    )
+
+    /**
+     * Rebind requests made for a carrier change of the running session, on the control worker.
+     * Acceptance is not evidence of a completed handshake.
+     */
+    protected open fun onXrayNetworkRebind(result: XrayNetworkRebindResult) = Unit
+
+    /** Carrier policy or scheduling failures of [networkChangeRebindEnabled]; no rebind was requested. */
+    protected open fun onXrayNetworkChangeError(error: Exception) = Unit
+
+    /**
      * Starts asynchronously. A [startupProbe] runs before `Builder.establish()`, so its failure,
      * timeout or cancellation leaves routes and DNS untouched; requires ABI 1.12. [tunMtu] is
      * given to both the interface and the core; a library without ABI 1.16 `TunMtu` runs both
      * at [XrayTunInterface.MTU].
+     *
+     * Every accepted call ends in exactly one of [onXrayTunnelStarted], [onXrayTunnelStartFailed]
+     * or [onXrayTunnelStartCancelled]. A call while an earlier start with different arguments is
+     * still in flight replaces it: the earlier attempt is cancelled and reports
+     * [onXrayTunnelStartCancelled], and this one begins once its cleanup has finished. A call with
+     * the same arguments as the start in flight, or while a session is running or stopping, is
+     * ignored. Failure to schedule the worker of a start that did not replace another one is thrown
+     * here. The callbacks carry no attempt identity, and those of different attempts can arrive
+     * on different threads and interleave.
      */
     open fun startXrayTunnel(
         configJson: String,
@@ -424,55 +613,82 @@ open class XrayVpnService : VpnService() {
         startupProbe: XrayStartupProbeOptions? = null,
         tunMtu: Int = XrayTunInterface.MTU,
     ) {
-        val attempt = lifecycle.beginStart() ?: return
+        val request = StartRequest(configJson, tunBackend, tunRuntimeProfile, startupProbe, tunMtu)
+        val admission = lifecycle.beginOrReplaceStart(request) { attempt -> launchReplacementStart(attempt, request) }
+        when (admission) {
+            is XrayTunnelStartAdmission.Started -> {
+                val attempt = admission.token
+                try {
+                    launchXrayTunnelStart(attempt, request)
+                } catch (error: Throwable) {
+                    lifecycle.failStart(attempt)?.invoke()
+                    throw error
+                }
+            }
+            is XrayTunnelStartAdmission.Queued -> {
+                // Before the cancel below, which can launch this start on the calling thread.
+                if (admission.displacedQueuedStart) notifyXrayTunnelStartCancelled()
+                startupProbePreflight.cancel()
+                startCoordinator.cancelActiveStart(admission.cancelled)
+            }
+            XrayTunnelStartAdmission.Rejected -> Unit
+        }
+    }
+
+    private fun launchXrayTunnelStart(attempt: XrayTunnelStateMachine.StartToken, request: StartRequest) {
+        // The bootstrap deadline begins once the lifecycle accepts this attempt.
         val dnsBootstrapDeadline = AndroidDnsBootstrapDeadline(
             TimeUnit.MILLISECONDS.toNanos(DNS_BOOTSTRAP_TIMEOUT_MILLISECONDS),
         )
+        startCoordinator.execute(
+            token = attempt,
+            block = { runXrayTunnelStart(attempt, request, dnsBootstrapDeadline) },
+            afterRelease = ::deliverStartOutcome,
+            onCancelledBeforeRun = ::notifyXrayTunnelStartCancelled,
+        )
+    }
+
+    // Runs on the thread releasing the replaced attempt, so a scheduling failure becomes a callback.
+    private fun launchReplacementStart(attempt: XrayTunnelStateMachine.StartToken, request: StartRequest) {
         try {
-            startCoordinator.execute(
-                token = attempt,
-                block = {
-                    runXrayTunnelStart(
-                        attempt = attempt,
-                        configJson = configJson,
-                        tunBackend = tunBackend,
-                        tunRuntimeProfile = tunRuntimeProfile,
-                        startupProbe = startupProbe,
-                        tunMtu = tunMtu,
-                        dnsBootstrapDeadline = dnsBootstrapDeadline,
-                    )
-                },
-                afterRelease = { outcome ->
-                    when (outcome) {
-                        is XrayTunnelStartOutcome.Started -> {
-                            if (lifecycle.isRunningSession(outcome.session)) {
-                                runCatching { onXrayTunnelStarted() }
-                            }
-                        }
-                        is XrayTunnelStartOutcome.Failed -> {
-                            if (!Thread.currentThread().isInterrupted) {
-                                notifyXrayTunnelStartFailed(outcome.error)
-                            }
-                        }
-                        XrayTunnelStartOutcome.Cancelled -> Unit
-                    }
-                },
-            )
+            launchXrayTunnelStart(attempt, request)
         } catch (error: Throwable) {
-            lifecycle.failStart(attempt)
-            throw error
+            reportUnscheduledStart(
+                lifecycle = lifecycle,
+                attempt = attempt,
+                error = error,
+                onFailed = ::notifyXrayTunnelStartFailed,
+                onCancelled = ::notifyXrayTunnelStartCancelled,
+            )
+        }
+    }
+
+    private fun deliverStartOutcome(outcome: XrayTunnelStartOutcome) {
+        when (outcome) {
+            is XrayTunnelStartOutcome.Started ->
+                if (lifecycle.isRunningSession(outcome.session)) {
+                    runCatching { onXrayTunnelStarted() }
+                } else {
+                    notifyXrayTunnelStartCancelled()
+                }
+            is XrayTunnelStartOutcome.Failed ->
+                if (Thread.currentThread().isInterrupted) {
+                    notifyXrayTunnelStartCancelled()
+                } else {
+                    notifyXrayTunnelStartFailed(outcome.error)
+                }
+            XrayTunnelStartOutcome.Cancelled -> notifyXrayTunnelStartCancelled()
         }
     }
 
     private fun runXrayTunnelStart(
         attempt: XrayTunnelStateMachine.StartToken,
-        configJson: String,
-        tunBackend: XrayTunBackend,
-        tunRuntimeProfile: XrayTunRuntimeProfile,
-        startupProbe: XrayStartupProbeOptions?,
-        tunMtu: Int,
+        request: StartRequest,
         dnsBootstrapDeadline: AndroidDnsBootstrapDeadline,
     ): XrayTunnelStartOutcome {
+        val configJson = request.configJson
+        val tunBackend = request.tunBackend
+        val startupProbe = request.startupProbe
         val prepareAndroidVpnConfig: (String) -> PreparedAndroidVpnConfig = { rawConfig ->
             prepareAndroidVpnConfigWithinDeadline(
                 configJson = rawConfig,
@@ -483,8 +699,12 @@ open class XrayVpnService : VpnService() {
         var tunnel: ParcelFileDescriptor? = null
         var xrayCore: XrayCore? = null
         var coreStarted = false
+        var networkChange: XrayNetworkChangeCoordinator? = null
         try {
             ensureStartIsActive(attempt)
+            val rebindEnabled = networkChangeRebindEnabled()
+            // Checked before establish(), so a missing permission never brings the interface up.
+            if (rebindEnabled) requireNetworkStatePermission()
             val preparedConfig = prepareAndroidVpnConfig(configJson)
             val geodataSearchDirectory = geodataSearchDirectory()
             ensureStartIsActive(attempt)
@@ -500,7 +720,7 @@ open class XrayVpnService : VpnService() {
                 )
             }
             // One value for the interface and the core, whatever buildTunnel() set.
-            val mtu = XrayCore.supportedTunMtu(tunMtu)
+            val mtu = XrayCore.supportedTunMtu(request.tunMtu)
             val tunnelBuilder = buildTunnel().setMtu(mtu)
             if (preparedConfig.usesLocalDnsAnchor) {
                 tunnelBuilder.addDnsServer(XrayTunInterface.DNS_ANCHOR)
@@ -513,7 +733,7 @@ open class XrayVpnService : VpnService() {
             xrayCore = XrayCore.create(
                 configJson = preparedConfig.json,
                 vpnService = this,
-                tunRuntimeProfile = tunRuntimeProfile,
+                tunRuntimeProfile = request.tunRuntimeProfile,
                 dnsBootstrapMode = XrayDnsBootstrapMode.StaticOnly,
                 tunAdmission = tunAdmissionOptions(),
                 geodataSearchDirectory = geodataSearchDirectory,
@@ -531,11 +751,13 @@ open class XrayVpnService : VpnService() {
             xrayCore.start()
             coreStarted = true
             ensureStartIsActive(attempt)
+            if (rebindEnabled) networkChange = startNetworkChangeRebind(xrayCore)
 
             val session = TunnelSession(
                 backend = tunBackend,
                 tunnel = tunnel,
                 core = xrayCore,
+                networkChange = networkChange,
                 runtimeGeneration = runtimeGeneration.incrementAndGet(),
             )
             if (tunBackend == XrayTunBackend.PacketPump) {
@@ -570,6 +792,7 @@ open class XrayVpnService : VpnService() {
                 tunnel = tunnel,
                 core = xrayCore,
                 coreStarted = coreStarted,
+                networkChange = networkChange,
             )
             if (error is XrayStartCancelledException ||
                 error is AndroidDnsBootstrapCancelledException
@@ -589,7 +812,8 @@ open class XrayVpnService : VpnService() {
     open fun stopXrayTunnel() {
         when (val action = lifecycle.requestStop()) {
             XrayTunnelStopAction.None -> Unit
-            XrayTunnelStopAction.CancelStart -> {
+            is XrayTunnelStopAction.CancelStart -> {
+                if (action.discardedQueuedStart) notifyXrayTunnelStartCancelled()
                 startupProbePreflight.cancel()
                 startCoordinator.cancelActiveStart()
             }
@@ -609,6 +833,14 @@ open class XrayVpnService : VpnService() {
 
     /** Called on the asynchronous start worker when startup fails without cancellation. */
     protected open fun onXrayTunnelStartFailed(error: Throwable) = Unit
+
+    /**
+     * Called once a start ends without a running tunnel because [stopXrayTunnel] or a replacing
+     * [startXrayTunnel] cancelled it. Runs on the start worker, or on the thread of that stop/start
+     * call when the attempt never reached a worker. A packet-pump failure racing publication may
+     * report [onXrayTunnelFatalError] as well.
+     */
+    protected open fun onXrayTunnelStartCancelled() = Unit
 
     /** Called after an already-published tunnel stops because its packet pump failed. */
     protected open fun onXrayTunnelFatalError(error: Throwable) = Unit
@@ -650,8 +882,10 @@ open class XrayVpnService : VpnService() {
     fun protectSocket(fd: Int): Boolean = protect(fd)
 
     override fun onDestroy() {
+        destroyed = true
         stopXrayTunnel()
         startExecutor.shutdownNow()
+        synchronized(networkControlLock) { networkControlWorker?.shutdownNow() }
         dnsBootstrapResolver.close()
         super.onDestroy()
     }
@@ -689,11 +923,57 @@ open class XrayVpnService : VpnService() {
         runCatching { onXrayTunnelStartFailed(error) }
     }
 
+    private fun notifyXrayTunnelStartCancelled() {
+        runCatching { onXrayTunnelStartCancelled() }
+    }
+
+    @Suppress("MissingPermission") // Opt-in callers declare ACCESS_NETWORK_STATE in the host manifest.
+    private fun systemDefaultNetwork(): Network? =
+        runCatching { getSystemService(ConnectivityManager::class.java)?.activeNetwork }.getOrNull()
+
+    private fun requireNetworkStatePermission() {
+        if (checkSelfPermission(Manifest.permission.ACCESS_NETWORK_STATE) != PackageManager.PERMISSION_GRANTED) {
+            throw SecurityException("networkChangeRebindEnabled() requires ${Manifest.permission.ACCESS_NETWORK_STATE}")
+        }
+    }
+
+    // Created on first use; after onDestroy the start is cancelled instead of leaking a new worker.
+    private fun networkControlExecutor(): ExecutorService = synchronized(networkControlLock) {
+        if (destroyed) throw XrayStartCancelledException()
+        networkControlWorker ?: Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "xray-vpn-network").apply { isDaemon = true }
+        }.also { networkControlWorker = it }
+    }
+
+    private fun startNetworkChangeRebind(core: XrayCore): XrayNetworkChangeCoordinator {
+        val connectivity = checkNotNull(getSystemService(ConnectivityManager::class.java)) {
+            "ConnectivityManager is unavailable"
+        }
+        val coordinator = XrayNetworkChangeCoordinator(
+            connectivityManager = connectivity,
+            controlExecutor = networkControlExecutor(),
+            selectAndApply = { candidates, previous -> selectUnderlyingNetwork(candidates, previous) },
+            // A start racing onDestroy sees its worker rejected; that is not a host-visible error.
+            onError = { error -> if (!destroyed) runCatching { onXrayNetworkChangeError(error) } },
+            onResult = { result -> runCatching { onXrayNetworkRebind(result) } },
+        )
+        try {
+            coordinator.start(core)
+        } catch (error: Throwable) {
+            runCatching { coordinator.close() }
+            throw error
+        }
+        return coordinator
+    }
+
     private fun cleanupUnpublishedSession(
         tunnel: ParcelFileDescriptor?,
         core: XrayCore?,
         coreStarted: Boolean,
+        networkChange: XrayNetworkChangeCoordinator?,
     ) {
+        // The coordinator must stop requesting rebinds before the core it targets stops.
+        runCatching { networkChange?.close() }
         // For the borrowed-fd backend, Rust must finish all fd tasks before the
         // ParcelFileDescriptor can be closed or reused by the process.
         if (coreStarted) {
@@ -813,6 +1093,7 @@ open class XrayVpnService : VpnService() {
         val backend: XrayTunBackend,
         val tunnel: ParcelFileDescriptor,
         val core: XrayCore,
+        val networkChange: XrayNetworkChangeCoordinator?,
         val runtimeGeneration: Long,
     ) {
         val active = AtomicBoolean(true)
@@ -826,6 +1107,8 @@ open class XrayVpnService : VpnService() {
 
             val failures = XrayShutdownFailures()
 
+            // Unregister and wait for in-flight rebind work before the core or its fd go away.
+            networkChange?.let { failures.capture { it.close() } }
             inboundThread?.interrupt()
             outboundThread?.interrupt()
 
@@ -849,6 +1132,25 @@ open class XrayVpnService : VpnService() {
         }
     }
 
+    // Not a data class: the config carries credentials and must never reach a toString().
+    // Equality lets a duplicate start of the same request be ignored rather than replace itself.
+    private class StartRequest(
+        val configJson: String,
+        val tunBackend: XrayTunBackend,
+        val tunRuntimeProfile: XrayTunRuntimeProfile,
+        val startupProbe: XrayStartupProbeOptions?,
+        val tunMtu: Int,
+    ) {
+        override fun equals(other: Any?): Boolean = other is StartRequest &&
+            configJson == other.configJson &&
+            tunBackend == other.tunBackend &&
+            tunRuntimeProfile == other.tunRuntimeProfile &&
+            startupProbe == other.startupProbe &&
+            tunMtu == other.tunMtu
+
+        override fun hashCode(): Int = configJson.hashCode()
+    }
+
     private sealed interface XrayTunnelStartOutcome {
         data class Started(val session: TunnelSession) : XrayTunnelStartOutcome
         data class Failed(val error: Throwable) : XrayTunnelStartOutcome
@@ -859,7 +1161,9 @@ open class XrayVpnService : VpnService() {
         const val MAX_PACKETS_PER_POLL = 64
         const val POLL_WAIT_MILLISECONDS = 250
         const val DNS_BOOTSTRAP_TIMEOUT_MILLISECONDS = 5_000L
-        const val MAX_CONCURRENT_START_WORKERS = 2
+        // A worker launching its replacement still holds its thread, an earlier worker may still run
+        // onXrayTunnelStarted, and a finishing worker still counts while the next handoff happens.
+        const val MAX_CONCURRENT_START_WORKERS = 4
         const val START_THREAD_KEEP_ALIVE_SECONDS = 30L
     }
 }
