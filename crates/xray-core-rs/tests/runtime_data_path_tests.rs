@@ -164,6 +164,7 @@ fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> Ou
                 encryption: Default::default(),
                 flow: None,
                 level: 0,
+                vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
             }],
         }),
     }

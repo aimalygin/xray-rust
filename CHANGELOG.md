@@ -35,6 +35,16 @@ long-term supported release series.
     `perConnRemote` draws the first address without hopping.
   - A remote hop also takes a fresh local socket, and `remoteIPs` of the
     other family than the server's are not drawn.
+- VLESS and VMess outbound settings are read as Xray-core v26.10.31 reads
+  them. Profiles in either shape below used to fail to parse.
+  - A non-null `address` is the simplified form, with the server and its user
+    in `settings`, and `vnext` is not read. VLESS refused it, and VMess
+    refused it next to `vnext`.
+  - An `id` of 1 to 30 bytes of text names the UUID Xray-core's
+    `uuid.ParseString` makes of it, so a server with the same text accepts
+    it.
+  - VLESS `testseed` sets Vision's padding parameters. `reverse` and a
+    nonzero `testpre` are refused.
 - `dns.enableParallelQuery` asks every selected DNS server at once and takes
   the first answer of the earliest group of servers sharing a policy, as
   Xray-core does. Profiles with it used to fail to parse.

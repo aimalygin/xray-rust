@@ -358,6 +358,24 @@ cases against sing-box, but that run is not yet recorded; no physical-device
 run yet; the legacy fully-base64 `ss://` form and SIP003 plugins are not
 imported.
 
+## VLESS and VMess settings
+
+VLESS and VMess outbound settings are read as Xray-core v26.10.31 reads them,
+in the simplified form and in `vnext`, with ids as its `uuid.ParseString`
+reads them ([details](config-compatibility.md#outbounds-and-streams)).
+Deliberate differences:
+
+- A VLESS user without `encryption` is read as `none`, and a `vnext` server
+  with several VLESS users dials as the first. Xray-core refuses both
+  profiles; accepting them breaks none it accepts.
+- A server port of 0 fails parsing, as before. Xray-core accepts it and
+  dials port 0.
+- VLESS `reverse` and a nonzero `testpre` fail parsing: the reverse proxy and
+  the pre-connections are not implemented.
+- Xray-core panics when a `testseed` range is zero, and writes a negative
+  padding length when a short record is longer than its third number. Here a
+  zero range pads nothing and that part of the padding is zero.
+
 ## DNS `UseSystem` route probe
 
 `queryStrategy: "UseSystem"` narrows each lookup to the address families the

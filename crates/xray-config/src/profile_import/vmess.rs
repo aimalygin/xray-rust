@@ -194,7 +194,7 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
         (host, port, id, name, params)
     };
     let name = fragment.map_or(name, |f| f.to_string());
-    if uuid::Uuid::parse_str(&id).is_err() {
+    if crate::xray_uuid::parse(&id).is_none() {
         return Err(ImportError::Configuration);
     }
     if integer(&take(&mut params, "alterId", "0"))? != 0 {
