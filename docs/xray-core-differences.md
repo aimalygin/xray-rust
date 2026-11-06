@@ -76,7 +76,7 @@ This establishes the listed tests on the combined tree, not NAT or device proof.
 | --- | --- | --- |
 | #74 / #83: dependencies and Tokio descriptors | Updated dependency locks, private CLOEXEC descriptor duplicates, corrected Gradle checksum retry handling | Internal Rust/build changes; no intended Xray JSON or wire-format change |
 | #80 / #78: SOCKS inbound authentication | SOCKS5 username/password; stricter credential/configuration validation | RFC 1929 TCP authentication; authenticated UDP has the deliberate restriction below |
-| #84 / #87 / #79: SOCKS outbound | TCP CONNECT and UDP ASSOCIATE, noauth or password, flat or legacy settings, raw TCP with none/TLS control security | Tested subset of Xray-core; UDP relay datagrams remain plain and transport restrictions remain |
+| #84 / #87 / #79: SOCKS outbound | TCP CONNECT and UDP ASSOCIATE, noauth or password, flat or legacy settings; since 0.10.0 every transport with none/TLS/REALITY control security | Tested subset of Xray-core; UDP relay datagrams remain plain, as there |
 | #82 / #81: Android fixes | VPN metering policy, cached native FFI information, checked stats array length | Host SDK behavior, not an Xray network protocol extension |
 | #81: Android cleanup/helpers | Stage 1 merged in #82; stage 2 cleanup follows separately; stage 3 helpers remain optional | Host SDK work; preserve documented ownership and lifecycle rules |
 | #79: HTTP outbound | HTTP/1.1 and HTTP/2 CONNECT, optional Basic auth and custom headers, flat or legacy settings, raw TCP with none/TLS, TCP only | Tested subset of the pinned Xray client; status 200 only, one try, bounded head, early bytes kept, HTTP/2 tunnels end with `END_STREAM` |
@@ -163,8 +163,9 @@ silently accepting or ignoring them. `level` also applies without credentials;
 `email` is type-checked but does not supply upstream user-identity accounting.
 
 At the reviewed main snapshot, the outbound implements TCP CONNECT and UDP
-ASSOCIATE. It rejects enabled Mux, non-raw transports, and REALITY. UDP proxy
-chaining remains rejected. Xray-core has a broader transport surface.
+ASSOCIATE over every transport, with none, TLS or REALITY, as Xray-core does
+since 0.10.0. It rejects enabled Mux, and UDP proxy chaining remains
+rejected.
 Development mobile profile import additionally accepts `socks://` and
 `socks5://` through the shared Rust parser and Swift/Kotlin APIs under ABI 1.13;
 see the [accepted link subset and capability guard](socks-profile-import.md).

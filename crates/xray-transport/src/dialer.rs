@@ -106,6 +106,12 @@ impl TransportDialer {
         self.socket_protector.as_deref()
     }
 
+    /// Whether TCP carriers go through another outbound (`dialerProxy`)
+    /// instead of a direct socket.
+    pub fn carries_tcp_through_outbound(&self) -> bool {
+        self.resolved_tcp_connector.is_some()
+    }
+
     /// The same trust policy and socket protector used by this dialer.
     pub fn tls_connector(&self) -> &TlsConnector {
         &self.tls

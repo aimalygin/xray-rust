@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 use xray_config::{
     parse_xray_json, OutboundProtocol, OutboundSettings, SocksOutboundSettings, StreamSecurity,
-    TargetAddr,
+    StreamTransport, TargetAddr,
 };
 use xray_proxy::inbound::SocksAccount;
 
@@ -195,39 +195,106 @@ fn invalid_shapes_and_credentials_are_rejected_at_their_paths_without_secrets() 
 }
 
 #[test]
-fn stream_settings_allow_raw_with_none_or_tls_only() {
+fn stream_settings_accept_every_transport_and_its_security() {
     let with_stream = |stream: Value| {
         let mut raw = profile(flat());
         raw["outbounds"][0]["streamSettings"] = stream;
         raw
     };
-    for stream in [
-        json!({}),
-        json!({"network":"raw"}),
-        json!({"network":"tcp","security":"none"}),
-        json!({"network":"tcp","security":"tls","tlsSettings":{"serverName":"socks.example"}}),
-    ] {
-        settings(&with_stream(stream));
-    }
-    let parsed = parse_xray_json(
-        &with_stream(json!({"security":"tls","tlsSettings":{"serverName":"socks.example"}}))
-            .to_string(),
-    )
-    .unwrap();
-    assert!(matches!(
-        parsed.config.outbounds[0].stream.security,
-        StreamSecurity::Tls(_)
-    ));
-    for (stream, path) in [
-        (json!({"network":"ws"}), "network"),
-        (json!({"network":"grpc"}), "network"),
-        (json!({"network":"httpupgrade"}), "network"),
-        (json!({"network":"xhttp"}), "network"),
+    let stream_of = |stream: Value| {
+        let parsed =
+            parse_xray_json(&with_stream(stream).to_string()).expect("SOCKS stream parses");
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        parsed.config.outbounds[0].stream.clone()
+    };
+    let tls = json!({"serverName":"socks.example"});
+    let reality = json!({"serverName":"socks.example","fingerprint":"chrome",
+        "publicKey":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE","shortId":"02030405"});
+    // Xray-core puts no transport or security restriction on its SOCKS client.
+    for (stream, transport, security) in [
+        (json!({}), "raw", "none"),
         (
-            json!({"network":"raw","security":"reality","realitySettings":{
-                "serverName":"socks.example","fingerprint":"chrome",
-                "publicKey":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE","shortId":"02030405"}}),
+            json!({"network":"tcp","security":"tls","tlsSettings":tls}),
+            "raw",
+            "tls",
+        ),
+        (
+            json!({"network":"raw","security":"reality","realitySettings":reality}),
+            "raw",
+            "reality",
+        ),
+        (
+            json!({"network":"ws","wsSettings":{"path":"/socks"}}),
+            "ws",
+            "none",
+        ),
+        (
+            json!({"network":"ws","security":"tls","tlsSettings":tls}),
+            "ws",
+            "tls",
+        ),
+        (
+            json!({"network":"httpupgrade","security":"tls","tlsSettings":tls}),
+            "httpupgrade",
+            "tls",
+        ),
+        (
+            json!({"network":"grpc","grpcSettings":{"serviceName":"socks"}}),
+            "grpc",
+            "none",
+        ),
+        (
+            json!({"network":"grpc","security":"reality","realitySettings":reality}),
+            "grpc",
+            "reality",
+        ),
+        (
+            json!({"network":"xhttp","xhttpSettings":{"path":"/socks"}}),
+            "xhttp",
+            "none",
+        ),
+        (
+            json!({"network":"xhttp","security":"reality","realitySettings":reality}),
+            "xhttp",
+            "reality",
+        ),
+    ] {
+        let parsed = stream_of(stream.clone());
+        let parsed_transport = match parsed.transport {
+            StreamTransport::Raw => "raw",
+            StreamTransport::WebSocket(_) => "ws",
+            StreamTransport::HttpUpgrade(_) => "httpupgrade",
+            StreamTransport::Grpc(_) => "grpc",
+            StreamTransport::Xhttp(_) => "xhttp",
+            StreamTransport::Hysteria(_) => "hysteria",
+        };
+        let parsed_security = match parsed.security {
+            StreamSecurity::None => "none",
+            StreamSecurity::Tls(_) => "tls",
+            StreamSecurity::Reality(_) => "reality",
+        };
+        assert_eq!(
+            (parsed_transport, parsed_security),
+            (transport, security),
+            "{stream}"
+        );
+    }
+    // A plaintext XHTTP download leg to a public server is accepted, as a
+    // plaintext public SOCKS server is.
+    stream_of(
+        json!({"network":"xhttp","xhttpSettings":{"path":"/up","downloadSettings":{
+        "address":"198.51.100.20","port":443,"network":"xhttp","xhttpSettings":{"path":"/down"}}}}),
+    );
+    // Only what every outbound refuses stays refused: REALITY over WebSocket
+    // as in Xray-core, and the Hysteria transport outside its own outbound.
+    for (stream, path) in [
+        (
+            json!({"network":"ws","security":"reality","realitySettings":reality}),
             "security",
+        ),
+        (
+            json!({"network":"hysteria","hysteriaSettings":{"version":2,"auth":"synthetic"}}),
+            "network",
         ),
     ] {
         rejects_at(

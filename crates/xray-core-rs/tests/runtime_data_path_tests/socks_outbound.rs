@@ -175,10 +175,21 @@ struct ScriptedAssociation {
 /// replies with an unspecified bound address, so the client must substitute
 /// the server address.
 async fn scripted_upstream_association(listener: &TcpListener) -> ScriptedAssociation {
-    let (mut control, _) = timeout(Duration::from_secs(2), listener.accept())
+    scripted_association(accept_control(listener).await, Ipv4Addr::UNSPECIFIED.into()).await
+}
+
+async fn accept_control(listener: &TcpListener) -> TcpStream {
+    let (control, _) = timeout(Duration::from_secs(2), listener.accept())
         .await
         .expect("the outbound opens a control connection")
         .unwrap();
+    control
+}
+
+/// Plays a password SOCKS5 server for one UDP ASSOCIATE on `control` and
+/// replies with `bound`. The relay listens on `bound`, or on the control
+/// connection's local address when `bound` is unspecified.
+async fn scripted_association(mut control: TcpStream, bound: IpAddr) -> ScriptedAssociation {
     let mut greeting = [0; 3];
     control.read_exact(&mut greeting).await.unwrap();
     assert_eq!(greeting, [5, 1, 2]);
@@ -200,11 +211,32 @@ async fn scripted_upstream_association(listener: &TcpListener) -> ScriptedAssoci
                 u16::from_be_bytes([raw[4], raw[5]]),
             ))
         }
+        4 => {
+            let mut raw = [0; 18];
+            control.read_exact(&mut raw).await.unwrap();
+            let ip: [u8; 16] = raw[..16].try_into().unwrap();
+            SocketAddr::from((Ipv6Addr::from(ip), u16::from_be_bytes([raw[16], raw[17]])))
+        }
         other => panic!("unexpected declared address type {other}"),
     };
 
-    let relay = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-    let mut reply = vec![5, 0, 0, 1, 0, 0, 0, 0];
+    let relay_ip = if bound.is_unspecified() {
+        control.local_addr().unwrap().ip()
+    } else {
+        bound
+    };
+    let relay = UdpSocket::bind((relay_ip, 0)).await.unwrap();
+    let mut reply = vec![5, 0, 0];
+    match bound {
+        IpAddr::V4(ip) => {
+            reply.push(1);
+            reply.extend_from_slice(&ip.octets());
+        }
+        IpAddr::V6(ip) => {
+            reply.push(4);
+            reply.extend_from_slice(&ip.octets());
+        }
+    }
     reply.extend_from_slice(&relay.local_addr().unwrap().port().to_be_bytes());
     control.write_all(&reply).await.unwrap();
     ScriptedAssociation {
@@ -503,6 +535,103 @@ async fn socks_outbound_udp_uses_ipv4_socket_for_mapped_proxy_address() {
         let reply = encode_socks5_udp_datagram(&request.target, &request.payload).unwrap();
         upstream.relay.send_to(&reply, source).await.unwrap();
         assert_eq!(client.recv().await.as_ref(), b"mapped");
+        drop(client);
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn socks_outbound_udp_associates_over_a_transport_and_names_its_server() {
+    timeout(Duration::from_secs(10), async {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        // The control connection goes through HTTPUpgrade. The relay comes
+        // back unspecified, and with no direct peer to read it names the
+        // server's first address of the socket's family, not its last.
+        let profile = serde_json::json!({
+            "dns": {"hosts": {"upgrade.socks.test": ["127.0.0.1", "127.0.0.2"]}},
+            "inbounds": [{"tag": "client-in", "protocol": "socks", "listen": "127.0.0.1", "port": 0,
+                "settings": {"auth": "noauth", "udp": true}}],
+            "outbounds": [{"protocol": "socks", "settings": {
+                "address": "upgrade.socks.test", "port": port,
+                "user": "synthetic-user", "pass": "synthetic-pass"
+            }, "streamSettings": {"network": "httpupgrade",
+                "httpupgradeSettings": {"path": "/socks-upgrade"}}}]
+        });
+        let mut core = Core::new(parse_xray_json(&profile.to_string()).unwrap().config).unwrap();
+        core.start().await.unwrap();
+        let client = UdpClient::associate(core.inbound_addr(Some("client-in")).unwrap()).await;
+        client.send(SYNTHETIC_UDP_TARGET, b"upgraded").await;
+        let mut control = accept_control(&listener).await;
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            let mut byte = [0; 1];
+            control.read_exact(&mut byte).await.unwrap();
+            request.push(byte[0]);
+        }
+        let request = String::from_utf8(request).unwrap().to_ascii_lowercase();
+        assert!(request.starts_with("get /socks-upgrade http/1.1\r\n"), "{request}");
+        assert!(request.contains("\r\nupgrade: websocket\r\n"), "{request}");
+        control
+            .write_all(
+                b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        let upstream = scripted_association(control, Ipv4Addr::UNSPECIFIED.into()).await;
+        let (source, request) = upstream.recv().await;
+        assert_eq!(request.payload.as_ref(), b"upgraded");
+        let reply = encode_socks5_udp_datagram(&request.target, b"over the transport").unwrap();
+        upstream.relay.send_to(&reply, source).await.unwrap();
+        assert_eq!(client.recv().await.as_ref(), b"over the transport");
+        drop(client);
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn socks_outbound_udp_moves_on_from_a_relay_of_the_other_family() {
+    let Some((v4, v6, port)) = super::freedom_domain_strategy::dual_stack_listeners().await else {
+        eprintln!("skipped: this host has no IPv6 loopback");
+        return;
+    };
+    timeout(Duration::from_secs(10), async {
+        let profile = serde_json::json!({
+            "dns": {"hosts": {"dual.socks.test": ["::1", "127.0.0.1"]}},
+            "inbounds": [{"tag": "client-in", "protocol": "socks", "listen": "127.0.0.1", "port": 0,
+                "settings": {"auth": "noauth", "udp": true}}],
+            "outbounds": [{"protocol": "socks", "settings": {
+                "address": "dual.socks.test", "port": port,
+                "user": "synthetic-user", "pass": "synthetic-pass"
+            }}]
+        });
+        let mut core = Core::new(parse_xray_json(&profile.to_string()).unwrap().config).unwrap();
+        core.start().await.unwrap();
+        let client = UdpClient::associate(core.inbound_addr(Some("client-in")).unwrap()).await;
+        client.send(SYNTHETIC_UDP_TARGET, b"next family").await;
+        // The IPv6 control connection is answered with an IPv4 relay, which
+        // the IPv6 socket cannot pair with: the client closes it and asks
+        // over IPv4 instead.
+        let mut other_family =
+            scripted_association(accept_control(&v6).await, Ipv4Addr::LOCALHOST.into()).await;
+        assert!(other_family.declared.is_ipv6());
+        let mut byte = [0; 1];
+        let read = timeout(Duration::from_secs(2), other_family.control.read(&mut byte))
+            .await
+            .expect("the client closes the mismatched control connection");
+        assert!(matches!(read, Ok(0) | Err(_)), "{read:?}");
+        let upstream =
+            scripted_association(accept_control(&v4).await, Ipv4Addr::UNSPECIFIED.into()).await;
+        let (source, request) = upstream.recv().await;
+        assert!(source.is_ipv4());
+        assert_eq!(request.payload.as_ref(), b"next family");
+        let reply = encode_socks5_udp_datagram(&request.target, b"same family").unwrap();
+        upstream.relay.send_to(&reply, source).await.unwrap();
+        assert_eq!(client.recv().await.as_ref(), b"same family");
         drop(client);
         core.stop().await.unwrap();
     })
