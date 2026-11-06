@@ -95,23 +95,25 @@ internal class XrayTunnelStateMachine<Session> {
     fun beginOrReplaceStart(
         request: Any? = null,
         launch: (StartToken) -> Unit,
-    ): XrayTunnelStartAdmission = synchronized(lock) {
+    ): XrayTunnelStartAdmission = synchronized(lock) { admitStartLocked(request, launch) }
+
+    private fun admitStartLocked(request: Any?, launch: (StartToken) -> Unit): XrayTunnelStartAdmission {
         val current = state
         val starting = when (current) {
-            State.Stopped -> return@synchronized XrayTunnelStartAdmission.Started(
+            State.Stopped -> return XrayTunnelStartAdmission.Started(
                 StartToken(request).also { state = State.Starting(it) },
             )
             is State.Starting -> current.token
             is State.Stopping -> current.failedStartToken
             is State.Running -> null
-        } ?: return@synchronized XrayTunnelStartAdmission.Rejected
+        } ?: return XrayTunnelStartAdmission.Rejected
         if (current is State.Starting && request != null && request == pendingRequest(starting)) {
-            return@synchronized XrayTunnelStartAdmission.Rejected
+            return XrayTunnelStartAdmission.Rejected
         }
         starting.stopRequested = true
         val displaced = queuedStart != null
         queuedStart = QueuedStart(StartToken(request), launch)
-        XrayTunnelStartAdmission.Queued(cancelled = starting, displacedQueuedStart = displaced)
+        return XrayTunnelStartAdmission.Queued(cancelled = starting, displacedQueuedStart = displaced)
     }
 
     // The request that will run unless stopped: the queued replacement, else the live attempt.
@@ -170,7 +172,7 @@ internal class XrayTunnelStateMachine<Session> {
             state = next?.let { State.Starting(it.token) } ?: State.Stopped
         }
         lock.notifyAll()
-        next?.let { { it.launch(it.token) } }
+        next?.let { queued -> { queued.launch(queued.token) } }
     }
 
     fun requestStop(): XrayTunnelStopAction<Session> = synchronized(lock) {
@@ -666,17 +668,11 @@ open class XrayVpnService : VpnService() {
     private fun deliverStartOutcome(outcome: XrayTunnelStartOutcome) {
         when (outcome) {
             is XrayTunnelStartOutcome.Started ->
-                if (lifecycle.isRunningSession(outcome.session)) {
-                    runCatching { onXrayTunnelStarted() }
-                } else {
-                    notifyXrayTunnelStartCancelled()
-                }
+                if (lifecycle.isRunningSession(outcome.session)) notifyXrayTunnelStarted()
+                else notifyXrayTunnelStartCancelled()
             is XrayTunnelStartOutcome.Failed ->
-                if (Thread.currentThread().isInterrupted) {
-                    notifyXrayTunnelStartCancelled()
-                } else {
-                    notifyXrayTunnelStartFailed(outcome.error)
-                }
+                if (Thread.currentThread().isInterrupted) notifyXrayTunnelStartCancelled()
+                else notifyXrayTunnelStartFailed(outcome.error)
             XrayTunnelStartOutcome.Cancelled -> notifyXrayTunnelStartCancelled()
         }
     }
@@ -921,6 +917,10 @@ open class XrayVpnService : VpnService() {
 
     private fun notifyXrayTunnelStartFailed(error: Throwable) {
         runCatching { onXrayTunnelStartFailed(error) }
+    }
+
+    private fun notifyXrayTunnelStarted() {
+        runCatching { onXrayTunnelStarted() }
     }
 
     private fun notifyXrayTunnelStartCancelled() {
