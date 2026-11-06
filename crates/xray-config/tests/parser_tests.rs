@@ -5717,6 +5717,10 @@ fn finalmask_quic_params_full_v26_surface_is_normalized() {
             udp_hop: QuicUdpHopSettings {
                 ports: vec![443, 1000, 1001, 1002, 443],
                 interval: QuicIntervalRange { from: 10, to: 30 },
+                // The legacy spelling hops both, as the mask's two modes do.
+                local: true,
+                remote: true,
+                ..QuicUdpHopSettings::default()
             },
             init_stream_receive_window: 16_384,
             max_stream_receive_window: 32_768,

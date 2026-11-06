@@ -34,16 +34,31 @@ Hysteria accepts one Salamander mask and the v26.10.21 UDP-hop mask:
 }
 ```
 
-Both masks are optional. UDP-hop must be first; the supported mode changes the
-local socket and remote port together. Independent `intervalLocal`,
-`intervalRemote`, `perConnRemote` and nonempty `remoteIPs` are rejected. XHTTP
-with exact `h3` ALPN accepts the same UDP-hop mask (see the XHTTP H3 section).
-Ports preserve order and duplicate weights, with at most 65535
-expanded entries and at least one port. An omitted/zero interval defaults to
-30 seconds; other bounds must both be at least five seconds. The first packet
-already uses a randomly selected port; all ports must reach the same server.
-Each scheduled hop draws among the ports other than the current one, keeping
-duplicate weights, so every hop changes the path. Xray draws with
+Both masks are optional. UDP-hop must be first. XHTTP with exact `h3` ALPN
+accepts the same UDP-hop mask (see the XHTTP H3 section). Its `mode` is a
+comma-separated mix of Xray-core v26.10.31's modes, read as Xray reads them:
+case-insensitive, without trimming, and refusing an empty or unknown part.
+
+- `intervalLocal` moves the connection to a fresh protected local socket at
+  every interval, still aimed at the same remote address.
+- `intervalRemote` aims it at a new remote address at every interval: a port
+  among `remotePorts` and an IP in `remoteIPs`. Unlike Xray-core, which keeps
+  its socket for a remote-only hop, a remote hop also takes a fresh local
+  socket.
+- `perConnRemote` draws the first remote address once per connection and
+  never hops on its own.
+
+With `intervalRemote` or `perConnRemote` the first packet already goes to a
+drawn address, and every address must reach the same server; otherwise it
+goes to the configured server. `remotePorts` preserves order and duplicate
+weights, with at most 65535 expanded entries. `remoteIPs` holds IPs or
+prefixes, read as Go's `netip` reads them; a drawn IP takes random host bits
+within a prefix, as Xray's `randPrefix` draws them. Only entries of the
+server address's family are drawn, since the QUIC endpoint keeps its socket
+family, where Xray-core dials any family. An omitted/zero interval defaults
+to 30 seconds; other bounds must both be at least five seconds. Each
+scheduled remote hop draws among the ports other than the current one,
+keeping duplicate weights, so every hop changes the port. Xray draws with
 replacement, so with two ports half of its hops keep the same port.
 The old `quicParams.udpHop` spelling remains accepted with a migration warning;
 combining both spellings fails. Profile import emits the new mask form.
@@ -1586,9 +1601,10 @@ aggressive `bbrProfile` with BBR selected fails to parse, and so does plain
 `brutal`: it follows the rate a Hysteria server announces, and Xray-core's
 XHTTP dialer has no case for it and panics when dialing. H3 accepts the
 UDP-hop mask, or the legacy `quicParams.udpHop`, with
-the Hysteria rules above: the first Initial already goes to a hop port, and
-each interval moves the connection to a fresh protected socket aimed at
-another port while QUIC migrates the path. The timer starts once the
+the Hysteria rules above: with a remote mode the first Initial already goes
+to a drawn address, and each interval of an interval mode moves the
+connection to a fresh protected socket, aimed with `intervalRemote` at
+another address, while QUIC migrates the path. The timer starts once the
 connection exists and stops with it; a failed hop keeps the current path until
 the next interval, as in Xray. Each pooled QUIC connection hops independently.
 H3 rejects TCP masks and UDP masks other than UDP-hop and the bounded noise mask; the opt-in TCP fragment

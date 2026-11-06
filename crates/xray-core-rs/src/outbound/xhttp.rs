@@ -309,13 +309,35 @@ pub(super) fn xhttp_h3_quic_config(
         }
     };
     config.brutal_disable_loss_compensation = settings.brutal_disable_loss_compensation;
-    config.udp_hop = H3UdpHopConfig {
-        ports: settings.udp_hop.ports.clone(),
-        interval_min: quic_i32_seconds("udpHop.interval.from", settings.udp_hop.interval.from)?,
-        interval_max: quic_i32_seconds("udpHop.interval.to", settings.udp_hop.interval.to)?,
-    };
+    config.udp_hop = udp_hop_config(
+        &settings.udp_hop,
+        quic_i32_seconds("udpHop.interval.from", settings.udp_hop.interval.from)?,
+        quic_i32_seconds("udpHop.interval.to", settings.udp_hop.interval.to)?,
+    );
     config.debug = settings.debug;
     Ok(config)
+}
+
+/// A UDP hop's settings for the QUIC carrier, with its intervals already
+/// converted.
+pub(super) fn udp_hop_config(
+    hop: &xray_config::QuicUdpHopSettings,
+    interval_min: Duration,
+    interval_max: Duration,
+) -> H3UdpHopConfig {
+    H3UdpHopConfig {
+        ports: hop.ports.clone(),
+        interval_min,
+        interval_max,
+        local: hop.local,
+        remote: hop.remote,
+        remote_once: hop.remote_once,
+        remote_ips: hop
+            .remote_ips
+            .iter()
+            .map(|cidr| (cidr.network(), cidr.prefix()))
+            .collect(),
+    }
 }
 
 /// The BBR variant for Xray's `bbrProfile`; only standard is implemented.

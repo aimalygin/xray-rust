@@ -1301,7 +1301,7 @@
         "remotePorts"
       ],
       "id": "UDP_HOP_MASK",
-      "notes": "Hysteria only, first UDP mask: mode intervalLocal,intervalRemote, nonempty remotePorts and empty remoteIPs. Default interval 30 seconds, minimum 5. Independent modes, perConnRemote and remote IP hopping are rejected."
+      "notes": "Hysteria or XHTTP with exact h3 ALPN, first UDP mask: mode is any comma-separated mix of intervalLocal, intervalRemote and perConnRemote; remotePorts and remoteIPs (IPs or prefixes, drawn only within the server's family). Default interval 30 seconds, minimum 5. A remote hop also takes a fresh local socket and always changes the port."
     },
     {
       "context": "$.outbounds[].settings (shadowsocks)",

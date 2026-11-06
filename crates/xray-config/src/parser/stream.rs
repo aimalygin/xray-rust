@@ -842,7 +842,18 @@ impl Parser<'_> {
             );
         }
 
-        Some(QuicUdpHopSettings { ports, interval })
+        // The legacy `quicParams.udpHop` hops the local socket and the
+        // remote port together when it has ports; a mask's `mode` sets its
+        // own.
+        let hops = !ports.is_empty();
+        Some(QuicUdpHopSettings {
+            ports,
+            interval,
+            local: hops,
+            remote: hops,
+            remote_once: false,
+            remote_ips: Vec::new(),
+        })
     }
 
     pub(super) fn quic_u64_at(&mut self, quic: &Value, key: &str, quic_path: &str) -> Option<u64> {

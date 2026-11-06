@@ -63,28 +63,79 @@ fn null_proxy_settings_is_absent_as_in_xray() {
 }
 
 #[test]
-fn udp_hop_mask_normalizes_supported_mode_and_rejects_unimplemented_modes() {
+fn udp_hop_mask_reads_every_xray_mode_and_remote_ips() {
     let mut raw = hysteria();
     let settings = json!({"mode":"intervalRemote,intervalLocal","remotePorts":"443,8443-8444","interval":"10-5"});
     raw["outbounds"][0]["streamSettings"]["finalmask"]["udp"] =
         json!([{"type":"UDPHOP","settings":settings}]);
     let parsed = parse_xray_json(&raw.to_string()).unwrap();
     assert!(parsed.diagnostics.is_empty());
-    let hop = &parsed.config.outbounds[0]
-        .stream
-        .quic_params
-        .as_ref()
-        .unwrap()
-        .udp_hop;
-    assert_eq!(hop.ports, [443, 8443, 8444]);
-    assert_eq!((hop.interval.from, hop.interval.to), (5, 10));
+    let hop = |raw: &Value| {
+        parse_xray_json(&raw.to_string()).unwrap().config.outbounds[0]
+            .stream
+            .quic_params
+            .clone()
+            .unwrap()
+            .udp_hop
+    };
+    let both = hop(&raw);
+    assert_eq!(both.ports, [443, 8443, 8444]);
+    assert_eq!((both.interval.from, both.interval.to), (5, 10));
+    assert_eq!(
+        (both.local, both.remote, both.remote_once),
+        (true, true, false)
+    );
+    // Each mode alone, in any case and repeated, as Xray reads them.
+    for (mode, expected) in [
+        ("intervalLocal", (true, false, false)),
+        ("INTERVALREMOTE", (false, true, false)),
+        ("perConnRemote", (false, false, true)),
+        (
+            "perConnRemote,intervalLocal,perconnremote",
+            (true, false, true),
+        ),
+    ] {
+        let mut one = raw.clone();
+        one["outbounds"][0]["streamSettings"]["finalmask"]["udp"][0]["settings"]["mode"] =
+            json!(mode);
+        let read = hop(&one);
+        assert_eq!(
+            (read.local, read.remote, read.remote_once),
+            expected,
+            "{mode}"
+        );
+    }
+    // Remote IPs are IPs or prefixes, and no ports are needed with them.
+    let mut ips = raw.clone();
+    let settings = &mut ips["outbounds"][0]["streamSettings"]["finalmask"]["udp"][0]["settings"];
+    settings["remoteIPs"] = json!(["192.0.2.7", "198.51.100.0/24", "2001:db8::/64"]);
+    settings["remotePorts"] = json!(null);
+    let read = hop(&ips);
+    assert!(read.ports.is_empty());
+    assert_eq!(
+        read.remote_ips
+            .iter()
+            .map(|cidr| (cidr.network().to_string(), cidr.prefix()))
+            .collect::<Vec<_>>(),
+        [
+            ("192.0.2.7".to_owned(), 32),
+            ("198.51.100.0".to_owned(), 24),
+            ("2001:db8::".to_owned(), 64),
+        ]
+    );
     for (key, bad) in [
-        ("mode", json!("intervalRemote")),
-        ("mode", json!("perConnRemote")),
-        ("mode", json!("intervalLocal")),
-        ("remoteIPs", json!(["192.0.2.1"])),
-        ("remotePorts", json!([])),
-        ("remotePorts", json!(0)),
+        // Xray splits the mode without trimming and refuses an empty part.
+        ("mode", json!("intervalLocal, intervalRemote")),
+        ("mode", json!("")),
+        ("mode", json!(null)),
+        ("mode", json!("intervalLocal,")),
+        ("mode", json!("perConn")),
+        ("mode", json!(1)),
+        ("remoteIPs", json!(["192.0.2.1/33"])),
+        ("remoteIPs", json!(["example.com"])),
+        ("remoteIPs", json!(["[2001:db8::1]"])),
+        ("remoteIPs", json!(["192.0.2.0/024"])),
+        ("remoteIPs", json!("192.0.2.1")),
         ("interval", json!("0-5")),
         ("interval", json!(4)),
     ] {
@@ -245,4 +296,25 @@ fn wireguard_remote_dns_defaults_literals_and_legacy_diagnostic() {
         raw["outbounds"][0]["settings"]["remoteDNS"] = bad;
         assert!(parse_xray_json(&raw.to_string()).is_err());
     }
+}
+
+/// The legacy spelling hops the local socket and the remote port together,
+/// and only when it has ports to hop between.
+#[test]
+fn legacy_udp_hop_hops_both_ways_and_only_with_ports() {
+    let hop = |udp_hop: Value| {
+        let mut raw = hysteria();
+        raw["outbounds"][0]["streamSettings"]["finalmask"]["quicParams"] =
+            json!({"udpHop": udp_hop, "disableChromeParrot": true});
+        let hop = parse_xray_json(&raw.to_string()).unwrap().config.outbounds[0]
+            .stream
+            .quic_params
+            .clone()
+            .unwrap()
+            .udp_hop;
+        (hop.local, hop.remote, hop.remote_once)
+    };
+    assert_eq!(hop(json!({"ports": "443,8443"})), (true, true, false));
+    assert_eq!(hop(json!({"ports": null})), (false, false, false));
+    assert_eq!(hop(json!({"ports": 0})), (false, false, false));
 }

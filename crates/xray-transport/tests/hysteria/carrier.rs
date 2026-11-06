@@ -73,6 +73,8 @@ async fn scenario_with(salamander: bool, gecko: Option<(u16, u16)>, hopping: boo
             let reservation = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
             config.remote_addr = reservation.local_addr().unwrap();
             config.carrier.udp_hop.ports = vec![first.address.port(), second.address.port()];
+            config.carrier.udp_hop.local = true;
+            config.carrier.udp_hop.remote = true;
             config.carrier.udp_hop.interval_min = Duration::from_secs(5);
             config.carrier.udp_hop.interval_max = Duration::from_secs(5);
             drop(reservation);
@@ -175,6 +177,18 @@ async fn scenario_with(salamander: bool, gecko: Option<(u16, u16)>, hopping: boo
             assert_eq!(client.active_udp_sessions(), 1);
         }
         assert!(protector.calls.load(Ordering::SeqCst) >= 3);
+        if hopping {
+            // The first socket, the timer's hop and the rebind alternate
+            // between the two hop ports: each hop starts from the port in use.
+            let (a, b) = (first.sources(), second.sources());
+            let (starter, other) = if a.first() < b.first() && !a.is_empty() {
+                (a, b)
+            } else {
+                (b, a)
+            };
+            assert_eq!((starter.len(), other.len()), (2, 1));
+            assert!(starter[0] < other[0] && other[0] < starter[1]);
+        }
         protector.reject.store(true, Ordering::Release);
         assert!(client.rebind());
         timeout(DEADLINE, async {

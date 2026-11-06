@@ -2392,6 +2392,9 @@ async fn xhttp_h3_hops_to_a_different_port_each_interval_on_one_connection() {
                     ports: vec![first.address.port(), second.address.port()],
                     interval_min: Duration::from_secs(5),
                     interval_max: Duration::from_secs(5),
+                    local: true,
+                    remote: true,
+                    ..H3UdpHopConfig::default()
                 },
                 ..H3QuicConfig::default()
             },
@@ -2439,6 +2442,120 @@ async fn xhttp_h3_hops_to_a_different_port_each_interval_on_one_connection() {
     })
     .await
     .expect("bounded UDP hop scenario");
+}
+
+/// One request and response over `client`, served by `server`.
+async fn hop_exchange(client: &H3Client, server: &TestServer, round: u8) {
+    let handler = tokio::spawn({
+        let server = server.clone();
+        async move { serve_clean_exchange(&server).await }
+    });
+    let payload = vec![round; 4096];
+    let mut body = client
+        .send_fixed(request(Method::POST, "/hop"), Bytes::from(payload.clone()))
+        .await
+        .expect("request survives the hop");
+    body.read_to_end(&mut Vec::new())
+        .await
+        .expect("response body");
+    assert_eq!(handler.await.unwrap().2, payload);
+}
+
+/// Xray's `intervalLocal` alone: each interval takes a fresh local socket,
+/// still aimed at the server's own address, whatever the ports say.
+#[tokio::test]
+async fn xhttp_h3_local_hop_keeps_the_servers_address() {
+    timeout(Duration::from_secs(30), async {
+        let (client_tls, server_addr, server) = server_with_options(None).await;
+        let own = HopRelay::start(server_addr).await;
+        let other = HopRelay::start(server_addr).await;
+        let protector = Arc::new(RecordingProtector::default());
+        let protector_dyn: Arc<dyn SocketProtector> = protector.clone();
+        let client = connect_h3(H3ConnectConfig {
+            remote_addr: own.address,
+            server_name: "localhost".to_owned(),
+            tls_config: client_tls,
+            socket_protector: Some(protector_dyn),
+            quic: H3QuicConfig {
+                udp_hop: H3UdpHopConfig {
+                    ports: vec![other.address.port()],
+                    interval_min: Duration::from_secs(5),
+                    interval_max: Duration::from_secs(5),
+                    local: true,
+                    ..H3UdpHopConfig::default()
+                },
+                ..H3QuicConfig::default()
+            },
+        })
+        .await
+        .expect("connect to the server's address");
+        hop_exchange(&client, &server, 0).await;
+        let before = client.local_addr().unwrap();
+        timeout(Duration::from_secs(8), async {
+            while client.local_addr().unwrap() == before {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("the timer moves the carrier to a fresh socket");
+        hop_exchange(&client, &server, 1).await;
+        assert!(client.is_live());
+        assert_eq!(own.sources.load(Ordering::SeqCst), 2);
+        assert_eq!(other.sources.load(Ordering::SeqCst), 0);
+        assert_eq!(protector.calls.load(Ordering::SeqCst), 2);
+    })
+    .await
+    .expect("bounded local hop scenario");
+}
+
+/// Xray's `perConnRemote` alone: the connection goes to a random one of the
+/// ports and stays there, on its first socket.
+#[tokio::test]
+async fn xhttp_h3_per_connection_remote_draws_once_and_never_hops() {
+    timeout(Duration::from_secs(30), async {
+        let (client_tls, server_addr, server) = server_with_options(None).await;
+        let first = HopRelay::start(server_addr).await;
+        let second = HopRelay::start(server_addr).await;
+        // Nothing listens on the nominal port.
+        let nominal = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let protector = Arc::new(RecordingProtector::default());
+        let protector_dyn: Arc<dyn SocketProtector> = protector.clone();
+        let client = connect_h3(H3ConnectConfig {
+            remote_addr: nominal,
+            server_name: "localhost".to_owned(),
+            tls_config: client_tls,
+            socket_protector: Some(protector_dyn),
+            quic: H3QuicConfig {
+                udp_hop: H3UdpHopConfig {
+                    ports: vec![first.address.port(), second.address.port()],
+                    interval_min: Duration::from_secs(5),
+                    interval_max: Duration::from_secs(5),
+                    remote_once: true,
+                    ..H3UdpHopConfig::default()
+                },
+                ..H3QuicConfig::default()
+            },
+        })
+        .await
+        .expect("connect through a drawn port");
+        let before = client.local_addr().unwrap();
+        hop_exchange(&client, &server, 0).await;
+        tokio::time::sleep(Duration::from_secs(6)).await;
+        hop_exchange(&client, &server, 1).await;
+        assert_eq!(client.local_addr().unwrap(), before);
+        let mut sources = [
+            first.sources.load(Ordering::SeqCst),
+            second.sources.load(Ordering::SeqCst),
+        ];
+        sources.sort_unstable();
+        assert_eq!(sources, [0, 1]);
+        assert_eq!(protector.calls.load(Ordering::SeqCst), 1);
+    })
+    .await
+    .expect("bounded per-connection scenario");
 }
 
 #[tokio::test]
@@ -2722,6 +2839,9 @@ fn unsupported_quic_parity_modes_fail_closed() {
         ports: vec![443, 8443],
         interval_min: Duration::from_secs(5),
         interval_max: Duration::from_secs(10),
+        local: true,
+        remote: true,
+        ..H3UdpHopConfig::default()
     };
     assert!(config.diagnostics().unwrap().udp_hop);
     config.udp_hop.interval_min = Duration::from_secs(4);
@@ -2735,6 +2855,26 @@ fn unsupported_quic_parity_modes_fail_closed() {
         config.diagnostics(),
         Err(H3Error::InvalidUdpHop { port_count: 3, .. })
     ));
+    // A local hop needs no ports, and its interval is held to the same bounds.
+    config.udp_hop = H3UdpHopConfig {
+        interval_min: Duration::from_secs(5),
+        interval_max: Duration::from_secs(5),
+        local: true,
+        ..H3UdpHopConfig::default()
+    };
+    assert!(config.diagnostics().unwrap().udp_hop);
+    config.udp_hop.interval_min = Duration::from_secs(4);
+    assert!(matches!(
+        config.diagnostics(),
+        Err(H3Error::InvalidUdpHop { port_count: 0, .. })
+    ));
+    // `perConnRemote` alone draws once and runs no timer.
+    config.udp_hop = H3UdpHopConfig {
+        ports: vec![443, 8443],
+        remote_once: true,
+        ..H3UdpHopConfig::default()
+    };
+    assert!(!config.diagnostics().unwrap().udp_hop);
 
     config.udp_hop = H3UdpHopConfig::default();
     config.debug = true;

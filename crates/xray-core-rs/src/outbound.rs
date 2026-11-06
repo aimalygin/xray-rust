@@ -8199,7 +8199,18 @@ mod tests {
             bbr_profile: xray_config::QuicBbrProfile::Standard,
             brutal_up_bytes_per_sec: 65_536,
             brutal_down_bytes_per_sec: 131_072,
-            udp_hop: xray_config::QuicUdpHopSettings::default(),
+            udp_hop: xray_config::QuicUdpHopSettings {
+                ports: vec![4_443, 4_444],
+                interval: xray_config::QuicIntervalRange { from: 7, to: 9 },
+                local: true,
+                remote: false,
+                remote_once: true,
+                remote_ips: vec![xray_config::IpCidr::new(
+                    std::net::IpAddr::V4(std::net::Ipv4Addr::new(198, 51, 100, 0)),
+                    24,
+                )
+                .unwrap()],
+            },
             init_stream_receive_window: 2_100_000,
             max_stream_receive_window: 2_100_000,
             init_connection_receive_window: 3_100_000,
@@ -8227,6 +8238,21 @@ mod tests {
         assert_eq!(quic.max_incoming_bidirectional_streams, 16);
         assert!(quic.disable_path_mtu_discovery);
         assert_eq!(quic.congestion, H3Congestion::Reno);
+        assert_eq!(
+            quic.udp_hop,
+            xray_transport::stream::H3UdpHopConfig {
+                ports: vec![4_443, 4_444],
+                interval_min: Duration::from_secs(7),
+                interval_max: Duration::from_secs(9),
+                local: true,
+                remote: false,
+                remote_once: true,
+                remote_ips: vec![(
+                    std::net::IpAddr::V4(std::net::Ipv4Addr::new(198, 51, 100, 0)),
+                    24
+                )],
+            }
+        );
     }
 
     #[test]
@@ -8235,6 +8261,9 @@ mod tests {
             udp_hop: xray_config::QuicUdpHopSettings {
                 ports: vec![4_443],
                 interval: xray_config::QuicIntervalRange { from, to: 6 },
+                local: true,
+                remote: true,
+                ..xray_config::QuicUdpHopSettings::default()
             },
             ..QuicParamsSettings::default()
         };
