@@ -358,6 +358,27 @@ cases against sing-box, but that run is not yet recorded; no physical-device
 run yet; the legacy fully-base64 `ss://` form and SIP003 plugins are not
 imported.
 
+## DNS `UseSystem` route probe
+
+`queryStrategy: "UseSystem"` narrows each lookup to the address families the
+system has a route for, as Xray-core v26.10.31's `checkSystem` does
+([details](config-compatibility.md#dns)). Both probe with a UDP `connect`
+toward a root DNS server of each family and keep the result for 100 ms on
+mobile and desktop platforms.
+
+Deliberate difference: the probe sockets go through the socket protector.
+On Android, Xray-core's probe is not protected, so inside the VPN it reads
+the VPN's own routes, which usually include IPv6 even on an IPv4-only
+network. Ours reads the network the core dials over, where a missing family
+would fail the connection anyway.
+
+Evidence: live against Xray-core v26.10.31 with a recording DNS server and
+`freedom` resolving with `UseIP`, five profiles (global `UseIP`, `UseIPv4`,
+`UseSystem`, a server's `UseSystem`, and the `use-sys` spelling under a
+server's `UseIP`) ask for the same record types in both cores. That holds
+on macOS, which routes both families, and in a Linux container without IPv6,
+where `UseSystem` asks for `A` alone.
+
 ## DNS hosts `"#N"` RCODE answers
 
 `dns.hosts` reads a `"#N"` value as Xray-core's `app/dns/hosts.go` does: the

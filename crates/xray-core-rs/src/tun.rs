@@ -22,10 +22,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{AbortHandle, JoinError, JoinSet};
 use tokio::time::{sleep, Duration, Instant as TokioInstant};
-use xray_config::{
-    CoreConfig, DnsQueryStrategy as ConfigDnsQueryStrategy, DnsServerConfig, DomainStrategy,
-    InboundSniffingConfig,
-};
+use xray_config::{CoreConfig, DnsServerConfig, DomainStrategy, InboundSniffingConfig};
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
     dns_response_matches_query, protect_udp_socket, BoxedTransportStream, DnsLookup,
@@ -588,7 +585,7 @@ impl FakeIpMapper {
             ));
         }
         if question.qtype == DNS_TYPE_A && question.qclass == DNS_CLASS_IN {
-            if self.query_strategy() == ConfigDnsQueryStrategy::UseIpv6 {
+            if !self.answers(false) {
                 return Some(build_dns_response(
                     query,
                     &question,
@@ -6385,6 +6382,7 @@ mod tests {
     use std::pin::Pin;
     use std::task::{Context, Poll};
     use tokio::io::AsyncWrite;
+    use xray_config::DnsQueryStrategy as ConfigDnsQueryStrategy;
 
     const NORMAL_TCP_REMOTE_PENDING_LIMIT: usize = 4 * 1024 * 1024;
     const PRESSURE_TCP_REMOTE_PENDING_LIMIT: usize = 2 * 1024 * 1024;

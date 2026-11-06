@@ -138,6 +138,10 @@ pub struct DnsConfig {
     /// tag. UUID generation intentionally stays outside the config model.
     pub tag: String,
     pub query_strategy: DnsQueryStrategy,
+    /// `queryStrategy: "UseSystem"`, which leaves `query_strategy` at
+    /// [`DnsQueryStrategy::UseIp`] and narrows each lookup to the address
+    /// families the system has a route for, as Xray-core's `checkSystem` does.
+    pub check_system_routes: bool,
     /// Disables the core-owned destination DNS cache. Bootstrap/system caches
     /// remain platform-owned, matching Xray's `localhost` exception.
     pub disable_cache: bool,
@@ -219,6 +223,9 @@ pub struct DnsNameServerConfig {
     pub timeout_ms: u64,
     pub skip_fallback: bool,
     pub query_strategy: DnsQueryStrategy,
+    /// This server's `queryStrategy` is `UseSystem`; see
+    /// [`DnsConfig::check_system_routes`].
+    pub check_system_routes: bool,
     pub final_query: bool,
     /// This server's own `clientIp`, which replaces `dns.clientIp`.
     pub client_ip: Option<IpAddr>,
@@ -270,6 +277,12 @@ impl DnsServerConfig {
             Self::Policy(server) => server.query_strategy,
             Self::Ip(_) | Self::Domain { .. } => DnsQueryStrategy::UseIp,
         }
+    }
+
+    /// Whether this server's lookups are narrowed to the address families
+    /// the system has a route for (`queryStrategy: "UseSystem"`).
+    pub fn check_system_routes(&self) -> bool {
+        matches!(self, Self::Policy(server) if server.check_system_routes)
     }
 
     pub fn final_query(&self) -> bool {

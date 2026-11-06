@@ -295,6 +295,7 @@ pub(super) fn dns_stream_server_policy(
         timeout_ms: 0,
         skip_fallback: false,
         query_strategy: DnsQueryStrategy::UseIp,
+        check_system_routes: false,
         final_query: false,
         client_ip: None,
         policy_key: crate::DEFAULT_DNS_POLICY_KEY.to_owned(),
@@ -346,7 +347,7 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(dns, dns_path, &surface::DNS);
-        let query_strategy = self.parse_dns_query_strategy(dns);
+        let (query_strategy, check_system_routes) = self.parse_dns_query_strategy(dns);
         let disable_cache = self
             .optional_bool_at(dns, "disableCache", "$.dns.disableCache".to_owned())
             .unwrap_or(false);
@@ -385,6 +386,7 @@ impl Parser<'_> {
                 .unwrap_or_default()
                 .to_owned(),
             query_strategy,
+            check_system_routes,
             disable_cache,
             serve_stale,
             serve_expired_ttl,
@@ -433,44 +435,45 @@ impl Parser<'_> {
         }
     }
 
-    pub(super) fn parse_dns_query_strategy(&mut self, dns: &Value) -> DnsQueryStrategy {
+    /// The global `queryStrategy`, and whether it is `UseSystem`.
+    pub(super) fn parse_dns_query_strategy(&mut self, dns: &Value) -> (DnsQueryStrategy, bool) {
         self.parse_dns_query_strategy_at(dns.get("queryStrategy"), "$.dns.queryStrategy")
     }
 
+    /// A `queryStrategy` and whether it is `UseSystem`, which Xray-core reads
+    /// as `UseIP` narrowed per lookup to the families the system has a route
+    /// for.
     pub(super) fn parse_dns_query_strategy_at(
         &mut self,
         raw_strategy: Option<&Value>,
         path: &str,
-    ) -> DnsQueryStrategy {
+    ) -> (DnsQueryStrategy, bool) {
         let Some(raw_strategy) = raw_strategy else {
-            return DnsQueryStrategy::default();
+            return (DnsQueryStrategy::default(), false);
         };
         let Some(strategy) = raw_strategy.as_str() else {
             self.error(path, "dns queryStrategy must be a string");
-            return DnsQueryStrategy::default();
+            return (DnsQueryStrategy::default(), false);
         };
 
+        let strategy_for = |strategy| (strategy, false);
         match strategy.to_ascii_lowercase().as_str() {
-            "useip" | "use_ip" | "use-ip" => DnsQueryStrategy::UseIp,
+            "useip" | "use_ip" | "use-ip" => strategy_for(DnsQueryStrategy::UseIp),
             "useip4" | "useipv4" | "use_ip4" | "use_ipv4" | "use_ip_v4" | "use-ip4"
-            | "use-ipv4" | "use-ip-v4" => DnsQueryStrategy::UseIpv4,
+            | "use-ipv4" | "use-ip-v4" => strategy_for(DnsQueryStrategy::UseIpv4),
             "useip6" | "useipv6" | "use_ip6" | "use_ipv6" | "use_ip_v6" | "use-ip6"
-            | "use-ipv6" | "use-ip-v6" => DnsQueryStrategy::UseIpv6,
+            | "use-ipv6" | "use-ip-v6" => strategy_for(DnsQueryStrategy::UseIpv6),
             "usesys" | "usesystem" | "use_sys" | "use_system" | "use-sys" | "use-system" => {
-                self.error(
-                    path,
-                    "dns queryStrategy `UseSystem` requires platform route capability and is not supported",
-                );
-                DnsQueryStrategy::default()
+                (DnsQueryStrategy::UseIp, true)
             }
             _ => {
                 self.error(
                     path,
                     format!(
-                        "unsupported dns queryStrategy `{strategy}`; expected UseIP, UseIPv4, or UseIPv6"
+                        "unsupported dns queryStrategy `{strategy}`; expected UseIP, UseIPv4, UseIPv6, or UseSystem"
                     ),
                 );
-                DnsQueryStrategy::default()
+                (DnsQueryStrategy::default(), false)
             }
         }
     }
@@ -576,7 +579,7 @@ impl Parser<'_> {
             return None;
         }
         let query_strategy_path = format!("{path}.queryStrategy");
-        let query_strategy =
+        let (query_strategy, check_system_routes) =
             self.parse_dns_query_strategy_at(server.get("queryStrategy"), &query_strategy_path);
         if !dns_query_strategies_overlap(global_query_strategy, query_strategy) {
             self.error(
@@ -607,6 +610,7 @@ impl Parser<'_> {
             timeout_ms,
             skip_fallback,
             query_strategy,
+            check_system_routes,
             final_query: self
                 .optional_bool_at(server, "finalQuery", format!("{path}.finalQuery"))
                 .unwrap_or(false),

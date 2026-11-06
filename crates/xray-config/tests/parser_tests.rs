@@ -2697,6 +2697,7 @@ fn parses_tcp_dns_string_shorthand_as_default_policy() {
             timeout_ms: 0,
             skip_fallback: false,
             query_strategy: DnsQueryStrategy::UseIp,
+            check_system_routes: false,
             final_query: false,
             client_ip: None,
             policy_key: xray_config::DEFAULT_DNS_POLICY_KEY.to_owned(),
@@ -3164,6 +3165,7 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
             timeout_ms: 0,
             skip_fallback: false,
             query_strategy: DnsQueryStrategy::UseIp,
+            check_system_routes: false,
             final_query: false,
             client_ip: None,
             policy_key: second.policy_key.clone(),
@@ -3782,8 +3784,10 @@ fn parses_xray_dns_query_strategy_aliases() {
     }
 }
 
+/// `UseSystem` is Xray-core's `UseIP` narrowed per lookup to the families
+/// the system routes, globally or for one server.
 #[test]
-fn rejects_dns_use_system_until_route_capability_is_available() {
+fn dns_use_system_is_use_ip_that_checks_the_system_routes() {
     for strategy in [
         "UseSys",
         "UseSystem",
@@ -3793,16 +3797,43 @@ fn rejects_dns_use_system_until_route_capability_is_available() {
         "use-system",
     ] {
         let raw = raw_with_dns_query_strategy(&format!(r#""{strategy}""#));
-        let error = parse_xray_json(&raw).unwrap_err();
-
-        assert_eq!(
-            error.diagnostics[0].path.as_deref(),
-            Some("$.dns.queryStrategy")
-        );
-        assert!(error.diagnostics[0]
-            .message
-            .contains("requires platform route capability"));
+        let parsed = parse_xray_json(&raw).expect("UseSystem should parse");
+        assert_eq!(parsed.config.dns.query_strategy, DnsQueryStrategy::UseIp);
+        assert!(parsed.config.dns.check_system_routes, "{strategy}");
     }
+    let raw = raw_with_dns_query_strategy(r#""UseIPv4""#);
+    assert!(
+        !parse_xray_json(&raw)
+            .unwrap()
+            .config
+            .dns
+            .check_system_routes
+    );
+
+    let raw = r#"{
+        "dns": {"queryStrategy": "UseIPv4", "servers": [
+            {"address": "192.0.2.53", "queryStrategy": "UseSystem"},
+            {"address": "192.0.2.54", "queryStrategy": "UseIP"},
+            "192.0.2.55"
+        ]},
+        "outbounds": [{"tag": "direct", "protocol": "freedom"}]
+    }"#;
+    let parsed = parse_xray_json(raw).expect("a server's UseSystem should parse");
+    let servers = &parsed.config.dns.servers;
+    assert!(!parsed.config.dns.check_system_routes);
+    assert_eq!(
+        servers
+            .iter()
+            .map(|server| (server.query_strategy(), server.check_system_routes()))
+            .collect::<Vec<_>>(),
+        [
+            (DnsQueryStrategy::UseIp, true),
+            (DnsQueryStrategy::UseIp, false),
+            (DnsQueryStrategy::UseIp, false),
+        ]
+    );
+    // Xray-core's policy id reads the spelling as written.
+    assert!(servers[0].policy_key().contains("|qs=usesystem|"));
 }
 
 #[test]

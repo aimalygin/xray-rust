@@ -18,8 +18,8 @@ use xray_runtime::Shutdown;
 use xray_transport::{
     CachingDnsResolver, CompiledNameServerPolicies, ConfiguredDnsResolver,
     DnsQueryStrategy as TransportDnsQueryStrategy, DnsQueryTransport, DnsResolver, NameServer,
-    NameServerPolicy, NameServerTransport, SocketProtector, SystemDnsResolver, TransportDialer,
-    TransportError,
+    NameServerPolicy, NameServerTransport, RouteProbe, SocketProtector, SystemDnsResolver,
+    SystemRouteDnsResolver, TransportDialer, TransportError,
 };
 use xray_tun::{TunConfig, TunEndpoint};
 
@@ -722,10 +722,13 @@ impl Core {
 
     fn build(
         mut config: CoreConfig,
-        dns: CoreDnsDependencies,
+        mut dns: CoreDnsDependencies,
         transport_dialer: Arc<TransportDialer>,
         tun_runtime_options: TunRuntimeOptions,
     ) -> Result<Self, CoreError> {
+        dns.rules
+            .route_probe
+            .get_or_insert_with(|| transport_dialer.route_probe());
         if config.observatory.as_ref().is_some_and(|observatory| {
             startup_probe::parse_probe_url(&observatory.probe_url).is_err()
         }) {
@@ -1150,6 +1153,12 @@ impl Core {
                     &[tun::TUN_DNS_ANCHOR, tun::TUN_CLIENT_IPV4],
                 )
             })
+            .map(|mapper| match &self.dns_rules.route_probe {
+                Some(probe) if config.dns.check_system_routes => {
+                    mapper.with_route_probe(Arc::clone(probe))
+                }
+                Some(_) | None => mapper,
+            })
             .map(|mapper| Arc::new(Mutex::new(mapper)));
         let query_transport = self.managed_dns_resolver.then(|| {
             Arc::new(dns::RoutedDnsQueryTransport::with_direct_executor(
@@ -1175,7 +1184,11 @@ impl Core {
                 query_transport.clone(),
                 transport_dns_query_strategy(config.dns.query_strategy),
             );
-            destination_dns_cache_for_config(config.as_ref(), resolver)
+            destination_dns_cache_for_config(
+                config.as_ref(),
+                resolver,
+                self.dns_rules.route_probe.as_ref(),
+            )
         } else {
             Arc::clone(&self.dns_resolver)
         };
@@ -1479,11 +1492,15 @@ fn system_dns_resolver() -> Arc<dyn DnsResolver> {
     Arc::new(CachingDnsResolver::new(Arc::new(SystemDnsResolver)))
 }
 
+/// The destination cache over `resolver`, behind the global
+/// `queryStrategy: "UseSystem"` narrowing when it is set, so cached entries
+/// follow the system's routes.
 fn destination_dns_cache_for_config(
     config: &CoreConfig,
     resolver: Arc<dyn DnsResolver>,
+    route_probe: Option<&Arc<dyn RouteProbe>>,
 ) -> Arc<dyn DnsResolver> {
-    if config.dns.disable_cache {
+    let cached: Arc<dyn DnsResolver> = if config.dns.disable_cache {
         resolver
     } else if config.dns.serve_stale {
         Arc::new(CachingDnsResolver::with_stale_ttl(
@@ -1492,6 +1509,12 @@ fn destination_dns_cache_for_config(
         ))
     } else {
         Arc::new(CachingDnsResolver::new(resolver))
+    };
+    match route_probe {
+        Some(probe) if config.dns.check_system_routes => {
+            Arc::new(SystemRouteDnsResolver::new(cached, Arc::clone(probe)))
+        }
+        Some(_) | None => cached,
     }
 }
 
@@ -1583,6 +1606,7 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
                 timeout,
                 skip_fallback,
                 query_strategy,
+                check_system_routes: server.check_system_routes(),
                 final_query,
                 client_ip,
                 policy_id,
@@ -1604,6 +1628,9 @@ fn ensure_effective_dns_tag(config: &mut CoreConfig) {
 struct DnsRules {
     name_servers: Option<Arc<CompiledNameServerPolicies>>,
     static_hosts: Arc<DomainHostIndex<DnsHostTarget>>,
+    /// The dialer's route probe, shared so its cached result is, for
+    /// `queryStrategy: "UseSystem"`.
+    route_probe: Option<Arc<dyn RouteProbe>>,
 }
 
 impl DnsRules {
@@ -1611,6 +1638,7 @@ impl DnsRules {
         Self {
             name_servers: Some(take_name_server_policy_set(config)),
             static_hosts: Arc::new(std::mem::take(&mut config.dns.hosts)),
+            route_probe: None,
         }
     }
 
@@ -1618,6 +1646,7 @@ impl DnsRules {
         Self {
             name_servers: Some(Arc::default()),
             static_hosts: Arc::new(std::mem::take(&mut config.dns.hosts)),
+            route_probe: None,
         }
     }
 
@@ -1625,11 +1654,15 @@ impl DnsRules {
         Self {
             name_servers: None,
             static_hosts,
+            route_probe: None,
         }
     }
 
     fn hosts_only(&self) -> Self {
-        Self::hosts(Arc::clone(&self.static_hosts))
+        Self {
+            route_probe: self.route_probe.clone(),
+            ..Self::hosts(Arc::clone(&self.static_hosts))
+        }
     }
 }
 
@@ -1734,6 +1767,12 @@ fn configured_dns_resolver_from_config_with_transport_mode(
         )
         .with_query_strategy(query_strategy)
         .with_parallel_query(config.dns.enable_parallel_query);
+    if let Some(probe) = dns_rules.route_probe {
+        // Servers that check their own routes read the probe here. The
+        // global `UseSystem` narrows ahead of the destination cache instead,
+        // and the bootstrap resolver ignores the global strategy.
+        resolver = resolver.with_system_routes(false, probe);
+    }
     if role == DnsResolverRole::Bootstrap {
         resolver = resolver.without_system_fallback_timeout();
     }
@@ -1873,8 +1912,11 @@ mod tests {
         .unwrap()
         .config;
         let cached_inner = Arc::new(NegativeCountingResolver(AtomicUsize::new(0)));
-        let cached =
-            destination_dns_cache_for_config(&config, cached_inner.clone() as Arc<dyn DnsResolver>);
+        let cached = destination_dns_cache_for_config(
+            &config,
+            cached_inner.clone() as Arc<dyn DnsResolver>,
+            None,
+        );
         assert!(cached.resolve("missing.example", 443).await.is_err());
         assert!(cached.resolve("missing.example", 443).await.is_err());
         assert_eq!(cached_inner.0.load(Ordering::Relaxed), 1);
@@ -1884,6 +1926,7 @@ mod tests {
         let uncached = destination_dns_cache_for_config(
             &config,
             uncached_inner.clone() as Arc<dyn DnsResolver>,
+            None,
         );
         assert!(uncached.resolve("missing.example", 443).await.is_err());
         assert!(uncached.resolve("missing.example", 443).await.is_err());
@@ -1980,6 +2023,7 @@ mod tests {
             DnsRules {
                 name_servers: Some(Arc::default()),
                 static_hosts: static_host_index(&parsed.config),
+                route_probe: None,
             },
         );
 
@@ -2010,6 +2054,7 @@ mod tests {
             DnsRules {
                 name_servers: Some(Arc::default()),
                 static_hosts: static_host_index(&parsed.config),
+                route_probe: None,
             },
         );
         let started_at = tokio::time::Instant::now();
@@ -2071,6 +2116,7 @@ mod tests {
             DnsRules {
                 name_servers: Some(Arc::default()),
                 static_hosts: static_host_index(&parsed.config),
+                route_probe: None,
             },
         );
 
@@ -2157,6 +2203,7 @@ mod tests {
             DnsRules {
                 name_servers: Some(name_servers),
                 static_hosts: static_host_index(&config),
+                route_probe: None,
             },
             Some(transport.clone()),
             TransportDnsQueryStrategy::UseIp,
@@ -2205,6 +2252,7 @@ mod tests {
             DnsRules {
                 name_servers: Some(name_servers),
                 static_hosts: static_host_index(&config),
+                route_probe: None,
             },
             Some(transport.clone()),
             TransportDnsQueryStrategy::UseIpv4,

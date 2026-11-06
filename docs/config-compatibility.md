@@ -474,7 +474,7 @@ exposes an unauthenticated proxy to the network.
 | `outbounds` | Supported subset below |
 | `routing` | Ordered `field` rules and selector-group subset below |
 | `observatory` | Bounded periodic HTTP(S) URL probes for tagged outbounds |
-| `dns` | Hosts, string/object servers with managed selection policy, global `queryStrategy`, and `fakeIp` subset |
+| `dns` | Hosts, string/object servers with managed selection policy, global and per-server `queryStrategy` including `UseSystem`, and `fakeIp` subset |
 | `policy` | Level/system fields are parsed; runtime timeout/buffer behavior is a subset |
 | `log` | Accepted for input compatibility, but runtime file logging is configured through the embedding API |
 | `remarks`, `meta` | Subscription labels, such as those in Remnawave's XRAY_JSON format; `remarks` must be a string and `meta` an object (or null), and both are ignored, as in Xray-core |
@@ -2447,8 +2447,27 @@ between its DNS feature and the default system carrier dialer. A destination
 static mapping that contains no address from the selected family returns
 terminal NODATA instead of leaking to another resolver. IPv4-mapped IPv6 values
 count as IPv4 at the TCP dial boundary and are discarded when received in an
-AAAA answer. `UseSystem` is rejected until the universal core has an injectable
-platform route-capability provider; it is not silently treated as `UseIP`.
+AAAA answer.
+
+`UseSystem` (or `UseSys`, `use_system`, `use-sys` and the other Xray
+spellings) is `UseIP` narrowed on each lookup to the address families the
+system has a route for, as Xray-core v26.10.31's `checkSystem` narrows them:
+
+- A UDP `connect` toward a root DNS server of each family, which sends
+  nothing, tells which families have a route. A family without one is neither
+  asked for nor answered, and with neither, a lookup is answered empty.
+- On Android, iOS, macOS, Windows and a Linux desktop session the result stands
+  for 100 ms, elsewhere for the life of the core, as in Xray-core.
+- The probe sockets go through the socket protector, so inside the mobile VPN
+  they see the network the core dials over. Xray-core's unprotected probe sees
+  the VPN's own routes on Android.
+- A server's own `queryStrategy: "UseSystem"` narrows that server alone, as
+  `UseIP` would with the global strategy; one left without a routed family is
+  passed over.
+- The destination cache keys each entry by the families routed when it was
+  looked up, so a change of network takes effect on the next lookup. Answers
+  hijacked from TUN and fake IP answers follow the same routes. Bootstrap
+  resolution keeps ignoring the global strategy.
 
 `dns.servers` accepts at most eight string or object entries. String shorthand
 accepts IP addresses, socket addresses, domain names with an optional nonzero

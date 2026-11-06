@@ -76,6 +76,8 @@ mod tun_admission;
 
 #[path = "runtime_data_path_tests/blackhole.rs"]
 mod blackhole;
+#[path = "runtime_data_path_tests/dns_use_system.rs"]
+mod dns_use_system;
 #[path = "runtime_data_path_tests/freedom_domain_strategy.rs"]
 mod freedom_domain_strategy;
 #[path = "runtime_data_path_tests/freedom_noises.rs"]
@@ -221,6 +223,7 @@ fn tagged_dns_server_with_transport(
         timeout_ms: 0,
         skip_fallback: false,
         query_strategy: DnsQueryStrategy::UseIp,
+        check_system_routes: false,
         final_query: false,
         client_ip: None,
         policy_key: xray_config::DEFAULT_DNS_POLICY_KEY.to_owned(),
@@ -6986,6 +6989,7 @@ async fn run_tun_dns_hijack_udp_matched_policy_scenario() {
             timeout_ms: 0,
             skip_fallback: false,
             query_strategy: DnsQueryStrategy::UseIp,
+            check_system_routes: false,
             final_query: false,
             client_ip: None,
             policy_key: xray_config::DEFAULT_DNS_POLICY_KEY.to_owned(),
@@ -7061,6 +7065,7 @@ async fn run_tun_dns_hijack_parallel_query_scenario() {
                 timeout_ms: 0,
                 skip_fallback: false,
                 query_strategy: DnsQueryStrategy::UseIp,
+                check_system_routes: false,
                 final_query: false,
                 client_ip: None,
                 policy_key: slow_key.to_owned(),
@@ -7123,6 +7128,7 @@ async fn run_tun_dns_hijack_client_subnet_scenario() {
             timeout_ms: 0,
             skip_fallback: true,
             query_strategy: DnsQueryStrategy::UseIp,
+            check_system_routes: false,
             final_query: false,
             client_ip: Some("2001:db8::1".parse().unwrap()),
             policy_key: xray_config::DEFAULT_DNS_POLICY_KEY.to_owned(),
@@ -8549,6 +8555,7 @@ async fn run_tun_dns_hijack_tcp_mixed_pipeline_scenario() {
             timeout_ms: 0,
             skip_fallback: false,
             query_strategy: DnsQueryStrategy::UseIp,
+            check_system_routes: false,
             final_query: false,
             client_ip: None,
             policy_key: xray_config::DEFAULT_DNS_POLICY_KEY.to_owned(),
