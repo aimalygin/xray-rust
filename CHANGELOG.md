@@ -10,6 +10,12 @@ long-term supported release series.
 
 ## Unreleased
 
+- `dns.enableParallelQuery` asks every selected DNS server at once and takes
+  the first answer of the earliest group of servers sharing a policy, as
+  Xray-core does. Profiles with it used to fail to parse.
+- `dns.clientIp` and a DNS server's own `clientIp` are sent as the EDNS
+  client subnet of every query, as Xray-core sends them. Profiles with them
+  used to fail to parse. DoH queries now carry Xray-core's EDNS padding.
 - `dns.queryStrategy: "UseSystem"`, globally or for one server, is `UseIP`
   narrowed on each lookup to the address families the system has a route
   for, as Xray-core's `checkSystem` narrows them. Profiles with it used to
@@ -21,12 +27,6 @@ long-term supported release series.
     sees the network the core dials over, where Xray-core's sees the VPN's
     own routes on Android.
   - Cached entries, hijacked answers and fake IP answers follow the routes.
-- `dns.enableParallelQuery` asks every selected DNS server at once and takes
-  the first answer of the earliest group of servers sharing a policy, as
-  Xray-core does. Profiles with it used to fail to parse.
-- `dns.clientIp` and a DNS server's own `clientIp` are sent as the EDNS
-  client subnet of every query, as Xray-core sends them. Profiles with them
-  used to fail to parse. DoH queries now carry Xray-core's EDNS padding.
 - The `socks` outbound runs over every transport, as Xray-core's does:
   WebSocket, HTTPUpgrade, gRPC and XHTTP, with TLS, and REALITY over raw,
   gRPC and XHTTP. Such profiles used to fail to parse.

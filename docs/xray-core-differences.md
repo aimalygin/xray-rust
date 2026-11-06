@@ -358,26 +358,6 @@ cases against sing-box, but that run is not yet recorded; no physical-device
 run yet; the legacy fully-base64 `ss://` form and SIP003 plugins are not
 imported.
 
-## DNS hosts `"#N"` RCODE answers
-
-`dns.hosts` reads a `"#N"` value as Xray-core's `app/dns/hosts.go` does: the
-name is answered with DNS RCODE `N` and no records, and internal lookups see
-it as a failed lookup with no addresses. `"#0"` is an empty answer.
-
-Deliberate differences, source-derived:
-
-- `N` must be 0 through 15. Xray-core accepts any `strconv.Atoi` integer and
-  casts it to `uint16`; `golang.org/x/net/dns/dnsmessage` then ORs that value
-  into the header flags, so a value above 15 also sets opcode, AA, TC, RD or
-  QR bits, and a negative value wraps. Here such a value is a config error.
-- One `dns.hosts` entry answers a name: an explicit `full:` key first, then the
-  first matching rule. Xray-core checks every matching rule and returns the
-  RCODE if any of them is `"#N"`.
-- An array value keeps accepting only IP strings. Xray-core would read a
-  non-IP first element, including `"#N"`, as the whole value.
-- The fixed TUN FakeDNS mode (`dns.fakeIp` without a DNS outbound) does not
-  read `dns.hosts`, for IP values as for `"#N"`.
-
 ## DNS `UseSystem` route probe
 
 `queryStrategy: "UseSystem"` narrows each lookup to the address families the
@@ -398,6 +378,26 @@ Evidence: live against Xray-core v26.10.31 with a recording DNS server and
 server's `UseIP`) ask for the same record types in both cores. That holds
 on macOS, which routes both families, and in a Linux container without IPv6,
 where `UseSystem` asks for `A` alone.
+
+## DNS hosts `"#N"` RCODE answers
+
+`dns.hosts` reads a `"#N"` value as Xray-core's `app/dns/hosts.go` does: the
+name is answered with DNS RCODE `N` and no records, and internal lookups see
+it as a failed lookup with no addresses. `"#0"` is an empty answer.
+
+Deliberate differences, source-derived:
+
+- `N` must be 0 through 15. Xray-core accepts any `strconv.Atoi` integer and
+  casts it to `uint16`; `golang.org/x/net/dns/dnsmessage` then ORs that value
+  into the header flags, so a value above 15 also sets opcode, AA, TC, RD or
+  QR bits, and a negative value wraps. Here such a value is a config error.
+- One `dns.hosts` entry answers a name: an explicit `full:` key first, then the
+  first matching rule. Xray-core checks every matching rule and returns the
+  RCODE if any of them is `"#N"`.
+- An array value keeps accepting only IP strings. Xray-core would read a
+  non-IP first element, including `"#N"`, as the whole value.
+- The fixed TUN FakeDNS mode (`dns.fakeIp` without a DNS outbound) does not
+  read `dns.hosts`, for IP values as for `"#N"`.
 
 ## Panel subscription fields Xray-core does not read
 
