@@ -18,6 +18,7 @@ fuzz_target!(|data: &[u8]| {
             import_profile(ProfileFormat::Trojan, text, None, &[]),
             import_profile(ProfileFormat::Shadowsocks2022, text, None, &[]),
             import_profile(ProfileFormat::Vmess, text, None, &[]),
+            import_profile(ProfileFormat::Vless, text, None, &[]),
         ]
         .into_iter()
         .flatten()

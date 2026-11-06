@@ -4,6 +4,7 @@ mod hysteria;
 mod shadowsocks;
 mod socks;
 mod trojan;
+mod vless;
 mod vmess;
 mod wireguard;
 
@@ -26,6 +27,7 @@ pub enum ProfileFormat {
     Wireguard,
     Socks,
     Http,
+    Vless,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
@@ -147,6 +149,7 @@ pub fn import_profile(
         ProfileFormat::Shadowsocks2022 => shadowsocks::import(text, dns_servers)?,
         ProfileFormat::Vmess => vmess::import(text, dns_servers)?,
         ProfileFormat::Trojan => trojan::import(text, dns_servers)?,
+        ProfileFormat::Vless => vless::import(text, dns_servers)?,
         ProfileFormat::Hysteria2 => hysteria::import(text, dns_servers)?,
         ProfileFormat::Wireguard => wireguard::import(text, dns_servers)?,
     };
@@ -223,7 +226,9 @@ fn finish_masked(
 /// Whether an imported profile may carry this parser diagnostic. Import
 /// refuses a profile with any other diagnostic.
 pub fn is_import_advisory(diagnostic: &crate::Diagnostic) -> bool {
-    is_reality_fingerprint_advisory(diagnostic) || is_wireguard_dns_advisory(diagnostic)
+    is_reality_fingerprint_advisory(diagnostic)
+        || is_wireguard_dns_advisory(diagnostic)
+        || is_httpupgrade_early_data_advisory(diagnostic)
 }
 /// The parser warns on a REALITY fingerprint that v26.10.21 servers refuse.
 /// That describes the server rather than the import: the profile is exactly
@@ -244,6 +249,16 @@ fn is_wireguard_dns_advisory(diagnostic: &crate::Diagnostic) -> bool {
             .path
             .as_deref()
             .is_some_and(|path| path.ends_with(".settings.remoteDNS"))
+}
+/// The parser warns that an HTTPUpgrade path's `?ed=` early data waits for
+/// the 101 response. Xray-core accepts the path, the profile is exactly what
+/// the link asked for, and only the first payload's timing differs.
+fn is_httpupgrade_early_data_advisory(diagnostic: &crate::Diagnostic) -> bool {
+    diagnostic.severity == crate::DiagnosticSeverity::Warning
+        && diagnostic
+            .path
+            .as_deref()
+            .is_some_and(|path| path.ends_with(".httpupgradeSettings.path"))
 }
 /// Remnawave's `fm`: the percent-decoded JSON of a host's
 /// `streamSettings.finalmask`. It must be an object; its content is left to

@@ -323,6 +323,7 @@ it reads the parameters panels such as Remnawave write on every link:
 | RAW `headerType` | none | absent, empty or `none`; `http` fails with an error naming `headerType` |
 | WebSocket `heartbeatPeriod` | `wsSettings.heartbeatPeriod` | decimal seconds, 0..4294967295 |
 | XHTTP `extra` | `xhttpSettings.extra` | a JSON object, validated like canonical JSON |
+| TLS `alpn` | `tlsSettings.alpn` | comma-separated protocol names; an empty value, an empty entry or whitespace fails with an error naming `alpn`, because a TLS protocol name is 1..255 bytes |
 | TLS `pcs` | `tlsSettings.pinnedPeerCertSha256` | Xray's comma-separated SHA-256 hex, with or without colons |
 | TLS `vcn` | `tlsSettings.verifyPeerCertByName` | Xray's comma-separated names |
 | TLS `cs` | none | always fails with an error naming `cs`: `cipherSuites` is not supported |
