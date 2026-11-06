@@ -10,6 +10,17 @@ long-term supported release series.
 
 ## Unreleased
 
+- `dns.queryStrategy: "UseSystem"`, globally or for one server, is `UseIP`
+  narrowed on each lookup to the address families the system has a route
+  for, as Xray-core's `checkSystem` narrows them. Profiles with it used to
+  fail to parse.
+  - The probe connects a UDP socket toward a root DNS server of each family
+    without sending anything. On mobile and desktop platforms its result
+    stands for 100 ms.
+  - Its sockets go through the socket protector, so inside the mobile VPN it
+    sees the network the core dials over, where Xray-core's sees the VPN's
+    own routes on Android.
+  - Cached entries, hijacked answers and fake IP answers follow the routes.
 - `dns.enableParallelQuery` asks every selected DNS server at once and takes
   the first answer of the earliest group of servers sharing a policy, as
   Xray-core does. Profiles with it used to fail to parse.

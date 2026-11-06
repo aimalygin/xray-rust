@@ -7,8 +7,8 @@ use crate::utls_tls::TlsAlpnPolicy;
 use crate::{
     connect_tcp_dual_stack, connect_tcp_happy_eyeballs, connect_tcp_stream, connect_tcp_target,
     BoxedTransportStream, ConnectorConfig, HappyEyeballsConfig, RealityRuntimeEngine,
-    RealityTlsEngine, ResolvedTcpConnector, RustlsRealityTlsSessionProvider, SocketProtector,
-    TlsConnector, TransportError,
+    RealityTlsEngine, ResolvedTcpConnector, RouteProbe, RustlsRealityTlsSessionProvider,
+    SocketProtector, SystemRouteProbe, TlsConnector, TransportError,
 };
 use xray_routing::{Target, TargetAddr};
 
@@ -19,6 +19,7 @@ pub struct TransportDialer {
     socket_protector: Option<Arc<dyn SocketProtector>>,
     resolved_tcp_connector: Option<Arc<dyn ResolvedTcpConnector>>,
     tcp_fragment: Option<Arc<crate::TcpFragmentConfig>>,
+    route_probe: Option<Arc<dyn RouteProbe>>,
 }
 
 #[derive(Clone)]
@@ -39,6 +40,7 @@ impl fmt::Debug for TransportDialer {
                 "resolved_tcp_connector",
                 &self.resolved_tcp_connector.is_some(),
             )
+            .field("route_probe", &self.route_probe)
             .finish()
     }
 }
@@ -67,6 +69,7 @@ impl TransportDialer {
             socket_protector,
             resolved_tcp_connector: None,
             tcp_fragment: None,
+            route_probe: None,
         })
     }
 
@@ -78,6 +81,7 @@ impl TransportDialer {
             socket_protector,
             resolved_tcp_connector: None,
             tcp_fragment: None,
+            route_probe: None,
         }
     }
 
@@ -104,6 +108,23 @@ impl TransportDialer {
 
     pub fn socket_protector(&self) -> Option<&dyn SocketProtector> {
         self.socket_protector.as_deref()
+    }
+
+    /// Replaces the system's route probe, as a test or a platform that knows
+    /// its routes better may.
+    pub fn with_route_probe(mut self, probe: Arc<dyn RouteProbe>) -> Self {
+        self.route_probe = Some(probe);
+        self
+    }
+
+    /// The probe that reports which address families the system has a route
+    /// for: the one set with [`Self::with_route_probe`], or a new
+    /// [`SystemRouteProbe`] whose sockets this dialer protects. Keep the
+    /// returned probe; its result is cached.
+    pub fn route_probe(&self) -> Arc<dyn RouteProbe> {
+        self.route_probe.clone().unwrap_or_else(|| {
+            Arc::new(SystemRouteProbe::new(self.socket_protector.clone())) as Arc<dyn RouteProbe>
+        })
     }
 
     /// The same trust policy and socket protector used by this dialer.

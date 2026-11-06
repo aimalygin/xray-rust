@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use xray_config::{DnsFakeIpConfig, DnsQueryStrategy};
+use xray_transport::RouteProbe;
 
 /// Stateful, bounded mapping between DNS names and synthetic IPv4 addresses.
 ///
@@ -13,6 +14,9 @@ use xray_config::{DnsFakeIpConfig, DnsQueryStrategy};
 #[derive(Debug)]
 pub(crate) struct FakeIpMapper {
     query_strategy: DnsQueryStrategy,
+    /// Set for `queryStrategy: "UseSystem"`: a family without a route gets
+    /// no answers, as Xray-core's `checkSystem` leaves it.
+    route_probe: Option<Arc<dyn RouteProbe>>,
     ttl: u32,
     network_base: u32,
     address_count: u64,
@@ -115,6 +119,7 @@ impl FakeIpMapper {
 
         Some(Self {
             query_strategy,
+            route_probe: None,
             ttl: config.ttl,
             network_base,
             address_count,
@@ -134,8 +139,30 @@ impl FakeIpMapper {
         self.ttl
     }
 
-    pub(crate) fn query_strategy(&self) -> DnsQueryStrategy {
-        self.query_strategy
+    /// Narrows the answers to the families `probe` reports a route for.
+    pub(crate) fn with_route_probe(mut self, probe: Arc<dyn RouteProbe>) -> Self {
+        self.route_probe = Some(probe);
+        self
+    }
+
+    /// Whether an `A` query (or with `ipv6`, an `AAAA` query) may be
+    /// answered: the strategy allows the family, and with a route probe the
+    /// system has a route for it.
+    pub(crate) fn answers(&self, ipv6: bool) -> bool {
+        let allowed = match self.query_strategy {
+            DnsQueryStrategy::UseIp => true,
+            DnsQueryStrategy::UseIpv4 => !ipv6,
+            DnsQueryStrategy::UseIpv6 => ipv6,
+        };
+        allowed
+            && self.route_probe.as_ref().is_none_or(|probe| {
+                let routes = probe.families();
+                if ipv6 {
+                    routes.ipv6
+                } else {
+                    routes.ipv4
+                }
+            })
     }
 
     #[cfg(test)]
@@ -463,7 +490,8 @@ mod tests {
         let mapper = FakeIpMapper::from_config(&config, DnsQueryStrategy::UseIpv6, &[]).unwrap();
 
         assert_eq!(mapper.ttl(), 123);
-        assert_eq!(mapper.query_strategy(), DnsQueryStrategy::UseIpv6);
+        assert!(mapper.answers(true));
+        assert!(!mapper.answers(false));
     }
 
     #[test]

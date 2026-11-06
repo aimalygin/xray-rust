@@ -38,6 +38,7 @@ pub mod reality_connector;
 pub mod reality_runtime;
 mod reality_rustls;
 mod reality_spider;
+mod route_probe;
 pub mod stream;
 mod tls;
 mod utls_profiles;
@@ -50,7 +51,7 @@ pub use dns::{
     select_name_server_indices, CachingDnsResolver, CompiledNameServerPolicies,
     ConfiguredDnsResolver, DnsLookup, DnsQueryDispatch, DnsQueryMetadata, DnsQueryStrategy,
     DnsQueryTransport, DnsQueryTransportKind, DnsResolver, NameServer, NameServerPolicy,
-    NameServerTransport, SystemDnsResolver,
+    NameServerTransport, SystemDnsResolver, SystemRouteDnsResolver,
 };
 pub use happy_eyeballs::{connect_tcp_dual_stack, connect_tcp_happy_eyeballs, HappyEyeballsConfig};
 pub use memory_class::{memory_class, set_memory_class, MemoryClass};
@@ -63,6 +64,7 @@ pub use reality_runtime::{
 #[doc(hidden)]
 pub use reality_rustls::extract_server_hello_for_fuzzing;
 pub use reality_rustls::RustlsRealityTlsSessionProvider;
+pub use route_probe::{RouteFamilies, RouteProbe, SystemRouteProbe};
 pub use tls::{plain_tls_client_hello_bytes, TlsConnector};
 pub use utls_profiles::draw_modern_fingerprint;
 

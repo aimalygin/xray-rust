@@ -17,8 +17,8 @@ use xray_routing::{DnsHostTarget, DnsIpFilter, DomainHostIndex, DomainMatcherSet
 
 use crate::{
     canonicalize_socket_addr, connect_tcp_happy_eyeballs, BoxedTransportStream,
-    HappyEyeballsConfig, SocketHandle, SocketProtector, TlsClientConfig, TlsConnector,
-    TransportError,
+    HappyEyeballsConfig, RouteFamilies, RouteProbe, SocketHandle, SocketProtector, TlsClientConfig,
+    TlsConnector, TransportError,
 };
 
 /// A DNS lookup result containing every usable address and its remaining TTL.
@@ -163,6 +163,54 @@ pub trait DnsResolver: Send + Sync {
     ) -> Result<DnsLookup, TransportError> {
         let lookup = self.resolve_all(domain, port).await?;
         filter_dns_lookup_by_strategy(lookup, domain, port, strategy)
+    }
+}
+
+/// Narrows every lookup to the address families the system has a route
+/// for, as a global `queryStrategy: "UseSystem"` asks, before the resolver it
+/// wraps sees it.
+///
+/// Put in front of a cache, it keys each entry by the families routed when
+/// it was looked up, so a change of network takes effect at once rather than
+/// when the entries expire, as Xray-core's per-lookup check does.
+pub struct SystemRouteDnsResolver {
+    inner: Arc<dyn DnsResolver>,
+    probe: Arc<dyn RouteProbe>,
+}
+
+impl SystemRouteDnsResolver {
+    pub fn new(inner: Arc<dyn DnsResolver>, probe: Arc<dyn RouteProbe>) -> Self {
+        Self { inner, probe }
+    }
+}
+
+#[async_trait]
+impl DnsResolver for SystemRouteDnsResolver {
+    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        self.resolve_all(domain, port)
+            .await?
+            .first_socket_addr(domain, port)
+    }
+
+    async fn resolve_all(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+        self.resolve_all_with_strategy(domain, port, DnsQueryStrategy::UseIp)
+            .await
+    }
+
+    async fn resolve_all_with_strategy(
+        &self,
+        domain: &str,
+        port: u16,
+        strategy: DnsQueryStrategy,
+    ) -> Result<DnsLookup, TransportError> {
+        let Some(strategy) = DnsQueryStrategy::for_route_families(self.probe.families())
+            .and_then(|routes| strategy.intersect(routes))
+        else {
+            return Err(TransportError::DnsNoData(domain.to_owned(), port));
+        };
+        self.inner
+            .resolve_all_with_strategy(domain, port, strategy)
+            .await
     }
 }
 
@@ -697,6 +745,16 @@ impl DnsQueryStrategy {
         }
     }
 
+    /// The strategy that allows exactly `families`; `None` for neither.
+    pub fn for_route_families(families: RouteFamilies) -> Option<Self> {
+        match (families.ipv4, families.ipv6) {
+            (true, true) => Some(Self::UseIp),
+            (true, false) => Some(Self::UseIpv4),
+            (false, true) => Some(Self::UseIpv6),
+            (false, false) => None,
+        }
+    }
+
     fn intersect(self, other: Self) -> Option<Self> {
         match (self, other) {
             (Self::UseIp, strategy) | (strategy, Self::UseIp) => Some(strategy),
@@ -1124,6 +1182,10 @@ pub struct NameServerPolicy {
     pub unexpected_ips: DnsIpFilter,
     pub skip_fallback: bool,
     pub query_strategy: DnsQueryStrategy,
+    /// Xray-core's `checkSystem` (`queryStrategy: "UseSystem"`): this server's
+    /// lookups are also narrowed to the address families the system has a
+    /// route for, as the resolver's route probe reports them.
+    pub check_system_routes: bool,
     pub final_query: bool,
     /// Overrides the resolver's default wall-clock budget for this client.
     pub timeout: Option<Duration>,
@@ -1147,6 +1209,7 @@ impl NameServerPolicy {
             unexpected_ips: DnsIpFilter::default(),
             skip_fallback: false,
             query_strategy: DnsQueryStrategy::UseIp,
+            check_system_routes: false,
             final_query: false,
             timeout: None,
             client_ip: None,
@@ -1184,6 +1247,7 @@ impl CompiledNameServerPolicies {
                     unexpected_ips,
                     skip_fallback,
                     query_strategy,
+                    check_system_routes,
                     final_query,
                     timeout,
                     client_ip,
@@ -1201,6 +1265,7 @@ impl CompiledNameServerPolicies {
                     unexpected_ips,
                     skip_fallback,
                     query_strategy,
+                    check_system_routes,
                     final_query,
                     timeout,
                     client_ip,
@@ -1324,6 +1389,7 @@ struct CompiledNameServerPolicy {
     unexpected_ips: DnsIpFilter,
     skip_fallback: bool,
     query_strategy: DnsQueryStrategy,
+    check_system_routes: bool,
     final_query: bool,
     timeout: Option<Duration>,
     client_ip: Option<IpAddr>,
@@ -1394,6 +1460,11 @@ pub struct ConfiguredDnsResolver {
     query_transport: Arc<dyn DnsQueryTransport>,
     uses_direct_query_transport: bool,
     query_strategy: DnsQueryStrategy,
+    /// The global `queryStrategy: "UseSystem"`.
+    check_system_routes: bool,
+    /// Reports the system's routes for the global flag and for servers that
+    /// check them; without one, both families count as routed.
+    route_probe: Option<Arc<dyn RouteProbe>>,
     disable_fallback: bool,
     disable_fallback_if_match: bool,
     parallel_query: bool,
@@ -1421,6 +1492,8 @@ impl ConfiguredDnsResolver {
             query_transport,
             uses_direct_query_transport: true,
             query_strategy: DnsQueryStrategy::default(),
+            check_system_routes: false,
+            route_probe: None,
             disable_fallback: false,
             disable_fallback_if_match: false,
             parallel_query: false,
@@ -1462,6 +1535,41 @@ impl ConfiguredDnsResolver {
     pub fn with_parallel_query(mut self, enabled: bool) -> Self {
         self.parallel_query = enabled;
         self
+    }
+
+    /// The global `queryStrategy: "UseSystem"`: every lookup is narrowed to
+    /// the address families `probe` reports a route for, as Xray-core's
+    /// `checkSystem` narrows them. Servers that check their own routes use
+    /// `probe` too.
+    pub fn with_system_routes(mut self, check: bool, probe: Arc<dyn RouteProbe>) -> Self {
+        self.check_system_routes = check;
+        self.route_probe = Some(probe);
+        self
+    }
+
+    /// The address families the system has a route for, as a strategy;
+    /// `None` when it has neither.
+    fn system_route_strategy(&self) -> Option<DnsQueryStrategy> {
+        let families = self
+            .route_probe
+            .as_ref()
+            .map_or(RouteFamilies::BOTH, |probe| probe.families());
+        DnsQueryStrategy::for_route_families(families)
+    }
+
+    /// The strategy one server queries with for a lookup that asked for
+    /// `requested`: its own `queryStrategy`, and the system's routes when it
+    /// checks them. `None` leaves the server out, as an empty answer.
+    fn server_query_strategy(
+        &self,
+        name_server: &CompiledNameServerPolicy,
+        requested: DnsQueryStrategy,
+    ) -> Option<DnsQueryStrategy> {
+        let strategy = requested.intersect(name_server.query_strategy)?;
+        if !name_server.check_system_routes {
+            return Some(strategy);
+        }
+        strategy.intersect(self.system_route_strategy()?)
     }
 
     pub fn with_server_timeout(mut self, timeout: Duration) -> Self {
@@ -1512,8 +1620,8 @@ impl ConfiguredDnsResolver {
             let Some(name_server) = self.name_servers.get(index) else {
                 continue;
             };
-            if query_strategy
-                .intersect(name_server.query_strategy)
+            if self
+                .server_query_strategy(name_server, query_strategy)
                 .is_none()
             {
                 saw_incompatible_server = true;
@@ -1561,8 +1669,8 @@ impl ConfiguredDnsResolver {
         let mut saw_compatible_server = false;
         let mut saw_incompatible_server = false;
         for (position, name_server) in plan.iter().copied().enumerate() {
-            if query_strategy
-                .intersect(name_server.query_strategy)
+            if self
+                .server_query_strategy(name_server, query_strategy)
                 .is_none()
             {
                 // It cannot answer this lookup, so it fails in its group.
@@ -1674,7 +1782,7 @@ impl ConfiguredDnsResolver {
         deadline: time::Instant,
         query_strategy: DnsQueryStrategy,
     ) -> io::Result<ConfiguredServerResult> {
-        let Some(query_strategy) = query_strategy.intersect(name_server.query_strategy) else {
+        let Some(query_strategy) = self.server_query_strategy(name_server, query_strategy) else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "dns server query strategy has no address family in common with the requested strategy",
@@ -2129,6 +2237,17 @@ impl ConfiguredDnsResolver {
     ) -> Result<DnsLookup, TransportError> {
         let Some(query_strategy) = self.query_strategy.intersect(requested_strategy) else {
             return Err(TransportError::DnsNoData(domain.to_owned(), port));
+        };
+        let query_strategy = if self.check_system_routes {
+            let Some(routed) = self
+                .system_route_strategy()
+                .and_then(|routes| query_strategy.intersect(routes))
+            else {
+                return Err(TransportError::DnsNoData(domain.to_owned(), port));
+            };
+            routed
+        } else {
+            query_strategy
         };
         let resolution = async {
             match self.resolve_configured(domain, port, query_strategy).await {
@@ -3040,9 +3159,12 @@ mod tests {
         CompiledNameServerPolicies, ConfiguredDnsAddresses, ConfiguredDnsAnswer,
         ConfiguredDnsResolver, DnsHostTarget, DnsLookup, DnsQueryDispatch, DnsQueryMetadata,
         DnsQueryStrategy, DnsQueryTransport, DnsQueryTransportKind, DnsRecordType, DnsResolver,
-        NameServer, NameServerPolicy, NameServerTransport, DNS_CACHE_MAX_ENTRIES,
+        NameServer, NameServerPolicy, NameServerTransport, SystemRouteDnsResolver,
+        DNS_CACHE_MAX_ENTRIES,
     };
-    use crate::{SocketHandle, SocketProtector, TlsConnector, TransportError};
+    use crate::{
+        RouteFamilies, RouteProbe, SocketHandle, SocketProtector, TlsConnector, TransportError,
+    };
 
     #[test]
     fn build_dns_query_uses_injected_transaction_id() {
@@ -4780,6 +4902,196 @@ mod tests {
             assert_eq!(resolved, expected);
             assert_eq!(*transport.record_types.lock().unwrap(), [record_type]);
         }
+    }
+
+    /// A route probe that reports what the test sets.
+    #[derive(Debug)]
+    struct ScriptedRoutes(Mutex<RouteFamilies>);
+
+    impl ScriptedRoutes {
+        fn new(ipv4: bool, ipv6: bool) -> Arc<Self> {
+            Arc::new(Self(Mutex::new(RouteFamilies { ipv4, ipv6 })))
+        }
+
+        fn set(&self, ipv4: bool, ipv6: bool) {
+            *self.0.lock().unwrap() = RouteFamilies { ipv4, ipv6 };
+        }
+    }
+
+    impl RouteProbe for ScriptedRoutes {
+        fn families(&self) -> RouteFamilies {
+            *self.0.lock().unwrap()
+        }
+    }
+
+    /// The global `UseSystem` asks only for the families the system routes,
+    /// and nothing at all when it routes neither.
+    #[tokio::test]
+    async fn use_system_narrows_every_lookup_to_the_routed_families() {
+        for (ipv4, ipv6, record_types) in [
+            (true, true, vec![1, 28]),
+            (true, false, vec![1]),
+            (false, true, vec![28]),
+            (false, false, vec![]),
+        ] {
+            let transport = Arc::new(FamilyRecordingQueryTransport::default());
+            let resolver = ConfiguredDnsResolver::new(
+                DomainHostIndex::default(),
+                vec![NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)))],
+                Arc::new(RejectingResolver),
+            )
+            .with_system_routes(true, ScriptedRoutes::new(ipv4, ipv6))
+            .with_query_transport(transport.clone());
+
+            let lookup = resolver.resolve_all("family.example", 443).await;
+
+            let mut sent = transport.record_types.lock().unwrap().clone();
+            sent.sort_unstable();
+            assert_eq!(sent, record_types, "routes {ipv4}/{ipv6}");
+            match lookup {
+                Ok(lookup) => {
+                    assert!(lookup
+                        .socket_addrs()
+                        .iter()
+                        .all(|address| if address.is_ipv4() { ipv4 } else { ipv6 }))
+                }
+                Err(error) => {
+                    assert!((ipv4, ipv6) == (false, false), "{error:?}");
+                    assert!(matches!(error, TransportError::DnsNoData(..)), "{error:?}");
+                }
+            }
+        }
+    }
+
+    /// The probe is read on each lookup, so a change of network applies to
+    /// the next one; without the global flag nothing is narrowed.
+    #[tokio::test]
+    async fn use_system_follows_the_routes_from_one_lookup_to_the_next() {
+        let routes = ScriptedRoutes::new(true, false);
+        let transport = Arc::new(FamilyRecordingQueryTransport::default());
+        let resolver = ConfiguredDnsResolver::new(
+            DomainHostIndex::default(),
+            vec![NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)))],
+            Arc::new(RejectingResolver),
+        )
+        .with_system_routes(true, routes.clone())
+        .with_query_transport(transport.clone());
+        resolver.resolve_all("family.example", 443).await.unwrap();
+        routes.set(false, true);
+        resolver.resolve_all("family.example", 443).await.unwrap();
+        assert_eq!(*transport.record_types.lock().unwrap(), [1, 28]);
+
+        let unchecked_transport = Arc::new(FamilyRecordingQueryTransport::default());
+        let unchecked = ConfiguredDnsResolver::new(
+            DomainHostIndex::default(),
+            vec![NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)))],
+            Arc::new(RejectingResolver),
+        )
+        .with_system_routes(false, routes)
+        .with_query_transport(unchecked_transport.clone());
+        unchecked.resolve_all("family.example", 443).await.unwrap();
+        let mut sent = unchecked_transport.record_types.lock().unwrap().clone();
+        sent.sort_unstable();
+        assert_eq!(sent, [1, 28]);
+    }
+
+    /// Records which server was asked for which record type, and answers
+    /// both families.
+    #[derive(Default)]
+    struct ServerFamilyRecordingTransport(Mutex<Vec<(NameServer, u16)>>);
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for ServerFamilyRecordingTransport {
+        async fn exchange(
+            &self,
+            server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let record_type = u16::from_be_bytes([query[query.len() - 4], query[query.len() - 3]]);
+            self.0.lock().unwrap().push((server.clone(), record_type));
+            Ok(match record_type {
+                1 => build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 90)),
+                _ => build_test_address_response(
+                    query,
+                    &[(
+                        28,
+                        60,
+                        Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 90)
+                            .octets()
+                            .to_vec(),
+                    )],
+                ),
+            })
+        }
+    }
+
+    /// A server's own `UseSystem` narrows that server alone: it asks only
+    /// for the routed families, and one left with none is passed over
+    /// without I/O while the next server still asks for both.
+    #[tokio::test]
+    async fn a_servers_use_system_narrows_that_server_alone() {
+        let first = NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)));
+        let second = NameServer::Socket(SocketAddr::from(([192, 0, 2, 54], 53)));
+        for (first_strategy, asked) in [
+            (DnsQueryStrategy::UseIp, vec![(first.clone(), 1)]),
+            (
+                DnsQueryStrategy::UseIpv6,
+                vec![(second.clone(), 1), (second.clone(), 28)],
+            ),
+        ] {
+            let mut checking = NameServerPolicy::new(first.clone());
+            checking.check_system_routes = true;
+            checking.query_strategy = first_strategy;
+            let transport = Arc::new(ServerFamilyRecordingTransport::default());
+            let resolver = ConfiguredDnsResolver::new(
+                DomainHostIndex::default(),
+                Vec::new(),
+                Arc::new(RejectingResolver),
+            )
+            .with_name_server_policies(vec![checking, NameServerPolicy::new(second.clone())])
+            .with_system_routes(false, ScriptedRoutes::new(true, false))
+            .with_query_transport(transport.clone());
+
+            resolver.resolve_all("family.example", 443).await.unwrap();
+
+            let mut sent = transport.0.lock().unwrap().clone();
+            sent.sort_by_key(|(_, record_type)| *record_type);
+            assert_eq!(sent, asked, "{first_strategy:?}");
+        }
+    }
+
+    /// In front of a cache, the wrapper keys the cache by the routed
+    /// families, so a change of network is not answered from old entries.
+    #[tokio::test]
+    async fn the_system_route_wrapper_narrows_ahead_of_the_cache() {
+        let routes = ScriptedRoutes::new(true, false);
+        let transport = Arc::new(FamilyRecordingQueryTransport::default());
+        let configured = Arc::new(
+            ConfiguredDnsResolver::new(
+                DomainHostIndex::default(),
+                vec![NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53)))],
+                Arc::new(RejectingResolver),
+            )
+            .with_query_transport(transport.clone()),
+        );
+        let resolver = SystemRouteDnsResolver::new(
+            Arc::new(CachingDnsResolver::new(configured)),
+            routes.clone(),
+        );
+        let ipv4_only = resolver.resolve_all("family.example", 443).await.unwrap();
+        assert!(ipv4_only.socket_addrs().iter().all(SocketAddr::is_ipv4));
+        resolver.resolve_all("family.example", 443).await.unwrap();
+        assert_eq!(*transport.record_types.lock().unwrap(), [1]);
+        routes.set(true, true);
+        let both = resolver.resolve_all("family.example", 443).await.unwrap();
+        assert!(both.socket_addrs().iter().any(SocketAddr::is_ipv6));
+        routes.set(false, false);
+        assert!(matches!(
+            resolver.resolve_all("family.example", 443).await,
+            Err(TransportError::DnsNoData(..))
+        ));
     }
 
     #[tokio::test]

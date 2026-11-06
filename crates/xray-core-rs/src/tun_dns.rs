@@ -6174,7 +6174,7 @@ mod tests {
         };
         FakeIpMapper::from_config(
             &config,
-            ConfigDnsQueryStrategy::UseIp,
+            xray_config::DnsQueryStrategy::UseIp,
             &[TUN_DNS_ANCHOR, TUN_CLIENT_IPV4],
         )
         .unwrap()
@@ -6389,6 +6389,7 @@ mod tests {
                     timeout_ms: 0,
                     skip_fallback: true,
                     query_strategy: xray_config::DnsQueryStrategy::UseIpv6,
+                    check_system_routes: false,
                     final_query: true,
                     client_ip: None,
                     policy_key: xray_config::DEFAULT_DNS_POLICY_KEY.to_owned(),

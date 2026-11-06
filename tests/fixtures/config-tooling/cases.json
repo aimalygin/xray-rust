@@ -1411,6 +1411,24 @@
       }
     },
     {
+      "name": "dns-use-system-accepted",
+      "accepted": true,
+      "base": "dns-policy",
+      "set": {
+        "/dns/queryStrategy": "UseSystem",
+        "/dns/servers/0/queryStrategy": "use_sys"
+      }
+    },
+    {
+      "name": "dns-query-strategy-unknown",
+      "accepted": false,
+      "errorPath": "$.dns.queryStrategy",
+      "base": "dns-policy",
+      "set": {
+        "/dns/queryStrategy": "UseFastest"
+      }
+    },
+    {
       "name": "fake-ip-pool-capacity",
       "accepted": false,
       "errorPath": "$.dns.fakeIp.poolSize",

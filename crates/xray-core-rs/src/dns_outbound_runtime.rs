@@ -12,7 +12,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{sleep, timeout, Instant};
-use xray_config::{DnsHostTarget, DnsQueryStrategy as ConfigDnsQueryStrategy, DomainHostIndex};
+use xray_config::{DnsHostTarget, DomainHostIndex};
 use xray_routing::{Target, TargetAddr};
 use xray_transport::{
     BoxedTransportStream, DnsLookup, DnsQueryStrategy, DnsResolver, TransportDialer, TransportError,
@@ -905,15 +905,15 @@ impl DnsOutboundRuntime {
             return Some(HijackResolution::NoData);
         }
 
-        let query_strategy = mapper
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .query_strategy();
-        if matches!(
-            (parsed.qtype(), query_strategy),
-            (DNS_TYPE_A, ConfigDnsQueryStrategy::UseIpv6)
-                | (DNS_TYPE_AAAA, ConfigDnsQueryStrategy::UseIpv4)
-        ) {
+        let answers = |ipv6| {
+            mapper
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .answers(ipv6)
+        };
+        if (parsed.qtype() == DNS_TYPE_A && !answers(false))
+            || (parsed.qtype() == DNS_TYPE_AAAA && !answers(true))
+        {
             return Some(HijackResolution::NoData);
         }
 
@@ -1417,7 +1417,7 @@ mod tests {
             ttl: 60,
         };
         let mapper = Arc::new(Mutex::new(
-            FakeIpMapper::from_config(&config, ConfigDnsQueryStrategy::UseIp, &[]).unwrap(),
+            FakeIpMapper::from_config(&config, xray_config::DnsQueryStrategy::UseIp, &[]).unwrap(),
         ));
         let mut runtime = test_runtime();
         runtime.fake_ip_mapper = Some(Arc::clone(&mapper));
@@ -1521,6 +1521,44 @@ mod tests {
             restored.target.addr,
             TargetAddr::Domain("poisoned.example".to_owned())
         );
+    }
+
+    /// Routes IPv6 alone, as a `UseSystem` probe may report.
+    #[derive(Debug)]
+    struct Ipv6Only;
+
+    impl xray_transport::RouteProbe for Ipv6Only {
+        fn families(&self) -> xray_transport::RouteFamilies {
+            xray_transport::RouteFamilies {
+                ipv4: false,
+                ipv6: true,
+            }
+        }
+    }
+
+    /// With `UseSystem` and no IPv4 route, a hijacked `A` query is answered
+    /// empty and allocates no fake IP, as Xray-core's `checkSystem` leaves it.
+    #[tokio::test]
+    async fn fake_ip_hijack_answers_no_a_record_without_an_ipv4_route() {
+        let (runtime, mapper) = test_runtime_with_fake_ip();
+        {
+            let mut guard = mapper.lock().unwrap();
+            let config = DnsFakeIpConfig {
+                enabled: true,
+                ipv4_pool: IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 29).unwrap(),
+                pool_size: 1,
+                ttl: 60,
+            };
+            *guard = FakeIpMapper::from_config(&config, xray_config::DnsQueryStrategy::UseIp, &[])
+                .unwrap()
+                .with_route_probe(Arc::new(Ipv6Only));
+        }
+
+        let response = hijack_reply(&runtime, query(0x2301, "unrouted.example")).await;
+
+        assert_eq!(response[3] & 0x0f, 0, "NOERROR");
+        assert_eq!(u16::from_be_bytes([response[6], response[7]]), 0);
+        assert_eq!(mapper.lock().unwrap().mapping_count(), 0);
     }
 
     #[tokio::test]
