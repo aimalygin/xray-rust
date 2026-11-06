@@ -31,6 +31,7 @@
 
 mod grpc;
 mod h2_bdp;
+mod http2_connect;
 mod http_headers;
 mod httpupgrade;
 mod masquerade;
@@ -52,6 +53,7 @@ pub(crate) use xhttp::{
 #[doc(hidden)]
 pub use grpc::test_only as grpc_test_only;
 pub use grpc::{resolve_user_agent, Authority, GrpcConfig, GrpcTransport, HeaderValue};
+pub use http2_connect::{Http2ConnectClient, Http2ConnectError};
 pub use http_headers::{serialize_request, HeaderMap};
 pub use httpupgrade::{connect_httpupgrade, HttpUpgradeConfig, PrefixedStream};
 pub use masquerade::{

@@ -4,8 +4,8 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use xray_proxy::outbound::{
-    encode_connect_request, http_connect, HttpAccount, HttpClientError,
-    MAX_HTTP_CONNECT_RESPONSE_HEAD, MAX_HTTP_CREDENTIAL_LENGTH,
+    encode_connect_request, encode_http2_connect_request, http_connect, HttpAccount,
+    HttpClientError, MAX_HTTP_CONNECT_RESPONSE_HEAD, MAX_HTTP_CREDENTIAL_LENGTH,
 };
 use xray_routing::{Network, Target, TargetAddr};
 
@@ -137,17 +137,31 @@ fn request_without_headers_uses_go_defaults_and_no_authorization() {
 }
 
 #[test]
-fn request_owns_host_and_proxy_fields() {
+fn request_owns_host_proxy_connection_and_framing() {
     let headers = [
         ("Host", "spoofed.example"),
-        ("Proxy-Authorization", "Basic spoofed"),
         ("Proxy-Connection", "close"),
+        ("Content-Length", "5"),
+        ("Transfer-Encoding", "chunked"),
+        ("Trailer", "X-Spoofed"),
     ];
     let text = request(&domain("example.com"), None, &headers);
     assert!(!text.contains("spoofed"));
     assert!(!text.contains("close"));
+    assert!(!text.contains("Content-Length"));
+    assert!(!text.contains("chunked"));
+    assert!(!text.contains("Trailer"));
     assert_eq!(text.matches("Host:").count(), 1);
     assert!(!text.contains("Proxy-Authorization"));
+}
+
+#[test]
+fn a_custom_proxy_authorization_replaces_the_accounts() {
+    // Xray-core sets the custom headers after the account's credentials.
+    let headers = [("Proxy-Authorization", "Bearer synthetic-token")];
+    let text = request(&domain("example.com"), Some(&account()), &headers);
+    assert_eq!(text.matches("Proxy-Authorization:").count(), 1);
+    assert!(text.contains("Proxy-Authorization: Bearer synthetic-token\r\n"));
 }
 
 #[test]
@@ -235,6 +249,229 @@ fn request_rejects_invalid_extra_headers() {
         );
     }
     assert!(encode_connect_request(&domain("example.com"), None, &[("X-Tab", "a\tb")]).is_ok());
+}
+
+/// The HTTP/2 fields for `headers`, as `name: value` lines in sending order.
+fn http2_fields(
+    target: &Target,
+    account: Option<&HttpAccount>,
+    headers: &[(&str, &str)],
+) -> Vec<String> {
+    let request = encode_http2_connect_request(target, account, headers).unwrap();
+    request
+        .fields()
+        .into_iter()
+        .map(|(name, value)| format!("{name}: {value}"))
+        .collect()
+}
+
+#[test]
+fn http2_fields_are_lowercase_and_end_with_gos_additions() {
+    let request = encode_http2_connect_request(
+        &domain("example.com"),
+        Some(&account()),
+        &[
+            ("User-Agent", "synthetic-agent"),
+            ("X-Mixed-Case", "  kept as is\t"),
+        ],
+    )
+    .unwrap();
+    assert_eq!(request.authority(), "example.com:443");
+    assert_eq!(
+        request.fields(),
+        [
+            ("proxy-authorization", BASIC),
+            ("user-agent", "synthetic-agent"),
+            ("x-mixed-case", "  kept as is\t"),
+            ("accept-encoding", "gzip"),
+        ]
+    );
+    let debug = format!("{request:?}");
+    assert!(
+        !debug.contains(BASIC) && !debug.contains("kept as is"),
+        "{debug}"
+    );
+}
+
+#[test]
+fn http2_user_agent_follows_go() {
+    let target = domain("example.com");
+    // A missing one is Go's HTTP/2 default; an empty one is not sent.
+    assert_eq!(
+        http2_fields(&target, None, &[]),
+        ["accept-encoding: gzip", "user-agent: Go-http-client/2.0"]
+    );
+    assert_eq!(
+        http2_fields(&target, None, &[("User-Agent", "")]),
+        ["accept-encoding: gzip"]
+    );
+}
+
+#[test]
+fn http2_drops_connection_fields_and_host() {
+    let fields = http2_fields(
+        &domain("example.com"),
+        None,
+        &[
+            ("User-Agent", "a"),
+            ("Host", "spoofed.example"),
+            ("Content-Length", "5"),
+            ("Connection", "Keep-Alive"),
+            ("Proxy-Connection", "close"),
+            ("Keep-Alive", "5"),
+            ("Transfer-Encoding", "chunked"),
+            ("Upgrade", "chunked"),
+            ("Te", "trailers"),
+        ],
+    );
+    assert_eq!(
+        fields,
+        ["user-agent: a", "te: trailers", "accept-encoding: gzip"]
+    );
+}
+
+#[test]
+fn http2_refuses_what_go_or_http2_refuses() {
+    for header in [
+        ("Upgrade", "websocket"),
+        ("Transfer-Encoding", "gzip"),
+        ("Connection", "upgrade"),
+        ("Te", "gzip"),
+        ("X-Lines", "one\ntwo"),
+        ("X-Return", "one\rtwo"),
+        ("X-Nul", "a\0b"),
+        ("X-Del", "a\u{7f}b"),
+        ("Bad Name", "v"),
+    ] {
+        assert_eq!(
+            encode_http2_connect_request(&domain("example.com"), None, &[header]).map(drop),
+            Err(HttpClientError::InvalidHeader),
+            "{header:?}"
+        );
+    }
+    for header in [
+        ("Upgrade", ""),
+        ("Transfer-Encoding", ""),
+        ("Connection", ""),
+        ("Connection", "close"),
+        ("Connection", "KEEP-ALIVE"),
+        ("X-Tab", "a\tb"),
+        ("X-Utf8", "значение"),
+    ] {
+        assert!(
+            encode_http2_connect_request(&domain("example.com"), None, &[header]).is_ok(),
+            "{header:?}"
+        );
+    }
+}
+
+#[test]
+fn http2_splits_cookies_as_go() {
+    assert_eq!(
+        http2_fields(
+            &domain("example.com"),
+            None,
+            &[("User-Agent", "a"), ("Cookie", "a=1;  b=2;c=3;")]
+        ),
+        [
+            "user-agent: a",
+            "cookie: a=1",
+            "cookie: b=2",
+            "cookie: c=3",
+            "accept-encoding: gzip"
+        ]
+    );
+    assert_eq!(
+        http2_fields(
+            &domain("example.com"),
+            None,
+            &[("User-Agent", "a"), ("Cookie", ";a;;")]
+        ),
+        [
+            "user-agent: a",
+            "cookie: ",
+            "cookie: a",
+            "cookie: ",
+            "accept-encoding: gzip"
+        ]
+    );
+    assert_eq!(
+        http2_fields(
+            &domain("example.com"),
+            None,
+            &[("User-Agent", "a"), ("Cookie", "")]
+        ),
+        ["user-agent: a", "accept-encoding: gzip"]
+    );
+}
+
+#[test]
+fn http2_asks_for_gzip_only_without_accept_encoding_or_range() {
+    let target = domain("example.com");
+    for header in [
+        ("Accept-Encoding", "br"),
+        ("Accept-Encoding", ""),
+        ("Range", "bytes=0-1"),
+    ] {
+        let fields = http2_fields(&target, None, &[("User-Agent", "a"), header]);
+        assert!(
+            !fields.contains(&"accept-encoding: gzip".to_owned()),
+            "{header:?}"
+        );
+    }
+}
+
+#[test]
+fn http2_custom_authorization_replaces_the_accounts() {
+    assert_eq!(
+        http2_fields(
+            &domain("example.com"),
+            Some(&account()),
+            &[
+                ("Proxy-Authorization", "Bearer synthetic-token"),
+                ("User-Agent", "a")
+            ]
+        ),
+        [
+            "proxy-authorization: Bearer synthetic-token",
+            "user-agent: a",
+            "accept-encoding: gzip"
+        ]
+    );
+}
+
+#[test]
+fn http2_authority_matches_http1() {
+    for target in [
+        tcp(
+            TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 7))),
+            8443,
+        ),
+        tcp(
+            TargetAddr::Ip(IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))),
+            443,
+        ),
+        tcp(
+            TargetAddr::Ip(IpAddr::V6(Ipv4Addr::new(192, 0, 2, 7).to_ipv6_mapped())),
+            443,
+        ),
+        domain("example.com"),
+    ] {
+        let authority = encode_http2_connect_request(&target, None, &[])
+            .unwrap()
+            .authority()
+            .to_owned();
+        let http1 = request(&target, None, &[]);
+        assert!(
+            http1.starts_with(&format!("CONNECT {authority} HTTP/1.1\r\n")),
+            "{http1}"
+        );
+    }
+    assert_eq!(
+        encode_http2_connect_request(&tcp(TargetAddr::Domain("example.com".into()), 0), None, &[])
+            .map(drop),
+        Err(HttpClientError::InvalidTargetPort)
+    );
 }
 
 #[test]

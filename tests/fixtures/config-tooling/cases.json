@@ -1394,6 +1394,23 @@
       }
     },
     {
+      "name": "dns-parallel-query-accepted",
+      "accepted": true,
+      "base": "dns-policy",
+      "set": {
+        "/dns/enableParallelQuery": true
+      }
+    },
+    {
+      "name": "dns-parallel-query-not-boolean",
+      "accepted": false,
+      "errorPath": "$.dns.enableParallelQuery",
+      "base": "dns-policy",
+      "set": {
+        "/dns/enableParallelQuery": "yes"
+      }
+    },
+    {
       "name": "fake-ip-pool-capacity",
       "accepted": false,
       "errorPath": "$.dns.fakeIp.poolSize",
@@ -2666,12 +2683,24 @@
     },
     {
       "name": "http-outbound-custom-headers",
-      "accepted": false,
-      "errorPath": "$.outbounds[0].settings.headers",
+      "accepted": true,
       "base": "http-outbound-flat",
       "set": {
         "/outbounds/0/settings/headers": {
-          "User-Agent": "synthetic"
+          "User-Agent": "synthetic",
+          "X-Target": "{{.Target}}",
+          "X-Source": "{{ .Source.Address }}"
+        }
+      }
+    },
+    {
+      "name": "http-outbound-header-template-function",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.headers.X-Target",
+      "base": "http-outbound-flat",
+      "set": {
+        "/outbounds/0/settings/headers": {
+          "X-Target": "{{printf \"%s\" .Target}}"
         }
       }
     },
@@ -2754,8 +2783,7 @@
     },
     {
       "name": "http-outbound-h2-alpn",
-      "accepted": false,
-      "errorPath": "$.outbounds[0].streamSettings.tlsSettings.alpn",
+      "accepted": true,
       "base": "http-outbound-flat",
       "set": {
         "/outbounds/0/streamSettings/tlsSettings/alpn": [

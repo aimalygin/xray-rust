@@ -10,6 +10,9 @@ long-term supported release series.
 
 ## Unreleased
 
+- `dns.enableParallelQuery` asks every selected DNS server at once and takes
+  the first answer of the earliest group of servers sharing a policy, as
+  Xray-core does. Profiles with it used to fail to parse.
 - `dns.clientIp` and a DNS server's own `clientIp` are sent as the EDNS
   client subnet of every query, as Xray-core sends them. Profiles with them
   used to fail to parse. DoH queries now carry Xray-core's EDNS padding.
@@ -41,6 +44,15 @@ long-term supported release series.
 - The SOCKS inbound reads `users` as another name for `accounts`, keeps the
   last account of a name, and accepts empty or missing credentials and
   `null` settings, as Xray-core does.
+- The HTTP outbound speaks HTTP/2 when the proxy's TLS picks `h2`, as
+  Xray-core does: its TLS now offers the protocols Xray-core offers, `h2`
+  included, instead of `http/1.1` alone, and later tunnels share the HTTP/2
+  connection. A proxy that offers only HTTP/1.1 is unaffected, as are imported
+  `https://` links. An Xray-core HTTP inbound behind TLS needs
+  `alpn: ["http/1.1"]`, for Xray-core's client and this one alike.
+- The HTTP outbound sends its `headers` as Xray-core does, Go templates
+  naming the connection's source and target included. Profiles with them
+  used to fail to parse.
 - The `loopback` outbound routes a connection again, as if it came from the
   inbound tag it names, as Xray-core's does. Its own `sniffing` cannot be
   enabled yet. A chain of more than 8 loopbacks fails the connection, where

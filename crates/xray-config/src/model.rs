@@ -150,6 +150,8 @@ pub struct DnsConfig {
     /// Xray-core's `clientIp`: the address sent as the EDNS client subnet by
     /// every server without its own.
     pub client_ip: Option<IpAddr>,
+    /// Xray-core's `enableParallelQuery`: query every selected server at once.
+    pub enable_parallel_query: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -181,6 +183,11 @@ pub enum DnsServerTransport {
 }
 
 pub const DEFAULT_DNS_SERVER_TIMEOUT_MS: u64 = 4_000;
+
+/// The policy key of a DNS server entry that sets none of the fields the key
+/// reads, as Xray-core's config builder writes it.
+pub const DEFAULT_DNS_POLICY_KEY: &str =
+    "client=none|skip=0|qs=|tag=|domains=[]|expected=[]|expect=[]|unexpected=[]|";
 pub const MAX_DNS_SERVE_EXPIRED_TTL_SECONDS: u32 = 24 * 60 * 60;
 /// Largest millisecond value safe across Xray-core's duration conversions.
 ///
@@ -215,6 +222,9 @@ pub struct DnsNameServerConfig {
     pub final_query: bool,
     /// This server's own `clientIp`, which replaces `dns.clientIp`.
     pub client_ip: Option<IpAddr>,
+    /// The policy key Xray-core's config builder derives from this entry's
+    /// raw fields; see [`DnsServerConfig::policy_key`].
+    pub policy_key: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -264,6 +274,18 @@ impl DnsServerConfig {
 
     pub fn final_query(&self) -> bool {
         matches!(self, Self::Policy(server) if server.final_query)
+    }
+
+    /// The key Xray-core v26.10.31's config builder gives this entry's
+    /// policy: its own `clientIp`, `skipFallback`, `queryStrategy` and `tag`,
+    /// and its domain and IP lists, as written. Adjacent servers with equal
+    /// keys race as one group under `enableParallelQuery`. A string entry has
+    /// the key of an object with none of those fields.
+    pub fn policy_key(&self) -> &str {
+        match self {
+            Self::Policy(server) => &server.policy_key,
+            Self::Ip(_) | Self::Domain { .. } => DEFAULT_DNS_POLICY_KEY,
+        }
     }
 
     /// This server's own `clientIp`; only object entries can carry one.
@@ -1377,6 +1399,9 @@ pub struct HttpOutboundSettings {
     pub port: u16,
     pub account: Option<xray_proxy::outbound::HttpAccount>,
     pub level: u32,
+    /// `headers`, set on each `CONNECT` after the credentials, by canonical
+    /// name; their values are redacted from `Debug`.
+    pub headers: Vec<(String, xray_proxy::outbound::HttpHeaderTemplate)>,
 }
 
 /// Settings of the `shadowsocks` outbound for both method families:

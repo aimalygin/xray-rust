@@ -61,6 +61,8 @@ pub enum HttpClientError {
     ProxyAuthenticationRequired,
     #[error("HTTP proxy answered CONNECT with status {0}, not 200")]
     Rejected(u16),
+    #[error("HTTP proxy negotiated an application protocol other than http/1.1 or h2")]
+    UnsupportedApplicationProtocol,
 }
 
 impl From<io::Error> for HttpClientError {
@@ -117,12 +119,16 @@ impl fmt::Debug for HttpAccount {
     }
 }
 
-/// Builds the CONNECT request for `target`.
+/// Builds the CONNECT request for `target`, as Xray-core's HTTP outbound
+/// writes it with Go's `Request.Write`.
 ///
-/// `headers` are extra fields, such as Xray's browser masquerade block; a
-/// `User-Agent` among them replaces Go's default. `Host`,
-/// `Proxy-Authorization` and `Proxy-Connection` are always this function's
-/// own and are skipped in `headers`. The target is validated before anything
+/// `headers` are the request's other fields: the configured custom headers
+/// and Xray's browser masquerade block. A `User-Agent` among them replaces
+/// Go's default, and a `Proxy-Authorization` replaces the account's, since
+/// Xray-core sets the custom headers after it. `Host` comes from the target
+/// and `Proxy-Connection` is always `Keep-Alive`, so theirs are skipped, as
+/// are the `Content-Length`, `Transfer-Encoding` and `Trailer` that Go
+/// writes from the request itself. The target is validated before anything
 /// is built, so callers can fail before resolving or dialing the proxy.
 pub fn encode_connect_request(
     target: &Target,
@@ -130,14 +136,24 @@ pub fn encode_connect_request(
     headers: &[(&str, &str)],
 ) -> Result<Zeroizing<Vec<u8>>, HttpClientError> {
     let authority = connect_authority(target)?;
-    let authorization = account.map(HttpAccount::proxy_authorization);
+    let custom_authorization = headers
+        .iter()
+        .any(|(name, _)| *name == "Proxy-Authorization");
+    let authorization = account
+        .filter(|_| !custom_authorization)
+        .map(HttpAccount::proxy_authorization);
     let mut fields: Vec<(&str, &str)> = headers
         .iter()
         .copied()
         .filter(|(name, _)| {
             !matches!(
                 *name,
-                "Host" | "User-Agent" | "Proxy-Authorization" | "Proxy-Connection"
+                "Host"
+                    | "User-Agent"
+                    | "Proxy-Connection"
+                    | "Content-Length"
+                    | "Transfer-Encoding"
+                    | "Trailer"
             )
         })
         .chain(
@@ -186,6 +202,146 @@ pub fn encode_connect_request(
     request.extend_from_slice(b"\r\n");
     debug_assert_eq!(request.len(), capacity);
     Ok(request)
+}
+
+/// Go's HTTP/2 client default when the request has no `User-Agent`.
+const DEFAULT_HTTP2_USER_AGENT: &str = "Go-http-client/2.0";
+
+/// The `:authority` and fields of an HTTP/2 CONNECT. Field names are
+/// lowercase, as HTTP/2 sends them.
+pub struct Http2ConnectRequest {
+    authority: String,
+    fields: Vec<(String, Zeroizing<String>)>,
+}
+
+impl Http2ConnectRequest {
+    /// `host:port`, as for HTTP/1.1.
+    pub fn authority(&self) -> &str {
+        &self.authority
+    }
+
+    /// The fields in the order they are sent.
+    pub fn fields(&self) -> Vec<(&str, &str)> {
+        self.fields
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect()
+    }
+}
+
+impl fmt::Debug for Http2ConnectRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let names: Vec<&str> = self.fields.iter().map(|(name, _)| name.as_str()).collect();
+        formatter
+            .debug_struct("Http2ConnectRequest")
+            .field("authority", &self.authority)
+            .field("fields", &names)
+            .finish()
+    }
+}
+
+/// Builds the HTTP/2 CONNECT for `target`, as Go's HTTP/2 client encodes
+/// the request Xray-core's HTTP outbound builds when the proxy negotiated
+/// `h2`.
+///
+/// `headers` are the request's other fields with their raw values, the
+/// configured custom headers and Xray's browser masquerade block; a
+/// `Proxy-Authorization` among them replaces the account's. Then, as Go:
+///
+/// - `Host`, `Content-Length` and the connection-specific `Connection`,
+///   `Proxy-Connection`, `Keep-Alive`, `Transfer-Encoding` and `Upgrade` are
+///   not sent, and an `Upgrade`, `Transfer-Encoding` or `Connection` value
+///   other than empty, `chunked`, `close` or `keep-alive` as Go allows each
+///   fails the request;
+/// - a value with a line break or another control byte except a tab fails,
+///   where HTTP/1.1 sends line breaks as spaces;
+/// - `Cookie` is split at each `;`;
+/// - an empty `User-Agent` is not sent, and a missing one is
+///   `Go-http-client/2.0`;
+/// - `accept-encoding: gzip` follows unless an `Accept-Encoding` or `Range`
+///   is set.
+///
+/// A `TE` other than `trailers` fails too. Go sends it, though HTTP/2
+/// forbids it and a conforming proxy refuses the request.
+pub fn encode_http2_connect_request(
+    target: &Target,
+    account: Option<&HttpAccount>,
+    headers: &[(&str, &str)],
+) -> Result<Http2ConnectRequest, HttpClientError> {
+    let authority = connect_authority(target)?;
+    let custom_authorization = headers
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case("Proxy-Authorization"));
+    let authorization = account
+        .filter(|_| !custom_authorization)
+        .map(HttpAccount::proxy_authorization);
+    let all: Vec<(&str, &str)> = authorization
+        .as_deref()
+        .map(|value| ("Proxy-Authorization", value.as_str()))
+        .into_iter()
+        .chain(headers.iter().copied())
+        .collect();
+
+    // Go checks every field before it encodes any.
+    for &(name, value) in &all {
+        let allowed = valid_header_name(name)
+            && valid_header_value(value)
+            && match name.to_ascii_lowercase().as_str() {
+                "upgrade" | "transfer-encoding" => matches!(value, "" | "chunked"),
+                "connection" => {
+                    value.is_empty()
+                        || value.eq_ignore_ascii_case("close")
+                        || value.eq_ignore_ascii_case("keep-alive")
+                }
+                "te" => value == "trailers",
+                _ => true,
+            };
+        if !allowed {
+            return Err(HttpClientError::InvalidHeader);
+        }
+    }
+
+    let mut fields: Vec<(String, Zeroizing<String>)> = Vec::with_capacity(all.len() + 2);
+    let mut push = |name: &str, value: &str| {
+        fields.push((name.to_owned(), Zeroizing::new(value.to_owned())));
+    };
+    let mut user_agent = false;
+    for &(name, value) in &all {
+        let name = name.to_ascii_lowercase();
+        match name.as_str() {
+            "host" | "content-length" | "connection" | "proxy-connection" | "transfer-encoding"
+            | "upgrade" | "keep-alive" => {}
+            "user-agent" => {
+                user_agent = true;
+                if !value.is_empty() {
+                    push("user-agent", value);
+                }
+            }
+            "cookie" => {
+                // Go's split: each `;` ends a field, the spaces after it go.
+                let mut rest = value;
+                while let Some(end) = rest.find(';') {
+                    push("cookie", &rest[..end]);
+                    rest = rest[end + 1..].trim_start_matches(' ');
+                }
+                if !rest.is_empty() {
+                    push("cookie", rest);
+                }
+            }
+            _ => push(&name, value),
+        }
+    }
+    let present = |wanted: &str| {
+        all.iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case(wanted))
+    };
+    if !present("Accept-Encoding") && !present("Range") {
+        push("accept-encoding", "gzip");
+    }
+    if !user_agent {
+        push("user-agent", DEFAULT_HTTP2_USER_AGENT);
+    }
+    Ok(Http2ConnectRequest { authority, fields })
 }
 
 /// Sends `request` over an established `stream` and reads the response head.

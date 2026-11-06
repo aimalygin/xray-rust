@@ -253,15 +253,29 @@ async fn http_runtime_delivers_tunnel_bytes_that_arrive_with_the_200() {
     .unwrap();
 }
 
+/// A profile with TLS settings beyond the pin, such as `alpn`.
+fn profile_with_tls(settings: Value, pin: &str, extra: Value) -> Value {
+    let mut profile = profile(settings, Some((pin, None)));
+    let tls = &mut profile["outbounds"][0]["streamSettings"]["tlsSettings"];
+    for (key, value) in extra.as_object().unwrap() {
+        tls[key] = value.clone();
+    }
+    profile
+}
+
 #[tokio::test]
-async fn http_runtime_offers_only_http11_over_tls() {
+async fn http_runtime_tunnels_over_http2_when_tls_picks_it() {
     timeout(DEADLINE, async {
         let (echo, _echo) = tcp_echo().await;
         let identity = tls_identity();
-        let proxy =
-            ScriptedProxy::start(Reply::Tunnel(b""), Some(identity.acceptor), echo.ip()).await;
-        // The unshaped hello and a shaped one whose profile carries h2.
-        for fingerprint in [None, Some("chrome"), Some("firefox")] {
+        let proxy = ScriptedProxy::start(
+            Reply::Tunnel(b"proxy-first"),
+            Some(identity.acceptor),
+            echo.ip(),
+        )
+        .await;
+        // Shaped hellos carry their profile's h2, as Xray-core's do.
+        for fingerprint in [None, Some("firefox")] {
             let settings =
                 outbound_settings(Form::Servers, proxy.address.port(), Some((USER, PASS)));
             let (mut core, _, _) = core(profile(settings, Some((&identity.pin, fingerprint))));
@@ -269,15 +283,179 @@ async fn http_runtime_offers_only_http11_over_tls() {
             let socks = core.inbound_addr(Some("socks-in")).unwrap();
             let (mut stream, reply) =
                 connect(socks, Destination::Domain(REMOTE_DOMAIN, echo.port())).await;
-            assert_eq!(reply, 0, "TLS tunnel with fingerprint {fingerprint:?}");
+            assert_eq!(reply, 0, "HTTP/2 tunnel with fingerprint {fingerprint:?}");
+            // Bytes the proxy sends with its 200 come first.
+            let mut early = [0; 11];
+            stream.read_exact(&mut early).await.unwrap();
+            assert_eq!(&early, b"proxy-first");
             echo_round_trip(&mut stream, PAYLOAD_LEN).await;
             core.stop().await.unwrap();
         }
         let captured = proxy.captured();
+        assert_eq!(captured.len(), 2);
+        for request in &captured {
+            assert_eq!(request.alpn.as_deref(), Some(b"h2".as_slice()));
+            let authority = format!("{REMOTE_DOMAIN}:{}", echo.port());
+            assert_eq!(request.head, format!("CONNECT {authority} HTTP/2"));
+            assert_eq!(field(request, "proxy-authorization"), Some(BASIC));
+            // Go's HTTP/2 client asks for gzip: the masquerade block sets
+            // no Accept-Encoding.
+            assert_eq!(field(request, "accept-encoding"), Some("gzip"));
+            assert!(field(request, "user-agent").unwrap().contains("Chrome/"));
+            for absent in ["host", "proxy-connection", "connection"] {
+                assert_eq!(field(request, absent), None, "{absent}");
+            }
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn http_runtime_stays_on_http11_unless_tls_picks_h2() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let identity = tls_identity();
+        let both = ScriptedProxy::start(
+            Reply::Tunnel(b""),
+            Some(identity.acceptor.clone()),
+            echo.ip(),
+        )
+        .await;
+        let http11 = ScriptedProxy::start(
+            Reply::Tunnel(b""),
+            Some(identity.http11_acceptor.clone()),
+            echo.ip(),
+        )
+        .await;
+        let cases = [
+            // A proxy that offers HTTP/1.1 alone.
+            (&http11, json!({})),
+            // `["http/1.1"]` is the one list a shaped hello sends as configured.
+            (&both, json!({"alpn": ["http/1.1"]})),
+            // With `unsafe` and no list, the hello offers no protocol at all.
+            (&both, json!({"fingerprint": "unsafe"})),
+        ];
+        for (proxy, tls) in cases {
+            let settings = outbound_settings(Form::Flat, proxy.address.port(), Some((USER, PASS)));
+            let (mut core, _, _) = core(profile_with_tls(settings, &identity.pin, tls.clone()));
+            core.start().await.unwrap();
+            let socks = core.inbound_addr(Some("socks-in")).unwrap();
+            let (mut stream, reply) =
+                connect(socks, Destination::Domain(REMOTE_DOMAIN, echo.port())).await;
+            assert_eq!(reply, 0, "{tls}");
+            echo_round_trip(&mut stream, PAYLOAD_LEN).await;
+            core.stop().await.unwrap();
+        }
+        let mut captured = http11.captured();
+        captured.extend(both.captured());
         assert_eq!(captured.len(), 3);
+        let alpn: Vec<_> = captured
+            .iter()
+            .map(|request| request.alpn.clone())
+            .collect();
+        assert_eq!(
+            alpn,
+            [Some(b"http/1.1".to_vec()), Some(b"http/1.1".to_vec()), None]
+        );
         for request in captured {
-            assert_eq!(request.alpn.as_deref(), Some(b"http/1.1".as_slice()));
+            assert!(request.head.starts_with("CONNECT "), "{}", request.head);
+            assert!(request.head.contains(" HTTP/1.1\r\n"), "{}", request.head);
             assert_eq!(header(&request.head, "Proxy-Authorization"), Some(BASIC));
+            assert_eq!(
+                header(&request.head, "Proxy-Connection"),
+                Some("Keep-Alive")
+            );
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn http_runtime_tunnels_share_one_http2_connection() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let identity = tls_identity();
+        let proxy =
+            ScriptedProxy::start(Reply::Tunnel(b""), Some(identity.acceptor), echo.ip()).await;
+        let settings = outbound_settings(Form::Flat, proxy.address.port(), None);
+        let (mut core, protector, bootstrap) = core(profile(settings, Some((&identity.pin, None))));
+        core.start().await.unwrap();
+        let socks = core.inbound_addr(Some("socks-in")).unwrap();
+        let destination = || Destination::Domain(REMOTE_DOMAIN, echo.port());
+        // One after another, and two at once beside a third.
+        let (mut first, reply) = connect(socks, destination()).await;
+        assert_eq!(reply, 0);
+        echo_round_trip(&mut first, 1024).await;
+        drop(first);
+        let (mut second, reply) = connect(socks, destination()).await;
+        assert_eq!(reply, 0);
+        let (mut third, reply) = connect(socks, destination()).await;
+        assert_eq!(reply, 0);
+        let (a, b) = tokio::join!(
+            echo_round_trip(&mut second, PAYLOAD_LEN),
+            echo_round_trip(&mut third, PAYLOAD_LEN)
+        );
+        let ((), ()) = (a, b);
+        drop((second, third));
+        assert_eq!(
+            proxy.http2_ended(),
+            0,
+            "the connection is kept for later tunnels"
+        );
+        // Stopping the core lets the shared connection go.
+        core.stop().await.unwrap();
+        for _ in 0..200 {
+            if proxy.http2_ended() == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            proxy.http2_ended(),
+            1,
+            "the stopped core must close its connection"
+        );
+
+        let captured = proxy.captured();
+        assert_eq!(captured.len(), 3);
+        assert!(captured.iter().all(|request| request.connection == 0));
+        // The proxy was resolved and dialed once, through the protector.
+        assert_eq!(bootstrap.0.load(Ordering::SeqCst), 1);
+        assert_eq!(protector.0.load(Ordering::SeqCst), 1);
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn http_runtime_refuses_every_status_but_200_over_http2() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let identity = tls_identity();
+        for status in [
+            "407 Proxy Authentication Required",
+            "403 Forbidden",
+            "204 No Content",
+        ] {
+            let proxy = ScriptedProxy::start(
+                Reply::Status(status),
+                Some(identity.acceptor.clone()),
+                echo.ip(),
+            )
+            .await;
+            let settings = outbound_settings(Form::Flat, proxy.address.port(), Some((USER, PASS)));
+            let (mut core, _, _) = core(profile(settings, Some((&identity.pin, None))));
+            core.start().await.unwrap();
+            let socks = core.inbound_addr(Some("socks-in")).unwrap();
+            let (_stream, reply) =
+                connect(socks, Destination::Domain(REMOTE_DOMAIN, echo.port())).await;
+            assert_ne!(reply, 0, "{status} must not open the tunnel");
+            core.stop().await.unwrap();
+            let captured = proxy.captured();
+            assert_eq!(captured.len(), 1, "{status}");
+            assert_eq!(captured[0].alpn.as_deref(), Some(b"h2".as_slice()));
         }
     })
     .await
@@ -569,6 +747,305 @@ async fn http_runtime_request_matches_the_pinned_go_client() {
                 assert_eq!(line, go_line);
             }
         }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn http_runtime_sends_custom_headers_naming_source_and_target() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let proxy = ScriptedProxy::start(Reply::Tunnel(b""), None, echo.ip()).await;
+        let mut settings = outbound_settings(Form::Flat, proxy.address.port(), None);
+        settings["headers"] = json!({
+            "x-target": "{{.Target}}",
+            "X-Source": "{{.Source}}",
+            "User-Agent": "synthetic-agent",
+        });
+        let (mut core, _, _) = core(profile(settings, None));
+        core.start().await.unwrap();
+        let socks = core.inbound_addr(Some("socks-in")).unwrap();
+        let (mut stream, reply) = connect(socks, Destination::Ip(echo)).await;
+        assert_eq!(reply, 0);
+        echo_round_trip(&mut stream, 1024).await;
+        let head = &proxy.captured()[0].head;
+        assert_eq!(
+            header(head, "X-Target"),
+            Some(format!("tcp:{echo}").as_str())
+        );
+        assert_eq!(
+            header(head, "X-Source"),
+            Some(format!("tcp:{}", stream.local_addr().unwrap()).as_str())
+        );
+        // A custom User-Agent other than a browser's name keeps the
+        // masquerade block out, as in Xray-core.
+        assert_eq!(header(head, "User-Agent"), Some("synthetic-agent"));
+        assert_eq!(header(head, "Sec-Fetch-Mode"), None);
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn http_runtime_hop_headers_name_the_client_the_chain_carries() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let proxy = ScriptedProxy::start(Reply::Tunnel(b""), None, echo.ip()).await;
+        let upstream_port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let entry = json!({"tag":"entry", "protocol":"socks", "settings":{
+            "address":"127.0.0.1", "port":upstream_port},
+            "proxySettings": {"tag":"hop", "transportLayer":true}});
+        let hop = json!({"tag":"hop", "protocol":"http", "settings":{
+            "address":"127.0.0.1", "port":proxy.address.port(),
+            "headers": {"X-Source": "{{.Source}}", "X-Target": "{{.Target}}"}}});
+        let (mut core, _, _) = core(chain_profile(entry, hop, upstream_port));
+        core.start().await.unwrap();
+        let socks_in = core.inbound_addr(Some("socks-in")).unwrap();
+        let (mut stream, reply) = connect(socks_in, Destination::Ip(echo)).await;
+        assert_eq!(reply, 0);
+        echo_round_trip(&mut stream, 1024).await;
+        let head = &proxy.captured()[0].head;
+        // The hop's target is the next server.
+        assert_eq!(
+            header(head, "X-Target"),
+            Some(format!("tcp:127.0.0.1:{upstream_port}").as_str())
+        );
+        assert_eq!(
+            header(head, "X-Source"),
+            Some(format!("tcp:{}", stream.local_addr().unwrap()).as_str())
+        );
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn http_runtime_custom_headers_keep_the_masquerade_without_a_user_agent() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let proxy = ScriptedProxy::start(Reply::Tunnel(b""), None, echo.ip()).await;
+        let mut settings = outbound_settings(Form::Flat, proxy.address.port(), Some((USER, PASS)));
+        settings["headers"] =
+            json!({"X-Extra": "1", "Proxy-Authorization": "Bearer synthetic-token"});
+        let (mut core, _, _) = core(profile(settings, None));
+        core.start().await.unwrap();
+        let socks = core.inbound_addr(Some("socks-in")).unwrap();
+        let (mut stream, reply) = connect(socks, Destination::Ip(echo)).await;
+        assert_eq!(reply, 0);
+        echo_round_trip(&mut stream, 1024).await;
+        let head = &proxy.captured()[0].head;
+        assert_eq!(header(head, "X-Extra"), Some("1"));
+        assert_eq!(header(head, "Sec-Fetch-Mode"), Some("navigate"));
+        // The custom credentials replace the account's.
+        assert_eq!(
+            header(head, "Proxy-Authorization"),
+            Some("Bearer synthetic-token")
+        );
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+/// Opens a tunnel through `socks` to the echo server and checks it works.
+async fn open_echo(socks: SocketAddr, echo: SocketAddr) -> TcpStream {
+    let (mut stream, reply) = connect(socks, Destination::Domain(REMOTE_DOMAIN, echo.port())).await;
+    assert_eq!(reply, 0);
+    echo_round_trip(&mut stream, 1024).await;
+    stream
+}
+
+#[tokio::test]
+async fn http_runtime_dials_again_at_the_proxys_stream_limit() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let identity = tls_identity();
+        let options = Http2Options {
+            max_streams: Some(1),
+            ..Http2Options::default()
+        };
+        let proxy = ScriptedProxy::start_http2(
+            Reply::Tunnel(b""),
+            Some(identity.acceptor),
+            echo.ip(),
+            options,
+        )
+        .await;
+        let settings = outbound_settings(Form::Flat, proxy.address.port(), None);
+        let (mut core, _, _) = core(profile(settings, Some((&identity.pin, None))));
+        core.start().await.unwrap();
+        let socks = core.inbound_addr(Some("socks-in")).unwrap();
+        // Each open tunnel fills the one stream its connection allows, so
+        // every new one dials, and the newest connection is the one kept.
+        let first = open_echo(socks, echo).await;
+        let second = open_echo(socks, echo).await;
+        let third = open_echo(socks, echo).await;
+        drop((first, second, third));
+        core.stop().await.unwrap();
+        let connections: Vec<_> = proxy
+            .captured()
+            .iter()
+            .map(|request| request.connection)
+            .collect();
+        assert_eq!(connections, [0, 1, 2]);
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn http_runtime_dials_again_after_a_goaway() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let identity = tls_identity();
+        let options = Http2Options {
+            goaway_after: Some(1),
+            ..Http2Options::default()
+        };
+        let proxy = ScriptedProxy::start_http2(
+            Reply::Tunnel(b""),
+            Some(identity.acceptor),
+            echo.ip(),
+            options,
+        )
+        .await;
+        let settings = outbound_settings(Form::Flat, proxy.address.port(), None);
+        let (mut core, _, _) = core(profile(settings, Some((&identity.pin, None))));
+        core.start().await.unwrap();
+        let socks = core.inbound_addr(Some("socks-in")).unwrap();
+        // The first tunnel stays open, so the connection that sent GOAWAY is
+        // still up when the second asks for a tunnel.
+        let mut first = open_echo(socks, echo).await;
+        let second = open_echo(socks, echo).await;
+        echo_round_trip(&mut first, 1024).await;
+        drop((first, second));
+        core.stop().await.unwrap();
+        let connections: Vec<_> = proxy
+            .captured()
+            .iter()
+            .map(|request| request.connection)
+            .collect();
+        assert_eq!(connections, [0, 1]);
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn http_runtime_fails_on_another_application_protocol() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let identity = tls_identity();
+        let proxy = ScriptedProxy::start(
+            Reply::Tunnel(b""),
+            Some(identity.acceptor_offering(&[b"spdy/3"])),
+            echo.ip(),
+        )
+        .await;
+        let settings = outbound_settings(Form::Flat, proxy.address.port(), None);
+        let tls = json!({"fingerprint": "unsafe", "alpn": ["spdy/3"]});
+        let (mut core, _, _) = core(profile_with_tls(settings, &identity.pin, tls));
+        core.start().await.unwrap();
+        let socks = core.inbound_addr(Some("socks-in")).unwrap();
+        let (_stream, reply) =
+            connect(socks, Destination::Domain(REMOTE_DOMAIN, echo.port())).await;
+        assert_ne!(reply, 0, "Xray-core supports only http/1.1 and h2");
+        core.stop().await.unwrap();
+        assert!(proxy.captured().is_empty());
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn http_runtime_http2_sends_custom_values_as_they_are() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let identity = tls_identity();
+        let proxy =
+            ScriptedProxy::start(Reply::Tunnel(b""), Some(identity.acceptor), echo.ip()).await;
+        let mut settings = outbound_settings(Form::Flat, proxy.address.port(), None);
+        settings["headers"] = json!({
+            "User-Agent": "golang",
+            "X-Padded": "  padded\t",
+            "x-target": "{{.Target}}",
+            "Cookie": "a=1; b=2",
+        });
+        let (mut core, _, _) = core(profile(settings, Some((&identity.pin, None))));
+        core.start().await.unwrap();
+        let socks = core.inbound_addr(Some("socks-in")).unwrap();
+        drop(open_echo(socks, echo).await);
+        core.stop().await.unwrap();
+        let captured = proxy.captured();
+        let fields: Vec<(&str, &str)> = captured[0]
+            .fields
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect();
+        let target = format!("tcp:{REMOTE_DOMAIN}:{}", echo.port());
+        // `golang` drops the masquerade block and the agent, so Go's HTTP/2
+        // default is sent.
+        assert_eq!(
+            fields,
+            [
+                ("cookie", "a=1"),
+                ("cookie", "b=2"),
+                ("x-padded", "  padded\t"),
+                ("x-target", target.as_str()),
+                ("accept-encoding", "gzip"),
+                ("user-agent", "Go-http-client/2.0"),
+            ]
+        );
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn http_runtime_stopping_closes_a_chained_http2_connection() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let identity = tls_identity();
+        let proxy =
+            ScriptedProxy::start(Reply::Tunnel(b""), Some(identity.acceptor), echo.ip()).await;
+        // The HTTP outbound rides a freedom hop, so the core keeps it inside
+        // a chain.
+        let profile = json!({
+            "inbounds": [{"tag":"socks-in", "protocol":"socks", "listen":"127.0.0.1", "port":0,
+                          "settings":{"auth":"noauth"}}],
+            "outbounds": [
+                {"tag":"entry", "protocol":"http",
+                 "settings":{"address":"127.0.0.1", "port":proxy.address.port()},
+                 "streamSettings":{"network":"raw", "security":"tls",
+                    "tlsSettings":{"serverName":"localhost", "pinnedPeerCertSha256":identity.pin},
+                    "sockopt":{"dialerProxy":"hop"}}},
+                {"tag":"hop", "protocol":"freedom"}
+            ]
+        });
+        let (mut core, _, _) = core(profile);
+        core.start().await.unwrap();
+        let socks = core.inbound_addr(Some("socks-in")).unwrap();
+        drop(open_echo(socks, echo).await);
+        core.stop().await.unwrap();
+        for _ in 0..200 {
+            if proxy.http2_ended() == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(proxy.captured()[0].alpn.as_deref(), Some(b"h2".as_slice()));
+        assert_eq!(
+            proxy.http2_ended(),
+            1,
+            "the stopped core must close its connection"
+        );
     })
     .await
     .unwrap();

@@ -99,6 +99,49 @@ fn credentials_are_optional_and_pass_defaults_to_empty() {
 }
 
 #[test]
+fn custom_headers_read_as_xray_core_sets_them() {
+    let names = |headers: Value| {
+        let mut raw = flat();
+        raw["headers"] = headers;
+        settings(&profile(raw))
+            .headers
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect::<Vec<_>>()
+    };
+    // Go's Header.Set canonicalizes names, and a later alike name replaces.
+    let set = names(json!({"x-lower": "a", "X-UPPER": "b", "x_under-score": "c"}));
+    assert!(set.contains(&"X-Lower".to_owned()), "{set:?}");
+    assert!(set.contains(&"X-Upper".to_owned()), "{set:?}");
+    assert!(set.contains(&"X_under-Score".to_owned()), "{set:?}");
+    let mut raw = flat();
+    raw["headers"] = json!({"x-a": "1", "X-A": "2"});
+    let headers = settings(&profile(raw)).headers;
+    assert_eq!(headers.len(), 1);
+    // serde_json keeps keys sorted, so `x-a` comes last and wins.
+    let target = xray_routing::Target::new(
+        xray_routing::TargetAddr::Domain("example.test".to_owned()),
+        443,
+        xray_routing::Network::Tcp,
+    );
+    assert_eq!(headers[0].1.render(None, &target), "1");
+    // Templates and null values are accepted in both forms; Debug shows no
+    // value.
+    for headers in [
+        json!({"X-Target": "{{.Target}}", "X-Source": "{{ .Source.Address }}", "X-Null": null}),
+        json!({"Proxy-Authorization": "Bearer synthetic-token"}),
+    ] {
+        let mut raw = flat();
+        raw["headers"] = headers.clone();
+        let parsed = settings(&profile(raw));
+        assert!(!format!("{parsed:?}").contains("synthetic-token"));
+        let mut raw = legacy();
+        raw["headers"] = headers;
+        settings(&profile(raw));
+    }
+}
+
+#[test]
 fn empty_headers_are_accepted_in_both_forms() {
     for headers in [json!(null), json!({})] {
         let mut raw = flat();
@@ -211,27 +254,47 @@ fn invalid_shapes_and_credentials_are_rejected_at_their_paths_without_secrets() 
         raw["servers"][0][key] = value;
         cases.push((raw, format!("{server_path}.{key}")));
     }
-    // Custom headers are a Go-template feature that is not implemented.
-    for headers in [
-        json!({"User-Agent":"synthetic"}),
-        json!({"X-Target":"{{.Target}}"}),
-        json!([]),
-        json!("X: y"),
+    for (headers, path) in [
+        (json!([]), "headers".to_owned()),
+        (json!("X: y"), "headers".to_owned()),
+        (json!({"X-Number": 1}), "headers.X-Number".to_owned()),
+        (json!({"Bad Name": "x"}), "headers.Bad Name".to_owned()),
+        (json!({"": "x"}), "headers.".to_owned()),
+        (json!({"X-Nul": "a\u{0}b"}), "headers.X-Nul".to_owned()),
+        (
+            json!({"X-Long": "x".repeat(8 * 1024 + 1)}),
+            "headers.X-Long".to_owned(),
+        ),
+        (
+            json!({"X-Func": "{{printf \"%s\" .Target}}"}),
+            "headers.X-Func".to_owned(),
+        ),
+        (
+            json!({"X-Field": "{{.Target.Domain}}"}),
+            "headers.X-Field".to_owned(),
+        ),
+        (json!({"X-Open": "{{.Target"}), "headers.X-Open".to_owned()),
     ] {
         let mut raw = flat();
         raw["headers"] = headers.clone();
-        cases.push((raw, format!("{settings_path}.headers")));
+        cases.push((raw, format!("{settings_path}.{path}")));
         let mut raw = legacy();
         raw["headers"] = headers;
-        cases.push((raw, format!("{settings_path}.headers")));
+        cases.push((raw, format!("{settings_path}.{path}")));
     }
+    let many: serde_json::Map<String, Value> = (0..65)
+        .map(|index| (format!("X-{index}"), json!("x")))
+        .collect();
+    let mut raw = flat();
+    raw["headers"] = Value::Object(many);
+    cases.push((raw, format!("{settings_path}.headers")));
     for (raw, path) in cases {
         rejects_at(&profile(raw), &path);
     }
 }
 
 #[test]
-fn stream_settings_allow_raw_with_none_or_http11_tls_only() {
+fn stream_settings_allow_raw_with_none_or_tls() {
     let with_stream = |stream: Value| {
         let mut raw = profile(flat());
         raw["outbounds"][0]["streamSettings"] = stream;
@@ -244,6 +307,11 @@ fn stream_settings_allow_raw_with_none_or_http11_tls_only() {
         json!({"network":"tcp","security":"tls","tlsSettings":{"serverName":"proxy.example"}}),
         json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","alpn":["http/1.1"]}}),
         json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","fingerprint":"chrome"}}),
+        // TLS offers what Xray-core offers; the proxy's pick decides the
+        // tunnel's HTTP version.
+        json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","alpn":["h2"]}}),
+        json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","alpn":["h2","http/1.1"]}}),
+        json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","alpn":["http/1.1","http/1.1"]}}),
     ] {
         settings(&with_stream(stream));
     }
@@ -266,18 +334,6 @@ fn stream_settings_allow_raw_with_none_or_http11_tls_only() {
                 "serverName":"proxy.example","fingerprint":"chrome",
                 "publicKey":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE","shortId":"02030405"}}),
             "security",
-        ),
-        (
-            json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","alpn":["h2"]}}),
-            "tlsSettings.alpn",
-        ),
-        (
-            json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","alpn":["h2","http/1.1"]}}),
-            "tlsSettings.alpn",
-        ),
-        (
-            json!({"security":"tls","tlsSettings":{"serverName":"proxy.example","alpn":["http/1.1","http/1.1"]}}),
-            "tlsSettings.alpn",
         ),
     ] {
         rejects_at(

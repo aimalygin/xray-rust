@@ -4,12 +4,13 @@ Write access is restricted to these repositories:
 
 - `aimalygin/xray-rust` (`/Users/antonmalygin/xray-rust` and its worktrees).
 - `aimalygin/xray-rust-mobile` (`/Users/antonmalygin/xray-rust-mobile` and its worktrees).
+- `aimalygin/xray-rust-kmp` (`/Users/antonmalygin/xray-rust-kmp` and its worktrees).
 
 Reading other repositories is allowed when relevant to the task, including
 inspecting code, searching, comparing implementations, and fetching reference
 material.
 
-Keep repository modifications and GitHub write operations within the two
+Keep repository modifications and GitHub write operations within the three
 repositories above. This includes source edits, commits, pushes, branch/tag
 changes, pull-request or issue changes, workflow dispatches, and releases.
 Writing to another repository requires a new explicit instruction from the user.
