@@ -163,8 +163,9 @@ silently accepting or ignoring them. `level` also applies without credentials;
 `email` is type-checked but does not supply upstream user-identity accounting.
 
 At the reviewed main snapshot, the outbound implements TCP CONNECT and UDP
-ASSOCIATE. It rejects enabled Mux, non-raw transports, and REALITY. UDP proxy
-chaining remains rejected. Xray-core has a broader transport surface.
+ASSOCIATE over every transport, with none, TLS or REALITY, as Xray-core does
+since 0.10.0. It rejects enabled Mux, and UDP proxy chaining remains
+rejected.
 Development mobile profile import additionally accepts `socks://` and
 `socks5://` through the shared Rust parser and Swift/Kotlin APIs under ABI 1.13;
 see the [accepted link subset and capability guard](socks-profile-import.md).
