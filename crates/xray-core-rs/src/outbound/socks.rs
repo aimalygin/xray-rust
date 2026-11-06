@@ -138,6 +138,8 @@ impl SocksOutbound {
             }
         }
 
+        // The relay socket takes this outbound's socket options too.
+        let relay_dialer = socket_options::dialer(dialer, self.0.carrier.socket_options.as_ref());
         let mut last_error = None;
         for ipv4 in families {
             let family: Vec<SocketAddr> = candidates
@@ -147,7 +149,7 @@ impl SocksOutbound {
                 .filter(|candidate| candidate.is_ipv4() == ipv4)
                 .collect();
             // A host without this family (e.g. no IPv6) falls through to the next one.
-            let socket = match bind_relay_socket(ipv4, dialer) {
+            let socket = match bind_relay_socket(ipv4, &relay_dialer) {
                 Ok(socket) => socket,
                 Err(error) => {
                     last_error = Some(error.into());
@@ -210,12 +212,8 @@ impl SocksOutbound {
         if matches!(carrier.transport_layer, TransportLayer::Raw)
             && !matches!(carrier.transport, ConnectorConfig::Reality(_))
         {
-            let fragmented_dialer = carrier
-                .fragment
-                .as_ref()
-                .map(|fragment| dialer.clone().with_tcp_fragment(fragment.clone()));
-            let dialer = fragmented_dialer.as_ref().unwrap_or(dialer);
-            let (control, peer) = dialer
+            let (control, peer) = carrier
+                .dialer(dialer)
                 .connect_raw_stream_with_peer(
                     &carrier.transport,
                     self.server(),

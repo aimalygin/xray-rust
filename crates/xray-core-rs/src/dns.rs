@@ -218,16 +218,13 @@ impl RoutedDnsQueryTransport {
             .map_err(io::Error::other)?;
 
         match outbound {
-            UdpOutbound::Freedom(_) => {
+            UdpOutbound::Freedom(freedom) => {
                 let server = self.resolved_server(server).await?;
                 let _udp_exchange_permit = self.direct_executor.try_reserve_udp_exchange()?;
-                exchange_freedom_udp(
-                    server,
-                    query,
-                    self.transport_dialer.socket_protector(),
-                    true,
-                )
-                .await
+                // The query socket takes freedom's socket options, as the
+                // socket Xray-core's freedom dials for it does.
+                let dialer = freedom.dialer(&self.transport_dialer);
+                exchange_freedom_udp(server, query, dialer.socket_protector(), true).await
             }
             UdpOutbound::Vless(outbound) if !outbound.udp_uses_mux(&target) => {
                 if server_socket_has_nonzero_scope(server) {
@@ -1839,6 +1836,86 @@ mod tests {
             !server.await.expect("join Freedom budget DNS server"),
             "a saturated managed or ingress query opened a second UDP socket"
         );
+    }
+
+    /// A query routed through freedom over UDP leaves on a socket with
+    /// freedom's socket options, as the socket Xray-core's freedom dials for
+    /// it does.
+    #[tokio::test]
+    async fn routed_freedom_dns_over_udp_takes_freedoms_socket_options() {
+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind Freedom options DNS UDP server");
+        let server_addr = socket.local_addr().expect("read Freedom DNS address");
+        let server = tokio::spawn(async move {
+            let mut buffer = [0_u8; 512];
+            while let Ok((read, peer)) = socket.recv_from(&mut buffer).await {
+                let _ = socket.send_to(&dns_response(&buffer[..read]), peer).await;
+            }
+        });
+        for (interface, answered) in [("", true), ("xray-missing0", false)] {
+            let config = Arc::new(CoreConfig {
+                inbounds: Vec::new(),
+                outbounds: vec![OutboundConfig {
+                    mux: None,
+                    tag: Some("direct".to_owned()),
+                    proxy_settings: None,
+                    stream: StreamSettings {
+                        network: Network::Tcp,
+                        transport: StreamTransport::Raw,
+                        security: StreamSecurity::None,
+                        quic_params: None,
+                        tcp_fragment: None,
+                        udp_noise: None,
+                        socket_options: Some(xray_config::SocketOptions {
+                            interface: interface.to_owned(),
+                            ..Default::default()
+                        }),
+                    },
+                    settings: OutboundSettings::Freedom(Default::default()),
+                }],
+                default_outbound_tag: Some("direct".to_owned()),
+                routing: RoutingConfig::default(),
+                observatory: None,
+                dns: DnsConfig::default(),
+                policy: PolicyConfig::default(),
+            });
+            let bootstrap: Arc<dyn DnsResolver> = Arc::new(xray_transport::SystemDnsResolver);
+            let dialer = Arc::new(TransportDialer::system().expect("build Freedom DNS dialer"));
+            let direct_executor = Arc::new(DnsDirectExecutor::with_pool_config(
+                Arc::clone(&bootstrap),
+                Arc::clone(&dialer),
+                Vec::new(),
+                DnsDirectPoolConfig::from_runtime_limit(4, Duration::from_secs(30)),
+            ));
+            let transport = RoutedDnsQueryTransport::with_direct_executor(
+                Arc::new(OutboundRouter::new(config)),
+                bootstrap,
+                dialer,
+                Vec::new(),
+                direct_executor,
+                4,
+            );
+            let result = timeout(
+                Duration::from_secs(5),
+                transport.exchange(
+                    &NameServer::Socket(server_addr),
+                    DnsQueryTransportKind::Udp,
+                    DnsQueryMetadata::new(None),
+                    &dns_query(0x2400, "freedom-options.test"),
+                ),
+            )
+            .await
+            .expect("the query ends");
+            assert_eq!(result.is_ok(), answered, "{interface}: {result:?}");
+            if let Err(error) = result {
+                assert!(
+                    error.to_string().contains("failed to bind to interface"),
+                    "{error}"
+                );
+            }
+        }
+        server.abort();
     }
 
     #[tokio::test]

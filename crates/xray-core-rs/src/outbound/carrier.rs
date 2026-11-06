@@ -1,5 +1,6 @@
 //! Shared endpoint, authenticated connector and stream transport compilation.
 use super::*;
+use std::borrow::Cow;
 use xray_transport::stream::XhttpConnectTarget;
 
 #[derive(Clone, Copy)]
@@ -24,6 +25,8 @@ pub(super) struct StreamCarrier {
     pub(super) download: Option<XhttpDownloadOutbound>,
     pub(super) happy_eyeballs: Option<HappyEyeballsConfig>,
     pub(super) fragment: Option<Arc<xray_transport::TcpFragmentConfig>>,
+    /// `sockopt`, for every socket the carrier opens.
+    pub(super) socket_options: Option<Arc<xray_transport::SocketOptions>>,
 }
 
 impl StreamCarrier {
@@ -59,7 +62,17 @@ impl StreamCarrier {
             transport,
             download: build_xhttp_download(stream, unencrypted_payload)?,
             happy_eyeballs: happy_eyeballs_config(stream),
+            socket_options: socket_options::compile(stream),
         })
+    }
+
+    /// `dialer` with this carrier's socket options and fragment mask.
+    pub(super) fn dialer<'a>(&self, dialer: &'a TransportDialer) -> Cow<'a, TransportDialer> {
+        let dialer = socket_options::dialer(dialer, self.socket_options.as_ref());
+        match &self.fragment {
+            Some(fragment) => Cow::Owned(dialer.into_owned().with_tcp_fragment(fragment.clone())),
+            None => dialer,
+        }
     }
     pub(super) async fn resolve_download(
         &self,
@@ -77,17 +90,16 @@ impl StreamCarrier {
         download_candidates: &[SocketAddr],
         dialer: &TransportDialer,
     ) -> Result<BoxedTransportStream, CoreError> {
-        let fragmented_dialer = self
-            .fragment
-            .as_ref()
-            .map(|fragment| dialer.clone().with_tcp_fragment(fragment.clone()));
-        let dialer = fragmented_dialer.as_ref().unwrap_or(dialer);
+        let base = dialer;
+        let dialer = self.dialer(base);
+        let dialer = dialer.as_ref();
         if let Some(down) = &self.download {
             let TransportLayer::Xhttp(up) = &self.transport_layer else {
                 return Err(invalid_xhttp_configuration(
                     "split download requires XHTTP upload",
                 ));
             };
+            let down_dialer = down.dialer(base, dialer);
             return up
                 .open_split_stream(
                     dialer,
@@ -98,6 +110,7 @@ impl StreamCarrier {
                         happy_eyeballs: self.happy_eyeballs.as_ref(),
                     },
                     &down.transport,
+                    &down_dialer,
                     XhttpConnectTarget {
                         connector: &down.connector,
                         target: &down.server,

@@ -920,26 +920,234 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(socket_options, &socket_options_path, &surface::SOCKOPT);
+        let at = |key: &str| format!("{socket_options_path}.{key}");
         // Chaining is parsed on the outbound; dedicated freedom fragment
         // handlers are normalized across outbounds after parsing.
-        self.nullable_string_at(
-            socket_options,
-            "dialerProxy",
-            format!("{socket_options_path}.dialerProxy"),
-        )?;
+        let dialer_proxy =
+            self.nullable_string_at(socket_options, "dialerProxy", at("dialerProxy"));
         let happy_eyeballs = socket_options
             .get("happyEyeballs")
+            .filter(|settings| !settings.is_null())
             .and_then(|settings| self.parse_happy_eyeballs_settings(settings, index));
-        let domain_strategy = self.domain_strategy_at(
+        let domain_strategy =
+            self.domain_strategy_at(socket_options, "domainStrategy", &at("domainStrategy"));
+        let mark = self.go_int32_at(socket_options, "mark", at("mark"));
+        let tcp_fast_open = self.tcp_fast_open_at(socket_options, at("tcpFastOpen"));
+        let tproxy = self
+            .nullable_string_at(socket_options, "tproxy", at("tproxy"))
+            .map(|mode| match mode.to_ascii_lowercase().as_str() {
+                "tproxy" => TproxyMode::Tproxy,
+                "redirect" => TproxyMode::Redirect,
+                _ => TproxyMode::Off,
+            });
+        let tcp_keep_alive_idle =
+            self.go_int32_at(socket_options, "tcpKeepAliveIdle", at("tcpKeepAliveIdle"));
+        let tcp_keep_alive_interval = self.go_int32_at(
             socket_options,
-            "domainStrategy",
-            &format!("{socket_options_path}.domainStrategy"),
-        )?;
+            "tcpKeepAliveInterval",
+            at("tcpKeepAliveInterval"),
+        );
+        let tcp_congestion =
+            self.nullable_string_at(socket_options, "tcpCongestion", at("tcpCongestion"));
+        let tcp_window_clamp =
+            self.go_int32_at(socket_options, "tcpWindowClamp", at("tcpWindowClamp"));
+        let tcp_max_seg = self.go_int32_at(socket_options, "tcpMaxSeg", at("tcpMaxSeg"));
+        let tcp_user_timeout =
+            self.go_int32_at(socket_options, "tcpUserTimeout", at("tcpUserTimeout"));
+        let interface = self.nullable_string_at(socket_options, "interface", at("interface"));
+        let tcp_mptcp = self.go_bool_at(socket_options, "tcpMptcp", at("tcpMptcp"));
+        let penetrate = self.go_bool_at(socket_options, "penetrate", at("penetrate"));
+        // Inbound options, which Xray-core reads only on a listener: their
+        // types are checked, and they are ignored.
+        self.go_bool_at(
+            socket_options,
+            "acceptProxyProtocol",
+            at("acceptProxyProtocol"),
+        );
+        self.go_bool_at(socket_options, "v6only", at("v6only"));
+        self.go_string_list_at(
+            socket_options,
+            "trustedXForwardedFor",
+            at("trustedXForwardedFor"),
+        );
+        let custom = self.parse_custom_socket_options(socket_options, &at("customSockopt"));
+        let address_port_strategy =
+            self.address_port_strategy_at(socket_options, &at("addressPortStrategy"));
 
+        dialer_proxy?;
+        address_port_strategy?;
         Some(SocketOptions {
             happy_eyeballs,
-            domain_strategy,
+            domain_strategy: domain_strategy?,
+            mark: mark?,
+            tcp_fast_open: tcp_fast_open?,
+            tproxy: tproxy?,
+            tcp_keep_alive_idle: tcp_keep_alive_idle?,
+            tcp_keep_alive_interval: tcp_keep_alive_interval?,
+            tcp_congestion: tcp_congestion?.to_owned(),
+            tcp_window_clamp: tcp_window_clamp?,
+            tcp_max_seg: tcp_max_seg?,
+            tcp_user_timeout: tcp_user_timeout?,
+            interface: interface?.to_owned(),
+            tcp_mptcp: tcp_mptcp?,
+            penetrate: penetrate?,
+            custom: custom?,
         })
+    }
+
+    /// A Go `int32` field: absent and null are zero, and only an integer
+    /// literal within range decodes, as `encoding/json` decodes one.
+    fn go_int32_at(&mut self, value: &Value, key: &str, path: String) -> Option<i32> {
+        match value.get(key) {
+            None | Some(Value::Null) => Some(0),
+            Some(raw) => match raw.as_i64().and_then(|value| i32::try_from(value).ok()) {
+                Some(value) => Some(value),
+                None => {
+                    self.error(
+                        path,
+                        format!("field `{key}` must be a 32-bit integer or null"),
+                    );
+                    None
+                }
+            },
+        }
+    }
+
+    /// A Go `bool` field: absent and null are false.
+    fn go_bool_at(&mut self, value: &Value, key: &str, path: String) -> Option<bool> {
+        match value.get(key) {
+            None | Some(Value::Null) => Some(false),
+            Some(Value::Bool(value)) => Some(*value),
+            Some(_) => {
+                self.error(path, format!("field `{key}` must be a boolean or null"));
+                None
+            }
+        }
+    }
+
+    /// A Go `[]string` field: absent and null are empty, and a null element
+    /// is an empty string.
+    fn go_string_list_at(&mut self, value: &Value, key: &str, path: String) -> Option<Vec<String>> {
+        match value.get(key) {
+            None | Some(Value::Null) => Some(Vec::new()),
+            Some(Value::Array(items)) => {
+                let mut list = Vec::with_capacity(items.len());
+                for (item_index, item) in items.iter().enumerate() {
+                    match item {
+                        Value::Null => list.push(String::new()),
+                        Value::String(text) => list.push(text.clone()),
+                        _ => {
+                            self.error(
+                                format!("{path}[{item_index}]"),
+                                format!("field `{key}` must hold strings"),
+                            );
+                            return None;
+                        }
+                    }
+                }
+                Some(list)
+            }
+            Some(_) => {
+                self.error(
+                    path,
+                    format!("field `{key}` must be an array of strings or null"),
+                );
+                None
+            }
+        }
+    }
+
+    /// `tcpFastOpen`, which Xray-core reads as `true` (256), `false` (-1)
+    /// or a number it truncates and caps at `math.MaxInt32`.
+    fn tcp_fast_open_at(&mut self, socket_options: &Value, path: String) -> Option<i32> {
+        match socket_options.get("tcpFastOpen") {
+            None | Some(Value::Null) => Some(0),
+            Some(Value::Bool(true)) => Some(256),
+            Some(Value::Bool(false)) => Some(-1),
+            // `int32(math.Min(v, math.MaxInt32))`; Go's conversion of a value
+            // below `math.MinInt32` gives `math.MinInt32` on every supported
+            // architecture, as Rust's saturating cast does.
+            Some(Value::Number(number)) => number.as_f64().map(|value| value as i32),
+            Some(_) => {
+                self.error(
+                    path,
+                    "tcpFastOpen: only boolean and integer value is acceptable",
+                );
+                None
+            }
+        }
+    }
+
+    /// `customSockopt`, kept as text: Xray-core reads each entry only when it
+    /// sets a socket up.
+    fn parse_custom_socket_options(
+        &mut self,
+        socket_options: &Value,
+        path: &str,
+    ) -> Option<Vec<CustomSocketOption>> {
+        let items = match socket_options.get("customSockopt") {
+            None | Some(Value::Null) => return Some(Vec::new()),
+            Some(Value::Array(items)) => items,
+            Some(_) => {
+                self.error(path, "field `customSockopt` must be an array or null");
+                return None;
+            }
+        };
+        let mut options = Vec::with_capacity(items.len());
+        let mut failed = false;
+        for (item_index, item) in items.iter().enumerate() {
+            let item_path = format!("{path}[{item_index}]");
+            // Xray-core dereferences each entry, so a null one stops it.
+            if !item.is_object() {
+                self.error(item_path, "customSockopt entries must be objects");
+                return None;
+            }
+            self.reject_unknown_fields(item, &item_path, &surface::CUSTOM_SOCKOPT);
+            let fields = ["system", "network", "level", "opt", "value", "type"].map(|key| {
+                self.nullable_string_at(item, key, format!("{item_path}.{key}"))
+                    .map(str::to_owned)
+            });
+            if fields.iter().any(Option::is_none) {
+                failed = true;
+                continue;
+            }
+            let [system, network, level, opt, value, kind] = fields.map(Option::unwrap_or_default);
+            options.push(CustomSocketOption {
+                system,
+                network,
+                level,
+                opt,
+                value,
+                kind,
+            });
+        }
+        (!failed).then_some(options)
+    }
+
+    /// `addressPortStrategy`. Xray-core looks the destination up in the
+    /// system's SRV or TXT records for every value but `none`; that lookup is
+    /// not implemented, so those values are refused.
+    fn address_port_strategy_at(&mut self, socket_options: &Value, path: &str) -> Option<()> {
+        let strategy =
+            self.nullable_string_at(socket_options, "addressPortStrategy", path.to_owned())?;
+        match strategy.to_ascii_lowercase().as_str() {
+            "" | "none" => Some(()),
+            "srvportonly" | "srvaddressonly" | "srvportandaddress" | "txtportonly"
+            | "txtaddressonly" | "txtportandaddress" => {
+                self.error(
+                    path,
+                    format!("addressPortStrategy `{strategy}` is unsupported: SRV and TXT lookups are not implemented"),
+                );
+                None
+            }
+            _ => {
+                self.error(
+                    path,
+                    format!("unsupported address and port strategy: {strategy}"),
+                );
+                None
+            }
+        }
     }
 
     pub(super) fn parse_happy_eyeballs_settings(

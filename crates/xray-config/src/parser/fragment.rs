@@ -242,6 +242,17 @@ impl Parser<'_> {
             let fragment = target.stream.tcp_fragment.clone();
             outbounds[index].stream.tcp_fragment = fragment;
             outbounds[index].proxy_settings = None;
+            // Xray-core's sockets here are the handler's, which sets no
+            // socket option, so the caller's own socket options never reach
+            // them; what its dial reads stays.
+            if let Some(options) = outbounds[index].stream.socket_options.take() {
+                outbounds[index].stream.socket_options = Some(SocketOptions {
+                    happy_eyeballs: options.happy_eyeballs,
+                    domain_strategy: options.domain_strategy,
+                    penetrate: options.penetrate,
+                    ..SocketOptions::default()
+                });
+            }
         }
     }
 

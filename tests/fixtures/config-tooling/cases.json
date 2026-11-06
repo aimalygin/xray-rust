@@ -3264,6 +3264,128 @@
       "accepted": true
     },
     {
+      "name": "sockopt-every-field",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/streamSettings/sockopt": {
+          "mark": 255,
+          "tcpFastOpen": true,
+          "tproxy": "tproxy",
+          "acceptProxyProtocol": false,
+          "domainStrategy": "UseIPv4",
+          "dialerProxy": "",
+          "tcpKeepAliveInterval": 30,
+          "tcpKeepAliveIdle": 60,
+          "tcpCongestion": "bbr",
+          "tcpWindowClamp": 600,
+          "tcpMaxSeg": 1200,
+          "penetrate": false,
+          "tcpUserTimeout": 5000,
+          "v6only": false,
+          "interface": "eth0",
+          "tcpMptcp": true,
+          "customSockopt": [
+            {
+              "system": "linux",
+              "network": "tcp",
+              "level": "6",
+              "opt": "13",
+              "value": "reno",
+              "type": "str"
+            }
+          ],
+          "addressPortStrategy": "none",
+          "happyEyeballs": {
+            "tryDelayMs": 250
+          },
+          "trustedXForwardedFor": [
+            "10.0.0.1"
+          ]
+        }
+      },
+      "accepted": true,
+      "objects": {
+        "SOCKOPT": "/outbounds/0/streamSettings/sockopt",
+        "CUSTOM_SOCKOPT": "/outbounds/0/streamSettings/sockopt/customSockopt/0",
+        "HAPPY_EYEBALLS": "/outbounds/0/streamSettings/sockopt/happyEyeballs"
+      }
+    },
+    {
+      "name": "sockopt-tcpFastOpen-string",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/streamSettings/sockopt/tcpFastOpen": "true"
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.sockopt.tcpFastOpen"
+    },
+    {
+      "name": "sockopt-mark-fraction",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/streamSettings/sockopt/mark": 1.5
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.sockopt.mark"
+    },
+    {
+      "name": "sockopt-addressPortStrategy-srv",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/streamSettings/sockopt/addressPortStrategy": "SrvPortAndAddress"
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.sockopt.addressPortStrategy"
+    },
+    {
+      "name": "sockopt-customSockopt-null-entry",
+      "base": "freedom-domain-strategy",
+      "set": {
+        "/outbounds/0/streamSettings/sockopt/customSockopt": [
+          null
+        ]
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.sockopt.customSockopt[0]"
+    },
+    {
+      "name": "download-sockopt-penetrate",
+      "base": "xhttp-download",
+      "set": {
+        "/outbounds/0/streamSettings/sockopt": {
+          "penetrate": true,
+          "mark": 7
+        },
+        "/outbounds/0/streamSettings/xhttpSettings/downloadSettings/sockopt": {
+          "mark": 9,
+          "tcpKeepAliveIdle": 30
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "download-sockopt-dialerProxy",
+      "base": "xhttp-download",
+      "set": {
+        "/outbounds/0/streamSettings/xhttpSettings/downloadSettings/sockopt": {
+          "dialerProxy": "proxy"
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.xhttpSettings.downloadSettings.sockopt.dialerProxy"
+    },
+    {
+      "name": "download-sockopt-domainStrategy",
+      "base": "xhttp-download",
+      "set": {
+        "/outbounds/0/streamSettings/xhttpSettings/downloadSettings/sockopt": {
+          "domainStrategy": "UseIPv6"
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.xhttpSettings.downloadSettings.sockopt.domainStrategy"
+    },
+    {
       "name": "freedom-settings-domainStrategy",
       "base": "freedom-domain-strategy",
       "set": {

@@ -538,11 +538,14 @@ impl XhttpTransport {
 
     /// Opens a logical flow whose GET uses an independently configured pool
     /// and carrier. Both resolved targets retain the same host dialer.
+    /// Opens the upload leg through `dialer` and the download leg, with its
+    /// own transport, through `down_dialer`.
     pub async fn open_split_stream(
         &self,
         dialer: &TransportDialer,
         upload: XhttpConnectTarget<'_>,
         download: &Self,
+        down_dialer: &TransportDialer,
         down: XhttpConnectTarget<'_>,
     ) -> Result<BoxedTransportStream, XhttpTransportError> {
         let up_dial = self.mode_dial(
@@ -553,7 +556,7 @@ impl XhttpTransport {
             upload.happy_eyeballs,
         )?;
         let down_dial = download.mode_dial(
-            dialer,
+            down_dialer,
             down.connector,
             down.target,
             down.candidates,

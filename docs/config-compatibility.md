@@ -205,7 +205,9 @@ Existing mobile profiles may instead put
 in a dedicated `freedom` outbound's `settings`, then reference its tag with
 `streamSettings.sockopt.dialerProxy`. That handler must use raw TCP with no
 security, socket overrides, mux or proxy chain. The parser normalizes its sole
-fragment transform into the caller's stream. Ordinary `dialerProxy` chaining
+fragment transform into the caller's stream. As in Xray-core, where the
+handler opens the socket, the caller's own socket options such as `mark` or
+`interface` do not apply to it. Ordinary `dialerProxy` chaining
 is supported separately below. Combining two fragment masks, QUIC/H3 fragmentation and split XHTTP
 downloads remain unsupported. A raw freedom outbound can also fragment an
 application's first complete TLS record directly.
@@ -2088,7 +2090,8 @@ four uTLS can produce rather than dropping to a weaker check.
 ### Happy Eyeballs socket option
 
 `streamSettings.sockopt` supports the Xray-compatible `happyEyeballs` object,
-along with `dialerProxy` (see chaining) and `domainStrategy` (below):
+along with `dialerProxy` (see chaining), `domainStrategy` (below) and the
+[socket options](#socket-options) set on each socket:
 
 ```json
 {
@@ -2181,6 +2184,113 @@ Differences from Xray-core:
   because their server lookup and target resolution do not read a strategy
   yet. For the same reason, `dialerProxy` refuses a dedicated freedom fragment
   handler that has a strategy, since inlining it would drop the strategy.
+
+### Socket options
+
+The rest of `streamSettings.sockopt` is read as Xray-core v26.10.31 reads it
+and set on every socket the outbound opens:
+
+- the TCP carrier of VLESS, Trojan, VMess, Shadowsocks, SOCKS and HTTP, over
+  every transport;
+- freedom's TCP and UDP sockets, including those of DNS queries routed
+  through it;
+- the SOCKS and Shadowsocks UDP sockets;
+- the QUIC socket of Hysteria and of XHTTP over HTTP/3.
+
+```json
+{
+  "streamSettings": {
+    "sockopt": {
+      "mark": 255,
+      "interface": "eth0",
+      "tcpKeepAliveIdle": 60,
+      "tcpCongestion": "bbr",
+      "customSockopt": [
+        {"system": "linux", "network": "tcp", "level": "6", "opt": "13", "value": "reno", "type": "str"}
+      ]
+    }
+  }
+}
+```
+
+Values decode as Go decodes them: integer fields take 32-bit integers, text
+and booleans take only text and booleans, and null is the zero value.
+`tcpFastOpen` takes `true`, `false` or a number, which is truncated and
+capped at the 32-bit range.
+
+**Keepalive.** Every outbound TCP socket, with or without `sockopt`, turns
+keepalive on after 45 seconds idle and probes every 45 seconds, as
+Xray-core's system dialer does. The number of probes is the system's.
+
+- `tcpKeepAliveIdle` and `tcpKeepAliveInterval` set other numbers of
+  seconds.
+- A negative value turns keepalive off.
+- A positive value with a negative one fails every TCP dial of that outbound,
+  as in Xray-core. The two are multiplied as 32-bit integers, so a product
+  that overflows to a negative number fails too.
+
+**Linux and Android**, in this order:
+
+1. `mark`, the socket's `SO_MARK`;
+2. `interface`, the device the socket is bound to;
+3. on TCP sockets, `tcpFastOpen` (`TCP_FASTOPEN_CONNECT`: `true` or a
+   positive number turns it on, `false` or a negative one off), then
+   `tcpCongestion`, `tcpWindowClamp`, `tcpUserTimeout` in milliseconds and
+   `tcpMaxSeg`, each when set;
+4. `customSockopt`;
+5. `tproxy` set to `tproxy` or `redirect`, which sets `IP_TRANSPARENT`.
+
+`tcpMptcp` opens a Multipath TCP socket and dials plain TCP after any
+failure, as Go's dialer does.
+
+**Apple platforms**, in this order:
+
+1. on TCP sockets, `tcpFastOpen`, then the keepalive times;
+2. `interface`, bound by index;
+3. `customSockopt`.
+
+`mark`, `tcpCongestion`, `tcpWindowClamp`, `tcpUserTimeout`, `tcpMaxSeg`,
+`tcpMptcp` and `tproxy` do nothing there, as in Xray-core. Apple kernels take
+`TCP_FASTOPEN` only on a listening socket. A configured `tcpFastOpen`
+therefore fails on every outbound TCP socket and, as in Xray-core, stops the
+options after it: such an outbound dials TCP without binding its
+`interface`. Keepalive still applies.
+
+**Failures.** The first option that fails stops the ones after it. It is
+logged at debug level as "failed to apply socket options", and the dial goes
+on. The exception is `interface`: a device that does not exist or cannot be
+bound fails the dial. Android apps lack the privilege binding to a device
+needs, so there `interface` fails every dial, and `mark` stops the options
+after it, as in Xray-core.
+
+**`customSockopt`** entries are text read when a socket is set up:
+
+- An entry applies when `system` is empty or names the platform as Go's
+  `runtime.GOOS` does (`linux`, `android`, `darwin` or `ios`), and `network`
+  is a prefix of `tcp4`, `tcp6`, `udp4` or `udp6`.
+- `level` (6, TCP, when empty), `opt` and an `int` value are decimal
+  integers, and other text reads as 0.
+- `type` `int` sets an integer, `str` sets the bytes of `value`.
+- An empty `opt` or another `type` fails, which stops the options after it.
+
+**`penetrate`** makes an XHTTP `downloadSettings` leg dial with the
+outbound's own `sockopt`, chaining included. Without it, the download leg
+dials with its own `sockopt` and never chains. The outbound's `dialerProxy`
+carries only the upload leg, as in Xray-core. A `dialerProxy`, or a
+`domainStrategy` other than `AsIs`, inside `downloadSettings` fails parsing.
+
+`acceptProxyProtocol`, `v6only` and `trustedXForwardedFor` are inbound
+options. They are type-checked and ignored, as Xray-core ignores them on an
+outbound.
+
+Not supported yet:
+
+- `addressPortStrategy` accepts only `none` or an empty value. Its SRV and
+  TXT lookups are not implemented, so the other six values fail parsing
+  instead of dialing the configured address. Xray-core refuses them on
+  freedom too.
+- WireGuard outbounds still refuse `streamSettings`, so they take no
+  `sockopt`.
 
 ## Routing
 
