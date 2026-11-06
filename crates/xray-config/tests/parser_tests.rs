@@ -2545,9 +2545,183 @@ fn rejects_non_object_sockopt_with_path() {
 
 #[test]
 fn rejects_unknown_sockopt_field_with_path() {
-    let raw = raw_with_sockopt(r#"{ "mark": 1 }"#);
+    let raw = raw_with_sockopt(r#"{ "tcpNoDelay": true }"#);
 
-    assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.sockopt.mark");
+    assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.sockopt.tcpNoDelay");
+}
+
+fn parsed_sockopt(sockopt: &str) -> xray_config::SocketOptions {
+    let parsed = parse_xray_json(&raw_with_sockopt(sockopt))
+        .unwrap_or_else(|error| panic!("{sockopt}: {error:?}"));
+    parsed.config.outbounds[0]
+        .stream
+        .socket_options
+        .clone()
+        .expect("sockopt kept")
+}
+
+#[test]
+fn accepts_every_xray_core_sockopt_field() {
+    let options = parsed_sockopt(
+        r#"{
+            "mark": -2, "tcpFastOpen": 7, "tproxy": "TProxy", "acceptProxyProtocol": true,
+            "domainStrategy": "UseIPv4", "dialerProxy": null, "tcpKeepAliveInterval": 30,
+            "tcpKeepAliveIdle": -1, "tcpCongestion": "bbr", "tcpWindowClamp": 600,
+            "tcpMaxSeg": 1200, "penetrate": true, "tcpUserTimeout": 5000, "v6only": true,
+            "interface": "eth0", "tcpMptcp": true, "addressPortStrategy": "None",
+            "happyEyeballs": null, "trustedXForwardedFor": ["10.0.0.1", null],
+            "customSockopt": [
+                {"system": "linux", "network": "tcp", "level": "6", "opt": "13", "value": "reno", "type": "str"},
+                {"opt": "", "type": null}
+            ]
+        }"#,
+    );
+    assert_eq!(
+        options,
+        xray_config::SocketOptions {
+            happy_eyeballs: None,
+            domain_strategy: xray_config::DomainStrategy::UseIpv4,
+            mark: -2,
+            tcp_fast_open: 7,
+            tproxy: xray_config::TproxyMode::Tproxy,
+            tcp_keep_alive_idle: -1,
+            tcp_keep_alive_interval: 30,
+            tcp_congestion: "bbr".to_owned(),
+            tcp_window_clamp: 600,
+            tcp_max_seg: 1200,
+            tcp_user_timeout: 5000,
+            interface: "eth0".to_owned(),
+            tcp_mptcp: true,
+            penetrate: true,
+            custom: vec![
+                xray_config::CustomSocketOption {
+                    system: "linux".to_owned(),
+                    network: "tcp".to_owned(),
+                    level: "6".to_owned(),
+                    opt: "13".to_owned(),
+                    value: "reno".to_owned(),
+                    kind: "str".to_owned(),
+                },
+                xray_config::CustomSocketOption::default(),
+            ],
+        }
+    );
+}
+
+#[test]
+fn sockopt_reads_null_and_absent_values_as_go_zero_values() {
+    let options = parsed_sockopt(
+        r#"{
+            "mark": null, "tcpFastOpen": null, "tproxy": null, "tcpKeepAliveIdle": null,
+            "tcpMptcp": null, "penetrate": null, "v6only": null, "interface": null,
+            "customSockopt": null, "trustedXForwardedFor": null, "addressPortStrategy": ""
+        }"#,
+    );
+    assert_eq!(options, xray_config::SocketOptions::default());
+}
+
+#[test]
+fn sockopt_tcp_fast_open_reads_booleans_and_numbers_as_xray_core_does() {
+    for (value, expected) in [
+        ("true", 256),
+        ("false", -1),
+        ("0", 0),
+        ("5", 5),
+        ("1.9", 1),
+        ("-1.9", -1),
+        ("-5", -5),
+        ("1e10", i32::MAX),
+        ("-1e10", i32::MIN),
+    ] {
+        let options = parsed_sockopt(&format!(r#"{{ "tcpFastOpen": {value} }}"#));
+        assert_eq!(options.tcp_fast_open, expected, "{value}");
+    }
+    for value in [r#""true""#, "[]", "{}"] {
+        let raw = raw_with_sockopt(&format!(r#"{{ "tcpFastOpen": {value} }}"#));
+        assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.sockopt.tcpFastOpen");
+    }
+}
+
+#[test]
+fn sockopt_tproxy_reads_any_other_text_as_off() {
+    for (value, expected) in [
+        ("tproxy", xray_config::TproxyMode::Tproxy),
+        ("REDIRECT", xray_config::TproxyMode::Redirect),
+        ("off", xray_config::TproxyMode::Off),
+        ("anything", xray_config::TproxyMode::Off),
+    ] {
+        let options = parsed_sockopt(&format!(r#"{{ "tproxy": "{value}" }}"#));
+        assert_eq!(options.tproxy, expected, "{value}");
+    }
+}
+
+#[test]
+fn sockopt_refuses_values_go_cannot_decode_with_path() {
+    for (field, value) in [
+        ("mark", r#""1""#),
+        ("mark", "1.5"),
+        ("mark", "2147483648"),
+        ("tcpKeepAliveIdle", "-2147483649"),
+        ("tcpKeepAliveInterval", "true"),
+        ("tcpWindowClamp", "1e3"),
+        ("tcpMaxSeg", "[]"),
+        ("tcpUserTimeout", r#""5""#),
+        ("tcpCongestion", "1"),
+        ("interface", "false"),
+        ("tproxy", "1"),
+        ("tcpMptcp", "1"),
+        ("penetrate", r#""true""#),
+        ("acceptProxyProtocol", "0"),
+        ("v6only", "1"),
+        ("trustedXForwardedFor", r#""10.0.0.1""#),
+        ("customSockopt", "{}"),
+        ("addressPortStrategy", "1"),
+        ("addressPortStrategy", r#""bogus""#),
+        ("addressPortStrategy", r#""SrvPortOnly""#),
+        ("addressPortStrategy", r#""txtportandaddress""#),
+    ] {
+        let raw = raw_with_sockopt(&format!(r#"{{ "{field}": {value} }}"#));
+        let error = parse_xray_json(&raw).unwrap_err();
+        let path = format!("$.outbounds[0].streamSettings.sockopt.{field}");
+        assert!(
+            error
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.path.as_deref() == Some(path.as_str())),
+            "{field}: {value}: {:?}",
+            error.diagnostics
+        );
+    }
+}
+
+#[test]
+fn sockopt_refuses_custom_entries_go_cannot_decode_with_path() {
+    for (entries, path) in [
+        ("[null]", "customSockopt[0]"),
+        ("[1]", "customSockopt[0]"),
+        (r#"[{"opt": 13}]"#, "customSockopt[0].opt"),
+        (r#"[{}, {"level": true}]"#, "customSockopt[1].level"),
+        (r#"[{"opt": "1", "kind": "int"}]"#, "customSockopt[0].kind"),
+        (r#"[{"opt": "1"}, "x"]"#, "customSockopt[1]"),
+        (r#"{"opt": "1"}"#, "customSockopt"),
+    ] {
+        let raw = raw_with_sockopt(&format!(r#"{{ "customSockopt": {entries} }}"#));
+        let error = parse_xray_json(&raw).unwrap_err();
+        let path = format!("$.outbounds[0].streamSettings.sockopt.{path}");
+        assert!(
+            error
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.path.as_deref() == Some(path.as_str())),
+            "{entries}: {:?}",
+            error.diagnostics
+        );
+    }
+    let raw = raw_with_sockopt(r#"{ "trustedXForwardedFor": ["ok", 1] }"#);
+    assert_parse_error_path(
+        &raw,
+        "$.outbounds[0].streamSettings.sockopt.trustedXForwardedFor[1]",
+    );
 }
 
 #[test]

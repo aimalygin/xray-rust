@@ -7,6 +7,46 @@ pub(super) struct XhttpDownloadOutbound {
     pub(super) connector: ConnectorConfig,
     pub(super) transport: XhttpTransport,
     pub(super) happy_eyeballs: Option<HappyEyeballsConfig>,
+    pub(super) socket_options: DownloadSocketOptions,
+}
+
+/// The `sockopt` the download leg dials with, as Xray-core's XHTTP picks it.
+#[derive(Debug)]
+pub(super) enum DownloadSocketOptions {
+    /// The outbound's `sockopt` sets `penetrate`: the download leg takes it
+    /// whole, chaining included.
+    Upload,
+    /// The download leg's own `sockopt`, which never chains; `None` keeps
+    /// the dialer's defaults.
+    Own(Option<Arc<xray_transport::SocketOptions>>),
+}
+
+impl XhttpDownloadOutbound {
+    /// The dialer for the download leg: `upload`, the upload leg's own, or
+    /// `base`, the dialer the outbound was given, without its chain and with
+    /// the download leg's options.
+    pub(super) fn dialer<'a>(
+        &self,
+        base: &'a TransportDialer,
+        upload: &'a TransportDialer,
+    ) -> std::borrow::Cow<'a, TransportDialer> {
+        match &self.socket_options {
+            DownloadSocketOptions::Upload => std::borrow::Cow::Borrowed(upload),
+            DownloadSocketOptions::Own(options) => {
+                let base = if base.carries_tcp_through_outbound() {
+                    std::borrow::Cow::Owned(base.clone().without_resolved_tcp_connector())
+                } else {
+                    std::borrow::Cow::Borrowed(base)
+                };
+                match options {
+                    Some(options) => std::borrow::Cow::Owned(
+                        base.into_owned().with_socket_options(Arc::clone(options)),
+                    ),
+                    None => base,
+                }
+            }
+        }
+    }
 }
 
 pub(super) fn build_xhttp_download(
@@ -73,6 +113,15 @@ pub(super) fn build_xhttp_download(
             download.stream.udp_noise.as_ref(),
         )?,
         happy_eyeballs: happy_eyeballs_config(&download.stream),
+        socket_options: if stream
+            .socket_options
+            .as_ref()
+            .is_some_and(|options| options.penetrate)
+        {
+            DownloadSocketOptions::Upload
+        } else {
+            DownloadSocketOptions::Own(socket_options::compile(&download.stream))
+        },
     }))
 }
 

@@ -5028,7 +5028,9 @@ async fn bridge_udp_freedom_flow(
             return;
         }
     };
-    if protect_udp_socket(&socket, context.transport_dialer.socket_protector()).is_err() {
+    // The socket takes freedom's socket options, as Xray-core's does.
+    let dialer = freedom.dialer(&context.transport_dialer);
+    if protect_udp_socket(&socket, dialer.socket_protector()).is_err() {
         if context.runtime_logger.is_enabled() {
             crate::debug_log::log_access_rejected(
                 &context.runtime_logger,

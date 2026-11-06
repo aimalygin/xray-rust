@@ -442,7 +442,30 @@ interval, echoing over SOCKS for 13 seconds. Both cores:
 With `intervalRemote` alone Xray-core kept one socket and ours took a new one
 at each hop. Every echo came back in every mode.
 
-## Panel subscription fields Xray-core does not read
+## Socket options
+
+`streamSettings.sockopt` is read and applied as Xray-core v26.10.31 applies it
+on Linux, Android and Apple platforms
+([details](config-compatibility.md#socket-options)), including the default
+TCP keepalive, the order of the options, an option that fails stopping the
+rest, and an interface that cannot be bound failing the dial. Deliberate
+differences:
+
+- `addressPortStrategy` values other than `none` fail parsing. Xray-core,
+  which refuses them only on freedom, looks the server's SRV or TXT records
+  up with the system resolver. That lookup is not implemented, and dialing
+  the configured address instead would reach another server.
+- A `dialerProxy` inside an XHTTP `downloadSettings` fails parsing. Xray-core
+  would carry the download leg through that outbound. Here the leg either
+  takes the outbound's own chain, with `penetrate`, or dials directly.
+- WireGuard outbounds take no `sockopt`, as they take no `streamSettings`.
+- An option that fails is logged at debug level; Xray-core logs it at info,
+  a level the runtime log here does not have.
+- Xray-core's outbound UDP sockets are IPv6 sockets that also carry IPv4, so
+  its `customSockopt` entries for `udp4` never apply to them. Here a UDP
+  socket has its destination's address family, and such entries apply to the
+  IPv4 ones.
+
 ## Panel subscription fields Xray-core does not read
 
 Remnawave's XRAY_JSON subscriptions (`xray-json.generator.service.ts`) put a

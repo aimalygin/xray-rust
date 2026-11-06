@@ -148,6 +148,7 @@ impl Shadowsocks2022Outbound {
 
         Method::validate_target(target)?;
         let candidates = resolve_server_candidates(self.server(), resolver).await?;
+        let dialer = socket_options::dialer(dialer, self.0.carrier.socket_options.as_ref());
         let mut last = None;
         for address in candidates {
             let result = (|| -> io::Result<UdpSocket> {

@@ -1876,6 +1876,59 @@ pub struct SocketOptions {
     /// and an outbound `targetStrategy` were migrated into it as Xray-core
     /// does. Only freedom reads it so far.
     pub domain_strategy: DomainStrategy,
+    /// `mark`, the Linux and Android `SO_MARK`; zero sets nothing.
+    pub mark: i32,
+    /// `tcpFastOpen` as Xray-core stores it: zero when absent or null, 256
+    /// for `true`, -1 for `false`, otherwise the number truncated and clamped
+    /// to `i32`.
+    pub tcp_fast_open: i32,
+    /// `tproxy`, which on an outbound sets Linux `IP_TRANSPARENT`.
+    pub tproxy: TproxyMode,
+    /// `tcpKeepAliveIdle` and `tcpKeepAliveInterval` in seconds. Zero keeps
+    /// Xray-core's 45-second default, a negative value turns keepalive off.
+    pub tcp_keep_alive_idle: i32,
+    pub tcp_keep_alive_interval: i32,
+    /// `tcpCongestion`, the Linux congestion control algorithm; empty sets
+    /// nothing.
+    pub tcp_congestion: String,
+    /// `tcpWindowClamp`, `tcpMaxSeg` and `tcpUserTimeout` (milliseconds),
+    /// set on Linux when positive.
+    pub tcp_window_clamp: i32,
+    pub tcp_max_seg: i32,
+    pub tcp_user_timeout: i32,
+    /// `interface`, the device every socket is bound to; empty binds none.
+    pub interface: String,
+    /// `tcpMptcp`: Multipath TCP on Linux, falling back to TCP.
+    pub tcp_mptcp: bool,
+    /// `penetrate`: an XHTTP `downloadSettings` takes these options instead
+    /// of its own.
+    pub penetrate: bool,
+    /// `customSockopt`, applied in order after the options above.
+    pub custom: Vec<CustomSocketOption>,
+}
+
+/// Xray-core's `SocketConfig_TProxyMode`. Any other `tproxy` text is off.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TproxyMode {
+    #[default]
+    Off,
+    Tproxy,
+    Redirect,
+}
+
+/// One `sockopt.customSockopt` entry, kept as the text Xray-core keeps and
+/// reads only when a socket is set up.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CustomSocketOption {
+    /// The `runtime.GOOS` the entry applies to; empty applies everywhere.
+    pub system: String,
+    /// A prefix of `tcp4`, `tcp6`, `udp4` or `udp6`; empty matches all.
+    pub network: String,
+    pub level: String,
+    pub opt: String,
+    pub value: String,
+    /// `int` or `str`; anything else fails when the option is applied.
+    pub kind: String,
 }
 
 /// Xray-core's `internet.DomainStrategy`: whether a dial resolves a domain

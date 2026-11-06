@@ -31,6 +31,7 @@ pub(crate) mod proxy_protocol;
 pub(crate) use domain_strategy::DomainStrategyResolver;
 mod mux;
 mod routing;
+pub(crate) mod socket_options;
 mod xhttp;
 mod xudp;
 use carrier::StreamCarrier;
@@ -361,6 +362,8 @@ pub(crate) enum DnsHappyEyeballsMode {
 pub struct FreedomOutbound {
     fragment: Option<Arc<xray_transport::TcpFragmentConfig>>,
     happy_eyeballs: Option<HappyEyeballsConfig>,
+    /// `sockopt`, for every TCP and UDP socket freedom opens.
+    socket_options: Option<Arc<xray_transport::SocketOptions>>,
     domain_strategy: DomainStrategy,
     /// Present only when it changes the destination.
     redirect: Option<Arc<FreedomRedirect>>,
@@ -728,6 +731,7 @@ impl FreedomOutbound {
         Self {
             fragment: None,
             happy_eyeballs: None,
+            socket_options: socket_options::compile(stream),
             domain_strategy: Self::stream_domain_strategy(stream),
             redirect: (!settings.redirect.is_empty()).then(|| Arc::new(settings.redirect.clone())),
             user_level: settings.user_level,
@@ -883,13 +887,18 @@ impl FreedomOutbound {
             .unwrap_or_default()
     }
 
-    /// The dialer with this outbound's fragment mask, if it has one.
-    fn dialer<'a>(&self, dialer: &'a TransportDialer) -> std::borrow::Cow<'a, TransportDialer> {
+    /// The dialer with this outbound's socket options and fragment mask, if
+    /// it has them.
+    pub(crate) fn dialer<'a>(
+        &self,
+        dialer: &'a TransportDialer,
+    ) -> std::borrow::Cow<'a, TransportDialer> {
+        let dialer = socket_options::dialer(dialer, self.socket_options.as_ref());
         match &self.fragment {
             Some(fragment) => {
-                std::borrow::Cow::Owned(dialer.clone().with_tcp_fragment(fragment.clone()))
+                std::borrow::Cow::Owned(dialer.into_owned().with_tcp_fragment(fragment.clone()))
             }
-            None => std::borrow::Cow::Borrowed(dialer),
+            None => dialer,
         }
     }
 
@@ -6025,6 +6034,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    socket_options: None,
                     download: None,
                     server: domain_tcp_target("proxy.example"),
                     transport: ConnectorConfig::Tcp,
@@ -9287,6 +9297,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    socket_options: None,
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -9325,6 +9336,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    socket_options: None,
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -9381,6 +9393,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    socket_options: None,
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -9538,6 +9551,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    socket_options: None,
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -9601,6 +9615,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    socket_options: None,
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -10207,5 +10222,346 @@ mod parallel_relay_budget_tests {
             first.factory.parallel_vmess_relays.available_permits(),
             PARALLEL_VMESS_CONNECTIONS
         );
+    }
+}
+
+#[cfg(test)]
+mod socket_option_tests {
+    use super::*;
+    use serde_json::json;
+    use tokio::net::TcpListener;
+
+    const MISSING: &str = "xray-missing0";
+
+    fn outbound(value: serde_json::Value) -> OutboundConfig {
+        let parsed = xray_config::parse_xray_json(&json!({ "outbounds": [value] }).to_string())
+            .unwrap_or_else(|error| panic!("{error:?}"));
+        parsed.config.outbounds[0].clone()
+    }
+
+    fn missing_interface_error(error: impl std::fmt::Display) -> bool {
+        error.to_string().contains("failed to bind to interface")
+    }
+
+    /// An outbound whose `sockopt` names an interface that does not exist
+    /// fails before its first byte, whatever its protocol and transport, so
+    /// every one of them dials with its own options.
+    #[tokio::test]
+    async fn every_outbound_tcp_dial_takes_its_socket_options() {
+        // A server that accepts and holds: a dial that skipped its options
+        // would get this far and then wait.
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let held = tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                held.push(stream);
+            }
+        });
+        let sockopt = json!({ "interface": MISSING });
+        let id = "27848739-7e62-4138-9fd3-098a63964b6b";
+        let vless = |stream: serde_json::Value| {
+            json!({
+                "protocol": "vless",
+                "settings": {"vnext": [{"address": "127.0.0.1", "port": port,
+                                        "users": [{"id": id, "encryption": "none"}]}]},
+                "streamSettings": stream,
+            })
+        };
+        let cases = [
+            (
+                "freedom",
+                json!({"protocol": "freedom", "streamSettings": {"sockopt": sockopt}}),
+            ),
+            ("vless", vless(json!({"sockopt": sockopt}))),
+            (
+                "vless-tls",
+                vless(
+                    json!({"security": "tls", "tlsSettings": {"serverName": "localhost"}, "sockopt": sockopt}),
+                ),
+            ),
+            (
+                "vless-ws",
+                vless(json!({"network": "ws", "sockopt": sockopt})),
+            ),
+            (
+                "vless-httpupgrade",
+                vless(json!({"network": "httpupgrade", "sockopt": sockopt})),
+            ),
+            (
+                "vless-grpc",
+                vless(
+                    json!({"network": "grpc", "grpcSettings": {"serviceName": "x"}, "sockopt": sockopt}),
+                ),
+            ),
+            (
+                "vless-xhttp",
+                vless(
+                    json!({"network": "xhttp", "xhttpSettings": {"path": "/x"}, "sockopt": sockopt}),
+                ),
+            ),
+            (
+                "vless-xhttp-download",
+                vless(json!({"network": "xhttp", "xhttpSettings": {
+                "mode": "packet-up", "path": "/x",
+                "downloadSettings": {"address": "127.0.0.1", "port": port, "network": "xhttp",
+                                     "xhttpSettings": {"path": "/x"}, "sockopt": sockopt}}})),
+            ),
+            (
+                "vless-xhttp-penetrate",
+                vless(
+                    json!({"network": "xhttp", "sockopt": {"penetrate": true, "interface": MISSING},
+                "xhttpSettings": {"mode": "stream-up", "path": "/x",
+                "downloadSettings": {"address": "127.0.0.1", "port": port, "network": "xhttp",
+                                     "xhttpSettings": {"path": "/x"}}}}),
+                ),
+            ),
+            (
+                "trojan",
+                json!({"protocol": "trojan", "settings": {"servers": [{"address": "127.0.0.1", "port": port, "password": "pw"}]},
+                              "streamSettings": {"sockopt": sockopt}}),
+            ),
+            (
+                "socks",
+                json!({"protocol": "socks", "settings": {"address": "127.0.0.1", "port": port},
+                             "streamSettings": {"sockopt": sockopt}}),
+            ),
+            (
+                "http",
+                json!({"protocol": "http", "settings": {"address": "127.0.0.1", "port": port},
+                            "streamSettings": {"sockopt": sockopt}}),
+            ),
+            (
+                "vmess",
+                json!({"protocol": "vmess", "settings": {"vnext": [{"address": "127.0.0.1", "port": port,
+                                                                          "users": [{"id": id}]}]},
+                             "streamSettings": {"sockopt": sockopt}}),
+            ),
+            (
+                "shadowsocks",
+                json!({"protocol": "shadowsocks", "settings": {"servers": [{"address": "127.0.0.1", "port": port,
+                                   "method": "2022-blake3-aes-128-gcm", "password": "AAAAAAAAAAAAAAAAAAAAAA=="}]},
+                                   "streamSettings": {"sockopt": sockopt}}),
+            ),
+            (
+                "hysteria",
+                json!({"protocol": "hysteria", "settings": {"version": 2, "address": "127.0.0.1", "port": port},
+                                "streamSettings": {"network": "hysteria", "security": "tls",
+                                                   "tlsSettings": {"serverName": "localhost", "alpn": ["h3"]},
+                                                   "hysteriaSettings": {"version": 2, "auth": "a"},
+                                                   "sockopt": sockopt}}),
+            ),
+        ];
+        let target = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            port,
+            RoutingNetwork::Tcp,
+        );
+        for (name, value) in cases {
+            let tcp = build_tcp_outbound(&outbound(value))
+                .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+            let dialer = TransportDialer::system().unwrap();
+            let result = tokio::time::timeout(
+                Duration::from_secs(5),
+                open_tcp_stream_with_resolver_and_dialer(
+                    &tcp,
+                    &target,
+                    &SystemDnsResolver,
+                    &dialer,
+                ),
+            )
+            .await
+            .unwrap_or_else(|_| panic!("{name}: the dial went past its socket options"));
+            let Err(error) = result else {
+                panic!("{name}: dialed without its interface");
+            };
+            // Hysteria names the failure without its cause.
+            assert!(
+                missing_interface_error(&error)
+                    || name == "hysteria" && error.to_string().contains("socket protection failed"),
+                "{name}: {error}"
+            );
+        }
+        held.abort();
+    }
+
+    /// Hysteria matches a cached session by its dialer's protector, so the
+    /// dialer with its socket options stays the same while the one given
+    /// does.
+    #[test]
+    fn hysteria_keeps_one_dialer_with_its_socket_options() {
+        let value = json!({"protocol": "hysteria", "settings": {"version": 2, "address": "127.0.0.1", "port": 443},
+                           "streamSettings": {"network": "hysteria", "security": "tls",
+                                              "tlsSettings": {"serverName": "localhost", "alpn": ["h3"]},
+                                              "hysteriaSettings": {"version": 2, "auth": "a"},
+                                              "sockopt": {"mark": 4}}});
+        let TcpOutbound::Hysteria(hysteria) = build_tcp_outbound(&outbound(value)).unwrap() else {
+            panic!("hysteria");
+        };
+        let base = TransportDialer::system().unwrap();
+        let first = hysteria.socket_dialer(&base);
+        let second = hysteria.socket_dialer(&base);
+        assert_eq!(first.socket_options().map(|options| options.mark), Some(4));
+        assert!(first
+            .tls_connector()
+            .shares_session_context(second.tls_connector()));
+        let other = TransportDialer::system().unwrap();
+        let third = hysteria.socket_dialer(&other);
+        assert!(!first
+            .tls_connector()
+            .shares_session_context(third.tls_connector()));
+    }
+
+    /// Records the type of each socket the platform protector is handed.
+    #[derive(Default)]
+    struct SocketTypes(std::sync::Mutex<Vec<socket2::Type>>);
+
+    impl xray_transport::SocketProtector for SocketTypes {
+        fn protect(&self, socket: xray_transport::SocketHandle) -> io::Result<()> {
+            use std::os::fd::BorrowedFd;
+            // SAFETY: the socket stays open for this call.
+            let fd = unsafe { BorrowedFd::borrow_raw(socket.raw() as std::os::fd::RawFd) };
+            let kind = socket2::SockRef::from(&fd).r#type()?;
+            self.0.lock().unwrap().push(kind);
+            Ok(())
+        }
+    }
+
+    /// The UDP sockets SOCKS and Shadowsocks open for datagrams take the
+    /// outbound's options too. Each is bound before any control connection
+    /// opens, so with its options in force no TCP socket is ever handed out.
+    #[tokio::test]
+    async fn outbound_udp_sockets_take_their_socket_options() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let held = tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                held.push(stream);
+            }
+        });
+        let sockopt = json!({ "interface": MISSING });
+        let target = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            53_053,
+            RoutingNetwork::Udp,
+        );
+        for (name, value) in [
+            (
+                "socks",
+                json!({"protocol": "socks", "settings": {"address": "127.0.0.1", "port": port},
+                             "streamSettings": {"sockopt": sockopt}}),
+            ),
+            (
+                "shadowsocks",
+                json!({"protocol": "shadowsocks", "settings": {"servers": [{"address": "127.0.0.1", "port": port,
+                                   "method": "2022-blake3-aes-128-gcm", "password": "AAAAAAAAAAAAAAAAAAAAAA=="}]},
+                                   "streamSettings": {"sockopt": sockopt}}),
+            ),
+        ] {
+            let udp = build_udp_outbound(&outbound(value))
+                .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+            let types = Arc::new(SocketTypes::default());
+            let dialer = TransportDialer::system()
+                .unwrap()
+                .with_socket_protector(types.clone());
+            let result = tokio::time::timeout(
+                Duration::from_secs(5),
+                datagram::open(
+                    &udp,
+                    &target,
+                    &SystemDnsResolver,
+                    &SystemDnsResolver,
+                    &dialer,
+                    [0; 8],
+                ),
+            )
+            .await
+            .unwrap_or_else(|_| panic!("{name}: the open went past its socket options"));
+            let Err(error) = result else {
+                panic!("{name}: opened without its interface");
+            };
+            assert!(missing_interface_error(&error), "{name}: {error}");
+            assert_eq!(*types.0.lock().unwrap(), [socket2::Type::DGRAM], "{name}");
+        }
+        held.abort();
+    }
+
+    #[test]
+    fn freedom_udp_takes_its_socket_options() {
+        let value = json!({"protocol": "freedom", "streamSettings": {"sockopt": {"mark": 9}}});
+        let UdpOutbound::Freedom(freedom) = build_udp_outbound(&outbound(value)).unwrap() else {
+            panic!("freedom");
+        };
+        let base = TransportDialer::system().unwrap();
+        let dialer = freedom.dialer(&base);
+        assert_eq!(dialer.socket_options().map(|options| options.mark), Some(9));
+        let plain = json!({"protocol": "freedom"});
+        let UdpOutbound::Freedom(freedom) = build_udp_outbound(&outbound(plain)).unwrap() else {
+            panic!("freedom");
+        };
+        assert!(matches!(
+            freedom.dialer(&base),
+            std::borrow::Cow::Borrowed(_)
+        ));
+    }
+
+    /// The download leg dials with its own options and without the
+    /// outbound's chain, unless `penetrate` hands it the outbound's dialer.
+    #[test]
+    fn the_download_leg_picks_its_dialer_as_xray_core_does() {
+        struct NoTcp;
+        #[async_trait]
+        impl ResolvedTcpConnector for NoTcp {
+            async fn connect_resolved(
+                &self,
+                _: &Target,
+                _: &[SocketAddr],
+                _: Option<&HappyEyeballsConfig>,
+            ) -> Result<BoxedTransportStream, TransportError> {
+                Err(TransportError::UnsupportedConnectorConfig("test"))
+            }
+        }
+        let chained = TransportDialer::system()
+            .unwrap()
+            .with_resolved_tcp_connector(Arc::new(NoTcp));
+        let upload = chained
+            .clone()
+            .with_socket_options(Arc::new(xray_transport::SocketOptions {
+                mark: 1,
+                ..Default::default()
+            }));
+        let compiled = |upload_sockopt: serde_json::Value, download_sockopt: serde_json::Value| {
+            let value = json!({
+                "protocol": "vless",
+                "settings": {"vnext": [{"address": "127.0.0.1", "port": 443,
+                    "users": [{"id": "27848739-7e62-4138-9fd3-098a63964b6b", "encryption": "none"}]}]},
+                "streamSettings": {"network": "xhttp", "sockopt": upload_sockopt, "xhttpSettings": {
+                    "mode": "packet-up", "path": "/x",
+                    "downloadSettings": {"address": "127.0.0.1", "port": 443, "network": "xhttp",
+                                         "xhttpSettings": {"path": "/x"}, "sockopt": download_sockopt}}},
+            });
+            let TcpOutbound::Vless(vless) = build_tcp_outbound(&outbound(value)).unwrap() else {
+                panic!("vless");
+            };
+            vless
+        };
+        let own = compiled(json!({"mark": 1}), json!({}));
+        let download = own.payload.carrier.download.as_ref().unwrap();
+        let dialer = download.dialer(&chained, &upload);
+        assert!(!dialer.carries_tcp_through_outbound());
+        assert!(dialer.socket_options().is_none());
+
+        let own = compiled(json!({"mark": 1}), json!({"mark": 2}));
+        let download = own.payload.carrier.download.as_ref().unwrap();
+        let dialer = download.dialer(&chained, &upload);
+        assert!(!dialer.carries_tcp_through_outbound());
+        assert_eq!(dialer.socket_options().map(|options| options.mark), Some(2));
+
+        let penetrate = compiled(json!({"mark": 1, "penetrate": true}), json!({"mark": 2}));
+        let download = penetrate.payload.carrier.download.as_ref().unwrap();
+        let dialer = download.dialer(&chained, &upload);
+        assert!(dialer.carries_tcp_through_outbound());
+        assert_eq!(dialer.socket_options().map(|options| options.mark), Some(1));
     }
 }

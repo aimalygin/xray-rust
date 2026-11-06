@@ -1785,7 +1785,9 @@ async fn bridge_socks_udp_freedom_flow(
     let Ok(remote_socket) = bound else {
         return;
     };
-    if protect_udp_socket(&remote_socket, context.transport_dialer.socket_protector()).is_err() {
+    // The socket takes freedom's socket options, as Xray-core's does.
+    let dialer = freedom.dialer(&context.transport_dialer);
+    if protect_udp_socket(&remote_socket, dialer.socket_protector()).is_err() {
         return;
     }
     connection.mark_active();

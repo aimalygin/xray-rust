@@ -89,7 +89,12 @@ fn hysteria2_rejects_unsupported_or_inconsistent_settings_without_exposing_auth(
         (
             "/outbounds/0/streamSettings",
             "sockopt",
-            json!({"happyEyeballs":{}}),
+            json!({"dialerProxy":"direct"}),
+        ),
+        (
+            "/outbounds/0/streamSettings",
+            "sockopt",
+            json!({"domainStrategy":"UseIPv4"}),
         ),
         (
             "/outbounds/0/streamSettings/tlsSettings",
@@ -119,6 +124,28 @@ fn hysteria2_rejects_unsupported_or_inconsistent_settings_without_exposing_auth(
             "accepted {parent}/{key}"
         );
     }
+}
+
+#[test]
+fn hysteria2_takes_socket_options_for_its_quic_socket() {
+    let mut config = example();
+    config["outbounds"][0]["streamSettings"]["sockopt"] = json!({
+        "mark": 255,
+        "interface": "eth0",
+        "tcpFastOpen": true,
+        "customSockopt": [{"network": "udp", "level": "41", "opt": "67", "value": "1", "type": "int"}],
+        "happyEyeballs": {"tryDelayMs": 250}
+    });
+    let parsed = parse_xray_json(&config.to_string()).expect("Hysteria socket options parse");
+    let options = parsed.config.outbounds[0]
+        .stream
+        .socket_options
+        .as_ref()
+        .expect("socket options kept");
+    assert_eq!(options.mark, 255);
+    assert_eq!(options.interface, "eth0");
+    assert_eq!(options.tcp_fast_open, 256);
+    assert_eq!(options.custom.len(), 1);
 }
 
 #[test]

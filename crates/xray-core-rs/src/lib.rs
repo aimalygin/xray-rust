@@ -726,6 +726,19 @@ impl Core {
         transport_dialer: Arc<TransportDialer>,
         tun_runtime_options: TunRuntimeOptions,
     ) -> Result<Self, CoreError> {
+        // Every socket takes Xray-core's defaults, TCP keepalive among them,
+        // unless the dialer given sets options of its own; an outbound's
+        // `sockopt` replaces them for its sockets.
+        let transport_dialer = if transport_dialer.socket_options().is_some() {
+            transport_dialer
+        } else {
+            Arc::new(
+                transport_dialer
+                    .as_ref()
+                    .clone()
+                    .with_socket_options(Arc::new(xray_transport::SocketOptions::default())),
+            )
+        };
         dns.rules
             .route_probe
             .get_or_insert_with(|| transport_dialer.route_probe());
@@ -871,6 +884,17 @@ impl Core {
     }
 
     pub fn set_runtime_logger(&mut self, runtime_logger: RuntimeLogger) {
+        // A socket option that fails without failing its dial is logged, as
+        // Xray-core logs it.
+        let logger = runtime_logger.clone();
+        self.transport_dialer = Arc::new(
+            self.transport_dialer
+                .as_ref()
+                .clone()
+                .with_socket_options_report(Arc::new(move |error: &std::io::Error| {
+                    logger.debug(|| format!("failed to apply socket options: {error}"));
+                })),
+        );
         self.runtime_logger = runtime_logger;
     }
 
@@ -2679,5 +2703,39 @@ mod tests {
                 if source.kind() == io::ErrorKind::NotConnected
         ));
         assert_eq!(protector.calls.load(Ordering::Relaxed), 2);
+    }
+
+    /// Every socket the core opens takes Xray-core's default options, TCP
+    /// keepalive among them, unless the dialer given sets its own.
+    #[test]
+    fn the_core_dials_with_xray_cores_default_socket_options() {
+        let raw = r#"{ "outbounds": [ { "tag": "direct", "protocol": "freedom" } ] }"#;
+        let core = Core::with_transport_dialer_and_tun_options(
+            parse_xray_json(raw).unwrap().config,
+            Arc::new(TransportDialer::system().unwrap()),
+            TunRuntimeOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            core.transport_dialer
+                .socket_options()
+                .map(|options| options.as_ref()),
+            Some(&xray_transport::SocketOptions::default())
+        );
+        let own = Arc::new(xray_transport::SocketOptions {
+            mark: 3,
+            ..Default::default()
+        });
+        let core = Core::with_transport_dialer_and_tun_options(
+            parse_xray_json(raw).unwrap().config,
+            Arc::new(
+                TransportDialer::system()
+                    .unwrap()
+                    .with_socket_options(own.clone()),
+            ),
+            TunRuntimeOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(core.transport_dialer.socket_options(), Some(&own));
     }
 }
