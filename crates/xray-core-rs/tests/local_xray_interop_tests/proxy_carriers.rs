@@ -1,10 +1,11 @@
-//! The `socks` outbound over every transport and its security, against
-//! Xray-core's own SOCKS inbound behind the same transport.
+//! The `socks` and `http` outbounds over every transport and its security,
+//! against Xray-core's own SOCKS and HTTP inbounds behind the same transport.
 //!
 //! Xray-core's SOCKS server answers `UDP ASSOCIATE` with a relay on plain UDP
 //! beside the transport and admits only datagrams from the control
-//! connection's source IP, so the UDP half of each case also checks that the
-//! relay socket and the control connection agree on it.
+//! connection's source IP, so the UDP half of each SOCKS case also checks that
+//! the relay socket and the control connection agree on it. Its HTTP server
+//! reads HTTP/1.1 only, which every one of these transports carries.
 use super::xhttp_download::json_process;
 use super::*;
 use base64::Engine as _;
@@ -15,9 +16,9 @@ use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram}
 use xray_routing::{Network as RouteNetwork, Target, TargetAddr as RouteAddr};
 use xray_transport::{SocketHandle, SocketProtector};
 
-const SERVER: &str = "socks-carrier.test";
-const USER: &str = "synthetic-socks-carrier-user";
-const PASS: &str = "synthetic-socks-carrier-pass";
+const SERVER: &str = "proxy-carrier.test";
+const USER: &str = "synthetic-proxy-carrier-user";
+const PASS: &str = "synthetic-proxy-carrier-pass";
 const REALITY_NAME: &str = "encryption-oracle.test";
 
 struct Task(tokio::task::JoinHandle<()>);
@@ -46,21 +47,24 @@ impl DnsResolver for Resolver {
     }
 }
 
-fn socks_inbound(config: &mut Value) {
+/// `protocol` is `socks` or `http`, with an account either way.
+fn proxy_inbound(config: &mut Value, protocol: &str) {
     config["log"]["loglevel"] = "debug".into();
     if config["inbounds"][0]["streamSettings"]["security"] == "reality" {
         config["inbounds"][0]["streamSettings"]["realitySettings"]["show"] = false.into();
     }
-    config["inbounds"][0]["protocol"] = "socks".into();
-    config["inbounds"][0]["settings"] =
-        json!({"auth":"password","udp":true,"accounts":[{"user":USER,"pass":PASS}]});
+    config["inbounds"][0]["protocol"] = protocol.into();
+    config["inbounds"][0]["settings"] = match protocol {
+        "socks" => json!({"auth":"password","udp":true,"accounts":[{"user":USER,"pass":PASS}]}),
+        _ => json!({"accounts":[{"user":USER,"pass":PASS}]}),
+    };
 }
 
-fn profile(port: u16, stream: &Value) -> Value {
+fn profile(protocol: &str, port: u16, stream: &Value) -> Value {
     json!({
         "inbounds":[{"tag":"socks-in","protocol":"socks","listen":"127.0.0.1","port":0,
             "settings":{"udp":true}}],
-        "outbounds":[{"tag":"proxy","protocol":"socks",
+        "outbounds":[{"tag":"proxy","protocol":protocol,
             "settings":{"address":SERVER,"port":port,"user":USER,"pass":PASS},
             "streamSettings":stream}]
     })
@@ -189,6 +193,18 @@ async fn exercise(config: Value, datagram: bool) -> std::io::Result<()> {
 #[tokio::test]
 #[ignore = "requires local pinned oracles; run check-v08-carrier-interop.sh"]
 async fn socks_carrier_every_transport_and_security_tcp_and_udp() {
+    every_transport_and_security("socks", true).await;
+}
+
+#[tokio::test]
+#[ignore = "requires local pinned oracles; run check-v08-carrier-interop.sh"]
+async fn http_carrier_every_transport_and_security_tcp() {
+    every_transport_and_security("http", false).await;
+}
+
+/// Runs `protocol`'s outbound against its inbound over each transport and
+/// security, with a UDP association too when `datagram`.
+async fn every_transport_and_security(protocol: &str, datagram: bool) {
     let checkout = resolve_xray_checkout();
     let origin_binary = env::var_os("XRAY_VLESS_ENCRYPTION_ORACLE").unwrap();
     let (_origin, origin) = json_process(&origin_binary, &["origin"]);
@@ -199,60 +215,60 @@ async fn socks_carrier_every_transport_and_security_tcp_and_udp() {
     let cases = [
         (
             XrayInboundSecurity::None,
-            XrayInboundTransport::WebSocket { path: "/socks-ws" },
-            json!({"network":"ws","wsSettings":{"path":"/socks-ws"}}),
+            XrayInboundTransport::WebSocket { path: "/proxy-ws" },
+            json!({"network":"ws","wsSettings":{"path":"/proxy-ws"}}),
         ),
         (
             XrayInboundSecurity::None,
-            XrayInboundTransport::HttpUpgrade { path: "/socks-hu" },
-            json!({"network":"httpupgrade","httpupgradeSettings":{"path":"/socks-hu"}}),
+            XrayInboundTransport::HttpUpgrade { path: "/proxy-hu" },
+            json!({"network":"httpupgrade","httpupgradeSettings":{"path":"/proxy-hu"}}),
         ),
         (
             XrayInboundSecurity::None,
             XrayInboundTransport::Grpc {
-                service_name: "socks",
+                service_name: "proxy",
             },
-            json!({"network":"grpc","grpcSettings":{"serviceName":"socks"}}),
+            json!({"network":"grpc","grpcSettings":{"serviceName":"proxy"}}),
         ),
         (
             XrayInboundSecurity::None,
             XrayInboundTransport::Xhttp {
-                path: "/socks-x/",
+                path: "/proxy-x/",
                 mode: "auto",
                 tls_alpn: None,
             },
-            json!({"network":"xhttp","xhttpSettings":xhttp("/socks-x/","packet-up")}),
+            json!({"network":"xhttp","xhttpSettings":xhttp("/proxy-x/","packet-up")}),
         ),
         (
             XrayInboundSecurity::Tls,
-            XrayInboundTransport::WebSocket { path: "/socks-ws" },
+            XrayInboundTransport::WebSocket { path: "/proxy-ws" },
             json!({"network":"ws","security":"tls","tlsSettings":{"serverName":TLS_SERVER_NAME},
-                "wsSettings":{"path":"/socks-ws"}}),
+                "wsSettings":{"path":"/proxy-ws"}}),
         ),
         (
             XrayInboundSecurity::Tls,
-            XrayInboundTransport::HttpUpgrade { path: "/socks-hu" },
+            XrayInboundTransport::HttpUpgrade { path: "/proxy-hu" },
             json!({"network":"httpupgrade","security":"tls","tlsSettings":{"serverName":TLS_SERVER_NAME},
-                "httpupgradeSettings":{"path":"/socks-hu"}}),
+                "httpupgradeSettings":{"path":"/proxy-hu"}}),
         ),
         (
             XrayInboundSecurity::Tls,
             XrayInboundTransport::Grpc {
-                service_name: "socks",
+                service_name: "proxy",
             },
             json!({"network":"grpc","security":"tls","tlsSettings":{"serverName":TLS_SERVER_NAME},
-                "grpcSettings":{"serviceName":"socks"}}),
+                "grpcSettings":{"serviceName":"proxy"}}),
         ),
         (
             XrayInboundSecurity::Tls,
             XrayInboundTransport::Xhttp {
-                path: "/socks-x/",
+                path: "/proxy-x/",
                 mode: "auto",
                 tls_alpn: Some("h2"),
             },
             json!({"network":"xhttp","security":"tls",
                 "tlsSettings":{"serverName":TLS_SERVER_NAME,"alpn":["h2"]},
-                "xhttpSettings":xhttp("/socks-x/","stream-up")}),
+                "xhttpSettings":xhttp("/proxy-x/","stream-up")}),
         ),
         (
             XrayInboundSecurity::Reality,
@@ -262,18 +278,18 @@ async fn socks_carrier_every_transport_and_security_tcp_and_udp() {
         (
             XrayInboundSecurity::Reality,
             XrayInboundTransport::Grpc {
-                service_name: "socks",
+                service_name: "proxy",
             },
-            json!({"network":"grpc","grpcSettings":{"serviceName":"socks"}}),
+            json!({"network":"grpc","grpcSettings":{"serviceName":"proxy"}}),
         ),
         (
             XrayInboundSecurity::Reality,
             XrayInboundTransport::Xhttp {
-                path: "/socks-x/",
+                path: "/proxy-x/",
                 mode: "auto",
                 tls_alpn: None,
             },
-            json!({"network":"xhttp","xhttpSettings":xhttp("/socks-x/","stream-one")}),
+            json!({"network":"xhttp","xhttpSettings":xhttp("/proxy-x/","stream-one")}),
         ),
     ];
     for (security, transport, mut stream) in cases {
@@ -286,7 +302,7 @@ async fn socks_carrier_every_transport_and_security_tcp_and_udp() {
                 flow: None,
             },
             |config| {
-                socks_inbound(config);
+                proxy_inbound(config, protocol);
                 if reality {
                     let settings = &mut config["inbounds"][0]["streamSettings"]["realitySettings"];
                     settings["dest"] = origin["address"].clone();
@@ -306,14 +322,14 @@ async fn socks_carrier_every_transport_and_security_tcp_and_udp() {
             // first connection, so one bounded warmup comes first.
             let _ = timeout(
                 Duration::from_secs(30),
-                exercise(profile(server.addr.port(), &stream), false),
+                exercise(profile(protocol, server.addr.port(), &stream), false),
             )
             .await;
         }
-        eprintln!("SOCKS over {stream}");
+        eprintln!("{protocol} over {stream}");
         let result = timeout(
             Duration::from_secs(30),
-            exercise(profile(server.addr.port(), &stream), true),
+            exercise(profile(protocol, server.addr.port(), &stream), datagram),
         )
         .await;
         assert!(

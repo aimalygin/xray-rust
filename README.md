@@ -74,7 +74,7 @@ lists the accepted values.
 | **Hysteria 2** | Own QUIC carrier, Salamander, port hopping | QUIC | ➖ | ➖ | ✅ | ➖ |
 | **WireGuard** | Own UDP carrier | ➖ | ➖ | ➖ | ✅ | ➖ |
 | **SOCKS5** | RAW, WebSocket, HTTPUpgrade, gRPC, XHTTP | ✅ | ✅ RAW, gRPC, XHTTP | ➖ | ✅ | ❌ |
-| **HTTP `CONNECT`** | RAW, HTTP/1.1 only | ✅ | ❌ | ➖ | ❌ | ❌ |
+| **HTTP `CONNECT`** | RAW, WebSocket, HTTPUpgrade, gRPC, XHTTP | ✅ | ✅ RAW, gRPC, XHTTP | ➖ | ❌ | ❌ |
 | **Freedom, blackhole, DNS** | Direct | ➖ | ➖ | ➖ | ✅ | ➖ |
 
 ✅ supported subset · ❌ not supported · ➖ not applicable.

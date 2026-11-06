@@ -28,6 +28,11 @@ long-term supported release series.
     family, as Xray-core names the configured server.
   - A plaintext XHTTP `downloadSettings` leg to a public server is accepted,
     as a plaintext public SOCKS server is.
+- The `http` outbound runs over every transport too, with TLS, and REALITY
+  over raw, gRPC and XHTTP. Only the raw transport's TLS can make a tunnel
+  HTTP/2; every other transport, and REALITY, carries HTTP/1.1, as in
+  Xray-core. A plaintext XHTTP `downloadSettings` leg to a public server is
+  accepted, as a plaintext public HTTP proxy is.
 - The SOCKS inbound reads its handshake as Xray-core v26.10.31 does.
   - A domain that is an IP literal, such as `127.0.0.1` or `[::1]`, is that
     IP, so `ip` rules match it. An IPv4-mapped address is IPv4.

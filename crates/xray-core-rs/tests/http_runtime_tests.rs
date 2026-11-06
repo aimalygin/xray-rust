@@ -253,6 +253,38 @@ async fn http_runtime_delivers_tunnel_bytes_that_arrive_with_the_200() {
     .unwrap();
 }
 
+#[tokio::test]
+async fn http_runtime_tunnels_over_httpupgrade() {
+    timeout(DEADLINE, async {
+        let (echo, _echo) = tcp_echo().await;
+        let proxy =
+            ScriptedProxy::start_behind_upgrade(Reply::Tunnel(b""), echo.ip(), "/proxy-upgrade")
+                .await;
+        let settings = outbound_settings(Form::Flat, proxy.address.port(), Some((USER, PASS)));
+        let mut profile = profile(settings, None);
+        profile["outbounds"][0]["streamSettings"] =
+            json!({"network":"httpupgrade","httpupgradeSettings":{"path":"/proxy-upgrade"}});
+        let (mut core, _, _) = core(profile);
+        core.start().await.unwrap();
+        let socks = core.inbound_addr(Some("socks-in")).unwrap();
+        let (mut stream, reply) = connect(socks, Destination::Ip(echo)).await;
+        assert_eq!(reply, 0);
+        echo_round_trip(&mut stream, PAYLOAD_LEN).await;
+        let captured = proxy.captured();
+        assert_eq!(captured.len(), 1);
+        assert!(
+            captured[0]
+                .head
+                .starts_with(&format!("CONNECT {echo} HTTP/1.1\r\n")),
+            "{}",
+            captured[0].head
+        );
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
 /// A profile with TLS settings beyond the pin, such as `alpn`.
 fn profile_with_tls(settings: Value, pin: &str, extra: Value) -> Value {
     let mut profile = profile(settings, Some((pin, None)));
