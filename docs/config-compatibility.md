@@ -2475,8 +2475,22 @@ seconds. Xray treats zero as an unbounded stale lifetime; this mobile-oriented
 core rejects that value rather than silently retaining records forever.
 Per-server cache/stale overrides remain unsupported because the current cache
 is owned once per Core rather than once per upstream. Special
-`localhost`/`fakedns` clients, routed DoQ, and parallel queries are rejected until their
+`localhost`/`fakedns` clients and routed DoQ are rejected until their
 runtime semantics exist; they are not silently approximated as classic UDP.
+
+`enableParallelQuery: true` asks every server a lookup selects at once, as
+Xray-core v26.10.31's parallel query does, instead of one after another. The
+selection is the serial one. Servers next to each other in it that share a
+policy race as a group: the first of them, in selection order, to answer with
+addresses gives the answer. Groups settle in order, so a later group's answer
+waits until every member of the earlier groups failed, and the remaining
+lookups are dropped once an answer is found. Two servers share a policy when
+their own `clientIp`, `skipFallback`, `queryStrategy`, `tag`, `domains`,
+`expectedIPs`, `expectIPs` and `unexpectedIPs` are equal as Xray-core's config
+builder compares them: as written, trimmed and lowercased, with lists sorted.
+So `"queryStrategy": "UseIP"` and an absent one are two policies there and
+here, and every string entry shares the policy of an object with none of those
+fields. A `null` `enableParallelQuery` is `false`, as in Go.
 
 `clientIp`, at the top level and in an object server, is sent as the EDNS
 client subnet (RFC 7871) of every query, as Xray-core v26.10.31 sends it. A

@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use futures_util::stream::{FuturesUnordered, StreamExt as _};
 use http::{header, Method, Request};
 use rand::Rng as _;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1129,6 +1130,9 @@ pub struct NameServerPolicy {
     /// Xray-core's `clientIp`, sent as the EDNS client subnet of every query
     /// to this server.
     pub client_ip: Option<IpAddr>,
+    /// Xray-core's policy id: servers with the same id next to each other in
+    /// a lookup's plan race as one group under parallel query.
+    pub policy_id: u32,
 }
 
 impl NameServerPolicy {
@@ -1146,6 +1150,7 @@ impl NameServerPolicy {
             final_query: false,
             timeout: None,
             client_ip: None,
+            policy_id: 0,
         }
     }
 }
@@ -1182,6 +1187,7 @@ impl CompiledNameServerPolicies {
                     final_query,
                     timeout,
                     client_ip,
+                    policy_id,
                 } = policy;
                 matcher_count += domains.matcher_count();
                 pattern_bytes += domains.pattern_bytes();
@@ -1198,6 +1204,7 @@ impl CompiledNameServerPolicies {
                     final_query,
                     timeout,
                     client_ip,
+                    policy_id,
                 }
             })
             .collect();
@@ -1320,6 +1327,7 @@ struct CompiledNameServerPolicy {
     final_query: bool,
     timeout: Option<Duration>,
     client_ip: Option<IpAddr>,
+    policy_id: u32,
 }
 
 impl CompiledNameServerPolicy {
@@ -1388,6 +1396,7 @@ pub struct ConfiguredDnsResolver {
     query_strategy: DnsQueryStrategy,
     disable_fallback: bool,
     disable_fallback_if_match: bool,
+    parallel_query: bool,
 }
 
 impl ConfiguredDnsResolver {
@@ -1414,6 +1423,7 @@ impl ConfiguredDnsResolver {
             query_strategy: DnsQueryStrategy::default(),
             disable_fallback: false,
             disable_fallback_if_match: false,
+            parallel_query: false,
         }
     }
 
@@ -1444,6 +1454,13 @@ impl ConfiguredDnsResolver {
 
     pub fn with_query_strategy(mut self, query_strategy: DnsQueryStrategy) -> Self {
         self.query_strategy = query_strategy;
+        self
+    }
+
+    /// Xray-core's `enableParallelQuery`: ask every server a lookup selects
+    /// at once rather than one after another.
+    pub fn with_parallel_query(mut self, enabled: bool) -> Self {
+        self.parallel_query = enabled;
         self
     }
 
@@ -1503,49 +1520,13 @@ impl ConfiguredDnsResolver {
                 continue;
             }
             saw_compatible_server = true;
-            let deadline =
-                time::sleep(name_server.timeout.unwrap_or(self.server_timeout)).deadline();
-            let mut current_domain = domain.to_owned();
-            let mut cname_ttl_cap = None;
-            for depth in 0..MAX_DNS_ALIAS_DEPTH {
-                let started_at = Instant::now();
-                let result = self
-                    .query_configured_server(name_server, &current_domain, deadline, query_strategy)
-                    .await;
-                cname_ttl_cap = age_ttl_cap(cname_ttl_cap, started_at.elapsed());
-                match result {
-                    Ok(ConfiguredServerResult::Answer(ConfiguredDnsAnswer::Addresses(
-                        mut answer,
-                    ))) => {
-                        if let Some(ttl_cap) = cname_ttl_cap {
-                            answer.ttl = answer.ttl.min(ttl_cap);
-                        }
-                        return ConfiguredServersResult::Answer(answer);
-                    }
-                    Ok(ConfiguredServerResult::Answer(ConfiguredDnsAnswer::Cname {
-                        alias,
-                        ttl,
-                    })) => {
-                        cname_ttl_cap =
-                            Some(cname_ttl_cap.map_or(ttl, |current: Duration| current.min(ttl)));
-                        let alias = normalize_dns_name(&alias).unwrap_or(alias);
-                        if alias == current_domain || depth + 1 == MAX_DNS_ALIAS_DEPTH {
-                            last_negative = Some(ConfiguredDnsNegative::NoData);
-                            break;
-                        }
-                        current_domain = alias;
-                    }
-                    Ok(ConfiguredServerResult::Negative(negative)) => {
-                        last_negative = Some(negative);
-                        break;
-                    }
-                    Err(_) => {
-                        if cname_ttl_cap.is_some() {
-                            last_negative = Some(ConfiguredDnsNegative::NoData);
-                        }
-                        break;
-                    }
-                }
+            match self
+                .query_server_lookup(name_server, domain, query_strategy)
+                .await
+            {
+                ServerLookup::Answer(answer) => return ConfiguredServersResult::Answer(answer),
+                ServerLookup::Negative(negative) => last_negative = Some(negative),
+                ServerLookup::Failed => {}
             }
         }
 
@@ -1557,6 +1538,133 @@ impl ConfiguredDnsResolver {
             ConfiguredServersResult::Unavailable,
             ConfiguredServersResult::Negative,
         )
+    }
+
+    /// Xray-core's `parallelQuery`: every server of the plan is asked at
+    /// once. The plan's adjacent servers with the same policy id race as one
+    /// group, and groups settle in plan order: a group's answer is that of
+    /// its first member, in plan order, to have answered with addresses, and
+    /// a group whose members all failed passes the lookup on. The rest of the
+    /// lookups are dropped once an answer is found.
+    async fn query_configured_servers_parallel(
+        &self,
+        domain: &str,
+        selected_servers: &[usize],
+        query_strategy: DnsQueryStrategy,
+    ) -> ConfiguredServersResult {
+        let plan: Vec<&CompiledNameServerPolicy> = selected_servers
+            .iter()
+            .filter_map(|&index| self.name_servers.get(index))
+            .collect();
+        let mut outcomes: Vec<Option<ServerLookup>> = Vec::with_capacity(plan.len());
+        let mut lookups = FuturesUnordered::new();
+        let mut saw_compatible_server = false;
+        let mut saw_incompatible_server = false;
+        for (position, name_server) in plan.iter().copied().enumerate() {
+            if query_strategy
+                .intersect(name_server.query_strategy)
+                .is_none()
+            {
+                // It cannot answer this lookup, so it fails in its group.
+                saw_incompatible_server = true;
+                outcomes.push(Some(ServerLookup::Failed));
+                continue;
+            }
+            saw_compatible_server = true;
+            outcomes.push(None);
+            lookups.push(async move {
+                let outcome = self
+                    .query_server_lookup(name_server, domain, query_strategy)
+                    .await;
+                (position, outcome)
+            });
+        }
+
+        let mut group_start = 0;
+        while group_start < plan.len() {
+            let group_end = (group_start + 1..plan.len())
+                .find(|&position| plan[position].policy_id != plan[group_start].policy_id)
+                .unwrap_or(plan.len());
+            let answered = (group_start..group_end)
+                .find(|&position| matches!(outcomes[position], Some(ServerLookup::Answer(_))));
+            if let Some(position) = answered {
+                if let Some(ServerLookup::Answer(answer)) = outcomes[position].take() {
+                    return ConfiguredServersResult::Answer(answer);
+                }
+            }
+            if outcomes[group_start..group_end].iter().all(Option::is_some) {
+                group_start = group_end;
+                continue;
+            }
+            let Some((position, outcome)) = lookups.next().await else {
+                break;
+            };
+            outcomes[position] = Some(outcome);
+        }
+
+        if !saw_compatible_server && saw_incompatible_server {
+            return ConfiguredServersResult::Negative(ConfiguredDnsNegative::NoData);
+        }
+        // As in the serial plan, the last negative answer in plan order.
+        outcomes
+            .into_iter()
+            .rev()
+            .find_map(|outcome| match outcome {
+                Some(ServerLookup::Negative(negative)) => Some(negative),
+                _ => None,
+            })
+            .map_or(
+                ConfiguredServersResult::Unavailable,
+                ConfiguredServersResult::Negative,
+            )
+    }
+
+    /// One server's lookup, with the aliases it answers followed on the same
+    /// server, as both the serial and the parallel plan ask it.
+    async fn query_server_lookup(
+        &self,
+        name_server: &CompiledNameServerPolicy,
+        domain: &str,
+        query_strategy: DnsQueryStrategy,
+    ) -> ServerLookup {
+        let deadline = time::sleep(name_server.timeout.unwrap_or(self.server_timeout)).deadline();
+        let mut current_domain = domain.to_owned();
+        let mut cname_ttl_cap = None;
+        for depth in 0..MAX_DNS_ALIAS_DEPTH {
+            let started_at = Instant::now();
+            let result = self
+                .query_configured_server(name_server, &current_domain, deadline, query_strategy)
+                .await;
+            cname_ttl_cap = age_ttl_cap(cname_ttl_cap, started_at.elapsed());
+            match result {
+                Ok(ConfiguredServerResult::Answer(ConfiguredDnsAnswer::Addresses(mut answer))) => {
+                    if let Some(ttl_cap) = cname_ttl_cap {
+                        answer.ttl = answer.ttl.min(ttl_cap);
+                    }
+                    return ServerLookup::Answer(answer);
+                }
+                Ok(ConfiguredServerResult::Answer(ConfiguredDnsAnswer::Cname { alias, ttl })) => {
+                    cname_ttl_cap =
+                        Some(cname_ttl_cap.map_or(ttl, |current: Duration| current.min(ttl)));
+                    let alias = normalize_dns_name(&alias).unwrap_or(alias);
+                    if alias == current_domain || depth + 1 == MAX_DNS_ALIAS_DEPTH {
+                        return ServerLookup::Negative(ConfiguredDnsNegative::NoData);
+                    }
+                    current_domain = alias;
+                }
+                Ok(ConfiguredServerResult::Negative(negative)) => {
+                    return ServerLookup::Negative(negative);
+                }
+                Err(_) => {
+                    return if cname_ttl_cap.is_some() {
+                        ServerLookup::Negative(ConfiguredDnsNegative::NoData)
+                    } else {
+                        ServerLookup::Failed
+                    };
+                }
+            }
+        }
+        ServerLookup::Failed
     }
 
     async fn query_configured_server(
@@ -1809,9 +1917,17 @@ impl ConfiguredDnsResolver {
                 self.disable_fallback,
                 self.disable_fallback_if_match,
             );
-            let result = self
-                .query_configured_servers(&current_domain, &server_plan, query_strategy)
-                .await;
+            let result = if self.parallel_query {
+                self.query_configured_servers_parallel(
+                    &current_domain,
+                    &server_plan,
+                    query_strategy,
+                )
+                .await
+            } else {
+                self.query_configured_servers(&current_domain, &server_plan, query_strategy)
+                    .await
+            };
             ttl_cap = age_ttl_cap(ttl_cap, started_at.elapsed());
             match result {
                 ConfiguredServersResult::Answer(answer) => {
@@ -2146,6 +2262,13 @@ enum ConfiguredServersResult {
     Answer(ConfiguredDnsAddresses),
     Negative(ConfiguredDnsNegative),
     Unavailable,
+}
+
+/// What one server's lookup came to.
+enum ServerLookup {
+    Answer(ConfiguredDnsAddresses),
+    Negative(ConfiguredDnsNegative),
+    Failed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2890,6 +3013,7 @@ fn invalid_dns_response(message: &'static str) -> io::Error {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::io;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -4296,6 +4420,250 @@ mod tests {
                 "test DNS transport unavailable",
             ))
         }
+    }
+
+    /// How a scripted server answers: after `delay`, with an address, a
+    /// response code, or an error.
+    #[derive(Clone, Copy)]
+    enum Scripted {
+        Address(Duration, Ipv4Addr),
+        Rcode(Duration, u16),
+        Error(Duration),
+    }
+
+    /// Answers each server as scripted, keyed by its last octet, and can hold
+    /// every exchange until `barrier` many have started.
+    struct ScriptedServersTransport {
+        script: HashMap<u8, Scripted>,
+        barrier: Option<Arc<Barrier>>,
+        asked: Mutex<Vec<u8>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for ScriptedServersTransport {
+        async fn exchange(
+            &self,
+            server: &NameServer,
+            _transport: DnsQueryTransportKind,
+            _metadata: DnsQueryMetadata<'_>,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            let NameServer::Socket(SocketAddr::V4(address)) = server else {
+                panic!("scripted servers are IPv4 sockets");
+            };
+            let octet = address.ip().octets()[3];
+            self.asked.lock().unwrap().push(octet);
+            if let Some(barrier) = &self.barrier {
+                barrier.wait().await;
+            }
+            match self.script[&octet] {
+                Scripted::Address(delay, answer) => {
+                    tokio::time::sleep(delay).await;
+                    Ok(build_test_a_response(query, answer))
+                }
+                Scripted::Rcode(delay, rcode) => {
+                    tokio::time::sleep(delay).await;
+                    Ok(build_test_empty_response(query, rcode))
+                }
+                Scripted::Error(delay) => {
+                    tokio::time::sleep(delay).await;
+                    Err(io::Error::new(io::ErrorKind::ConnectionRefused, "scripted"))
+                }
+            }
+        }
+    }
+
+    /// A parallel resolver over scripted servers `192.0.2.<octet>` with the
+    /// given policy ids, asking A records only.
+    fn parallel_resolver(
+        servers: &[(u8, u32, Scripted)],
+        barrier: Option<usize>,
+    ) -> (ConfiguredDnsResolver, Arc<ScriptedServersTransport>) {
+        let transport = Arc::new(ScriptedServersTransport {
+            script: servers
+                .iter()
+                .map(|&(octet, _, scripted)| (octet, scripted))
+                .collect(),
+            barrier: barrier.map(|count| Arc::new(Barrier::new(count))),
+            asked: Mutex::new(Vec::new()),
+        });
+        let policies = servers
+            .iter()
+            .map(|&(octet, policy_id, _)| {
+                let mut policy = NameServerPolicy::new(NameServer::Socket(SocketAddr::from((
+                    [192, 0, 2, octet],
+                    53,
+                ))));
+                policy.policy_id = policy_id;
+                policy
+            })
+            .collect();
+        let resolver = ConfiguredDnsResolver::new(
+            DomainHostIndex::default(),
+            Vec::new(),
+            Arc::new(RejectingResolver),
+        )
+        .with_name_server_policies(policies)
+        .with_query_strategy(DnsQueryStrategy::UseIpv4)
+        .with_query_transport(transport.clone())
+        .with_parallel_query(true);
+        (resolver, transport)
+    }
+
+    const FAST: Duration = Duration::from_millis(0);
+    const SLOW: Duration = Duration::from_millis(300);
+
+    async fn answer_of(resolver: &ConfiguredDnsResolver) -> Result<IpAddr, TransportError> {
+        resolver
+            .resolve("parallel.example", 443)
+            .await
+            .map(|address| address.ip())
+    }
+
+    #[tokio::test]
+    async fn parallel_query_asks_every_server_at_once() {
+        // Each exchange waits until all three began, which a serial plan
+        // never lets happen.
+        let (resolver, transport) = parallel_resolver(
+            &[
+                (1, 1, Scripted::Address(FAST, Ipv4Addr::new(192, 0, 2, 101))),
+                (2, 2, Scripted::Address(FAST, Ipv4Addr::new(192, 0, 2, 102))),
+                (3, 3, Scripted::Address(FAST, Ipv4Addr::new(192, 0, 2, 103))),
+            ],
+            Some(3),
+        );
+        let answer = tokio::time::timeout(Duration::from_secs(5), answer_of(&resolver))
+            .await
+            .expect("the servers must be asked at once");
+        assert_eq!(answer.unwrap(), IpAddr::from([192, 0, 2, 101]));
+        let mut asked = transport.asked.lock().unwrap().clone();
+        asked.sort_unstable();
+        assert_eq!(asked, [1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn parallel_query_takes_the_first_answer_of_a_group() {
+        // Same policy: the faster server wins.
+        let (resolver, _) = parallel_resolver(
+            &[
+                (1, 1, Scripted::Address(SLOW, Ipv4Addr::new(192, 0, 2, 101))),
+                (2, 1, Scripted::Address(FAST, Ipv4Addr::new(192, 0, 2, 102))),
+            ],
+            None,
+        );
+        assert_eq!(
+            answer_of(&resolver).await.unwrap(),
+            IpAddr::from([192, 0, 2, 102])
+        );
+    }
+
+    #[tokio::test]
+    async fn parallel_query_settles_groups_in_plan_order() {
+        // A later group's quick answer waits for the earlier group.
+        let (resolver, _) = parallel_resolver(
+            &[
+                (1, 1, Scripted::Address(SLOW, Ipv4Addr::new(192, 0, 2, 101))),
+                (2, 2, Scripted::Address(FAST, Ipv4Addr::new(192, 0, 2, 102))),
+            ],
+            None,
+        );
+        assert_eq!(
+            answer_of(&resolver).await.unwrap(),
+            IpAddr::from([192, 0, 2, 101])
+        );
+
+        // A group whose members all fail passes the lookup on, whatever the
+        // failure: an error, SERVFAIL or NXDOMAIN.
+        for failure in [
+            Scripted::Error(FAST),
+            Scripted::Rcode(FAST, 2),
+            Scripted::Rcode(FAST, 3),
+        ] {
+            let (resolver, _) = parallel_resolver(
+                &[
+                    (1, 1, failure),
+                    (2, 1, Scripted::Error(SLOW)),
+                    (3, 2, Scripted::Address(SLOW, Ipv4Addr::new(192, 0, 2, 103))),
+                ],
+                None,
+            );
+            assert_eq!(
+                answer_of(&resolver).await.unwrap(),
+                IpAddr::from([192, 0, 2, 103])
+            );
+        }
+
+        // A group is not settled while a member is still out.
+        let (resolver, _) = parallel_resolver(
+            &[
+                (1, 1, Scripted::Error(FAST)),
+                (2, 1, Scripted::Address(SLOW, Ipv4Addr::new(192, 0, 2, 102))),
+                (3, 2, Scripted::Address(FAST, Ipv4Addr::new(192, 0, 2, 103))),
+            ],
+            None,
+        );
+        assert_eq!(
+            answer_of(&resolver).await.unwrap(),
+            IpAddr::from([192, 0, 2, 102])
+        );
+    }
+
+    #[tokio::test]
+    async fn parallel_query_counts_a_server_without_the_family_as_failed() {
+        let (resolver, transport) = parallel_resolver(
+            &[
+                (1, 1, Scripted::Address(FAST, Ipv4Addr::new(192, 0, 2, 101))),
+                (2, 2, Scripted::Address(SLOW, Ipv4Addr::new(192, 0, 2, 102))),
+            ],
+            None,
+        );
+        // The first server answers AAAA only, so for an A lookup its group
+        // fails at once and passes the lookup on.
+        let mut policies: Vec<NameServerPolicy> =
+            [(1, 1, Some(DnsQueryStrategy::UseIpv6)), (2, 2, None)]
+                .into_iter()
+                .map(|(octet, policy_id, strategy)| {
+                    let mut policy = NameServerPolicy::new(NameServer::Socket(SocketAddr::from((
+                        [192, 0, 2, octet],
+                        53,
+                    ))));
+                    policy.policy_id = policy_id;
+                    if let Some(strategy) = strategy {
+                        policy.query_strategy = strategy;
+                    }
+                    policy
+                })
+                .collect();
+        let resolver = resolver.with_name_server_policies(std::mem::take(&mut policies));
+        assert_eq!(
+            answer_of(&resolver).await.unwrap(),
+            IpAddr::from([192, 0, 2, 102])
+        );
+        assert_eq!(*transport.asked.lock().unwrap(), [2]);
+    }
+
+    #[tokio::test]
+    async fn parallel_query_without_an_answer_reports_the_last_negative() {
+        let (resolver, _) = parallel_resolver(
+            &[
+                (1, 1, Scripted::Rcode(FAST, 3)),
+                (2, 2, Scripted::Rcode(FAST, 0)),
+                (3, 3, Scripted::Error(FAST)),
+            ],
+            None,
+        );
+        let error = answer_of(&resolver).await.unwrap_err();
+        assert!(matches!(error, TransportError::DnsNoData(..)), "{error:?}");
+
+        let (resolver, _) = parallel_resolver(&[(1, 1, Scripted::Error(FAST))], None);
+        let error = answer_of(&resolver).await.unwrap_err();
+        assert!(
+            !matches!(
+                error,
+                TransportError::DnsNoData(..) | TransportError::DnsNameError(..)
+            ),
+            "{error:?}"
+        );
     }
 
     struct MappedFirstServerQueryTransport {

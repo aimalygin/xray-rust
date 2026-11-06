@@ -1526,6 +1526,8 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
     ensure_effective_dns_tag(config);
     let global_dns_tag = config.dns.tag.clone();
     let global_client_ip = config.dns.client_ip;
+    // Xray-core numbers policies by their key's first appearance.
+    let mut policy_ids: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     let name_servers = config
         .dns
         .servers
@@ -1552,6 +1554,10 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
             let final_query = server.final_query();
             // A server's own clientIp replaces the global one, as in Xray-core.
             let client_ip = server.client_ip().or(global_client_ip);
+            let next_policy_id = u32::try_from(policy_ids.len()).unwrap_or(u32::MAX) + 1;
+            let policy_id = *policy_ids
+                .entry(server.policy_key().to_owned())
+                .or_insert(next_policy_id);
             let timeout = Some(Duration::from_millis(server.timeout_ms()));
             let tag = server.effective_tag(&global_dns_tag).to_owned();
             let (domains, expected_ips, unexpected_ips) = match server {
@@ -1579,6 +1585,7 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
                 query_strategy,
                 final_query,
                 client_ip,
+                policy_id,
             })
         })
         .collect();
@@ -1725,7 +1732,8 @@ fn configured_dns_resolver_from_config_with_transport_mode(
             config.dns.disable_fallback,
             config.dns.disable_fallback_if_match,
         )
-        .with_query_strategy(query_strategy);
+        .with_query_strategy(query_strategy)
+        .with_parallel_query(config.dns.enable_parallel_query);
     if role == DnsResolverRole::Bootstrap {
         resolver = resolver.without_system_fallback_timeout();
     }
