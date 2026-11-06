@@ -1,5 +1,5 @@
 use super::*;
-use crate::{WireguardDomainStrategy, WireguardOutboundSettings, WireguardPeerSettings};
+use crate::{WireguardOutboundSettings, WireguardPeerSettings};
 use xray_proxy::wireguard::{AllowedIp, KeyMaterial};
 
 impl Parser<'_> {
@@ -12,10 +12,25 @@ impl Parser<'_> {
         let parsed = (|| {
             let settings = outbound.get("settings").filter(|v| v.is_object())?;
             self.reject_unknown_fields(settings, &path, &surface::WIREGUARD);
-            if outbound.get("streamSettings").is_some() || outbound.get("proxySettings").is_some() {
+            // Xray-core reads only `sockopt` from a WireGuard outbound's
+            // streams; its UDP masks are not supported here. The stream
+            // parser refuses a stream that is not an object.
+            if let Some(fields) = outbound.get("streamSettings").and_then(Value::as_object) {
+                for key in fields.keys().filter(|key| *key != "sockopt") {
+                    self.error(
+                        format!("$.outbounds[{index}].streamSettings.{key}"),
+                        "WireGuard takes only streamSettings.sockopt",
+                    );
+                }
+            }
+            let dialer_proxy = outbound
+                .pointer("/streamSettings/sockopt/dialerProxy")
+                .and_then(Value::as_str)
+                .is_some_and(|tag| !tag.is_empty());
+            if outbound.get("proxySettings").is_some() || dialer_proxy {
                 self.error(
                     format!("$.outbounds[{index}]"),
-                    "WireGuard custom stream settings and chaining are unsupported",
+                    "WireGuard chaining is unsupported",
                 );
             }
             if let Some(value) = settings.get("noKernelTun") {
@@ -153,30 +168,17 @@ impl Parser<'_> {
                 self.warning(format!("{path}.remoteDNS"),
                     "no remoteDNS server is routable through the tunnel (covered by a peer's allowedIPs, with a local address of its family); destination domains resolve with the caller's DNS outside the tunnel");
             }
+            // Xray-core v26.10.31 has no WireGuard `domainStrategy` and so
+            // reads none, of any value.
             if settings.get("domainStrategy").is_some() {
                 self.warning(format!("{path}.domainStrategy"),
-                    "legacy WireGuard domainStrategy is retained only for address-family selection; destination DNS now uses remoteDNS through the tunnel");
+                    "WireGuard domainStrategy is not read, as in Xray-core: destinations take the families of the local addresses, and streamSettings.sockopt.domainStrategy selects the peer endpoint's");
             }
-            let domain_strategy = match settings
-                .get("domainStrategy")
-                .map(Value::as_str)
-                .unwrap_or(Some(""))
-                .map(str::to_ascii_lowercase)?
-                .as_str()
-            {
-                "" | "forceip" => WireguardDomainStrategy::ForceIp,
-                "forceipv4" => WireguardDomainStrategy::ForceIpv4,
-                "forceipv6" => WireguardDomainStrategy::ForceIpv6,
-                "forceipv4v6" => WireguardDomainStrategy::ForceIpv4v6,
-                "forceipv6v4" => WireguardDomainStrategy::ForceIpv6v4,
-                _ => return None,
-            };
             Some(WireguardOutboundSettings {
                 secret_key,
                 peers,
                 addresses,
                 mtu,
-                domain_strategy,
                 remote_dns,
             })
         })();

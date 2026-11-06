@@ -168,12 +168,17 @@ would fail with no route. The parser warns at `remoteDNS` when this applies. The
 device owns a 256-entry single-flight cache: answer TTL is capped at 300
 seconds, negatives last 30 seconds, and stale answers are never returned.
 Closing the outbound cancels pending queries. Its peer endpoint continues to use
-the separate bootstrap resolver and protected outer socket.
+the separate bootstrap resolver and protected outer socket, and
+`streamSettings.sockopt.domainStrategy` picks which of a domain endpoint's
+addresses it dials ([details](#domain-strategy-socket-option)).
 
-Legacy `domainStrategy` emits a warning and controls address-family selection
-only. `allowedIPs` still bounds DNS-server and destination routing. WireGuard
-profile import preserves explicitly supplied DNS addresses in both the profile
-DNS configuration and `remoteDNS`; it never substitutes public resolvers during
+Destination lookups ask for the families the device has a local `address`
+of, and put IPv6 answers first when it has an IPv6 one, as Xray-core's device
+resolver does. `settings.domainStrategy` is not read, of any value, since
+Xray-core v26.10.31 has no such setting; the parser warns at it. `allowedIPs`
+still bounds DNS-server and destination routing. WireGuard profile import
+preserves explicitly supplied DNS addresses in both the profile DNS
+configuration and `remoteDNS`; it never substitutes public resolvers during
 import. Port-qualified/hostname DNS, DoH and DoT are outside this field's contract.
 
 ## v0.8 TLS ClientHello fragmentation
@@ -2175,6 +2180,18 @@ does. When a freedom outbound carries another outbound through `dialerProxy`,
 that outbound's server address resolves with freedom's strategy, since
 Xray-core hands it to freedom as the destination.
 
+On a WireGuard outbound it picks the address dialed for a peer endpoint that
+is a domain, as Xray-core's `MakeResolveLocal` does. The bootstrap resolver
+looks the domain up for both families, and the strategy keeps:
+
+- every address under `AsIs`, `UseIP` and `ForceIP`;
+- that family's under `IPv4` and `IPv6`;
+- under `IPv4v6`, the IPv4 addresses, or the IPv6 ones when there is no IPv4
+  address; `IPv6v4` is the reverse.
+
+`Use` and `Force` do not differ there: with no address kept, the connection
+fails. An endpoint written as an IP address is dialed as it is.
+
 Xray-core v26.10.31 deprecates freedom's own `settings.domainStrategy` (and
 `settings.targetStrategy`, which wins when nonempty), as well as an outbound
 `targetStrategy` on freedom, and migrates them into `sockopt.domainStrategy`.
@@ -2193,11 +2210,15 @@ Differences from Xray-core:
 - Xray-core dials one random permitted address per attempt and retries up to
   five times. xray-rust tries the permitted addresses in order, as for any
   other candidates, and a UDP flow takes the first one.
-- Other outbounds accept only `AsIs`. A different `sockopt.domainStrategy` or
-  `targetStrategy` on VLESS, Trojan and the other proxies fails parsing,
-  because their server lookup and target resolution do not read a strategy
-  yet. For the same reason, `dialerProxy` refuses a dedicated freedom fragment
-  handler that has a strategy, since inlining it would drop the strategy.
+- Xray-core's WireGuard picks one of the addresses kept at random.
+  xray-rust's takes the first.
+- Outbounds other than freedom accept only `AsIs` in `targetStrategy`, and
+  those other than freedom and WireGuard only `AsIs` in
+  `sockopt.domainStrategy`. A different value on VLESS, Trojan and the other
+  proxies fails parsing, because their server lookup and target resolution do
+  not read a strategy yet. For the same reason, `dialerProxy` refuses a
+  dedicated freedom fragment handler that has a strategy, since inlining it
+  would drop the strategy.
 
 ### Socket options
 
@@ -2209,7 +2230,8 @@ and set on every socket the outbound opens:
 - freedom's TCP and UDP sockets, including those of DNS queries routed
   through it;
 - the SOCKS and Shadowsocks UDP sockets;
-- the QUIC socket of Hysteria and of XHTTP over HTTP/3.
+- the QUIC socket of Hysteria and of XHTTP over HTTP/3;
+- the UDP sockets WireGuard sends from.
 
 ```json
 {
@@ -2303,8 +2325,10 @@ Not supported yet:
   TXT lookups are not implemented, so the other six values fail parsing
   instead of dialing the configured address. Xray-core refuses them on
   freedom too.
-- WireGuard outbounds still refuse `streamSettings`, so they take no
-  `sockopt`.
+- WireGuard reads no `streamSettings` field other than `sockopt`. The others
+  fail parsing, its UDP `finalmask` among them, and so does a `dialerProxy`.
+  Xray-core ignores the transport settings, masks the UDP with `finalmask`,
+  and carries it through the `dialerProxy` outbound.
 
 ## Routing
 

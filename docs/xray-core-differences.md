@@ -458,7 +458,12 @@ differences:
 - A `dialerProxy` inside an XHTTP `downloadSettings` fails parsing. Xray-core
   would carry the download leg through that outbound. Here the leg either
   takes the outbound's own chain, with `penetrate`, or dials directly.
-- WireGuard outbounds take no `sockopt`, as they take no `streamSettings`.
+- WireGuard reads no `streamSettings` field other than `sockopt`, and its
+  other fields, `finalmask` among them, fail parsing, as does a
+  `dialerProxy`. Xray-core ignores the transport settings, masks the UDP with
+  `finalmask`, and carries it through the `dialerProxy` outbound.
+- A WireGuard peer endpoint that is a domain dials the first address its
+  `domainStrategy` keeps. Xray-core picks one of them at random.
 - An option that fails is logged at debug level; Xray-core logs it at info,
   a level the runtime log here does not have.
 - Xray-core's outbound UDP sockets are IPv6 sockets that also carry IPv4, so

@@ -378,3 +378,221 @@ async fn wireguard_total_deadline_and_caller_cancellation_release_single_flight(
         "cancelled owner must release the connection admission lock"
     );
 }
+
+/// The fixture's outbound with `sockopt`, its peer at `endpoint`.
+fn with_sockopt(sockopt: serde_json::Value, endpoint: &str) -> OutboundConfig {
+    let mut raw: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tests/fixtures/configs/wireguard.json"
+    ))
+    .unwrap();
+    raw["outbounds"][0]["streamSettings"] = serde_json::json!({ "sockopt": sockopt });
+    raw["outbounds"][0]["settings"]["peers"][0]["endpoint"] = endpoint.into();
+    xray_config::parse_xray_json(&raw.to_string())
+        .unwrap_or_else(|error| panic!("{error:?}"))
+        .config
+        .outbounds
+        .remove(0)
+}
+
+/// Records the address family of each socket the platform protects.
+#[derive(Default)]
+struct Families(std::sync::Mutex<Vec<socket2::Domain>>);
+impl xray_transport::SocketProtector for Families {
+    fn protect(&self, socket: xray_transport::SocketHandle) -> std::io::Result<()> {
+        use std::os::fd::BorrowedFd;
+        // SAFETY: the socket stays open for this call.
+        let fd = unsafe { BorrowedFd::borrow_raw(socket.raw() as std::os::fd::RawFd) };
+        let domain = socket2::SockRef::from(&fd).local_addr()?.domain();
+        self.0.lock().unwrap().push(domain);
+        Ok(())
+    }
+}
+
+/// Answers every lookup with the same addresses.
+struct Answers(Vec<IpAddr>);
+#[async_trait]
+impl DnsResolver for Answers {
+    async fn resolve(&self, _domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        Ok(SocketAddr::new(self.0[0], port))
+    }
+    async fn resolve_all(
+        &self,
+        _domain: &str,
+        port: u16,
+    ) -> Result<xray_transport::DnsLookup, TransportError> {
+        Ok(xray_transport::DnsLookup::new(
+            self.0.iter().map(|ip| SocketAddr::new(*ip, port)),
+            None,
+        ))
+    }
+}
+
+/// Starts the device for one UDP flow and returns the families of the
+/// sockets it sends from, which are those of its peer's address.
+async fn endpoint_families(
+    config: &OutboundConfig,
+    answers: &[IpAddr],
+) -> Result<Vec<socket2::Domain>, CoreError> {
+    let outbound = WireguardOutbound::new(config).unwrap();
+    let families = Arc::new(Families::default());
+    let dialer = TransportDialer::system()
+        .unwrap()
+        .with_socket_protector(families.clone());
+    let dns = Answers(answers.to_vec());
+    let result = outbound
+        .open_udp(&target(), &dns, &dns, &dialer)
+        .await
+        .map(drop);
+    let client = outbound
+        .0
+        .session
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|cached| cached.client.clone());
+    outbound.close();
+    if let Some(client) = client {
+        client.shutdown().await;
+    }
+    result.map(|()| families.0.lock().unwrap().clone())
+}
+
+/// `sockopt.domainStrategy` picks a domain endpoint's address as Xray-core's
+/// `MakeResolveLocal` does; an IP endpoint is taken as it is, unlooked-up.
+#[tokio::test]
+async fn wireguard_endpoint_takes_the_sockopt_domain_strategy() {
+    use socket2::Domain;
+    let v4 = IpAddr::from(std::net::Ipv4Addr::LOCALHOST);
+    let v6 = IpAddr::from(std::net::Ipv6Addr::LOCALHOST);
+    let cases: [(&str, &str, &[IpAddr], Option<Domain>); 9] = [
+        ("AsIs", "wg.example:9", &[v6, v4], Some(Domain::IPV6)),
+        ("UseIP", "wg.example:9", &[v4, v6], Some(Domain::IPV4)),
+        ("UseIPv4", "wg.example:9", &[v6, v4], Some(Domain::IPV4)),
+        ("ForceIPv6", "wg.example:9", &[v4, v6], Some(Domain::IPV6)),
+        ("UseIPv6", "wg.example:9", &[v4], None),
+        ("ForceIPv4", "wg.example:9", &[v6], None),
+        ("UseIPv4v6", "wg.example:9", &[v6], Some(Domain::IPV6)),
+        ("ForceIPv6v4", "wg.example:9", &[v4], Some(Domain::IPV4)),
+        ("UseIPv6", "127.0.0.1:9", &[], Some(Domain::IPV4)),
+    ];
+    for (strategy, endpoint, answers, expected) in cases {
+        let config = with_sockopt(serde_json::json!({ "domainStrategy": strategy }), endpoint);
+        let result = endpoint_families(&config, answers).await;
+        match expected {
+            Some(family) => assert_eq!(result.unwrap(), [family], "{strategy} {endpoint}"),
+            None => assert!(
+                matches!(result, Err(CoreError::Wireguard(Error::NoRoute))),
+                "{strategy} {endpoint}"
+            ),
+        }
+    }
+}
+
+/// The device's UDP sockets take the outbound's `sockopt` after the
+/// platform's protection, so an interface that does not exist fails the open.
+#[tokio::test]
+async fn wireguard_sockets_take_the_outbound_socket_options() {
+    let config = with_sockopt(
+        serde_json::json!({ "interface": "xray-missing0" }),
+        "127.0.0.1:9",
+    );
+    let outbound = WireguardOutbound::new(&config).unwrap();
+    let families = Arc::new(Families::default());
+    let dialer = TransportDialer::system()
+        .unwrap()
+        .with_socket_protector(families.clone());
+    let dns = PendingDns::default();
+    assert!(matches!(
+        outbound.open_udp(&target(), &dns, &dns, &dialer).await,
+        Err(CoreError::Wireguard(Error::SocketProtection))
+    ));
+    assert_eq!(*families.0.lock().unwrap(), [socket2::Domain::IPV4]);
+}
+
+/// A cached session is matched by its protector, so the dialer made with the
+/// outbound's options stays the same while the dialer given does.
+#[test]
+fn wireguard_keeps_one_dialer_with_its_socket_options() {
+    let outbound = WireguardOutbound::new(&with_sockopt(
+        serde_json::json!({ "mark": 4 }),
+        "127.0.0.1:9",
+    ))
+    .unwrap();
+    let base = TransportDialer::system().unwrap();
+    let first = outbound.socket_dialer(&base).socket_protector_arc();
+    let again = outbound.socket_dialer(&base);
+    assert_eq!(again.socket_options().map(|options| options.mark), Some(4));
+    assert!(first.is_some() && same_protector(&first, &again.socket_protector_arc()));
+    let other = TransportDialer::system().unwrap();
+    assert!(!same_protector(
+        &first,
+        &outbound.socket_dialer(&other).socket_protector_arc()
+    ));
+    let plain = WireguardOutbound::new(&configured()).unwrap();
+    assert!(matches!(
+        plain.socket_dialer(&base),
+        std::borrow::Cow::Borrowed(_)
+    ));
+}
+
+/// Destination lookups ask for the families of the local addresses and put
+/// IPv6 answers first when there is an IPv6 one, as Xray-core's tunnel
+/// lookup does.
+#[tokio::test]
+async fn wireguard_destinations_follow_the_local_address_families() {
+    use xray_transport::DnsQueryStrategy;
+    struct Recorded(std::sync::Mutex<Vec<DnsQueryStrategy>>);
+    #[async_trait]
+    impl DnsResolver for Recorded {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            Err(TransportError::DnsNoData(domain.to_owned(), port))
+        }
+        async fn resolve_all_with_strategy(
+            &self,
+            _domain: &str,
+            port: u16,
+            strategy: DnsQueryStrategy,
+        ) -> Result<xray_transport::DnsLookup, TransportError> {
+            self.0.lock().unwrap().push(strategy);
+            let answers = ["192.0.2.1", "2001:db8::1", "192.0.2.2", "2001:db8::2"]
+                .into_iter()
+                .map(|ip| SocketAddr::new(ip.parse().unwrap(), port))
+                .filter(|address| match strategy {
+                    DnsQueryStrategy::UseIpv4 => address.is_ipv4(),
+                    DnsQueryStrategy::UseIpv6 => address.is_ipv6(),
+                    _ => true,
+                });
+            Ok(xray_transport::DnsLookup::new(answers, None))
+        }
+    }
+    let target = Target::new(
+        RoutingTargetAddr::Domain("destination.example".into()),
+        443,
+        RoutingNetwork::Tcp,
+    );
+    let both = ["2001:db8::1", "2001:db8::2", "192.0.2.1", "192.0.2.2"];
+    for (addresses, strategy, expected) in [
+        (
+            &["10.44.0.2", "fd44::2"][..],
+            DnsQueryStrategy::UseIp,
+            &both[..],
+        ),
+        (&["10.44.0.2"], DnsQueryStrategy::UseIpv4, &both[2..]),
+        (&["fd44::2"], DnsQueryStrategy::UseIpv6, &both[..2]),
+    ] {
+        let mut config = configured();
+        let OutboundSettings::Wireguard(settings) = &mut config.settings else {
+            panic!()
+        };
+        settings.addresses = addresses.iter().map(|ip| ip.parse().unwrap()).collect();
+        let outbound = WireguardOutbound::new(&config).unwrap();
+        let resolver = Recorded(std::sync::Mutex::new(Vec::new()));
+        let found = outbound.destinations(&target, &resolver).await.unwrap();
+        assert_eq!(*resolver.0.lock().unwrap(), [strategy], "{addresses:?}");
+        let expected: Vec<SocketAddr> = expected
+            .iter()
+            .map(|ip| SocketAddr::new(ip.parse().unwrap(), 443))
+            .collect();
+        assert_eq!(found, expected, "{addresses:?}");
+    }
+}
