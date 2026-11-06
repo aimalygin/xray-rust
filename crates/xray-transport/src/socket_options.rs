@@ -10,6 +10,13 @@
 //! every 45 seconds unless the options say otherwise, whatever happened to the
 //! options before it.
 
+// Systems Xray-core sets no outbound socket option on compile only the parts
+// every system shares.
+#![cfg_attr(
+    not(any(target_os = "linux", target_os = "android", target_vendor = "apple")),
+    allow(dead_code)
+)]
+
 use std::{fmt, io, sync::Arc};
 
 use crate::{SocketHandle, SocketProtector};
@@ -104,18 +111,15 @@ impl SocketProtector for SocketOptionsProtector {
 
 /// Why an option stopped the others: an interface that cannot be bound fails
 /// the dial, as Xray-core's `BindError` does; anything else is only reported.
-#[cfg_attr(not(unix), allow(dead_code))]
 enum ApplyError {
     Bind(io::Error),
     Other(io::Error),
 }
 
-#[cfg_attr(not(unix), allow(dead_code))]
 fn option_error(what: impl fmt::Display, error: io::Error) -> ApplyError {
     ApplyError::Other(io::Error::new(error.kind(), format!("{what}: {error}")))
 }
 
-#[cfg_attr(not(unix), allow(dead_code))]
 fn bind_error(what: impl fmt::Display, error: io::Error) -> ApplyError {
     ApplyError::Bind(io::Error::new(
         error.kind(),
@@ -125,7 +129,6 @@ fn bind_error(what: impl fmt::Display, error: io::Error) -> ApplyError {
 
 /// What Go's dialer tells `Control` about a socket.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(unix), allow(dead_code))]
 struct SocketKind {
     tcp: bool,
     ipv6: bool,
@@ -133,7 +136,6 @@ struct SocketKind {
 
 impl SocketKind {
     /// Go's network name: `tcp4`, `tcp6`, `udp4` or `udp6`.
-    #[cfg_attr(not(unix), allow(dead_code))]
     fn network(self) -> &'static str {
         match (self.tcp, self.ipv6) {
             (true, false) => "tcp4",
@@ -147,7 +149,6 @@ impl SocketKind {
 impl SocketOptions {
     /// Xray-core's `ParseTFOValue`: -1 sets nothing, otherwise the value
     /// to set, with a disabled option set to zero.
-    #[cfg_attr(not(unix), allow(dead_code))]
     fn parsed_tcp_fast_open(&self) -> i32 {
         match self.tcp_fast_open {
             0 => -1,
@@ -210,7 +211,6 @@ impl SocketOptions {
 
 /// Go's `strconv.Atoi` as `customSockopt` uses it, errors ignored: invalid
 /// text is zero and an out-of-range number its nearest 64-bit bound.
-#[cfg_attr(not(unix), allow(dead_code))]
 fn go_atoi(text: &str) -> i64 {
     let (negative, digits) = match text.as_bytes() {
         [b'-', rest @ ..] => (true, rest),
@@ -334,22 +334,19 @@ mod sys {
         "android"
     } else if cfg!(target_os = "linux") {
         "linux"
-    } else if cfg!(target_os = "ios") {
-        "ios"
     } else if cfg!(target_os = "macos") {
         "darwin"
+    } else if cfg!(target_vendor = "apple") {
+        // Go names iOS `ios`; it runs on no other Apple system, whose
+        // kernel this one shares.
+        "ios"
     } else {
         std::env::consts::OS
     };
 
     /// `customSockopt`, the same on every platform Xray-core applies it on.
     #[cfg_attr(
-        not(any(
-            target_os = "linux",
-            target_os = "android",
-            target_os = "macos",
-            target_os = "ios"
-        )),
+        not(any(target_os = "linux", target_os = "android", target_vendor = "apple")),
         allow(dead_code)
     )]
     fn apply_custom(
@@ -508,7 +505,7 @@ mod sys {
         }
     }
 
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    #[cfg(target_vendor = "apple")]
     mod platform {
         use super::*;
         use std::ffi::CString;
@@ -592,12 +589,7 @@ mod sys {
     }
 
     /// Xray-core sets no outbound socket option on other systems.
-    #[cfg(not(any(
-        target_os = "linux",
-        target_os = "android",
-        target_os = "macos",
-        target_os = "ios"
-    )))]
+    #[cfg(not(any(target_os = "linux", target_os = "android", target_vendor = "apple")))]
     mod platform {
         use super::*;
 
@@ -691,9 +683,9 @@ mod socket_tests {
     const KEEPALIVE_IDLE: c_int = 4;
     #[cfg(any(target_os = "linux", target_os = "android"))]
     const KEEPALIVE_INTERVAL: c_int = 5;
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    #[cfg(target_vendor = "apple")]
     const KEEPALIVE_IDLE: c_int = 0x10;
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    #[cfg(target_vendor = "apple")]
     const KEEPALIVE_INTERVAL: c_int = 0x101;
 
     fn keepalive(socket: &socket2::Socket) -> (bool, c_int, c_int) {
@@ -868,7 +860,7 @@ mod socket_tests {
         }
     }
 
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    #[cfg(target_vendor = "apple")]
     #[test]
     fn apple_binds_to_an_interface_by_index() {
         let index = {
@@ -893,7 +885,7 @@ mod socket_tests {
     /// Apple kernels take `TCP_FASTOPEN` only on a listening socket, so a
     /// configured `tcpFastOpen` stops every option after it on a TCP socket,
     /// as in Xray-core, while a UDP socket never reads it.
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    #[cfg(target_vendor = "apple")]
     #[test]
     fn apple_tcp_fast_open_stops_the_tcp_options_after_it() {
         for tcp_fast_open in [256, -1, 3] {

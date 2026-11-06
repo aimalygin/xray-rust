@@ -52,7 +52,7 @@ fn get(fd: RawFd, level: libc::c_int, name: libc::c_int) -> libc::c_int {
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 const KEEPALIVE_IDLE: libc::c_int = 4;
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg(target_vendor = "apple")]
 const KEEPALIVE_IDLE: libc::c_int = 0x10;
 
 fn keepalive_idle(fd: RawFd) -> Option<libc::c_int> {
