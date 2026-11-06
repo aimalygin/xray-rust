@@ -1,7 +1,7 @@
 //! Lazy shared WireGuard device with separate bootstrap and destination DNS.
 mod dns;
 use super::*;
-use xray_config::{WireguardDomainStrategy, WireguardOutboundSettings};
+use xray_config::{AddressFamilies, WireguardOutboundSettings};
 use xray_wireguard::{Client, Config, Error, PeerConfig};
 
 #[derive(Clone, Debug)]
@@ -9,6 +9,14 @@ pub struct WireguardOutbound(Arc<Owner>);
 #[derive(Debug)]
 struct Owner {
     settings: WireguardOutboundSettings,
+    /// `sockopt`, for the UDP socket.
+    socket_options: Option<Arc<xray_transport::SocketOptions>>,
+    /// `sockopt.domainStrategy`, which picks a domain endpoint's address.
+    endpoint_strategy: DomainStrategy,
+    /// The dialer given and the one made from it with `socket_options`,
+    /// kept so its protector, which a cached session is matched by, stays
+    /// the same.
+    socket_dialer: Mutex<Option<(TransportDialer, TransportDialer)>>,
     session: Mutex<Option<Cached>>,
     connecting: tokio::sync::Mutex<()>,
     shutdown: tokio::sync::watch::Sender<bool>,
@@ -40,7 +48,6 @@ impl WireguardOutbound {
             || outbound.stream.transport != StreamTransport::Raw
             || outbound.stream.security != StreamSecurity::None
             || outbound.stream.quic_params.is_some()
-            || outbound.stream.socket_options.is_some()
             || outbound.proxy_settings.is_some()
             || settings.remote_dns.is_empty()
             || settings.remote_dns.len() > 8
@@ -56,11 +63,45 @@ impl WireguardOutbound {
             .map_err(|_| CoreError::UnsupportedOutboundNetwork)?;
         Ok(Self(Arc::new(Owner {
             settings: settings.clone(),
+            socket_options: socket_options::compile(&outbound.stream),
+            endpoint_strategy: outbound
+                .stream
+                .socket_options
+                .as_ref()
+                .map(|options| options.domain_strategy)
+                .unwrap_or_default(),
+            socket_dialer: Mutex::new(None),
             session: Mutex::new(None),
             connecting: tokio::sync::Mutex::new(()),
             shutdown: tokio::sync::watch::channel(false).0,
             network_generation: std::sync::atomic::AtomicU64::new(0),
         })))
+    }
+    /// `dialer` with this outbound's socket options: the same dialer each
+    /// time `dialer` is the same, so a cached session still matches it.
+    pub(super) fn socket_dialer<'a>(
+        &self,
+        dialer: &'a TransportDialer,
+    ) -> std::borrow::Cow<'a, TransportDialer> {
+        let Some(options) = &self.0.socket_options else {
+            return std::borrow::Cow::Borrowed(dialer);
+        };
+        let mut cached = self
+            .0
+            .socket_dialer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some((given, derived)) = cached.as_ref() {
+            if given
+                .tls_connector()
+                .shares_session_context(dialer.tls_connector())
+            {
+                return std::borrow::Cow::Owned(derived.clone());
+            }
+        }
+        let derived = dialer.clone().with_socket_options(Arc::clone(options));
+        *cached = Some((dialer.clone(), derived.clone()));
+        std::borrow::Cow::Owned(derived)
     }
     pub(super) fn close(&self) {
         self.0.shutdown.send_replace(true);
@@ -97,6 +138,7 @@ impl WireguardOutbound {
         if *self.0.shutdown.borrow() {
             return Err(Error::Closed.into());
         }
+        let dialer = self.socket_dialer(dialer);
         let protector = dialer.socket_protector_arc();
         {
             let mut slot = self.0.session.lock().unwrap_or_else(|e| e.into_inner());
@@ -120,11 +162,12 @@ impl WireguardOutbound {
                 settings.port,
                 RoutingNetwork::Udp,
             );
-            peer.endpoint = resolve_server_candidates(&target, bootstrap)
-                .await?
-                .into_iter()
-                .next()
-                .ok_or(Error::NoRoute)?;
+            let candidates = resolve_server_candidates(&target, bootstrap).await?;
+            peer.endpoint = match &settings.endpoint {
+                TargetAddr::Ip(_) => candidates.into_iter().next(),
+                TargetAddr::Domain(_) => endpoint_address(&candidates, self.0.endpoint_strategy),
+            }
+            .ok_or(Error::NoRoute)?;
         }
         let generation = self.0.network_generation.load(Ordering::Acquire);
         let client = Client::start(config, protector.clone()).await?;
@@ -169,12 +212,15 @@ impl WireguardOutbound {
     ) -> Result<Vec<SocketAddr>, CoreError> {
         use xray_transport::DnsQueryStrategy;
         let config = &self.0.settings;
-        let strategy = match config.domain_strategy {
-            WireguardDomainStrategy::ForceIpv4 => DnsQueryStrategy::UseIpv4,
-            WireguardDomainStrategy::ForceIpv6 => DnsQueryStrategy::UseIpv6,
-            _ if config.addresses.iter().all(IpAddr::is_ipv4) => DnsQueryStrategy::UseIpv4,
-            _ if config.addresses.iter().all(IpAddr::is_ipv6) => DnsQueryStrategy::UseIpv6,
-            _ => DnsQueryStrategy::UseIp,
+        // The families the device has a local address of, as the tunnel's
+        // own lookup in Xray-core asks for.
+        let has_ipv6 = config.addresses.iter().any(IpAddr::is_ipv6);
+        let strategy = if !has_ipv6 {
+            DnsQueryStrategy::UseIpv4
+        } else if config.addresses.iter().all(IpAddr::is_ipv6) {
+            DnsQueryStrategy::UseIpv6
+        } else {
+            DnsQueryStrategy::UseIp
         };
         let mut candidates = match &target.addr {
             RoutingTargetAddr::Ip(ip) => vec![SocketAddr::new(*ip, target.port)],
@@ -184,18 +230,16 @@ impl WireguardOutbound {
                     .resolve_all_with_strategy(domain, target.port, strategy)
                     .await?
                     .socket_addrs()
-                    .iter()
-                    .take(8)
-                    .copied()
-                    .collect(),
+                    .to_vec(),
             },
         };
         candidates.retain(|addr| routable(config, addr.ip()));
-        match config.domain_strategy {
-            WireguardDomainStrategy::ForceIpv4v6 => candidates.sort_by_key(SocketAddr::is_ipv6),
-            WireguardDomainStrategy::ForceIpv6v4 => candidates.sort_by_key(SocketAddr::is_ipv4),
-            _ => {}
+        // That lookup also puts IPv6 answers first when there is an IPv6
+        // local address.
+        if has_ipv6 {
+            candidates.sort_by_key(SocketAddr::is_ipv4);
         }
+        candidates.truncate(8);
         if candidates.is_empty() {
             return Err(Error::NoRoute.into());
         }
@@ -280,6 +324,20 @@ fn engine_config(settings: &WireguardOutboundSettings) -> Config {
         mtu: settings.mtu,
     }
 }
+/// The address a domain endpoint dials, as Xray-core's `MakeResolveLocal`
+/// picks it: one of the families `strategy` prefers, else of its fallback
+/// family. Xray-core picks one of them at random; the first is taken here.
+fn endpoint_address(candidates: &[SocketAddr], strategy: DomainStrategy) -> Option<SocketAddr> {
+    let of = |families: AddressFamilies| {
+        candidates.iter().copied().find(|candidate| match families {
+            AddressFamilies::Both => true,
+            AddressFamilies::Ipv4 => candidate.is_ipv4(),
+            AddressFamilies::Ipv6 => candidate.is_ipv6(),
+        })
+    };
+    of(strategy.preferred()).or_else(|| strategy.fallback().and_then(of))
+}
+
 fn same_protector(
     a: &Option<Arc<dyn xray_transport::SocketProtector>>,
     b: &Option<Arc<dyn xray_transport::SocketProtector>>,

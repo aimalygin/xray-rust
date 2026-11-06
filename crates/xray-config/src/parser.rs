@@ -1117,14 +1117,16 @@ impl Parser<'_> {
                     "targetStrategy is supported only on freedom outbounds",
                 );
             }
-            if stream
-                .socket_options
-                .as_ref()
-                .is_some_and(|options| options.domain_strategy.has_strategy())
+            // WireGuard reads it for its peer endpoints.
+            if protocol != OutboundProtocol::Wireguard
+                && stream
+                    .socket_options
+                    .as_ref()
+                    .is_some_and(|options| options.domain_strategy.has_strategy())
             {
                 self.error(
                     format!("$.outbounds[{index}].streamSettings.sockopt.domainStrategy"),
-                    "sockopt.domainStrategy is supported only on freedom outbounds",
+                    "sockopt.domainStrategy is supported only on freedom and WireGuard outbounds",
                 );
             }
         }

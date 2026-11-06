@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use xray_config::{parse_xray_json, DiagnosticSeverity, OutboundSettings, WireguardDomainStrategy};
+use xray_config::{parse_xray_json, DiagnosticSeverity, DomainStrategy, OutboundSettings};
 fn example() -> Value {
     serde_json::from_str(include_str!(
         "../../../tests/fixtures/configs/wireguard.json"
@@ -16,7 +16,6 @@ fn wireguard_canonical_keys_addresses_and_defaults_are_bounded_and_redacted() {
     };
     assert_eq!(settings.addresses.len(), 2);
     assert_eq!(settings.mtu, 1420);
-    assert_eq!(settings.domain_strategy, WireguardDomainStrategy::ForceIp);
     assert!(!format!("{parsed:?}").contains(&"42".repeat(32)));
     for key in ["address", "mtu"] {
         value["outbounds"][0]["settings"]
@@ -43,7 +42,6 @@ fn wireguard_rejects_invalid_keys_limits_types_and_unsupported_options() {
         ("mtu", json!(1421)),
         ("mtu", json!("1420")),
         ("reserved", json!([1, 2, 3])),
-        ("domainStrategy", json!("AsIs")),
         ("noKernelTun", Value::Null),
         ("remoteDNS", json!("192.0.2.1")),
     ] {
@@ -69,9 +67,10 @@ fn wireguard_rejects_invalid_keys_limits_types_and_unsupported_options() {
         let error = parse_xray_json(&value.to_string()).unwrap_err();
         assert!(!format!("{error:?}").contains("sensitive-psk"));
     }
+    // An empty streamSettings asks for nothing, as in Xray-core.
     let mut value = example();
     value["outbounds"][0]["streamSettings"] = json!({});
-    assert!(parse_xray_json(&value.to_string()).is_err());
+    assert!(parse_xray_json(&value.to_string()).is_ok());
     let mut value = example();
     let second = value["outbounds"][0]["settings"]["peers"][0].clone();
     value["outbounds"][0]["settings"]["peers"]
@@ -249,4 +248,79 @@ fn wireguard_warns_when_no_remote_dns_server_is_routable_through_the_tunnel() {
     assert!(found.is_empty(), "{found:?}");
     let found = diagnostics(both, json!(["0.0.0.0/0", "::/0"]), None);
     assert!(found.is_empty(), "{found:?}");
+}
+
+/// Xray-core v26.10.31 has no WireGuard `domainStrategy`: any value is
+/// accepted and not read, with a warning here.
+#[test]
+fn wireguard_domain_strategy_is_not_read() {
+    for value in [
+        json!("ForceIPv4"),
+        json!("AsIs"),
+        json!("anything"),
+        json!(5),
+    ] {
+        let mut config = example();
+        config["outbounds"][0]["settings"]["domainStrategy"] = value.clone();
+        let parsed = parse_xray_json(&config.to_string())
+            .unwrap_or_else(|error| panic!("{value}: {error:?}"));
+        assert!(parsed.diagnostics.iter().any(|diagnostic| {
+            diagnostic.severity == DiagnosticSeverity::Warning
+                && diagnostic.path.as_deref() == Some("$.outbounds[0].settings.domainStrategy")
+        }));
+    }
+}
+
+/// `streamSettings` holds only `sockopt`, whose options and domain strategy
+/// WireGuard reads; chaining stays unsupported.
+#[test]
+fn wireguard_takes_socket_options_and_nothing_else_from_streams() {
+    let mut config = example();
+    config["outbounds"][0]["streamSettings"] = json!({"sockopt": {
+        "mark": 7, "interface": "eth0", "domainStrategy": "UseIPv6v4", "tcpKeepAliveIdle": 30
+    }});
+    let parsed = parse_xray_json(&config.to_string()).unwrap();
+    let options = parsed.config.outbounds[0]
+        .stream
+        .socket_options
+        .clone()
+        .unwrap();
+    assert_eq!(options.mark, 7);
+    assert_eq!(options.interface, "eth0");
+    assert_eq!(options.domain_strategy, DomainStrategy::UseIpv6v4);
+    // An empty dialerProxy chains nothing.
+    config["outbounds"][0]["streamSettings"] = json!({"sockopt": {"dialerProxy": ""}});
+    assert!(parse_xray_json(&config.to_string()).is_ok());
+
+    for (stream, path) in [
+        (
+            json!({"network": "ws"}),
+            "$.outbounds[0].streamSettings.network",
+        ),
+        (
+            json!({"security": "tls"}),
+            "$.outbounds[0].streamSettings.security",
+        ),
+        (
+            json!({"finalmask": {"udp": [{"type": "noise"}]}}),
+            "$.outbounds[0].streamSettings.finalmask",
+        ),
+        (
+            json!({"sockopt": {"dialerProxy": "socks-in"}}),
+            "$.outbounds[0]",
+        ),
+        (json!("raw"), "$.outbounds[0].streamSettings"),
+    ] {
+        let mut config = example();
+        config["outbounds"][0]["streamSettings"] = stream.clone();
+        let error = parse_xray_json(&config.to_string()).unwrap_err();
+        assert!(
+            error
+                .diagnostics
+                .iter()
+                .any(|d| d.path.as_deref() == Some(path)),
+            "{stream}: {:?}",
+            error.diagnostics
+        );
+    }
 }

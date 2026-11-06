@@ -283,7 +283,7 @@ fn wireguard_remote_dns_defaults_literals_and_legacy_diagnostic() {
             .unwrap()
             .diagnostics
             .iter()
-            .any(|d| d.message.contains("legacy WireGuard")));
+            .any(|d| d.message.contains("WireGuard domainStrategy is not read")));
     }
     for bad in [
         json!(["dns.example"]),

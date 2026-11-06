@@ -1189,7 +1189,6 @@ pub struct WireguardOutboundSettings {
     pub peers: Vec<WireguardPeerSettings>,
     pub addresses: Vec<std::net::IpAddr>,
     pub mtu: u16,
-    pub domain_strategy: WireguardDomainStrategy,
     /// Literal DNS servers contacted through the WireGuard tunnel.
     pub remote_dns: Vec<std::net::IpAddr>,
 }
@@ -1202,15 +1201,6 @@ pub struct WireguardPeerSettings {
     pub port: u16,
     pub allowed_ips: Vec<xray_proxy::wireguard::AllowedIp>,
     pub keepalive: u16,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WireguardDomainStrategy {
-    ForceIp,
-    ForceIpv4,
-    ForceIpv6,
-    ForceIpv4v6,
-    ForceIpv6v4,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

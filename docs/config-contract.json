@@ -1280,7 +1280,7 @@
         "remoteDNS"
       ],
       "id": "WIREGUARD",
-      "notes": "1..8 distinct peers, at most 256 total allowed-IP prefixes, up to one local address per family, MTU 1280..1420; userspace TCP and MTU-sized UDP. Optional 32-byte PSK. remoteDNS accepts up to 8 IP literals, default Cloudflare IPv4/IPv6; destination DNS runs through the tunnel with bounded TTL caching. domainStrategy is legacy address-family selection. Nonzero reserved bytes, custom streams and chaining are unsupported."
+      "notes": "1..8 distinct peers, at most 256 total allowed-IP prefixes, up to one local address per family, MTU 1280..1420; userspace TCP and MTU-sized UDP. Optional 32-byte PSK. remoteDNS accepts up to 8 IP literals, default Cloudflare IPv4/IPv6; destination DNS runs through the tunnel with bounded TTL caching, for the families of the local addresses, IPv6 first when there is an IPv6 one. domainStrategy is not read, of any value, as Xray-core v26.10.31 has none. streamSettings may hold only sockopt: its options go on the UDP sockets, and its domainStrategy selects the address of a domain peer endpoint as Xray-core's does. Nonzero reserved bytes, UDP masks and chaining are unsupported."
     },
     {
       "context": "$.outbounds[].settings.peers[] (wireguard)",

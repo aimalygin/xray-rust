@@ -3174,6 +3174,73 @@
       "accepted": false
     },
     {
+      "name": "wireguard-sockopt",
+      "base": "wireguard",
+      "set": {
+        "/outbounds/0/streamSettings": {
+          "sockopt": {
+            "mark": 255,
+            "interface": "wg-out",
+            "domainStrategy": "ForceIPv6v4"
+          }
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "wireguard-stream-network",
+      "base": "wireguard",
+      "set": {
+        "/outbounds/0/streamSettings": {
+          "network": "raw",
+          "sockopt": {
+            "mark": 255
+          }
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.network"
+    },
+    {
+      "name": "wireguard-finalmask",
+      "base": "wireguard",
+      "set": {
+        "/outbounds/0/streamSettings": {
+          "finalmask": {
+            "udp": [
+              {
+                "type": "noise"
+              }
+            ]
+          }
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask"
+    },
+    {
+      "name": "wireguard-dialer-proxy",
+      "base": "wireguard",
+      "set": {
+        "/outbounds/0/streamSettings": {
+          "sockopt": {
+            "dialerProxy": "proxy"
+          }
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0]"
+    },
+    {
+      "name": "wireguard-domain-strategy-not-read",
+      "base": "wireguard",
+      "set": {
+        "/outbounds/0/settings/domainStrategy": "NotAStrategy"
+      },
+      "accepted": true,
+      "warningPath": "$.outbounds[0].settings.domainStrategy"
+    },
+    {
       "name": "quic-unsupported-disableChromeParrot",
       "base": "udp-hop-mask-261021",
       "set": {

@@ -10186,6 +10186,15 @@ mod socket_option_tests {
                                                    "hysteriaSettings": {"version": 2, "auth": "a"},
                                                    "sockopt": sockopt}}),
             ),
+            (
+                "wireguard",
+                json!({"protocol": "wireguard", "settings": {
+                    "secretKey": "4242424242424242424242424242424242424242424242424242424242424242",
+                    "address": ["10.44.0.2/32"],
+                    "peers": [{"publicKey": "5353535353535353535353535353535353535353535353535353535353535353",
+                               "endpoint": format!("127.0.0.1:{port}"), "allowedIPs": ["0.0.0.0/0"]}]},
+                    "streamSettings": {"sockopt": sockopt}}),
+            ),
         ];
         let target = Target::new(
             RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -10210,10 +10219,11 @@ mod socket_option_tests {
             let Err(error) = result else {
                 panic!("{name}: dialed without its interface");
             };
-            // Hysteria names the failure without its cause.
+            // Hysteria and WireGuard name the failure without its cause.
             assert!(
                 missing_interface_error(&error)
-                    || name == "hysteria" && error.to_string().contains("socket protection failed"),
+                    || matches!(name, "hysteria" | "wireguard")
+                        && error.to_string().contains("socket protection failed"),
                 "{name}: {error}"
             );
         }

@@ -27,6 +27,15 @@ long-term supported release series.
     accepts only `none`, and a `dialerProxy` inside `downloadSettings` is
     refused.
 
+- WireGuard outbounds read `streamSettings.sockopt`, as Xray-core's do.
+  Profiles with it used to fail to parse.
+  - Its options go on the device's UDP sockets, and its `domainStrategy`
+    picks which address of a domain peer endpoint is dialed.
+  - `settings.domainStrategy` is no longer read, of any value, since
+    Xray-core v26.10.31 has none. Destination lookups ask for the families
+    of the local addresses, with IPv6 answers first when there is an IPv6
+    one, as there; the setting used to narrow or order them.
+  - Other stream settings and a `dialerProxy` are still refused.
 - The `udphop` UDP mask reads every Xray-core mode: `intervalLocal`,
   `intervalRemote` and `perConnRemote`, alone or together, and `remoteIPs`
   of IPs and prefixes. Only `intervalLocal,intervalRemote` with ports used to
