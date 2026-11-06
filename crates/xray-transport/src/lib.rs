@@ -39,6 +39,7 @@ pub mod reality_runtime;
 mod reality_rustls;
 mod reality_spider;
 mod route_probe;
+mod socket_options;
 pub mod stream;
 mod tls;
 mod utls_profiles;
@@ -65,6 +66,10 @@ pub use reality_runtime::{
 pub use reality_rustls::extract_server_hello_for_fuzzing;
 pub use reality_rustls::RustlsRealityTlsSessionProvider;
 pub use route_probe::{RouteFamilies, RouteProbe, SystemRouteProbe};
+pub use socket_options::{
+    CustomSocketOption, SocketOptions, SocketOptionsProtector, SocketOptionsReport,
+    DEFAULT_TCP_KEEPALIVE_SECS,
+};
 pub use tls::{plain_tls_client_hello_bytes, TlsConnector};
 pub use utls_profiles::draw_modern_fingerprint;
 
@@ -383,6 +388,12 @@ impl SocketHandle {
 
 pub trait SocketProtector: Send + Sync {
     fn protect(&self, socket: SocketHandle) -> io::Result<()>;
+
+    /// Whether TCP sockets ask for Multipath TCP, as Go's
+    /// `Dialer.SetMultipathTCP(true)` does for `sockopt.tcpMptcp`.
+    fn multipath_tcp(&self) -> bool {
+        false
+    }
 }
 
 #[async_trait]
@@ -534,6 +545,13 @@ pub async fn connect_tcp_stream(
     socket_protector: Option<&dyn SocketProtector>,
 ) -> Result<TcpStream, TransportError> {
     let addr = canonicalize_socket_addr(addr);
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    if let Some(protector) = socket_protector.filter(|protector| protector.multipath_tcp()) {
+        // Go's `dialMPTCP` dials plain TCP after any Multipath TCP failure.
+        if let Ok(stream) = connect_multipath_tcp_stream(addr, protector).await {
+            return Ok(stream);
+        }
+    }
     let stream = match socket_protector {
         None => TcpStream::connect(addr)
             .await
@@ -557,6 +575,26 @@ pub async fn connect_tcp_stream(
     // The relay carries many latency-sensitive small frames (VLESS headers,
     // Vision blocks, TLS records); Nagle would delay them behind ACKs.
     stream.set_nodelay(true).map_err(TransportError::Tcp)?;
+    Ok(stream)
+}
+
+/// Opens a protected Multipath TCP socket to `addr`.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+async fn connect_multipath_tcp_stream(
+    addr: SocketAddr,
+    socket_protector: &dyn SocketProtector,
+) -> io::Result<TcpStream> {
+    const IPPROTO_MPTCP: i32 = 262;
+    let socket = socket2::Socket::new(
+        socket2::Domain::for_address(addr),
+        socket2::Type::STREAM,
+        Some(socket2::Protocol::from(IPPROTO_MPTCP)),
+    )?;
+    socket.set_nonblocking(true)?;
+    let socket = TcpSocket::from_std_stream(std::net::TcpStream::from(socket));
+    socket_protector.protect(SocketHandle::from_tcp_socket(&socket))?;
+    let stream = socket.connect(addr).await?;
+    stream.set_nodelay(true)?;
     Ok(stream)
 }
 

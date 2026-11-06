@@ -203,11 +203,5 @@ impl Parser<'_> {
                 "Hysteria outbound chaining is unsupported",
             );
         }
-        if stream.socket_options.is_some() {
-            self.error(
-                format!("$.outbounds[{index}].streamSettings.sockopt"),
-                "Hysteria socket option overrides are unsupported",
-            );
-        }
     }
 }

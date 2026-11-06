@@ -3947,9 +3947,17 @@ async fn exchange_udp_candidate(
     failure_phase: &mut DnsUdpFailurePhase,
 ) -> Result<DnsUpstreamResponse, crate::CoreError> {
     let response = match outbound {
-        UdpOutbound::Freedom(_) => {
+        UdpOutbound::Freedom(ref freedom) => {
             let upstream = resolve_freedom_dns_upstream(upstream, context).await?;
-            exchange_udp_freedom(upstream, query, max_payload, context, failure_phase).await?
+            exchange_udp_freedom(
+                upstream,
+                query,
+                max_payload,
+                context,
+                freedom,
+                failure_phase,
+            )
+            .await?
         }
         UdpOutbound::Vless(ref outbound)
             if !outbound.udp_uses_mux(target)
@@ -4123,6 +4131,7 @@ async fn exchange_udp_freedom(
     query: &[u8],
     max_payload: usize,
     context: &TunRuntimeContext,
+    freedom: &FreedomOutbound,
     failure_phase: &mut DnsUdpFailurePhase,
 ) -> Result<DnsUpstreamResponse, crate::CoreError> {
     let bind_addr = if upstream.is_ipv4() {
@@ -4131,7 +4140,9 @@ async fn exchange_udp_freedom(
         SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0)
     };
     let socket = UdpSocket::bind(bind_addr).await?;
-    protect_udp_socket(&socket, context.transport_dialer.socket_protector())?;
+    // The socket takes freedom's socket options, as Xray-core's does.
+    let dialer = freedom.dialer(&context.transport_dialer);
+    protect_udp_socket(&socket, dialer.socket_protector())?;
     socket.connect(upstream).await?;
     context.tun.record_udp_remote_open(false);
     *failure_phase = DnsUdpFailurePhase::Write;

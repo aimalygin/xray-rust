@@ -861,10 +861,37 @@ impl Parser<'_> {
                 diagnostic.path = Some(format!("{path}{suffix}"));
             }
         }
+        let stream = parsed?;
+        // The download leg dials with its own sockopt, as Xray-core's does,
+        // and chaining and domain strategies are read only on an outbound.
+        let sockopt_path = format!("{path}.sockopt");
+        if object
+            .get("sockopt")
+            .and_then(|sockopt| sockopt.get("dialerProxy"))
+            .and_then(Value::as_str)
+            .is_some_and(|tag| !tag.is_empty())
+        {
+            self.error(
+                format!("{sockopt_path}.dialerProxy"),
+                "downloadSettings dialerProxy is unsupported; set penetrate on the outbound's sockopt to dial the download leg through its chain",
+            );
+            return None;
+        }
+        if stream
+            .socket_options
+            .as_ref()
+            .is_some_and(|options| options.domain_strategy.has_strategy())
+        {
+            self.error(
+                format!("{sockopt_path}.domainStrategy"),
+                "sockopt.domainStrategy is supported only on freedom outbounds",
+            );
+            return None;
+        }
         Some(crate::XhttpDownloadSettings {
             address,
             port,
-            stream: parsed?,
+            stream,
         })
     }
 }

@@ -102,6 +102,19 @@ pub async fn connect_tcp_happy_eyeballs(
     .await
 }
 
+/// [`connect_tcp_happy_eyeballs`], returning the address that connected.
+pub(crate) async fn connect_tcp_happy_eyeballs_with_peer(
+    candidates: &[SocketAddr],
+    socket_protector: Option<&dyn SocketProtector>,
+    config: &HappyEyeballsConfig,
+) -> Result<(TcpStream, SocketAddr), TransportError> {
+    race_candidates(candidates, config, |candidate| async move {
+        let peer = canonicalize_socket_addr(candidate);
+        Ok((connect_tcp_stream(peer, socket_protector).await?, peer))
+    })
+    .await
+}
+
 fn interleave_families(
     preferred: &[SocketAddr],
     alternate: &[SocketAddr],
@@ -222,6 +235,18 @@ pub async fn connect_tcp_dual_stack(
 ) -> Result<TcpStream, TransportError> {
     dial_dual_stack(candidates, |candidate| {
         connect_tcp_stream(candidate, socket_protector)
+    })
+    .await
+}
+
+/// [`connect_tcp_dual_stack`], returning the address that connected.
+pub(crate) async fn connect_tcp_dual_stack_with_peer(
+    candidates: &[SocketAddr],
+    socket_protector: Option<&dyn SocketProtector>,
+) -> Result<(TcpStream, SocketAddr), TransportError> {
+    dial_dual_stack(candidates, |candidate| async move {
+        let peer = canonicalize_socket_addr(candidate);
+        Ok((connect_tcp_stream(peer, socket_protector).await?, peer))
     })
     .await
 }

@@ -34,8 +34,8 @@ use xray_routing::{DomainMatcherSet, DomainMatcherSetBuilder, IpMatcherSet, IpMa
 use crate::model::build_domain_matcher_set;
 use crate::{
     geodata::{default_geodata_dirs, GeodataLoader},
-    CoreConfig, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostTarget, DnsIpFilter,
-    DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
+    CoreConfig, CustomSocketOption, Diagnostic, DnsConfig, DnsFakeIpConfig, DnsHostTarget,
+    DnsIpFilter, DnsNameServerConfig, DnsOutboundRule, DnsOutboundRuleAction, DnsOutboundSettings,
     DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
     DomainHostIndex, DomainMatcher, DomainNameMode, DomainStrategy, FreedomOutboundSettings,
     FreedomRedirect, GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings, InboundConfig,
@@ -43,11 +43,11 @@ use crate::{
     OutboundProtocol, OutboundProxySettings, OutboundSettings, PolicyConfig, PolicyLevelConfig,
     PolicySystemConfig, QuicBbrProfile, QuicCongestion, QuicIntervalRange, QuicParamsSettings,
     QuicUdpHopSettings, RealitySettings, RealityShortId, SniffingDestination, SocketOptions,
-    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings, WebSocketSettings,
-    XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
-    XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings, DEFAULT_OBSERVATORY_PROBE_INTERVAL,
-    DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVE_EXPIRED_TTL_SECONDS,
-    OBSERVATORY_PROBE_TIMEOUT,
+    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings, TproxyMode,
+    WebSocketSettings, XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement,
+    XhttpRange, XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
+    DEFAULT_OBSERVATORY_PROBE_INTERVAL, DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS,
+    MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;

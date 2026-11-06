@@ -144,6 +144,36 @@ fn legacy_dialer_proxy_normalizes_only_dedicated_fragment_handlers() {
     assert!(parse_xray_json(&invalid.to_string()).is_err());
 }
 
+/// Xray-core opens the socket in the freedom handler, whose `sockopt` is
+/// empty, so the caller's socket options never reach it; what the caller's
+/// dial reads is kept.
+#[test]
+fn an_inlined_fragment_handler_drops_the_callers_socket_options() {
+    let mut config = legacy_profile();
+    config["outbounds"][0]["streamSettings"]["sockopt"] = json!({
+        "dialerProxy": "fragment", "mark": 5, "interface": "eth0", "tcpKeepAliveIdle": 30,
+        "customSockopt": [{"opt": "1", "type": "int"}],
+        "happyEyeballs": {"tryDelayMs": 250}
+    });
+    let parsed = parse_xray_json(&config.to_string()).unwrap();
+    let options = parsed.config.outbounds[0]
+        .stream
+        .socket_options
+        .clone()
+        .unwrap();
+    assert_eq!(
+        options,
+        xray_config::SocketOptions {
+            happy_eyeballs: options.happy_eyeballs,
+            ..xray_config::SocketOptions::default()
+        }
+    );
+    assert_eq!(
+        options.happy_eyeballs.map(|settings| settings.try_delay_ms),
+        Some(250)
+    );
+}
+
 #[test]
 fn unsupported_masks_and_unbounded_values_fail_closed() {
     for (key, value) in [

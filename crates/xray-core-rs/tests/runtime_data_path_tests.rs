@@ -94,6 +94,8 @@ mod routing_attributes;
 mod routing_origin;
 #[path = "runtime_data_path_tests/routing_protocol.rs"]
 mod routing_protocol;
+#[path = "runtime_data_path_tests/socket_options.rs"]
+mod socket_options;
 #[path = "runtime_data_path_tests/socks_inbound_udp.rs"]
 mod socks_inbound_udp;
 #[path = "runtime_data_path_tests/socks_inbound_wire.rs"]

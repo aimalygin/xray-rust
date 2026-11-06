@@ -10,6 +10,23 @@ long-term supported release series.
 
 ## Unreleased
 
+- Every `streamSettings.sockopt` field of Xray-core v26.10.31 is read and set
+  on each socket an outbound opens, in Xray-core's order on Linux and
+  Android and on Apple platforms. Profiles with fields other than
+  `happyEyeballs`, `dialerProxy` and `domainStrategy` used to fail to parse.
+  - Every outbound TCP socket now keeps alive after 45 seconds idle and every
+    45 seconds, as Xray-core's do, unless `tcpKeepAliveIdle` or
+    `tcpKeepAliveInterval` says otherwise.
+  - The first option that fails stops the rest and is logged, while an
+    `interface` that cannot be bound fails the dial. On Apple platforms a
+    configured `tcpFastOpen` always fails, as there.
+  - `penetrate` gives an XHTTP `downloadSettings` leg the outbound's own
+    socket options and chain. Without it the download leg dials with its own
+    socket options and no longer goes through the outbound's `dialerProxy`.
+  - Hysteria takes socket options for its QUIC socket. `addressPortStrategy`
+    accepts only `none`, and a `dialerProxy` inside `downloadSettings` is
+    refused.
+
 - The `udphop` UDP mask reads every Xray-core mode: `intervalLocal`,
   `intervalRemote` and `perConnRemote`, alone or together, and `remoteIPs`
   of IPs and prefixes. Only `intervalLocal,intervalRemote` with ports used to

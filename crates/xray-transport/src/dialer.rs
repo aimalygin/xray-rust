@@ -2,13 +2,17 @@ use std::{fmt, io, net::SocketAddr, sync::Arc};
 
 use tokio::io::AsyncWriteExt;
 
+use crate::happy_eyeballs::{
+    connect_tcp_dual_stack_with_peer, connect_tcp_happy_eyeballs_with_peer,
+};
 use crate::stream::{connect_httpupgrade, connect_websocket, TransportLayer};
 use crate::utls_tls::TlsAlpnPolicy;
 use crate::{
-    connect_tcp_dual_stack, connect_tcp_happy_eyeballs, connect_tcp_stream, connect_tcp_target,
-    BoxedTransportStream, ConnectorConfig, HappyEyeballsConfig, RealityRuntimeEngine,
-    RealityTlsEngine, ResolvedTcpConnector, RouteProbe, RustlsRealityTlsSessionProvider,
-    SocketProtector, SystemRouteProbe, TlsConnector, TransportError,
+    canonicalize_socket_addr, connect_tcp_stream, connect_tcp_target, BoxedTransportStream,
+    ConnectorConfig, HappyEyeballsConfig, RealityRuntimeEngine, RealityTlsEngine,
+    ResolvedTcpConnector, RouteProbe, RustlsRealityTlsSessionProvider, SocketOptions,
+    SocketOptionsProtector, SocketOptionsReport, SocketProtector, SystemRouteProbe, TlsConnector,
+    TransportError,
 };
 use xray_routing::{Target, TargetAddr};
 
@@ -16,7 +20,13 @@ use xray_routing::{Target, TargetAddr};
 pub struct TransportDialer {
     tls: TlsConnector,
     reality: Option<Arc<dyn RealityTlsEngine>>,
+    /// The protector every socket this dialer opens goes through: the
+    /// platform's, wrapped with `socket_options` when there are some.
     socket_protector: Option<Arc<dyn SocketProtector>>,
+    /// The platform's own protector, which socket options wrap.
+    platform_protector: Option<Arc<dyn SocketProtector>>,
+    socket_options: Option<Arc<SocketOptions>>,
+    socket_options_report: Option<SocketOptionsReport>,
     resolved_tcp_connector: Option<Arc<dyn ResolvedTcpConnector>>,
     tcp_fragment: Option<Arc<crate::TcpFragmentConfig>>,
     route_probe: Option<Arc<dyn RouteProbe>>,
@@ -36,6 +46,7 @@ impl fmt::Debug for TransportDialer {
             .field("tls", &self.tls)
             .field("reality_engine", &self.reality.is_some())
             .field("socket_protector", &self.socket_protector.is_some())
+            .field("socket_options", &self.socket_options)
             .field(
                 "resolved_tcp_connector",
                 &self.resolved_tcp_connector.is_some(),
@@ -66,7 +77,10 @@ impl TransportDialer {
         Ok(Self {
             tls,
             reality: Some(Arc::new(reality)),
-            socket_protector,
+            socket_protector: socket_protector.clone(),
+            platform_protector: socket_protector,
+            socket_options: None,
+            socket_options_report: None,
             resolved_tcp_connector: None,
             tcp_fragment: None,
             route_probe: None,
@@ -78,7 +92,10 @@ impl TransportDialer {
         Self {
             tls,
             reality: None,
-            socket_protector,
+            socket_protector: socket_protector.clone(),
+            platform_protector: socket_protector,
+            socket_options: None,
+            socket_options_report: None,
             resolved_tcp_connector: None,
             tcp_fragment: None,
             route_probe: None,
@@ -91,8 +108,41 @@ impl TransportDialer {
     }
 
     pub fn with_socket_protector(mut self, protector: Arc<dyn SocketProtector>) -> Self {
-        self.tls = self.tls.with_socket_protector(Arc::clone(&protector));
-        self.socket_protector = Some(protector);
+        self.platform_protector = Some(protector);
+        self.rewrap_socket_protector()
+    }
+
+    /// Applies `options` to every socket this dialer opens, after the
+    /// platform's protection and in place of any options set before.
+    pub fn with_socket_options(mut self, options: Arc<SocketOptions>) -> Self {
+        self.socket_options = Some(options);
+        self.rewrap_socket_protector()
+    }
+
+    /// Receives each socket option that failed without failing its dial.
+    pub fn with_socket_options_report(mut self, report: SocketOptionsReport) -> Self {
+        self.socket_options_report = Some(report);
+        self.rewrap_socket_protector()
+    }
+
+    /// The options set with [`Self::with_socket_options`].
+    pub fn socket_options(&self) -> Option<&Arc<SocketOptions>> {
+        self.socket_options.as_ref()
+    }
+
+    fn rewrap_socket_protector(mut self) -> Self {
+        let protector = match &self.socket_options {
+            Some(options) => Some(Arc::new(SocketOptionsProtector::new(
+                self.platform_protector.clone(),
+                Arc::clone(options),
+                self.socket_options_report.clone(),
+            )) as Arc<dyn SocketProtector>),
+            None => self.platform_protector.clone(),
+        };
+        if let Some(protector) = &protector {
+            self.tls = self.tls.with_socket_protector(Arc::clone(protector));
+        }
+        self.socket_protector = protector;
         self
     }
 
@@ -103,6 +153,13 @@ impl TransportDialer {
 
     pub fn with_tcp_fragment(mut self, config: Arc<crate::TcpFragmentConfig>) -> Self {
         self.tcp_fragment = Some(config);
+        self
+    }
+
+    /// This dialer with its own sockets instead of the outbound that
+    /// [`Self::with_resolved_tcp_connector`] carried TCP through.
+    pub fn without_resolved_tcp_connector(mut self) -> Self {
+        self.resolved_tcp_connector = None;
         self
     }
 
@@ -309,10 +366,9 @@ impl TransportDialer {
                 ));
             }
         };
-        let tcp = self
+        let (tcp, peer) = self
             .connect_direct_tcp(original_target, candidates, happy_eyeballs)
             .await?;
-        let peer = tcp.peer_addr().map_err(TransportError::Tcp)?;
         let stream = self.mask_tcp_carrier(Box::new(tcp));
         let stream = match prepared {
             Some(prepared) => {
@@ -346,10 +402,9 @@ impl TransportDialer {
                 None,
             ),
             None => {
-                let tcp = self
+                let (tcp, peer) = self
                     .connect_direct_tcp(original_target, candidates, happy_eyeballs)
                     .await?;
-                let peer = tcp.peer_addr().map_err(TransportError::Tcp)?;
                 (Box::new(tcp), Some(peer))
             }
         };
@@ -422,17 +477,14 @@ impl TransportDialer {
                         .ok_or(TransportError::UnsupportedConnectorConfig(
                             "REALITY tlshello fragmentation",
                         ))?;
-                    let stream = self
+                    let (stream, _) = self
                         .connect_candidates(candidates, first, race_config)
                         .await?;
                     return prepared.complete_fragmented(stream, fragment.clone()).await;
                 }
 
-                if race_config.is_none() && candidates.len() < 2 {
-                    return reality
-                        .connect_socket_addr(reality_config, original_target, first)
-                        .await;
-                }
+                // The socket is this dialer's, so it carries this dialer's
+                // protection and socket options.
                 let Some(prepared) =
                     reality.prepare_preconnected(reality_config, original_target)?
                 else {
@@ -442,7 +494,7 @@ impl TransportDialer {
                         .connect_socket_addr(reality_config, original_target, first)
                         .await;
                 };
-                let stream = self
+                let (stream, _) = self
                     .connect_candidates(candidates, first, race_config)
                     .await?;
 
@@ -484,16 +536,19 @@ impl TransportDialer {
 
         Ok(Box::new(
             self.connect_direct_tcp(original_target, candidates, happy_eyeballs)
-                .await?,
+                .await?
+                .0,
         ))
     }
 
+    /// Connects a direct TCP socket and returns it with the address it
+    /// connected to.
     async fn connect_direct_tcp(
         &self,
         original_target: &Target,
         candidates: &[SocketAddr],
         happy_eyeballs: Option<&HappyEyeballsConfig>,
-    ) -> Result<tokio::net::TcpStream, TransportError> {
+    ) -> Result<(tokio::net::TcpStream, SocketAddr), TransportError> {
         let first = candidates
             .first()
             .copied()
@@ -507,17 +562,26 @@ impl TransportDialer {
     /// Races configured `happyEyeballs`; otherwise dials like Go's
     /// `net.Dialer`, which Xray-core uses, so a dual-stack host whose first
     /// address is unreachable still connects through another.
+    ///
+    /// Returns the address the socket connected to, which Go's
+    /// `Conn.RemoteAddr` reports even when Linux TCP Fast Open has deferred
+    /// the handshake and the kernel has no peer to report yet.
     async fn connect_candidates(
         &self,
         candidates: &[SocketAddr],
         first: SocketAddr,
         race_config: Option<&HappyEyeballsConfig>,
-    ) -> Result<tokio::net::TcpStream, TransportError> {
+    ) -> Result<(tokio::net::TcpStream, SocketAddr), TransportError> {
         let protector = self.socket_protector.as_deref();
         match race_config {
-            Some(race) => connect_tcp_happy_eyeballs(candidates, protector, race).await,
-            None if candidates.len() >= 2 => connect_tcp_dual_stack(candidates, protector).await,
-            None => connect_tcp_stream(first, protector).await,
+            Some(race) => connect_tcp_happy_eyeballs_with_peer(candidates, protector, race).await,
+            None if candidates.len() >= 2 => {
+                connect_tcp_dual_stack_with_peer(candidates, protector).await
+            }
+            None => {
+                let peer = canonicalize_socket_addr(first);
+                Ok((connect_tcp_stream(peer, protector).await?, peer))
+            }
         }
     }
 }
