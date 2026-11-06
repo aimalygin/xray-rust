@@ -2743,6 +2743,81 @@
       }
     },
     {
+      "name": "vless-simplified-settings",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/settings": {
+          "address": "server.example",
+          "port": 443,
+          "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+          "encryption": "none",
+          "flow": "",
+          "level": 0,
+          "email": "",
+          "seed": "",
+          "testpre": 0,
+          "testseed": [
+            900,
+            500,
+            900,
+            256
+          ]
+        }
+      },
+      "accepted": true,
+      "objects": {
+        "VLESS": "/outbounds/0/settings"
+      }
+    },
+    {
+      "name": "vless-simplified-text-id",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/settings": {
+          "address": "server.example",
+          "port": 443,
+          "id": "my-short-id",
+          "encryption": "none"
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "vless-simplified-reverse",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/settings": {
+          "address": "server.example",
+          "port": 443,
+          "id": "my-short-id",
+          "encryption": "none",
+          "reverse": {
+            "tag": "portal"
+          }
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.reverse"
+    },
+    {
+      "name": "vless-testpre",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/settings/vnext/0/users/0/testpre": 2
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.vnext[0].users[0].testpre"
+    },
+    {
+      "name": "vless-id-31-bytes",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/settings/vnext/0/users/0/id": "0001020304050607080900a0b0c0d0e"
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.vnext[0].users[0].id"
+    },
+    {
       "name": "vless-reality-mux",
       "accepted": true,
       "base": "reality-compatible-unknown",

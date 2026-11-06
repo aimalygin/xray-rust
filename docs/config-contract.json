@@ -1348,7 +1348,7 @@
         "vnext"
       ],
       "id": "VMESS",
-      "notes": "AEAD only, exactly one flattened server/user or one vnext entry with one user. auto/aes-128-gcm/chacha20-poly1305; nonzero alterId rejected."
+      "notes": "AEAD only. A non-null address is the simplified form, the server and its one user in these fields, and vnext is not read, as in Xray-core; otherwise exactly one vnext entry with one user. id is a UUID, or 1 to 30 bytes of text that name one as Xray-core's uuid.ParseString does. auto/aes-128-gcm/chacha20-poly1305; nonzero alterId rejected."
     },
     {
       "context": "$.outbounds[].settings.vnext[0] (vmess)",
@@ -1403,10 +1403,21 @@
     {
       "context": "$.outbounds[].settings (vless)",
       "fields": [
+        "address",
+        "port",
+        "level",
+        "email",
+        "id",
+        "flow",
+        "seed",
+        "encryption",
+        "reverse",
+        "testpre",
+        "testseed",
         "vnext"
       ],
       "id": "VLESS",
-      "notes": "Exactly one vnext server is required."
+      "notes": "Read as Xray-core v26.10.31 reads it. A non-null address is the simplified form: the server and its one user are these fields, and vnext is not read; otherwise exactly one vnext server. Every field decodes in either form. seed is ignored. testseed sets the Vision padding parameters: the first four numbers when there are at least four. A reverse proxy (reverse) and pre-connections (a nonzero testpre) are unsupported."
     },
     {
       "context": "$.outbounds[].settings.vnext[0]",
@@ -1426,10 +1437,13 @@
         "flow",
         "level",
         "email",
-        "security"
+        "security",
+        "testpre",
+        "testseed",
+        "reverse"
       ],
       "id": "VLESS_USER",
-      "notes": "Runtime selects the first user. encryption defaults to none; non-none uses the bounded VLESS encryption parser. flow supports empty, xtls-rprx-vision and xtls-rprx-vision-udp443. email is ignored; security is type-checked but ignored."
+      "notes": "Runtime selects the first user, where Xray-core wants exactly one. id is a UUID, or 1 to 30 bytes of text that name one as Xray-core's uuid.ParseString does. encryption defaults to none, where Xray-core requires it; non-none uses the bounded VLESS encryption parser. flow supports empty, xtls-rprx-vision and xtls-rprx-vision-udp443. testseed sets the Vision padding parameters. reverse is refused here, as Xray-core refuses it outside the simplified form. email is ignored; security is type-checked but ignored."
     },
     {
       "context": "streamSettings.wsSettings",

@@ -14,6 +14,7 @@ libc.workspace = true
 prost.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha1.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 xray-routing = { path = "../xray-routing" }

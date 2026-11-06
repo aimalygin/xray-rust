@@ -56,6 +56,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                 encryption: Default::default(),
                 flow: Some("xtls-rprx-vision".to_owned()),
                 level: 0,
+                vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
             }],
         }),
     };
@@ -118,6 +119,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                     encryption: Default::default(),
                     flow: Some("xtls-rprx-vision".to_owned()),
                     level: 0,
+                    vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
                 }],
             }),
         }],
@@ -600,6 +602,7 @@ fn credential_debug_output_is_redacted_in_the_config_model() {
         encryption: Default::default(),
         flow: Some("xtls-rprx-vision".to_owned()),
         level: 0,
+        vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
     };
     let user_debug = format!("{user:?}");
     assert!(user_debug.contains("id: \"<redacted>\""));

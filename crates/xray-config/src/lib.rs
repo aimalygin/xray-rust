@@ -5,6 +5,7 @@ mod parser;
 pub mod profile_import;
 mod surface;
 pub mod tooling;
+mod xray_uuid;
 
 pub use xray_vless_encryption::Encryption as VlessEncryption;
 

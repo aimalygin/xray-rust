@@ -1454,6 +1454,9 @@ pub struct VlessUser {
     pub encryption: crate::VlessEncryption,
     pub flow: Option<String>,
     pub level: u32,
+    /// `testseed`: Vision's padding parameters, Xray-core's
+    /// `[900, 500, 900, 256]` unless set.
+    pub vision_seed: [u32; 4],
 }
 
 impl fmt::Debug for VlessUser {
@@ -1464,6 +1467,7 @@ impl fmt::Debug for VlessUser {
             .field("encryption", &self.encryption)
             .field("flow", &self.flow)
             .field("level", &self.level)
+            .field("vision_seed", &self.vision_seed)
             .finish()
     }
 }

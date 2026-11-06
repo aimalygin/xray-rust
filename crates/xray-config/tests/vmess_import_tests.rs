@@ -27,6 +27,19 @@ fn vmess_json_and_uri_dialects_preserve_credentials_and_transport() {
     }
 }
 #[test]
+fn vmess_links_take_a_text_id_as_xray_core_reads_it() {
+    let mut source = link();
+    source["id"] = json!("my-short-id");
+    let text = format!("vmess://{}", STANDARD.encode(source.to_string()));
+    let profile = import_profile(ProfileFormat::Vmess, &text, None, &[]).unwrap();
+    let root: Value = serde_json::from_str(&profile.config_json).unwrap();
+    assert_eq!(root["outbounds"][0]["settings"]["id"], "my-short-id");
+    // 31 bytes names no id, in Xray-core or here.
+    source["id"] = json!("1234567890123456789012345678901");
+    let text = format!("vmess://{}", STANDARD.encode(source.to_string()));
+    assert!(import_profile(ProfileFormat::Vmess, &text, None, &[]).is_err());
+}
+#[test]
 fn vmess_ipv6_numeric_fields_grpc_and_fragment_override() {
     let mut source = link();
     for (k, v) in [

@@ -62,7 +62,7 @@ use xray_config::{
 };
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
-    VlessResponseStream, DEFAULT_VISION_SEED,
+    VlessResponseStream,
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::stream::{
@@ -4523,7 +4523,11 @@ async fn open_vless_tcp_stream_with_resolved_server_and_dialer(
 
     if flow.uses_vision() {
         let stream = VlessResponseStream::new(VisionTransportStream::new(stream));
-        let stream = VisionStream::new(stream, *outbound.user().id.as_bytes(), DEFAULT_VISION_SEED);
+        let stream = VisionStream::new(
+            stream,
+            *outbound.user().id.as_bytes(),
+            outbound.user().vision_seed,
+        );
         // On timeout Xray-core pads an empty frame to hide the bare header.
         return Ok(Box::new(FirstPayloadDeadline::new(
             VisionOutboundStream::new(stream),
@@ -4673,7 +4677,7 @@ async fn open_vless_command_stream(
         return Ok(Box::new(VisionOutboundStream::new(VisionStream::new(
             stream,
             *outbound.user().id.as_bytes(),
-            DEFAULT_VISION_SEED,
+            outbound.user().vision_seed,
         ))));
     }
 
@@ -4829,6 +4833,7 @@ mod tests {
                     encryption: Default::default(),
                     flow: None,
                     level: 0,
+                    vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
                 }],
             }),
         }
@@ -6015,6 +6020,7 @@ mod tests {
                     encryption: Default::default(),
                     flow: None,
                     level: 0,
+                    vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
                 },
                 encryption: None,
                 carrier: StreamCarrier {
@@ -9276,6 +9282,7 @@ mod tests {
                     encryption: Default::default(),
                     flow: Some("xtls-rprx-vision".to_owned()),
                     level: 0,
+                    vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
                 },
                 encryption: None,
                 carrier: StreamCarrier {
@@ -9313,6 +9320,7 @@ mod tests {
                     encryption: Default::default(),
                     flow: Some(VISION_FLOW.to_owned()),
                     level: 0,
+                    vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
                 },
                 encryption: None,
                 carrier: StreamCarrier {
@@ -9368,6 +9376,7 @@ mod tests {
                     encryption: Default::default(),
                     flow: Some(VISION_FLOW.to_owned()),
                     level: 0,
+                    vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
                 },
                 encryption: None,
                 carrier: StreamCarrier {
@@ -9436,6 +9445,84 @@ mod tests {
         assert_eq!(seen_target.network, outbound.server().network);
     }
 
+    /// `testseed` sets Vision's padding: a zero range pads no frame, where
+    /// Xray-core's default pads each short frame with up to 255 bytes.
+    #[tokio::test]
+    async fn vision_pads_with_the_users_testseed() {
+        let outbound = VlessTcpOutbound {
+            payload: Arc::new(VlessTcpOutboundPayload {
+                mux: None,
+                user: VlessUser {
+                    id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
+                    encryption: Default::default(),
+                    flow: Some(VISION_FLOW.to_owned()),
+                    level: 0,
+                    vision_seed: [0, 0, 0, 0],
+                },
+                encryption: None,
+                carrier: StreamCarrier {
+                    fragment: None,
+                    download: None,
+                    server: Target::new(
+                        RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                        443,
+                        RoutingNetwork::Tcp,
+                    ),
+                    transport: ConnectorConfig::Reality(RealityClientConfig {
+                        server_name: "example.com".to_owned(),
+                        fingerprint: "chrome".to_owned(),
+                        public_key: [7; 32],
+                        short_id: vec![1, 2, 3, 4],
+                        spider_x: "/".to_owned(),
+                        mldsa65_verify: None,
+                    }),
+                    transport_layer: TransportLayer::Raw,
+                    happy_eyeballs: None,
+                },
+            }),
+        };
+        let target = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+            443,
+            RoutingNetwork::Tcp,
+        );
+        let (client, mut protected_side) = tokio::io::duplex(1 << 16);
+        let transport_dialer = TransportDialer::system()
+            .unwrap()
+            .with_reality_engine(Arc::new(DuplexRealityEngine::new(client)));
+        let mut stream = open_vless_tcp_stream_with_resolver_and_dialer(
+            &outbound,
+            &target,
+            &SystemDnsResolver,
+            &transport_dialer,
+        )
+        .await
+        .unwrap();
+        let header_len = encode_request_header(&VlessRequest {
+            user_id: outbound.user().id,
+            command: VlessCommand::Tcp,
+            target: target.clone(),
+            flow: outbound.user().flow.clone(),
+        })
+        .unwrap()
+        .len();
+        let mut header = vec![0; header_len];
+        for (index, payload) in [b"first".as_slice(), b"second", b"third"]
+            .into_iter()
+            .enumerate()
+        {
+            stream.write_all(payload).await.unwrap();
+            stream.flush().await.unwrap();
+            if index == 0 {
+                protected_side.read_exact(&mut header).await.unwrap();
+            }
+            let (_, content_len, padding_len) =
+                read_vision_frame(&mut protected_side, index == 0).await;
+            assert_eq!(content_len, payload.len());
+            assert_eq!(padding_len, 0, "frame {index}");
+        }
+    }
+
     #[tokio::test]
     async fn open_vless_udp_stream_rejects_udp443_for_regular_vision_flow_before_connecting() {
         let outbound = VlessTcpOutbound {
@@ -9446,6 +9533,7 @@ mod tests {
                     encryption: Default::default(),
                     flow: Some(VISION_FLOW.to_owned()),
                     level: 0,
+                    vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
                 },
                 encryption: None,
                 carrier: StreamCarrier {
@@ -9508,6 +9596,7 @@ mod tests {
                     encryption: Default::default(),
                     flow: Some("xtls-rprx-vision-udp443".to_owned()),
                     level: 0,
+                    vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
                 },
                 encryption: None,
                 carrier: StreamCarrier {
@@ -9566,6 +9655,82 @@ mod tests {
             .expect("read VLESS header from protected stream");
         assert_eq!(received_header, expected_header);
         assert!(engine.seen().is_some());
+    }
+
+    /// The command stream UDP and Mux ride pads with the user's `testseed`
+    /// too.
+    #[tokio::test]
+    async fn vision_udp_pads_with_the_users_testseed() {
+        let outbound = VlessTcpOutbound {
+            payload: Arc::new(VlessTcpOutboundPayload {
+                mux: None,
+                user: VlessUser {
+                    id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
+                    encryption: Default::default(),
+                    flow: Some("xtls-rprx-vision-udp443".to_owned()),
+                    level: 0,
+                    vision_seed: [0, 0, 0, 0],
+                },
+                encryption: None,
+                carrier: StreamCarrier {
+                    fragment: None,
+                    download: None,
+                    server: Target::new(
+                        RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                        443,
+                        RoutingNetwork::Tcp,
+                    ),
+                    transport: ConnectorConfig::Reality(RealityClientConfig {
+                        server_name: "example.com".to_owned(),
+                        fingerprint: "chrome".to_owned(),
+                        public_key: [7; 32],
+                        short_id: vec![1, 2, 3, 4],
+                        spider_x: "/".to_owned(),
+                        mldsa65_verify: None,
+                    }),
+                    transport_layer: TransportLayer::Raw,
+                    happy_eyeballs: None,
+                },
+            }),
+        };
+        let target = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10))),
+            443,
+            RoutingNetwork::Udp,
+        );
+        let (client, mut protected_side) = tokio::io::duplex(1 << 16);
+        let transport_dialer = TransportDialer::system()
+            .unwrap()
+            .with_reality_engine(Arc::new(DuplexRealityEngine::new(client)));
+        let (mut stream, _) = open_vless_udp_stream_with_resolver_and_dialer(
+            &outbound,
+            &target,
+            &SystemDnsResolver,
+            &transport_dialer,
+        )
+        .await
+        .unwrap();
+        let header_len = encode_request_header(&VlessRequest {
+            user_id: outbound.user().id,
+            command: VlessCommand::Mux,
+            target: target.clone(),
+            flow: Some(VISION_FLOW.to_owned()),
+        })
+        .unwrap()
+        .len();
+        let mut header = vec![0; header_len];
+        protected_side.read_exact(&mut header).await.unwrap();
+        for (index, payload) in [b"first".as_slice(), b"second", b"third"]
+            .into_iter()
+            .enumerate()
+        {
+            stream.write_all(payload).await.unwrap();
+            stream.flush().await.unwrap();
+            let (_, content_len, padding_len) =
+                read_vision_frame(&mut protected_side, index == 0).await;
+            assert_eq!(content_len, payload.len());
+            assert_eq!(padding_len, 0, "frame {index}");
+        }
     }
 
     #[test]

@@ -45,11 +45,15 @@ fn malformed_vmess_credentials_and_legacy_authentication_fail_closed() {
         json!({"vnext":[{"address":"example.test","port":443,"users":[]}]}),
         json!({"vnext":[{"address":"example.test","port":443,"users":[user(),user()]}]}),
     ];
+    // A vnext that is not an array fails even beside a flattened server,
+    // whose address Xray-core reads instead of vnext.
     let mut mixed = server();
-    mixed["vnext"] = json!([]);
+    mixed["vnext"] = json!("synthetic-secret");
     cases.push(mixed);
     for (key, value) in [
-        ("id", json!("synthetic-secret")),
+        // 31 bytes: too long for a text id, too short for a UUID.
+        ("id", json!("synthetic-secret-id-of-31-bytes")),
+        ("id", json!(format!("{{{ID}}}"))),
         ("id", json!(1)),
         ("security", json!("none")),
         ("security", json!("aes-128-cfb")),

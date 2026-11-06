@@ -402,7 +402,11 @@ mod tests {
         let carrier: BoxedTransportStream = Box::new(HeldHeader::new(Box::new(recorder), HEADER));
         let stream = VlessResponseStream::new(VisionTransportStream::new(carrier));
         FirstPayloadDeadline::new(
-            VisionOutboundStream::new(VisionStream::new(stream, [7; 16], DEFAULT_VISION_SEED)),
+            VisionOutboundStream::new(VisionStream::new(
+                stream,
+                [7; 16],
+                xray_proxy::vless::DEFAULT_VISION_SEED,
+            )),
             VLESS_FIRST_PAYLOAD_WAIT,
             |stream| stream.inner.queue_empty_padding_frame(),
         )

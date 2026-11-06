@@ -12,19 +12,20 @@ impl Parser<'_> {
             return None;
         };
         self.reject_unknown_fields(settings, &root, &surface::VMESS);
-        let (server, user, path, user_path) = if let Some(vnext) = settings.get("vnext") {
-            if surface::VMESS
-                .fields
-                .iter()
-                .filter(|&&k| k != "vnext")
-                .any(|k| settings.get(*k).is_some())
-            {
-                self.error(
-                    root,
-                    "VMess flattened settings and vnext cannot be combined",
-                );
-                return None;
-            }
+        // As in Xray-core, a non-null `address` puts the server and its user
+        // in `settings`, and `vnext` is not read.
+        let flattened = settings
+            .get("address")
+            .is_some_and(|address| !address.is_null());
+        let vnext = settings.get("vnext").filter(|vnext| !vnext.is_null());
+        if flattened && vnext.is_some_and(|vnext| !vnext.is_array()) {
+            self.error(
+                format!("{root}.vnext"),
+                "field `vnext` must be an array or null",
+            );
+            return None;
+        }
+        let (server, user, path, user_path) = if let Some(vnext) = vnext.filter(|_| !flattened) {
             let Some(servers) = vnext.as_array().filter(|v| v.len() == 1) else {
                 self.error(format!("{root}.vnext"), "VMess requires exactly one server");
                 return None;
@@ -72,10 +73,9 @@ impl Parser<'_> {
         if port == 0 {
             self.error(format!("{path}.port"), "VMess port must be nonzero");
         }
-        let Some(id) = self
-            .string_at(user, "id")
-            .and_then(|s| uuid::Uuid::parse_str(s).ok())
-        else {
+        // A UUID, or 1 to 30 bytes of text that name one, as Xray-core's
+        // `uuid.ParseString` reads it.
+        let Some(id) = self.string_at(user, "id").and_then(crate::xray_uuid::parse) else {
             self.error(format!("{user_path}.id"), "VMess requires a UUID");
             return None;
         };

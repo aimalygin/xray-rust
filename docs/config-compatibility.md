@@ -654,13 +654,31 @@ parsed, so a missing piece is never read as part of a name.
 `loopback`, `socks`, and `http` are supported. DNS
 outbound settings are described below, and [freedom](#freedom-outbound),
 [blackhole](#blackhole-outbound), [loopback](#loopback-outbound),
-[SOCKS](#socks-outbound) and [HTTP](#http-outbound) after the TLS notes. VLESS accepts one `vnext` server with one or more UUID users, but the
-runtime currently selects the first user. With `encryption: "none"`, optional
-`level` and these flow values are accepted:
+[SOCKS](#socks-outbound) and [HTTP](#http-outbound) after the TLS notes.
+
+VLESS and VMess settings are read as Xray-core v26.10.31 reads them:
+
+- A non-null `address` is the simplified form. The server and its one user are
+  fields of `settings` itself, and `vnext` is not read, though it must still
+  decode.
+- Otherwise there is one `vnext` server. VLESS accepts one or more users there
+  and selects the first, where Xray-core wants exactly one; VMess wants exactly
+  one, as Xray-core does.
+- `id` is a UUID: 32 to 36 hex digits in Xray-core's groups, or 1 to 30 bytes
+  of any text, which name the UUID Xray-core's `uuid.ParseString` makes of
+  them. A server configured with the same text accepts it.
+
+A VLESS user takes `encryption` (`none` when absent, where Xray-core requires
+it), optional `level` and these flow values:
 
 - empty/no flow;
 - `xtls-rprx-vision`;
 - `xtls-rprx-vision-udp443`.
+
+`testseed` sets Vision's padding parameters, the first four numbers when there
+are at least four, Xray-core's `[900, 500, 900, 256]` otherwise. `seed` and
+`email` are ignored. VLESS `reverse` and pre-connections, a nonzero `testpre`,
+are not supported and fail parsing.
 
 On the raw transport, Vision switches each direction to direct mode on its own,
 as Xray-core does. After the peer's `Direct` command the downlink is read from
@@ -738,12 +756,8 @@ hop can carry the next domain target, the target stays unresolved until that
 hop; only terminal Freedom carriers use local destination resolution.
 
 VLESS whose first selected user has `encryption: "none"` and no stream security fails closed for a
-public server address. This adopts Xray-core v26.7.28's policy but deliberately
-closes an upstream legacy-schema gap: Xray invokes the guard for simplified
-top-level VLESS settings, while its legacy `vnext` shape bypasses it.
-xray-rust supports `vnext` and applies the guard there as an intentional
-security hardening, so this one unsafe legacy profile is rejected even though
-the pinned Xray binary accepts it. Such a server must use TLS, REALITY, or the
+public server address, in the simplified form and in `vnext` alike, as
+Xray-core v26.10.31 does. Such a server must use TLS, REALITY, or the
 supported VLESS encryption subset unless
 its IP is private, loopback or link-local as Go's `IsPrivate`, `IsLoopback`
 and `IsLinkLocalUnicast` define them (`10/8`, `172.16/12`, `192.168/16`,

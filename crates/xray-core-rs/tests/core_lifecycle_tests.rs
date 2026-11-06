@@ -48,6 +48,7 @@ fn runtime_config() -> CoreConfig {
                     encryption: Default::default(),
                     flow: None,
                     level: 0,
+                    vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
                 }],
             }),
         }],
