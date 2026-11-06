@@ -9475,6 +9475,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    socket_options: None,
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -9689,6 +9690,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    socket_options: None,
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
