@@ -110,11 +110,11 @@ impl HysteriaOutbound {
                     Err(CoreError::UnsupportedOutboundNetwork)
                 }
             };
-            carrier.udp_hop = H3UdpHopConfig {
-                ports: hop.ports.clone(),
-                interval_min: interval(hop.interval.from)?,
-                interval_max: interval(hop.interval.to)?,
-            };
+            carrier.udp_hop = super::xhttp::udp_hop_config(
+                hop,
+                interval(hop.interval.from)?,
+                interval(hop.interval.to)?,
+            );
             if carrier.udp_hop.ports.len() > 65_535
                 || carrier.udp_hop.ports.contains(&0)
                 || carrier.udp_hop.interval_max < carrier.udp_hop.interval_min

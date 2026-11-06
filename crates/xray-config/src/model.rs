@@ -1579,6 +1579,15 @@ pub struct QuicUdpHopSettings {
     /// Expanded in configured order; duplicates are intentionally preserved.
     pub ports: Vec<u16>,
     pub interval: QuicIntervalRange,
+    /// Xray's `intervalLocal`: a new local socket at every interval.
+    pub local: bool,
+    /// Xray's `intervalRemote`: a new remote address at every interval.
+    pub remote: bool,
+    /// Xray's `perConnRemote`: a random remote address once per connection.
+    pub remote_once: bool,
+    /// Xray's `remoteIPs`: a new remote address takes a random IP in one of
+    /// these; empty keeps the server's IP.
+    pub remote_ips: Vec<IpCidr>,
 }
 
 /// An ordered Xray `Int32Range` used for the UDP-hop interval.

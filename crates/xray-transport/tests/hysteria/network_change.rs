@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::support::{ReferenceServer, Task, DEADLINE};
@@ -18,6 +18,8 @@ use xray_transport::{SocketHandle, SocketProtector};
 pub(super) struct Relay {
     pub(super) address: SocketAddr,
     blocked: Arc<AtomicU16>,
+    /// When each client source first sent through this relay.
+    sources: Arc<Mutex<Vec<Instant>>>,
     _driver: Task,
 }
 impl Relay {
@@ -26,6 +28,8 @@ impl Relay {
         let address = front.local_addr().unwrap();
         let blocked = Arc::new(AtomicU16::new(0));
         let filter = blocked.clone();
+        let sources = Arc::new(Mutex::new(Vec::new()));
+        let seen = sources.clone();
         let driver = Task(tokio::spawn(async move {
             let mut paths: HashMap<SocketAddr, (Arc<UdpSocket>, Task)> = HashMap::new();
             let mut buffer = [0; 65535];
@@ -36,6 +40,7 @@ impl Relay {
                 }
                 if !paths.contains_key(&client) {
                     assert!(paths.len() < 16, "bounded synthetic path count");
+                    seen.lock().unwrap().push(Instant::now());
                     let upstream =
                         Arc::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap());
                     upstream.connect(server).await.unwrap();
@@ -59,8 +64,14 @@ impl Relay {
         Self {
             address,
             blocked,
+            sources,
             _driver: driver,
         }
+    }
+
+    /// When each client source first sent through this relay, in order.
+    pub(super) fn sources(&self) -> Vec<Instant> {
+        self.sources.lock().unwrap().clone()
     }
 }
 

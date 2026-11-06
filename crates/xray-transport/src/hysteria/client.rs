@@ -1,7 +1,7 @@
 use std::fmt;
 use std::future::poll_fn;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -199,8 +199,9 @@ pub(super) struct Shared {
     rebind_driver: Mutex<Option<JoinHandle<()>>>,
     bind_addr: SocketAddr,
     carrier: super::HysteriaCarrierConfig,
-    // The hop port the current carrier sends to, so the next hop leaves it.
-    wire_port: AtomicU16,
+    // The remote address the current carrier sends to, so the next hop
+    // starts from it.
+    wire_peer: Mutex<SocketAddr>,
     noise_state: Option<Arc<crate::udp_noise::UdpNoiseState>>,
     protector: Option<Arc<dyn crate::SocketProtector>>,
     pub limits: HysteriaLimits,
@@ -293,9 +294,10 @@ impl Shared {
         // On the captured runtime. Quinn retains at most the current and
         // previous carrier until an authenticated packet arrives on the new one.
         let result = if self.carrier.enabled() {
-            let wire_peer = self
-                .carrier
-                .next_hop_peer(logical_peer, self.wire_port.load(Ordering::Acquire));
+            let wire_peer = self.carrier.next_hop_peer(
+                logical_peer,
+                *self.wire_peer.lock().unwrap_or_else(|e| e.into_inner()),
+            );
             let socket = super::carrier::wrap(
                 socket,
                 logical_peer,
@@ -306,7 +308,7 @@ impl Shared {
             .map_err(|_| HysteriaError::Connect)?;
             endpoint
                 .rebind_abstract(socket)
-                .map(|()| self.wire_port.store(wire_peer.port(), Ordering::Release))
+                .map(|()| *self.wire_peer.lock().unwrap_or_else(|e| e.into_inner()) = wire_peer)
         } else {
             #[cfg(target_os = "macos")]
             {
@@ -493,7 +495,7 @@ impl HysteriaClient {
             rebind_driver: Mutex::new(None),
             bind_addr,
             carrier: config.carrier.clone(),
-            wire_port: AtomicU16::new(wire_peer.port()),
+            wire_peer: Mutex::new(wire_peer),
             noise_state,
             protector: tls.socket_protector_arc(),
             limits: config.limits,

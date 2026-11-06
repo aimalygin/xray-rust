@@ -29,41 +29,66 @@ impl Parser<'_> {
             return None;
         };
         self.reject_unknown_fields(settings, &path, &surface::UDP_HOP_MASK);
-        let mut modes: Vec<_> = settings
-            .get("mode")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .split(',')
-            .map(str::to_ascii_lowercase)
-            .collect();
-        modes.sort();
-        if modes != ["intervallocal", "intervalremote"] {
-            self.error(format!("{path}.mode"),
-                "supported udphop mode is intervalLocal,intervalRemote; independent and perConnRemote modes are unsupported");
+        // Xray splits `mode` at commas without trimming and refuses any part
+        // that is not a mode, an empty one included.
+        let (mut local, mut remote, mut remote_once) = (false, false, false);
+        match settings.get("mode") {
+            None | Some(Value::Null) | Some(Value::String(_)) => {
+                let mode = settings.get("mode").and_then(Value::as_str).unwrap_or("");
+                for part in mode.split(',') {
+                    match part.to_ascii_lowercase().as_str() {
+                        "intervallocal" => local = true,
+                        "intervalremote" => remote = true,
+                        "perconnremote" => remote_once = true,
+                        _ => self.error(
+                            format!("{path}.mode"),
+                            format!(
+                                "udphop mode `{part}` is not intervalLocal, intervalRemote or perConnRemote"
+                            ),
+                        ),
+                    }
+                }
+            }
+            Some(_) => self.error(format!("{path}.mode"), "udphop mode must be a string"),
         }
-        if settings
-            .get("remoteIPs")
-            .is_some_and(|v| !v.is_null() && !v.as_array().is_some_and(Vec::is_empty))
-        {
-            self.error(
-                format!("{path}.remoteIPs"),
-                "remote IP hopping is unsupported",
-            );
-        }
-        let hop = self.parse_udp_hop_fields(settings, &path, "remotePorts")?;
-        if hop.ports.is_empty() {
-            self.error(
-                format!("{path}.remotePorts"),
-                "udphop requires at least one remote port",
-            );
-        }
+        let remote_ips = self.parse_udp_hop_remote_ips(settings.get("remoteIPs"), &path);
+        let mut hop = self.parse_udp_hop_fields(settings, &path, "remotePorts")?;
         if (hop.interval.from == 0) != (hop.interval.to == 0) {
             self.error(
                 format!("{path}.interval"),
                 "udphop interval must be zero or have both bounds at least 5 seconds",
             );
         }
+        hop.local = local;
+        hop.remote = remote;
+        hop.remote_once = remote_once;
+        hop.remote_ips = remote_ips;
         Some(hop)
+    }
+
+    /// Xray's `remoteIPs`: each an IP or a prefix, as `netip` reads them.
+    fn parse_udp_hop_remote_ips(&mut self, raw: Option<&Value>, path: &str) -> Vec<IpCidr> {
+        let path = format!("{path}.remoteIPs");
+        let entries = match raw {
+            None | Some(Value::Null) => return Vec::new(),
+            Some(Value::Array(entries)) => entries,
+            Some(_) => {
+                self.error(path, "udphop remoteIPs must be an array of strings");
+                return Vec::new();
+            }
+        };
+        let mut ips = Vec::with_capacity(entries.len());
+        for (i, entry) in entries.iter().enumerate() {
+            let parsed = entry.as_str().and_then(parse_netip_prefix_or_addr);
+            match parsed {
+                Some(cidr) => ips.push(cidr),
+                None => self.error(
+                    format!("{path}[{i}]"),
+                    "udphop remoteIPs entries must be an IP address or prefix",
+                ),
+            }
+        }
+        ips
     }
 
     pub(super) fn parse_udp_noise(
@@ -231,4 +256,29 @@ impl Parser<'_> {
         }
         result
     }
+}
+
+/// Go's `netip.ParsePrefix`, then `netip.ParseAddr`, as Xray reads a
+/// `remoteIPs` entry: an IP with an optional decimal `/bits`, without
+/// brackets, a zone, a sign or leading zeros.
+fn parse_netip_prefix_or_addr(text: &str) -> Option<IpCidr> {
+    let (address, bits) = match text.split_once('/') {
+        Some((address, bits)) => (address, Some(bits)),
+        None => (text, None),
+    };
+    let ip: IpAddr = address.parse().ok()?;
+    let bits = match bits {
+        None if ip.is_ipv4() => 32,
+        None => 128,
+        Some(bits) => {
+            if bits.is_empty()
+                || !bits.bytes().all(|byte| byte.is_ascii_digit())
+                || (bits.len() > 1 && bits.starts_with('0'))
+            {
+                return None;
+            }
+            bits.parse::<u8>().ok()?
+        }
+    };
+    IpCidr::new(ip, bits).ok()
 }

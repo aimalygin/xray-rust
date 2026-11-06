@@ -3034,7 +3034,7 @@
       "set": {
         "/outbounds/0/streamSettings/finalmask/udp/0/settings/mode": "intervalRemote"
       },
-      "accepted": false
+      "accepted": true
     },
     {
       "name": "udp-hop-remote-ip",
@@ -3044,7 +3044,16 @@
           "192.0.2.1"
         ]
       },
-      "accepted": false
+      "accepted": true
+    },
+    {
+      "name": "udp-hop-untrimmed-mode",
+      "base": "udp-hop-mask-261021",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/0/settings/mode": "intervalLocal, intervalRemote"
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[0].settings.mode"
     },
     {
       "name": "udp-hop-zero-interval-bound",

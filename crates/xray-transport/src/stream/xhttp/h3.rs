@@ -104,16 +104,39 @@ pub enum H3Congestion {
 
 /// UDP-hop policy for the QUIC carrier, Xray's `udphop` finalmask.
 ///
-/// An empty port list is disabled, matching Xray even when an interval was
-/// configured. Otherwise the first packet already goes to one of the ports,
-/// and each interval moves the connection to a fresh protected socket aimed at
-/// a different port. Zero intervals default to 30 seconds; bounds below five
-/// seconds are rejected.
+/// Its modes are Xray's. With `remote` or `remote_once` the first packet
+/// already goes to a random remote address: a port among `ports` and an IP in
+/// `remote_ips`. With `local` or `remote`, each interval moves the connection
+/// to a fresh protected socket, aimed with `remote` at a new remote address.
+/// Zero intervals default to 30 seconds; bounds below five seconds are
+/// rejected.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct H3UdpHopConfig {
     pub ports: Vec<u16>,
     pub interval_min: Duration,
     pub interval_max: Duration,
+    /// Xray's `intervalLocal`: a new local socket at every interval.
+    pub local: bool,
+    /// Xray's `intervalRemote`: a new remote address at every interval.
+    pub remote: bool,
+    /// Xray's `perConnRemote`: a random remote address once per connection.
+    pub remote_once: bool,
+    /// Xray's `remoteIPs` as networks and prefix lengths. A new remote
+    /// address takes a random IP in one of those of the server's family;
+    /// without one it keeps the server's IP.
+    pub remote_ips: Vec<(IpAddr, u8)>,
+}
+
+impl H3UdpHopConfig {
+    /// Whether the hop changes anything at all.
+    pub fn is_active(&self) -> bool {
+        self.local || self.remote || self.remote_once
+    }
+
+    /// Whether it moves the connection on a timer.
+    pub fn hops_on_interval(&self) -> bool {
+        self.local || self.remote
+    }
 }
 
 /// QUIC transport settings supported by the phase-one engine.
@@ -212,7 +235,7 @@ impl H3QuicConfig {
                 max_connection: self.max_connection_receive_window,
             });
         }
-        if !self.udp_hop.ports.is_empty() {
+        if self.udp_hop.is_active() {
             self.hop_carrier()
                 .validate()
                 .map_err(|_| H3Error::InvalidUdpHop {
@@ -251,7 +274,7 @@ impl H3QuicConfig {
             stream_receive_window: self.initial_stream_receive_window,
             connection_receive_window: self.initial_connection_receive_window,
             adaptive_receive_windows: self.receive_window(memory_class()).tunes,
-            udp_hop: !self.udp_hop.ports.is_empty(),
+            udp_hop: self.udp_hop.hops_on_interval(),
         })
     }
 
@@ -981,7 +1004,7 @@ pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
             connection.clone(),
             carrier,
             protector,
-            wire_peer.port(),
+            wire_peer,
         ))
     });
     // quic-go's http3 client, which Xray's XHTTP H3 dial uses, opens its
@@ -1013,18 +1036,19 @@ pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
     })
 }
 
-/// Hops one connection's carrier across `udp_hop` ports, as Xray's `udphop`
-/// finalmask does for any UDP transport, with these deliberate differences:
-/// the timer starts once the connection exists rather than at dial, every hop
-/// changes the port, Quinn keeps the previous socket until the new path
-/// authenticates, and the task ends with the connection. A failed hop keeps
-/// the current protected path until the next interval, as in Xray.
+/// Hops one connection's carrier as Xray's `udphop` finalmask does for any
+/// UDP transport, with these deliberate differences: the timer starts once
+/// the connection exists rather than at dial, every remote hop changes the
+/// port, a remote hop also takes a fresh local socket, Quinn keeps the
+/// previous socket until the new path authenticates, and the task ends with
+/// the connection. A failed hop keeps the current protected path until the
+/// next interval, as in Xray.
 async fn hop_udp_carrier(
     endpoint: Endpoint,
     connection: quinn::Connection,
     carrier: crate::hysteria::HysteriaCarrierConfig,
     protector: Option<Arc<dyn SocketProtector>>,
-    mut wire_port: u16,
+    mut wire_peer: SocketAddr,
 ) {
     let logical_peer = connection.remote_address();
     while let Some(delay) = carrier.next_interval() {
@@ -1032,17 +1056,17 @@ async fn hop_udp_carrier(
             _ = connection.closed() => return,
             () = tokio::time::sleep(delay) => {}
         }
-        let wire_peer = carrier.next_hop_peer(logical_peer, wire_port);
+        let next = carrier.next_hop_peer(logical_peer, wire_peer);
         if rebind_carrier(
             &endpoint,
             logical_peer,
-            wire_peer,
+            next,
             &carrier,
             protector.as_deref(),
         )
         .is_ok()
         {
-            wire_port = wire_peer.port();
+            wire_peer = next;
         }
     }
 }

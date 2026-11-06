@@ -10,6 +10,14 @@ long-term supported release series.
 
 ## Unreleased
 
+- The `udphop` UDP mask reads every Xray-core mode: `intervalLocal`,
+  `intervalRemote` and `perConnRemote`, alone or together, and `remoteIPs`
+  of IPs and prefixes. Only `intervalLocal,intervalRemote` with ports used to
+  parse.
+  - `intervalLocal` alone keeps the configured server address, and
+    `perConnRemote` draws the first address without hopping.
+  - A remote hop also takes a fresh local socket, and `remoteIPs` of the
+    other family than the server's are not drawn.
 - `dns.enableParallelQuery` asks every selected DNS server at once and takes
   the first answer of the earliest group of servers sharing a policy, as
   Xray-core does. Profiles with it used to fail to parse.

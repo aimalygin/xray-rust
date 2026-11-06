@@ -4,7 +4,7 @@ use std::{
     collections::VecDeque,
     fmt,
     io::{self, IoSliceMut},
-    net::{SocketAddr, UdpSocket},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
     pin::Pin,
     sync::{
         atomic::{AtomicU32, Ordering},
@@ -62,12 +62,17 @@ impl HysteriaCarrierConfig {
             || self.udp_hop.ports.len() > 65_535
             || self.udp_hop.ports.contains(&0)
             || self
+                .udp_hop
+                .remote_ips
+                .iter()
+                .any(|&(ip, prefix)| prefix > if ip.is_ipv4() { 32 } else { 128 })
+            || self
                 .gecko
                 .is_some_and(|size| self.salamander_password.is_none() || !size.is_valid())
         {
             return Err(HysteriaError::Configuration);
         }
-        if !self.udp_hop.ports.is_empty() {
+        if self.udp_hop.hops_on_interval() {
             let (min, max) = self.intervals();
             if min < Duration::from_secs(5)
                 || max < min
@@ -94,47 +99,101 @@ impl HysteriaCarrierConfig {
     }
 
     pub(crate) fn enabled(&self) -> bool {
-        self.salamander_password.is_some() || !self.udp_hop.ports.is_empty() || self.noise.is_some()
+        self.salamander_password.is_some() || self.udp_hop.is_active() || self.noise.is_some()
     }
 
+    /// The first remote address: with `remote` or `remote_once`, a random
+    /// one, as Xray draws it at dial; otherwise the server's.
     pub(crate) fn next_peer(&self, mut peer: SocketAddr) -> SocketAddr {
-        if !self.udp_hop.ports.is_empty() {
-            peer.set_port(
-                self.udp_hop.ports[rand::thread_rng().gen_range(0..self.udp_hop.ports.len())],
-            );
+        let hop = &self.udp_hop;
+        if !(hop.remote || hop.remote_once) {
+            return peer;
+        }
+        if let Some(ip) = self.draw_remote_ip(peer.ip()) {
+            peer.set_ip(ip);
+        }
+        if !hop.ports.is_empty() {
+            peer.set_port(hop.ports[rand::thread_rng().gen_range(0..hop.ports.len())]);
         }
         peer
     }
 
-    /// The port for a scheduled hop: drawn among the configured ports other
-    /// than `current_port`, so every hop changes the path. Xray draws with
-    /// replacement, so with two ports half of its hops leave the path as is.
-    /// A single distinct port keeps it.
-    pub(crate) fn next_hop_peer(&self, mut peer: SocketAddr, current_port: u16) -> SocketAddr {
+    /// The remote address for a scheduled hop from `current`. Without
+    /// `remote` it stays. With it the IP is drawn again from `remote_ips`, and
+    /// the port among the configured ports other than the current one, so
+    /// every hop changes the path. Xray draws the port with replacement, so
+    /// with two ports half of its hops leave it as is. A single distinct
+    /// port keeps it.
+    pub(crate) fn next_hop_peer(&self, logical: SocketAddr, mut current: SocketAddr) -> SocketAddr {
+        if !self.udp_hop.remote {
+            return current;
+        }
+        if let Some(ip) = self.draw_remote_ip(logical.ip()) {
+            current.set_ip(ip);
+        }
+        let current_port = current.port();
         let mut others = self
             .udp_hop
             .ports
             .iter()
             .filter(|&&port| port != current_port);
         let count = others.clone().count();
-        let port = match count {
-            0 => current_port,
-            _ => *others
-                .nth(rand::thread_rng().gen_range(0..count))
-                .expect("index below count"),
-        };
-        peer.set_port(port);
-        peer
+        if count > 0 {
+            current.set_port(
+                *others
+                    .nth(rand::thread_rng().gen_range(0..count))
+                    .expect("index below count"),
+            );
+        }
+        current
+    }
+
+    /// A random IP in a random one of the `remote_ips` of `server`'s family,
+    /// with the host bits drawn as Xray's `randPrefix` draws them. `None`
+    /// when there is none: a hop never leaves the server's family, since the
+    /// QUIC endpoint keeps its socket family.
+    fn draw_remote_ip(&self, server: IpAddr) -> Option<IpAddr> {
+        let candidates: Vec<(IpAddr, u8)> = self
+            .udp_hop
+            .remote_ips
+            .iter()
+            .copied()
+            .filter(|(ip, _)| ip.is_ipv4() == server.is_ipv4())
+            .collect();
+        if candidates.is_empty() {
+            return None;
+        }
+        let (network, prefix) = candidates[rand::thread_rng().gen_range(0..candidates.len())];
+        Some(random_ip_in(network, prefix))
     }
 
     pub(crate) fn next_interval(&self) -> Option<Duration> {
-        if self.udp_hop.ports.is_empty() {
+        if !self.udp_hop.hops_on_interval() {
             return None;
         }
         let (min, max) = self.intervals();
         Some(Duration::from_nanos(
             rand::thread_rng().gen_range(min.as_nanos() as u64..=max.as_nanos() as u64),
         ))
+    }
+}
+
+/// Xray's `randPrefix`: `network` with every bit past `prefix` random.
+fn random_ip_in(network: IpAddr, prefix: u8) -> IpAddr {
+    let mut rng = rand::thread_rng();
+    match network {
+        IpAddr::V4(ip) => {
+            let host = u32::MAX.checked_shr(u32::from(prefix)).unwrap_or(0);
+            IpAddr::V4(Ipv4Addr::from(
+                (u32::from(ip) & !host) | (rng.gen::<u32>() & host),
+            ))
+        }
+        IpAddr::V6(ip) => {
+            let host = u128::MAX.checked_shr(u32::from(prefix)).unwrap_or(0);
+            IpAddr::V6(Ipv6Addr::from(
+                (u128::from(ip) & !host) | (rng.gen::<u128>() & host),
+            ))
+        }
     }
 }
 
@@ -603,6 +662,8 @@ mod tests {
         config.salamander_password = Some(Arc::new(Zeroizing::new("secret-synthetic".into())));
         assert!(!format!("{config:?}").contains("secret-synthetic"));
         config.udp_hop.ports = vec![443, 8443];
+        config.udp_hop.local = true;
+        config.udp_hop.remote = true;
         config.validate().unwrap();
         assert_eq!(config.next_interval(), Some(Duration::from_secs(30)));
         config.udp_hop.interval_min = Duration::from_secs(4);
@@ -642,28 +703,103 @@ mod tests {
     #[test]
     fn scheduled_hops_always_leave_the_current_port() {
         let logical: SocketAddr = "192.0.2.1:443".parse().unwrap();
+        let at = |port: u16| SocketAddr::new(logical.ip(), port);
         let mut config = HysteriaCarrierConfig::default();
+        config.udp_hop.remote = true;
         config.udp_hop.ports = vec![443, 8443];
         // With two ports Xray's draw with replacement stays put half the time.
-        let mut current = 443;
+        let mut current = at(443);
         for _ in 0..100 {
             let next = config.next_hop_peer(logical, current);
             assert_eq!(next.ip(), logical.ip());
-            assert_ne!(next.port(), current);
-            current = next.port();
+            assert_ne!(next.port(), current.port());
+            current = next;
         }
         // Duplicates do not count as a different port.
         config.udp_hop.ports = vec![443, 443, 8443];
-        assert_eq!(config.next_hop_peer(logical, 443).port(), 8443);
+        assert_eq!(config.next_hop_peer(logical, at(443)).port(), 8443);
         // Every other port is reachable.
         config.udp_hop.ports = (1000..1010).collect();
         let seen: std::collections::HashSet<u16> = (0..1000)
-            .map(|_| config.next_hop_peer(logical, 1000).port())
+            .map(|_| config.next_hop_peer(logical, at(1000)).port())
             .collect();
         assert_eq!(seen, (1001..1010).collect());
         // A single distinct port has nowhere else to go.
         config.udp_hop.ports = vec![443, 443];
-        assert_eq!(config.next_hop_peer(logical, 443).port(), 443);
+        assert_eq!(config.next_hop_peer(logical, at(443)).port(), 443);
+    }
+
+    /// Each mode changes only what Xray's changes: `intervalLocal` alone keeps
+    /// the server's address and hops on a timer, `perConnRemote` draws the
+    /// first address and never hops, `intervalRemote` does both.
+    #[test]
+    fn modes_choose_the_first_address_and_the_timer() {
+        let logical: SocketAddr = "192.0.2.1:443".parse().unwrap();
+        let mut config = HysteriaCarrierConfig::default();
+        config.udp_hop.ports = vec![8443, 8444];
+        assert!(!config.udp_hop.is_active());
+        assert!(!config.enabled());
+
+        config.udp_hop.local = true;
+        assert!(config.enabled());
+        assert_eq!(config.next_peer(logical), logical);
+        assert!(config.next_interval().is_some());
+        let current = config.next_peer(logical);
+        assert_eq!(config.next_hop_peer(logical, current), logical);
+
+        config.udp_hop.local = false;
+        config.udp_hop.remote_once = true;
+        assert!(config.enabled());
+        assert_eq!(config.next_interval(), None);
+        let first = config.next_peer(logical);
+        assert!([8443, 8444].contains(&first.port()));
+        assert_eq!(config.next_hop_peer(logical, first), first);
+
+        config.udp_hop.remote_once = false;
+        config.udp_hop.remote = true;
+        assert!(config.next_interval().is_some());
+        assert!([8443, 8444].contains(&config.next_peer(logical).port()));
+        assert_eq!(
+            config.next_hop_peer(logical, first).port(),
+            8443 + 8444 - first.port()
+        );
+    }
+
+    /// `remoteIPs` gives the IP of a random address within a prefix of the
+    /// server's family; one of the other family is never drawn.
+    #[test]
+    fn remote_ips_draw_within_prefixes_of_the_servers_family() {
+        let logical: SocketAddr = "192.0.2.1:443".parse().unwrap();
+        let mut config = HysteriaCarrierConfig::default();
+        config.udp_hop.remote = true;
+        config.udp_hop.remote_ips = vec![
+            ("198.51.100.0".parse().unwrap(), 30),
+            ("203.0.113.9".parse().unwrap(), 32),
+            ("2001:db8::".parse().unwrap(), 64),
+        ];
+        config.validate().unwrap();
+        let seen: std::collections::HashSet<IpAddr> =
+            (0..2000).map(|_| config.next_peer(logical).ip()).collect();
+        let expected: std::collections::HashSet<IpAddr> = [
+            "198.51.100.0",
+            "198.51.100.1",
+            "198.51.100.2",
+            "198.51.100.3",
+            "203.0.113.9",
+        ]
+        .iter()
+        .map(|ip| ip.parse().unwrap())
+        .collect();
+        assert_eq!(seen, expected);
+        // The port stays without ports to draw from.
+        assert!((0..100).all(|_| config.next_hop_peer(logical, logical).port() == 443));
+        // A server of the other family keeps its own IP.
+        let v6: SocketAddr = "[2001:db8:1::1]:443".parse().unwrap();
+        config.udp_hop.remote_ips.retain(|(ip, _)| ip.is_ipv4());
+        assert_eq!(config.next_peer(v6), v6);
+        // An impossible prefix length is refused.
+        config.udp_hop.remote_ips = vec![("192.0.2.0".parse().unwrap(), 33)];
+        assert!(config.validate().is_err());
     }
 
     #[tokio::test]

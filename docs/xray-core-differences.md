@@ -378,6 +378,32 @@ Deliberate differences, source-derived:
 - The fixed TUN FakeDNS mode (`dns.fakeIp` without a DNS outbound) does not
   read `dns.hosts`, for IP values as for `"#N"`.
 
+## UDP-hop modes
+
+The `udphop` UDP mask reads Xray-core v26.10.31's `intervalLocal`,
+`intervalRemote` and `perConnRemote` modes and its `remoteIPs`
+([details](config-compatibility.md#v08-hysteria-carrier-additions)). Deliberate differences:
+
+- A remote hop takes a fresh local socket too. Xray-core keeps its socket when
+  only `intervalRemote` is set; the QUIC carrier here is rebound to move the
+  connection.
+- Every remote hop changes the port. Xray-core draws with replacement, so
+  with two ports half of its hops keep the same one.
+- `remoteIPs` of the other address family than the server's are never drawn,
+  since the QUIC endpoint keeps its socket family; Xray-core dials either.
+
+Evidence: live against Xray-core v26.10.31, a Hysteria client of each core went
+through two UDP relays in front of an Xray Hysteria server with a 5-second
+interval, echoing over SOCKS for 13 seconds. Both cores:
+- with `intervalLocal`, took a new socket at the server's own port every 5
+  seconds;
+- with `perConnRemote`, used one socket at one drawn port;
+- with both interval modes, took a new socket at every hop.
+
+With `intervalRemote` alone Xray-core kept one socket and ours took a new one
+at each hop. Every echo came back in every mode.
+
+## Panel subscription fields Xray-core does not read
 ## Panel subscription fields Xray-core does not read
 
 Remnawave's XRAY_JSON subscriptions (`xray-json.generator.service.ts`) put a
