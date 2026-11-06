@@ -97,9 +97,16 @@ impl HttpHeaderTemplate {
 
     /// The value for a connection from `source` to `target`, with line
     /// breaks turned into spaces and surrounding white space trimmed, as
-    /// Go's `Header.Write` writes it. Without a source, as for a connection
-    /// no inbound made, Xray-core names `tcp:0.0.0.0:0`.
+    /// Go's `Header.Write` writes it over HTTP/1.1.
     pub fn render(&self, source: Option<SocketAddr>, target: &Target) -> String {
+        http1_header_value(&self.render_raw(source, target))
+    }
+
+    /// The value for a connection from `source` to `target` as Go's
+    /// `text/template` fills it in, before any encoding: Go's HTTP/2 client
+    /// sends it as it is. Without a source, as for a connection no inbound
+    /// made, Xray-core names `tcp:0.0.0.0:0`.
+    pub fn render_raw(&self, source: Option<SocketAddr>, target: &Target) -> String {
         let mut value = String::new();
         for part in &self.parts {
             match part {
@@ -132,10 +139,16 @@ impl HttpHeaderTemplate {
             }
         }
         value
-            .replace(['\r', '\n'], " ")
-            .trim_matches(|c| matches!(c, ' ' | '\t'))
-            .to_owned()
     }
+}
+
+/// `value` as Go's `Header.Write` sends it over HTTP/1.1: line breaks turned
+/// into spaces and surrounding spaces and tabs trimmed.
+fn http1_header_value(value: &str) -> String {
+    value
+        .replace(['\r', '\n'], " ")
+        .trim_matches(|c| matches!(c, ' ' | '\t'))
+        .to_owned()
 }
 
 fn push_text(parts: &mut Vec<Part>, text: &str) {

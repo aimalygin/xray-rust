@@ -937,6 +937,19 @@ impl TcpOutbound {
         }
     }
 
+    /// Lets connections this outbound keeps for later flows close: an HTTP
+    /// outbound's shared HTTP/2 connection.
+    pub(crate) fn close_shared_connections(&self) {
+        match self {
+            Self::Http(http) => http.close(),
+            Self::Chained { outbound, proxy } => {
+                outbound.close_shared_connections();
+                proxy.close_shared_connections();
+            }
+            _ => {}
+        }
+    }
+
     /// Whether this chain names the client: a freedom in it writes a PROXY
     /// protocol header, or an HTTP outbound's custom headers name the
     /// source.
@@ -3574,6 +3587,9 @@ impl OutboundFactory {
     pub(crate) fn close_sessions(&self) {
         self.sessions_closed.store(true, Ordering::Release);
         for entry in &self.entries {
+            if let Some(Ok(outbound)) = entry.tcp.get() {
+                outbound.close_shared_connections();
+            }
             if let Some(Ok(outbound)) = entry.vless.get() {
                 outbound.close();
             }

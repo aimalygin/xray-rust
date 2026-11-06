@@ -79,7 +79,7 @@ This establishes the listed tests on the combined tree, not NAT or device proof.
 | #84 / #87 / #79: SOCKS outbound | TCP CONNECT and UDP ASSOCIATE, noauth or password, flat or legacy settings, raw TCP with none/TLS control security | Tested subset of Xray-core; UDP relay datagrams remain plain and transport restrictions remain |
 | #82 / #81: Android fixes | VPN metering policy, cached native FFI information, checked stats array length | Host SDK behavior, not an Xray network protocol extension |
 | #81: Android cleanup/helpers | Stage 1 merged in #82; stage 2 cleanup follows separately; stage 3 helpers remain optional | Host SDK work; preserve documented ownership and lifecycle rules |
-| #79: HTTP outbound | HTTP/1.1 CONNECT, optional Basic auth, flat or legacy settings, raw TCP with none/TLS (`http/1.1` ALPN), TCP only | Tested subset of the pinned Xray client; status 200 only, no HTTP/2 or custom headers, bounded head, early bytes kept |
+| #79: HTTP outbound | HTTP/1.1 and HTTP/2 CONNECT, optional Basic auth and custom headers, flat or legacy settings, raw TCP with none/TLS, TCP only | Tested subset of the pinned Xray client; status 200 only, one try, bounded head, early bytes kept, HTTP/2 tunnels end with `END_STREAM` |
 | #86: mobile SOCKS bootstrap | Android and Apple prepare SOCKS carrier hosts/literals before VPN setup; Apple excludes carrier routes | Integration gap fixed; destination DNS remains at the proxy |
 | SOCKS inbound `udp` | `"udp": false` refuses `UDP ASSOCIATE` without a relay; an absent `udp` keeps it enabled | Explicit `false` matches the reference; the absent default differs and is an open question below |
 | Policy half-close timeouts | SOCKS and HTTP relays switch from `connIdle` to `downlinkOnly` after the client finished sending and to `uplinkOnly` after the server did; both default to 1 s | Source-derived from the outbound timers (`proxy/freedom/freedom.go`, `proxy/vless/outbound/outbound.go`) and `SessionDefault` in `features/policy/policy.go`; covered by paused-clock unit tests, not by interop. Stricter: the inbound level also bounds each phase, while the reference SOCKS/HTTP inbounds run no timer of their own |
@@ -266,22 +266,30 @@ is implemented against the HTTP/1.1 path of the pinned
 [Xray HTTP client](https://github.com/XTLS/Xray-core/blob/5ca6f4b7d4dc20a881d4330e498892697627ec0c/proxy/http/client.go).
 The decisions it asked for, with their evidence:
 
-- HTTP/1.1 only. TLS always offers exactly `http/1.1`, also for a shaped uTLS
-  hello whose profile carries `h2`, and `tlsSettings.alpn` is limited to absent,
-  `[]` or `["http/1.1"]`. The reference also negotiates `h2` and then sends an
-  HTTP/2 `CONNECT`; a proxy that accepts only HTTP/2 therefore fails the
-  handshake here. `http_runtime_offers_only_http11_over_tls` checks the agreed
-  protocol against a server that prefers `h2` with unshaped, `chrome` and
-  `firefox` hellos; without the forced offer the shaped hello agrees `h2`.
+- HTTP/1.1 or HTTP/2, as TLS decides. TLS offers what the reference offers,
+  so a shaped hello carries its profile's `h2`, and the tunnel is an HTTP/2
+  `CONNECT` stream when the proxy picks it
+  ([details](config-compatibility.md#http2-connect)). A capture of both clients
+  against a TLS proxy that offers `h2` matched the opening SETTINGS, the
+  request's fields in 23 cases and connection sharing. The differences: 16 MiB
+  of connection credit where Go grants 1 GiB, a `TE` other than `trailers`
+  refused, a refused tunnel failing alone where the reference closes the shared
+  connection, `END_STREAM` where the reference resets with `CANCEL`, and the
+  first bytes sent after the 200 rather than with the request.
+  `http_runtime_tunnels_over_http2_when_tls_picks_it` and
+  `http_runtime_stays_on_http11_unless_tls_picks_h2` run them end to end. With
+  `fingerprint: "unsafe"` and no `alpn`, no protocol is offered, where the
+  reference offers `h2` and `http/1.1`, so such a profile stays on HTTP/1.1.
 - Status 200 only, as in the reference, rather than every 2xx that
   [RFC 9110 section 9.3.6](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.6)
   allows. 204 is refused like 403, 407 and 502 (`connect_accepts_only_status_200`,
   `http_runtime_refuses_every_status_but_200`).
 - Parser surface: flat and legacy `servers` forms; `level` selects policy with
-  or without credentials; `email` is type-checked and ignored; `headers` is
-  accepted only as `null` or `{}`. The reference's custom headers are Go
-  templates expanded per flow; any header fails parsing instead of being
-  ignored. A lone `pass`, an empty `user`, a `user` containing `:` and a
+  or without credentials; `email` is type-checked and ignored; `headers` are
+  Go templates filled in per flow, as in the reference, except that template
+  actions other than the `Source` and `Target` fields, invalid names and most
+  control characters are refused when the profile is read, and a profile takes
+  at most 64 headers of 8 KiB. A lone `pass`, an empty `user`, a `user` containing `:` and a
   `users` entry without `user` are rejected, where the reference drops or
   sends them. Credentials are limited to 1024 bytes each, the reference has no
   limit.
@@ -296,12 +304,17 @@ The decisions it asked for, with their evidence:
   domain authorities and early bytes also run end to end.
 - Integration: TCP `proxySettings` in both directions, `probeOutboundUrl`, UDP
   refusal without dialing, and Android/Apple carrier bootstrap that resolves
-  only the proxy name. Destination domains stay with the proxy.
+  only the proxy name. Destination domains stay with the proxy. The reference
+  tries a failed tunnel five times, a refusal included; this client tries once.
 
 `scripts/check-http-interop.sh` runs the pinned Go HTTP inbound with Basic and
 open listeners over plain TCP and TLS, in both settings forms, with refused
-wrong and missing credentials, and the Go-client request comparison. Physical
-device routing and HTTP/2 `CONNECT` are not established.
+wrong and missing credentials, and the Go-client request comparison. That
+inbound reads HTTP/1.1 only, so its TLS sets `alpn: ["http/1.1"]`; with the
+default list it picks `h2`, and the reference's own HTTP outbound fails on it
+too. No pinned HTTP/2 `CONNECT` server exists in the reference, so HTTP/2 is
+checked against the reference client's capture. Physical device routing is
+not established.
 
 ## Shadowsocks classic AEAD: implemented scope
 

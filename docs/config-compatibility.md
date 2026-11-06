@@ -1092,9 +1092,10 @@ described [below](#http-outbound).
 
 ### HTTP outbound
 
-`http` asks an upstream HTTP/1.1 proxy for a `CONNECT` tunnel (RFC 9110
-section 9.3.6), optionally with Basic authentication (RFC 7617). It accepts
-both settings shapes of Xray-core v26.7.28:
+`http` asks an upstream HTTP proxy for a `CONNECT` tunnel (RFC 9110
+section 9.3.6), optionally with Basic authentication (RFC 7617): over
+HTTP/1.1, or over [HTTP/2](#http2-connect) when the proxy's TLS picks `h2`, as
+Xray-core does. It accepts both settings shapes of Xray-core v26.7.28:
 
 ```json
 { "tag": "upstream", "protocol": "http",
@@ -1168,7 +1169,9 @@ rather than being converted to Punycode as Go does.
 
 - Only status 200 opens the tunnel, as in the pinned Xray client, although RFC
   9110 allows any 2xx; 407 and every other status fail the flow without echoing
-  the proxy's reason phrase. The status line must be `HTTP/1.0` or `HTTP/1.1`,
+  the proxy's reason phrase. Xray-core tries a failed tunnel five times, each
+  retry 100 ms later than the one before, a refusal included; xray-rust tries
+  once. The status line must be `HTTP/1.0` or `HTTP/1.1`,
   header lines must be well formed (bare `LF` line ends and obs-fold are
   accepted), and `Content-Length` or `Transfer-Encoding` on the 200 are ignored
   as RFC 9110 requires.
@@ -1177,11 +1180,14 @@ rather than being converted to Punycode as Go does.
   read are delivered to the client first. Xray reads the head through a
   `bufio.Reader` it then discards, so it loses them.
 - `streamSettings` may select only `raw`/`tcp` with `security` `none` or `tls`.
-  TLS always offers exactly `http/1.1` in ALPN, including with a uTLS
-  `fingerprint` whose profile carries `h2`, and `alpn` may only be absent,
-  empty or `["http/1.1"]`. Xray also speaks HTTP/2 `CONNECT` when the proxy
-  negotiates `h2`; that path is not implemented, so a proxy that accepts only
-  HTTP/2 fails the TLS handshake. Other networks and REALITY fail parsing.
+  TLS offers what Xray-core offers: a shaped hello (`chrome` unless
+  `fingerprint` names another) sends its profile's ALPN, `h2` and `http/1.1`
+  for `chrome`, unless `alpn` is exactly `["http/1.1"]`; `fingerprint:
+  "unsafe"` sends the configured list as it is, and none when it is empty,
+  where Xray-core sends `h2` and `http/1.1`. The proxy's pick decides the
+  tunnel: HTTP/2 for `h2`, HTTP/1.1 for `http/1.1` or no pick, and any other
+  protocol fails the flow, as in Xray-core. Other networks and REALITY fail
+  parsing.
 - Only TCP is supported. UDP routed to an HTTP outbound is refused without
   dialing the proxy, and DNS queries over UDP through it fail, so use `tcp://`
   DNS servers on such a route. Enabled `mux` fails parsing.
@@ -1193,14 +1199,54 @@ rather than being converted to Punycode as Go does.
   in both directions: an HTTP outbound can carry another TCP outbound, and it
   can ride another outbound's TCP carrier. `probeOutboundUrl` works through it.
 
+#### HTTP/2 CONNECT
+
+When the proxy's TLS picks `h2`, the tunnel is an HTTP/2 stream (RFC 9113
+section 8.5), opened as Xray-core v26.10.31 opens it with Go's HTTP/2 client:
+
+- The connection opens with Go's SETTINGS: push disabled, a 4 MiB stream
+  window, a 1 MiB frame and a 10 MiB header list. It grants 16 MiB of
+  connection receive credit, as XHTTP does, where Go grants 1 GiB.
+- The request carries `:method` and `:authority` only, and the fields of the
+  HTTP/1.1 request under Go's HTTP/2 rules. Names are lowercase. `Host`,
+  `Content-Length`, `Proxy-Connection` and the other connection-specific fields
+  are not sent. `Cookie` is split at each `;`. An empty `User-Agent` is left out,
+  and a missing one, as with `golang`, is `Go-http-client/2.0`.
+  `accept-encoding: gzip` follows unless the request has an `Accept-Encoding`
+  or a `Range`, which the masquerade block does not set.
+- Custom values are sent as their templates fill them in, untrimmed. A value
+  with a line break fails the tunnel, as do an `Upgrade`, `Transfer-Encoding` or
+  `Connection` that Go refuses. A `TE` other than `trailers` fails too, where Go
+  sends it although HTTP/2 forbids it. `Proxy-Authorization` is never indexed
+  by HPACK.
+- Later tunnels share the connection while it is up and below the proxy's
+  concurrent stream limit, as Xray-core keeps one connection per proxy. At the
+  limit, or once the proxy sends GOAWAY, the next tunnel dials a new connection,
+  which is kept instead. Stopping the core lets the connection close once its
+  tunnels end; Xray-core keeps it for the life of the process.
+- A refused tunnel fails alone. Xray-core closes the shared connection with it,
+  and every tunnel on it.
+- The client's end of a tunnel reaches the proxy as `END_STREAM`, the HTTP/2
+  form of its FIN. Xray-core resets the stream with `CANCEL` when the tunnel
+  closes.
+- The tunnel's first bytes follow the proxy's 200; Xray-core sends them right
+  after the request.
+
+Xray-core's own HTTP inbound reads HTTP/1.1 only. Behind TLS it needs
+`"alpn": ["http/1.1"]`: otherwise it picks `h2`, and Xray-core's HTTP outbound
+fails on it as this one does. Imported `https://` links offer `http/1.1` alone.
+
 `scripts/check-http-interop.sh` verifies this subset against the pinned
 Xray-core v26.7.28 HTTP inbound: both settings forms, Basic and no-auth tunnels
 to IPv4 and Xray-resolved domain targets over plain TCP and TLS with a `chrome`
 fingerprint, and refused wrong or missing credentials. It also captures the
-pinned Go client's `CONNECT` and compares it with ours. In-process tests cover
-IPv6 targets, early tunnel bytes, every refused status, the ALPN offer with
-unshaped, `chrome` and `firefox` hellos against a server that prefers `h2`, UDP
-refusal, chaining both ways and outbound probes. Android and Apple prepare the
+pinned Go client's `CONNECT` and compares it with ours. Its TLS inbound sets
+`alpn: ["http/1.1"]`, as that inbound needs. In-process tests cover IPv6
+targets, early tunnel bytes, every refused status, HTTP/2 tunnels with `chrome`
+and `firefox` hellos against a proxy that prefers `h2`, refusals and shared
+connections over HTTP/2, HTTP/1.1 against an HTTP/1.1-only proxy, with
+`alpn: ["http/1.1"]` and with `unsafe`, UDP refusal, chaining both ways and
+outbound probes. Android and Apple prepare the
 proxy's carrier hostname like a SOCKS server's. Tests use loopback; they do not
 establish physical-device VPN routing.
 

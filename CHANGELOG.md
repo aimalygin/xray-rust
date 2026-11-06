@@ -32,6 +32,12 @@ long-term supported release series.
 - The SOCKS inbound reads `users` as another name for `accounts`, keeps the
   last account of a name, and accepts empty or missing credentials and
   `null` settings, as Xray-core does.
+- The HTTP outbound speaks HTTP/2 when the proxy's TLS picks `h2`, as
+  Xray-core does: its TLS now offers the protocols Xray-core offers, `h2`
+  included, instead of `http/1.1` alone, and later tunnels share the HTTP/2
+  connection. A proxy that offers only HTTP/1.1 is unaffected, as are imported
+  `https://` links. An Xray-core HTTP inbound behind TLS needs
+  `alpn: ["http/1.1"]`, for Xray-core's client and this one alike.
 - The HTTP outbound sends its `headers` as Xray-core does, Go templates
   naming the connection's source and target included. Profiles with them
   used to fail to parse.

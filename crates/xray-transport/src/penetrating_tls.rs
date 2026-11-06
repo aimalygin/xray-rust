@@ -401,6 +401,14 @@ where
         }
     }
 
+    fn negotiated_alpn(&self) -> Option<&[u8]> {
+        match &self.state {
+            PenetratingTlsState::Tls(Some(stream)) => stream.get_ref().1.alpn_protocol(),
+            PenetratingTlsState::ReadDirect { stream, .. } => stream.get_ref().1.alpn_protocol(),
+            PenetratingTlsState::Tls(None) => None,
+        }
+    }
+
     fn poll_read_direct(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

@@ -88,6 +88,19 @@ impl H2ReceiveWindow {
         }
     }
 
+    /// The window of a connection no XHTTP config shapes, opened as XHTTP
+    /// opens one without a configured window: Go's 4 MiB, or a quarter of it
+    /// growing back to 4 MiB on a constrained host.
+    pub(crate) fn for_host(class: MemoryClass) -> Self {
+        match class {
+            MemoryClass::Constrained => Self::Adaptive {
+                initial: CONSTRAINED_STREAM_WINDOW_SIZE,
+                max: STREAM_WINDOW_SIZE,
+            },
+            MemoryClass::Standard => Self::Fixed(STREAM_WINDOW_SIZE),
+        }
+    }
+
     fn initial(self) -> u32 {
         match self {
             Self::Fixed(window)
