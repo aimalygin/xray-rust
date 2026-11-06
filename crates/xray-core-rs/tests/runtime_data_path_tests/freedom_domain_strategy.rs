@@ -9,7 +9,7 @@ use super::*;
 const NAME: &str = "dual.test";
 
 /// The same port on 127.0.0.1 and ::1, or `None` without IPv6 loopback.
-async fn dual_stack_listeners() -> Option<(TcpListener, TcpListener, u16)> {
+pub(super) async fn dual_stack_listeners() -> Option<(TcpListener, TcpListener, u16)> {
     for _ in 0..32 {
         let v4 = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let port = v4.local_addr().unwrap().port();

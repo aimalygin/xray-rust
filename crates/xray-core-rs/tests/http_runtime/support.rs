@@ -202,6 +202,46 @@ impl ScriptedProxy {
         }
     }
 
+    /// A plain proxy behind an HTTPUpgrade transport on `path`: each
+    /// connection is upgraded first, then serves one CONNECT as [`Self::start`]
+    /// does.
+    pub async fn start_behind_upgrade(reply: Reply, remote: IpAddr, path: &'static str) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let log = captured.clone();
+        let task = tokio::spawn(async move {
+            for connection in 0.. {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let log = log.clone();
+                tokio::spawn(async move {
+                    let mut head = Vec::new();
+                    while !head.ends_with(b"\r\n\r\n") {
+                        let Ok(byte) = stream.read_u8().await else {
+                            return;
+                        };
+                        head.push(byte);
+                    }
+                    let head = String::from_utf8(head).unwrap().to_ascii_lowercase();
+                    if !head.starts_with(&format!("get {path} http/1.1\r\n"))
+                        || !head.contains("\r\nupgrade: websocket\r\n")
+                    {
+                        return;
+                    }
+                    let switched = b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n";
+                    stream.write_all(switched).await.unwrap();
+                    serve(stream, None, connection, reply, remote, log).await;
+                });
+            }
+        });
+        Self {
+            address,
+            captured,
+            http2_ended: Arc::default(),
+            task,
+        }
+    }
+
     /// How many HTTP/2 connections their client has closed so far.
     pub fn http2_ended(&self) -> usize {
         self.http2_ended.load(std::sync::atomic::Ordering::SeqCst)

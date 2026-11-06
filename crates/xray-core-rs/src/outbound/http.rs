@@ -2,10 +2,11 @@
 //!
 //! TCP only: there is no UDP or Mux path. The CONNECT request carries the
 //! configured custom headers and then Xray's browser masquerade block for
-//! navigations, as Xray's client sets them. TLS offers the application
-//! protocols Xray-core offers, `h2` included. When the proxy picks `h2`, the
-//! tunnel is an HTTP/2 stream, and later tunnels share that connection while
-//! it takes them, as Xray-core keeps one per proxy.
+//! navigations, as Xray's client sets them. Every transport carries it. TLS
+//! offers the application protocols Xray-core offers, `h2` included, and on
+//! the raw transport, when the proxy picks `h2`, the tunnel is an HTTP/2
+//! stream, and later tunnels share that connection while it takes them, as
+//! Xray-core keeps one per proxy.
 use super::*;
 use std::sync::PoisonError;
 use xray_proxy::outbound::{
@@ -57,26 +58,21 @@ impl HttpOutbound {
         if settings.level > 255 {
             return Err(CoreError::NoSupportedOutbound);
         }
-        // The parser enforces raw/tcp with none or TLS; keep that invariant
-        // for programmatically built configs.
-        if config.stream.transport != StreamTransport::Raw {
-            return Err(CoreError::UnsupportedOutboundNetwork);
-        }
-        match &config.stream.security {
-            StreamSecurity::None => {}
-            StreamSecurity::Tls(tls) if !tls.allow_insecure => {}
-            StreamSecurity::Tls(_) | StreamSecurity::Reality(_) => {
-                return Err(CoreError::UnsupportedOutboundSecurity);
-            }
+        // The parser refuses `allowInsecure`; keep that for programmatically
+        // built configs.
+        if matches!(&config.stream.security, StreamSecurity::Tls(tls) if tls.allow_insecure) {
+            return Err(CoreError::UnsupportedOutboundSecurity);
         }
         let mut masquerade = HeaderMap::new();
         apply_masquerade(&mut masquerade, "nav");
         Ok(Self(Arc::new(Payload {
+            // A plaintext public server is accepted for HTTP, so an XHTTP
+            // download leg to one is too.
             carrier: StreamCarrier::new(
                 &config.stream,
                 &settings.server,
                 settings.port,
-                true,
+                false,
                 carrier::TROJAN_PATHS,
             )?,
             account: settings.account.clone(),
@@ -239,9 +235,9 @@ impl HttpOutbound {
     }
 
     /// Dials the proxy and opens the tunnel in the protocol its TLS
-    /// negotiated, which Xray-core reads only from the raw transport's TLS.
-    /// Bytes that arrived with an HTTP/1.1 200 response are replayed before
-    /// the stream is read again.
+    /// negotiated, as [`Self::negotiated_http2`] reads it. Bytes that arrived
+    /// with an HTTP/1.1 200 response are replayed before the stream is read
+    /// again.
     async fn connect(
         &self,
         request: &[u8],
@@ -252,11 +248,8 @@ impl HttpOutbound {
         dialer: &TransportDialer,
     ) -> Result<BoxedTransportStream, CoreError> {
         let mut stream = self.0.carrier.open(candidates, download, dialer).await?;
-        match stream.negotiated_alpn() {
-            None => {}
-            Some(ALPN_HTTP11) => {}
-            Some(ALPN_H2) => return self.connect_http2(stream, target, source).await,
-            Some(_) => return Err(HttpClientError::UnsupportedApplicationProtocol.into()),
+        if self.negotiated_http2(stream.negotiated_alpn())? {
+            return self.connect_http2(stream, target, source).await;
         }
         stream.release_record_alignment();
         let early = http_connect(&mut stream, request).await?;
@@ -265,6 +258,27 @@ impl HttpOutbound {
         } else {
             Box::new(PrefixedStream::new(stream, early))
         })
+    }
+
+    /// Whether a new connection's tunnel is HTTP/2: the proxy's TLS picked
+    /// `h2`, which Xray-core reads only from the raw transport's TLS.
+    ///
+    /// Every other transport, and REALITY, carries HTTP/1.1 whatever was
+    /// negotiated, as there. Xray-core's own REALITY server negotiates no
+    /// protocol, but another may, and the proxy behind it reads the request
+    /// Xray-core's client sends.
+    fn negotiated_http2(&self, alpn: Option<&[u8]>) -> Result<bool, HttpClientError> {
+        let carrier = &self.0.carrier;
+        if !matches!(carrier.transport_layer, TransportLayer::Raw)
+            || !matches!(carrier.transport, ConnectorConfig::Tls(_))
+        {
+            return Ok(false);
+        }
+        match alpn {
+            None | Some(ALPN_HTTP11) => Ok(false),
+            Some(ALPN_H2) => Ok(true),
+            Some(_) => Err(HttpClientError::UnsupportedApplicationProtocol),
+        }
     }
 
     /// Opens HTTP/2 on a new connection and the tunnel on it, then keeps the
@@ -324,6 +338,67 @@ mod tests {
             http2_error(Http2ConnectError::Protocol("reset".to_owned())),
             CoreError::Transport(TransportError::Http2Connect(_))
         ));
+    }
+
+    fn outbound(stream: serde_json::Value) -> HttpOutbound {
+        let raw = serde_json::json!({"outbounds":[{"protocol":"http",
+            "settings":{"address":"proxy.example","port":443},"streamSettings":stream}]});
+        let config = xray_config::parse_xray_json(&raw.to_string())
+            .unwrap_or_else(|error| panic!("{raw}: {:?}", error.diagnostics))
+            .config;
+        HttpOutbound::new(&config.outbounds[0]).unwrap_or_else(|error| panic!("{raw}: {error:?}"))
+    }
+
+    fn reality() -> serde_json::Value {
+        serde_json::json!({"serverName":"proxy.example","fingerprint":"chrome",
+            "publicKey":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE","shortId":"02030405"})
+    }
+
+    #[test]
+    fn every_transport_and_security_builds() {
+        let tls = serde_json::json!({"serverName":"proxy.example"});
+        for stream in [
+            serde_json::json!({}),
+            serde_json::json!({"security":"tls","tlsSettings":tls}),
+            serde_json::json!({"security":"reality","realitySettings":reality()}),
+            serde_json::json!({"network":"ws","security":"tls","tlsSettings":tls}),
+            serde_json::json!({"network":"httpupgrade"}),
+            serde_json::json!({"network":"grpc","security":"reality","realitySettings":reality()}),
+            serde_json::json!({"network":"xhttp","security":"reality","realitySettings":reality()}),
+            serde_json::json!({"network":"xhttp","xhttpSettings":{"downloadSettings":{
+                "address":"198.51.100.20","port":443,"network":"xhttp"}}}),
+        ] {
+            outbound(stream);
+        }
+    }
+
+    /// Only the raw transport's TLS decides the tunnel's protocol, as in
+    /// Xray-core; everything else, REALITY included, carries HTTP/1.1.
+    #[test]
+    fn only_raw_tls_negotiates_the_tunnel_protocol() {
+        let tls = serde_json::json!({"serverName":"proxy.example"});
+        let raw_tls = outbound(serde_json::json!({"security":"tls","tlsSettings":tls}));
+        assert!(raw_tls.negotiated_http2(Some(ALPN_H2)).unwrap());
+        assert!(!raw_tls.negotiated_http2(Some(ALPN_HTTP11)).unwrap());
+        assert!(!raw_tls.negotiated_http2(None).unwrap());
+        assert!(matches!(
+            raw_tls.negotiated_http2(Some(b"spdy/3")),
+            Err(HttpClientError::UnsupportedApplicationProtocol)
+        ));
+        for stream in [
+            serde_json::json!({"security":"reality","realitySettings":reality()}),
+            serde_json::json!({"network":"ws","security":"tls","tlsSettings":tls}),
+            serde_json::json!({"network":"grpc","security":"tls","tlsSettings":tls}),
+            serde_json::json!({"network":"xhttp","security":"tls","tlsSettings":tls}),
+        ] {
+            let carried = outbound(stream.clone());
+            for alpn in [Some(ALPN_H2), Some(&b"spdy/3"[..]), None] {
+                assert!(
+                    !carried.negotiated_http2(alpn).unwrap(),
+                    "{stream} {alpn:?}"
+                );
+            }
+        }
     }
 }
 

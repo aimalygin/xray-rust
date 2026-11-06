@@ -3635,6 +3635,8 @@ fn bulk_interop_payload(len: usize) -> Vec<u8> {
 #[path = "local_xray_interop_tests/vless_encryption.rs"]
 mod vless_encryption;
 
+#[path = "local_xray_interop_tests/proxy_carriers.rs"]
+mod proxy_carriers;
 #[path = "local_xray_interop_tests/v08_carriers.rs"]
 mod v08_carriers;
 #[path = "local_xray_interop_tests/xhttp_download.rs"]
