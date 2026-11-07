@@ -2023,7 +2023,8 @@ A transform is an `op` over `args`, each exactly one of `bytes`, `u64`,
 - numbers packed into bytes: `be16`, `be32`, `le16`, `le32`, `le64`;
 - numbers: `add`, `sub`, `and`, `or`, `shl`, `shr`, `xor16`, `xor32`.
 
-Overflows, a short source and an unknown op fail the dial, as in Xray-core.
+Overflows, a short source and an unknown op fail the dial, as in Xray-core. An
+item sent or read, and a `pad`, is at most 1 MiB here.
 `metadata` reads the carrier's own addresses: `local_port` and `remote_port`,
 `local_ip4_u32` and `remote_ip4_u32` for IPv4, and the aliases `src_*` for the
 remote end and `dst_*` for the local one. Each side reads its own, so a

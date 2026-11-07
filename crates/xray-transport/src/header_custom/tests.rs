@@ -184,7 +184,7 @@ fn byte_operations_refuse_what_go_refuses() {
         Err(error("pad fill must not be empty"))
     );
     assert_eq!(
-        eval("pad", vec![b(b"a"), u(MAX_PAD + 1), b(b"z")]),
+        eval("pad", vec![b(b"a"), u(MAX_ITEM as u64 + 1), b(b"z")]),
         Err(error("pad target too large"))
     );
     assert_eq!(
@@ -244,4 +244,47 @@ fn measuring_follows_go() {
         Err(error("metadata not implemented: local_port"))
     );
     assert_eq!(measure_item(&item(), &mut sizes), Ok(0));
+}
+
+#[tokio::test]
+async fn items_past_a_mebibyte_fail_sent_or_read() {
+    // A capture that doubles at every step: 64 KiB, then up to 2 MiB.
+    let mut client = vec![CustomItem {
+        rand: 65536,
+        capture: "v".to_owned(),
+        ..item()
+    }];
+    for _ in 0..5 {
+        client.push(CustomItem {
+            transform: Some(expr(
+                "concat",
+                vec![CustomArg::Reuse("v".into()), CustomArg::Reuse("v".into())],
+            )),
+            capture: "v".to_owned(),
+            ..item()
+        });
+    }
+    let config = HeaderCustomTcpConfig {
+        clients: vec![client],
+        servers: vec![],
+    };
+    let (mut stream, _peer) = tokio::io::duplex(1 << 23);
+    let error = client_handshake(&mut stream, &config, None, None)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("exceeds 1 MiB"), "{error}");
+    // A server item measured one byte past it.
+    let config = HeaderCustomTcpConfig {
+        clients: vec![],
+        servers: vec![vec![CustomItem {
+            transform: Some(expr("truncate", vec![b(b"a"), u((1 << 20) + 1)])),
+            ..item()
+        }]],
+    };
+    let (mut stream, peer) = tokio::io::duplex(64);
+    drop(peer);
+    let error = client_handshake(&mut stream, &config, None, None)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("exceeds 1 MiB"), "{error}");
 }

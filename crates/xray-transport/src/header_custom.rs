@@ -131,8 +131,9 @@ impl Context {
     }
 }
 
-/// The longest `pad` result here; Xray-core allocates any length asked.
-const MAX_PAD: u64 = 1 << 20;
+/// The longest item sent or read, and `pad` result, here. Xray-core
+/// allocates whatever is asked, and captures can double an item each step.
+const MAX_ITEM: usize = 1 << 20;
 
 /// Go's `crypto.RandBetween`: the upper end is never drawn.
 fn rand_between(from: i64, to: i64) -> i64 {
@@ -340,7 +341,7 @@ pub(crate) fn evaluate_expr(expr: &CustomExpr, context: &Context) -> Result<Valu
                 return Err(error("pad target shorter than source"));
             }
             // Xray-core allocates whatever the target says.
-            if target > MAX_PAD {
+            if target > MAX_ITEM as u64 {
                 return Err(error("pad target too large"));
             }
             let target = target as usize;
@@ -474,7 +475,11 @@ where
                 tokio::time::sleep(Duration::from_millis(millis as u64)).await;
             }
         }
-        merged.extend(evaluate_item(item, context).map_err(auth_failed)?);
+        let bytes = evaluate_item(item, context).map_err(auth_failed)?;
+        if bytes.len() > MAX_ITEM {
+            return Err(auth_failed("an item exceeds 1 MiB"));
+        }
+        merged.extend(bytes);
     }
     if !merged.is_empty() {
         stream.write_all(&merged).await?;
@@ -494,6 +499,9 @@ where
 {
     for item in sequence {
         let length = measure_item(item, &mut context.sizes()).map_err(auth_failed)?;
+        if length > MAX_ITEM {
+            return Err(auth_failed("an item exceeds 1 MiB"));
+        }
         let mut received = vec![0; length];
         stream.read_exact(&mut received).await?;
         if !match_item(item, &received, context).map_err(auth_failed)? {

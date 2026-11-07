@@ -441,9 +441,10 @@ differences:
 - One `header-custom` TCP mask, and a `fragment` mask only before it. After
   it, Xray-core's fragment mask would split the handshake instead of the TLS
   ClientHello.
-- `rand` is at most 65536 bytes and a `pad` at most 1 MiB, where Xray-core
-  allocates whatever is asked. A `slice` whose offset and length overflow
-  fails, where Xray-core panics.
+- `rand` is at most 65536 bytes, and an item sent or read and a `pad` at
+  most 1 MiB, where Xray-core allocates whatever is asked, even when
+  captures double an item at every step. A `slice` whose offset and length
+  overflow fails, where Xray-core panics.
 - Only the carriers of proxying outbounds run it. Xray-core runs TCP masks on
   freedom and DNS dials too, and ignores them on UDP carriers, which refuse
   them here.
