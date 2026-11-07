@@ -25,19 +25,22 @@ Hysteria accepts one Salamander mask and the v26.10.21 UDP-hop mask:
 ```json
 "finalmask": {
   "udp": [
+    {"type": "salamander", "settings": {"password": "synthetic-example-password"}},
     {"type": "udphop", "settings": {
       "mode": "intervalLocal,intervalRemote", "remotePorts": "443,8443-8445", "interval": "5-10"
-    }},
-    {"type": "salamander", "settings": {"password": "synthetic-example-password"}}
+    }}
   ],
   "quicParams": {"disableChromeParrot": true}
 }
 ```
 
-Both masks are optional. UDP-hop must be first. XHTTP with exact `h3` ALPN
-accepts the same UDP-hop mask (see the XHTTP H3 section). Its `mode` is a
-comma-separated mix of Xray-core v26.10.31's modes, read as Xray reads them:
-case-insensitive, without trimming, and refusing an empty or unknown part.
+Both masks are optional. UDP-hop must be last: Xray-core reverses the list
+and dials only an outermost UDP-hop, so a mask after it fails every dial with
+`incorrect index`, though `xray run -test` accepts it. XHTTP with exact `h3`
+ALPN accepts the same UDP-hop mask (see the XHTTP H3 section). Its `mode` is
+a comma-separated mix of Xray-core v26.10.31's modes, read as Xray reads
+them: case-insensitive, without trimming, and refusing an empty or unknown
+part.
 
 - `intervalLocal` moves the connection to a fresh protected local socket at
   every interval, still aimed at the same remote address.

@@ -10,6 +10,12 @@ long-term supported release series.
 
 ## Unreleased
 
+- `udphop` is now the last UDP mask, where Xray-core dials it: Xray-core
+  reverses the list and dials only an outermost `udphop`, so a mask after it
+  fails every dial with `incorrect index`. The first place used to be
+  required here, which refused working Xray-core configurations and took ones
+  it cannot dial. Hysteria links with port hopping and Salamander now import
+  with the hop last.
 - mKCP: `network: "kcp"` and `"mkcp"` carry VLESS, VMess, Trojan,
   Shadowsocks, SOCKS and HTTP over Xray-core's reliable stream over UDP, plain
   or under TLS, Vision included. Profiles with it used to fail to parse. See

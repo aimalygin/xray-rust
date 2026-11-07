@@ -181,6 +181,47 @@ fn udp_hop_mask_hops_xhttp_over_h3_like_hysteria() {
 }
 
 #[test]
+fn udp_hop_mask_is_last_as_xray_dials_it() {
+    let hop =
+        json!({"type":"udphop","settings":{"mode":"intervalLocal","remotePorts":"20000-20002"}});
+    let salamander = json!({"type":"salamander","settings":{"password":"synthetic"}});
+    let noise = json!({"type":"noise","settings":{"noise":[{"type":"str","packet":"nz"}]}});
+    let parrot = json!({"disableChromeParrot":true});
+    let with = |udp: Value| {
+        let mut raw = hysteria();
+        raw["outbounds"][0]["streamSettings"]["finalmask"] = json!({"udp":udp,"quicParams":parrot});
+        parse_xray_json(&raw.to_string())
+    };
+    for udp in [
+        json!([hop]),
+        json!([salamander, hop]),
+        json!([noise, salamander, hop]),
+        json!([salamander, noise, hop]),
+    ] {
+        let parsed = with(udp.clone()).unwrap_or_else(|e| panic!("{udp}: {e:?}"));
+        let hop = &parsed.config.outbounds[0]
+            .stream
+            .quic_params
+            .as_ref()
+            .unwrap()
+            .udp_hop;
+        assert_eq!(hop.ports, [20000, 20001, 20002], "{udp}");
+    }
+    // Xray-core reverses the list and dials only an outermost udphop; a mask
+    // after it fails every dial with "incorrect index".
+    for udp in [json!([hop, salamander]), json!([salamander, hop, noise])] {
+        let errors = with(udp.clone()).unwrap_err();
+        assert!(
+            errors
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("must be the last UDP mask")),
+            "{udp}: {errors:?}"
+        );
+    }
+}
+
+#[test]
 fn legacy_udp_hop_hint_points_only_quic_carriers_at_the_udphop_mask() {
     let hint = |raw: &Value| -> String {
         let parsed = parse_xray_json(&raw.to_string()).unwrap();

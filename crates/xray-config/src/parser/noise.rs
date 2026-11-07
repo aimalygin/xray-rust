@@ -17,10 +17,12 @@ impl Parser<'_> {
         })?;
         let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp[{i}].settings");
         // Xray applies UDP masks to any UDP dial; here the QUIC carriers hop.
-        if !is_quic || i != 0 {
+        // Xray reverses the list and dials only an outermost udphop, so any
+        // mask after it fails every dial with "incorrect index".
+        if !is_quic || i + 1 != masks.len() {
             self.error(
                 &path,
-                "udphop requires Hysteria or XHTTP with exact h3 ALPN and must be the first UDP mask",
+                "udphop requires Hysteria or XHTTP with exact h3 ALPN and must be the last UDP mask",
             );
         }
         let settings = mask.get("settings").filter(|s| s.is_object());

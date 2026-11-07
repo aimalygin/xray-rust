@@ -482,6 +482,9 @@ The `udphop` UDP mask reads Xray-core v26.10.31's `intervalLocal`,
   with two ports half of its hops keep the same one.
 - `remoteIPs` of the other address family than the server's are never drawn,
   since the QUIC endpoint keeps its socket family; Xray-core dials either.
+- A mask after `udphop` is refused when the configuration is read. Xray-core's
+  `xray run -test` accepts it, then fails every dial with `incorrect index`,
+  because it reverses the list and dials only an outermost `udphop`.
 
 Evidence: live against Xray-core v26.10.31, a Hysteria client of each core went
 through two UDP relays in front of an Xray Hysteria server with a 5-second
