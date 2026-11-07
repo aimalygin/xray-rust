@@ -655,7 +655,7 @@
         "quicParams"
       ],
       "id": "FINALMASK",
-      "notes": "TCP supports one tlshello fragment mask. Hysteria, mKCP and XHTTP H3 support one UDP noise mask; Hysteria also supports one Salamander mask and mKCP any number of mkcp-legacy masks, preserving array order."
+      "notes": "TCP supports one tlshello fragment mask and one header-custom mask. Hysteria, mKCP and XHTTP H3 support one UDP noise mask; Hysteria also supports one Salamander mask and mKCP any number of mkcp-legacy masks, preserving array order."
     },
     {
       "context": "streamSettings.finalmask.udp[]",
@@ -752,7 +752,54 @@
         "settings"
       ],
       "id": "TCP_MASK_ENTRY",
-      "notes": "Exactly one fragment mask; type is case-insensitive."
+      "notes": "At most one fragment and one header-custom mask, the fragment first when both are set; type is case-insensitive."
+    },
+    {
+      "context": "streamSettings.finalmask.tcp[].settings (header-custom)",
+      "fields": [
+        "clients",
+        "servers",
+        "errors"
+      ],
+      "id": "HEADER_CUSTOM_TCP",
+      "notes": "Absent or null settings and sequences are empty. Before any other byte, the client writes clients[0], reads servers[0], writes clients[1], and so on, then reads the servers left; each server sequence must match. errors are read and never sent by a client."
+    },
+    {
+      "context": "streamSettings.finalmask.tcp[].settings.{clients,servers,errors}[][] (header-custom)",
+      "fields": [
+        "delay",
+        "rand",
+        "randRange",
+        "capture",
+        "type",
+        "reuse",
+        "transform",
+        "packet"
+      ],
+      "id": "HEADER_CUSTOM_TCP_ITEM",
+      "notes": "At most one of packet (decoded by type: array, str, hex or base64), rand (random bytes in randRange, default 0-255, at most 65536 here), reuse (a captured variable) and transform; capture saves the item under a name of ASCII letters, digits and underscores. delay waits a random number of milliseconds before the item when its upper bound is positive."
+    },
+    {
+      "context": "streamSettings.finalmask.*[].settings...transform (header-custom)",
+      "fields": [
+        "op",
+        "args"
+      ],
+      "id": "HEADER_CUSTOM_TRANSFORM",
+      "notes": "op and at least one arg are required. Ops: concat, slice, xor16, xor32, be16, be32, le16, le32, le64, pad, truncate, add, sub, and, or, shl and shr; an unknown op fails when the connection evaluates it, as in Xray-core."
+    },
+    {
+      "context": "streamSettings.finalmask.*[].settings...transform.args[] (header-custom)",
+      "fields": [
+        "type",
+        "bytes",
+        "u64",
+        "reuse",
+        "metadata",
+        "transform"
+      ],
+      "id": "HEADER_CUSTOM_ARG",
+      "notes": "Exactly one of bytes (decoded by type), u64, reuse, metadata (local_port, remote_port, local_ip4_u32, remote_ip4_u32, src_port_u16, dst_port_u16, src_ip4_u32, dst_ip4_u32) and transform."
     },
     {
       "context": "streamSettings.finalmask.tcp[].settings (fragment)",

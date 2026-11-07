@@ -61,7 +61,7 @@ impl Parser<'_> {
             }
             quic_params.get_or_insert_with(Default::default).udp_hop = hop;
         }
-        let tcp_fragment = self.parse_tcp_fragment_mask(stream, index);
+        let (tcp_fragment, tcp_header_custom) = self.parse_tcp_masks(stream, index);
         let udp_noise = self.parse_udp_noise(stream, stream_network, index);
         let socket_options = self.parse_socket_options(stream, index);
         if let Some(stream) = stream {
@@ -135,6 +135,7 @@ impl Parser<'_> {
             security,
             quic_params,
             tcp_fragment,
+            tcp_header_custom,
             udp_noise,
             socket_options,
         })

@@ -1988,6 +1988,60 @@ not delivered yet.
 The deliberate differences from Xray-core and the evidence behind this are in
 [mKCP](xray-core-differences.md#mkcp).
 
+### header-custom TCP mask
+
+A `header-custom` entry in `finalmask.tcp` is a handshake every TCP carrier
+sends and checks before any other byte, as Xray-core v26.10.31's runs: raw,
+WebSocket, HTTPUpgrade, gRPC and XHTTP over TCP, under none, TLS or REALITY,
+for VLESS, VMess, Trojan, Shadowsocks, SOCKS and HTTP.
+
+```json
+"finalmask": {"tcp": [{"type": "header-custom", "settings": {
+  "clients": [[{"type": "str", "packet": "HELLO"}, {"rand": 8, "capture": "nonce"}]],
+  "servers": [[{"reuse": "nonce"}, {"type": "str", "packet": "OK"}]]
+}}]}
+```
+
+The client writes `clients[0]`, reads `servers[0]`, writes `clients[1]`, and so
+on, then reads the server sequences left. Every byte the server sends must be
+what its item expects, or the dial fails. `errors` is read and never sent by a
+client.
+
+An item is at most one of these:
+
+- `packet`, decoded by `type`: `array` or empty (a byte array, or a string Go
+  reads as base64), `str`, `hex` or `base64`;
+- `rand` random bytes within `randRange`, by default 0 to 255, at most 65536;
+- `reuse`, the bytes captured under that name;
+- a `transform`.
+
+`capture` saves the item's bytes under a name of letters, digits and
+underscores. `delay` waits a random number of milliseconds before the item,
+sending what came before it first, when its upper bound is positive.
+
+A transform is an `op` over `args`, each exactly one of `bytes`, `u64`,
+`reuse`, `metadata` or another `transform`:
+
+- bytes: `concat`, `slice`, `pad`, `truncate`;
+- numbers packed into bytes: `be16`, `be32`, `le16`, `le32`, `le64`;
+- numbers: `add`, `sub`, `and`, `or`, `shl`, `shr`, `xor16`, `xor32`.
+
+Overflows, a short source and an unknown op fail the dial, as in Xray-core. An
+item sent or read, and a `pad`, is at most 1 MiB here.
+`metadata` reads the carrier's own addresses: `local_port` and `remote_port`,
+`local_ip4_u32` and `remote_ip4_u32` for IPv4, and the aliases `src_*` for the
+remote end and `dst_*` for the local one. Each side reads its own, so a
+client's `remote_port` is the server's `local_port`. A carrier through another
+outbound reads `0.0.0.0:0` for both, as Xray's chained connection does.
+
+The handshake runs as soon as TCP connects, before the fragment mask, TLS and
+REALITY. A `fragment` mask may stand before it in the array; after it, Xray-core
+fragments the handshake rather than the TLS ClientHello, so that order is
+refused. `header-custom` is refused on mKCP, XHTTP over HTTP/3, a split XHTTP
+download and outbounds that dial directly. The UDP form is not supported yet.
+Deliberate differences and the evidence are in
+[header-custom TCP](xray-core-differences.md#header-custom-tcp).
+
 ### TLS ClientHello shaping
 
 `security: "tls"` sends a uTLS-shaped ClientHello, as Xray-core does on every

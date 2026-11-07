@@ -16,6 +16,14 @@ long-term supported release series.
   required here, which refused working Xray-core configurations and took ones
   it cannot dial. Hysteria links with port hopping and Salamander now import
   with the hop last.
+- The `header-custom` TCP mask runs Xray-core's handshake on every TCP
+  carrier before anything else: raw, WebSocket, HTTPUpgrade, gRPC and XHTTP,
+  under none, TLS or REALITY. Every item kind and transform op is read, with
+  the carrier's addresses as metadata. See
+  [header-custom TCP mask](docs/config-compatibility.md#header-custom-tcp-mask).
+  - A `fragment` mask may come before it, not after.
+  - `rand` is at most 65536 bytes, and an item sent or read and a `pad` at
+    most 1 MiB.
 - mKCP: `network: "kcp"` and `"mkcp"` carry VLESS, VMess, Trojan,
   Shadowsocks, SOCKS and HTTP over Xray-core's reliable stream over UDP, plain
   or under TLS, Vision included. Profiles with it used to fail to parse. See

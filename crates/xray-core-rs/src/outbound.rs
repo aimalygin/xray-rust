@@ -4908,6 +4908,7 @@ mod tests {
                 security: StreamSecurity::None,
                 quic_params: None,
                 tcp_fragment: None,
+                tcp_header_custom: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -4926,6 +4927,7 @@ mod tests {
                 security: StreamSecurity::None,
                 quic_params: None,
                 tcp_fragment: None,
+                tcp_header_custom: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -4955,6 +4957,7 @@ mod tests {
                 security: StreamSecurity::None,
                 quic_params: None,
                 tcp_fragment: None,
+                tcp_header_custom: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -5275,6 +5278,7 @@ mod tests {
                 }),
                 quic_params: None,
                 tcp_fragment: None,
+                tcp_header_custom: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -5317,6 +5321,7 @@ mod tests {
                     }),
                     quic_params: None,
                     tcp_fragment: None,
+                    tcp_header_custom: None,
                     udp_noise: None,
                     socket_options: None,
                 },
@@ -5354,6 +5359,7 @@ mod tests {
             }),
             quic_params: None,
             tcp_fragment: None,
+            tcp_header_custom: None,
             udp_noise: None,
             socket_options: None,
         };
@@ -5388,6 +5394,7 @@ mod tests {
                 }),
                 quic_params: None,
                 tcp_fragment: None,
+                tcp_header_custom: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -5463,6 +5470,7 @@ mod tests {
                 security: StreamSecurity::None,
                 quic_params: None,
                 tcp_fragment: None,
+                tcp_header_custom: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -5501,6 +5509,7 @@ mod tests {
                 security: StreamSecurity::Reality(reality.clone()),
                 quic_params: None,
                 tcp_fragment: None,
+                tcp_header_custom: None,
                 udp_noise: None,
                 socket_options: Some(SocketOptions {
                     happy_eyeballs: Some(HappyEyeballsSettings {
@@ -5545,6 +5554,7 @@ mod tests {
                 security: StreamSecurity::None,
                 quic_params: None,
                 tcp_fragment: None,
+                tcp_header_custom: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -5564,6 +5574,7 @@ mod tests {
                 security: StreamSecurity::None,
                 quic_params: None,
                 tcp_fragment: None,
+                tcp_header_custom: None,
                 udp_noise: None,
                 socket_options: Some(SocketOptions {
                     happy_eyeballs: Some(HappyEyeballsSettings::default()),
@@ -5589,6 +5600,7 @@ mod tests {
                 security: StreamSecurity::None,
                 quic_params: None,
                 tcp_fragment: None,
+                tcp_header_custom: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -5611,6 +5623,7 @@ mod tests {
                 }),
                 quic_params: None,
                 tcp_fragment: None,
+                tcp_header_custom: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -6132,6 +6145,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    header_custom: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
@@ -9398,6 +9412,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    header_custom: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
@@ -9440,6 +9455,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    header_custom: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
@@ -9500,6 +9516,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    header_custom: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
@@ -9585,6 +9602,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    header_custom: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
@@ -9665,6 +9683,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    header_custom: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
@@ -9732,6 +9751,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    header_custom: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
@@ -9809,6 +9829,7 @@ mod tests {
                 encryption: None,
                 carrier: StreamCarrier {
                     fragment: None,
+                    header_custom: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,

@@ -25,6 +25,8 @@ pub(super) struct StreamCarrier {
     pub(super) download: Option<XhttpDownloadOutbound>,
     pub(super) happy_eyeballs: Option<HappyEyeballsConfig>,
     pub(super) fragment: Option<Arc<xray_transport::TcpFragmentConfig>>,
+    /// The `header-custom` TCP mask, run on every TCP carrier it opens.
+    pub(super) header_custom: Option<Arc<xray_transport::header_custom::HeaderCustomTcpConfig>>,
     /// `sockopt`, for every socket the carrier opens.
     pub(super) socket_options: Option<Arc<xray_transport::SocketOptions>>,
     /// `sockopt.addressPortStrategy`, for the server's address and port.
@@ -44,8 +46,18 @@ impl StreamCarrier {
         }
         super::validate_udp_noise(stream)?;
         let fragment = fragment_config(stream)?;
+        let header_custom = header_custom_config(stream.tcp_header_custom.as_ref());
         let transport = build_connector(&stream.security, server);
         let transport_layer = build_transport_layer(stream, server, port, &transport, paths)?;
+        // Only TCP carriers take TCP masks; a split XHTTP download keeps its
+        // own dialer, which does not run the handshake.
+        if header_custom.is_some()
+            && (matches!(&transport_layer, TransportLayer::Xhttp(xhttp) if xhttp.http_version() == XhttpHttpVersion::Http3)
+                || matches!(transport_layer, TransportLayer::Kcp(_))
+                || matches!(&stream.transport, StreamTransport::Xhttp(xhttp) if xhttp.download.is_some()))
+        {
+            return Err(CoreError::UnsupportedOutboundNetwork);
+        }
         if fragment.is_some()
             && (matches!(transport, ConnectorConfig::Tcp)
                 || matches!(&transport_layer, TransportLayer::Xhttp(xhttp) if xhttp.http_version() == XhttpHttpVersion::Http3)
@@ -62,6 +74,7 @@ impl StreamCarrier {
             server: Target::new(addr, port, RoutingNetwork::Tcp),
             transport_layer,
             fragment,
+            header_custom,
             transport,
             download: build_xhttp_download(stream, unencrypted_payload)?,
             happy_eyeballs: happy_eyeballs_config(stream),
@@ -73,8 +86,12 @@ impl StreamCarrier {
     /// `dialer` with this carrier's socket options and fragment mask.
     pub(super) fn dialer<'a>(&self, dialer: &'a TransportDialer) -> Cow<'a, TransportDialer> {
         let dialer = socket_options::dialer(dialer, self.socket_options.as_ref());
-        match &self.fragment {
+        let dialer = match &self.fragment {
             Some(fragment) => Cow::Owned(dialer.into_owned().with_tcp_fragment(fragment.clone())),
+            None => dialer,
+        };
+        match &self.header_custom {
+            Some(header) => Cow::Owned(dialer.into_owned().with_tcp_header_custom(header.clone())),
             None => dialer,
         }
     }
@@ -511,6 +528,59 @@ fn host_and_port(server: &TargetAddr, port: u16) -> String {
     }
 }
 
+/// The transport's form of a `header-custom` TCP mask.
+pub(super) fn header_custom_config(
+    header: Option<&xray_config::HeaderCustomTcp>,
+) -> Option<Arc<xray_transport::header_custom::HeaderCustomTcpConfig>> {
+    use xray_transport::header_custom::{CustomArg, CustomExpr, CustomItem, HeaderCustomTcpConfig};
+    fn expr(source: &xray_config::HeaderCustomExpr) -> CustomExpr {
+        CustomExpr {
+            op: source.op.clone(),
+            args: source
+                .args
+                .iter()
+                .map(|arg| match arg {
+                    xray_config::HeaderCustomArg::Bytes(bytes) => CustomArg::Bytes(bytes.clone()),
+                    xray_config::HeaderCustomArg::U64(value) => CustomArg::U64(*value),
+                    xray_config::HeaderCustomArg::Reuse(name) => CustomArg::Reuse(name.clone()),
+                    xray_config::HeaderCustomArg::Metadata(name) => {
+                        CustomArg::Metadata(name.clone())
+                    }
+                    xray_config::HeaderCustomArg::Transform(inner) => {
+                        CustomArg::Transform(expr(inner))
+                    }
+                })
+                .collect(),
+        }
+    }
+    let items = |sequences: &[Vec<xray_config::HeaderCustomItem>]| {
+        sequences
+            .iter()
+            .map(|sequence| {
+                sequence
+                    .iter()
+                    .map(|item| CustomItem {
+                        delay: item.delay,
+                        rand: item.rand,
+                        // The parser keeps the range within 0..=255.
+                        rand_range: (item.rand_range.0 as u8, item.rand_range.1 as u8),
+                        packet: item.packet.clone(),
+                        capture: item.capture.clone(),
+                        reuse: item.reuse.clone(),
+                        transform: item.transform.as_ref().map(expr),
+                    })
+                    .collect()
+            })
+            .collect()
+    };
+    header.map(|header| {
+        Arc::new(HeaderCustomTcpConfig {
+            clients: items(&header.clients),
+            servers: items(&header.servers),
+        })
+    })
+}
+
 pub(super) fn fragment_config(
     stream: &StreamSettings,
 ) -> Result<Option<Arc<xray_transport::TcpFragmentConfig>>, CoreError> {
@@ -528,3 +598,6 @@ pub(super) fn fragment_config(
         })
         .transpose()
 }
+
+#[cfg(test)]
+mod tests;

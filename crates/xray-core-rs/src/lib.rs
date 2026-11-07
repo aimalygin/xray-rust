@@ -801,6 +801,21 @@ impl Core {
                 )
                 .map_err(|_| CoreError::UnsupportedOutboundNetwork)?;
             }
+            // `header-custom` runs on the TCP carriers of the outbounds that
+            // proxy over a stream transport, not on direct or DNS dials.
+            if outbound.stream.tcp_header_custom.is_some()
+                && !matches!(
+                    outbound.settings,
+                    xray_config::OutboundSettings::Vless(_)
+                        | xray_config::OutboundSettings::Vmess(_)
+                        | xray_config::OutboundSettings::Trojan(_)
+                        | xray_config::OutboundSettings::Shadowsocks2022(_)
+                        | xray_config::OutboundSettings::Socks(_)
+                        | xray_config::OutboundSettings::Http(_)
+                )
+            {
+                return Err(CoreError::UnsupportedOutboundNetwork);
+            }
             if matches!(
                 outbound.settings,
                 xray_config::OutboundSettings::Wireguard(_)
