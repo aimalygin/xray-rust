@@ -10,6 +10,16 @@ long-term supported release series.
 
 ## Unreleased
 
+- mKCP: `network: "kcp"` and `"mkcp"` carry VLESS, VMess, Trojan,
+  Shadowsocks, SOCKS and HTTP over Xray-core's reliable stream over UDP, plain
+  or under TLS, Vision included. Profiles with it used to fail to parse. See
+  [mKCP](docs/config-compatibility.md#mkcp).
+  - `kcpSettings` takes Xray's fields and defaults. `header` and `seed` are
+    ignored, as by Xray-core v26, with a warning.
+  - `mkcp-legacy` masks, the original obfuscation, AES-128-GCM from a seed and
+    the old headers, and a noise mask apply in array order.
+  - `mtu` is at most 8192, where Xray-core panics on a full segment.
+    Salamander, `udphop`, TCP masks and chaining are refused on mKCP.
 - VLESS `testpre` keeps that many carrier connections opened ahead of the
   requests that take them, as Xray-core does, up to 64. Profiles with it used
   to fail to parse.

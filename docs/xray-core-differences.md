@@ -382,6 +382,52 @@ Deliberate differences:
   padding length when a short record is longer than its third number. Here a
   zero range pads nothing and that part of the padding is zero.
 
+## mKCP
+
+mKCP and its `mkcp-legacy` masks are read and run as Xray-core v26.10.31's
+([details](config-compatibility.md#mkcp)). Deliberate differences:
+
+- `mtu` is at most 8192. Xray-core accepts more, then panics on the first
+  segment that does not fit its 8192-byte buffer.
+- A `dns` header whose labels fill all 256 bytes of the name fails the dial.
+  Xray-core panics there.
+- Only `mkcp-legacy` and `noise` masks apply to mKCP; Salamander, `udphop`
+  and TCP masks are refused on it, and `mkcp-legacy` on any other transport.
+  Xray-core applies every UDP mask to mKCP's socket, ignores TCP masks on it,
+  and ignores UDP masks on TCP transports.
+- mKCP over another outbound, through `dialerProxy` or `proxySettings`, is
+  refused. Xray-core dials its datagrams through the chain.
+- A datagram the system refuses to send counts as lost, and goes again when
+  its retransmission timeout passes. Xray-core retries it five times 100 ms
+  apart, holding the connection's writer meanwhile.
+- `kcpSettings.header` and `kcpSettings.seed` warn that they are ignored.
+  Xray-core v26 ignores them silently.
+
+Xray-core's own SOCKS inbound panics over mKCP, taking its local address for
+a TCP one (`proxy/socks/server.go:112`), so the SOCKS outbound over mKCP has
+no Xray-core server to talk to.
+
+Evidence, against Xray-core v26.10.31:
+
+- Byte for byte, its finalmask code and ours wrap and unwrap the same
+  datagrams for every `mkcp-legacy` mask, with the header counters, the DNS
+  names Xray packs oddly, groups split by noise, and the 4096-byte drops
+  (`tools/kcp-oracle`, `tests/fixtures/kcp/mask-vectors.json`).
+- Live, its mKCP server carried VLESS, VMess, Trojan, Shadowsocks and HTTP
+  from our client, plain and under TLS, with each mask, noise between masks,
+  Mux with XUDP, and Vision through a direct-mode switch under inner TLS
+  (`scripts/check-kcp-interop.sh`).
+- Its client and ours, through a relay in front of its server: neither sent
+  anything before the first request; both sent the same 53 data segments for
+  a 64 KiB echo, then a terminate 1.0 s after the request closed, then two
+  pings in 12 idle seconds; both finished the echo through 10% loss each way;
+  and both ended a read about 30 seconds after the server fell silent.
+- Both resend segments the server already has on loopback, where the
+  retransmission timeout falls to about a millisecond after the first sample:
+  over seven echoes its client sent 53 to 98 data segments for the 53 it
+  needed, ours 53 to 74. The protocol is the same; when acks are read
+  relative to flushes differs.
+
 ## DNS `UseSystem` route probe
 
 `queryStrategy: "UseSystem"` narrows each lookup to the address families the

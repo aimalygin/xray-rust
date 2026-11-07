@@ -17,8 +17,8 @@ use xray_routing::{Network as RouteNetwork, Target, TargetAddr as RouteAddr};
 use xray_transport::{SocketHandle, SocketProtector};
 
 const SERVER: &str = "proxy-carrier.test";
-const USER: &str = "synthetic-proxy-carrier-user";
-const PASS: &str = "synthetic-proxy-carrier-pass";
+pub(super) const USER: &str = "synthetic-proxy-carrier-user";
+pub(super) const PASS: &str = "synthetic-proxy-carrier-pass";
 const REALITY_NAME: &str = "encryption-oracle.test";
 
 struct Task(tokio::task::JoinHandle<()>);
@@ -48,7 +48,7 @@ impl DnsResolver for Resolver {
 }
 
 /// `protocol` is `socks` or `http`, with an account either way.
-fn proxy_inbound(config: &mut Value, protocol: &str) {
+pub(super) fn proxy_inbound(config: &mut Value, protocol: &str) {
     config["log"]["loglevel"] = "debug".into();
     if config["inbounds"][0]["streamSettings"]["security"] == "reality" {
         config["inbounds"][0]["streamSettings"]["realitySettings"]["show"] = false.into();
@@ -101,7 +101,7 @@ async fn socks(
 
 /// The `pinnedPeerCertSha256` of the server's generated certificate, so the
 /// outbound dials through the shaped TLS path a profile takes.
-fn certificate_pin(server: &XrayServer) -> String {
+pub(super) fn certificate_pin(server: &XrayServer) -> String {
     let pem = fs::read_to_string(server._temp_dir.path.join("server.crt.pem")).unwrap();
     let body: String = pem
         .lines()

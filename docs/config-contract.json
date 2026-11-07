@@ -655,16 +655,25 @@
         "quicParams"
       ],
       "id": "FINALMASK",
-      "notes": "TCP supports one tlshello fragment mask. Hysteria and XHTTP H3 support one UDP noise mask; Hysteria also supports one Salamander mask, preserving array order."
+      "notes": "TCP supports one tlshello fragment mask. Hysteria, mKCP and XHTTP H3 support one UDP noise mask; Hysteria also supports one Salamander mask and mKCP any number of mkcp-legacy masks, preserving array order."
     },
     {
-      "context": "streamSettings.finalmask.udp[] (Hysteria)",
+      "context": "streamSettings.finalmask.udp[]",
       "fields": [
         "type",
         "settings"
       ],
       "id": "FINALMASK_ENTRY",
-      "notes": "One noise and (Hysteria only) one salamander mask; type is case-insensitive."
+      "notes": "One noise mask, plus one salamander mask on Hysteria or mkcp-legacy masks on mKCP; type is case-insensitive."
+    },
+    {
+      "context": "streamSettings.finalmask.udp[].settings (mkcp-legacy)",
+      "fields": [
+        "header",
+        "value"
+      ],
+      "id": "MKCP_LEGACY",
+      "notes": "mKCP only; absent or null settings mean both empty. No header: original obfuscation without a value, AES-128-GCM keyed by the value's SHA-256 with one. header is dns, dtls, srtp, utp, wechat or wireguard, case-insensitive; dns asks for the value as its domain, www.baidu.com without one, and the others ignore the value."
     },
     {
       "context": "streamSettings.finalmask.udp[].settings (noise)",
@@ -1246,12 +1255,13 @@
         "grpcSettings",
         "xhttpSettings",
         "splithttpSettings",
+        "kcpSettings",
         "hysteriaSettings",
         "finalmask",
         "sockopt"
       ],
       "id": "STREAM",
-      "notes": "method takes priority over network. raw/tcp, ws/websocket, httpupgrade, grpc, xhttp/splithttp, hysteria; security none/tls/reality. Carrier/security combinations and inactive block handling require the validator."
+      "notes": "method takes priority over network. raw/tcp, ws/websocket, httpupgrade, grpc, xhttp/splithttp, kcp/mkcp, hysteria; security none/tls/reality. Carrier/security combinations and inactive block handling require the validator."
     },
     {
       "context": "streamSettings.tlsSettings",
@@ -1303,6 +1313,21 @@
       ],
       "id": "HYSTERIA",
       "notes": "Version 2, one server, nonzero port; requires matching Hysteria transport and TLS. No chaining."
+    },
+    {
+      "context": "streamSettings.kcpSettings",
+      "fields": [
+        "mtu",
+        "tti",
+        "uplinkCapacity",
+        "downlinkCapacity",
+        "cwndMultiplier",
+        "maxSendingWindow",
+        "header",
+        "seed"
+      ],
+      "id": "KCP_SETTINGS",
+      "notes": "Absent or null keeps the defaults (mtu 1350, tti 50, uplinkCapacity 5, downlinkCapacity 20, cwndMultiplier 1, maxSendingWindow 2 MiB); null fields keep theirs. mtu 21..=8192, tti 10..=1000, cwndMultiplier at least 1, maxSendingWindow at least mtu. header and seed are ignored, as by Xray-core v26: mkcp-legacy masks replace them."
     },
     {
       "context": "streamSettings.hysteriaSettings",

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{FragmentRange, UdpNoiseItem, UdpNoiseSettings};
+use crate::{go_lowercase, FragmentRange, UdpNoiseItem, UdpNoiseSettings};
 use base64::Engine as _;
 
 impl Parser<'_> {
@@ -94,6 +94,7 @@ impl Parser<'_> {
     pub(super) fn parse_udp_noise(
         &mut self,
         stream: Option<&Value>,
+        network: StreamNetwork,
         index: usize,
     ) -> Option<UdpNoiseSettings> {
         let raw = stream?.get("finalmask")?.get("udp")?;
@@ -108,7 +109,13 @@ impl Parser<'_> {
         let mut noise = None;
         let mut salamander = None;
         let mut hop = None;
-        if masks.len() > 3 {
+        // mKCP takes any number of `mkcp-legacy` masks besides these.
+        let legacy = |mask: &Value| {
+            mask.get("type")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| go_lowercase(kind) == "mkcp-legacy")
+        };
+        if masks.iter().filter(|mask| !legacy(mask)).count() > 3 {
             self.error(
                 &path,
                 "at most one udphop, one noise and one Salamander mask are supported",
@@ -121,7 +128,7 @@ impl Parser<'_> {
             match mask
                 .get("type")
                 .and_then(Value::as_str)
-                .map(str::to_ascii_lowercase)
+                .map(go_lowercase)
                 .as_deref()
             {
                 Some("noise") if noise.is_none() => {
@@ -133,6 +140,9 @@ impl Parser<'_> {
                 Some("udphop") if hop.is_none() => {
                     hop = Some(i);
                 }
+                // Read by `parse_kcp_masks`.
+                Some("mkcp-legacy") if network == StreamNetwork::Kcp => {}
+                Some("mkcp-legacy") => self.error(&p, "mkcp-legacy requires mKCP"),
                 _ => self.error(
                     &p,
                     "only one udphop, one noise and one Salamander UDP mask are supported",

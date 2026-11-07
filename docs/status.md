@@ -68,10 +68,11 @@ recorded with its original RC identity.
 | VLESS over WebSocket / HTTPUpgrade | Supported subset | Browser-masqueraded HTTP/1.1 upgrade with early data and keepalive; REALITY is refused; Vision requires VLESS encryption, matching Xray; live Xray-core interoperability tests |
 | VLESS over gRPC | Supported subset | One pooled HTTP/2 connection per outbound carrying `Hunk` or `MultiHunk` messages, with grpc-go's keepalive gate and dormancy; REALITY is accepted; Vision requires VLESS encryption, matching Xray; Go-oracle wire fixtures and live Xray-core interoperability tests |
 | VLESS over XHTTP | Supported subset | All three modes over production HTTP/1.1, pooled HTTP/2, and protected HTTP/3 over QUIC v1, including UUID/custom-table `sessionID*` generation, xmux, hermetic wire/lifecycle/pooling coverage, and live Xray-core interoperability for `packet-up`, `stream-up`, and `stream-one`. The v0.6 RC adds an independently validated download stack through `downloadSettings` for packet-up/stream-up; see [design](xhttp-download-design.md) |
+| mKCP | Implemented in development 0.10 | VLESS, VMess, Trojan, Shadowsocks, SOCKS and HTTP over Xray-core's mKCP, plain or under TLS with Vision, and the `mkcp-legacy` masks with noise. Engine tests with explicit time, mask vectors recorded from Xray-core v26.10.31's own finalmask code, loopback stream tests, and live interop against its mKCP server for each protocol but SOCKS, whose Xray-core inbound panics over mKCP, and for each mask, Mux and Vision direct mode (`scripts/check-kcp-interop.sh`); [configuration limits](config-compatibility.md#mkcp) |
 | TLS | Supported subset | Certificate-verified local integration tests; the uTLS-shaped ClientHello sent by default is covered by per-fingerprint shape tests. Canonical `allowInsecure: true` fails closed. `pinnedPeerCertSha256` supports Xray's full-DER leaf short-circuit and presented-CA pin; comma-separated `verifyPeerCertByName` supports ORed DNS/IP SAN verification against system roots or the pinned CA without changing SNI. |
 | REALITY client | Supported subset | Deterministic primitive tests and optional local Xray-core REALITY+Vision interoperability tests |
 | TCP Happy Eyeballs | Supported subset | Opt-in Xray-compatible Freedom/VLESS raw-TCP candidate race; bounded and cancellation-safe, with one TLS/REALITY handshake after connect |
-| `xtls-rprx-vision` | Supported subset | TCP and XUDP paths; direct mode over raw-transport TLS and REALITY, with optional local Xray-core interop carrying a real inner TLS session through each direct switch; UDP/443 behavior follows the selected Vision flow |
+| `xtls-rprx-vision` | Supported subset | TCP and XUDP paths; direct mode over raw-transport TLS and REALITY and over mKCP's TLS, with optional local Xray-core interop carrying a real inner TLS session through each direct switch; UDP/443 behavior follows the selected Vision flow |
 | Domain/IP/network/port routing | Supported subset | Ordered `field` rules with inbound tags, domain/CIDR/private/geodata matchers, network selectors, and numeric/range port selectors; populated selectors inside one rule are ANDed |
 | Routing-policy hot replacement | Supported | ABI 1.4 plus Swift/Kotlin atomically replace scoped ordered rules, `domainStrategy`, and compiled geodata matchers for new flows. Outbound/balancer topology and existing flows remain immutable; invalid updates retain the prior revision. |
 | Outbound selector groups and chaining | Supported subset | Xray `routing.balancers` prefix selectors, random/round-robin/`leastPing`, bounded rolling-window `leastLoad`, fallback tags, `balancerTag` rules, atomic validated host overrides, bounded `observatory` URL probes, typed health snapshots, and health-aware failover over shared handler pools; ABI 1.2 plus Swift/Kotlin expose capability-gated override and versioned selection/health snapshots. Explicit `proxySettings.transportLayer: true` adds validated cycle-free TCP Freedom/VLESS edges; development 0.8 adds Trojan/SS2022/VMess carrier edges. UDP/protocol-layer, REALITY, QUIC and independent XHTTP-download chaining remain unsupported. |
@@ -98,8 +99,8 @@ runtime validation.
 Notable unsupported areas include:
 
 - Shadowsocks stream ciphers and `none`, legacy VMess authentication, and server-side proxy protocols;
-- generic HTTP/2, QUIC and KCP transports, and stream transports beyond raw,
-  WebSocket, HTTPUpgrade, gRPC and XHTTP;
+- generic HTTP/2 and QUIC transports, and stream transports beyond raw,
+  WebSocket, HTTPUpgrade, gRPC, XHTTP and mKCP;
 - reverse proxy, observatory command/API services, regex `leastLoad`
   costs, and outbound chaining outside the documented transport-layer TCP
   subset;

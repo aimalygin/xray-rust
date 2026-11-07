@@ -1225,7 +1225,7 @@
               ]
             },
             "streamSettings": {
-              "network": "kcp",
+              "network": "masque",
               "security": "tls",
               "tlsSettings": {
                 "fingerprint": "chrome",
@@ -1642,6 +1642,142 @@
         "HYSTERIA_TRANSPORT": "/outbounds/0/streamSettings/hysteriaSettings",
         "FINALMASK_ENTRY": "/outbounds/0/streamSettings/finalmask/udp/0",
         "SALAMANDER": "/outbounds/0/streamSettings/finalmask/udp/0/settings"
+      }
+    },
+    {
+      "name": "mkcp",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "kcp",
+              "security": "tls",
+              "tlsSettings": {
+                "fingerprint": "chrome",
+                "serverName": "server.example"
+              },
+              "kcpSettings": {
+                "mtu": 1350,
+                "tti": 50,
+                "uplinkCapacity": 5,
+                "downlinkCapacity": 20,
+                "cwndMultiplier": 1,
+                "maxSendingWindow": 2097152,
+                "header": {
+                  "type": "none"
+                },
+                "seed": ""
+              },
+              "finalmask": {
+                "udp": [
+                  {
+                    "type": "mkcp-legacy",
+                    "settings": {
+                      "value": "synthetic-mkcp-seed"
+                    }
+                  },
+                  {
+                    "type": "mkcp-legacy",
+                    "settings": {
+                      "header": "wechat",
+                      "value": ""
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "KCP_SETTINGS": "/outbounds/0/streamSettings/kcpSettings",
+        "MKCP_LEGACY": "/outbounds/0/streamSettings/finalmask/udp/1/settings"
+      }
+    },
+    {
+      "name": "mkcp-mtu-below-21",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.kcpSettings.mtu",
+      "base": "mkcp",
+      "set": {
+        "/outbounds/0/streamSettings/kcpSettings/mtu": 20
+      }
+    },
+    {
+      "name": "mkcp-mtu-above-8192",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.kcpSettings.mtu",
+      "base": "mkcp",
+      "set": {
+        "/outbounds/0/streamSettings/kcpSettings/mtu": 8193
+      }
+    },
+    {
+      "name": "mkcp-legacy-unknown-header",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.header",
+      "base": "mkcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/header": "wechat-video"
+      }
+    },
+    {
+      "name": "mkcp-reality",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.security",
+      "base": "mkcp",
+      "set": {
+        "/outbounds/0/streamSettings/security": "reality",
+        "/outbounds/0/streamSettings/realitySettings": {
+          "serverName": "server.example",
+          "fingerprint": "chrome",
+          "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+          "shortId": "02030405"
+        }
+      }
+    },
+    {
+      "name": "mkcp-legacy-on-raw",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[0]",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask": {
+          "udp": [
+            {
+              "type": "mkcp-legacy"
+            }
+          ]
+        }
       }
     },
     {

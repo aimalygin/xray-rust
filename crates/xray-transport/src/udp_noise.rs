@@ -21,7 +21,7 @@ pub struct NoiseRange {
     pub to: u32,
 }
 impl NoiseRange {
-    fn sample(&self) -> u32 {
+    pub(crate) fn sample(&self) -> u32 {
         rand::thread_rng().gen_range(self.from..=self.to)
     }
     fn valid(&self, max: u32) -> bool {
@@ -34,6 +34,18 @@ pub struct UdpNoiseItem {
     pub random_length: NoiseRange,
     pub random_bytes: NoiseRange,
     pub delay_ms: NoiseRange,
+}
+impl UdpNoiseItem {
+    /// One noise packet: the fixed bytes, or random ones of a random length.
+    pub(crate) fn build(&self) -> Vec<u8> {
+        if self.random_length.to == 0 {
+            return self.packet.clone();
+        }
+        let mut rng = rand::thread_rng();
+        (0..self.random_length.sample())
+            .map(|_| rng.gen_range(self.random_bytes.from..=self.random_bytes.to) as u8)
+            .collect()
+    }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UdpNoiseConfig {
@@ -141,15 +153,7 @@ impl AsyncUdpSocket for NoiseSocket {
             let Some(item) = self.config.items.get(state.index) else {
                 break;
             };
-            let packet = state.packet.get_or_insert_with(|| {
-                if item.random_length.to == 0 {
-                    return item.packet.clone();
-                }
-                let mut rng = rand::thread_rng();
-                (0..item.random_length.sample())
-                    .map(|_| rng.gen_range(item.random_bytes.from..=item.random_bytes.to) as u8)
-                    .collect()
-            });
+            let packet = state.packet.get_or_insert_with(|| item.build());
             let noise = udp::Transmit {
                 destination: self.peer,
                 ecn: None,

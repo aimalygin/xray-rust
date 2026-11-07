@@ -5,6 +5,7 @@ mod freedom;
 mod http_inbound;
 mod http_outbound;
 mod hysteria;
+mod kcp;
 mod loopback;
 mod noise;
 mod routing;
@@ -79,6 +80,7 @@ enum StreamNetwork {
     HttpUpgrade,
     Grpc,
     Xhttp,
+    Kcp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

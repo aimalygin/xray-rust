@@ -49,6 +49,7 @@ impl StreamCarrier {
         if fragment.is_some()
             && (matches!(transport, ConnectorConfig::Tcp)
                 || matches!(&transport_layer, TransportLayer::Xhttp(xhttp) if xhttp.http_version() == XhttpHttpVersion::Http3)
+                || matches!(transport_layer, TransportLayer::Kcp(_))
                 || matches!(&stream.transport, StreamTransport::Xhttp(xhttp) if xhttp.download.is_some()))
         {
             return Err(CoreError::UnsupportedOutboundNetwork);
@@ -263,6 +264,47 @@ fn build_transport_layer(
             stream.quic_params.as_ref(),
             stream.udp_noise.as_ref(),
         )?),
+        StreamTransport::Kcp(kcp) => TransportLayer::Kcp(Arc::new(kcp_config(kcp, stream)?)),
+    })
+}
+
+/// mKCP's settings and masks, with the stream's noise for its noise mask.
+fn kcp_config(
+    kcp: &xray_config::KcpSettings,
+    stream: &StreamSettings,
+) -> Result<xray_transport::kcp::KcpConfig, CoreError> {
+    use xray_config::{KcpHeader, KcpMask};
+    use xray_transport::kcp::{KcpHeader as Header, KcpMask as Mask};
+    let masks = kcp
+        .masks
+        .iter()
+        .map(|mask| match mask {
+            KcpMask::Original => Mask::Original,
+            KcpMask::Aes128Gcm(password) => Mask::Aes128Gcm(password.clone()),
+            KcpMask::Noise => Mask::Noise,
+            KcpMask::Header(header) => Mask::Header(match header {
+                KcpHeader::Dns(domain) => Header::Dns(domain.clone()),
+                KcpHeader::Dtls => Header::Dtls,
+                KcpHeader::Srtp => Header::Srtp,
+                KcpHeader::Utp => Header::Utp,
+                KcpHeader::Wechat => Header::Wechat,
+                KcpHeader::Wireguard => Header::Wireguard,
+            }),
+        })
+        .collect();
+    Ok(xray_transport::kcp::KcpConfig {
+        mtu: kcp.mtu,
+        tti: kcp.tti,
+        uplink_capacity: kcp.uplink_capacity,
+        downlink_capacity: kcp.downlink_capacity,
+        cwnd_multiplier: kcp.cwnd_multiplier,
+        max_sending_window: kcp.max_sending_window,
+        masks,
+        noise: stream
+            .udp_noise
+            .as_ref()
+            .map(super::xhttp::udp_noise_config)
+            .transpose()?,
     })
 }
 

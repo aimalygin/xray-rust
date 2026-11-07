@@ -781,6 +781,10 @@ impl Core {
                         && outbound.stream.security == xray_config::StreamSecurity::None
                     || matches!(&outbound.stream.transport, xray_config::StreamTransport::Xhttp(xhttp) if xhttp.download.is_some() || matches!(&outbound.stream.security, xray_config::StreamSecurity::Tls(tls) if tls.alpn == ["h3"]))
                     || matches!(
+                        &outbound.stream.transport,
+                        xray_config::StreamTransport::Kcp(_)
+                    )
+                    || matches!(
                         outbound.settings,
                         xray_config::OutboundSettings::Dns(_)
                             | xray_config::OutboundSettings::Hysteria(_)
