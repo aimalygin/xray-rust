@@ -100,7 +100,7 @@ class XrayStartupProbePreflightNativeTest {
 
             // The XrayVpnService stop path for a pending start.
             val stopped = System.nanoTime()
-            assertEquals(XrayTunnelStopAction.CancelStart, start.lifecycle.requestStop())
+            assertEquals(XrayTunnelStopAction.CancelStart(), start.lifecycle.requestStop())
             start.preflight.cancel()
             assertTrue(System.nanoTime() - stopped < TimeUnit.SECONDS.toNanos(1))
             start.awaitFinished(timeoutSeconds = 2)

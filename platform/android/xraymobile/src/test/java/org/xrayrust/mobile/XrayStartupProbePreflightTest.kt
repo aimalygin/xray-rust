@@ -99,7 +99,7 @@ class XrayStartupProbePreflightTest {
         assertTrue(entered.await(5, TimeUnit.SECONDS))
 
         val started = System.nanoTime()
-        assertEquals(XrayTunnelStopAction.CancelStart, lifecycle.requestStop())
+        assertEquals(XrayTunnelStopAction.CancelStart(), lifecycle.requestStop())
         preflight.cancel()
         // The worker is still blocked in close(), so the stop path did not join it.
         assertTrue(System.nanoTime() - started < TimeUnit.SECONDS.toNanos(1))
@@ -121,7 +121,7 @@ class XrayStartupProbePreflightTest {
 
         assertThrows(XrayStartCancelledException::class.java) {
             preflight.run(token, probe) {
-                assertEquals(XrayTunnelStopAction.CancelStart, lifecycle.requestStop())
+                assertEquals(XrayTunnelStopAction.CancelStart(), lifecycle.requestStop())
                 preflight.cancel()
                 ScriptedCore(events) { error("a cancelled start must not probe") }
             }
@@ -156,7 +156,7 @@ class XrayStartupProbePreflightTest {
                     // A late stop for an earlier attempt must not cancel this active start.
                     preflight.cancel()
                     cancelCallsWhileActive.set(core.cancelCalls.get())
-                    assertEquals(XrayTunnelStopAction.CancelStart, lifecycle.requestStop())
+                    assertEquals(XrayTunnelStopAction.CancelStart(), lifecycle.requestStop())
                     preflight.cancel()
                 }
             }
