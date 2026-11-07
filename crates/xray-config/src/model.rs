@@ -1575,6 +1575,9 @@ pub struct StreamSettings {
     pub quic_params: Option<QuicParamsSettings>,
     /// One normalized FinalMask or legacy freedom `tlshello` transform.
     pub tcp_fragment: Option<TcpFragmentSettings>,
+    /// The `header-custom` TCP mask: the handshake every TCP carrier sends
+    /// and checks before anything else.
+    pub tcp_header_custom: Option<HeaderCustomTcp>,
     pub udp_noise: Option<UdpNoiseSettings>,
     pub socket_options: Option<SocketOptions>,
 }
@@ -1592,6 +1595,52 @@ pub struct UdpNoiseItem {
     pub random_length: FragmentRange,
     pub random_bytes: FragmentRange,
     pub delay_ms: FragmentRange,
+}
+
+/// The `header-custom` TCP mask, as Xray-core v26.10.31's `HeaderCustomTCP`
+/// reads it: sequences the client writes and the server answers with, in
+/// turns, before the connection carries anything else.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HeaderCustomTcp {
+    pub clients: Vec<Vec<HeaderCustomItem>>,
+    pub servers: Vec<Vec<HeaderCustomItem>>,
+    /// What a server answers a client sequence that does not match; read
+    /// for parity, never sent by a client.
+    pub errors: Vec<Vec<HeaderCustomItem>>,
+}
+
+/// One `header-custom` item: random bytes, fixed bytes, a captured variable
+/// or a transform, or nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeaderCustomItem {
+    /// TCP only: milliseconds to wait before the item when the upper bound
+    /// is positive. Go's `Int32Range`, so it may be negative.
+    pub delay: (i32, i32),
+    /// Random bytes to send, and the inclusive range of their values.
+    pub rand: i32,
+    pub rand_range: (i32, i32),
+    pub packet: Vec<u8>,
+    /// Saves what the item sends or receives under this name.
+    pub capture: String,
+    /// Sends, or expects, the bytes saved under this name.
+    pub reuse: String,
+    pub transform: Option<HeaderCustomExpr>,
+}
+
+/// A `header-custom` transform: an operation over its arguments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeaderCustomExpr {
+    pub op: String,
+    pub args: Vec<HeaderCustomArg>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeaderCustomArg {
+    Bytes(Vec<u8>),
+    U64(u64),
+    Reuse(String),
+    Metadata(String),
+    Transform(HeaderCustomExpr),
 }
 
 /// Bounded first-ClientHello record fragmentation. Ranges are inclusive.
