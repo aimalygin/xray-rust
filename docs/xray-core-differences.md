@@ -451,10 +451,15 @@ TCP keepalive, the order of the options, an option that fails stopping the
 rest, and an interface that cannot be bound failing the dial. Deliberate
 differences:
 
-- `addressPortStrategy` values other than `none` fail parsing. Xray-core,
-  which refuses them only on freedom, looks the server's SRV or TXT records
-  up with the system resolver. That lookup is not implemented, and dialing
-  the configured address instead would reach another server.
+- `addressPortStrategy` with a `dialerProxy` chain fails parsing. Xray-core
+  hands the address and port it looks up to the `dialerProxy` outbound;
+  here a chain hands the proxy the configured server.
+- An `addressPortStrategy` SRV name whose first or second part is empty,
+  such as `.tcp.example.com`, dials the configured server. Xray-core panics
+  on it.
+- The `addressPortStrategy` lookup protects its sockets with the platform's
+  protector, so inside a mobile VPN it bypasses the tunnel; Go's resolver in
+  Xray-core sets nothing on them.
 - A `dialerProxy` inside an XHTTP `downloadSettings` fails parsing. Xray-core
   would carry the download leg through that outbound. Here the leg either
   takes the outbound's own chain, with `penetrate`, or dials directly.

@@ -22,6 +22,8 @@ struct SessionOwner {
     auth: xray_config::HysteriaSettings,
     /// `sockopt`, for the QUIC socket.
     socket_options: Option<Arc<xray_transport::SocketOptions>>,
+    /// `sockopt.addressPortStrategy`, for the server's address and port.
+    address_port: xray_config::AddressPortStrategy,
     /// The dialer given and the one made from it with `socket_options`,
     /// kept so its protector, which a cached session is matched by, stays
     /// the same.
@@ -147,6 +149,7 @@ impl HysteriaOutbound {
         Ok(Self {
             inner: Arc::new(SessionOwner {
                 socket_options: socket_options::compile(&config.stream),
+                address_port: super::carrier::address_port_strategy(&config.stream),
                 socket_dialer: Mutex::new(None),
                 limits: limits.transport_limits(),
                 carrier,
@@ -269,7 +272,13 @@ impl HysteriaOutbound {
                 drop(stale);
             }
         }
-        let candidates = resolve_server_candidates(&self.inner.server, resolver).await?;
+        let candidates = super::address_port::resolve_server(
+            &self.inner.server,
+            self.inner.address_port,
+            resolver,
+            dialer,
+        )
+        .await?;
         let mut last = HysteriaError::Connect;
         for candidate in candidates.into_iter().take(8) {
             let mut config = HysteriaConfig::new(candidate, self.inner.tls.clone(), String::new());

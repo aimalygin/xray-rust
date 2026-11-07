@@ -2581,6 +2581,7 @@ fn accepts_every_xray_core_sockopt_field() {
         xray_config::SocketOptions {
             happy_eyeballs: None,
             domain_strategy: xray_config::DomainStrategy::UseIpv4,
+            address_port_strategy: xray_config::AddressPortStrategy::None,
             mark: -2,
             tcp_fast_open: 7,
             tproxy: xray_config::TproxyMode::Tproxy,
@@ -2677,8 +2678,6 @@ fn sockopt_refuses_values_go_cannot_decode_with_path() {
         ("customSockopt", "{}"),
         ("addressPortStrategy", "1"),
         ("addressPortStrategy", r#""bogus""#),
-        ("addressPortStrategy", r#""SrvPortOnly""#),
-        ("addressPortStrategy", r#""txtportandaddress""#),
     ] {
         let raw = raw_with_sockopt(&format!(r#"{{ "{field}": {value} }}"#));
         let error = parse_xray_json(&raw).unwrap_err();
@@ -2692,6 +2691,124 @@ fn sockopt_refuses_values_go_cannot_decode_with_path() {
             error.diagnostics
         );
     }
+}
+
+/// `addressPortStrategy` takes Xray-core's six names, ignoring case, on
+/// every outbound but freedom, which Xray-core refuses it on. A chained
+/// outbound refuses it here, as the address it looks up would have to go to
+/// the proxy; an inlined fragment handler is no chain and keeps it.
+#[test]
+fn address_port_strategy_is_read_as_xray_core_reads_it() {
+    use xray_config::AddressPortStrategy;
+    let vless = |sockopt: serde_json::Value| {
+        serde_json::json!({"outbounds": [{"tag": "proxy", "protocol": "vless",
+            "settings": {"vnext": [{"address": "_xray._tcp.corp.example", "port": 443,
+                "users": [{"id": "27848739-7e62-4138-9fd3-098a63964b6b", "encryption": "none"}]}]},
+            "streamSettings": {"sockopt": sockopt}}]})
+    };
+    let strategy = |raw: serde_json::Value| {
+        parse_xray_json(&raw.to_string()).map(|parsed| {
+            parsed.config.outbounds[0]
+                .stream
+                .socket_options
+                .as_ref()
+                .unwrap()
+                .address_port_strategy
+        })
+    };
+    for (name, expected) in [
+        ("none", AddressPortStrategy::None),
+        ("", AddressPortStrategy::None),
+        ("SrvPortOnly", AddressPortStrategy::SrvPortOnly),
+        ("srvaddressonly", AddressPortStrategy::SrvAddressOnly),
+        ("SRVPORTANDADDRESS", AddressPortStrategy::SrvPortAndAddress),
+        ("TxtPortOnly", AddressPortStrategy::TxtPortOnly),
+        ("txtAddressOnly", AddressPortStrategy::TxtAddressOnly),
+        ("txtportandaddress", AddressPortStrategy::TxtPortAndAddress),
+    ] {
+        let raw = vless(serde_json::json!({ "addressPortStrategy": name }));
+        assert_eq!(strategy(raw).unwrap(), expected, "{name}");
+    }
+    assert_eq!(
+        strategy(vless(serde_json::json!({ "addressPortStrategy": null }))).unwrap(),
+        AddressPortStrategy::None
+    );
+
+    let path = "$.outbounds[0].streamSettings.sockopt.addressPortStrategy";
+    let refused = |raw: serde_json::Value, message: &str| {
+        let error = parse_xray_json(&raw.to_string()).unwrap_err();
+        assert!(
+            error.diagnostics.iter().any(|diagnostic| {
+                diagnostic.path.as_deref() == Some(path) && diagnostic.message.contains(message)
+            }),
+            "{raw}: {:?}",
+            error.diagnostics
+        );
+    };
+    refused(
+        serde_json::json!({"outbounds": [{"protocol": "freedom",
+            "streamSettings": {"sockopt": {"addressPortStrategy": "SrvPortOnly"}}}]}),
+        "freedom outbound does not support \"sockopt.addressPortStrategy\"",
+    );
+    let mut chained =
+        vless(serde_json::json!({"addressPortStrategy": "TxtPortOnly", "dialerProxy": "next"}));
+    chained["outbounds"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!(
+        {"tag": "next", "protocol": "socks", "settings": {"address": "127.0.0.1", "port": 1080}}));
+    refused(
+        chained,
+        "addressPortStrategy is unsupported on a chained outbound",
+    );
+
+    // An inlined fragment handler leaves no chain, and the strategy stays.
+    let mut fragmented =
+        vless(serde_json::json!({"addressPortStrategy": "TxtPortOnly", "dialerProxy": "fragment"}));
+    fragmented["outbounds"][0]["streamSettings"]["security"] = "tls".into();
+    fragmented["outbounds"][0]["streamSettings"]["tlsSettings"] =
+        serde_json::json!({"serverName": "example.com"});
+    fragmented["outbounds"].as_array_mut().unwrap().push(serde_json::json!(
+        {"tag": "fragment", "protocol": "freedom",
+         "settings": {"fragment": {"packets": "tlshello", "length": "100-200", "interval": "1-2"}}}));
+    let parsed =
+        parse_xray_json(&fragmented.to_string()).unwrap_or_else(|error| panic!("{error:?}"));
+    let outbound = &parsed.config.outbounds[0];
+    assert!(outbound.proxy_settings.is_none());
+    assert_eq!(
+        outbound
+            .stream
+            .socket_options
+            .as_ref()
+            .unwrap()
+            .address_port_strategy,
+        AddressPortStrategy::TxtPortOnly
+    );
+
+    // An XHTTP download leg's own sockopt takes one too.
+    let download = serde_json::json!({"outbounds": [{"protocol": "vless",
+        "settings": {"vnext": [{"address": "up.example", "port": 443,
+            "users": [{"id": "27848739-7e62-4138-9fd3-098a63964b6b", "encryption": "none"}]}]},
+        "streamSettings": {"network": "xhttp", "xhttpSettings": {"mode": "packet-up", "path": "/x",
+            "downloadSettings": {"address": "_down._tcp.corp.example", "port": 443, "network": "xhttp",
+                "xhttpSettings": {"path": "/x"}, "sockopt": {"addressPortStrategy": "SrvPortAndAddress"}}}}}]});
+    let parsed = parse_xray_json(&download.to_string()).unwrap_or_else(|error| panic!("{error:?}"));
+    let xray_config::StreamTransport::Xhttp(xhttp) = &parsed.config.outbounds[0].stream.transport
+    else {
+        panic!("xhttp");
+    };
+    assert_eq!(
+        xhttp
+            .download
+            .as_ref()
+            .unwrap()
+            .stream
+            .socket_options
+            .as_ref()
+            .unwrap()
+            .address_port_strategy,
+        AddressPortStrategy::SrvPortAndAddress
+    );
 }
 
 #[test]

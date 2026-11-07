@@ -57,6 +57,9 @@ impl Shadowsocks2022Outbound {
     pub fn server(&self) -> &Target {
         &self.0.carrier.server
     }
+    pub(super) fn carrier(&self) -> &super::carrier::StreamCarrier {
+        &self.0.carrier
+    }
     pub fn level(&self) -> u32 {
         self.0.level
     }
@@ -75,8 +78,8 @@ impl Shadowsocks2022Outbound {
         dialer: &TransportDialer,
     ) -> Result<BoxedTransportStream, CoreError> {
         Method::validate_target(target)?;
-        let candidates = resolve_server_candidates(self.server(), resolver).await?;
-        let download = self.0.carrier.resolve_download(resolver).await?;
+        let candidates = self.0.carrier.resolve_server(resolver, dialer).await?;
+        let download = self.0.carrier.resolve_download(resolver, dialer).await?;
         self.open_resolved(target, &candidates, &download, dialer)
             .await
     }
@@ -131,8 +134,8 @@ impl Shadowsocks2022Outbound {
             return Err(CoreError::UnsupportedOutboundNetwork);
         }
         if let Some(pool) = self.mux_pool(target)? {
-            let candidates = resolve_server_candidates(self.server(), resolver).await?;
-            let download = self.0.carrier.resolve_download(resolver).await?;
+            let candidates = self.0.carrier.resolve_server(resolver, dialer).await?;
+            let download = self.0.carrier.resolve_download(resolver, dialer).await?;
             let child = pool
                 .open_datagram(
                     target,
@@ -147,7 +150,7 @@ impl Shadowsocks2022Outbound {
         }
 
         Method::validate_target(target)?;
-        let candidates = resolve_server_candidates(self.server(), resolver).await?;
+        let candidates = self.0.carrier.resolve_server(resolver, dialer).await?;
         let dialer = socket_options::dialer(dialer, self.0.carrier.socket_options.as_ref());
         let mut last = None;
         for address in candidates {

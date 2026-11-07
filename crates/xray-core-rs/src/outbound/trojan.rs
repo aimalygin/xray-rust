@@ -66,6 +66,9 @@ impl TrojanOutbound {
     pub fn server(&self) -> &Target {
         &self.0.carrier.server
     }
+    pub(super) fn carrier(&self) -> &super::carrier::StreamCarrier {
+        &self.0.carrier
+    }
     pub fn level(&self) -> u32 {
         self.0.level
     }
@@ -78,8 +81,8 @@ impl TrojanOutbound {
     ) -> Result<BoxedTransportStream, CoreError> {
         // Validate before DNS or dialing, including programmatically built targets.
         wire::encode_request_header(&self.0.auth, target)?;
-        let candidates = resolve_server_candidates(self.server(), resolver).await?;
-        let download = self.0.carrier.resolve_download(resolver).await?;
+        let candidates = self.0.carrier.resolve_server(resolver, dialer).await?;
+        let download = self.0.carrier.resolve_download(resolver, dialer).await?;
         self.open_resolved(target, &candidates, &download, dialer)
             .await
     }
@@ -138,8 +141,8 @@ impl TrojanOutbound {
             return Err(CoreError::UnsupportedOutboundNetwork);
         }
         if let Some(pool) = self.mux_pool(target)? {
-            let candidates = resolve_server_candidates(self.server(), resolver).await?;
-            let download = self.0.carrier.resolve_download(resolver).await?;
+            let candidates = self.0.carrier.resolve_server(resolver, dialer).await?;
+            let download = self.0.carrier.resolve_download(resolver, dialer).await?;
             let child = pool
                 .open_datagram(
                     target,

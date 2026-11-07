@@ -2417,7 +2417,7 @@ impl DnsRecordType {
     }
 }
 
-async fn exchange_direct_udp(
+pub(crate) async fn exchange_direct_udp(
     server_addr: SocketAddr,
     query: &[u8],
     socket_protector: Option<&dyn SocketProtector>,
@@ -2459,7 +2459,7 @@ async fn exchange_direct_udp(
     }
 }
 
-async fn exchange_direct_tcp_candidates(
+pub(crate) async fn exchange_direct_tcp_candidates(
     server_addrs: &[SocketAddr],
     query: &[u8],
     socket_protector: Option<&dyn SocketProtector>,
@@ -3045,7 +3045,7 @@ fn read_dns_question(packet: &[u8], offset: &mut usize) -> io::Result<(String, u
     Ok((name, record_type, record_class))
 }
 
-fn read_dns_name(packet: &[u8], offset: &mut usize) -> io::Result<String> {
+pub(crate) fn read_dns_name(packet: &[u8], offset: &mut usize) -> io::Result<String> {
     read_dns_name_limited(packet, offset, packet.len())
 }
 
@@ -3112,7 +3112,7 @@ fn read_dns_name_limited(packet: &[u8], offset: &mut usize, limit: usize) -> io:
     Err(invalid_dns_response("dns name pointer loop"))
 }
 
-fn read_u16(packet: &[u8], offset: usize) -> io::Result<u16> {
+pub(crate) fn read_u16(packet: &[u8], offset: usize) -> io::Result<u16> {
     let bytes = packet
         .get(offset..offset + 2)
         .ok_or_else(|| invalid_dns_response("truncated u16"))?;

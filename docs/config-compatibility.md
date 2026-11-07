@@ -2315,16 +2315,52 @@ dials with its own `sockopt` and never chains. The outbound's `dialerProxy`
 carries only the upload leg, as in Xray-core. A `dialerProxy`, or a
 `domainStrategy` other than `AsIs`, inside `downloadSettings` fails parsing.
 
+**`addressPortStrategy`** replaces a domain server's address, its port or
+both with what a DNS lookup of its name finds, before each dial, as
+Xray-core's `DialSystem` does. The names ignore case:
+
+- `SrvPortOnly`, `SrvAddressOnly` and `SrvPortAndAddress` cut the name in
+  three at its first two dots, drop the first character of the first two
+  parts, and look up the SRV records of `_service._proto.name`. The first
+  record, by priority and then drawn by weight, gives the target and port.
+- `TxtPortOnly`, `TxtAddressOnly` and `TxtPortAndAddress` look up the TXT
+  records of the name. The first one that reads as `host:port`, with a
+  decimal port up to 65535, gives them.
+- `none` and an empty value look nothing up.
+
+The lookup goes where Go's resolver sends it for Xray-core, not to the
+platform's resolver: to the nameservers of `/etc/resolv.conf`, over UDP and
+then over TCP when an answer is truncated, with the file's search list and
+its `ndots`, `timeout`, `attempts`, `rotate`, `use-vc` and `trust-ad`
+options. Without the file, as on Android, it asks `127.0.0.1:53` and
+`[::1]:53`. Its sockets take the platform's socket protection, not the
+outbound's options.
+
+- A failed lookup, or one without a usable record, dials the configured
+  server. A server given as an IP address looks nothing up.
+- TLS server names, `Host` headers and gRPC authorities keep the configured
+  server's name, as there.
+- An address found is dialed as a configured one would be: a domain resolves
+  as the server's name does.
+- The plaintext guard checks the configured server, as Xray-core's does, and
+  not the address a lookup finds.
+
+Every proxy outbound reads it for its server, over every transport and UDP
+included, and an XHTTP download leg reads the one of the `sockopt` it dials
+with. Freedom refuses it, as Xray-core does. WireGuard finds its peer
+endpoints with its own lookup, so the strategy changes nothing there, as in
+Xray-core.
+
 `acceptProxyProtocol`, `v6only` and `trustedXForwardedFor` are inbound
 options. They are type-checked and ignored, as Xray-core ignores them on an
 outbound.
 
 Not supported yet:
 
-- `addressPortStrategy` accepts only `none` or an empty value. Its SRV and
-  TXT lookups are not implemented, so the other six values fail parsing
-  instead of dialing the configured address. Xray-core refuses them on
-  freedom too.
+- `addressPortStrategy` on an outbound that chains through `dialerProxy`
+  fails parsing. Xray-core hands the address and port it finds to the
+  `dialerProxy` outbound as its destination. A dedicated freedom fragment
+  handler is inlined, not chained, and keeps the strategy.
 - WireGuard reads no `streamSettings` field other than `sockopt`. The others
   fail parsing, its UDP `finalmask` among them, and so does a `dialerProxy`.
   Xray-core ignores the transport settings, masks the UDP with `finalmask`,

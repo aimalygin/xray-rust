@@ -27,6 +27,8 @@ pub(super) struct StreamCarrier {
     pub(super) fragment: Option<Arc<xray_transport::TcpFragmentConfig>>,
     /// `sockopt`, for every socket the carrier opens.
     pub(super) socket_options: Option<Arc<xray_transport::SocketOptions>>,
+    /// `sockopt.addressPortStrategy`, for the server's address and port.
+    pub(super) address_port: xray_config::AddressPortStrategy,
 }
 
 impl StreamCarrier {
@@ -63,6 +65,7 @@ impl StreamCarrier {
             download: build_xhttp_download(stream, unencrypted_payload)?,
             happy_eyeballs: happy_eyeballs_config(stream),
             socket_options: socket_options::compile(stream),
+            address_port: address_port_strategy(stream),
         })
     }
 
@@ -74,12 +77,27 @@ impl StreamCarrier {
             None => dialer,
         }
     }
+    /// The server's candidates, after its `addressPortStrategy`.
+    pub(super) fn resolve_server<'a>(
+        &'a self,
+        resolver: &'a dyn DnsResolver,
+        dialer: &'a TransportDialer,
+    ) -> impl Future<Output = Result<Vec<SocketAddr>, CoreError>> + 'a {
+        address_port::resolve_server(&self.server, self.address_port, resolver, dialer)
+    }
+
+    /// The XHTTP download server's candidates, after its leg's
+    /// `addressPortStrategy`.
     pub(super) async fn resolve_download(
         &self,
         resolver: &dyn DnsResolver,
+        dialer: &TransportDialer,
     ) -> Result<Vec<SocketAddr>, CoreError> {
         match &self.download {
-            Some(down) => resolve_server_candidates(&down.server, resolver).await,
+            Some(down) => {
+                address_port::resolve_server(&down.server, down.address_port, resolver, dialer)
+                    .await
+            }
             None => Ok(Vec::new()),
         }
     }
@@ -131,6 +149,15 @@ impl StreamCarrier {
             )
             .await?)
     }
+}
+
+/// `stream`'s `sockopt.addressPortStrategy`.
+pub(super) fn address_port_strategy(stream: &StreamSettings) -> xray_config::AddressPortStrategy {
+    stream
+        .socket_options
+        .as_ref()
+        .map(|options| options.address_port_strategy)
+        .unwrap_or_default()
 }
 
 pub(super) fn build_connector(

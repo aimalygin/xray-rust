@@ -8,6 +8,8 @@ pub(super) struct XhttpDownloadOutbound {
     pub(super) transport: XhttpTransport,
     pub(super) happy_eyeballs: Option<HappyEyeballsConfig>,
     pub(super) socket_options: DownloadSocketOptions,
+    /// The `addressPortStrategy` of the `sockopt` the leg dials with.
+    pub(super) address_port: xray_config::AddressPortStrategy,
 }
 
 /// The `sockopt` the download leg dials with, as Xray-core's XHTTP picks it.
@@ -91,6 +93,10 @@ pub(super) fn build_xhttp_download(
             "downloadSettings cannot disable TLS authentication",
         ));
     }
+    let penetrate = stream
+        .socket_options
+        .as_ref()
+        .is_some_and(|options| options.penetrate);
     let addr = match &download.address {
         TargetAddr::Ip(ip) => RoutingTargetAddr::Ip(*ip),
         TargetAddr::Domain(domain) if !domain.is_empty() => {
@@ -113,15 +119,16 @@ pub(super) fn build_xhttp_download(
             download.stream.udp_noise.as_ref(),
         )?,
         happy_eyeballs: happy_eyeballs_config(&download.stream),
-        socket_options: if stream
-            .socket_options
-            .as_ref()
-            .is_some_and(|options| options.penetrate)
-        {
+        socket_options: if penetrate {
             DownloadSocketOptions::Upload
         } else {
             DownloadSocketOptions::Own(socket_options::compile(&download.stream))
         },
+        address_port: carrier::address_port_strategy(if penetrate {
+            stream
+        } else {
+            &download.stream
+        }),
     }))
 }
 

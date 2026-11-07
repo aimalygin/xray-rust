@@ -975,10 +975,10 @@ impl Parser<'_> {
             self.address_port_strategy_at(socket_options, &at("addressPortStrategy"));
 
         dialer_proxy?;
-        address_port_strategy?;
         Some(SocketOptions {
             happy_eyeballs,
             domain_strategy: domain_strategy?,
+            address_port_strategy: address_port_strategy?,
             mark: mark?,
             tcp_fast_open: tcp_fast_open?,
             tproxy: tproxy?,
@@ -1124,22 +1124,22 @@ impl Parser<'_> {
         (!failed).then_some(options)
     }
 
-    /// `addressPortStrategy`. Xray-core looks the destination up in the
-    /// system's SRV or TXT records for every value but `none`; that lookup is
-    /// not implemented, so those values are refused.
-    fn address_port_strategy_at(&mut self, socket_options: &Value, path: &str) -> Option<()> {
+    /// `addressPortStrategy`, Xray-core's names ignoring case.
+    fn address_port_strategy_at(
+        &mut self,
+        socket_options: &Value,
+        path: &str,
+    ) -> Option<AddressPortStrategy> {
         let strategy =
             self.nullable_string_at(socket_options, "addressPortStrategy", path.to_owned())?;
         match strategy.to_ascii_lowercase().as_str() {
-            "" | "none" => Some(()),
-            "srvportonly" | "srvaddressonly" | "srvportandaddress" | "txtportonly"
-            | "txtaddressonly" | "txtportandaddress" => {
-                self.error(
-                    path,
-                    format!("addressPortStrategy `{strategy}` is unsupported: SRV and TXT lookups are not implemented"),
-                );
-                None
-            }
+            "" | "none" => Some(AddressPortStrategy::None),
+            "srvportonly" => Some(AddressPortStrategy::SrvPortOnly),
+            "srvaddressonly" => Some(AddressPortStrategy::SrvAddressOnly),
+            "srvportandaddress" => Some(AddressPortStrategy::SrvPortAndAddress),
+            "txtportonly" => Some(AddressPortStrategy::TxtPortOnly),
+            "txtaddressonly" => Some(AddressPortStrategy::TxtAddressOnly),
+            "txtportandaddress" => Some(AddressPortStrategy::TxtPortAndAddress),
             _ => {
                 self.error(
                     path,

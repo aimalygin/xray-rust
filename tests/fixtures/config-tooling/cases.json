@@ -3480,6 +3480,106 @@
       "errorPath": "$.outbounds[0].streamSettings.sockopt.addressPortStrategy"
     },
     {
+      "name": "ws-address-port-strategy",
+      "base": "ws",
+      "set": {
+        "/outbounds/0/settings/vnext/0/address": "_xray._tcp.server.example",
+        "/outbounds/0/streamSettings/sockopt": {
+          "addressPortStrategy": "SrvPortAndAddress"
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "xhttp-download-address-port-strategy",
+      "base": "xhttp-download",
+      "set": {
+        "/outbounds/0/streamSettings/xhttpSettings/downloadSettings/sockopt": {
+          "addressPortStrategy": "txtportonly"
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "ws-address-port-strategy-chained",
+      "config": {
+        "inbounds": [
+          {
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "protocol": "socks",
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            },
+            "tag": "socks-in"
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "ws",
+              "security": "tls",
+              "tlsSettings": {
+                "fingerprint": "chrome",
+                "serverName": "server.example"
+              },
+              "wsSettings": {
+                "path": "/ws",
+                "host": "server.example",
+                "headers": {
+                  "User-Agent": "fixture"
+                },
+                "heartbeatPeriod": 10,
+                "acceptProxyProtocol": false
+              },
+              "sockopt": {
+                "addressPortStrategy": "TxtPortAndAddress",
+                "dialerProxy": "socks-out"
+              }
+            },
+            "tag": "proxy"
+          },
+          {
+            "tag": "socks-out",
+            "protocol": "socks",
+            "settings": {
+              "address": "192.0.2.10",
+              "port": 1080
+            }
+          }
+        ]
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.sockopt.addressPortStrategy"
+    },
+    {
+      "name": "ws-address-port-strategy-unknown",
+      "base": "ws",
+      "set": {
+        "/outbounds/0/streamSettings/sockopt": {
+          "addressPortStrategy": "SrvTxt"
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.sockopt.addressPortStrategy"
+    },
+    {
       "name": "sockopt-customSockopt-null-entry",
       "base": "freedom-domain-strategy",
       "set": {

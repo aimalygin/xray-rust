@@ -41,6 +41,7 @@ mod reality_spider;
 mod route_probe;
 mod socket_options;
 pub mod stream;
+mod system_records;
 mod tls;
 mod utls_profiles;
 mod utls_shaping;
@@ -70,6 +71,7 @@ pub use socket_options::{
     CustomSocketOption, SocketOptions, SocketOptionsProtector, SocketOptionsReport,
     DEFAULT_TCP_KEEPALIVE_SECS,
 };
+pub use system_records::{is_domain_name, RecordResolver, SrvRecord, SystemRecordResolver};
 pub use tls::{plain_tls_client_hello_bytes, TlsConnector};
 pub use utls_profiles::draw_modern_fingerprint;
 
