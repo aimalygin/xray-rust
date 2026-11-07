@@ -1191,6 +1191,8 @@ enum XrayInboundTransport {
     Grpc {
         service_name: &'static str,
     },
+    /// mKCP with its default settings; masks go in through `customize`.
+    Kcp,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1471,6 +1473,7 @@ fn write_xray_vless_config(
         "grpcSettings": {{ "serviceName": "{service_name}" }}"#
             ),
         ),
+        XrayInboundTransport::Kcp => ("kcp", String::new()),
     };
     let security_settings = match server_config.security {
         XrayInboundSecurity::None => r#""security": "none""#.to_owned(),
@@ -1630,7 +1633,7 @@ async fn start_xray_vless_server_customized(
         XrayInboundTransport::Xhttp {
             tls_alpn: Some("h3"),
             ..
-        }
+        } | XrayInboundTransport::Kcp
     );
     let port = if uses_udp_listener {
         allocate_loopback_udp_port()
@@ -3643,6 +3646,9 @@ mod proxy_carriers;
 mod v08_carriers;
 #[path = "local_xray_interop_tests/xhttp_download.rs"]
 mod xhttp_download;
+
+#[path = "local_xray_interop_tests/kcp_carriers.rs"]
+mod kcp_carriers;
 
 /// Record-level observer: it forwards the finalized ClientHello unchanged and
 /// then becomes a byte relay, including Vision's later direct-mode payload.

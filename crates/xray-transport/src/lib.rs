@@ -24,6 +24,7 @@ pub use fragment::TcpFragmentConfig;
 mod dns;
 mod happy_eyeballs;
 pub mod hysteria;
+pub mod kcp;
 mod memory_class;
 
 /// Validate a TLS DNS/IP verification name without performing network I/O.
@@ -195,6 +196,8 @@ pub enum TransportError {
     Grpc(String),
     #[error("xhttp transport error: {0}")]
     Xhttp(String),
+    #[error("mKCP dial failed: {0}")]
+    Kcp(std::io::Error),
     #[error(transparent)]
     Http2Connect(#[from] stream::Http2ConnectError),
     #[error("reality handshake failed: {0}")]

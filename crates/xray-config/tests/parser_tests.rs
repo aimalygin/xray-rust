@@ -4789,10 +4789,10 @@ fn rejects_udp_stream_network_with_path() {
 
 #[test]
 fn rejects_other_stream_network_with_path() {
-    // The example moved off `grpc` when this crate learned to parse it; `kcp`
-    // is still a network xray-core has and xray-rust does not.
+    // The example moved off `grpc`, then `kcp`, as this crate learned to parse
+    // them; `masque` is still a network xray-core has and xray-rust does not.
     let raw = vless_raw_with_network(
-        "kcp",
+        "masque",
         r#""users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]"#,
         "",
         443,
@@ -6504,7 +6504,7 @@ fn removed_transports_say_they_were_removed() {
 
 #[test]
 fn transports_xray_still_has_but_we_do_not_say_so() {
-    for network in ["kcp", "mkcp"] {
+    for network in ["masque", "xdrive", "MASQUE"] {
         let error = parse_xray_json(&raw_with_stream_settings(&format!(
             r#""network": "{network}", "security": "none""#
         )))

@@ -1141,7 +1141,8 @@ embedded mobile client core into a general proxy gateway or server:
 
 - matching every Xray-core or sing-box inbound and outbound;
 - server-side VLESS or Trojan, reverse proxy, and a server ecosystem;
-- legacy transports such as mKCP solely for feature-count parity;
+- legacy transports solely for feature-count parity (mKCP, which client
+  profiles still use, arrived in 0.10.0);
 - a Clash-compatible dashboard, embedded REST/gRPC daemon, or remote-control
   server;
 - Linux gateway features such as nftables auto-redirect, network namespaces,

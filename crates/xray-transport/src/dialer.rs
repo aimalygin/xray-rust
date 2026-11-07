@@ -363,6 +363,47 @@ impl TransportDialer {
                 .open_stream(self, config, original_target, candidates, happy_eyeballs)
                 .await
                 .map_err(|error| TransportError::Xhttp(error.to_string())),
+            TransportLayer::Kcp(kcp) => {
+                self.connect_kcp(config, kcp, original_target, candidates)
+                    .await
+            }
+        }
+    }
+
+    /// An mKCP stream to the first candidate, with TLS on it as Xray-core's
+    /// `DialKCP` puts it: the TLS of the raw transport. REALITY never rides
+    /// on mKCP, and a chain cannot carry its UDP.
+    async fn connect_kcp(
+        &self,
+        config: &ConnectorConfig,
+        kcp: &crate::kcp::KcpConfig,
+        original_target: &Target,
+        candidates: &[SocketAddr],
+    ) -> Result<BoxedTransportStream, TransportError> {
+        if self.resolved_tcp_connector.is_some() {
+            return Err(TransportError::UnsupportedChainedTransport("mKCP"));
+        }
+        let prepared = match config {
+            ConnectorConfig::Tcp => None,
+            ConnectorConfig::Tls(tls) => Some(self.tls.prepare_stream(tls, TlsAlpnPolicy::Raw)?),
+            ConnectorConfig::Reality(_) => {
+                return Err(TransportError::UnsupportedConnectorConfig(
+                    "reality over mKCP",
+                ))
+            }
+        };
+        if candidates.is_empty() {
+            return Err(no_resolved_candidates_error(original_target));
+        }
+        let stream: BoxedTransportStream =
+            Box::new(crate::kcp::connect(candidates, self.socket_protector(), kcp).await?);
+        match prepared {
+            None => Ok(stream),
+            Some(prepared) => {
+                self.tls
+                    .connect_prepared_penetrating_stream(stream, prepared)
+                    .await
+            }
         }
     }
 

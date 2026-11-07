@@ -383,6 +383,7 @@ impl FullMatrix {
                 stream["grpcSettings"] =
                     serde_json::json!({"serviceName":service_name,"multiMode":multi});
             }
+            XrayInboundTransport::Kcp => stream["network"] = "kcp".into(),
             XrayInboundTransport::Xhttp {
                 path,
                 mode,

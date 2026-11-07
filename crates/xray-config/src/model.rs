@@ -1229,6 +1229,80 @@ impl fmt::Debug for HysteriaSettings {
     }
 }
 
+/// `kcpSettings`, read as Xray-core v26.10.31's `KCPConfig.Build` reads it,
+/// with the stream's `finalmask.udp` masks that mKCP applies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KcpSettings {
+    /// Bytes in a segment with its 18-byte header, at least 21.
+    pub mtu: u32,
+    /// Milliseconds between flushes, 10 to 1000.
+    pub tti: u32,
+    /// Megabytes a second the sender may keep in flight.
+    pub uplink_capacity: u32,
+    /// Megabytes a second the receiver advertises.
+    pub downlink_capacity: u32,
+    pub cwnd_multiplier: u32,
+    /// Bytes the sender buffers; at least `mtu`.
+    pub max_sending_window: u32,
+    /// The `finalmask.udp` masks in array order. The first applies first to
+    /// a datagram on its way out, the last is outermost on the wire.
+    pub masks: Vec<KcpMask>,
+}
+
+impl Default for KcpSettings {
+    /// Xray-core's defaults for an absent or null `kcpSettings`.
+    fn default() -> Self {
+        Self {
+            mtu: 1350,
+            tti: 50,
+            uplink_capacity: 5,
+            downlink_capacity: 20,
+            cwnd_multiplier: 1,
+            max_sending_window: 2 * 1024 * 1024,
+            masks: Vec::new(),
+        }
+    }
+}
+
+/// A `finalmask.udp` mask on an mKCP stream.
+#[derive(Clone, PartialEq, Eq)]
+pub enum KcpMask {
+    /// `mkcp-legacy` without header or value: an FNV-1a checksum and a
+    /// forward XOR, mKCP's original obfuscation.
+    Original,
+    /// `mkcp-legacy` with a value and no header: AES-128-GCM keyed by the
+    /// SHA-256 of the value, mKCP's old `seed`.
+    Aes128Gcm(zeroize::Zeroizing<String>),
+    /// `mkcp-legacy` with a header: bytes mKCP's old `header.type` put first.
+    Header(KcpHeader),
+    /// The stream's noise mask, read into `StreamSettings::udp_noise`, at
+    /// its place in the array.
+    Noise,
+}
+
+impl fmt::Debug for KcpMask {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Original => f.write_str("Original"),
+            Self::Aes128Gcm(_) => f.write_str("Aes128Gcm(<redacted>)"),
+            Self::Header(header) => f.debug_tuple("Header").field(header).finish(),
+            Self::Noise => f.write_str("Noise"),
+        }
+    }
+}
+
+/// An `mkcp-legacy` header.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KcpHeader {
+    /// A DNS query for this domain: `value`, else `www.baidu.com`.
+    Dns(String),
+    Dtls,
+    Srtp,
+    Utp,
+    Wechat,
+    Wireguard,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DnsOutboundSettings {
     /// Optional transport override; `None` preserves the original DNS flow.
@@ -1622,6 +1696,8 @@ pub enum StreamTransport {
     Grpc(GrpcSettings),
     /// `xhttp` / the legacy `splithttp` spelling.
     Xhttp(Box<XhttpSettings>),
+    /// `kcp` / `mkcp`.
+    Kcp(KcpSettings),
 }
 
 /// An ordered XHTTP integer range. Xray accepts either a JSON integer or a

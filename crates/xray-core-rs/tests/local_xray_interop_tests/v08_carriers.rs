@@ -32,7 +32,7 @@ impl DnsResolver for Resolver {
         Ok(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
     }
 }
-fn settings(protocol: &str, port: u16) -> Value {
+pub(super) fn settings(protocol: &str, port: u16) -> Value {
     match protocol {
         "trojan" => json!({"address":"upload.test","port":port,"password":PASSWORD}),
         "shadowsocks" => {
@@ -44,7 +44,7 @@ fn settings(protocol: &str, port: u16) -> Value {
         _ => unreachable!(),
     }
 }
-fn inbound(config: &mut Value, protocol: &str) {
+pub(super) fn inbound(config: &mut Value, protocol: &str) {
     config["log"]["loglevel"] = "debug".into();
     if config["inbounds"][0]["streamSettings"]["security"] == "reality" {
         config["inbounds"][0]["streamSettings"]["realitySettings"]["show"] = false.into();
@@ -90,7 +90,7 @@ async fn socks(
     ))
 }
 
-async fn exercise(config: Value, datagram: bool) -> std::io::Result<()> {
+pub(super) async fn exercise(config: Value, datagram: bool) -> std::io::Result<()> {
     let tcp = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
     let address = tcp.local_addr()?;
     let payload: Vec<u8> = (0..131_077).map(|n| (n * 197 + 31) as u8).collect();

@@ -98,6 +98,8 @@ pub enum TransportLayer {
     HttpUpgrade(HttpUpgradeConfig),
     Grpc(GrpcTransport),
     Xhttp(XhttpTransport),
+    /// mKCP: its own UDP socket per stream, with TLS on top when configured.
+    Kcp(std::sync::Arc<crate::kcp::KcpConfig>),
 }
 
 pub use websocket_frame::{encode_client_frames, FrameDecoder, FrameEvent, MAX_FRAME_PAYLOAD};

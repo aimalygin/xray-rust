@@ -258,6 +258,12 @@ fn stream_settings_accept_every_transport_and_its_security() {
             "xhttp",
             "reality",
         ),
+        (json!({"network":"kcp"}), "kcp", "none"),
+        (
+            json!({"network":"mkcp","security":"tls","tlsSettings":tls}),
+            "kcp",
+            "tls",
+        ),
     ] {
         let parsed = stream_of(stream.clone());
         let parsed_transport = match parsed.transport {
@@ -267,6 +273,7 @@ fn stream_settings_accept_every_transport_and_its_security() {
             StreamTransport::Grpc(_) => "grpc",
             StreamTransport::Xhttp(_) => "xhttp",
             StreamTransport::Hysteria(_) => "hysteria",
+            StreamTransport::Kcp(_) => "kcp",
         };
         let parsed_security = match parsed.security {
             StreamSecurity::None => "none",

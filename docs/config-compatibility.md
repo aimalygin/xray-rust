@@ -229,8 +229,8 @@ existing profiles. Configured delays intentionally increase handshake latency.
 
 ## v0.8 UDP noise
 
-Hysteria2 and XHTTP with exact TLS `alpn: ["h3"]` accept one FinalMask UDP
-noise mask, using Xray-core v26.7.28's format:
+Hysteria2, [mKCP](#mkcp) and XHTTP with exact TLS `alpn: ["h3"]` accept one
+FinalMask UDP noise mask, using Xray-core v26.7.28's format:
 
 ```json
 "finalmask": {"udp": [{"type": "noise", "settings": {
@@ -751,9 +751,9 @@ TCP transport to `raw` and XHTTP from `splithttp`; both pairs are accepted alias
   [REALITY real-certificate crawl](xray-core-differences.md#reality-real-certificate-crawl).
 
 `tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
-empty, or `none`. Generic HTTP/2, QUIC, KCP and other stream transports are not
-supported; HTTP/2 and QUIC v1 are available only as XHTTP's selected wire
-engines. VLESS supports the shared [Mux](#vless-mux); `sendThrough`, multiple
+empty, or `none`. Generic HTTP/2 and QUIC transports are not supported; HTTP/2
+and QUIC v1 are available only as XHTTP's selected wire engines. [mKCP](#mkcp)
+is described below. VLESS supports the shared [Mux](#vless-mux); `sendThrough`, multiple
 VLESS servers, and protocol-layer chaining remain unsupported. The supported chaining subset
 uses `streamSettings.sockopt.dialerProxy` with a nonempty outbound tag:
 
@@ -1921,6 +1921,69 @@ Note that the injected-looking case is not header injection. HTTP/2 header
 blocks are length-prefixed, so `\r\n` inside a value stays inside that value and
 no second header appears; what kills the stream is the peer validating the
 field, not parsing a forged one.
+
+### mKCP
+
+`network: "kcp"`, or `"mkcp"`, carries VLESS, VMess, Trojan, Shadowsocks,
+SOCKS or HTTP over mKCP, Xray-core v26.10.31's reliable stream over UDP. Each
+connection opens its own UDP socket, as Xray's dialer does, and takes replies
+from any address on it. Nothing is sent before the first write. `security` is
+`none` or `tls`; REALITY is refused, as by Xray-core. Vision works under TLS,
+because Xray's mKCP dialer hands back the TLS connection itself. SOCKS has no
+Xray-core server over mKCP: its SOCKS inbound panics there.
+
+`kcpSettings` reads Xray's fields with Xray's defaults. Absent or null, the
+block and each field keep the default.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `mtu` | 1350 | Bytes in a segment, its 18-byte header included; 21 to 8192 |
+| `tti` | 50 | Milliseconds between flushes while data or acks wait; 10 to 1000 |
+| `uplinkCapacity` | 5 | Megabytes a second the sender keeps in flight |
+| `downlinkCapacity` | 20 | Megabytes a second the receiver offers the sender |
+| `cwndMultiplier` | 1 | Multiplies what one flush may send; at least 1 |
+| `maxSendingWindow` | 2 MiB | Bytes waiting for acks before writes wait; at least `mtu` |
+
+`header` and `seed` are read and ignored, as Xray-core v26 ignores them, with a
+warning when they ask for something: since v26 the old header and seed are
+`mkcp-legacy` masks. Both ends need the same masks, in the same order:
+
+```json
+"finalmask": {"udp": [
+  {"type": "mkcp-legacy", "settings": {"value": "the old seed"}},
+  {"type": "mkcp-legacy", "settings": {"header": "wechat"}}
+]}
+```
+
+An `mkcp-legacy` mask is one of these, by its settings:
+
+- neither `header` nor `value`: the original obfuscation, an FNV-1a checksum
+  and a forward XOR;
+- `value` alone: AES-128-GCM keyed by the value's SHA-256, the old `seed`;
+- a `header`, case-insensitive: `dns`, a DNS query for `value` or
+  `www.baidu.com`, or `dtls`, `srtp`, `utp`, `wechat` or `wireguard`, the old
+  header types.
+
+Masks apply in array order, so the last one is outermost on the wire: the old
+header with a seed is the seed mask first, then the header. Consecutive
+`mkcp-legacy` masks drop a datagram that grows past 4096 bytes, as Xray's do.
+One `noise` mask may stand anywhere among them, and its packets go out through
+the masks after it. Salamander, `udphop` and the other UDP masks, TCP masks
+and chaining through another outbound are refused on mKCP.
+
+The connection runs as Xray's does. It resends a segment once its
+retransmission timeout passes, estimated as RFC 6298 does, and sooner when a
+later segment is acknowledged first. It flushes every `tti` milliseconds while
+data or acks wait, at once on a write, a read or an arriving segment, and every
+five seconds regardless, pinging when three seconds passed without one. Thirty
+seconds without a datagram from the server close it. Closing sends what is
+left, marked as closing, then a terminate command until the server answers or
+eight seconds pass. mKCP has no half close: the stream stays open after its
+write side shuts down, and when either side closes the other drops what it has
+not delivered yet.
+
+The deliberate differences from Xray-core and the evidence behind this are in
+[mKCP](xray-core-differences.md#mkcp).
 
 ### TLS ClientHello shaping
 

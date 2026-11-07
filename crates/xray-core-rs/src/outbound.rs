@@ -3788,6 +3788,10 @@ impl OutboundFactory {
                     "addressPortStrategy",
                 ))
             }
+            // mKCP's datagrams would need the chain's UDP.
+            Some(_) if matches!(outbound.stream.transport, StreamTransport::Kcp(_)) => {
+                Err(CachedOutboundError::UnsupportedOutboundProxyNetwork("mKCP"))
+            }
             Some(proxy) => self
                 .cached_tcp_outbound(proxy)
                 .map(|proxy| TcpOutbound::Chained {
@@ -4188,8 +4192,12 @@ fn validate_connector_flow(
     stream_transport: &TransportLayer,
 ) -> Result<VisionFlow, CoreError> {
     // Without VLESS encryption, only raw TLS/REALITY exposes the security
-    // connection Vision needs. Encrypted outbounds are handled separately.
-    if !matches!(stream_transport, TransportLayer::Raw) {
+    // connection Vision needs, and mKCP's TLS, which Xray's `DialKCP` also
+    // returns undisguised. Encrypted outbounds are handled separately.
+    if !matches!(
+        stream_transport,
+        TransportLayer::Raw | TransportLayer::Kcp(_)
+    ) {
         return validate_vision_flow(flow, false);
     }
 
@@ -4800,9 +4808,11 @@ pub async fn open_vless_tcp_stream(
 
 pub(crate) fn validate_udp_noise(stream: &StreamSettings) -> Result<(), CoreError> {
     if let Some(noise) = &stream.udp_noise {
-        if !(matches!(stream.transport, StreamTransport::Hysteria(_))
-            || matches!(stream.transport, StreamTransport::Xhttp(_))
-                && matches!(&stream.security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]))
+        if !(matches!(
+            stream.transport,
+            StreamTransport::Hysteria(_) | StreamTransport::Kcp(_)
+        ) || matches!(stream.transport, StreamTransport::Xhttp(_))
+            && matches!(&stream.security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]))
         {
             return Err(CoreError::UnsupportedOutboundNetwork);
         }
@@ -11145,5 +11155,122 @@ mod testpre_tests {
         .err()
         .expect("a closed outbound has no testpre connections");
         assert!(error.to_string().contains("closed"), "{error}");
+    }
+}
+
+#[cfg(test)]
+mod kcp_tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    const ID: &str = "27848739-7e62-4138-9fd3-098a63964b6b";
+
+    fn vless(stream: Value) -> OutboundConfig {
+        xray_config::parse_xray_json(
+            &json!({"outbounds": [{"tag": "proxy", "protocol": "vless", "settings": {"vnext": [{
+                "address": "10.0.0.1", "port": 443, "users": [{"id": ID, "encryption": "none",
+                "flow": stream.get("flow").cloned().unwrap_or(Value::Null)}]}]},
+                "streamSettings": stream.get("stream").cloned().unwrap_or(stream)}]})
+            .to_string(),
+        )
+        .unwrap()
+        .config
+        .outbounds
+        .remove(0)
+    }
+
+    #[test]
+    fn the_carrier_takes_mkcps_settings_masks_and_noise() {
+        let outbound = vless(json!({"network": "kcp",
+        "kcpSettings": {"mtu": 1200, "tti": 20, "uplinkCapacity": 9, "downlinkCapacity": 30,
+            "cwndMultiplier": 2, "maxSendingWindow": 65536},
+        "finalmask": {"udp": [
+            {"type": "mkcp-legacy", "settings": {"value": "seed"}},
+            {"type": "noise", "settings": {"noise": [{"type": "str", "packet": "hi"}]}},
+            {"type": "mkcp-legacy", "settings": {"header": "dns", "value": "kcp.example"}},
+        ]}}));
+        let built = build_vless_tcp_outbound(&outbound).unwrap();
+        let TransportLayer::Kcp(kcp) = built.transport_layer() else {
+            panic!("not mKCP");
+        };
+        assert_eq!(
+            (
+                kcp.mtu,
+                kcp.tti,
+                kcp.uplink_capacity,
+                kcp.downlink_capacity,
+                kcp.cwnd_multiplier,
+                kcp.max_sending_window
+            ),
+            (1200, 20, 9, 30, 2, 65536)
+        );
+        use xray_transport::kcp::{KcpHeader, KcpMask};
+        assert_eq!(
+            kcp.masks,
+            [
+                KcpMask::Aes128Gcm("seed".to_owned().into()),
+                KcpMask::Noise,
+                KcpMask::Header(KcpHeader::Dns("kcp.example".to_owned())),
+            ]
+        );
+        assert_eq!(kcp.noise.as_ref().unwrap().items[0].packet, b"hi");
+        assert!(matches!(built.transport(), ConnectorConfig::Tcp));
+    }
+
+    #[test]
+    fn vision_rides_mkcps_tls_and_not_plain_mkcp() {
+        let tls = vless(
+            json!({"flow": "xtls-rprx-vision", "stream": {"network": "kcp",
+            "security": "tls", "tlsSettings": {"serverName": "kcp.example"}}}),
+        );
+        let built = build_vless_tcp_outbound(&tls).unwrap();
+        assert!(validate_connector_flow(
+            built.user().flow.as_deref(),
+            built.transport(),
+            built.transport_layer(),
+        )
+        .unwrap()
+        .uses_vision());
+        // Without TLS the build refuses it, as it refuses raw without TLS.
+        let plain = vless(json!({"flow": "xtls-rprx-vision", "stream": {"network": "kcp"}}));
+        assert!(matches!(
+            build_vless_tcp_outbound(&plain),
+            Err(CoreError::UnsupportedOutboundFlow)
+        ));
+    }
+
+    /// Xray-core ignores TCP masks on mKCP's UDP dial; here they are refused,
+    /// as on XHTTP's HTTP/3.
+    #[test]
+    fn tcp_masks_are_refused_on_mkcp() {
+        let outbound = vless(json!({"network": "kcp", "security": "tls",
+            "tlsSettings": {"serverName": "kcp.example"},
+            "finalmask": {"tcp": [{"type": "fragment", "settings": {"packets": "tlshello",
+                "length": "100-200", "delay": "10-20"}}]}}));
+        assert!(matches!(
+            build_vless_tcp_outbound(&outbound),
+            Err(CoreError::UnsupportedOutboundNetwork)
+        ));
+    }
+
+    /// A chain would have to carry mKCP's datagrams.
+    #[test]
+    fn a_chained_outbound_takes_no_mkcp() {
+        let config = xray_config::parse_xray_json(
+            &json!({"outbounds": [
+                {"tag": "proxy", "protocol": "vless", "settings": {"vnext": [{"address": "10.0.0.1",
+                    "port": 443, "users": [{"id": ID, "encryption": "none"}]}]},
+                 "streamSettings": {"network": "kcp", "sockopt": {"dialerProxy": "next"}}},
+                {"tag": "next", "protocol": "socks", "settings": {"address": "127.0.0.1", "port": 1080}}
+            ]})
+            .to_string(),
+        )
+        .unwrap()
+        .config;
+        let router = OutboundRouter::new(Arc::new(config));
+        assert!(matches!(
+            router.select_tcp_outbound_direct(Some("proxy")),
+            Err(CoreError::UnsupportedOutboundProxyNetwork("mKCP"))
+        ));
     }
 }

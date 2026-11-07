@@ -428,6 +428,8 @@ jobs:
         run: bash scripts/check-v08-carrier-interop.sh
       - name: Verify live Hysteria TCP and UDP against pinned Xray-core
         run: bash scripts/check-hysteria-interop.sh
+      - name: Verify mKCP masks and live mKCP carriers against pinned Xray-core
+        run: bash scripts/check-kcp-interop.sh
 
       - name: Check out independent native Hysteria reference
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

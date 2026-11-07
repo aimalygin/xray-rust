@@ -1,5 +1,6 @@
 //! Transport selection, carrier settings and TLS/REALITY security.
 use super::*;
+use crate::KcpSettings;
 
 impl Parser<'_> {
     pub(super) fn parse_stream_settings(
@@ -61,7 +62,7 @@ impl Parser<'_> {
             quic_params.get_or_insert_with(Default::default).udp_hop = hop;
         }
         let tcp_fragment = self.parse_tcp_fragment_mask(stream, index);
-        let udp_noise = self.parse_udp_noise(stream, index);
+        let udp_noise = self.parse_udp_noise(stream, stream_network, index);
         let socket_options = self.parse_socket_options(stream, index);
         if let Some(stream) = stream {
             self.validate_stream_settings_compatibility(stream, index);
@@ -96,13 +97,13 @@ impl Parser<'_> {
         }
 
         if udp_noise.is_some()
-            && stream_network != StreamNetwork::Hysteria
+            && !matches!(stream_network, StreamNetwork::Hysteria | StreamNetwork::Kcp)
             && !(stream_network == StreamNetwork::Xhttp
                 && matches!(&security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]))
         {
             self.error(
                 format!("$.outbounds[{index}].streamSettings.finalmask.udp"),
-                "UDP noise requires Hysteria or XHTTP with exact h3 ALPN",
+                "UDP noise requires Hysteria, mKCP or XHTTP with exact h3 ALPN",
             );
         }
         if stream_network != StreamNetwork::Hysteria
@@ -163,6 +164,11 @@ impl Parser<'_> {
                 .parse_xhttp_settings(stream, index)
                 .map(Box::new)
                 .map(StreamTransport::Xhttp),
+            StreamNetwork::Kcp => {
+                let masks = self.parse_kcp_masks(stream, index);
+                self.parse_kcp_settings(stream, index)
+                    .map(|kcp| StreamTransport::Kcp(KcpSettings { masks, ..kcp }))
+            }
         }
     }
 
@@ -194,6 +200,7 @@ impl Parser<'_> {
             StreamNetwork::HttpUpgrade => &["httpupgradeSettings"],
             StreamNetwork::Grpc => &["grpcSettings"],
             StreamNetwork::Xhttp => &["xhttpSettings", "splithttpSettings"],
+            StreamNetwork::Kcp => &["kcpSettings"],
         };
 
         for key in [
@@ -205,6 +212,7 @@ impl Parser<'_> {
             "grpcSettings",
             "xhttpSettings",
             "splithttpSettings",
+            "kcpSettings",
         ] {
             let value = stream.get(key);
             let null_xhttp_pointer = matches!(key, "xhttpSettings" | "splithttpSettings")
@@ -240,6 +248,9 @@ impl Parser<'_> {
                 }
                 "splithttpSettings" if stream.get("xhttpSettings").is_none_or(Value::is_null) => {
                     let _ = self.parse_xhttp_settings(Some(stream), index);
+                }
+                "kcpSettings" => {
+                    let _ = self.parse_kcp_settings(Some(stream), index);
                 }
                 // `xhttpSettings` has priority over the legacy spelling, so
                 // the lower-priority block is inert when both are present.
@@ -1263,7 +1274,8 @@ impl Parser<'_> {
                 );
                 None
             }
-            network @ ("kcp" | "mkcp") => {
+            "kcp" | "mkcp" => Some(StreamNetwork::Kcp),
+            network @ ("masque" | "xdrive") => {
                 self.error(
                     network_path,
                     format!("stream network `{network}` is not supported by xray-rust"),
