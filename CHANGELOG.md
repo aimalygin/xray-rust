@@ -18,6 +18,14 @@ long-term supported release series.
   - A `fragment` mask may come before it, not after.
   - `rand` is at most 65536 bytes, and an item sent or read and a `pad` at
     most 1 MiB.
+- The `header-custom` UDP mask works on mKCP at its place among the noise and
+  `mkcp-legacy` masks. `prefix` mode puts the client's items before every
+  datagram and checks and takes the server's off every reply; `standalone`
+  exchanges them as separate datagrams before the first datagram to a peer,
+  and again once five seconds have passed since the last reply. See
+  [header-custom UDP mask](docs/config-compatibility.md#header-custom-udp-mask).
+  - Other UDP carriers refuse it, and a header is at most 4096 bytes.
+  - A null item reads as an empty one, in the TCP mask too, as in Xray-core.
 - mKCP: `network: "kcp"` and `"mkcp"` carry VLESS, VMess, Trojan,
   Shadowsocks, SOCKS and HTTP over Xray-core's reliable stream over UDP, plain
   or under TLS, Vision included. Profiles with it used to fail to parse. See

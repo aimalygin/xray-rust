@@ -2034,10 +2034,62 @@ outbound reads `0.0.0.0:0` for both, as Xray's chained connection does.
 The handshake runs as soon as TCP connects, before the fragment mask, TLS and
 REALITY. A `fragment` mask may stand before it in the array; after it, Xray-core
 fragments the handshake rather than the TLS ClientHello, so that order is
-refused. `header-custom` is refused on mKCP, XHTTP over HTTP/3, a split XHTTP
-download and outbounds that dial directly. The UDP form is not supported yet.
+refused. The TCP `header-custom` form is refused on mKCP, XHTTP over HTTP/3,
+a split XHTTP download and outbounds that dial directly. The UDP form is
+supported on mKCP, as described below.
 Deliberate differences and the evidence are in
 [header-custom TCP](xray-core-differences.md#header-custom-tcp).
+
+### header-custom UDP mask
+
+On mKCP, one `header-custom` entry in `streamSettings.finalmask.udp` is
+supported, at its position among `noise` and `mkcp-legacy` entries:
+
+```json
+"streamSettings": {
+  "network": "kcp",
+  "finalmask": {"udp": [{"type": "header-custom", "settings": {
+    "mode": "standalone",
+    "client": [{"type": "str", "packet": "hello", "capture": "greeting"}],
+    "server": [{"reuse": "greeting"}]
+  }}]}
+}
+```
+
+`mode` is case-sensitive: absent, empty or `prefix` puts the concatenated
+`client` items before each outgoing datagram and matches/removes `server`
+items from incoming datagrams. `standalone` sends the client sequence as its
+own datagram, waits for the matching server sequence from that peer, and
+then sends the original datagram unchanged. A standalone reply must have
+exactly the measured length. Subsequent writes reuse the completed handshake
+for five seconds; the first write after expiry repeats it. Ordinary traffic
+does not extend that standalone expiry. Even empty sequences exchange empty
+datagrams. Closing the stream cancels a pending handshake.
+
+`client` and `server` are flat arrays, unlike TCP's arrays of sequences. Items
+support the same packet encodings, random bytes, `capture`, `reuse` and
+`transform`, without TCP's `delay`. Metadata is available when writing, but
+not when matching a received header, as in Xray-core. mKCP's local address
+has a port and no IPv4 address there, as Xray-core's dual-stack wildcard
+socket reports it. A prefix client sequence must be measurable when the
+connection opens; a standalone one is only evaluated, so a computed `pad`,
+`slice` or `truncate` length works there, as with Xray-core's client.
+Prefix captures expire five seconds after their last successful read or
+write; writes also use Xray-core's fallback to the last successfully
+received variables.
+
+Mask array order is preserved: handshake and noise packets pass through
+only the masks after the mask that generated them. Standalone mode uses
+Xray-core's 4096-byte receive buffer. Prefix mode uses the carrier's
+receive buffer, and a transmitted prefix plus payload must fit 4096 bytes.
+Headers themselves are limited to 4096 bytes here; oversized headers fail or
+drop a write instead of panicking or allocating an unbounded buffer. A lost
+standalone request or reply is not resent: the connection waits for the
+reply until the stream closes.
+
+Other UDP carriers, duplicate custom masks and TCP-only item fields are
+rejected. `scripts/check-header-custom-interop.sh` checks the recorded UDP
+exchanges and both modes against Xray-core v26.10.31's server.
 
 ### TLS ClientHello shaping
 

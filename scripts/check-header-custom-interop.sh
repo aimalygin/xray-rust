@@ -27,8 +27,16 @@ env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
   "$TEST_ROOT/tcp-vectors.json"
 cmp "$WORKSPACE_ROOT/tests/fixtures/header-custom/tcp-vectors.json" "$TEST_ROOT/tcp-vectors.json"
 
+# The UDP prefix and standalone exchanges, recorded as individual datagrams.
+env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
+  go -C "$CHECKOUT" run -mod=readonly "$WORKSPACE_ROOT/tools/header-custom-udp-oracle/main.go" \
+  "$TEST_ROOT/udp-vectors.json"
+cmp "$WORKSPACE_ROOT/tests/fixtures/header-custom/udp-vectors.json" "$TEST_ROOT/udp-vectors.json"
+
 cd "$WORKSPACE_ROOT"
+cargo test --locked -p xray-config --test header_custom_tests
 cargo test --locked -p xray-transport --lib header_custom
+cargo test --locked -p xray-transport --lib kcp::
 cargo test --locked -p xray-transport --test header_custom_tests
 cargo test --locked -p xray-core-rs --lib outbound::carrier::tests
 
@@ -37,4 +45,8 @@ env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
   go -C "$CHECKOUT" build -mod=readonly -o "$TEST_ROOT/xray" ./main
 XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT" \
   cargo test --locked -p xray-core-rs --test local_xray_interop_tests header_custom:: \
+    -- --ignored --nocapture --test-threads=1
+
+XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT" \
+  cargo test --locked -p xray-core-rs --test local_xray_interop_tests kcp_header_custom_udp \
     -- --ignored --nocapture --test-threads=1

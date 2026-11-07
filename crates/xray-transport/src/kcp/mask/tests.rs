@@ -70,17 +70,23 @@ fn masks(names: &Value) -> Masks {
 
 /// What goes on the wire for `datagram`, noise first.
 fn wire(masks: &mut Masks, datagram: Vec<u8>) -> Vec<Vec<u8>> {
-    let now = Instant::now();
-    let Some(wrapped) = masks.wrap(datagram, now) else {
-        return Vec::new();
-    };
-    masks.sent(now);
-    let mut sent: Vec<Vec<u8>> = wrapped
-        .noise
-        .into_iter()
-        .filter_map(|(noise, _)| noise)
-        .collect();
-    sent.extend(wrapped.datagram);
+    wire_at(masks, datagram, Instant::now())
+}
+
+fn peer() -> SocketAddr {
+    "127.0.0.1:12345".parse().unwrap()
+}
+
+fn wire_at(masks: &mut Masks, datagram: Vec<u8>, now: Instant) -> Vec<Vec<u8>> {
+    masks.start(datagram);
+    let mut sent = Vec::new();
+    while let Some(action) = masks.next(now, None, peer()) {
+        match action {
+            Action::Send(packet) => sent.push(packet),
+            Action::Pause(_) => {}
+            Action::Wait => panic!("unexpected handshake"),
+        }
+    }
     sent
 }
 
@@ -141,10 +147,10 @@ fn every_dns_header_packs_as_xray_packs_it() {
 #[test]
 fn every_read_unwraps_as_xray_unwraps_it() {
     for read in vectors()["reads"].as_array().unwrap() {
-        let masks = masks(&read["masks"]);
+        let mut masks = masks(&read["masks"]);
         let mut incoming = hex(read["incoming"].as_str().unwrap());
         let payload = masks
-            .open(&mut incoming)
+            .open(&mut incoming, peer(), Instant::now())
             .map(|range| to_hex(&incoming[range]));
         assert_eq!(
             payload.as_deref(),
@@ -161,14 +167,16 @@ fn an_aes_datagram_opens_to_what_was_sealed() {
     let mut masks = masks(&serde_json::json!(["aes:seed"]));
     let mut sent = wire(&mut masks, b"segment".to_vec()).remove(0);
     assert_eq!(sent.len(), 12 + 7 + 16);
-    let range = masks.open(&mut sent).unwrap();
+    let range = masks.open(&mut sent, peer(), Instant::now()).unwrap();
     assert_eq!(&sent[range], b"segment");
     // A different value cannot open it, nor can a flipped bit.
-    let other = Masks::new(&[KcpMask::Aes128Gcm("other".to_owned().into())], None).unwrap();
+    let mut other = Masks::new(&[KcpMask::Aes128Gcm("other".to_owned().into())], None).unwrap();
     let mut again = wire(&mut masks, b"segment".to_vec()).remove(0);
-    assert!(other.open(&mut again.clone()).is_none());
+    assert!(other
+        .open(&mut again.clone(), peer(), Instant::now())
+        .is_none());
     again[20] ^= 1;
-    assert!(masks.open(&mut again).is_none());
+    assert!(masks.open(&mut again, peer(), Instant::now()).is_none());
     // The nonce is fresh every time.
     let first = wire(&mut masks, b"x".to_vec()).remove(0);
     let second = wire(&mut masks, b"x".to_vec()).remove(0);
@@ -188,8 +196,8 @@ fn the_original_mask_checks_the_length_too() {
     for i in 4..region.len() {
         region[i] ^= region[i - 4];
     }
-    let masks = Masks::new(&[KcpMask::Original], None).unwrap();
-    assert!(masks.open(&mut region).is_none());
+    let mut masks = Masks::new(&[KcpMask::Original], None).unwrap();
+    assert!(masks.open(&mut region, peer(), Instant::now()).is_none());
 }
 
 #[test]
@@ -207,11 +215,8 @@ fn noise_comes_back_after_the_connection_idles_past_its_reset() {
     config.reset_secs = NoiseRange { from: 5, to: 5 };
     let mut masks = Masks::new(&[KcpMask::Noise], Some(&config)).unwrap();
     let start = Instant::now();
-    let send = |masks: &mut Masks, at: Duration| {
-        let wrapped = masks.wrap(b"d".to_vec(), start + at).unwrap();
-        masks.sent(start + at);
-        wrapped.noise.len()
-    };
+    let send =
+        |masks: &mut Masks, at: Duration| wire_at(masks, b"d".to_vec(), start + at).len() - 1;
     assert_eq!(send(&mut masks, Duration::ZERO), 1);
     assert_eq!(send(&mut masks, Duration::from_secs(5)), 0);
     // Each datagram pushes the reset out again.
@@ -221,4 +226,110 @@ fn noise_comes_back_after_the_connection_idles_past_its_reset() {
     let mut once = Masks::new(&[KcpMask::Noise], Some(&noise())).unwrap();
     assert_eq!(send(&mut once, Duration::ZERO), 1);
     assert_eq!(send(&mut once, Duration::from_secs(3600)), 0);
+}
+
+fn custom(standalone: bool) -> KcpMask {
+    use crate::header_custom::{CustomItem, HeaderCustomUdpConfig};
+    let item = CustomItem {
+        delay: (0, 0),
+        rand: 0,
+        rand_range: (0, 255),
+        packet: b"HC".to_vec(),
+        capture: String::new(),
+        reuse: String::new(),
+        transform: None,
+    };
+    KcpMask::HeaderCustom(std::sync::Arc::new(HeaderCustomUdpConfig {
+        standalone,
+        client: vec![item.clone()],
+        server: vec![item],
+    }))
+}
+
+#[test]
+fn custom_prefix_and_noise_keep_array_order() {
+    let mut inner = Masks::new(&[custom(false), KcpMask::Noise], Some(&noise())).unwrap();
+    assert_eq!(
+        wire(&mut inner, b"p".to_vec()),
+        [b"NZ".to_vec(), b"HCp".to_vec()]
+    );
+    let mut outer = Masks::new(&[KcpMask::Noise, custom(false)], Some(&noise())).unwrap();
+    assert_eq!(
+        wire(&mut outer, b"p".to_vec()),
+        [b"HCNZ".to_vec(), b"HCp".to_vec()]
+    );
+    let mut incoming = b"HCp".to_vec();
+    assert_eq!(
+        outer.open(&mut incoming, peer(), Instant::now()),
+        Some(2..3)
+    );
+}
+
+#[test]
+fn standalone_exchanges_traverse_only_masks_after_the_header() {
+    for before_noise in [false, true] {
+        let ordered = if before_noise {
+            vec![KcpMask::Noise, custom(true), KcpMask::Original]
+        } else {
+            vec![custom(true), KcpMask::Noise, KcpMask::Original]
+        };
+        let now = Instant::now();
+        let mut masks = Masks::new(&ordered, Some(&noise())).unwrap();
+        let mut outer = Masks::new(&[KcpMask::Original], None).unwrap();
+        masks.start(b"payload".to_vec());
+        let mut before = Vec::new();
+        loop {
+            match masks.next(now, None, peer()).unwrap() {
+                Action::Send(mut packet) => {
+                    let range = outer.open(&mut packet, peer(), now).unwrap();
+                    before.push(packet[range].to_vec());
+                }
+                Action::Pause(_) => {}
+                Action::Wait => break,
+            }
+        }
+        let expected = if before_noise {
+            vec![b"HC".to_vec()]
+        } else {
+            vec![b"NZ".to_vec(), b"HC".to_vec()]
+        };
+        assert_eq!(before, expected);
+        let mut reply = wire(&mut outer, b"HC".to_vec()).remove(0);
+        assert!(masks.open(&mut reply, peer(), now).is_none());
+        let mut after = Vec::new();
+        while let Some(action) = masks.next(now, None, peer()) {
+            match action {
+                Action::Send(mut packet) => {
+                    let range = outer.open(&mut packet, peer(), now).unwrap();
+                    after.push(packet[range].to_vec());
+                }
+                Action::Pause(_) => {}
+                Action::Wait => panic!("completed handshake waited again"),
+            }
+        }
+        let expected = if before_noise {
+            vec![b"NZ".to_vec(), b"payload".to_vec()]
+        } else {
+            vec![b"payload".to_vec()]
+        };
+        assert_eq!(after, expected);
+    }
+}
+
+#[test]
+fn standalone_receive_buffer_matches_xrays_4096_byte_limit() {
+    let mut masks = Masks::new(&[custom(true)], None).unwrap();
+    let mut packet = vec![0; 5000];
+    assert_eq!(
+        masks.open(&mut packet, peer(), Instant::now()),
+        Some(0..4096)
+    );
+    // A prefix reads all the carrier received.
+    let mut masks = Masks::new(&[custom(false)], None).unwrap();
+    let mut packet = vec![0; 5000];
+    packet[..2].copy_from_slice(b"HC");
+    assert_eq!(
+        masks.open(&mut packet, peer(), Instant::now()),
+        Some(2..5000)
+    );
 }

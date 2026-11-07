@@ -466,6 +466,34 @@ Evidence, against Xray-core v26.10.31:
   WebSocket, HTTPUpgrade, gRPC and XHTTP, and refused a wrong one each time
   (`scripts/check-header-custom-interop.sh`).
 
+## header-custom UDP
+
+The mKCP client supports Xray-core v26.10.31's prefix and standalone UDP
+custom masks, including captures, expressions, address metadata on writes,
+five-second per-peer state and mask ordering. The parser accepts one custom
+mask on mKCP; other UDP carriers and multiple custom masks are rejected.
+The same item and expression limits as the TCP implementation apply.
+
+Custom headers are limited to 4096 bytes. Prefix writes whose combined
+header and payload exceed 4096 bytes are dropped; Xray-core sends stale
+bytes of its pooled buffer in place of everything past 4096 bytes, and
+panics past 8192. Standalone reads are truncated to its 4096-byte
+buffer, and dropping a Rust stream releases a pending standalone handshake.
+A lost standalone request or reply is not resent, and the connection waits
+until the stream closes. Xray-core blocks its data updater on it for good;
+its ping updater's next write sends a new request, and once that is
+answered, data goes out only at the ping updater's five-second pace.
+
+Thirteen client/server exchanges recorded directly from Xray-core are
+checked byte for byte (`tools/header-custom-udp-oracle`,
+`tests/fixtures/header-custom/udp-vectors.json`); one is a standalone client
+sequence that only Xray-core's client accepts, recorded against a scripted
+peer because its server measures the client sequence and refuses it. Tests
+also cover expiry, wrong peers, malformed replies, cancellation, the
+dual-stack local address and ordering with noise and legacy masks. Live mKCP interop covers both modes, each alone and with noise
+on either side and an additional legacy mask. See
+[configuration](config-compatibility.md#header-custom-udp-mask).
+
 ## DNS `UseSystem` route probe
 
 `queryStrategy: "UseSystem"` narrows each lookup to the address families the

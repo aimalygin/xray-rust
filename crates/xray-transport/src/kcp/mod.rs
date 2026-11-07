@@ -30,7 +30,7 @@ use tokio::{
 
 use crate::{udp_noise::UdpNoiseConfig, SocketProtector, TransportError, TransportStream};
 use engine::{Engine, State, WriteBlocked};
-use mask::Masks;
+use mask::{Action, Masks};
 
 /// `kcpSettings` with the stream's UDP masks.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +58,8 @@ pub enum KcpMask {
     Header(KcpHeader),
     /// The noise mask, whose settings are `KcpConfig::noise`.
     Noise,
+    /// A custom UDP prefix or standalone handshake.
+    HeaderCustom(Arc<crate::header_custom::HeaderCustomUdpConfig>),
 }
 
 impl std::fmt::Debug for KcpMask {
@@ -67,6 +69,7 @@ impl std::fmt::Debug for KcpMask {
             Self::Aes128Gcm(_) => f.write_str("Aes128Gcm(<redacted>)"),
             Self::Header(header) => f.debug_tuple("Header").field(header).finish(),
             Self::Noise => f.write_str("Noise"),
+            Self::HeaderCustom(config) => f.debug_tuple("HeaderCustom").field(config).finish(),
         }
     }
 }
@@ -259,6 +262,8 @@ impl Drop for KcpStream {
         let current = elapsed(self.shared.since);
         inner.engine.close(current);
         self.shared.signal(inner);
+        // The driver may be waiting inside a standalone UDP handshake.
+        self.shared.wake.notify_one();
     }
 }
 
@@ -357,6 +362,10 @@ struct Driver {
     socket: UdpSocket,
     peer: SocketAddr,
     masks: Masks,
+    /// The local address a `header-custom` mask writes with. Go listens on
+    /// the IPv6 wildcard for either family, so Xray-core's has a port and
+    /// no IPv4 address.
+    local: Option<SocketAddr>,
     data: DataUpdater,
     ping_next: Instant,
     /// Xray stops reading for good after a receive error.
@@ -367,11 +376,16 @@ impl Driver {
     fn new(shared: Arc<Shared>, socket: UdpSocket, peer: SocketAddr, masks: Masks) -> Self {
         let since = shared.since;
         let interval = Duration::from_millis(shared.lock().engine.tti().into());
+        let local = socket
+            .local_addr()
+            .ok()
+            .map(|local| SocketAddr::new(std::net::Ipv6Addr::UNSPECIFIED.into(), local.port()));
         Self {
             shared,
             socket,
             peer,
             masks,
+            local,
             data: DataUpdater {
                 running: false,
                 next: since,
@@ -395,7 +409,7 @@ impl Driver {
                 () = self.shared.wake.notified() => self.wake_data(),
                 received = self.socket.recv_from(&mut buf), if self.receiving => {
                     match received {
-                        Ok((length, _)) => self.receive(&mut buf[..length]),
+                        Ok((length, from)) => self.receive(&mut buf[..length], from),
                         Err(_) => self.receiving = false,
                     }
                 }
@@ -455,8 +469,8 @@ impl Driver {
         self.shared.signal_from_driver(inner);
     }
 
-    fn receive(&mut self, datagram: &mut [u8]) {
-        let Some(range) = self.masks.open(datagram) else {
+    fn receive(&mut self, datagram: &mut [u8], from: SocketAddr) {
+        let Some(range) = self.masks.open(datagram, from, Instant::now()) else {
             return;
         };
         let segments = segment::read_segments(&datagram[range]);
@@ -482,24 +496,58 @@ impl Driver {
             )
         };
         for datagram in datagrams {
-            let Some(wrapped) = self.masks.wrap(datagram, Instant::now()) else {
-                continue;
-            };
-            for (noise, pause) in wrapped.noise {
-                if let Some(noise) = noise {
-                    let _ = self.socket.send_to(&noise, self.peer).await;
+            self.masks.start(datagram);
+            while let Some(action) = self.masks.next(Instant::now(), self.local, self.peer) {
+                match action {
+                    Action::Send(datagram) => {
+                        // A datagram the system refuses is lost, and resent as lost.
+                        let _ = self.socket.send_to(&datagram, self.peer).await;
+                    }
+                    Action::Pause(pause) if !pause.is_zero() => tokio::time::sleep(pause).await,
+                    Action::Pause(_) => {}
+                    Action::Wait => {
+                        if !self.receive_handshake().await {
+                            return false;
+                        }
+                    }
                 }
-                if !pause.is_zero() {
-                    tokio::time::sleep(pause).await;
-                }
-            }
-            self.masks.sent(Instant::now());
-            if let Some(datagram) = wrapped.datagram {
-                // A datagram the system refuses is lost, and resent as lost.
-                let _ = self.socket.send_to(&datagram, self.peer).await;
             }
         }
         !terminated
+    }
+
+    /// A standalone write waits for the matching response. Keep receiving
+    /// ordinary packets and honor stream cancellation while it is pending.
+    async fn receive_handshake(&mut self) -> bool {
+        let mut buf = vec![0; RECEIVE_BUFFER];
+        loop {
+            let closing = matches!(
+                self.shared.lock().engine.state(),
+                State::ReadyToClose | State::Terminating | State::Terminated
+            );
+            if !self.receiving || closing {
+                self.abort();
+                return false;
+            }
+            tokio::select! {
+                () = self.shared.wake.notified() => {}
+                received = self.socket.recv_from(&mut buf) => {
+                    match received {
+                        Ok((length, from)) => {
+                            self.receive(&mut buf[..length], from);
+                            return true;
+                        }
+                        Err(_) => self.receiving = false,
+                    }
+                }
+            }
+        }
+    }
+
+    fn abort(&self) {
+        let mut inner = self.shared.lock();
+        inner.engine.abort(elapsed(self.shared.since));
+        self.shared.signal_from_driver(inner);
     }
 }
 

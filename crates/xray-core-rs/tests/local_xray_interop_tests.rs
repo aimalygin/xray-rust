@@ -1993,6 +1993,7 @@ fn rust_vless_outbound(
             quic_params: None,
             tcp_fragment: None,
             tcp_header_custom: None,
+            udp_header_custom: None,
             udp_noise: None,
             socket_options: None,
         },

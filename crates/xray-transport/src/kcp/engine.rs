@@ -532,6 +532,12 @@ impl Engine {
         }
     }
 
+    /// Stops a carrier that can no longer finish its pending write.
+    pub(super) fn abort(&mut self, current: u32) {
+        self.out.clear();
+        self.set_state(State::Terminated, current);
+    }
+
     /// `Close`: false when the connection was closed already.
     pub(super) fn close(&mut self, current: u32) -> bool {
         self.input_ready = true;
