@@ -164,6 +164,8 @@ pub struct H3QuicConfig {
     pub brutal_disable_loss_compensation: bool,
     pub udp_hop: H3UdpHopConfig,
     pub udp_noise: Option<crate::udp_noise::UdpNoiseConfig>,
+    /// A `header-custom` UDP mask, at its place among the noise mask.
+    pub udp_header_custom: Option<crate::hysteria::HeaderCustomCarrier>,
     pub debug: bool,
 }
 
@@ -188,6 +190,7 @@ impl Default for H3QuicConfig {
             brutal_disable_loss_compensation: false,
             udp_hop: H3UdpHopConfig::default(),
             udp_noise: None,
+            udp_header_custom: None,
             debug: false,
         }
     }
@@ -215,6 +218,14 @@ impl H3QuicConfig {
     pub fn diagnostics(&self) -> Result<H3Diagnostics, H3Error> {
         if let Some(noise) = &self.udp_noise {
             noise.validate().map_err(H3Error::UdpSocket)?;
+        }
+        if self.udp_header_custom.is_some() {
+            self.hop_carrier().validate().map_err(|_| {
+                H3Error::UdpSocket(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "an invalid header-custom UDP mask, or one with udphop",
+                ))
+            })?;
         }
         if self.version != H3QuicVersion::V1 {
             return Err(H3Error::UnsupportedQuicVersion {
@@ -278,12 +289,13 @@ impl H3QuicConfig {
         })
     }
 
-    /// The carrier transforms this XHTTP connection applies itself: UDP hop
-    /// and noise. Hysteria passes its own carrier instead.
+    /// The carrier transforms this XHTTP connection applies itself: UDP hop,
+    /// noise and a custom header. Hysteria passes its own carrier instead.
     fn hop_carrier(&self) -> crate::hysteria::HysteriaCarrierConfig {
         crate::hysteria::HysteriaCarrierConfig {
             udp_hop: self.udp_hop.clone(),
             noise: self.udp_noise.clone(),
+            header_custom: self.udp_header_custom.clone(),
             ..Default::default()
         }
     }
@@ -1081,7 +1093,13 @@ fn rebind_carrier(
     let socket = StdUdpSocket::bind(unspecified_bind_addr(logical_peer))?;
     crate::protect_std_udp_socket(&socket, protector).map_err(io::Error::other)?;
     socket.set_nonblocking(true)?;
-    let socket = crate::hysteria::carrier::wrap(socket, logical_peer, wire_peer, carrier, None)?;
+    let socket = crate::hysteria::carrier::wrap(
+        socket,
+        logical_peer,
+        wire_peer,
+        carrier,
+        &Default::default(),
+    )?;
     // Keep the receive batch every XHTTP endpoint starts with.
     endpoint.rebind_abstract(crate::quic_receive_batch::cap(
         socket,
@@ -1102,7 +1120,15 @@ pub(crate) async fn connect_quic_transport(
     config: H3ConnectConfig,
     expected_alpn: &'static [u8],
 ) -> Result<(Endpoint, quinn::Connection, H3Diagnostics, SocketAddr), H3Error> {
-    connect_quic_transport_with_datagrams(config, expected_alpn, None, None, None, None).await
+    connect_quic_transport_with_datagrams(
+        config,
+        expected_alpn,
+        None,
+        None,
+        Default::default(),
+        None,
+    )
+    .await
 }
 
 /// Optional receive/send byte budgets and advertised frame-size cap for QUIC datagrams.
@@ -1114,7 +1140,7 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
     expected_alpn: &'static [u8],
     datagram_buffers: Option<(usize, usize, u16)>,
     carrier: Option<&crate::hysteria::HysteriaCarrierConfig>,
-    noise_state: Option<Arc<crate::udp_noise::UdpNoiseState>>,
+    session: crate::hysteria::carrier::CarrierSession,
     negotiation: Option<&Arc<BrutalDecision>>,
 ) -> Result<(Endpoint, quinn::Connection, H3Diagnostics, SocketAddr), H3Error> {
     drop(crate::tls::parse_tls_server_name(&config.server_name)?);
@@ -1126,10 +1152,12 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
         return Err(H3Error::InvalidAlpn { expected });
     }
 
+    let own_carrier = config.quic.hop_carrier();
+    let carrier = carrier.or_else(|| own_carrier.enabled().then_some(&own_carrier));
     let (endpoint_config, client_config) = build_quinn_config(
         &config,
         datagram_buffers,
-        carrier.is_some_and(|c| c.salamander_password.is_some()),
+        carrier.map_or(0, |c| c.wire_overhead()),
         negotiation,
     )?;
     let remote_addr = canonicalize_socket_addr(config.remote_addr);
@@ -1144,12 +1172,10 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
     protect_quic_socket(&socket, config.socket_protector.as_deref())?;
     socket.set_nonblocking(true).map_err(H3Error::UdpSocket)?;
 
-    let own_carrier = config.quic.hop_carrier();
-    let carrier = carrier.or_else(|| own_carrier.enabled().then_some(&own_carrier));
     let mut wire_peer = remote_addr;
     let socket = if let Some(carrier) = carrier.filter(|c| c.enabled()) {
         wire_peer = carrier.next_peer(remote_addr);
-        crate::hysteria::carrier::wrap(socket, remote_addr, wire_peer, carrier, noise_state)
+        crate::hysteria::carrier::wrap(socket, remote_addr, wire_peer, carrier, &session)
             .map_err(H3Error::UdpSocket)?
     } else {
         // Every connection owns its socket and talks to one peer, so XHTTP H3
@@ -1308,7 +1334,7 @@ impl quinn::ConnectionIdGenerator for EmptyConnectionId {
 fn build_quinn_config(
     config: &H3ConnectConfig,
     datagram_buffers: Option<(usize, usize, u16)>,
-    salamander: bool,
+    wire_overhead: usize,
     negotiation: Option<&Arc<BrutalDecision>>,
 ) -> Result<(EndpointConfig, ClientConfig), H3Error> {
     let mut endpoint = EndpointConfig::default();
@@ -1353,10 +1379,12 @@ fn build_quinn_config(
         transport.datagram_send_buffer_size(send);
         transport.advertised_datagram_frame_size(Some(frame_size));
     }
-    if salamander {
-        // Reserve the 8-byte salt within the normal IPv6-safe wire budget.
+    if wire_overhead > 0 {
+        // Reserve Salamander's salt and a custom prefix within the normal
+        // IPv6-safe wire budget, never below QUIC's 1200-byte minimum.
         let mut mtu = quinn::MtuDiscoveryConfig::default();
-        mtu.upper_bound(1452 - crate::hysteria::carrier::SALT_LEN as u16);
+        let budget = 1452usize.saturating_sub(wire_overhead).max(1200);
+        mtu.upper_bound(budget as u16);
         transport.mtu_discovery_config(Some(mtu));
     }
     if config.quic.disable_path_mtu_discovery {

@@ -414,3 +414,48 @@ async fn custom_headers_write_with_go_dual_stack_local_address() {
         "a write without a local IPv4 address went out"
     );
 }
+
+#[tokio::test]
+async fn an_unanswered_standalone_request_goes_out_again_after_a_second() {
+    use crate::header_custom::{CustomItem, HeaderCustomUdpConfig};
+    let item = |packet: &[u8]| CustomItem {
+        delay: (0, 0),
+        rand: 0,
+        rand_range: (0, 255),
+        packet: packet.to_vec(),
+        capture: String::new(),
+        reuse: String::new(),
+        transform: None,
+    };
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let peer = socket.local_addr().unwrap();
+    let mut stream = connect(
+        &[peer],
+        None,
+        &config(vec![KcpMask::HeaderCustom(Arc::new(
+            HeaderCustomUdpConfig {
+                standalone: true,
+                client: vec![item(b"REQ")],
+                server: vec![item(b"ACK")],
+            },
+        ))]),
+    )
+    .await
+    .unwrap();
+    stream.write_all(b"pending").await.unwrap();
+    let mut buf = [0; 8192];
+    let (n, from) = within(socket.recv_from(&mut buf)).await.unwrap();
+    assert_eq!(&buf[..n], b"REQ");
+    let started = Instant::now();
+    let (n, _) = within(socket.recv_from(&mut buf)).await.unwrap();
+    assert_eq!(&buf[..n], b"REQ");
+    let waited = started.elapsed();
+    assert!(
+        waited >= Duration::from_millis(900) && waited < Duration::from_secs(3),
+        "{waited:?}"
+    );
+    socket.send_to(b"ACK", from).await.unwrap();
+    // The held datagram follows, unmasked: an mKCP segment.
+    let (n, _) = within(socket.recv_from(&mut buf)).await.unwrap();
+    assert!(n > 24, "{:?}", &buf[..n]);
+}

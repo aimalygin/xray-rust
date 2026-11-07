@@ -37,6 +37,7 @@ cd "$WORKSPACE_ROOT"
 cargo test --locked -p xray-config --test header_custom_tests
 cargo test --locked -p xray-transport --lib header_custom
 cargo test --locked -p xray-transport --lib kcp::
+cargo test --locked -p xray-transport --lib hysteria::carrier
 cargo test --locked -p xray-transport --test header_custom_tests
 cargo test --locked -p xray-core-rs --lib outbound::carrier::tests
 
@@ -49,4 +50,12 @@ XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT" \
 
 XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT" \
   cargo test --locked -p xray-core-rs --test local_xray_interop_tests kcp_header_custom_udp \
+    -- --ignored --nocapture --test-threads=1
+
+# The QUIC carriers against Xray-core's Hysteria and XHTTP H3 servers.
+env -u NATIVE_HYSTERIA_BINARY XRAY_HYSTERIA_BINARY="$TEST_ROOT/xray" \
+  cargo test --locked -p xray-transport --test hysteria_interop_tests header_custom:: \
+    -- --ignored --nocapture --test-threads=1
+XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT" \
+  cargo test --locked -p xray-core-rs --test local_xray_interop_tests header_custom_udp_xhttp_h3 \
     -- --ignored --nocapture --test-threads=1

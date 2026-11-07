@@ -324,6 +324,25 @@ impl Masks {
         self.pending.push_back(Pending::Packet(datagram, 0));
     }
 
+    /// The awaited standalone reply has not come: the datagram goes back to
+    /// the custom header, which sends its request again.
+    pub(super) fn resend(&mut self) {
+        let index = match self.pending.pop_front() {
+            Some(Pending::Handshake(data, index) | Pending::Packet(data, index)) => {
+                self.pending.push_front(Pending::Packet(data, index));
+                index
+            }
+            Some(other) => {
+                self.pending.push_front(other);
+                return;
+            }
+            None => return,
+        };
+        if let Some(Layer::Header(header)) = self.layers.get_mut(index) {
+            header.abandon();
+        }
+    }
+
     pub(super) fn next(
         &mut self,
         now: Instant,

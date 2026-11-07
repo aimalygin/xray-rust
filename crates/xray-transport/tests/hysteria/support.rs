@@ -102,6 +102,13 @@ impl ReferenceServer {
         Self::start_with_options(udp_enabled, salamander.then_some(None), None).await
     }
 
+    /// An Xray server with these `finalmask.udp` masks, or `None` when the
+    /// pinned reference is native Hysteria, which has no such masks.
+    pub async fn start_with_udp_masks(masks: serde_json::Value) -> Option<Self> {
+        std::env::var_os("XRAY_HYSTERIA_BINARY")?;
+        Some(Self::start_with_masks(true, None, None, Some(masks)).await)
+    }
+
     /// A Salamander server with Gecko's fragment sizes: Xray's `packetSize`,
     /// native Hysteria's `gecko` obfuscation.
     pub async fn start_with_gecko(min: u16, max: u16) -> Self {
@@ -120,6 +127,15 @@ impl ReferenceServer {
         udp_enabled: bool,
         salamander: Option<Option<(u16, u16)>>,
         bandwidth: Option<(&str, &str)>,
+    ) -> Self {
+        Self::start_with_masks(udp_enabled, salamander, bandwidth, None).await
+    }
+
+    async fn start_with_masks(
+        udp_enabled: bool,
+        salamander: Option<Option<(u16, u16)>>,
+        bandwidth: Option<(&str, &str)>,
+        udp_masks: Option<serde_json::Value>,
     ) -> Self {
         let (binary, native) = match (
             std::env::var_os("XRAY_HYSTERIA_BINARY"),
@@ -184,6 +200,10 @@ impl ReferenceServer {
                 config["inbounds"][0]["streamSettings"]["finalmask"] =
                     serde_json::json!({"udp":[{"type":"salamander","settings":settings}]});
             }
+        }
+        if let Some(masks) = udp_masks {
+            assert!(!native, "native Hysteria has no finalmask");
+            config["inbounds"][0]["streamSettings"]["finalmask"]["udp"] = masks;
         }
         if let Some((send, receive)) = bandwidth {
             if native {

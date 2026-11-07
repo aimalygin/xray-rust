@@ -48,6 +48,16 @@ impl UdpHeader {
         self.waiter.is_some()
     }
 
+    /// Forgets a standalone request that is no longer awaited.
+    pub(crate) fn abandon(&mut self) {
+        self.waiter = None;
+    }
+
+    /// What a prefix adds to every datagram; nothing in standalone mode.
+    pub(crate) fn prefix_len(&self) -> usize {
+        self.write_size.unwrap_or(0)
+    }
+
     pub(crate) fn new(config: Arc<HeaderCustomUdpConfig>) -> io::Result<Self> {
         let invalid = |error| io::Error::new(io::ErrorKind::InvalidInput, error);
         let mut saved_sizes = HashMap::new();

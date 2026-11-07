@@ -120,6 +120,31 @@ fn salamander_packet_size_reaches_the_carrier_as_gecko() {
 }
 
 #[test]
+fn a_header_custom_mask_reaches_the_carrier_at_its_place() {
+    let mut value: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tests/fixtures/configs/hysteria2.json"
+    ))
+    .unwrap();
+    value["outbounds"][0]["streamSettings"]["finalmask"] = serde_json::json!({"udp":[
+        {"type":"header-custom","settings":{"mode":"standalone",
+            "client":[{"type":"str","packet":"hi"}],"server":[{"type":"str","packet":"ok"}]}},
+        {"type":"salamander","settings":{"password":"synthetic-secret"}}
+    ],"quicParams":{"disableChromeParrot":true}});
+    let config = xray_config::parse_xray_json(&value.to_string())
+        .unwrap()
+        .config
+        .outbounds
+        .remove(0);
+    let outbound = HysteriaOutbound::new(&config).unwrap();
+    let header = outbound.inner.carrier.header_custom.as_ref().unwrap();
+    assert!(header.config.standalone);
+    assert_eq!(header.config.client[0].packet, b"hi");
+    assert_eq!(header.config.server[0].packet, b"ok");
+    assert!(header.before_salamander);
+    assert!(!header.before_noise);
+}
+
+#[test]
 fn hysteria_quic_params_follow_xrays_hysteria_dialer() {
     let (quic, receive) = hysteria_quic_config(None).unwrap();
     assert_eq!(quic.max_idle_timeout, Duration::from_secs(30));

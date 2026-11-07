@@ -3965,3 +3965,99 @@ async fn udp_noise_xhttp_h3_interop_all_modes() {
         .unwrap();
     }
 }
+
+/// XHTTP over HTTP/3 with a `header-custom` UDP mask against an Xray server
+/// applying the same mask; the client's noise goes through it or around it,
+/// and a client with another sequence carries nothing.
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary; run check-header-custom-interop.sh"]
+async fn header_custom_udp_xhttp_h3_modes_and_noise_order() {
+    let checkout = resolve_xray_checkout();
+    let h3 = || {
+        StreamSecurity::Tls(TlsSettings {
+            server_name: Some(TLS_SERVER_NAME.to_owned()),
+            fingerprint: Some("chrome".to_owned()),
+            allow_insecure: true,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
+            alpn: vec!["h3".to_owned()],
+        })
+    };
+    let noise = serde_json::json!({"type":"noise","settings":{"noise":[
+        {"type":"str","packet":"synthetic-noise","delay":2}]}});
+    for mode in ["prefix", "standalone"] {
+        let header = |hello: &str| {
+            serde_json::json!({"type":"header-custom","settings":{"mode":mode,
+                "client":[{"rand":4},{"type":"str","packet":hello}],
+                "server":[{"type":"str","packet":"world"}]}})
+        };
+        let client = |masks: serde_json::Value, server: SocketAddr| {
+            let mut config = rust_xhttp_core_config(server, h3(), XhttpMode::StreamOne);
+            let raw = serde_json::json!({"outbounds":[{"protocol":"freedom","streamSettings":{
+                "network":"xhttp","security":"tls",
+                "tlsSettings":{"serverName":"example.com","alpn":["h3"]},
+                "finalmask":{"udp":masks}}}]});
+            let parsed = parse_xray_json(&raw.to_string()).unwrap().config.outbounds[0]
+                .stream
+                .clone();
+            config.outbounds[0].stream.udp_header_custom = parsed.udp_header_custom;
+            config.outbounds[0].stream.udp_noise = parsed.udp_noise;
+            config
+        };
+        let server = || {
+            start_xray_vless_server_customized(
+                &checkout,
+                XrayVlessServerConfig {
+                    security: XrayInboundSecurity::Tls,
+                    transport: XrayInboundTransport::Xhttp {
+                        path: XHTTP_PATH,
+                        mode: "stream-one",
+                        tls_alpn: Some("h3"),
+                    },
+                    flow: None,
+                },
+                |json| {
+                    json["inbounds"][0]["streamSettings"]["finalmask"] =
+                        serde_json::json!({"udp":[header("hello")]});
+                },
+            )
+        };
+        for (order, masks) in [
+            ("alone", serde_json::json!([header("hello")])),
+            ("noise-inner", serde_json::json!([noise, header("hello")])),
+            ("noise-outer", serde_json::json!([header("hello"), noise])),
+        ] {
+            eprintln!("XHTTP H3 header-custom {mode} {order}");
+            let xray = timeout(Duration::from_secs(60), server()).await.unwrap();
+            let config = client(masks, xray.addr);
+            timeout(
+                Duration::from_secs(90),
+                run_local_xray_xhttp_interop_scenario(xray, config, XhttpMode::StreamOne),
+            )
+            .await
+            .unwrap();
+        }
+        eprintln!("XHTTP H3 header-custom {mode} mismatched");
+        let xray = timeout(Duration::from_secs(60), server()).await.unwrap();
+        let config = client(serde_json::json!([header("HELLO")]), xray.addr);
+        let mut core = Core::new(config).unwrap();
+        core.start().await.unwrap();
+        let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+        let (echo_addr, _echo) = spawn_echo_server().await;
+        let attempt = async {
+            let mut stream = TcpStream::connect(socks_addr).await.ok()?;
+            socks5_connect(&mut stream, echo_addr).await.ok()?;
+            stream.write_all(b"ping").await.ok()?;
+            let mut reply = [0; 4];
+            stream.read_exact(&mut reply).await.ok()?;
+            Some(reply)
+        };
+        let result = timeout(Duration::from_secs(4), attempt).await;
+        assert!(
+            !matches!(result, Ok(Some(_))),
+            "a mismatched header carried data"
+        );
+        drop(core);
+        drop(xray);
+    }
+}

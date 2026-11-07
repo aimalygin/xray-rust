@@ -4806,16 +4806,18 @@ pub async fn open_vless_tcp_stream(
     open_vless_tcp_stream_with_resolver(outbound, target, &SystemDnsResolver).await
 }
 
+/// UDP masks, noise and `header-custom`, need a UDP carrier: Hysteria, mKCP
+/// or XHTTP with exact `h3` ALPN.
 pub(crate) fn validate_udp_noise(stream: &StreamSettings) -> Result<(), CoreError> {
+    let udp_carrier = matches!(
+        stream.transport,
+        StreamTransport::Hysteria(_) | StreamTransport::Kcp(_)
+    ) || matches!(stream.transport, StreamTransport::Xhttp(_))
+        && matches!(&stream.security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]);
+    if (stream.udp_noise.is_some() || stream.udp_header_custom.is_some()) && !udp_carrier {
+        return Err(CoreError::UnsupportedOutboundNetwork);
+    }
     if let Some(noise) = &stream.udp_noise {
-        if !(matches!(
-            stream.transport,
-            StreamTransport::Hysteria(_) | StreamTransport::Kcp(_)
-        ) || matches!(stream.transport, StreamTransport::Xhttp(_))
-            && matches!(&stream.security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]))
-        {
-            return Err(CoreError::UnsupportedOutboundNetwork);
-        }
         xhttp::udp_noise_config(noise)?;
     }
     Ok(())

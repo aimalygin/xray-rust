@@ -418,3 +418,72 @@ fn udp_rejects_invalid_settings_tcp_fields_and_other_carriers() {
     masks.push(masks[0].clone());
     assert!(parse_xray_json(&cfg.to_string()).is_err());
 }
+
+fn quic_config(network: &str, alpn: &[&str], udp: Value) -> Value {
+    let mut value: Value = serde_json::from_str(&config(json!([]))).unwrap();
+    value["outbounds"][0]["streamSettings"] = json!({"network":network,"security":"tls",
+        "tlsSettings":{"serverName":"server.example","alpn":alpn},
+        "finalmask":{"udp":udp,"quicParams":{"disableChromeParrot":true}}});
+    if network == "hysteria" {
+        value["outbounds"][0] = json!({"tag":"proxy","protocol":"hysteria",
+            "settings":{"version":2,"address":"192.0.2.1","port":443},
+            "streamSettings":value["outbounds"][0]["streamSettings"].clone()});
+        value["outbounds"][0]["streamSettings"]["hysteriaSettings"] =
+            json!({"version":2,"auth":"synthetic"});
+    }
+    value
+}
+
+#[test]
+fn udp_header_custom_takes_its_place_on_hysteria_and_xhttp_h3() {
+    let header = json!({"type":"header-custom","settings":{"mode":"standalone",
+        "client":[{"type":"str","packet":"hi"}],"server":[{"type":"str","packet":"ok"}]}});
+    let salamander = json!({"type":"salamander","settings":{"password":"synthetic"}});
+    let noise = json!({"type":"noise","settings":{"noise":[{"type":"str","packet":"nz"}]}});
+    for (udp, before_salamander, before_noise) in [
+        (json!([header]), false, false),
+        (json!([header, salamander]), true, false),
+        (json!([salamander, header]), false, false),
+        (json!([noise, header, salamander]), true, false),
+        (json!([header, noise]), false, true),
+    ] {
+        let parsed = parse_xray_json(&quic_config("hysteria", &["h3"], udp.clone()).to_string())
+            .unwrap_or_else(|e| panic!("{udp}: {e:?}"));
+        let parsed = parsed.config.outbounds[0]
+            .stream
+            .udp_header_custom
+            .clone()
+            .unwrap();
+        assert!(parsed.standalone);
+        assert_eq!(
+            (parsed.before_salamander, parsed.before_noise),
+            (before_salamander, before_noise),
+            "{udp}"
+        );
+    }
+    let parsed =
+        parse_xray_json(&quic_config("xhttp", &["h3"], json!([noise, header])).to_string())
+            .unwrap();
+    let parsed = parsed.config.outbounds[0]
+        .stream
+        .udp_header_custom
+        .clone()
+        .unwrap();
+    assert!(!parsed.before_noise);
+    // XHTTP over TCP has no datagrams to mask.
+    let errors =
+        parse_xray_json(&quic_config("xhttp", &["h2"], json!([header])).to_string()).unwrap_err();
+    assert!(errors
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("requires mKCP, Hysteria or XHTTP")));
+    // Xray-core's state never matches under udphop: refused.
+    let hop = json!({"type":"udphop","settings":{"mode":"intervalLocal","remotePorts":"443,8443"}});
+    let errors =
+        parse_xray_json(&quic_config("hysteria", &["h3"], json!([header, hop])).to_string())
+            .unwrap_err();
+    assert!(errors
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("cannot be combined with udphop")));
+}

@@ -25,7 +25,11 @@ use super::{
     gecko::{self, GeckoPacketSize, Reassembly},
     HysteriaError,
 };
-use crate::stream::H3UdpHopConfig;
+use crate::{
+    header_custom::{quic::HeaderCustomState, udp::UdpHeader, HeaderCustomUdpConfig},
+    stream::H3UdpHopConfig,
+    udp_noise::UdpNoiseState,
+};
 
 pub(crate) const SALT_LEN: usize = 8;
 
@@ -38,6 +42,17 @@ pub struct HysteriaCarrierConfig {
     pub gecko: Option<GeckoPacketSize>,
     pub udp_hop: H3UdpHopConfig,
     pub noise: Option<crate::udp_noise::UdpNoiseConfig>,
+    pub header_custom: Option<HeaderCustomCarrier>,
+}
+
+/// A `header-custom` UDP mask and its place among the carrier's masks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HeaderCustomCarrier {
+    pub config: Arc<HeaderCustomUdpConfig>,
+    /// Listed before Salamander, which then obfuscates it.
+    pub before_salamander: bool,
+    /// Listed before noise, whose packets then pass through it.
+    pub before_noise: bool,
 }
 
 impl fmt::Debug for HysteriaCarrierConfig {
@@ -46,7 +61,51 @@ impl fmt::Debug for HysteriaCarrierConfig {
             .field("salamander", &self.salamander_password.is_some())
             .field("gecko", &self.gecko)
             .field("udp_hop", &self.udp_hop)
+            .field("header_custom", &self.header_custom.is_some())
             .finish()
+    }
+}
+
+/// A carrier's masks, from the innermost as `finalmask.udp` lists them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mask {
+    Noise,
+    Salamander,
+    Header,
+}
+
+/// One QUIC connection's mask state, which its rebound sockets keep:
+/// Xray-core's masks sit above the socket that is replaced.
+#[derive(Clone, Default)]
+pub(crate) struct CarrierSession {
+    pub(crate) noise: Option<Arc<UdpNoiseState>>,
+    pub(crate) header: Option<Arc<HeaderCustomState>>,
+}
+
+impl fmt::Debug for CarrierSession {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CarrierSession")
+            .field("noise", &self.noise.is_some())
+            .field("header", &self.header.is_some())
+            .finish()
+    }
+}
+
+impl CarrierSession {
+    /// The state a new connection with `config` starts from.
+    pub(crate) fn new(config: &HysteriaCarrierConfig) -> io::Result<Self> {
+        Ok(Self {
+            noise: config
+                .noise
+                .as_ref()
+                .filter(|noise| !noise.items.is_empty())
+                .map(|_| Arc::default()),
+            header: config
+                .header_custom
+                .as_ref()
+                .map(|header| HeaderCustomState::new(header.config.clone()))
+                .transpose()?,
+        })
     }
 }
 
@@ -54,6 +113,14 @@ impl HysteriaCarrierConfig {
     pub(crate) fn validate(&self) -> Result<(), HysteriaError> {
         if let Some(noise) = &self.noise {
             noise.validate().map_err(|_| HysteriaError::Configuration)?;
+        }
+        if let Some(header) = &self.header_custom {
+            // Xray-core writes to 0.0.0.0:0 under udphop but reads from the
+            // hop's address, so its state never matches; refused here.
+            if self.udp_hop.is_active() {
+                return Err(HysteriaError::Configuration);
+            }
+            UdpHeader::new(header.config.clone()).map_err(|_| HysteriaError::Configuration)?;
         }
         if self
             .salamander_password
@@ -99,7 +166,56 @@ impl HysteriaCarrierConfig {
     }
 
     pub(crate) fn enabled(&self) -> bool {
-        self.salamander_password.is_some() || self.udp_hop.is_active() || self.noise.is_some()
+        self.salamander_password.is_some()
+            || self.udp_hop.is_active()
+            || self.noise.is_some()
+            || self.header_custom.is_some()
+    }
+
+    /// What the masks add to every QUIC datagram: Salamander's salt and a
+    /// custom prefix.
+    pub(crate) fn wire_overhead(&self) -> usize {
+        let salt = if self.salamander_password.is_some() {
+            SALT_LEN
+        } else {
+            0
+        };
+        let prefix = self
+            .header_custom
+            .as_ref()
+            .and_then(|header| UdpHeader::new(header.config.clone()).ok())
+            .map_or(0, |header| header.prefix_len());
+        salt + prefix
+    }
+
+    /// The masks from the innermost. Salamander ranks 4 and the others go
+    /// either side of it; a custom header on noise's side sits next to it.
+    fn mask_order(&self) -> Vec<Mask> {
+        let side = |before: bool| if before { 2 } else { 6 };
+        let mut masks = Vec::new();
+        if self.salamander_password.is_some() {
+            masks.push((4, Mask::Salamander));
+        }
+        if let Some(noise) = &self.noise {
+            masks.push((side(noise.before_salamander), Mask::Noise));
+        }
+        if let Some(header) = &self.header_custom {
+            let mut rank = side(header.before_salamander);
+            if self
+                .noise
+                .as_ref()
+                .is_some_and(|noise| noise.before_salamander == header.before_salamander)
+            {
+                rank = if header.before_noise {
+                    rank - 1
+                } else {
+                    rank + 1
+                };
+            }
+            masks.push((rank, Mask::Header));
+        }
+        masks.sort_by_key(|(rank, _)| *rank);
+        masks.into_iter().map(|(_, mask)| mask).collect()
     }
 
     /// The first remote address: with `remote` or `remote_once`, a random
@@ -202,19 +318,50 @@ pub(crate) fn wrap(
     logical_peer: SocketAddr,
     wire_peer: SocketAddr,
     config: &HysteriaCarrierConfig,
-    noise_state: Option<Arc<crate::udp_noise::UdpNoiseState>>,
+    session: &CarrierSession,
 ) -> io::Result<Arc<dyn AsyncUdpSocket>> {
     // Socket protection has already happened, before connect or any send.
     #[cfg(target_os = "macos")]
-    let inner = crate::connected_quic::wrap(socket, wire_peer)?;
+    let mut socket = crate::connected_quic::wrap(socket, wire_peer)?;
     #[cfg(not(target_os = "macos"))]
-    let inner = quinn::TokioRuntime.wrap_udp_socket(socket)?;
-    let inner = if let Some(noise) = config.noise.as_ref().filter(|n| !n.before_salamander) {
-        crate::udp_noise::wrap(inner, wire_peer, noise.clone(), noise_state.clone())?
-    } else {
-        inner
-    };
-    let wrapped: Arc<dyn AsyncUdpSocket> = Arc::new(CarrierSocket {
+    let mut socket = quinn::TokioRuntime.wrap_udp_socket(socket)?;
+    // Built from the wire inwards. Masks outside the carrier socket see the
+    // wire peer and those inside it the logical one; it sits at Salamander's
+    // place, or innermost without Salamander.
+    let mut inside = false;
+    for mask in config.mask_order().into_iter().rev() {
+        let peer = if inside { logical_peer } else { wire_peer };
+        socket = match (mask, &config.noise, &config.header_custom) {
+            (Mask::Noise, Some(noise), _) => {
+                crate::udp_noise::wrap(socket, peer, noise.clone(), session.noise.clone())?
+            }
+            (Mask::Header, _, Some(header)) => {
+                let state = match &session.header {
+                    Some(state) => state.clone(),
+                    None => HeaderCustomState::new(header.config.clone())?,
+                };
+                crate::header_custom::quic::wrap(socket, peer, logical_peer, state)
+            }
+            (Mask::Salamander, ..) => {
+                inside = true;
+                carrier_socket(socket, logical_peer, wire_peer, config)
+            }
+            _ => socket,
+        };
+    }
+    if !inside {
+        socket = carrier_socket(socket, logical_peer, wire_peer, config);
+    }
+    Ok(socket)
+}
+
+fn carrier_socket(
+    inner: Arc<dyn AsyncUdpSocket>,
+    logical_peer: SocketAddr,
+    wire_peer: SocketAddr,
+    config: &HysteriaCarrierConfig,
+) -> Arc<dyn AsyncUdpSocket> {
+    Arc::new(CarrierSocket {
         inner,
         logical_peer,
         wire_peer,
@@ -228,12 +375,7 @@ pub(crate) fn wrap(
             .gecko
             .filter(|_| config.salamander_password.is_some())
             .map(GeckoState::new),
-    });
-    if let Some(noise) = config.noise.as_ref().filter(|n| n.before_salamander) {
-        crate::udp_noise::wrap(wrapped, logical_peer, noise.clone(), noise_state)
-    } else {
-        Ok(wrapped)
-    }
+    })
 }
 
 struct CarrierSocket {
@@ -559,7 +701,7 @@ mod tests {
                 }),
                 ..Default::default()
             };
-            let client = wrap(raw, addr, addr, &config, None).unwrap();
+            let client = wrap(raw, addr, addr, &config, &CarrierSession::default()).unwrap();
             let mut poller = client.clone().create_io_poller();
             for contents in [b"first".as_slice(), b"later"] {
                 let transmit = udp::Transmit {
@@ -652,6 +794,227 @@ mod tests {
             assert_eq!(meta.len, 0);
             assert_eq!(meta.stride, 1);
         }
+    }
+
+    #[tokio::test]
+    async fn header_custom_order_around_salamander_is_visible_on_the_wire() {
+        use crate::header_custom::{CustomItem, HeaderCustomUdpConfig};
+        let item = |packet: &[u8]| CustomItem {
+            delay: (0, 0),
+            rand: 0,
+            rand_range: (0, 255),
+            packet: packet.to_vec(),
+            capture: String::new(),
+            reuse: String::new(),
+            transform: None,
+        };
+        for before in [false, true] {
+            let peer = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let addr = peer.local_addr().unwrap();
+            let raw = UdpSocket::bind("127.0.0.1:0").unwrap();
+            raw.set_nonblocking(true).unwrap();
+            let config = HysteriaCarrierConfig {
+                salamander_password: Some(Arc::new(Zeroizing::new("synthetic".into()))),
+                header_custom: Some(HeaderCustomCarrier {
+                    config: Arc::new(HeaderCustomUdpConfig {
+                        standalone: false,
+                        client: vec![item(b"HC")],
+                        server: vec![item(b"SV")],
+                    }),
+                    before_salamander: before,
+                    before_noise: false,
+                }),
+                ..Default::default()
+            };
+            config.validate().unwrap();
+            assert_eq!(config.wire_overhead(), SALT_LEN + 2);
+            let client = wrap(
+                raw,
+                addr,
+                addr,
+                &config,
+                &CarrierSession::new(&config).unwrap(),
+            )
+            .unwrap();
+            let mut poller = client.clone().create_io_poller();
+            let transmit = udp::Transmit {
+                destination: addr,
+                ecn: None,
+                contents: b"quic",
+                segment_size: None,
+                src_ip: None,
+            };
+            loop {
+                match client.try_send(&transmit) {
+                    Ok(()) => break,
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        std::future::poll_fn(|cx| poller.as_mut().poll_writable(cx))
+                            .await
+                            .unwrap()
+                    }
+                    Err(e) => panic!("{e}"),
+                }
+            }
+            let mut bytes = [0; 128];
+            let (n, _) = tokio::time::timeout(Duration::from_secs(2), peer.recv_from(&mut bytes))
+                .await
+                .unwrap()
+                .unwrap();
+            let mut meta = udp::RecvMeta {
+                len: n,
+                stride: n,
+                ..Default::default()
+            };
+            if before {
+                // Salamander obfuscates the prefix with the datagram.
+                decode("synthetic", &mut bytes, &mut meta);
+                assert_eq!(&bytes[..meta.len], b"HCquic");
+            } else {
+                // The prefix stays outside Salamander's datagram.
+                assert_eq!(&bytes[..2], b"HC");
+                let mut inner = bytes[2..n].to_vec();
+                let mut meta = udp::RecvMeta {
+                    len: n - 2,
+                    stride: n - 2,
+                    ..Default::default()
+                };
+                decode("synthetic", &mut inner, &mut meta);
+                assert_eq!(&inner[..meta.len], b"quic");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_rebound_carrier_keeps_its_standalone_handshake() {
+        use crate::header_custom::{CustomItem, HeaderCustomUdpConfig};
+        use std::future::poll_fn;
+        let item = |packet: &[u8]| CustomItem {
+            delay: (0, 0),
+            rand: 0,
+            rand_range: (0, 255),
+            packet: packet.to_vec(),
+            capture: String::new(),
+            reuse: String::new(),
+            transform: None,
+        };
+        let peer = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = peer.local_addr().unwrap();
+        let config = HysteriaCarrierConfig {
+            header_custom: Some(HeaderCustomCarrier {
+                config: Arc::new(HeaderCustomUdpConfig {
+                    standalone: true,
+                    client: vec![item(b"REQ")],
+                    server: vec![item(b"ACK")],
+                }),
+                before_salamander: false,
+                before_noise: false,
+            }),
+            ..Default::default()
+        };
+        let session = CarrierSession::new(&config).unwrap();
+        let open = || {
+            let raw = UdpSocket::bind("127.0.0.1:0").unwrap();
+            raw.set_nonblocking(true).unwrap();
+            wrap(raw, addr, addr, &config, &session).unwrap()
+        };
+        let send = |socket: &Arc<dyn AsyncUdpSocket>, contents: &[u8]| {
+            socket.try_send(&udp::Transmit {
+                destination: addr,
+                ecn: None,
+                contents,
+                segment_size: None,
+                src_ip: None,
+            })
+        };
+        let mut bytes = [0; 64];
+        let first = open();
+        let mut poller = first.clone().create_io_poller();
+        poll_fn(|cx| poller.as_mut().poll_writable(cx))
+            .await
+            .unwrap();
+        assert!(send(&first, b"one").is_err());
+        let (n, from) = peer.recv_from(&mut bytes).await.unwrap();
+        assert_eq!(&bytes[..n], b"REQ");
+        peer.send_to(b"ACK", from).await.unwrap();
+        let mut buffer = vec![0; 2048];
+        let mut meta = [udp::RecvMeta::default()];
+        poll_fn(|cx| {
+            let mut bufs = [IoSliceMut::new(&mut buffer)];
+            first.poll_recv(cx, &mut bufs, &mut meta)
+        })
+        .await
+        .unwrap();
+        assert_eq!(meta[0].len, 0);
+        // A new socket of the same connection sends at once.
+        let rebound = open();
+        let mut poller = rebound.clone().create_io_poller();
+        poll_fn(|cx| poller.as_mut().poll_writable(cx))
+            .await
+            .unwrap();
+        send(&rebound, b"two").unwrap();
+        let (n, _) = peer.recv_from(&mut bytes).await.unwrap();
+        assert_eq!(&bytes[..n], b"two");
+    }
+
+    #[test]
+    fn header_custom_ranks_against_noise_and_salamander() {
+        use crate::header_custom::HeaderCustomUdpConfig;
+        use crate::udp_noise::{NoiseRange, UdpNoiseConfig};
+        let noise = |before_salamander| UdpNoiseConfig {
+            items: vec![],
+            reset_secs: NoiseRange { from: 0, to: 0 },
+            before_salamander,
+        };
+        let header = |before_salamander, before_noise| HeaderCustomCarrier {
+            config: Arc::new(HeaderCustomUdpConfig::default()),
+            before_salamander,
+            before_noise,
+        };
+        let order = |salamander: bool, noise: Option<UdpNoiseConfig>, header| {
+            HysteriaCarrierConfig {
+                salamander_password: salamander
+                    .then(|| Arc::new(Zeroizing::new("synthetic".into()))),
+                noise,
+                header_custom: Some(header),
+                ..Default::default()
+            }
+            .mask_order()
+        };
+        use Mask::{Header as H, Noise as N, Salamander as S};
+        assert_eq!(
+            order(false, Some(noise(false)), header(false, true)),
+            [H, N]
+        );
+        assert_eq!(
+            order(false, Some(noise(false)), header(false, false)),
+            [N, H]
+        );
+        assert_eq!(
+            order(true, Some(noise(true)), header(false, false)),
+            [N, S, H]
+        );
+        assert_eq!(
+            order(true, Some(noise(false)), header(true, true)),
+            [H, S, N]
+        );
+        assert_eq!(
+            order(true, Some(noise(true)), header(true, true)),
+            [H, N, S]
+        );
+        assert_eq!(
+            order(true, Some(noise(true)), header(true, false)),
+            [N, H, S]
+        );
+        assert_eq!(order(true, None, header(true, false)), [H, S]);
+        // A custom header under udphop is refused.
+        let mut config = HysteriaCarrierConfig {
+            header_custom: Some(header(false, false)),
+            ..Default::default()
+        };
+        config.validate().unwrap();
+        config.udp_hop.ports = vec![443, 8443];
+        config.udp_hop.local = true;
+        assert!(config.validate().is_err());
     }
 
     #[test]
@@ -814,7 +1177,14 @@ mod tests {
             salamander_password: Some(Arc::new(Zeroizing::new("synthetic-password".into()))),
             ..Default::default()
         };
-        let client = wrap(local, logical, wire_peer, &config, None).unwrap();
+        let client = wrap(
+            local,
+            logical,
+            wire_peer,
+            &config,
+            &CarrierSession::default(),
+        )
+        .unwrap();
         assert_eq!(client.max_transmit_segments(), 1);
         let input = vec![0xa5; 1472];
         let mut wire = vec![0; input.len() + SALT_LEN];
@@ -873,7 +1243,14 @@ mod tests {
             ..Default::default()
         };
         config.validate().unwrap();
-        let client = wrap(local, logical, wire_peer, &config, None).unwrap();
+        let client = wrap(
+            local,
+            logical,
+            wire_peer,
+            &config,
+            &CarrierSession::default(),
+        )
+        .unwrap();
         assert_eq!(client.max_transmit_segments(), 1);
         let mut poller = client.clone().create_io_poller();
         let mut long = vec![0xc3; 1200];

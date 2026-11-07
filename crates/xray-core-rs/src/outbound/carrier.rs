@@ -280,6 +280,7 @@ fn build_transport_layer(
             server,
             stream.quic_params.as_ref(),
             stream.udp_noise.as_ref(),
+            stream.udp_header_custom.as_ref(),
         )?),
         StreamTransport::Kcp(kcp) => TransportLayer::Kcp(Arc::new(kcp_config(kcp, stream)?)),
     })
@@ -305,13 +306,7 @@ fn kcp_config(
                         .udp_header_custom
                         .as_ref()
                         .ok_or(CoreError::UnsupportedOutboundNetwork)?;
-                    Mask::HeaderCustom(Arc::new(
-                        xray_transport::header_custom::HeaderCustomUdpConfig {
-                            standalone: header.standalone,
-                            client: custom_items(&header.client),
-                            server: custom_items(&header.server),
-                        },
-                    ))
+                    Mask::HeaderCustom(udp_header_config(header))
                 }
                 KcpMask::Header(header) => Mask::Header(match header {
                     KcpHeader::Dns(domain) => Header::Dns(domain.clone()),
@@ -561,6 +556,29 @@ pub(super) fn header_custom_config(
                 .collect(),
         })
     })
+}
+
+/// A `header-custom` UDP mask's sequences.
+fn udp_header_config(
+    header: &xray_config::HeaderCustomUdp,
+) -> Arc<xray_transport::header_custom::HeaderCustomUdpConfig> {
+    Arc::new(xray_transport::header_custom::HeaderCustomUdpConfig {
+        standalone: header.standalone,
+        client: custom_items(&header.client),
+        server: custom_items(&header.server),
+    })
+}
+
+/// A QUIC carrier's `header-custom` UDP mask, at its place among the
+/// carrier's other masks.
+pub(super) fn quic_header_custom(
+    header: &xray_config::HeaderCustomUdp,
+) -> xray_transport::hysteria::HeaderCustomCarrier {
+    xray_transport::hysteria::HeaderCustomCarrier {
+        config: udp_header_config(header),
+        before_salamander: header.before_salamander,
+        before_noise: header.before_noise,
+    }
 }
 
 fn custom_items(

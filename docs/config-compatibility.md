@@ -2036,14 +2036,15 @@ REALITY. A `fragment` mask may stand before it in the array; after it, Xray-core
 fragments the handshake rather than the TLS ClientHello, so that order is
 refused. The TCP `header-custom` form is refused on mKCP, XHTTP over HTTP/3,
 a split XHTTP download and outbounds that dial directly. The UDP form is
-supported on mKCP, as described below.
+supported on mKCP, Hysteria and XHTTP over HTTP/3, as described below.
 Deliberate differences and the evidence are in
 [header-custom TCP](xray-core-differences.md#header-custom-tcp).
 
 ### header-custom UDP mask
 
-On mKCP, one `header-custom` entry in `streamSettings.finalmask.udp` is
-supported, at its position among `noise` and `mkcp-legacy` entries:
+One `header-custom` entry in `streamSettings.finalmask.udp` is supported on
+mKCP, Hysteria and XHTTP with exact `h3` ALPN, at its position among the
+`noise`, `salamander` and `mkcp-legacy` entries:
 
 ```json
 "streamSettings": {
@@ -2079,17 +2080,26 @@ write; writes also use Xray-core's fallback to the last successfully
 received variables.
 
 Mask array order is preserved: handshake and noise packets pass through
-only the masks after the mask that generated them. Standalone mode uses
-Xray-core's 4096-byte receive buffer. Prefix mode uses the carrier's
+only the masks after the mask that generated them, and a custom header
+listed before Salamander is obfuscated with the datagram. Standalone mode
+uses Xray-core's 4096-byte receive buffer. Prefix mode uses the carrier's
 receive buffer, and a transmitted prefix plus payload must fit 4096 bytes.
 Headers themselves are limited to 4096 bytes here; oversized headers fail or
-drop a write instead of panicking or allocating an unbounded buffer. A lost
-standalone request or reply is not resent: the connection waits for the
-reply until the stream closes.
+drop a write instead of panicking or allocating an unbounded buffer. A
+standalone request unanswered for a second goes out again; Xray-core waits
+for its reply for good.
+
+On Hysteria and XHTTP over HTTP/3, the QUIC connection sends one datagram per
+system call while the mask is set, as quic-go does on Xray's masked conn,
+and path MTU discovery keeps a prefix within the usual 1452-byte budget
+where it can. A standalone handshake holds every QUIC packet until its reply
+arrives, as Xray-core's write does. The mask is refused with `udphop`:
+Xray-core writes to `0.0.0.0:0` under it but reads from the hop's address,
+so its standalone reply never completes and its captures never match.
 
 Other UDP carriers, duplicate custom masks and TCP-only item fields are
 rejected. `scripts/check-header-custom-interop.sh` checks the recorded UDP
-exchanges and both modes against Xray-core v26.10.31's server.
+exchanges and both modes against Xray-core v26.10.31's servers.
 
 ### TLS ClientHello shaping
 

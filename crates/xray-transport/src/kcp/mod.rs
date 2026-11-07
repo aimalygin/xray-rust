@@ -357,6 +357,20 @@ struct DataUpdater {
     interval: Duration,
 }
 
+/// A standalone request unanswered this long goes out again. Xray-core's data
+/// updater waits for its reply for good.
+const STANDALONE_RESEND: Duration = Duration::from_secs(1);
+
+/// How the wait for a standalone reply ended.
+enum Awaited {
+    /// A datagram arrived; the reply may be among them.
+    Received,
+    /// The request is due to go out again.
+    Resend,
+    /// The stream is closing.
+    Closed,
+}
+
 struct Driver {
     shared: Arc<Shared>,
     socket: UdpSocket,
@@ -495,19 +509,32 @@ impl Driver {
                 inner.engine.state() == State::Terminated,
             )
         };
+        // When the standalone request being awaited went out.
+        let mut requested = None;
         for datagram in datagrams {
             self.masks.start(datagram);
             while let Some(action) = self.masks.next(Instant::now(), self.local, self.peer) {
                 match action {
                     Action::Send(datagram) => {
+                        requested = None;
                         // A datagram the system refuses is lost, and resent as lost.
                         let _ = self.socket.send_to(&datagram, self.peer).await;
                     }
-                    Action::Pause(pause) if !pause.is_zero() => tokio::time::sleep(pause).await,
-                    Action::Pause(_) => {}
+                    Action::Pause(pause) => {
+                        requested = None;
+                        if !pause.is_zero() {
+                            tokio::time::sleep(pause).await;
+                        }
+                    }
                     Action::Wait => {
-                        if !self.receive_handshake().await {
-                            return false;
+                        let since = *requested.get_or_insert_with(Instant::now);
+                        match self.receive_handshake(since + STANDALONE_RESEND).await {
+                            Awaited::Received => {}
+                            Awaited::Resend => {
+                                requested = None;
+                                self.masks.resend();
+                            }
+                            Awaited::Closed => return false,
                         }
                     }
                 }
@@ -516,9 +543,9 @@ impl Driver {
         !terminated
     }
 
-    /// A standalone write waits for the matching response. Keep receiving
-    /// ordinary packets and honor stream cancellation while it is pending.
-    async fn receive_handshake(&mut self) -> bool {
+    /// A standalone write waits for the matching reply, receiving ordinary
+    /// packets meanwhile and honoring the stream's cancellation.
+    async fn receive_handshake(&mut self, resend: Instant) -> Awaited {
         let mut buf = vec![0; RECEIVE_BUFFER];
         loop {
             let closing = matches!(
@@ -527,15 +554,16 @@ impl Driver {
             );
             if !self.receiving || closing {
                 self.abort();
-                return false;
+                return Awaited::Closed;
             }
             tokio::select! {
                 () = self.shared.wake.notified() => {}
+                () = tokio::time::sleep_until(resend) => return Awaited::Resend,
                 received = self.socket.recv_from(&mut buf) => {
                     match received {
                         Ok((length, from)) => {
                             self.receive(&mut buf[..length], from);
-                            return true;
+                            return Awaited::Received;
                         }
                         Err(_) => self.receiving = false,
                     }

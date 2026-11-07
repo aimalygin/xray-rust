@@ -468,21 +468,26 @@ Evidence, against Xray-core v26.10.31:
 
 ## header-custom UDP
 
-The mKCP client supports Xray-core v26.10.31's prefix and standalone UDP
-custom masks, including captures, expressions, address metadata on writes,
-five-second per-peer state and mask ordering. The parser accepts one custom
-mask on mKCP; other UDP carriers and multiple custom masks are rejected.
-The same item and expression limits as the TCP implementation apply.
+The mKCP, Hysteria and XHTTP over HTTP/3 clients support Xray-core
+v26.10.31's prefix and standalone UDP custom masks, including captures,
+expressions, address metadata on writes, five-second per-peer state and mask
+ordering. The parser accepts one custom mask on those carriers; other UDP
+carriers, multiple custom masks and a custom mask with `udphop` are
+rejected. Under `udphop` Xray-core writes to `0.0.0.0:0` but reads from the
+hop's address, so its standalone reply never completes and prefix captures
+never match. The same item and expression limits as the TCP implementation
+apply.
 
 Custom headers are limited to 4096 bytes. Prefix writes whose combined
 header and payload exceed 4096 bytes are dropped; Xray-core sends stale
 bytes of its pooled buffer in place of everything past 4096 bytes, and
 panics past 8192. Standalone reads are truncated to its 4096-byte
 buffer, and dropping a Rust stream releases a pending standalone handshake.
-A lost standalone request or reply is not resent, and the connection waits
-until the stream closes. Xray-core blocks its data updater on it for good;
-its ping updater's next write sends a new request, and once that is
-answered, data goes out only at the ping updater's five-second pace.
+A standalone request unanswered for a second goes out again. On mKCP,
+Xray-core blocks its data updater on the reply for good; its ping updater's
+next write sends a new request, and once that is answered, data goes out
+only at the ping updater's five-second pace. On QUIC, quic-go's send loop
+waits for the reply for good.
 
 Thirteen client/server exchanges recorded directly from Xray-core are
 checked byte for byte (`tools/header-custom-udp-oracle`,
@@ -491,7 +496,10 @@ sequence that only Xray-core's client accepts, recorded against a scripted
 peer because its server measures the client sequence and refuses it. Tests
 also cover expiry, wrong peers, malformed replies, cancellation, the
 dual-stack local address and ordering with noise and legacy masks. Live mKCP interop covers both modes, each alone and with noise
-on either side and an additional legacy mask. See
+on either side and an additional legacy mask. Live Hysteria interop covers
+both modes alone and on either side of Salamander, and live XHTTP H3 interop
+both modes alone and with noise on either side; on both, a client whose
+sequence the server does not expect never connects. See
 [configuration](config-compatibility.md#header-custom-udp-mask).
 
 ## DNS `UseSystem` route probe
