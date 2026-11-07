@@ -685,8 +685,21 @@ it), optional `level` and these flow values:
 
 `testseed` sets Vision's padding parameters, the first four numbers when there
 are at least four, Xray-core's `[900, 500, 900, 256]` otherwise. `seed` and
-`email` are ignored. VLESS `reverse` and pre-connections, a nonzero `testpre`,
-are not supported and fail parsing.
+`email` are ignored. VLESS `reverse` is not supported and fails parsing.
+
+`testpre` keeps carrier connections opened ahead of the requests that take
+them, as Xray-core's VLESS outbound does, at most 64 here:
+
+- On the first request the outbound starts `testpre` dialers. Each opens a
+  carrier connection, with TLS or REALITY and the transport's handshake done,
+  and holds it until a request takes it. Then it waits 200 ms and opens the
+  next.
+- Every request takes a held connection: TCP and UDP requests, and Mux
+  connections. One held for two minutes is closed and the next taken.
+- A dialer dials where the latest request would: its server and download
+  addresses, after `addressPortStrategy`, and its chain.
+- Closing the outbound, as stopping the core does, closes the connections
+  held.
 
 On the raw transport, Vision switches each direction to direct mode on its own,
 as Xray-core does. After the peer's `Direct` command the downlink is read from

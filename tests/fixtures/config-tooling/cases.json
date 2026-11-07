@@ -2805,6 +2805,14 @@
       "set": {
         "/outbounds/0/settings/vnext/0/users/0/testpre": 2
       },
+      "accepted": true
+    },
+    {
+      "name": "vless-testpre-over-64",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/settings/vnext/0/users/0/testpre": 65
+      },
       "accepted": false,
       "errorPath": "$.outbounds[0].settings.vnext[0].users[0].testpre"
     },

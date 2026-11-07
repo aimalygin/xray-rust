@@ -10,6 +10,13 @@ long-term supported release series.
 
 ## Unreleased
 
+- VLESS `testpre` keeps that many carrier connections opened ahead of the
+  requests that take them, as Xray-core does, up to 64. Profiles with it used
+  to fail to parse.
+  - A dialer holds one connection until a request takes it, then waits 200 ms
+    and opens the next; one held two minutes is closed instead of used.
+  - A failed dial waits before the next, up to ten seconds, and a request
+    waits sixteen seconds for a connection. Xray-core does neither.
 - Profile import reads `vless://` share links as format `vless` (ABI 1.17,
   `VLESS_PROFILE_IMPORT`, bit 30): raw, WebSocket, HTTPUpgrade, gRPC and XHTTP
   with none, TLS or REALITY, VLESS encryption, Vision flows and Remnawave's

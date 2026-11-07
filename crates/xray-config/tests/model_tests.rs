@@ -57,6 +57,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                 flow: Some("xtls-rprx-vision".to_owned()),
                 level: 0,
                 vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
+                pre_connections: 0,
             }],
         }),
     };
@@ -120,6 +121,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                     flow: Some("xtls-rprx-vision".to_owned()),
                     level: 0,
                     vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
+                    pre_connections: 0,
                 }],
             }),
         }],
@@ -603,6 +605,7 @@ fn credential_debug_output_is_redacted_in_the_config_model() {
         flow: Some("xtls-rprx-vision".to_owned()),
         level: 0,
         vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
+        pre_connections: 0,
     };
     let user_debug = format!("{user:?}");
     assert!(user_debug.contains("id: \"<redacted>\""));

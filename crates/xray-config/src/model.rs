@@ -1447,6 +1447,9 @@ pub struct VlessUser {
     /// `testseed`: Vision's padding parameters, Xray-core's
     /// `[900, 500, 900, 256]` unless set.
     pub vision_seed: [u32; 4],
+    /// `testpre`: how many carrier connections the outbound keeps opened
+    /// ahead of the requests that take them; zero opens none.
+    pub pre_connections: u32,
 }
 
 impl fmt::Debug for VlessUser {

@@ -15,6 +15,9 @@ enum VlessForm<'a> {
     },
 }
 
+/// The most `testpre` connections one VLESS outbound keeps open.
+const MAX_PRE_CONNECTIONS: u32 = 64;
+
 impl Parser<'_> {
     /// Reads VLESS outbound settings as Xray-core v26.10.31's
     /// `VLessOutboundConfig.Build` reads them.
@@ -303,14 +306,16 @@ impl Parser<'_> {
             Some(_) => self.optional_u32_at(user, "level", format!("{user_path}.level"))?,
         };
         self.nullable_string_at(user, "email", format!("{user_path}.email"))?;
-        let testpre = match user.get("testpre") {
+        let pre_connections = match user.get("testpre") {
             None | Some(Value::Null) => 0,
             Some(_) => self.optional_u32_at(user, "testpre", format!("{user_path}.testpre"))?,
         };
-        if testpre != 0 {
+        // Xray-core starts as many dialers as the number asks for; here each
+        // holds a connection open, so the number is bounded.
+        if pre_connections > MAX_PRE_CONNECTIONS {
             self.error(
                 format!("{user_path}.testpre"),
-                "VLESS testpre pre-connections are unsupported",
+                format!("VLESS testpre is at most {MAX_PRE_CONNECTIONS} here"),
             );
             return None;
         }
@@ -322,6 +327,7 @@ impl Parser<'_> {
             flow,
             level,
             vision_seed,
+            pre_connections,
         })
     }
 
