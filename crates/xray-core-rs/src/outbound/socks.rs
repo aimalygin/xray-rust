@@ -64,6 +64,9 @@ impl SocksOutbound {
     pub fn server(&self) -> &Target {
         &self.0.carrier.server
     }
+    pub(super) fn carrier(&self) -> &super::carrier::StreamCarrier {
+        &self.0.carrier
+    }
     pub fn level(&self) -> u32 {
         self.0.level
     }
@@ -76,8 +79,8 @@ impl SocksOutbound {
     ) -> Result<BoxedTransportStream, CoreError> {
         // Validate before DNS or dialing, including programmatically built targets.
         validate_connect_target(target)?;
-        let candidates = resolve_server_candidates(self.server(), resolver).await?;
-        let download = self.0.carrier.resolve_download(resolver).await?;
+        let candidates = self.0.carrier.resolve_server(resolver, dialer).await?;
+        let download = self.0.carrier.resolve_download(resolver, dialer).await?;
         self.open_resolved(target, &candidates, &download, dialer)
             .await
     }
@@ -127,10 +130,10 @@ impl SocksOutbound {
         // DNS lookups already canonicalize mapped IPv6, but literal endpoints
         // bypass DNS. Use the same normalization before selecting a UDP family.
         let candidates = xray_transport::DnsLookup::new(
-            resolve_server_candidates(self.server(), resolver).await?,
+            self.0.carrier.resolve_server(resolver, dialer).await?,
             None,
         );
-        let download = self.0.carrier.resolve_download(resolver).await?;
+        let download = self.0.carrier.resolve_download(resolver, dialer).await?;
         let mut families = Vec::with_capacity(2);
         for candidate in candidates.socket_addrs() {
             if !families.contains(&candidate.is_ipv4()) {

@@ -16,6 +16,7 @@ aes.workspace = true
 aes-gcm.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
+futures-util.workspace = true
 hkdf.workspace = true
 libc.workspace = true
 rand.workspace = true

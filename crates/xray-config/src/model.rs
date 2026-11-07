@@ -1864,8 +1864,11 @@ pub struct SocketOptions {
     pub happy_eyeballs: Option<HappyEyeballsSettings>,
     /// `sockopt.domainStrategy`, after freedom's deprecated `domainStrategy`
     /// and an outbound `targetStrategy` were migrated into it as Xray-core
-    /// does. Only freedom reads it so far.
+    /// does. Freedom and WireGuard read it.
     pub domain_strategy: DomainStrategy,
+    /// `addressPortStrategy`: an SRV or TXT lookup that replaces a domain
+    /// server's address or port before it is dialed.
+    pub address_port_strategy: AddressPortStrategy,
     /// `mark`, the Linux and Android `SO_MARK`; zero sets nothing.
     pub mark: i32,
     /// `tcpFastOpen` as Xray-core stores it: zero when absent or null, 256
@@ -1895,6 +1898,65 @@ pub struct SocketOptions {
     pub penetrate: bool,
     /// `customSockopt`, applied in order after the options above.
     pub custom: Vec<CustomSocketOption>,
+}
+
+/// Xray-core's `AddressPortStrategy`: which records of a domain server's
+/// name the system resolver is asked for, and what of the first usable one
+/// replaces the server's address and port.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AddressPortStrategy {
+    #[default]
+    None,
+    SrvPortOnly,
+    SrvAddressOnly,
+    SrvPortAndAddress,
+    TxtPortOnly,
+    TxtAddressOnly,
+    TxtPortAndAddress,
+}
+
+/// The records an [`AddressPortStrategy`] looks up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddressPortRecords {
+    Srv,
+    Txt,
+}
+
+impl AddressPortStrategy {
+    /// The records looked up, or `None` for no lookup.
+    pub fn records(self) -> Option<AddressPortRecords> {
+        match self {
+            Self::None => None,
+            Self::SrvPortOnly | Self::SrvAddressOnly | Self::SrvPortAndAddress => {
+                Some(AddressPortRecords::Srv)
+            }
+            Self::TxtPortOnly | Self::TxtAddressOnly | Self::TxtPortAndAddress => {
+                Some(AddressPortRecords::Txt)
+            }
+        }
+    }
+
+    /// Whether the record's port replaces the server's.
+    pub fn replaces_port(self) -> bool {
+        matches!(
+            self,
+            Self::SrvPortOnly
+                | Self::SrvPortAndAddress
+                | Self::TxtPortOnly
+                | Self::TxtPortAndAddress
+        )
+    }
+
+    /// Whether the record's address replaces the server's.
+    pub fn replaces_address(self) -> bool {
+        matches!(
+            self,
+            Self::SrvAddressOnly
+                | Self::SrvPortAndAddress
+                | Self::TxtAddressOnly
+                | Self::TxtPortAndAddress
+        )
+    }
 }
 
 /// Xray-core's `SocketConfig_TProxyMode`. Any other `tproxy` text is off.

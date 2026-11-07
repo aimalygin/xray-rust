@@ -9,10 +9,10 @@ use crate::stream::{connect_httpupgrade, connect_websocket, TransportLayer};
 use crate::utls_tls::TlsAlpnPolicy;
 use crate::{
     canonicalize_socket_addr, connect_tcp_stream, connect_tcp_target, BoxedTransportStream,
-    ConnectorConfig, HappyEyeballsConfig, RealityRuntimeEngine, RealityTlsEngine,
+    ConnectorConfig, HappyEyeballsConfig, RealityRuntimeEngine, RealityTlsEngine, RecordResolver,
     ResolvedTcpConnector, RouteProbe, RustlsRealityTlsSessionProvider, SocketOptions,
-    SocketOptionsProtector, SocketOptionsReport, SocketProtector, SystemRouteProbe, TlsConnector,
-    TransportError,
+    SocketOptionsProtector, SocketOptionsReport, SocketProtector, SystemRecordResolver,
+    SystemRouteProbe, TlsConnector, TransportError,
 };
 use xray_routing::{Target, TargetAddr};
 
@@ -29,7 +29,17 @@ pub struct TransportDialer {
     socket_options_report: Option<SocketOptionsReport>,
     resolved_tcp_connector: Option<Arc<dyn ResolvedTcpConnector>>,
     tcp_fragment: Option<Arc<crate::TcpFragmentConfig>>,
+    /// The probe and resolver a caller set in place of the system's, behind
+    /// one pointer: every open future holds dialers, and most set neither.
+    replaced: Option<Arc<Replaced>>,
+}
+
+/// What [`TransportDialer::with_route_probe`] and
+/// [`TransportDialer::with_record_resolver`] set.
+#[derive(Clone, Default)]
+struct Replaced {
     route_probe: Option<Arc<dyn RouteProbe>>,
+    record_resolver: Option<Arc<dyn RecordResolver>>,
 }
 
 #[derive(Clone)]
@@ -51,7 +61,20 @@ impl fmt::Debug for TransportDialer {
                 "resolved_tcp_connector",
                 &self.resolved_tcp_connector.is_some(),
             )
-            .field("route_probe", &self.route_probe)
+            .field(
+                "route_probe",
+                &self
+                    .replaced
+                    .as_ref()
+                    .and_then(|replaced| replaced.route_probe.as_ref()),
+            )
+            .field(
+                "record_resolver",
+                &self
+                    .replaced
+                    .as_ref()
+                    .is_some_and(|replaced| replaced.record_resolver.is_some()),
+            )
             .finish()
     }
 }
@@ -83,7 +106,7 @@ impl TransportDialer {
             socket_options_report: None,
             resolved_tcp_connector: None,
             tcp_fragment: None,
-            route_probe: None,
+            replaced: None,
         })
     }
 
@@ -98,7 +121,29 @@ impl TransportDialer {
             socket_options_report: None,
             resolved_tcp_connector: None,
             tcp_fragment: None,
-            route_probe: None,
+            replaced: None,
+        }
+    }
+
+    /// Answers the SRV and TXT lookups of `addressPortStrategy` in place of
+    /// Go's resolver.
+    pub fn with_record_resolver(mut self, resolver: Arc<dyn RecordResolver>) -> Self {
+        Arc::make_mut(self.replaced.get_or_insert_with(Default::default)).record_resolver =
+            Some(resolver);
+        self
+    }
+
+    /// The resolver for `addressPortStrategy` lookups: the one set with
+    /// [`Self::with_record_resolver`], else Go's behind the platform's
+    /// protector.
+    pub fn record_resolver(&self) -> Arc<dyn RecordResolver> {
+        match self
+            .replaced
+            .as_ref()
+            .and_then(|replaced| replaced.record_resolver.as_ref())
+        {
+            Some(resolver) => Arc::clone(resolver),
+            None => Arc::new(SystemRecordResolver::new(self.platform_protector.clone())),
         }
     }
 
@@ -170,7 +215,7 @@ impl TransportDialer {
     /// Replaces the system's route probe, as a test or a platform that knows
     /// its routes better may.
     pub fn with_route_probe(mut self, probe: Arc<dyn RouteProbe>) -> Self {
-        self.route_probe = Some(probe);
+        Arc::make_mut(self.replaced.get_or_insert_with(Default::default)).route_probe = Some(probe);
         self
     }
 
@@ -179,9 +224,13 @@ impl TransportDialer {
     /// [`SystemRouteProbe`] whose sockets this dialer protects. Keep the
     /// returned probe; its result is cached.
     pub fn route_probe(&self) -> Arc<dyn RouteProbe> {
-        self.route_probe.clone().unwrap_or_else(|| {
-            Arc::new(SystemRouteProbe::new(self.socket_protector.clone())) as Arc<dyn RouteProbe>
-        })
+        self.replaced
+            .as_ref()
+            .and_then(|replaced| replaced.route_probe.clone())
+            .unwrap_or_else(|| {
+                Arc::new(SystemRouteProbe::new(self.socket_protector.clone()))
+                    as Arc<dyn RouteProbe>
+            })
     }
 
     /// Whether TCP carriers go through another outbound (`dialerProxy`)

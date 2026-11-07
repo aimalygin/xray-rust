@@ -23,9 +23,8 @@ long-term supported release series.
   - `penetrate` gives an XHTTP `downloadSettings` leg the outbound's own
     socket options and chain. Without it the download leg dials with its own
     socket options and no longer goes through the outbound's `dialerProxy`.
-  - Hysteria takes socket options for its QUIC socket. `addressPortStrategy`
-    accepts only `none`, and a `dialerProxy` inside `downloadSettings` is
-    refused.
+  - Hysteria takes socket options for its QUIC socket, and a `dialerProxy`
+    inside `downloadSettings` is refused.
 
 - WireGuard outbounds read `streamSettings.sockopt`, as Xray-core's do.
   Profiles with it used to fail to parse.
@@ -36,6 +35,15 @@ long-term supported release series.
     of the local addresses, with IPv6 answers first when there is an IPv6
     one, as there; the setting used to narrow or order them.
   - Other stream settings and a `dialerProxy` are still refused.
+- `sockopt.addressPortStrategy` replaces a domain server's address, port or
+  both with its first usable SRV or TXT record before each dial, as
+  Xray-core does. Its six values used to fail to parse.
+  - The records are looked up as Go's resolver does for Xray-core, from the
+    nameservers of `/etc/resolv.conf`, and a failed lookup dials the
+    configured server.
+  - Every proxy outbound reads it, over every transport and UDP, and so does
+    an XHTTP download leg with the `sockopt` it dials with. Freedom refuses
+    it, as there, and so does an outbound chained through `dialerProxy`.
 - The `udphop` UDP mask reads every Xray-core mode: `intervalLocal`,
   `intervalRemote` and `perConnRemote`, alone or together, and `remoteIPs`
   of IPs and prefixes. Only `intervalLocal,intervalRemote` with ports used to

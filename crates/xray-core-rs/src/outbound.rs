@@ -23,6 +23,7 @@ pub(crate) mod hysteria;
 pub use hysteria::HysteriaOutbound;
 pub(crate) mod wireguard;
 pub use wireguard::WireguardOutbound;
+mod address_port;
 mod carrier;
 pub(crate) mod datagram;
 mod domain_strategy;
@@ -607,6 +608,9 @@ impl VlessTcpOutbound {
     pub fn server(&self) -> &Target {
         &self.payload.carrier.server
     }
+    fn carrier(&self) -> &carrier::StreamCarrier {
+        &self.payload.carrier
+    }
 
     pub fn transport(&self) -> &ConnectorConfig {
         &self.payload.carrier.transport
@@ -678,8 +682,16 @@ impl VlessTcpOutbound {
         let pool = self
             .mux_pool(target)?
             .ok_or(CoreError::UnsupportedOutboundNetwork)?;
-        let server = resolve_server_candidates(self.server(), resolver).await?;
-        let download = self.payload.carrier.resolve_download(resolver).await?;
+        let server = self
+            .payload
+            .carrier
+            .resolve_server(resolver, dialer)
+            .await?;
+        let download = self
+            .payload
+            .carrier
+            .resolve_download(resolver, dialer)
+            .await?;
         let child = pool
             .open_datagram(
                 target,
@@ -1129,37 +1141,37 @@ fn prepare_outbound_proxy_dialer<'a>(
             .map(proxy_chain_requires_local_resolution)
             .unwrap_or(true);
         let server_candidates = match outbound.primary() {
-            TcpOutbound::Vless(vless) if requires_local_resolution => {
-                resolve_server_candidates(vless.server(), dns_resolver)
-                    .await?
-                    .into_boxed_slice()
-            }
+            TcpOutbound::Vless(vless) if requires_local_resolution => vless
+                .carrier()
+                .resolve_server(dns_resolver, &transport_dialer)
+                .await?
+                .into_boxed_slice(),
             TcpOutbound::Vless(_) => Box::default(),
-            TcpOutbound::Trojan(outbound) if requires_local_resolution => {
-                resolve_server_candidates(outbound.server(), dns_resolver)
-                    .await?
-                    .into_boxed_slice()
-            }
-            TcpOutbound::Socks(outbound) if requires_local_resolution => {
-                resolve_server_candidates(outbound.server(), dns_resolver)
-                    .await?
-                    .into_boxed_slice()
-            }
-            TcpOutbound::Http(outbound) if requires_local_resolution => {
-                resolve_server_candidates(outbound.server(), dns_resolver)
-                    .await?
-                    .into_boxed_slice()
-            }
-            TcpOutbound::Vmess(outbound) if requires_local_resolution => {
-                resolve_server_candidates(outbound.server(), dns_resolver)
-                    .await?
-                    .into_boxed_slice()
-            }
-            TcpOutbound::Shadowsocks2022(outbound) if requires_local_resolution => {
-                resolve_server_candidates(outbound.server(), dns_resolver)
-                    .await?
-                    .into_boxed_slice()
-            }
+            TcpOutbound::Trojan(outbound) if requires_local_resolution => outbound
+                .carrier()
+                .resolve_server(dns_resolver, &transport_dialer)
+                .await?
+                .into_boxed_slice(),
+            TcpOutbound::Socks(outbound) if requires_local_resolution => outbound
+                .carrier()
+                .resolve_server(dns_resolver, &transport_dialer)
+                .await?
+                .into_boxed_slice(),
+            TcpOutbound::Http(outbound) if requires_local_resolution => outbound
+                .carrier()
+                .resolve_server(dns_resolver, &transport_dialer)
+                .await?
+                .into_boxed_slice(),
+            TcpOutbound::Vmess(outbound) if requires_local_resolution => outbound
+                .carrier()
+                .resolve_server(dns_resolver, &transport_dialer)
+                .await?
+                .into_boxed_slice(),
+            TcpOutbound::Shadowsocks2022(outbound) if requires_local_resolution => outbound
+                .carrier()
+                .resolve_server(dns_resolver, &transport_dialer)
+                .await?
+                .into_boxed_slice(),
             TcpOutbound::Trojan(_) => Box::default(),
             TcpOutbound::Socks(_) => Box::default(),
             TcpOutbound::Http(_) => Box::default(),
@@ -3730,6 +3742,17 @@ impl OutboundFactory {
         }?;
 
         match self.graph.proxy_target(node) {
+            // Xray-core hands the address and port it looks up to the proxy;
+            // a chain here gives it the configured server.
+            Some(_)
+                if carrier::address_port_strategy(&outbound.stream)
+                    .records()
+                    .is_some() =>
+            {
+                Err(CachedOutboundError::UnsupportedOutboundProxyNetwork(
+                    "addressPortStrategy",
+                ))
+            }
             Some(proxy) => self
                 .cached_tcp_outbound(proxy)
                 .map(|proxy| TcpOutbound::Chained {
@@ -4476,11 +4499,15 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
     // resolved-server helper repeats this check because chained opens enter it
     // directly with candidates supplied by the outer proxy dialer.
     validate_outbound_flow(outbound)?;
-    let resolved_server = resolve_server_candidates(outbound.server(), dns_resolver).await?;
+    let resolved_server = outbound
+        .payload
+        .carrier
+        .resolve_server(dns_resolver, transport_dialer)
+        .await?;
     let resolved_download = outbound
         .payload
         .carrier
-        .resolve_download(dns_resolver)
+        .resolve_download(dns_resolver, transport_dialer)
         .await?;
     open_vless_tcp_stream_with_resolved_server_and_dialer(
         outbound,
@@ -4603,11 +4630,15 @@ pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
     }
     let uses_xudp = uses_vision || should_use_xudp_for_udp_target(target);
 
-    let resolved_server = resolve_server_candidates(outbound.server(), dns_resolver).await?;
+    let resolved_server = outbound
+        .payload
+        .carrier
+        .resolve_server(dns_resolver, transport_dialer)
+        .await?;
     let resolved_download = outbound
         .payload
         .carrier
-        .resolve_download(dns_resolver)
+        .resolve_download(dns_resolver, transport_dialer)
         .await?;
     let command = if uses_xudp {
         VlessCommand::Mux
@@ -6035,6 +6066,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     socket_options: None,
+                    address_port: Default::default(),
                     download: None,
                     server: domain_tcp_target("proxy.example"),
                     transport: ConnectorConfig::Tcp,
@@ -9298,6 +9330,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     socket_options: None,
+                    address_port: Default::default(),
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -9337,6 +9370,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     socket_options: None,
+                    address_port: Default::default(),
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -9394,6 +9428,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     socket_options: None,
+                    address_port: Default::default(),
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -9476,6 +9511,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     socket_options: None,
+                    address_port: Default::default(),
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -9553,6 +9589,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     socket_options: None,
+                    address_port: Default::default(),
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -9617,6 +9654,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     socket_options: None,
+                    address_port: Default::default(),
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -9691,6 +9729,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     socket_options: None,
+                    address_port: Default::default(),
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -10575,5 +10614,306 @@ mod socket_option_tests {
         let dialer = download.dialer(&chained, &upload);
         assert!(dialer.carries_tcp_through_outbound());
         assert_eq!(dialer.socket_options().map(|options| options.mark), Some(1));
+    }
+}
+
+#[cfg(test)]
+mod address_port_tests {
+    use super::*;
+    use serde_json::json;
+    use std::sync::atomic::AtomicUsize;
+    use tokio::net::{TcpListener, UdpSocket};
+    use xray_transport::{RecordResolver, SrvRecord};
+
+    fn outbound(value: serde_json::Value) -> OutboundConfig {
+        let parsed = xray_config::parse_xray_json(&json!({ "outbounds": [value] }).to_string())
+            .unwrap_or_else(|error| panic!("{error:?}"));
+        parsed.config.outbounds[0].clone()
+    }
+
+    /// Every name has the one TXT record given and no SRV record.
+    struct Txt(String);
+
+    #[async_trait]
+    impl RecordResolver for Txt {
+        async fn lookup_srv(&self, _: &str, _: &str, _: &str) -> io::Result<Vec<SrvRecord>> {
+            Err(io::ErrorKind::NotFound.into())
+        }
+        async fn lookup_txt(&self, _: &str) -> io::Result<Vec<String>> {
+            Ok(vec![self.0.clone()])
+        }
+    }
+
+    /// Resolves no name, so a dial reaches only an address a record names.
+    struct NoNames;
+
+    #[async_trait]
+    impl DnsResolver for NoNames {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            Err(TransportError::DnsNoData(domain.to_owned(), port))
+        }
+    }
+
+    const SERVER: &str = "txt.example";
+    const ID: &str = "27848739-7e62-4138-9fd3-098a63964b6b";
+
+    fn dialer(record: String) -> TransportDialer {
+        TransportDialer::system()
+            .unwrap()
+            .with_record_resolver(Arc::new(Txt(record)))
+    }
+
+    /// Each proxy outbound over each transport dials the address and port a
+    /// TXT record of its server's name gives, as Xray-core's `DialSystem`
+    /// does for every dial.
+    #[tokio::test]
+    async fn every_proxy_outbound_dials_what_its_lookup_gives() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let counter = accepted.clone();
+        let held = tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                counter.fetch_add(1, Ordering::SeqCst);
+                held.push(stream);
+            }
+        });
+        let dialer = dialer(format!("127.0.0.1:{port}"));
+        let sockopt = json!({"addressPortStrategy": "TxtPortAndAddress"});
+        let vless = |stream: serde_json::Value| {
+            json!({"protocol": "vless", "settings": {"vnext": [{"address": SERVER, "port": 1,
+                    "users": [{"id": ID, "encryption": "none"}]}]}, "streamSettings": stream})
+        };
+        let cases = [
+            ("vless", vless(json!({"sockopt": sockopt}))),
+            (
+                "vless-ws",
+                vless(json!({"network": "ws", "sockopt": sockopt})),
+            ),
+            (
+                "vless-grpc",
+                vless(
+                    json!({"network": "grpc", "grpcSettings": {"serviceName": "x"}, "sockopt": sockopt}),
+                ),
+            ),
+            (
+                "vless-xhttp",
+                vless(
+                    json!({"network": "xhttp", "xhttpSettings": {"path": "/x"}, "sockopt": sockopt}),
+                ),
+            ),
+            (
+                "trojan",
+                json!({"protocol": "trojan", "settings": {"servers": [{"address": SERVER, "port": 1, "password": "pw"}]},
+                       "streamSettings": {"sockopt": sockopt}}),
+            ),
+            (
+                "socks",
+                json!({"protocol": "socks", "settings": {"address": SERVER, "port": 1},
+                       "streamSettings": {"sockopt": sockopt}}),
+            ),
+            (
+                "http",
+                json!({"protocol": "http", "settings": {"address": SERVER, "port": 1},
+                       "streamSettings": {"sockopt": sockopt}}),
+            ),
+            (
+                "vmess",
+                json!({"protocol": "vmess", "settings": {"vnext": [{"address": SERVER, "port": 1, "users": [{"id": ID}]}]},
+                       "streamSettings": {"sockopt": sockopt}}),
+            ),
+            (
+                "shadowsocks",
+                json!({"protocol": "shadowsocks", "settings": {"servers": [{"address": SERVER, "port": 1,
+                       "method": "2022-blake3-aes-128-gcm", "password": "AAAAAAAAAAAAAAAAAAAAAA=="}]},
+                       "streamSettings": {"sockopt": sockopt}}),
+            ),
+        ];
+        let target = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            9,
+            RoutingNetwork::Tcp,
+        );
+        for (name, value) in cases {
+            let tcp = build_tcp_outbound(&outbound(value))
+                .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+            let before = accepted.load(Ordering::SeqCst);
+            // What the protocol does after the dial is not this test's.
+            let _ = tokio::time::timeout(
+                Duration::from_secs(2),
+                open_tcp_stream_with_resolver_and_dialer(&tcp, &target, &NoNames, &dialer),
+            )
+            .await;
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while accepted.load(Ordering::SeqCst) == before {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap_or_else(|_| panic!("{name}: the dial missed the record's address"));
+        }
+        held.abort();
+    }
+
+    /// Hysteria's QUIC socket and Shadowsocks' UDP datagrams go where the
+    /// lookup says too.
+    #[tokio::test]
+    async fn udp_carriers_send_to_what_their_lookup_gives() {
+        let sockopt = json!({"addressPortStrategy": "TxtPortAndAddress"});
+        let hysteria = json!({"protocol": "hysteria", "settings": {"version": 2, "address": SERVER, "port": 1},
+            "streamSettings": {"network": "hysteria", "security": "tls",
+                               "tlsSettings": {"serverName": "localhost", "alpn": ["h3"]},
+                               "hysteriaSettings": {"version": 2, "auth": "a"}, "sockopt": sockopt}});
+        let shadowsocks = json!({"protocol": "shadowsocks", "settings": {"servers": [{"address": SERVER, "port": 1,
+            "method": "2022-blake3-aes-128-gcm", "password": "AAAAAAAAAAAAAAAAAAAAAA=="}]},
+            "streamSettings": {"sockopt": sockopt}});
+        let target = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            9,
+            RoutingNetwork::Udp,
+        );
+        for (name, value) in [("hysteria", hysteria), ("shadowsocks", shadowsocks)] {
+            let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+            let dialer = dialer(format!("127.0.0.1:{}", socket.local_addr().unwrap().port()));
+            let udp = build_udp_outbound(&outbound(value))
+                .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+            let send = async {
+                if let Ok(session) =
+                    datagram::open(&udp, &target, &NoNames, &NoNames, &dialer, [0; 8]).await
+                {
+                    let _ = session.send(&target, b"payload").await;
+                }
+                std::future::pending::<()>().await;
+            };
+            let mut buffer = [0; 2048];
+            tokio::select! {
+                () = send => unreachable!(),
+                received = tokio::time::timeout(Duration::from_secs(3), socket.recv_from(&mut buffer)) => {
+                    received
+                        .unwrap_or_else(|_| panic!("{name}: nothing reached the record's address"))
+                        .unwrap();
+                }
+            }
+        }
+    }
+
+    /// The XHTTP download leg looks up with the `sockopt` it dials with: the
+    /// outbound's under `penetrate`, else its own.
+    #[tokio::test]
+    async fn the_download_leg_looks_up_with_its_own_sockopt() {
+        struct Named;
+        #[async_trait]
+        impl DnsResolver for Named {
+            async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+                match domain {
+                    "down.example" => Ok(SocketAddr::from(([127, 0, 0, 7], port))),
+                    _ => Err(TransportError::DnsNoData(domain.to_owned(), port)),
+                }
+            }
+        }
+        let txt = json!({"addressPortStrategy": "TxtPortAndAddress"});
+        let vless = |upload: serde_json::Value, download: serde_json::Value| {
+            json!({"protocol": "vless", "settings": {"vnext": [{"address": SERVER, "port": 1,
+                "users": [{"id": ID, "encryption": "none"}]}]},
+                "streamSettings": {"network": "xhttp", "sockopt": upload, "xhttpSettings": {
+                    "mode": "packet-up", "path": "/x",
+                    "downloadSettings": {"address": "down.example", "port": 2, "network": "xhttp",
+                                         "xhttpSettings": {"path": "/x"}, "sockopt": download}}}})
+        };
+        let looked_up = vec![SocketAddr::from(([127, 0, 0, 9], 9))];
+        let configured = vec![SocketAddr::from(([127, 0, 0, 7], 2))];
+        let dialer = dialer("127.0.0.9:9".into());
+        for (upload, download, expected) in [
+            (txt.clone(), json!({}), &configured),
+            (json!({}), txt.clone(), &looked_up),
+            (
+                json!({"penetrate": true, "addressPortStrategy": "TxtPortAndAddress"}),
+                json!({}),
+                &looked_up,
+            ),
+            (json!({"penetrate": true}), txt.clone(), &configured),
+        ] {
+            let TcpOutbound::Vless(outbound) =
+                build_tcp_outbound(&outbound(vless(upload.clone(), download.clone()))).unwrap()
+            else {
+                panic!("vless");
+            };
+            assert_eq!(
+                outbound
+                    .carrier()
+                    .resolve_download(&Named, &dialer)
+                    .await
+                    .unwrap(),
+                *expected,
+                "{upload} {download}"
+            );
+        }
+    }
+
+    /// The outbound a chain dials through looks its own server up.
+    #[tokio::test]
+    async fn a_dialer_proxy_outbound_dials_what_its_lookup_gives() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let config = xray_config::parse_xray_json(
+            &json!({"outbounds": [
+                {"tag": "front", "protocol": "socks", "settings": {"address": "127.0.0.1", "port": 1080},
+                 "streamSettings": {"sockopt": {"dialerProxy": "back"}}},
+                {"tag": "back", "protocol": "vless", "settings": {"vnext": [{"address": SERVER, "port": 1,
+                    "users": [{"id": ID, "encryption": "none"}]}]},
+                 "streamSettings": {"sockopt": {"addressPortStrategy": "TxtPortAndAddress"}}}
+            ]})
+            .to_string(),
+        )
+        .unwrap()
+        .config;
+        let router = OutboundRouter::new(Arc::new(config));
+        let front = router.select_tcp_outbound_direct(Some("front")).unwrap();
+        let dialer = dialer(format!("127.0.0.1:{port}"));
+        let target = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            9,
+            RoutingNetwork::Tcp,
+        );
+        let opened = tokio::spawn(async move {
+            let _ =
+                open_tcp_stream_with_resolver_and_dialer(&front, &target, &NoNames, &dialer).await;
+        });
+        tokio::time::timeout(Duration::from_secs(3), listener.accept())
+            .await
+            .expect("the proxy missed the record's address")
+            .unwrap();
+        opened.abort();
+    }
+
+    /// A chain hands its proxy the configured server, which Xray-core
+    /// replaces with what it looks up, so the two are not combined.
+    #[test]
+    fn a_chained_outbound_takes_no_address_port_strategy() {
+        let mut config = xray_config::parse_xray_json(
+            &json!({"outbounds": [
+                {"tag": "proxy", "protocol": "vless", "settings": {"vnext": [{"address": SERVER, "port": 1,
+                    "users": [{"id": ID, "encryption": "none"}]}]},
+                 "streamSettings": {"sockopt": {"dialerProxy": "next"}}},
+                {"tag": "next", "protocol": "socks", "settings": {"address": "127.0.0.1", "port": 1080}}
+            ]})
+            .to_string(),
+        )
+        .unwrap()
+        .config;
+        config.outbounds[0]
+            .stream
+            .socket_options
+            .as_mut()
+            .unwrap()
+            .address_port_strategy = xray_config::AddressPortStrategy::TxtPortOnly;
+        let router = OutboundRouter::new(Arc::new(config));
+        assert!(matches!(
+            router.select_tcp_outbound_direct(Some("proxy")),
+            Err(CoreError::UnsupportedOutboundProxyNetwork(
+                "addressPortStrategy"
+            ))
+        ));
     }
 }

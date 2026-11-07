@@ -107,6 +107,9 @@ impl HttpOutbound {
     pub fn server(&self) -> &Target {
         &self.0.carrier.server
     }
+    pub(super) fn carrier(&self) -> &super::carrier::StreamCarrier {
+        &self.0.carrier
+    }
     pub fn level(&self) -> u32 {
         self.0.level
     }
@@ -125,8 +128,8 @@ impl HttpOutbound {
         if let Some(stream) = self.reuse_http2(target, source).await? {
             return Ok(stream);
         }
-        let candidates = resolve_server_candidates(self.server(), resolver).await?;
-        let download = self.0.carrier.resolve_download(resolver).await?;
+        let candidates = self.0.carrier.resolve_server(resolver, dialer).await?;
+        let download = self.0.carrier.resolve_download(resolver, dialer).await?;
         self.connect(&request, target, source, &candidates, &download, dialer)
             .await
     }

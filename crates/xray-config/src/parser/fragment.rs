@@ -249,6 +249,7 @@ impl Parser<'_> {
                 outbounds[index].stream.socket_options = Some(SocketOptions {
                     happy_eyeballs: options.happy_eyeballs,
                     domain_strategy: options.domain_strategy,
+                    address_port_strategy: options.address_port_strategy,
                     penetrate: options.penetrate,
                     ..SocketOptions::default()
                 });
