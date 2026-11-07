@@ -10,6 +10,15 @@ long-term supported release series.
 
 ## Unreleased
 
+- Profile import reads `vless://` share links as format `vless` (ABI 1.17,
+  `VLESS_PROFILE_IMPORT`, bit 30): raw, WebSocket, HTTPUpgrade, gRPC and XHTTP
+  with none, TLS or REALITY, VLESS encryption, Vision flows and Remnawave's
+  `fm`. See [VLESS share-link import](docs/vless-profile-import.md). The Swift
+  and Kotlin SDKs keep their own VLESS importers for now.
+- Trojan and URI-form VMess imports refuse an empty `alpn`, an empty ALPN
+  entry or one with spaces, which TLS cannot send, and keep an HTTPUpgrade
+  path with `?ed=` that the parser only warns about.
+
 - Every `streamSettings.sockopt` field of Xray-core v26.10.31 is read and set
   on each socket an outbound opens, in Xray-core's order on Linux and
   Android and on Apple platforms. Profiles with fields other than

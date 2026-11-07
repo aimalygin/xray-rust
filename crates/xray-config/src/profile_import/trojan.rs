@@ -107,6 +107,14 @@ pub(super) fn stream_settings(
                 if alpn.len() > 256 {
                     return Err(ImportError::TooLarge);
                 }
+                // A TLS protocol name is 1..255 bytes (RFC 7301); Go's TLS
+                // client refuses an empty one at the handshake.
+                if alpn
+                    .split(',')
+                    .any(|v| v.is_empty() || v.contains(char::is_whitespace))
+                {
+                    return Err(ImportError::UnsupportedParameter("alpn"));
+                }
                 stream.0["tlsSettings"]["alpn"] = json!(alpn.split(',').collect::<Vec<_>>());
             }
             // Xray-core reads both as comma-separated strings; the parser

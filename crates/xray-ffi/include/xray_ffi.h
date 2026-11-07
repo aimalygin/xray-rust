@@ -246,7 +246,8 @@ typedef enum XrayFfiCapability {
   XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT = 1 << 26,
   XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT = 1 << 27,
   XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL = 1 << 28,
-  XRAY_FFI_CAPABILITY_TUN_MTU = 1 << 29
+  XRAY_FFI_CAPABILITY_TUN_MTU = 1 << 29,
+  XRAY_FFI_CAPABILITY_VLESS_PROFILE_IMPORT = 1 << 30
 } XrayFfiCapability;
 
 /* ABI 1.9. Outcome written by xray_core_probe_outbound_url through an int32_t.
@@ -266,10 +267,11 @@ uint32_t xray_ffi_version_minor(void);
 uint64_t xray_ffi_capabilities(void);
 
 /* ABI 1.5, PROFILE_IMPORT plus the selected outbound capability.
+ * VLESS links require ABI 1.17, PROFILE_IMPORT and VLESS_PROFILE_IMPORT.
  * HTTP/HTTPS links require ABI 1.14, PROFILE_IMPORT and HTTP_PROFILE_IMPORT.
  * SOCKS links require ABI 1.13, PROFILE_IMPORT and SOCKS_PROFILE_IMPORT.
  * Offline, thread-safe and handle-free. UTF-8 request (<=256 KiB):
- * {"format":"http"|"socks"|"trojan"|"shadowsocks2022"|"vmess"|"hysteria2"|"wireguard",
+ * {"format":"vless"|"http"|"socks"|"trojan"|"shadowsocks2022"|"vmess"|"hysteria2"|"wireguard",
  *  "text":"...","name":"...",
  *  "dnsServers":["IP",...]}; name and dnsServers are optional.
  * Source text <=64 KiB. No network, file access, commands or VPN startup.

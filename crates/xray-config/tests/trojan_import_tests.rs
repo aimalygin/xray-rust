@@ -25,6 +25,8 @@ fn trojan_uri_projects_stream_settings_through_the_shared_validator() {
         "type=tcp",
         "type=ws&host=cdn.example.test&path=%2Fpath%3Fed%3D2048",
         "type=httpupgrade&path=%2Ftrojan",
+        // The parser only warns that HTTPUpgrade early data waits for the 101.
+        "type=httpupgrade&path=%2F%3Fed%3D2560",
         "type=grpc&serviceName=test&alpn=h2",
         "type=xhttp&mode=stream-one&path=%2Ftrojan&alpn=h2",
     ] {
@@ -264,6 +266,23 @@ fn trojan_uri_maps_tls_pins_and_rejects_cipher_suites() {
         import_error("cs=TLS_AES_128_GCM_SHA256"),
         ImportError::UnsupportedParameter("cs")
     );
+}
+
+/// An ALPN protocol name is 1..255 bytes (RFC 7301), and Go's TLS client
+/// refuses an empty one at the handshake, so the import refuses it up front.
+#[test]
+fn trojan_uri_rejects_empty_or_padded_alpn_entries() {
+    assert_eq!(
+        stream("alpn=h2%2Chttp%2F1.1")["tlsSettings"]["alpn"],
+        serde_json::json!(["h2", "http/1.1"])
+    );
+    for alpn in ["", "h2%2C%2Chttp%2F1.1", "h2%2C", "h2%2C%20http%2F1.1"] {
+        assert_eq!(
+            import_error(&format!("alpn={alpn}")),
+            ImportError::UnsupportedParameter("alpn"),
+            "{alpn}"
+        );
+    }
 }
 
 /// Percent-encodes a finalmask as Remnawave's `encodeURIComponent` does.
