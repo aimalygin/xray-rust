@@ -16,7 +16,9 @@ redacted.
 ## Accepted subset
 
 - `vless://<uuid>@<host>:<port>?<query>#<name>`. The scheme is
-  case-insensitive. The user ID is a canonical hyphenated UUID. Hostnames,
+  case-insensitive. The user ID is read as Xray-core's `uuid.ParseString`
+  reads it, as in VMess links: a UUID with or without its hyphens, or 1 to 30
+  bytes of text, which names a version 5 UUID. Hostnames,
   IPv4 and bracketed IPv6 are accepted; the port is required (1..65535).
 - The percent-decoded fragment is the profile name; without one the name is
   `host:port` (`[ipv6]:port`). `+` stays a literal plus.
@@ -72,7 +74,9 @@ stricter:
   three.
 - An empty `alpn`, or one with an empty entry or spaces, is refused, as the
   SDK importers refuse it on TLS.
-- The user part is the UUID alone: `uuid:password@` is refused.
+- An ID of 1 to 30 bytes of text, or a UUID without its hyphens, imports, as
+  Xray-core reads it; the SDK importers take only the canonical UUID.
+- The user part is the whole ID: `uuid:password@` names no ID and is refused.
 - The fragment name must fit the shared profile-name rule, at most 128 UTF-8
   bytes without control characters or bidi overrides; a longer remark fails
   with the name error, where the SDK importers keep it.

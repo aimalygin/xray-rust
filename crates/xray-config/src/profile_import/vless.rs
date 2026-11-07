@@ -82,8 +82,9 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
         return Err(ImportError::Syntax);
     }
     let id = hysteria::decode(id)?;
-    // The canonical hyphenated form only, as the platform importers take it.
-    if id.len() != 36 || uuid::Uuid::try_parse(&id).is_err() {
+    // Read as Xray-core's `uuid.ParseString` reads it, as VMess links are: a
+    // UUID with or without its hyphens, or 1 to 30 bytes of text.
+    if crate::xray_uuid::parse(&id).is_none() {
         return Err(ImportError::Configuration);
     }
     // Share links carry no default port.

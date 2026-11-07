@@ -169,7 +169,8 @@ fn ffi_rejects_invalid_utf8_embedded_nul_and_oversized_requests() {
         rejected(&request("http", text), XrayStatus::ConfigError);
     }
     for text in [
-        "vless://secret@example.com:443?security=tls",
+        // 31 bytes name no ID; a shorter text is an ID, as in Xray-core.
+        "vless://secret-secret-secret-secret-sec@example.com:443?security=tls",
         "vless://6c027102-b0fb-4e85-a77c-9a0a8607101b@example.com:443?security=tls&ech=secret",
         "vless://6c027102-b0fb-4e85-a77c-9a0a8607101b@example.com:443?type=ws&security=tls&flow=xtls-rprx-vision",
     ] {

@@ -13,8 +13,9 @@ long-term supported release series.
 - Profile import reads `vless://` share links as format `vless` (ABI 1.17,
   `VLESS_PROFILE_IMPORT`, bit 30): raw, WebSocket, HTTPUpgrade, gRPC and XHTTP
   with none, TLS or REALITY, VLESS encryption, Vision flows and Remnawave's
-  `fm`. See [VLESS share-link import](docs/vless-profile-import.md). The Swift
-  and Kotlin SDKs keep their own VLESS importers for now.
+  `fm`, and IDs read as Xray-core reads them, as in VMess links. See
+  [VLESS share-link import](docs/vless-profile-import.md). The Swift and
+  Kotlin SDKs keep their own VLESS importers for now.
 - Trojan and URI-form VMess imports refuse an empty `alpn`, an empty ALPN
   entry or one with spaces, which TLS cannot send, and keep an HTTPUpgrade
   path with `?ed=` that the parser only warns about.

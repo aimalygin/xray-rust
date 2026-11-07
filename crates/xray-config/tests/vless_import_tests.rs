@@ -264,18 +264,30 @@ fn vless_cleartext_follows_the_parser_policy() {
     );
 }
 
+/// IDs read as Xray-core's `uuid.ParseString` reads them, as in VMess links:
+/// a UUID without its hyphens, and 1 to 30 bytes of text.
+#[test]
+fn vless_ids_read_as_xray_core_reads_them() {
+    for id in ["my-short-id".to_owned(), ID.replace('-', "")] {
+        let link = format!("vless://{id}@example.com:443?security=tls");
+        let profile = import_profile(ProfileFormat::Vless, &link, None, &[])
+            .unwrap_or_else(|error| panic!("{id}: {error}"));
+        assert!(!format!("{profile:?}").contains(&id));
+        let config: Value = serde_json::from_str(&profile.config_json).unwrap();
+        assert_eq!(user(&config)["id"], id.as_str());
+    }
+}
+
 #[test]
 fn vless_rejects_malformed_links() {
     for (link, expected) in [
+        // 31 bytes, and no bytes, name no ID, in Xray-core or here.
         (
-            "vless://not-a-uuid@example.com:443?security=tls".to_owned(),
+            "vless://1234567890123456789012345678901@example.com:443?security=tls".to_owned(),
             ImportError::Configuration,
         ),
         (
-            format!(
-                "vless://{}@example.com:443?security=tls",
-                ID.replace('-', "")
-            ),
+            "vless://@example.com:443?security=tls".to_owned(),
             ImportError::Configuration,
         ),
         (
