@@ -476,6 +476,15 @@ differences:
   socket has its destination's address family, and such entries apply to the
   IPv4 ones.
 
+## VLESS share-link import
+
+Development ABI 1.17 imports `vless://` links through the shared Rust parser
+(format `vless`, `VLESS_PROFILE_IMPORT`, bit 30); see the
+[accepted subset](vless-profile-import.md). Xray-core itself reads no share
+links. The importer applies Xray-core's configuration semantics: Vision only
+on RAW with TLS or REALITY unless VLESS encryption carries it, REALITY only on
+RAW, gRPC and XHTTP, and cleartext VLESS only to private destinations.
+
 ## Panel subscription fields Xray-core does not read
 
 Remnawave's XRAY_JSON subscriptions (`xray-json.generator.service.ts`) put a

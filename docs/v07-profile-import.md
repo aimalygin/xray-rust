@@ -4,7 +4,8 @@ The development SDK imports Hysteria 2 share links and standard WireGuard
 configuration text through one Rust parser, originally added in C ABI **1.5**.
 The current development importer also accepts Trojan, SS2022, VMess and
 [SOCKS5 links](socks-profile-import.md) (ABI **1.13**) and
-[HTTP/HTTPS proxy links](http-profile-import.md) (ABI **1.14**).
+[HTTP/HTTPS proxy links](http-profile-import.md) (ABI **1.14**) and
+[VLESS links](vless-profile-import.md) (ABI **1.17**).
 The version-specific observations below describe the original v0.7 increment.
 Current source support does not imply that a matching SDK binary is published
 or claim complete upstream feature parity.
@@ -17,7 +18,7 @@ or claim complete upstream feature parity.
 {"format":"hysteria2","text":"hy2://example-password@server.example#Example","name":"Example","dnsServers":[]}
 ```
 
-`format` is `http`, `socks`, `trojan`, `shadowsocks2022`, `vmess`, `hysteria2` or
+`format` is `vless`, `http`, `socks`, `trojan`, `shadowsocks2022`, `vmess`, `hysteria2` or
 `wireguard`. Despite its name, `shadowsocks2022` also imports SIP002 links with
 the classic AEAD methods; an older library rejects them with a configuration
 error. `name` and `dnsServers` are optional;
@@ -50,8 +51,10 @@ Capabilities are independent bits: `HYSTERIA2_OUTBOUND` (16),
 `XRAY_FFI_CAPABILITY_` prefix. Import requires ABI major 1, minor >=5, the import
 bit and the selected protocol bit for the original formats. SOCKS requires minor
 >=13 and `SOCKS_PROFILE_IMPORT` (26); HTTP/HTTPS requires minor >=14 and
-`HTTP_PROFILE_IMPORT` (27). Both also require `PROFILE_IMPORT`. Swift/Kotlin
-expose `supportsProfileImport` with the format-specific minimum version.
+`HTTP_PROFILE_IMPORT` (27); VLESS requires minor >=17 and
+`VLESS_PROFILE_IMPORT` (30). Each also requires `PROFILE_IMPORT`. Swift/Kotlin
+expose `supportsProfileImport` with the format-specific minimum version (VLESS
+not yet: the SDKs still import VLESS links with their own parsers).
 Compile/link the adapter, header and native binary together; checking a bit
 cannot make a missing strongly linked symbol loadable in an older artifact.
 

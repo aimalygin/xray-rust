@@ -8,7 +8,7 @@ source of truth for declarations and enum values.
 ## ABI version
 
 Call `xray_ffi_version_major()` and `xray_ffi_version_minor()` before creating a
-handle. The current ABI version is `1.16`. The checked-in Swift and JNI adapters
+handle. The current ABI version is `1.17`. The checked-in Swift and JNI adapters
 reject any major other than `1` and require minor `1` or newer. Their selector
 and health methods require the corresponding ABI 1.2 capability bits; their
 connection-management methods require the ABI 1.3 capability bit, and routing
@@ -28,6 +28,8 @@ Cancelling in-flight probes without the teardown latch requires minor >=15 and
 `OUTBOUND_PROBE_CANCEL` (bit 28).
 Startup-probe preflight requires minor >=12 and `STARTUP_PROBE_PREFLIGHT` (bit 25).
 A TUN MTU other than 1500 requires minor >=16 and `TUN_MTU` (bit 29).
+VLESS link import requires minor >=17, `PROFILE_IMPORT` and
+`VLESS_PROFILE_IMPORT` (bit 30); see the [format contract](vless-profile-import.md).
 
 An incompatible function signature, enum representation, ownership rule, or
 required struct layout requires a major version change. Consumers should

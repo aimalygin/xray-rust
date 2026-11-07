@@ -99,6 +99,14 @@ fn ffi_imports_all_formats_with_exact_sizing_and_loadable_configs() {
             "vmess",
             "vmess://00112233-4455-6677-8899-aabbccddeeff@vmess.example:443",
         ),
+        (
+            "vless",
+            "vless://6c027102-b0fb-4e85-a77c-9a0a8607101b@192.0.2.10:443?type=tcp&security=reality&pbk=kZ4NDkIZkxCcdw0iPsMfsjun8jdTfh4ngEuPlJ4yUY8&fp=chrome&sni=example.com&sid=6a75829e&flow=xtls-rprx-vision#VLESS",
+        ),
+        (
+            "vless",
+            "vless://6c027102-b0fb-4e85-a77c-9a0a8607101b@[2001:db8::7]:443?type=ws&security=tls&sni=example.com&path=%2Fws",
+        ),
     ] {
         let result = import(&request(format, text));
         assert_eq!(result["schemaVersion"], 1);
@@ -159,6 +167,14 @@ fn ffi_rejects_invalid_utf8_embedded_nul_and_oversized_requests() {
         "https://secret:p@proxy.example?allowInsecure=1",
     ] {
         rejected(&request("http", text), XrayStatus::ConfigError);
+    }
+    for text in [
+        // 31 bytes name no ID; a shorter text is an ID, as in Xray-core.
+        "vless://secret-secret-secret-secret-sec@example.com:443?security=tls",
+        "vless://6c027102-b0fb-4e85-a77c-9a0a8607101b@example.com:443?security=tls&ech=secret",
+        "vless://6c027102-b0fb-4e85-a77c-9a0a8607101b@example.com:443?type=ws&security=tls&flow=xtls-rprx-vision",
+    ] {
+        rejected(&request("vless", text), XrayStatus::ConfigError);
     }
     rejected(&[0xff], XrayStatus::InvalidUtf8);
     rejected(b"{}\0secret", XrayStatus::ConfigError);

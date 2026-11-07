@@ -104,6 +104,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
     assert!(header.contains("XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT = 1 << 27"));
     assert!(header.contains("XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL = 1 << 28"));
     assert!(header.contains("XRAY_FFI_CAPABILITY_TUN_MTU = 1 << 29"));
+    assert!(header.contains("XRAY_FFI_CAPABILITY_VLESS_PROFILE_IMPORT = 1 << 30"));
     assert!(header.contains("uint64_t udp_oversize_datagrams;"));
     // The Rust enum, the JNI result carrier and the Swift mapping all rely on
     // these discriminants staying stable within ABI major 1.
@@ -1392,6 +1393,7 @@ static void use_xray_ffi_api(void) {
   capabilities &= XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT;
   capabilities &= XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL;
   capabilities &= XRAY_FFI_CAPABILITY_TUN_MTU;
+  capabilities &= XRAY_FFI_CAPABILITY_VLESS_PROFILE_IMPORT;
   capabilities &= XRAY_FFI_CAPABILITY_OUTBOUND_PROBE;
   (void)capabilities;
   (void)xray_profile_import_json(packet, sizeof(packet), NULL, 0, &written, &error);

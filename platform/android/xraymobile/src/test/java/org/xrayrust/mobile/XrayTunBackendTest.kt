@@ -1213,7 +1213,7 @@ class XrayTunBackendTest {
     fun stopDuringStartCancelsPublicationWithoutWaiting() {
         val lifecycle = XrayTunnelStateMachine<String>()
         val token = lifecycle.beginStart()!!
-        assertEquals(XrayTunnelStopAction.CancelStart, lifecycle.requestStop())
+        assertEquals(XrayTunnelStopAction.CancelStart(), lifecycle.requestStop())
         assertFalse(lifecycle.isStartActive(token))
         assertFalse(lifecycle.publish(token, "must-not-publish"))
 
@@ -1233,7 +1233,7 @@ class XrayTunBackendTest {
         )
         coordinator.execute(token) { blockRan.set(true) }
 
-        assertEquals(XrayTunnelStopAction.CancelStart, lifecycle.requestStop())
+        assertEquals(XrayTunnelStopAction.CancelStart(), lifecycle.requestStop())
         coordinator.cancelActiveStart()
 
         assertFalse(coordinator.hasActiveStart())
@@ -1370,7 +1370,7 @@ class XrayTunBackendTest {
         }
         assertTrue(workerStarted.await(1, TimeUnit.SECONDS))
 
-        assertEquals(XrayTunnelStopAction.CancelStart, lifecycle.requestStop())
+        assertEquals(XrayTunnelStopAction.CancelStart(), lifecycle.requestStop())
         coordinator.cancelActiveStart()
         assertNull(lifecycle.beginStart())
 
