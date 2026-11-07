@@ -2,6 +2,7 @@ mod blackhole;
 mod dns;
 mod fragment;
 mod freedom;
+mod header_custom;
 mod http_inbound;
 mod http_outbound;
 mod hysteria;

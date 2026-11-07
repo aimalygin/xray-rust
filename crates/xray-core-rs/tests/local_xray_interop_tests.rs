@@ -1992,6 +1992,7 @@ fn rust_vless_outbound(
             security,
             quic_params: None,
             tcp_fragment: None,
+            tcp_header_custom: None,
             udp_noise: None,
             socket_options: None,
         },
@@ -3649,6 +3650,9 @@ mod xhttp_download;
 
 #[path = "local_xray_interop_tests/kcp_carriers.rs"]
 mod kcp_carriers;
+
+#[path = "local_xray_interop_tests/header_custom.rs"]
+mod header_custom;
 
 /// Record-level observer: it forwards the finalized ClientHello unchanged and
 /// then becomes a byte relay, including Vision's later direct-mode payload.
