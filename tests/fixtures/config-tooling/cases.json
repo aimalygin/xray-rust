@@ -1781,6 +1781,270 @@
       }
     },
     {
+      "name": "header-custom-tcp",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "fingerprint": "chrome",
+                "serverName": "server.example"
+              },
+              "finalmask": {
+                "tcp": [
+                  {
+                    "type": "header-custom",
+                    "settings": {
+                      "clients": [
+                        [
+                          {
+                            "delay": "0-0",
+                            "rand": 0,
+                            "randRange": "0-255",
+                            "capture": "",
+                            "type": "str",
+                            "reuse": "",
+                            "packet": "HELLO"
+                          },
+                          {
+                            "rand": 8,
+                            "capture": "nonce"
+                          },
+                          {
+                            "transform": {
+                              "op": "be16",
+                              "args": [
+                                {
+                                  "type": "",
+                                  "metadata": "remote_port"
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      ],
+                      "servers": [
+                        [
+                          {
+                            "reuse": "nonce"
+                          },
+                          {
+                            "transform": {
+                              "op": "concat",
+                              "args": [
+                                {
+                                  "type": "str",
+                                  "bytes": "OK"
+                                },
+                                {
+                                  "transform": {
+                                    "op": "le16",
+                                    "args": [
+                                      {
+                                        "u64": 1
+                                      }
+                                    ]
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      ],
+                      "errors": [
+                        [
+                          {
+                            "type": "str",
+                            "packet": "NO"
+                          }
+                        ]
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "HEADER_CUSTOM_TCP": "/outbounds/0/streamSettings/finalmask/tcp/0/settings",
+        "HEADER_CUSTOM_TCP_ITEM": "/outbounds/0/streamSettings/finalmask/tcp/0/settings/clients/0/0",
+        "HEADER_CUSTOM_TRANSFORM": "/outbounds/0/streamSettings/finalmask/tcp/0/settings/servers/0/1/transform",
+        "HEADER_CUSTOM_ARG": "/outbounds/0/streamSettings/finalmask/tcp/0/settings/clients/0/2/transform/args/0"
+      }
+    },
+    {
+      "name": "header-custom-two-kinds",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.clients[0][0]",
+      "base": "header-custom-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp/0/settings/clients/0/0": {
+          "type": "str",
+          "packet": "x",
+          "rand": 2
+        }
+      }
+    },
+    {
+      "name": "header-custom-bad-variable",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.clients[0][1].capture",
+      "base": "header-custom-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp/0/settings/clients/0/1/capture": "1nonce"
+      }
+    },
+    {
+      "name": "header-custom-rand-range",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.clients[0][1].randRange",
+      "base": "header-custom-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp/0/settings/clients/0/1/randRange": "0-256"
+      }
+    },
+    {
+      "name": "header-custom-transform-without-op",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.servers[0][1].transform.op",
+      "base": "header-custom-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp/0/settings/servers/0/1/transform/op": ""
+      }
+    },
+    {
+      "name": "header-custom-arg-two-values",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.clients[0][2].transform.args[0]",
+      "base": "header-custom-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp/0/settings/clients/0/2/transform/args/0": {
+          "u64": 1,
+          "metadata": "local_port"
+        }
+      }
+    },
+    {
+      "name": "header-custom-before-fragment",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[1]",
+      "base": "header-custom-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp": [
+          {
+            "type": "header-custom",
+            "settings": {
+              "clients": [
+                [
+                  {
+                    "delay": "0-0",
+                    "rand": 0,
+                    "randRange": "0-255",
+                    "capture": "",
+                    "type": "str",
+                    "reuse": "",
+                    "packet": "HELLO"
+                  },
+                  {
+                    "rand": 8,
+                    "capture": "nonce"
+                  },
+                  {
+                    "transform": {
+                      "op": "be16",
+                      "args": [
+                        {
+                          "type": "",
+                          "metadata": "remote_port"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              ],
+              "servers": [
+                [
+                  {
+                    "reuse": "nonce"
+                  },
+                  {
+                    "transform": {
+                      "op": "concat",
+                      "args": [
+                        {
+                          "type": "str",
+                          "bytes": "OK"
+                        },
+                        {
+                          "transform": {
+                            "op": "le16",
+                            "args": [
+                              {
+                                "u64": 1
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              ],
+              "errors": [
+                [
+                  {
+                    "type": "str",
+                    "packet": "NO"
+                  }
+                ]
+              ]
+            }
+          },
+          {
+            "type": "fragment",
+            "settings": {
+              "packets": "tlshello",
+              "length": "100-200",
+              "delay": "10-20"
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "wireguard",
       "accepted": true,
       "config": {

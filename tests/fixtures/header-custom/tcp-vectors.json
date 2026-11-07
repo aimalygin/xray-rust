@@ -1,0 +1,1881 @@
+[
+ {
+  "name": "fixed bytes each way",
+  "client": {
+   "clients": [
+    [
+     {
+      "packet": [
+       1,
+       2,
+       3
+      ]
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": "AAEC"
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "packet": [
+       1,
+       2,
+       3
+      ]
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": "AAEC"
+     }
+    ]
+   ]
+  },
+  "clientToServer": "010203",
+  "serverToClient": "000102",
+  "clientOk": true
+ },
+ {
+  "name": "every packet type",
+  "client": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "GET / HTTP/1.1\r\n"
+     },
+     {
+      "type": "hex",
+      "packet": "0D0a"
+     },
+     {
+      "type": "base64",
+      "packet": "aGVsbG8="
+     },
+     {
+      "type": "ARRAY",
+      "packet": [
+       255
+      ]
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "type": "Str",
+      "packet": "OK"
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "GET / HTTP/1.1\r\n"
+     },
+     {
+      "type": "hex",
+      "packet": "0D0a"
+     },
+     {
+      "type": "base64",
+      "packet": "aGVsbG8="
+     },
+     {
+      "type": "ARRAY",
+      "packet": [
+       255
+      ]
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "type": "Str",
+      "packet": "OK"
+     }
+    ]
+   ]
+  },
+  "clientToServer": "474554202f20485454502f312e310d0a0d0a68656c6c6fff",
+  "serverToClient": "4f4b",
+  "clientOk": true
+ },
+ {
+  "name": "a captured nonce echoed back",
+  "client": {
+   "clients": [
+    [
+     {
+      "capture": "nonce",
+      "type": "str",
+      "packet": "ABCDEFGH"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "reuse": "nonce"
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "capture": "nonce",
+      "type": "str",
+      "packet": "ABCDEFGH"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "reuse": "nonce"
+     }
+    ]
+   ]
+  },
+  "clientToServer": "4142434445464748",
+  "serverToClient": "4142434445464748",
+  "clientOk": true
+ },
+ {
+  "name": "the server captures and the client checks its transform",
+  "client": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "hi"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "capture": "token",
+      "type": "str",
+      "packet": "0123"
+     },
+     {
+      "transform": {
+       "op": "concat",
+       "args": [
+        {
+         "reuse": "token"
+        },
+        {
+         "type": "str",
+         "bytes": "!"
+        }
+       ]
+      }
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "hi"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "capture": "token",
+      "type": "str",
+      "packet": "0123"
+     },
+     {
+      "transform": {
+       "op": "concat",
+       "args": [
+        {
+         "reuse": "token"
+        },
+        {
+         "type": "str",
+         "bytes": "!"
+        }
+       ]
+      }
+     }
+    ]
+   ]
+  },
+  "clientToServer": "6869",
+  "serverToClient": "303132333031323321",
+  "clientOk": true
+ },
+ {
+  "name": "packs and arithmetic",
+  "client": {
+   "clients": [
+    [
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "u64": 513
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "le16",
+       "args": [
+        {
+         "u64": 513
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be32",
+       "args": [
+        {
+         "transform": {
+          "op": "add",
+          "args": [
+           {
+            "u64": 4294967294
+           },
+           {
+            "u64": 1
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "le32",
+       "args": [
+        {
+         "transform": {
+          "op": "sub",
+          "args": [
+           {
+            "u64": 10
+           },
+           {
+            "u64": 3
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "le64",
+       "args": [
+        {
+         "transform": {
+          "op": "shl",
+          "args": [
+           {
+            "u64": 1
+           },
+           {
+            "u64": 63
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "transform": {
+          "op": "xor16",
+          "args": [
+           {
+            "u64": 65535
+           },
+           {
+            "u64": 4660
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be32",
+       "args": [
+        {
+         "transform": {
+          "op": "xor32",
+          "args": [
+           {
+            "u64": 4294967295
+           },
+           {
+            "u64": 305419896
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "transform": {
+          "op": "and",
+          "args": [
+           {
+            "u64": 61680
+           },
+           {
+            "u64": 4080
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "transform": {
+          "op": "or",
+          "args": [
+           {
+            "u64": 61440
+           },
+           {
+            "u64": 15
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "transform": {
+          "op": "shr",
+          "args": [
+           {
+            "u64": 65280
+           },
+           {
+            "u64": 8
+           }
+          ]
+         }
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": [
+       0
+      ]
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "u64": 513
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "le16",
+       "args": [
+        {
+         "u64": 513
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be32",
+       "args": [
+        {
+         "transform": {
+          "op": "add",
+          "args": [
+           {
+            "u64": 4294967294
+           },
+           {
+            "u64": 1
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "le32",
+       "args": [
+        {
+         "transform": {
+          "op": "sub",
+          "args": [
+           {
+            "u64": 10
+           },
+           {
+            "u64": 3
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "le64",
+       "args": [
+        {
+         "transform": {
+          "op": "shl",
+          "args": [
+           {
+            "u64": 1
+           },
+           {
+            "u64": 63
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "transform": {
+          "op": "xor16",
+          "args": [
+           {
+            "u64": 65535
+           },
+           {
+            "u64": 4660
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be32",
+       "args": [
+        {
+         "transform": {
+          "op": "xor32",
+          "args": [
+           {
+            "u64": 4294967295
+           },
+           {
+            "u64": 305419896
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "transform": {
+          "op": "and",
+          "args": [
+           {
+            "u64": 61680
+           },
+           {
+            "u64": 4080
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "transform": {
+          "op": "or",
+          "args": [
+           {
+            "u64": 61440
+           },
+           {
+            "u64": 15
+           }
+          ]
+         }
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "transform": {
+          "op": "shr",
+          "args": [
+           {
+            "u64": 65280
+           },
+           {
+            "u64": 8
+           }
+          ]
+         }
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": [
+       0
+      ]
+     }
+    ]
+   ]
+  },
+  "clientToServer": "02010102ffffffff070000000000000000000080edcbedcba98700f0f00f00ff",
+  "serverToClient": "00",
+  "clientOk": true
+ },
+ {
+  "name": "byte operations",
+  "client": {
+   "clients": [
+    [
+     {
+      "transform": {
+       "op": "concat",
+       "args": [
+        {
+         "type": "str",
+         "bytes": "ab"
+        },
+        {
+         "type": "hex",
+         "bytes": "00ff"
+        },
+        {
+         "bytes": [
+          7
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "slice",
+       "args": [
+        {
+         "type": "str",
+         "bytes": "abcdef"
+        },
+        {
+         "u64": 1
+        },
+        {
+         "u64": 3
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "pad",
+       "args": [
+        {
+         "type": "str",
+         "bytes": "ab"
+        },
+        {
+         "u64": 7
+        },
+        {
+         "type": "str",
+         "bytes": "xy"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "truncate",
+       "args": [
+        {
+         "type": "str",
+         "bytes": "hello"
+        },
+        {
+         "u64": 3
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "pad",
+       "args": [
+        {
+         "type": "str",
+         "bytes": "abc"
+        },
+        {
+         "u64": 3
+        },
+        {
+         "type": "str",
+         "bytes": "z"
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": [
+       0
+      ]
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "transform": {
+       "op": "concat",
+       "args": [
+        {
+         "type": "str",
+         "bytes": "ab"
+        },
+        {
+         "type": "hex",
+         "bytes": "00ff"
+        },
+        {
+         "bytes": [
+          7
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "slice",
+       "args": [
+        {
+         "type": "str",
+         "bytes": "abcdef"
+        },
+        {
+         "u64": 1
+        },
+        {
+         "u64": 3
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "pad",
+       "args": [
+        {
+         "type": "str",
+         "bytes": "ab"
+        },
+        {
+         "u64": 7
+        },
+        {
+         "type": "str",
+         "bytes": "xy"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "truncate",
+       "args": [
+        {
+         "type": "str",
+         "bytes": "hello"
+        },
+        {
+         "u64": 3
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "pad",
+       "args": [
+        {
+         "type": "str",
+         "bytes": "abc"
+        },
+        {
+         "u64": 3
+        },
+        {
+         "type": "str",
+         "bytes": "z"
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": [
+       0
+      ]
+     }
+    ]
+   ]
+  },
+  "clientToServer": "616200ff076263646162787978797868656c616263",
+  "serverToClient": "00",
+  "clientOk": true
+ },
+ {
+  "name": "the addresses as metadata",
+  "client": {
+   "clients": [
+    [
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "metadata": "local_port"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "metadata": "remote_port"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "metadata": "src_port_u16"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "metadata": "dst_port_u16"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be32",
+       "args": [
+        {
+         "metadata": "local_ip4_u32"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be32",
+       "args": [
+        {
+         "metadata": "remote_ip4_u32"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be32",
+       "args": [
+        {
+         "metadata": "src_ip4_u32"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be32",
+       "args": [
+        {
+         "metadata": "dst_ip4_u32"
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "metadata": "remote_port"
+        }
+       ]
+      }
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "metadata": "local_port"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "metadata": "remote_port"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "metadata": "src_port_u16"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "metadata": "dst_port_u16"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be32",
+       "args": [
+        {
+         "metadata": "local_ip4_u32"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be32",
+       "args": [
+        {
+         "metadata": "remote_ip4_u32"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be32",
+       "args": [
+        {
+         "metadata": "src_ip4_u32"
+        }
+       ]
+      }
+     },
+     {
+      "transform": {
+       "op": "be32",
+       "args": [
+        {
+         "metadata": "dst_ip4_u32"
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "metadata": "remote_port"
+        }
+       ]
+      }
+     }
+    ]
+   ]
+  },
+  "clientToServer": "9c4001bb01bb9c40c000020ac6336414c6336414c000020a",
+  "serverToClient": "",
+  "clientOk": false
+ },
+ {
+  "name": "rounds in turn",
+  "client": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "c0"
+     }
+    ],
+    [
+     {
+      "type": "str",
+      "packet": "c1"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "type": "str",
+      "packet": "s0"
+     }
+    ],
+    [
+     {
+      "type": "str",
+      "packet": "s1"
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "c0"
+     }
+    ],
+    [
+     {
+      "type": "str",
+      "packet": "c1"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "type": "str",
+      "packet": "s0"
+     }
+    ],
+    [
+     {
+      "type": "str",
+      "packet": "s1"
+     }
+    ]
+   ]
+  },
+  "clientToServer": "63306331",
+  "serverToClient": "73307331",
+  "clientOk": true
+ },
+ {
+  "name": "a client round reuses what the server sent",
+  "client": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "c0"
+     }
+    ],
+    [
+     {
+      "reuse": "token"
+     },
+     {
+      "type": "str",
+      "packet": "!"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "capture": "token",
+      "type": "str",
+      "packet": "TOKEN"
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "c0"
+     }
+    ],
+    [
+     {
+      "reuse": "token"
+     },
+     {
+      "type": "str",
+      "packet": "!"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "capture": "token",
+      "type": "str",
+      "packet": "TOKEN"
+     }
+    ]
+   ]
+  },
+  "clientToServer": "6330544f4b454e21",
+  "serverToClient": "544f4b454e",
+  "clientOk": true
+ },
+ {
+  "name": "more server sequences",
+  "client": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "c0"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "type": "str",
+      "packet": "s0"
+     }
+    ],
+    [
+     {
+      "type": "str",
+      "packet": "s1"
+     }
+    ],
+    [
+     {
+      "type": "str",
+      "packet": "s2"
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "c0"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "type": "str",
+      "packet": "s0"
+     }
+    ],
+    [
+     {
+      "type": "str",
+      "packet": "s1"
+     }
+    ],
+    [
+     {
+      "type": "str",
+      "packet": "s2"
+     }
+    ]
+   ]
+  },
+  "clientToServer": "6330",
+  "serverToClient": "733073317332",
+  "clientOk": true
+ },
+ {
+  "name": "more client sequences",
+  "client": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "c0"
+     }
+    ],
+    [
+     {
+      "type": "str",
+      "packet": "c1"
+     }
+    ],
+    [
+     {
+      "type": "str",
+      "packet": "c2"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "type": "str",
+      "packet": "s0"
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "c0"
+     }
+    ],
+    [
+     {
+      "type": "str",
+      "packet": "c1"
+     }
+    ],
+    [
+     {
+      "type": "str",
+      "packet": "c2"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "type": "str",
+      "packet": "s0"
+     }
+    ]
+   ]
+  },
+  "clientToServer": "633063316332",
+  "serverToClient": "7330",
+  "clientOk": true
+ },
+ {
+  "name": "a delay splits the sequence",
+  "client": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "before"
+     },
+     {
+      "delay": "5-6",
+      "type": "str",
+      "packet": "after"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "type": "str",
+      "packet": "ok"
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "before"
+     },
+     {
+      "delay": "5-6",
+      "type": "str",
+      "packet": "after"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "type": "str",
+      "packet": "ok"
+     }
+    ]
+   ]
+  },
+  "clientToServer": "6265666f72656166746572",
+  "serverToClient": "6f6b",
+  "clientOk": true
+ },
+ {
+  "name": "empty items and sequences",
+  "client": {
+   "clients": [
+    [],
+    [
+     {}
+    ],
+    [
+     {
+      "type": "str",
+      "packet": "x"
+     }
+    ]
+   ],
+   "servers": [
+    [],
+    [
+     {}
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [],
+    [
+     {}
+    ],
+    [
+     {
+      "type": "str",
+      "packet": "x"
+     }
+    ]
+   ],
+   "servers": [
+    [],
+    [
+     {}
+    ]
+   ]
+  },
+  "clientToServer": "78",
+  "serverToClient": "",
+  "clientOk": true
+ },
+ {
+  "name": "nothing to send",
+  "client": {},
+  "server": {},
+  "clientToServer": "",
+  "serverToClient": "",
+  "clientOk": true
+ },
+ {
+  "name": "the server answers with its errors sequence",
+  "client": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "hello"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "type": "str",
+      "packet": "fine"
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "other"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "type": "str",
+      "packet": "fine"
+     }
+    ]
+   ],
+   "errors": [
+    [
+     {
+      "type": "str",
+      "packet": "nope"
+     }
+    ]
+   ]
+  },
+  "clientToServer": "68656c6c6f",
+  "serverToClient": "6e6f7065",
+  "clientOk": false
+ },
+ {
+  "name": "the server sends other bytes",
+  "client": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "hello"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "type": "str",
+      "packet": "fine"
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "hello"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "type": "str",
+      "packet": "FINE"
+     }
+    ]
+   ]
+  },
+  "clientToServer": "68656c6c6f",
+  "serverToClient": "46494e45",
+  "clientOk": false
+ },
+ {
+  "name": "an unknown op",
+  "client": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "a"
+     },
+     {
+      "transform": {
+       "op": "rot13",
+       "args": [
+        {
+         "u64": 1
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": [
+       0
+      ]
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "a"
+     },
+     {
+      "transform": {
+       "op": "rot13",
+       "args": [
+        {
+         "u64": 1
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": [
+       0
+      ]
+     }
+    ]
+   ]
+  },
+  "clientToServer": "",
+  "serverToClient": "",
+  "clientOk": false
+ },
+ {
+  "name": "a slice out of bounds",
+  "client": {
+   "clients": [
+    [
+     {
+      "transform": {
+       "op": "slice",
+       "args": [
+        {
+         "type": "str",
+         "bytes": "abc"
+        },
+        {
+         "u64": 2
+        },
+        {
+         "u64": 2
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": [
+       0
+      ]
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "transform": {
+       "op": "slice",
+       "args": [
+        {
+         "type": "str",
+         "bytes": "abc"
+        },
+        {
+         "u64": 2
+        },
+        {
+         "u64": 2
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": [
+       0
+      ]
+     }
+    ]
+   ]
+  },
+  "clientToServer": "",
+  "serverToClient": "",
+  "clientOk": false
+ },
+ {
+  "name": "an unknown variable",
+  "client": {
+   "clients": [
+    [
+     {
+      "reuse": "missing"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": [
+       0
+      ]
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "reuse": "missing"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": [
+       0
+      ]
+     }
+    ]
+   ]
+  },
+  "clientToServer": "",
+  "serverToClient": "",
+  "clientOk": false
+ },
+ {
+  "name": "unknown metadata",
+  "client": {
+   "clients": [
+    [
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "metadata": "local_port6"
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": [
+       0
+      ]
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "metadata": "local_port6"
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": [
+       0
+      ]
+     }
+    ]
+   ]
+  },
+  "clientToServer": "",
+  "serverToClient": "",
+  "clientOk": false
+ },
+ {
+  "name": "a pack overflow",
+  "client": {
+   "clients": [
+    [
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "u64": 65536
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": [
+       0
+      ]
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "transform": {
+       "op": "be16",
+       "args": [
+        {
+         "u64": 65536
+        }
+       ]
+      }
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "packet": [
+       0
+      ]
+     }
+    ]
+   ]
+  },
+  "clientToServer": "",
+  "serverToClient": "",
+  "clientOk": false
+ },
+ {
+  "name": "a server transform the client cannot size",
+  "client": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "a"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "transform": {
+       "op": "add",
+       "args": [
+        {
+         "u64": 1
+        },
+        {
+         "u64": 2
+        }
+       ]
+      }
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "type": "str",
+      "packet": "a"
+     }
+    ]
+   ],
+   "servers": [
+    [
+     {
+      "transform": {
+       "op": "add",
+       "args": [
+        {
+         "u64": 1
+        },
+        {
+         "u64": 2
+        }
+       ]
+      }
+     }
+    ]
+   ]
+  },
+  "clientToServer": "61",
+  "serverToClient": "",
+  "clientOk": false
+ },
+ {
+  "name": "a config Xray refuses",
+  "client": {
+   "clients": [
+    [
+     {
+      "packet": [
+       1
+      ],
+      "rand": 2
+     }
+    ]
+   ]
+  },
+  "server": {
+   "clients": [
+    [
+     {
+      "packet": [
+       1
+      ],
+      "rand": 2
+     }
+    ]
+   ]
+  },
+  "clientToServer": "",
+  "serverToClient": "",
+  "clientOk": false,
+  "buildError": "infra/conf: exactly one item kind must be set"
+ }
+]

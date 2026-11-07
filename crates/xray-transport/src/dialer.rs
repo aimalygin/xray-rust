@@ -29,17 +29,19 @@ pub struct TransportDialer {
     socket_options_report: Option<SocketOptionsReport>,
     resolved_tcp_connector: Option<Arc<dyn ResolvedTcpConnector>>,
     tcp_fragment: Option<Arc<crate::TcpFragmentConfig>>,
-    /// The probe and resolver a caller set in place of the system's, behind
-    /// one pointer: every open future holds dialers, and most set neither.
+    /// What most dialers leave unset, behind one pointer: every open future
+    /// holds dialers.
     replaced: Option<Arc<Replaced>>,
 }
 
-/// What [`TransportDialer::with_route_probe`] and
-/// [`TransportDialer::with_record_resolver`] set.
+/// What [`TransportDialer::with_route_probe`],
+/// [`TransportDialer::with_record_resolver`] and
+/// [`TransportDialer::with_tcp_header_custom`] set.
 #[derive(Clone, Default)]
 struct Replaced {
     route_probe: Option<Arc<dyn RouteProbe>>,
     record_resolver: Option<Arc<dyn RecordResolver>>,
+    tcp_header_custom: Option<Arc<crate::header_custom::HeaderCustomTcpConfig>>,
 }
 
 #[derive(Clone)]
@@ -199,6 +201,23 @@ impl TransportDialer {
     pub fn with_tcp_fragment(mut self, config: Arc<crate::TcpFragmentConfig>) -> Self {
         self.tcp_fragment = Some(config);
         self
+    }
+
+    /// Runs this `header-custom` handshake on every TCP carrier as soon as it
+    /// connects, before the fragment mask, TLS or REALITY.
+    pub fn with_tcp_header_custom(
+        mut self,
+        config: Arc<crate::header_custom::HeaderCustomTcpConfig>,
+    ) -> Self {
+        Arc::make_mut(self.replaced.get_or_insert_with(Default::default)).tcp_header_custom =
+            Some(config);
+        self
+    }
+
+    fn tcp_header_custom(&self) -> Option<&crate::header_custom::HeaderCustomTcpConfig> {
+        self.replaced
+            .as_ref()
+            .and_then(|replaced| replaced.tcp_header_custom.as_deref())
     }
 
     /// This dialer with its own sockets instead of the outbound that
@@ -456,9 +475,10 @@ impl TransportDialer {
                 ));
             }
         };
-        let (tcp, peer) = self
+        let (mut tcp, peer) = self
             .connect_direct_tcp(original_target, candidates, happy_eyeballs)
             .await?;
+        self.direct_header_custom_handshake(&mut tcp, peer).await?;
         let stream = self.mask_tcp_carrier(Box::new(tcp));
         let stream = match prepared {
             Some(prepared) => {
@@ -567,8 +587,10 @@ impl TransportDialer {
                         .ok_or(TransportError::UnsupportedConnectorConfig(
                             "REALITY tlshello fragmentation",
                         ))?;
-                    let (stream, _) = self
+                    let (mut stream, peer) = self
                         .connect_candidates(candidates, first, race_config)
+                        .await?;
+                    self.direct_header_custom_handshake(&mut stream, peer)
                         .await?;
                     return prepared.complete_fragmented(stream, fragment.clone()).await;
                 }
@@ -578,14 +600,23 @@ impl TransportDialer {
                 let Some(prepared) =
                     reality.prepare_preconnected(reality_config, original_target)?
                 else {
+                    // A legacy engine dials its own socket, which this
+                    // dialer cannot run the handshake on.
+                    if self.tcp_header_custom().is_some() {
+                        return Err(TransportError::UnsupportedConnectorConfig(
+                            "REALITY header-custom",
+                        ));
+                    }
                     // Legacy engines remain usable. They may override
                     // `connect_socket_addr` to preserve scoped IPv6 metadata.
                     return reality
                         .connect_socket_addr(reality_config, original_target, first)
                         .await;
                 };
-                let (stream, _) = self
+                let (mut stream, peer) = self
                     .connect_candidates(candidates, first, race_config)
+                    .await?;
+                self.direct_header_custom_handshake(&mut stream, peer)
                     .await?;
 
                 prepared.complete(stream).await
@@ -619,16 +650,52 @@ impl TransportDialer {
         happy_eyeballs: Option<&HappyEyeballsConfig>,
     ) -> Result<BoxedTransportStream, TransportError> {
         if let Some(connector) = &self.resolved_tcp_connector {
-            return connector
+            let mut stream = connector
                 .connect_resolved(original_target, candidates, happy_eyeballs)
-                .await;
+                .await?;
+            // Xray's chained connection says 0.0.0.0:0 for both of its ends.
+            let unspecified = SocketAddr::from(([0, 0, 0, 0], 0));
+            self.header_custom_handshake(&mut stream, unspecified, unspecified)
+                .await?;
+            return Ok(stream);
         }
 
-        Ok(Box::new(
-            self.connect_direct_tcp(original_target, candidates, happy_eyeballs)
-                .await?
-                .0,
-        ))
+        let (mut stream, peer) = self
+            .connect_direct_tcp(original_target, candidates, happy_eyeballs)
+            .await?;
+        self.direct_header_custom_handshake(&mut stream, peer)
+            .await?;
+        Ok(Box::new(stream))
+    }
+
+    /// The `header-custom` handshake over a direct socket connected to `peer`.
+    async fn direct_header_custom_handshake(
+        &self,
+        stream: &mut tokio::net::TcpStream,
+        peer: SocketAddr,
+    ) -> Result<(), TransportError> {
+        if self.tcp_header_custom().is_none() {
+            return Ok(());
+        }
+        let local = stream.local_addr().map_err(TransportError::Tcp)?;
+        self.header_custom_handshake(stream, local, peer).await
+    }
+
+    async fn header_custom_handshake<S>(
+        &self,
+        stream: &mut S,
+        local: SocketAddr,
+        remote: SocketAddr,
+    ) -> Result<(), TransportError>
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized,
+    {
+        let Some(config) = self.tcp_header_custom() else {
+            return Ok(());
+        };
+        crate::header_custom::client_handshake(stream, config, Some(local), Some(remote))
+            .await
+            .map_err(TransportError::Tcp)
     }
 
     /// Connects a direct TCP socket and returns it with the address it

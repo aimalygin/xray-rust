@@ -10,6 +10,13 @@ long-term supported release series.
 
 ## Unreleased
 
+- The `header-custom` TCP mask runs Xray-core's handshake on every TCP
+  carrier before anything else: raw, WebSocket, HTTPUpgrade, gRPC and XHTTP,
+  under none, TLS or REALITY. Every item kind and transform op is read, with
+  the carrier's addresses as metadata. See
+  [header-custom TCP mask](docs/config-compatibility.md#header-custom-tcp-mask).
+  - A `fragment` mask may come before it, not after.
+  - `rand` is at most 65536 bytes and a `pad` at most 1 MiB.
 - mKCP: `network: "kcp"` and `"mkcp"` carry VLESS, VMess, Trojan,
   Shadowsocks, SOCKS and HTTP over Xray-core's reliable stream over UDP, plain
   or under TLS, Vision included. Profiles with it used to fail to parse. See

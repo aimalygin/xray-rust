@@ -23,6 +23,7 @@ mod fragment;
 pub use fragment::TcpFragmentConfig;
 mod dns;
 mod happy_eyeballs;
+pub mod header_custom;
 pub mod hysteria;
 pub mod kcp;
 mod memory_class;

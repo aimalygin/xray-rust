@@ -428,6 +428,43 @@ Evidence, against Xray-core v26.10.31:
   needed, ours 53 to 74. The protocol is the same; when acks are read
   relative to flushes differs.
 
+## header-custom TCP
+
+The `header-custom` TCP mask is read and run as Xray-core v26.10.31's
+([details](config-compatibility.md#header-custom-tcp-mask)). Deliberate
+differences:
+
+- The client's handshake runs as soon as TCP connects, where Xray-core runs it
+  on the first write. Every client protocol writes first, so the bytes and
+  their order are the same; only a carrier opened and never written, such as
+  a `testpre` connection without TLS, sends its handshake sooner.
+- One `header-custom` TCP mask, and a `fragment` mask only before it. After
+  it, Xray-core's fragment mask would split the handshake instead of the TLS
+  ClientHello.
+- `rand` is at most 65536 bytes and a `pad` at most 1 MiB, where Xray-core
+  allocates whatever is asked. A `slice` whose offset and length overflow
+  fails, where Xray-core panics.
+- Only the carriers of proxying outbounds run it. Xray-core runs TCP masks on
+  freedom and DNS dials too, and ignores them on UDP carriers, which refuse
+  them here.
+
+Xray-core's own REALITY server panics on a `header-custom` connection, which
+lacks the `CloseWrite` it asserts
+(`reality@v0.0.0-20261014101318-83f621788ca8/tls.go:187`), so REALITY with
+`header-custom` has no Xray-core server to talk to.
+
+Evidence, against Xray-core v26.10.31:
+
+- Its client and server connections, run over a pipe for 23 configs, wrote
+  the bytes ours writes and read (`tools/header-custom-oracle`,
+  `tests/fixtures/header-custom/tcp-vectors.json`): every packet type, every
+  transform op, the metadata, captures each way, rounds of every length,
+  delays, the server's errors sequence, and each kind of failure.
+- 55 of 55 parity configs get the verdict `xray run -test` gives.
+- Live, its server took the handshake from our client on raw, raw TLS,
+  WebSocket, HTTPUpgrade, gRPC and XHTTP, and refused a wrong one each time
+  (`scripts/check-header-custom-interop.sh`).
+
 ## DNS `UseSystem` route probe
 
 `queryStrategy: "UseSystem"` narrows each lookup to the address families the
