@@ -169,8 +169,9 @@ fn testseed_takes_four_numbers_or_keeps_the_defaults() {
     }
 }
 
+/// `reverse` is refused. `testpre` is read in either form, up to 64 here.
 #[test]
-fn reverse_and_pre_connections_are_refused() {
+fn reverse_is_refused_and_testpre_is_read() {
     let flat = |extra: Value| {
         let mut settings =
             json!({"address": "example.com", "port": 443, "id": ID, "encryption": "none"});
@@ -178,35 +179,58 @@ fn reverse_and_pre_connections_are_refused() {
             .as_object_mut()
             .unwrap()
             .extend(extra.as_object().unwrap().clone());
-        vless(settings)
+        settings
     };
-    for (config, path) in [
+    let vnext = |user: Value| {
+        let mut base = json!({"id": ID, "encryption": "none"});
+        base.as_object_mut()
+            .unwrap()
+            .extend(user.as_object().unwrap().clone());
+        json!({"vnext": [{"address": "example.com", "port": 443, "users": [base]}]})
+    };
+    for (settings, path) in [
         (
             flat(json!({"reverse": {"tag": "r"}})),
             "$.outbounds[0].settings.reverse",
         ),
         (
-            flat(json!({"testpre": 2})),
-            "$.outbounds[0].settings.testpre",
-        ),
-        (
-            vless(json!({"vnext": [{"address": "example.com", "port": 443,
-                "users": [{"id": ID, "encryption": "none", "reverse": {"tag": "r"}}]}]})),
+            vnext(json!({"reverse": {"tag": "r"}})),
             "$.outbounds[0].settings.vnext[0].users[0].reverse",
         ),
         (
-            vless(json!({"vnext": [{"address": "example.com", "port": 443,
-                "users": [{"id": ID, "encryption": "none", "testpre": 1}]}]})),
+            flat(json!({"testpre": 65})),
+            "$.outbounds[0].settings.testpre",
+        ),
+        (
+            vnext(json!({"testpre": 65})),
             "$.outbounds[0].settings.vnext[0].users[0].testpre",
         ),
+        (
+            flat(json!({"testpre": "2"})),
+            "$.outbounds[0].settings.testpre",
+        ),
+        (
+            flat(json!({"testpre": -1})),
+            "$.outbounds[0].settings.testpre",
+        ),
     ] {
+        let config = vless(settings);
         assert!(error_paths(&config).iter().any(|p| p == path), "{config}");
     }
-    // A null reverse and a zero testpre ask for nothing.
-    parsed_vless(
-        json!({"address": "example.com", "port": 443, "id": ID, "encryption": "none",
-                        "reverse": null, "testpre": 0}),
-    );
+    for (settings, expected) in [
+        (flat(json!({"testpre": 2})), 2),
+        (flat(json!({"testpre": 64})), 64),
+        (flat(json!({"testpre": 0, "reverse": null})), 0),
+        (flat(json!({"testpre": null})), 0),
+        (flat(json!({})), 0),
+        (vnext(json!({"testpre": 1})), 1),
+    ] {
+        assert_eq!(
+            parsed_vless(settings.clone()).users[0].pre_connections,
+            expected,
+            "{settings}"
+        );
+    }
 }
 
 #[test]

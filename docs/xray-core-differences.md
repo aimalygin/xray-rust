@@ -370,8 +370,14 @@ Deliberate differences:
   profiles; accepting them breaks none it accepts.
 - A server port of 0 fails parsing, as before. Xray-core accepts it and
   dials port 0.
-- VLESS `reverse` and a nonzero `testpre` fail parsing: the reverse proxy and
-  the pre-connections are not implemented.
+- VLESS `reverse` fails parsing: the reverse proxy is not implemented.
+- VLESS `testpre` is at most 64 here; Xray-core starts any number of dialers.
+- A `testpre` dialer whose dial fails waits 200 ms before the next, twice as
+  long after each further failure, up to ten seconds. Xray-core dials again at
+  once, without end, while the server is unreachable.
+- A request waits sixteen seconds for a `testpre` connection, the time
+  Xray-core's system dialer gives a dial, and then fails. Xray-core's request
+  waits until a connection comes.
 - Xray-core panics when a `testseed` range is zero, and writes a negative
   padding length when a short record is longer than its third number. Here a
   zero range pads nothing and that part of the padding is zero.

@@ -1447,7 +1447,7 @@
         "vnext"
       ],
       "id": "VLESS",
-      "notes": "Read as Xray-core v26.10.31 reads it. A non-null address is the simplified form: the server and its one user are these fields, and vnext is not read; otherwise exactly one vnext server. Every field decodes in either form. seed is ignored. testseed sets the Vision padding parameters: the first four numbers when there are at least four. A reverse proxy (reverse) and pre-connections (a nonzero testpre) are unsupported."
+      "notes": "Read as Xray-core v26.10.31 reads it. A non-null address is the simplified form: the server and its one user are these fields, and vnext is not read; otherwise exactly one vnext server. Every field decodes in either form. seed is ignored. testseed sets the Vision padding parameters: the first four numbers when there are at least four. testpre keeps that many carrier connections opened ahead of the requests that take them, as Xray-core does, up to 64 here. A reverse proxy (reverse) is unsupported."
     },
     {
       "context": "$.outbounds[].settings.vnext[0]",
@@ -1473,7 +1473,7 @@
         "reverse"
       ],
       "id": "VLESS_USER",
-      "notes": "Runtime selects the first user, where Xray-core wants exactly one. id is a UUID, or 1 to 30 bytes of text that name one as Xray-core's uuid.ParseString does. encryption defaults to none, where Xray-core requires it; non-none uses the bounded VLESS encryption parser. flow supports empty, xtls-rprx-vision and xtls-rprx-vision-udp443. testseed sets the Vision padding parameters. reverse is refused here, as Xray-core refuses it outside the simplified form. email is ignored; security is type-checked but ignored."
+      "notes": "Runtime selects the first user, where Xray-core wants exactly one. id is a UUID, or 1 to 30 bytes of text that name one as Xray-core's uuid.ParseString does. encryption defaults to none, where Xray-core requires it; non-none uses the bounded VLESS encryption parser. flow supports empty, xtls-rprx-vision and xtls-rprx-vision-udp443. testseed sets the Vision padding parameters, and testpre the connections opened ahead, up to 64. reverse is refused here, as Xray-core refuses it outside the simplified form. email is ignored; security is type-checked but ignored."
     },
     {
       "context": "streamSettings.wsSettings",

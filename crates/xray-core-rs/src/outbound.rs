@@ -31,6 +31,7 @@ pub(crate) mod final_rules;
 pub(crate) mod proxy_protocol;
 pub(crate) use domain_strategy::DomainStrategyResolver;
 mod mux;
+mod preconnect;
 mod routing;
 pub(crate) mod socket_options;
 mod xhttp;
@@ -310,6 +311,8 @@ struct VlessTcpOutboundPayload {
     user: VlessUser,
     encryption: Option<xray_vless_encryption::Client>,
     mux: Option<mux::Runtime>,
+    /// `testpre`: carrier connections opened ahead of requests.
+    pre_connections: Option<preconnect::PreConnections>,
 }
 
 #[derive(Debug, Clone)]
@@ -646,11 +649,43 @@ impl VlessTcpOutbound {
         if let Some(mux) = &self.payload.mux {
             mux.close();
         }
+        if let Some(pre_connections) = &self.payload.pre_connections {
+            pre_connections.close();
+        }
     }
 
     pub(crate) async fn join(&self) {
         if let Some(mux) = &self.payload.mux {
             mux.join().await;
+        }
+        if let Some(pre_connections) = &self.payload.pre_connections {
+            pre_connections.join().await;
+        }
+    }
+
+    /// The carrier stream a request starts on: one opened ahead under
+    /// `testpre`, else a new one. Taking one is boxed, so it adds a pointer
+    /// and not its state to every open future.
+    fn open_carrier<'a>(
+        &'a self,
+        server: &'a [SocketAddr],
+        download: &'a [SocketAddr],
+        dialer: &'a TransportDialer,
+    ) -> impl Future<Output = Result<BoxedTransportStream, CoreError>> + 'a {
+        match &self.payload.pre_connections {
+            None => futures_util::future::Either::Left(
+                self.payload.carrier.open(server, download, dialer),
+            ),
+            Some(pre_connections) => {
+                futures_util::future::Either::Right(Box::pin(pre_connections.take(
+                    preconnect::DialSpec {
+                        server: server.to_vec(),
+                        download: download.to_vec(),
+                        dialer: dialer.clone(),
+                    },
+                    || Arc::new(CarrierOpener(Arc::downgrade(&self.payload))),
+                )))
+            }
         }
     }
 
@@ -4036,12 +4071,14 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
         return Err(CoreError::UnsupportedOutboundFlow);
     }
     let mux = mux::Runtime::new(&outbound.mux, &outbound.stream.transport)?;
+    let pre_connections = preconnect::PreConnections::new(user.pre_connections);
     Ok(VlessTcpOutbound {
         payload: Arc::new(VlessTcpOutboundPayload {
             carrier,
             user,
             encryption,
             mux,
+            pre_connections,
         }),
     })
 }
@@ -4541,9 +4578,7 @@ async fn open_vless_tcp_stream_with_resolved_server_and_dialer(
     }
 
     let stream = outbound
-        .payload
-        .carrier
-        .open(resolved_server, resolved_download, transport_dialer)
+        .open_carrier(resolved_server, resolved_download, transport_dialer)
         .await?;
     let stream = encryption::wrap(stream, outbound.encryption(), flow.uses_vision()).await?;
     let request = VlessRequest {
@@ -4663,6 +4698,27 @@ pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
     Ok((stream, framing))
 }
 
+/// Opens `testpre` connections on the carrier of a VLESS outbound that is
+/// still alive; the dialers hold no strong reference, so dropping the
+/// outbound ends them.
+struct CarrierOpener(std::sync::Weak<VlessTcpOutboundPayload>);
+
+#[async_trait]
+impl preconnect::Opener for CarrierOpener {
+    async fn open(
+        &self,
+        spec: &preconnect::DialSpec,
+    ) -> Option<Result<BoxedTransportStream, CoreError>> {
+        let payload = self.0.upgrade()?;
+        Some(
+            payload
+                .carrier
+                .open(&spec.server, &spec.download, &spec.dialer)
+                .await,
+        )
+    }
+}
+
 /// Opens one Mux.Cool parent: the VLESS Mux command to `v1.mux.cool:9527`,
 /// as Xray's `DialingWorkerFactory` hands it to the VLESS outbound. Vision
 /// keeps its padding layer; the pinned server then admits only UDP children.
@@ -4697,9 +4753,7 @@ async fn open_vless_command_stream(
     transport_dialer: &TransportDialer,
 ) -> Result<BoxedTransportStream, CoreError> {
     let stream = outbound
-        .payload
-        .carrier
-        .open(resolved_server, resolved_download, transport_dialer)
+        .open_carrier(resolved_server, resolved_download, transport_dialer)
         .await?;
     let mut stream = encryption::wrap(stream, outbound.encryption(), flow.uses_vision()).await?;
     let request = VlessRequest {
@@ -4874,6 +4928,7 @@ mod tests {
                     flow: None,
                     level: 0,
                     vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
+                    pre_connections: 0,
                 }],
             }),
         }
@@ -6055,12 +6110,14 @@ mod tests {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
                 mux: None,
+                pre_connections: None,
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
                     flow: None,
                     level: 0,
                     vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
+                    pre_connections: 0,
                 },
                 encryption: None,
                 carrier: StreamCarrier {
@@ -9319,12 +9376,14 @@ mod tests {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
                 mux: None,
+                pre_connections: None,
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
                     flow: Some("xtls-rprx-vision".to_owned()),
                     level: 0,
                     vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
+                    pre_connections: 0,
                 },
                 encryption: None,
                 carrier: StreamCarrier {
@@ -9359,12 +9418,14 @@ mod tests {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
                 mux: None,
+                pre_connections: None,
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
                     flow: Some(VISION_FLOW.to_owned()),
                     level: 0,
                     vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
+                    pre_connections: 0,
                 },
                 encryption: None,
                 carrier: StreamCarrier {
@@ -9417,12 +9478,14 @@ mod tests {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
                 mux: None,
+                pre_connections: None,
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
                     flow: Some(VISION_FLOW.to_owned()),
                     level: 0,
                     vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
+                    pre_connections: 0,
                 },
                 encryption: None,
                 carrier: StreamCarrier {
@@ -9500,12 +9563,14 @@ mod tests {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
                 mux: None,
+                pre_connections: None,
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
                     flow: Some(VISION_FLOW.to_owned()),
                     level: 0,
                     vision_seed: [0, 0, 0, 0],
+                    pre_connections: 0,
                 },
                 encryption: None,
                 carrier: StreamCarrier {
@@ -9578,12 +9643,14 @@ mod tests {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
                 mux: None,
+                pre_connections: None,
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
                     flow: Some(VISION_FLOW.to_owned()),
                     level: 0,
                     vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
+                    pre_connections: 0,
                 },
                 encryption: None,
                 carrier: StreamCarrier {
@@ -9643,12 +9710,14 @@ mod tests {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
                 mux: None,
+                pre_connections: None,
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
                     flow: Some("xtls-rprx-vision-udp443".to_owned()),
                     level: 0,
                     vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
+                    pre_connections: 0,
                 },
                 encryption: None,
                 carrier: StreamCarrier {
@@ -9718,12 +9787,14 @@ mod tests {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
                 mux: None,
+                pre_connections: None,
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
                     flow: Some("xtls-rprx-vision-udp443".to_owned()),
                     level: 0,
                     vision_seed: [0, 0, 0, 0],
+                    pre_connections: 0,
                 },
                 encryption: None,
                 carrier: StreamCarrier {
@@ -10915,5 +10986,164 @@ mod address_port_tests {
                 "addressPortStrategy"
             ))
         ));
+    }
+}
+
+#[cfg(test)]
+mod testpre_tests {
+    use super::*;
+    use serde_json::json;
+    use tokio::{io::AsyncReadExt, net::TcpListener, sync::mpsc};
+
+    const ID: &str = "27848739-7e62-4138-9fd3-098a63964b6b";
+
+    fn vless(port: u16, testpre: u32) -> VlessTcpOutbound {
+        let config = xray_config::parse_xray_json(
+            &json!({"outbounds": [{"protocol": "vless", "settings": {"address": "127.0.0.1",
+                "port": port, "id": ID, "encryption": "none", "testpre": testpre}}]})
+            .to_string(),
+        )
+        .unwrap_or_else(|error| panic!("{error:?}"))
+        .config;
+        let TcpOutbound::Vless(outbound) = build_tcp_outbound(&config.outbounds[0]).unwrap() else {
+            panic!("vless");
+        };
+        *outbound
+    }
+
+    /// A listener that hands over every connection it accepts.
+    async fn server() -> (u16, mpsc::UnboundedReceiver<tokio::net::TcpStream>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (accepted, connections) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                if accepted.send(stream).is_err() {
+                    return;
+                }
+            }
+        });
+        (port, connections)
+    }
+
+    fn drain(
+        connections: &mut mpsc::UnboundedReceiver<tokio::net::TcpStream>,
+    ) -> Vec<tokio::net::TcpStream> {
+        std::iter::from_fn(|| connections.try_recv().ok()).collect()
+    }
+
+    fn target() -> Target {
+        Target::new(
+            RoutingTargetAddr::Domain("example.com".into()),
+            443,
+            RoutingNetwork::Tcp,
+        )
+    }
+
+    /// Nothing opens before the first request. Then each of the `testpre`
+    /// dialers opens a connection, the request takes one, and its dialer
+    /// opens another 200 ms later; the next request takes a held one.
+    #[tokio::test]
+    async fn vless_opens_testpre_connections_ahead_of_requests() {
+        let (port, mut connections) = server().await;
+        let outbound = vless(port, 2);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(drain(&mut connections).is_empty());
+
+        let dialer = TransportDialer::system().unwrap();
+        let mut stream = open_vless_tcp_stream_with_resolver_and_dialer(
+            &outbound,
+            &target(),
+            &SystemDnsResolver,
+            &dialer,
+        )
+        .await
+        .unwrap();
+        stream.write_all(b"payload").await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let mut first = drain(&mut connections);
+        assert_eq!(first.len(), 2);
+        // One of them carries the request: VLESS version 0, then the ID.
+        let mut carried = 0;
+        for connection in &mut first {
+            let mut header = [0; 17];
+            if tokio::time::timeout(
+                Duration::from_millis(200),
+                connection.read_exact(&mut header),
+            )
+            .await
+            .is_ok()
+            {
+                assert_eq!(header[0], 0);
+                assert_eq!(&header[1..], uuid::Uuid::parse_str(ID).unwrap().as_bytes());
+                carried += 1;
+            }
+        }
+        assert_eq!(carried, 1);
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert_eq!(drain(&mut connections).len(), 1);
+
+        // A held connection serves the next request without a new dial.
+        let _second = open_vless_tcp_stream_with_resolver_and_dialer(
+            &outbound,
+            &target(),
+            &SystemDnsResolver,
+            &dialer,
+        )
+        .await
+        .unwrap();
+        assert!(drain(&mut connections).is_empty());
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert_eq!(drain(&mut connections).len(), 1);
+        outbound.close();
+        outbound.join().await;
+    }
+
+    /// UDP requests, which open a command stream, take them too, and
+    /// closing the outbound closes the held ones.
+    #[tokio::test]
+    async fn vless_udp_takes_testpre_connections_and_close_closes_them() {
+        let (port, mut connections) = server().await;
+        let outbound = vless(port, 1);
+        let dialer = TransportDialer::system().unwrap();
+        let udp = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 53))),
+            53,
+            RoutingNetwork::Udp,
+        );
+        let _udp = open_vless_udp_stream_with_resolver_and_dialer(
+            &outbound,
+            &udp,
+            &SystemDnsResolver,
+            &dialer,
+        )
+        .await
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let mut accepted = drain(&mut connections);
+        // The one that carried the request, and its refill.
+        assert_eq!(accepted.len(), 2);
+        outbound.close();
+        outbound.join().await;
+        let mut byte = [0; 1];
+        let held = accepted.pop().unwrap();
+        let mut held = held;
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), held.read(&mut byte))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+        let error = open_vless_tcp_stream_with_resolver_and_dialer(
+            &outbound,
+            &target(),
+            &SystemDnsResolver,
+            &dialer,
+        )
+        .await
+        .err()
+        .expect("a closed outbound has no testpre connections");
+        assert!(error.to_string().contains("closed"), "{error}");
     }
 }
