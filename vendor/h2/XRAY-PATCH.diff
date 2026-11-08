@@ -1,6 +1,6 @@
 --- a/src/client.rs
 +++ b/src/client.rs
-@@ -348,6 +348,10 @@
+@@ -348,6 +348,20 @@
      ///
      /// When this gets exhausted, we issue a GOAWAY with `ENHANCE_YOUR_CALM`.
      data_frame_budget: proto::DataFrameBudget,
@@ -8,18 +8,46 @@
 +    /// Released stream capacity that triggers a WINDOW_UPDATE, or `None` to
 +    /// wait for half of the remaining window.
 +    stream_window_update_threshold: Option<u32>,
++
++    /// xray-rust: the largest dynamic table the encoder keeps, whatever the
++    /// server allows.
++    send_header_table_size_limit: Option<u32>,
++
++    /// xray-rust: `:authority` right after `:method` in requests.
++    authority_after_method: bool,
++
++    /// xray-rust: HPACK representations as Go's encoder picks them.
++    go_hpack_choices: bool,
  }
  
  #[derive(Debug)]
-@@ -669,6 +673,7 @@
+@@ -375,6 +389,14 @@
+         Poll::Ready(Ok(()))
+     }
+ 
++    /// xray-rust: ready once the server's first `SETTINGS` frame has been
++    /// applied, so that [`Self::is_extended_connect_protocol_enabled`]
++    /// reports the server's choice; an error if the connection failed first.
++    /// One task at a time may wait. The [`Connection`] must be polled.
++    pub fn poll_remote_settings(&mut self, cx: &mut Context) -> Poll<Result<(), crate::Error>> {
++        self.inner.poll_remote_settings(cx).map_err(Into::into)
++    }
++
+     /// Consumes `self`, returning a future that returns `self` back once it is
+     /// ready to send a request.
+     ///
+@@ -669,6 +691,10 @@
              stream_id: 1.into(),
              local_max_error_reset_streams: Some(proto::DEFAULT_LOCAL_RESET_COUNT_MAX),
              data_frame_budget: proto::DataFrameBudget::Auto,
 +            stream_window_update_threshold: None,
++            send_header_table_size_limit: None,
++            authority_after_method: false,
++            go_hpack_choices: false,
          }
      }
  
-@@ -1175,6 +1180,19 @@
+@@ -1175,6 +1201,45 @@
          self
      }
  
@@ -36,10 +64,49 @@
 +        self
 +    }
 +
++    /// Caps the dynamic table the HPACK encoder keeps at `size` bytes, below
++    /// what the server's `SETTINGS_HEADER_TABLE_SIZE` allows; a smaller
++    /// table is announced at the start of the first header block.
++    ///
++    /// This is Go's `hpack.Encoder.SetMaxDynamicTableSizeLimit`. Zero sends
++    /// every field without indexing it.
++    pub fn send_header_table_size_limit(&mut self, size: u32) -> &mut Self {
++        self.send_header_table_size_limit = Some(size);
++        self
++    }
++
++    /// Writes `:authority` right after `:method` in request header blocks,
++    /// before `:scheme` and `:path`, as Chrome and Go's HTTP/2 writers do.
++    pub fn authority_after_method(&mut self, enabled: bool) -> &mut Self {
++        self.authority_after_method = enabled;
++        self
++    }
++
++    /// Picks HPACK representations as Go's `hpack.Encoder` does: a string
++    /// in Huffman code only when that is shorter, and a name in the static
++    /// table by its last entry (`:method` 3, `:path` 5) instead of its first.
++    pub fn go_hpack_choices(&mut self, enabled: bool) -> &mut Self {
++        self.go_hpack_choices = enabled;
++        self
++    }
++
      /// Sets the first stream ID to something other than 1.
      #[cfg(feature = "unstable")]
      pub fn initial_stream_id(&mut self, stream_id: u32) -> &mut Self {
-@@ -1366,6 +1384,7 @@
+@@ -1349,6 +1414,12 @@
+             codec.set_max_recv_header_list_size(max as usize);
+         }
+ 
++        if let Some(limit) = builder.send_header_table_size_limit {
++            codec.set_send_header_table_size_limit(limit as usize);
++        }
++        codec.set_authority_first(builder.authority_after_method);
++        codec.set_go_hpack_choices(builder.go_hpack_choices);
++
+         // Send initial settings frame
+         codec
+             .buffer(builder.settings.clone().into())
+@@ -1366,6 +1437,7 @@
                  local_error_reset_streams_max: builder.local_max_error_reset_streams,
                  settings: builder.settings,
                  data_frame_budget: builder.data_frame_budget,
@@ -47,6 +114,377 @@
              },
          );
          let send_request = SendRequest {
+--- a/src/codec/framed_write.rs
++++ b/src/codec/framed_write.rs
+@@ -343,6 +343,21 @@
+         self.encoder.hpack.update_max_size(val);
+     }
+ 
++    /// xray-rust: caps the HPACK encoder's dynamic table at `val` bytes.
++    pub fn set_header_table_size_limit(&mut self, val: usize) {
++        self.encoder.hpack.set_max_allowed_size(val);
++    }
++
++    /// xray-rust: puts `:authority` right after `:method`.
++    pub fn set_authority_first(&mut self, enabled: bool) {
++        self.encoder.hpack.set_authority_first(enabled);
++    }
++
++    /// xray-rust: picks HPACK representations as Go's encoder does.
++    pub fn set_go_hpack_choices(&mut self, enabled: bool) {
++        self.encoder.hpack.set_go_choices(enabled);
++    }
++
+     /// Retrieve the last data frame that has been sent
+     pub fn take_last_data_frame(&mut self) -> Option<frame::Data<B>> {
+         self.encoder.last_data_frame.take()
+--- a/src/codec/mod.rs
++++ b/src/codec/mod.rs
+@@ -95,6 +95,21 @@
+         self.framed_write().set_header_table_size(val)
+     }
+ 
++    /// xray-rust: caps the encoder's dynamic table, whatever the peer allows.
++    pub fn set_send_header_table_size_limit(&mut self, val: usize) {
++        self.framed_write().set_header_table_size_limit(val)
++    }
++
++    /// xray-rust: puts `:authority` right after `:method` in header blocks.
++    pub fn set_authority_first(&mut self, enabled: bool) {
++        self.framed_write().set_authority_first(enabled)
++    }
++
++    /// xray-rust: picks HPACK representations as Go's encoder does.
++    pub fn set_go_hpack_choices(&mut self, enabled: bool) {
++        self.framed_write().set_go_hpack_choices(enabled)
++    }
++
+     /// Set the decoder header table size size.
+     pub fn set_recv_header_table_size(&mut self, val: usize) {
+         self.inner.set_header_table_size(val)
+--- a/src/frame/headers.rs
++++ b/src/frame/headers.rs
+@@ -82,6 +82,9 @@
+     /// Pseudo headers
+     pseudo: Option<Pseudo>,
+ 
++    /// xray-rust: `:authority` right after `:method`.
++    authority_first: bool,
++
+     /// Header fields
+     fields: header::IntoIter<HeaderValue>,
+ }
+@@ -721,6 +724,12 @@
+                 return Some(Method(method));
+             }
+ 
++            if self.authority_first {
++                if let Some(authority) = pseudo.authority.take() {
++                    return Some(Authority(authority));
++                }
++            }
++
+             if let Some(scheme) = pseudo.scheme.take() {
+                 return Some(Scheme(scheme));
+             }
+@@ -994,6 +1003,7 @@
+         hpack.clear();
+         let headers = Iter {
+             pseudo: Some(self.pseudo),
++            authority_first: encoder.authority_first(),
+             fields: self.fields.into_iter(),
+         };
+ 
+@@ -1103,6 +1113,39 @@
+     fn huff_decode(src: &[u8]) -> BytesMut {
+         let mut buf = BytesMut::new();
+         huffman::decode(src, &mut buf).unwrap()
++    }
++
++    #[test]
++    fn authority_first_follows_method() {
++        let pseudo_names = |authority_first: bool| {
++            let mut encoder = Encoder::default();
++            encoder.set_authority_first(authority_first);
++            let pseudo = Pseudo::request(
++                Method::CONNECT,
++                Uri::from_static("https://proxy.example/masque"),
++                Some(Protocol::from_static("connect-ip")),
++            );
++            let mut dst = BytesMut::new();
++            Headers::new(StreamId::from(1), pseudo, HeaderMap::new())
++                .encode(&mut encoder, &mut (&mut dst).limit(1024));
++            let mut decoder = crate::hpack::Decoder::new(4096);
++            let mut names = Vec::new();
++            decoder
++                .decode(&mut Cursor::new(&mut dst.split_off(frame::HEADER_LEN)), |header| {
++                    names.push(String::from_utf8_lossy(header.name().as_slice()).into_owned());
++                    ControlFlow::Continue(())
++                })
++                .unwrap();
++            names
++        };
++        assert_eq!(
++            pseudo_names(true),
++            [":method", ":authority", ":scheme", ":path", ":protocol"]
++        );
++        assert_eq!(
++            pseudo_names(false),
++            [":method", ":scheme", ":authority", ":path", ":protocol"]
++        );
+     }
+ 
+     #[test]
+--- a/src/hpack/encoder.rs
++++ b/src/hpack/encoder.rs
+@@ -18,6 +18,12 @@
+     /// across frames instead of being allocated and freed per frame. See
+     /// `take_scratch` / `return_scratch`.
+     scratch: BytesMut,
++    /// xray-rust: whether `:authority` follows `:method` in request header
++    /// blocks, the order Chrome and Go's HTTP/2 writers use.
++    authority_first: bool,
++    /// xray-rust: whether representations are picked as Go's `hpack`
++    /// encoder picks them.
++    go_choices: bool,
+ }
+ 
+ #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+@@ -35,11 +41,15 @@
+             max_allowed_size: DEFAULT_MAX_ALLOWED_SIZE,
+             size_update: None,
+             scratch: BytesMut::new(),
++            authority_first: false,
++            go_choices: false,
+         }
+     }
+ 
+-    #[cfg(test)]
+-    fn set_max_allowed_size(&mut self, max: usize) {
++    /// Caps the dynamic table at `max` bytes whatever the peer allows; a
++    /// smaller table is announced at the start of the next header block.
++    /// xray-rust: also Go's `Encoder.SetMaxDynamicTableSizeLimit`.
++    pub(crate) fn set_max_allowed_size(&mut self, max: usize) {
+         self.max_allowed_size = max;
+ 
+         if self.table.max_size() > max {
+@@ -47,6 +57,34 @@
+         }
+     }
+ 
++    /// xray-rust: puts `:authority` right after `:method` in request header
++    /// blocks, instead of after `:scheme`.
++    pub(crate) fn set_authority_first(&mut self, enabled: bool) {
++        self.authority_first = enabled;
++    }
++
++    /// xray-rust: whether `:authority` follows `:method`.
++    pub(crate) fn authority_first(&self) -> bool {
++        self.authority_first
++    }
++
++    /// xray-rust: picks representations as Go's `hpack.Encoder` does: a
++    /// string in Huffman code only when that is shorter, and a name's last
++    /// static table entry, where upstream takes its first.
++    pub(crate) fn set_go_choices(&mut self, enabled: bool) {
++        self.go_choices = enabled;
++    }
++
++    /// The static index a name is referenced by: Go's `byName` keeps a
++    /// name's last entry.
++    fn name_index(&self, idx: usize) -> usize {
++        match idx {
++            2 | 4 | 6 if self.go_choices => idx + 1,
++            8 if self.go_choices => 14,
++            _ => idx,
++        }
++    }
++
+     /// Takes the reusable buffer for one header-block encode.
+     ///
+     /// The buffer is returned by `return_scratch` once the encoded block has
+@@ -160,7 +198,13 @@
+             Index::Name(idx, _) => {
+                 let header = self.table.resolve(index);
+ 
+-                encode_not_indexed(idx, header.value_slice(), header.is_sensitive(), dst);
++                encode_not_indexed(
++                    self.name_index(idx),
++                    header.value_slice(),
++                    header.is_sensitive(),
++                    self.go_choices,
++                    dst,
++                );
+             }
+             Index::Inserted(_) => {
+                 let header = self.table.resolve(index);
+@@ -169,16 +213,16 @@
+ 
+                 dst.put_u8(0b0100_0000);
+ 
+-                encode_str(header.name().as_slice(), dst);
+-                encode_str(header.value_slice(), dst);
++                encode_str(header.name().as_slice(), self.go_choices, dst);
++                encode_str(header.value_slice(), self.go_choices, dst);
+             }
+             Index::InsertedValue(idx, _) => {
+                 let header = self.table.resolve(index);
+ 
+                 assert!(!header.is_sensitive());
+ 
+-                encode_int(idx, 6, 0b0100_0000, dst);
+-                encode_str(header.value_slice(), dst);
++                encode_int(self.name_index(idx), 6, 0b0100_0000, dst);
++                encode_str(header.value_slice(), self.go_choices, dst);
+             }
+             Index::NotIndexed(_) => {
+                 let header = self.table.resolve(index);
+@@ -187,6 +231,7 @@
+                     header.name().as_slice(),
+                     header.value_slice(),
+                     header.is_sensitive(),
++                    self.go_choices,
+                     dst,
+                 );
+             }
+@@ -206,7 +251,13 @@
+             | Index::InsertedValue(..) => {
+                 let idx = self.table.resolve_idx(last);
+ 
+-                encode_not_indexed(idx, value.as_ref(), value.is_sensitive(), dst);
++                encode_not_indexed(
++                    self.name_index(idx),
++                    value.as_ref(),
++                    value.is_sensitive(),
++                    self.go_choices,
++                    dst,
++                );
+             }
+             Index::NotIndexed(_) => {
+                 let last = self.table.resolve(last);
+@@ -215,6 +266,7 @@
+                     last.name().as_slice(),
+                     value.as_ref(),
+                     value.is_sensitive(),
++                    self.go_choices,
+                     dst,
+                 );
+             }
+@@ -232,28 +284,36 @@
+     encode_int(val, 5, 0b0010_0000, dst)
+ }
+ 
+-fn encode_not_indexed(name: usize, value: &[u8], sensitive: bool, dst: &mut BytesMut) {
++fn encode_not_indexed(name: usize, value: &[u8], sensitive: bool, go: bool, dst: &mut BytesMut) {
+     if sensitive {
+         encode_int(name, 4, 0b10000, dst);
+     } else {
+         encode_int(name, 4, 0, dst);
+     }
+ 
+-    encode_str(value, dst);
++    encode_str(value, go, dst);
+ }
+ 
+-fn encode_not_indexed2(name: &[u8], value: &[u8], sensitive: bool, dst: &mut BytesMut) {
++fn encode_not_indexed2(
++    name: &[u8],
++    value: &[u8],
++    sensitive: bool,
++    go: bool,
++    dst: &mut BytesMut,
++) {
+     if sensitive {
+         dst.put_u8(0b10000);
+     } else {
+         dst.put_u8(0);
+     }
+ 
+-    encode_str(name, dst);
+-    encode_str(value, dst);
++    encode_str(name, go, dst);
++    encode_str(value, go, dst);
+ }
+ 
+-fn encode_str(val: &[u8], dst: &mut BytesMut) {
++/// Encodes a string literal; `go` keeps it raw unless Huffman code is
++/// shorter, as Go's `appendHpackString` does.
++fn encode_str(val: &[u8], go: bool, dst: &mut BytesMut) {
+     if !val.is_empty() {
+         let idx = position(dst);
+ 
+@@ -265,6 +325,13 @@
+ 
+         let huff_len = position(dst) - (idx + 1);
+ 
++        if go && huff_len >= val.len() {
++            dst.truncate(idx);
++            encode_int(val.len(), 7, 0, dst);
++            dst.put_slice(val);
++            return;
++        }
++
+         if encode_int_one_byte(huff_len, 7) {
+             // Write the string head
+             dst[idx] = 0x80 | huff_len as u8;
+@@ -749,6 +816,57 @@
+     #[ignore]
+     fn test_evicted_overflow() {
+         // Not sure what the best way to do this is.
++    }
++
++    #[test]
++    fn a_zero_table_limit_announces_itself_and_indexes_nothing() {
++        let mut encoder = Encoder::default();
++        encoder.set_max_allowed_size(0);
++        // The server allowing a table changes nothing.
++        encoder.update_max_size(4096);
++        // A size update to zero, then a literal without indexing.
++        let first = encode(&mut encoder, vec![header("x-custom", "1")]);
++        assert_eq!([0x20, 0x00], first[..2]);
++        // A static name is referenced, its value still not indexed.
++        let method = encode(&mut encoder, vec![method("CONNECT")]);
++        assert_eq!(0x02, method[0]);
++        // Nothing was added to the table: the same literal again.
++        let again = encode(&mut encoder, vec![header("x-custom", "1")]);
++        assert_eq!(first[1..], again[..]);
++        assert_eq!(0, encoder.table.size());
++    }
++
++    #[test]
++    fn go_choices_pick_raw_strings_and_last_static_names() {
++        use crate::hpack::BytesStr;
++
++        let mut encoder = Encoder::default();
++        encoder.set_max_allowed_size(0);
++        encoder.set_go_choices(true);
++        let res = encode(
++            &mut encoder,
++            vec![method("CONNECT"), header("capsule-protocol", "?1")],
++        );
++        // `:method` by its last static entry, POST, and CONNECT raw: its
++        // Huffman code is no shorter.
++        assert_eq!([0x20, 0x03, 0x07], res[..3]);
++        assert_eq!(b"CONNECT", &res[3..10]);
++        // A Huffman name, then `?1` raw.
++        assert_eq!(0x00, res[10]);
++        assert_eq!(0x80, res[11] & 0x80);
++        assert_eq!([0x02, b'?', b'1'], res[res.len() - 3..]);
++        // `:path` by its last entry, a long value in Huffman code.
++        let path = encode(
++            &mut encoder,
++            vec![Header::Path(BytesStr::from_static("/masque/ip/"))],
++        );
++        assert_eq!(0x05, path[0]);
++        assert_eq!(0x80, path[1] & 0x80);
++        // Upstream keeps the first entry and Huffman code throughout.
++        let mut upstream = Encoder::default();
++        upstream.set_max_allowed_size(0);
++        let res = encode(&mut upstream, vec![method("CONNECT")]);
++        assert_eq!([0x20, 0x02, 0x80 | 7], res[..3]);
+     }
+ 
+     fn encode(e: &mut Encoder, hdrs: Vec<Header<Option<HeaderName>>>) -> BytesMut {
 --- a/src/lib.rs
 +++ b/src/lib.rs
 @@ -132,7 +132,7 @@
@@ -234,6 +672,103 @@
          };
          let mut recv = Recv::new(peer::Dyn::Server, &config);
          let mut store = Store::new();
+--- a/src/proto/streams/streams.rs
++++ b/src/proto/streams/streams.rs
+@@ -103,6 +103,12 @@
+ 
+     /// If the connection errors, a copy is kept for any StreamRefs.
+     conn_error: Option<proto::Error>,
++
++    /// xray-rust: whether the peer's first SETTINGS frame was applied.
++    remote_settings: bool,
++
++    /// xray-rust: the task waiting for the peer's first SETTINGS frame.
++    remote_settings_waker: Option<Waker>,
+ }
+ 
+ /// Contains the buffer of frames to be written to the wire.
+@@ -246,15 +252,32 @@
+ 
+         me.counts.apply_remote_settings(frame, is_initial);
+ 
+-        me.actions.send.apply_remote_settings(
++        let result = me.actions.send.apply_remote_settings(
+             frame,
+             send_buffer,
+             &mut me.store,
+             &mut me.counts,
+             &mut me.actions.task,
+-        )
++        );
++        if is_initial {
++            me.actions.remote_settings = true;
++            me.actions.wake_remote_settings();
++        }
++        result
+     }
+ 
++    /// xray-rust: ready once the peer's first SETTINGS frame was applied, or
++    /// with the connection's error once it failed first.
++    pub fn poll_remote_settings(&self, cx: &Context) -> Poll<Result<(), proto::Error>> {
++        let mut me = self.inner.lock().unwrap();
++        if me.actions.remote_settings {
++            return Poll::Ready(Ok(()));
++        }
++        me.actions.ensure_no_conn_error()?;
++        me.actions.remote_settings_waker = Some(cx.waker().clone());
++        Poll::Pending
++    }
++
+     pub fn apply_local_settings(&mut self, frame: &frame::Settings) -> Result<(), Error> {
+         let mut me = self.inner.lock().unwrap();
+         let me = &mut *me;
+@@ -461,6 +484,8 @@
+                 send: Send::new(&config),
+                 task: None,
+                 conn_error: None,
++                remote_settings: false,
++                remote_settings_waker: None,
+             },
+             store: Store::new(),
+             refs: 1,
+@@ -795,6 +820,7 @@
+         });
+ 
+         actions.conn_error = Some(err);
++        actions.wake_remote_settings();
+ 
+         last_processed_id
+     }
+@@ -826,6 +852,7 @@
+         });
+ 
+         actions.conn_error = Some(err);
++        actions.wake_remote_settings();
+ 
+         Ok(())
+     }
+@@ -953,6 +980,7 @@
+                 .into(),
+             );
+         }
++        actions.wake_remote_settings();
+ 
+         tracing::trace!("Streams::recv_eof");
+ 
+@@ -1830,6 +1858,13 @@
+             self.send.ensure_not_idle(id)
+         } else {
+             self.recv.ensure_not_idle(id)
++        }
++    }
++
++    /// xray-rust: wakes the task waiting for the peer's first SETTINGS.
++    fn wake_remote_settings(&mut self) {
++        if let Some(waker) = self.remote_settings_waker.take() {
++            waker.wake();
+         }
+     }
+ 
 --- a/src/server.rs
 +++ b/src/server.rs
 @@ -1535,6 +1535,7 @@

@@ -95,6 +95,21 @@ impl<T, B> Codec<T, B> {
         self.framed_write().set_header_table_size(val)
     }
 
+    /// xray-rust: caps the encoder's dynamic table, whatever the peer allows.
+    pub fn set_send_header_table_size_limit(&mut self, val: usize) {
+        self.framed_write().set_header_table_size_limit(val)
+    }
+
+    /// xray-rust: puts `:authority` right after `:method` in header blocks.
+    pub fn set_authority_first(&mut self, enabled: bool) {
+        self.framed_write().set_authority_first(enabled)
+    }
+
+    /// xray-rust: picks HPACK representations as Go's encoder does.
+    pub fn set_go_hpack_choices(&mut self, enabled: bool) {
+        self.framed_write().set_go_hpack_choices(enabled)
+    }
+
     /// Set the decoder header table size size.
     pub fn set_recv_header_table_size(&mut self, val: usize) {
         self.inner.set_header_table_size(val)
