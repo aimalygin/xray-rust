@@ -258,6 +258,20 @@ class AppleAcceptanceV09Tests(unittest.TestCase):
         self.assertEqual(written["parts"], ["legacy", "v07", "v08"])
         self.assertEqual(remaining, ["server.log"])  # keys, configs and parts removed
 
+    def test_legacy_v09_parts_are_drawn_again_when_a_port_repeats(self):
+        # The generators reserve ports one at a time; a repeat draws the set again.
+        def parts(ports):
+            return ({"inbounds": [{"port": port, "protocol": "x"} for port in ports]},
+                    [{"label": label} for label in acceptance.LEGACY_V09])
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                acceptance, "legacy_v09_parts", side_effect=[parts([7, 7]), parts([7, 8])]) as draw:
+            acceptance.write_legacy_v09(Path(directory), "127.0.0.1", 1, 2, 3, **KW)
+        self.assertEqual(draw.call_count, 2)
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                acceptance, "legacy_v09_parts", side_effect=[parts([7, 7])] * 16):
+            with self.assertRaisesRegex(RuntimeError, "same carrier port twice"):
+                acceptance.write_legacy_v09(Path(directory), "127.0.0.1", 1, 2, 3, **KW)
+
     def test_android_legacy_v09_case_ids_are_the_transition_names(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
