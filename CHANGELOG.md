@@ -10,6 +10,12 @@ long-term supported release series.
 
 ## Unreleased
 
+- VLESS UDP through SOCKS or TUN no longer stops for good when a response
+  arrives in pieces. The relay dropped a response read that had already taken
+  a frame's head whenever an outgoing datagram or a flush came first, and
+  then read the rest of the stream out of step. Transports that deliver one
+  write in several reads (WebSocket, gRPC, XHTTP and now `xmc`) made it
+  likely; the reader now keeps what it took.
 - The `sudoku` mask hides every byte as sudoku clues, with Xray-core's
   tables: as a TCP mask on every TCP carrier, REALITY included, and as a UDP
   mask on mKCP. Entropy, ASCII and custom layouts, rotating tables and

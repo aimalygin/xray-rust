@@ -1,7 +1,7 @@
 use std::io;
 use std::net::IpAddr;
 
-use bytes::Bytes;
+use bytes::{Buf, Bytes, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use xray_routing::{Network, Target, TargetAddr};
 
@@ -38,6 +38,113 @@ where
     let mut payload = vec![0; usize::from(len)];
     reader.read_exact(&mut payload).await?;
     Ok(Bytes::from(payload))
+}
+
+/// Reads VLESS UDP responses so that a `select!` may drop a read halfway:
+/// the bytes a read took stay here, and only whole frames leave. The
+/// one-shot readers below lose a frame's head when dropped after reading it,
+/// which a transport that delivers a frame in pieces makes likely.
+#[derive(Debug, Default)]
+pub struct UdpResponseReader {
+    buffer: BytesMut,
+}
+
+/// How much one read from the stream makes room for.
+const RESPONSE_READ_CHUNK: usize = 16 * 1024;
+
+impl UdpResponseReader {
+    /// The next length-prefixed packet, as [`read_udp_packet`] reads it.
+    pub async fn read_udp_packet<R>(&mut self, reader: &mut R) -> io::Result<Bytes>
+    where
+        R: AsyncRead + Unpin,
+    {
+        loop {
+            if let Some((payload, used)) = decode_udp_packet(&self.buffer) {
+                self.buffer.advance(used);
+                return Ok(payload);
+            }
+            self.fill(reader).await?;
+        }
+    }
+
+    /// The next XUDP packet with data, as [`read_xudp_packet`] reads it.
+    pub async fn read_xudp_packet<R>(&mut self, reader: &mut R) -> io::Result<XudpPacket>
+    where
+        R: AsyncRead + Unpin,
+    {
+        loop {
+            while let Some((packet, used)) = decode_xudp_frame(&self.buffer)? {
+                self.buffer.advance(used);
+                if let Some(packet) = packet {
+                    return Ok(packet);
+                }
+            }
+            self.fill(reader).await?;
+        }
+    }
+
+    /// One read into the buffer. `read_buf` reads nothing unless it
+    /// completes, so dropping this loses no byte.
+    async fn fill<R>(&mut self, reader: &mut R) -> io::Result<()>
+    where
+        R: AsyncRead + Unpin,
+    {
+        self.buffer.reserve(RESPONSE_READ_CHUNK);
+        if reader.read_buf(&mut self.buffer).await? == 0 {
+            return Err(io::ErrorKind::UnexpectedEof.into());
+        }
+        Ok(())
+    }
+}
+
+/// A length-prefixed packet at the start of `input` and its length, or
+/// `None` until it is whole.
+fn decode_udp_packet(input: &[u8]) -> Option<(Bytes, usize)> {
+    let head = input.get(..2)?;
+    let len = usize::from(u16::from_be_bytes([head[0], head[1]]));
+    let payload = input.get(2..2 + len)?;
+    Some((Bytes::copy_from_slice(payload), 2 + len))
+}
+
+/// One XUDP frame at the start of `input` and its length, or `None` until
+/// it is whole. The packet is `None` for a frame [`read_xudp_packet`] skips:
+/// one without data, with empty data, or a discard.
+fn decode_xudp_frame(input: &[u8]) -> io::Result<Option<(Option<XudpPacket>, usize)>> {
+    let Some(head) = input.get(..2) else {
+        return Ok(None);
+    };
+    let metadata_len = usize::from(u16::from_be_bytes([head[0], head[1]]));
+    if metadata_len < 4 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "xudp metadata is shorter than mux header",
+        ));
+    }
+    let Some(metadata) = input.get(2..2 + metadata_len) else {
+        return Ok(None);
+    };
+    let command = metadata[2];
+    if !matches!(command, XUDP_CMD_NEW | XUDP_CMD_KEEP | XUDP_CMD_DISCARD) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("unsupported xudp command {command}"),
+        ));
+    }
+    let source = if metadata.len() > 4 && metadata[4] == XUDP_NETWORK_UDP {
+        Some(decode_addr_port(&metadata[5..])?)
+    } else {
+        None
+    };
+    let header = 2 + metadata_len;
+    if metadata[3] != XUDP_OPT_DATA {
+        return Ok(Some((None, header)));
+    }
+    let Some((payload, used)) = decode_udp_packet(&input[header..]) else {
+        return Ok(None);
+    };
+    let packet = (!payload.is_empty() && command != XUDP_CMD_DISCARD)
+        .then_some(XudpPacket { source, payload });
+    Ok(Some((packet, header + used)))
 }
 
 pub fn encode_xudp_new_packet(
@@ -206,6 +313,9 @@ fn decode_addr_port(input: &[u8]) -> io::Result<Target> {
 
     Ok(Target::new(addr, port, Network::Udp))
 }
+
+#[cfg(test)]
+mod response_reader_tests;
 
 #[cfg(test)]
 mod tests {

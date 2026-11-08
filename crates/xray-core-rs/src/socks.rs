@@ -23,9 +23,7 @@ use xray_proxy::inbound::{
     HttpInboundAccounts, InboundUser, SocksCommand, SocksInboundAuth, SocksParseError,
     SOCKS4_GRANTED, SOCKS4_REJECTED, SOCKS4_VERSION,
 };
-use xray_proxy::vless::{
-    encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet, read_xudp_packet,
-};
+use xray_proxy::vless::{encode_xudp_keep_packet, encode_xudp_new_packet, UdpResponseReader};
 use xray_routing::{Target, TargetAddr};
 use xray_transport::{protect_udp_socket, TransportDialer};
 
@@ -1955,6 +1953,9 @@ async fn bridge_socks_udp_vless_flow(
     let flush_deadline = tokio::time::sleep(SOCKS_VLESS_UDP_FLUSH_INTERVAL);
     tokio::pin!(flush_deadline);
     let mut pending_frames = 0usize;
+    // The read below loses to every other branch it is still waiting in;
+    // the bytes it took wait here for the next one.
+    let mut responses = UdpResponseReader::default();
     loop {
         tokio::select! {
             biased;
@@ -2004,7 +2005,7 @@ async fn bridge_socks_udp_vless_flow(
                     pending_frames += 1;
                 }
             }
-            packet = read_socks_vless_udp_response(&mut remote_reader, framing, fallback_source.clone()) => {
+            packet = read_socks_vless_udp_response(&mut responses, &mut remote_reader, framing, fallback_source.clone()) => {
                 let Ok((mut source, payload)) = packet else {
                     break;
                 };
@@ -2077,6 +2078,7 @@ where
 }
 
 async fn read_socks_vless_udp_response<R>(
+    responses: &mut UdpResponseReader,
     reader: &mut R,
     framing: VlessUdpFraming,
     fallback_source: Target,
@@ -2086,11 +2088,11 @@ where
 {
     match framing {
         VlessUdpFraming::LengthPrefixed => {
-            let payload = read_udp_packet(reader).await?;
+            let payload = responses.read_udp_packet(reader).await?;
             Ok((fallback_source, payload))
         }
         VlessUdpFraming::Xudp => {
-            let packet = read_xudp_packet(reader).await?;
+            let packet = responses.read_xudp_packet(reader).await?;
             Ok((packet.source.unwrap_or(fallback_source), packet.payload))
         }
     }
