@@ -1,6 +1,8 @@
 //! The `xicmp` UDP mask against Xray-core v26.10.31's own server, which
 //! reads echo requests on raw ICMP sockets and so needs root or
-//! `CAP_NET_RAW`: `scripts/check-xicmp-interop.sh` runs these on Linux.
+//! `CAP_NET_RAW`: `scripts/check-xicmp-interop.sh` runs these on Linux, as
+//! root, with `XRAY_XICMP_LIVE=1`. Without it they skip, so the binary's
+//! other `--ignored` runs, unprivileged, pass them by.
 //! The client takes datagram ICMP sockets, and raw ones where the test may
 //! open them.
 use super::v08_carriers::exercise;
@@ -34,6 +36,18 @@ async fn kcp_server(checkout: &Path, masks: Value) -> XrayServer {
     .await
 }
 
+/// Whether this run may start Xray-core's xicmp server: only
+/// `check-xicmp-interop.sh` says so.
+fn live() -> bool {
+    let live = env::var_os("XRAY_XICMP_LIVE").is_some_and(|value| value == "1");
+    if !live {
+        eprintln!(
+            "xicmp: needs root and XRAY_XICMP_LIVE=1, as check-xicmp-interop.sh runs it; skipped"
+        );
+    }
+    live
+}
+
 /// Whether this process may open raw ICMP sockets.
 fn raw_icmp() -> bool {
     socket2::Socket::new(
@@ -57,6 +71,9 @@ async fn check(server: &XrayServer, config: Value, case: &str) {
 #[tokio::test]
 #[ignore = "requires a pinned Xray-core with raw ICMP sockets; run check-xicmp-interop.sh"]
 async fn xicmp_carries_mkcp_to_xray() {
+    if !live() {
+        return;
+    }
     let checkout = resolve_xray_checkout();
     let server = kcp_server(&checkout, json!([xicmp(false, &[])])).await;
     let port = server.addr.port();
@@ -93,6 +110,9 @@ async fn xicmp_carries_mkcp_to_xray() {
 #[tokio::test]
 #[ignore = "requires a pinned Xray-core with raw ICMP sockets; run check-xicmp-interop.sh"]
 async fn xicmp_carries_mkcp_masks_inside_it() {
+    if !live() {
+        return;
+    }
     let checkout = resolve_xray_checkout();
     let legacy = json!({"type":"mkcp-legacy","settings":{"value":"kcp-seed"}});
     let noise = json!({"type":"noise","settings":{"noise":[{"type":"str","packet":"hello","delay":"5-10"}]}});
@@ -118,6 +138,9 @@ async fn xicmp_carries_mkcp_masks_inside_it() {
 #[tokio::test]
 #[ignore = "requires a pinned Xray-core with raw ICMP sockets; run check-xicmp-interop.sh"]
 async fn xicmp_carries_xhttp_h3() {
+    if !live() {
+        return;
+    }
     let checkout = resolve_xray_checkout();
     let xray = timeout(
         Duration::from_secs(60),

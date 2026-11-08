@@ -56,19 +56,23 @@ readonly HYSTERIA_TESTS="$(test_binary xray-transport hysteria_interop_tests)"
 # masks inside xicmp, and XHTTP over HTTP/3; Hysteria, alone and around
 # Salamander, before and after a rebind.
 readonly LIVE='
+  [ "${XRAY_XICMP_LIVE-}" = 1 ] || { echo "xicmp: XRAY_XICMP_LIVE did not reach the tests, which would skip" >&2; exit 1; }
   "$CORE_TESTS" xicmp:: --ignored --nocapture --test-threads=1
   env -u NATIVE_HYSTERIA_BINARY XRAY_HYSTERIA_BINARY="$XRAY_VLESS_FULL_BINARY" \
     "$HYSTERIA_TESTS" xicmp:: --ignored --nocapture --test-threads=1
 '
 export CORE_TESTS HYSTERIA_TESTS
 export XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT"
+# The tests skip without it, so the binaries' other --ignored runs, which go
+# without root, pass them by.
+export XRAY_XICMP_LIVE=1
 if [[ "$(id -u)" -eq 0 ]]; then
   sh -euc "$LIVE"
 else
   # As root, for the server's raw sockets, in a network namespace of its
   # own whose ping_group_range also admits the client's datagram sockets.
   # The checkout belongs to another user, whom git then has to trust.
-  sudo -n --preserve-env=CORE_TESTS,HYSTERIA_TESTS,XRAY_VLESS_FULL_BINARY,XRAY_CORE_CHECKOUT \
+  sudo -n --preserve-env=CORE_TESTS,HYSTERIA_TESTS,XRAY_VLESS_FULL_BINARY,XRAY_CORE_CHECKOUT,XRAY_XICMP_LIVE \
     env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*' \
     unshare --net sh -euc '
       ip link set lo up

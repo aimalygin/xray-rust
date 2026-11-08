@@ -1,6 +1,8 @@
 //! Hysteria through the `xicmp` mask against Xray-core's server, which
 //! reads echo requests on raw ICMP sockets and so needs root or
-//! `CAP_NET_RAW`: `scripts/check-xicmp-interop.sh` runs this on Linux.
+//! `CAP_NET_RAW`: `scripts/check-xicmp-interop.sh` runs this on Linux, as
+//! root, with `XRAY_XICMP_LIVE=1`. Without it the test skips, so the
+//! binary's other `--ignored` runs, unprivileged, pass it by.
 //! Every QUIC packet goes out in an echo request and comes back in a reply.
 use super::support::{ReferenceServer, Task, DEADLINE, SALAMANDER_PASSWORD};
 use serde_json::json;
@@ -100,10 +102,25 @@ async fn scenario(salamander: bool) {
     client.close();
 }
 
+/// Whether this run may start Xray-core's xicmp server: only
+/// `check-xicmp-interop.sh` says so.
+fn live() -> bool {
+    let live = std::env::var_os("XRAY_XICMP_LIVE").is_some_and(|value| value == "1");
+    if !live {
+        eprintln!(
+            "xicmp: needs root and XRAY_XICMP_LIVE=1, as check-xicmp-interop.sh runs it; skipped"
+        );
+    }
+    live
+}
+
 /// Alone, and with Salamander inside it.
 #[tokio::test]
 #[ignore = "requires pinned Xray Hysteria with raw ICMP sockets; use check-xicmp-interop.sh"]
 async fn xicmp_alone_and_around_salamander() {
+    if !live() {
+        return;
+    }
     for salamander in [false, true] {
         timeout(Duration::from_secs(90), scenario(salamander))
             .await
