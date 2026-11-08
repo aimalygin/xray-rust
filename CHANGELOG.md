@@ -19,7 +19,8 @@ long-term supported release series.
   [MASQUE](docs/config-compatibility.md#masque).
   - Tunnels are reused as Xray-core's `xmux` reuses them: by default one,
     retired after 1800 to 3000 seconds. `finalmask.quicParams` and the UDP
-    masks apply; congestion `brutal` runs BBR, as in Xray-core.
+    masks apply; congestion `brutal` runs BBR, as in Xray-core, and the BBR
+    profiles take over after the handshake, as on XHTTP over HTTP/3.
   - MASQUE over HTTP/2 (`tlsSettings.alpn` naming `h2` and not `h3`) and
     `warp` are not supported yet and fail the configuration.
   - Deliberate differences: a tunnel takes 16 TCP and 512 UDP flows, the

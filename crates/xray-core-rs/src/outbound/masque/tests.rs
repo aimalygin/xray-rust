@@ -219,3 +219,45 @@ fn open_timeout_adds_the_tunnel_dial() {
 }
 
 const MASQUE_DEFAULT_XMUX_FOR_TESTS: XhttpXmuxSettings = xray_config::MASQUE_DEFAULT_XMUX;
+
+/// The QUIC configuration a MASQUE outbound with `quic_params` dials with.
+fn quic_for(quic_params: serde_json::Value) -> H3QuicConfig {
+    let config = serde_json::json!({"outbounds": [{"protocol": "masque",
+        "settings": {"address": "masque.example", "port": 443},
+        "streamSettings": {"network": "masque", "security": "tls",
+            "tlsSettings": {"serverName": "masque.example"},
+            "finalmask": {"quicParams": quic_params}}}]});
+    let parsed = xray_config::parse_xray_json(&config.to_string()).unwrap();
+    let outbound = &parsed.config.outbounds[0];
+    let StreamTransport::Masque(transport) = &outbound.stream.transport else {
+        panic!("not a MASQUE transport");
+    };
+    masque_quic_config(&outbound.stream, transport).unwrap()
+}
+
+#[test]
+fn quic_runs_xrays_congestion_choices_and_bbr_profiles() {
+    use serde_json::json;
+    assert_eq!(quic_for(json!({})).congestion, H3Congestion::BbrStandard);
+    assert_eq!(
+        quic_for(json!({"bbrProfile": "conservative"})).congestion,
+        H3Congestion::BbrConservative
+    );
+    // Xray's dial runs BBR with the profile for `brutal`: nothing announces
+    // a rate.
+    assert_eq!(
+        quic_for(
+            json!({"congestion": "brutal", "brutalUp": "100 mbps", "bbrProfile": "aggressive"})
+        )
+        .congestion,
+        H3Congestion::BbrAggressive
+    );
+    assert_eq!(
+        quic_for(json!({"congestion": "reno"})).congestion,
+        H3Congestion::Reno
+    );
+    assert!(matches!(
+        quic_for(json!({"congestion": "force-brutal", "brutalUp": "100 mbps"})).congestion,
+        H3Congestion::ForceBrutal { .. }
+    ));
+}

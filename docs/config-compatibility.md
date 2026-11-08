@@ -2355,8 +2355,11 @@ below them, issues 4-byte connection IDs, refuses incoming streams, and
 keeps `finalmask.quicParams` and the UDP masks; quic-go's receive windows,
 a 30-second idle timeout and a 10-second keepalive apply where
 `quicParams` is silent, and `xmux.hKeepAlivePeriod` sets the keepalive when
-nonzero, negative turning it off. Congestion `brutal` runs BBR, as in
-Xray-core; `force-brutal` runs Brutal. The TCP fragment mask fails on
+nonzero, negative turning it off. Congestion `brutal` runs BBR with
+`bbrProfile`, as in Xray-core, and `force-brutal` runs Brutal; as on XHTTP
+over HTTP/3, a profile's BBR and Brutal take over from NewReno once the
+handshake completes, where Xray-core's dial installs them (see
+[BBR profiles](#bbr-profiles)). The TCP fragment mask fails on
 MASQUE over HTTP/3, which other TCP masks do not reach. `sockopt` applies
 to the QUIC socket, and `addressPortStrategy` and `domainStrategy` choose
 the server's address, as Xray-core's system dialer does.

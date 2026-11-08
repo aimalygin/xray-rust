@@ -632,13 +632,14 @@ through a `go test -overlay` and records its capsule encodings, its reading
 of valid and mutated capsules, the datagrams `composeDatagram` builds, its
 ICMP messages and which packets it admits; the tests replay them and
 `scripts/check-masque-interop.sh` regenerates a corpus ten times larger each
-run. 104 configuration cases carry `xray run -test` verdicts, rechecked with
-the binary each run: 94 match and 10 differ as listed above. Live against
+run. 107 configuration cases carry `xray run -test` verdicts, rechecked with
+the binary each run: 97 match and 10 differ as listed above. Live against
 Xray-core's MASQUE server over HTTP/3: TCP with a 128 KiB echo to IPv4, IPv6
 and a name resolved through the tunnel, UDP to the same three, TCP through
 the HTTP inbound, TCP and UDP through the TUN, eight parallel flows sharing
-one tunnel, the default path with a preset User-Agent, and a wrong password
-refused. Mutating 22 key branches (TTL, checksum, admission, capsule
+one tunnel, the default path with a preset User-Agent, the `conservative` and
+`aggressive` BBR profiles, and a wrong password refused. Mutating 22 key
+branches (TTL, checksum, admission, capsule
 checks, address choice, authority, User-Agent, the pool's limits and retry,
 the host and path checks) fails the tests each time.
 

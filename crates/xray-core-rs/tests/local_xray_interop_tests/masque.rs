@@ -469,3 +469,31 @@ async fn masque_h3_takes_the_default_path_and_a_custom_user_agent() {
     .await;
     core.stop().await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-masque-interop.sh"]
+async fn masque_h3_runs_xrays_bbr_profiles() {
+    let checkout = resolve_xray_checkout();
+    let server = start_server(&checkout, "h3", |_| {}).await;
+    let (tcp_port, udp_port, _tcp, _udp) = echo_servers().await;
+    for profile in ["conservative", "aggressive"] {
+        let mut config = client_config(&server, "h3", credentials());
+        config["outbounds"][0]["streamSettings"]["finalmask"] =
+            json!({"quicParams": {"bbrProfile": profile}});
+        let mut core = core(config).await;
+        let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+        check(
+            &server,
+            &format!("H3 TCP with the {profile} BBR profile"),
+            tcp_echo(proxy, ECHO_V4, tcp_port),
+        )
+        .await;
+        check(
+            &server,
+            &format!("H3 UDP with the {profile} BBR profile"),
+            udp_echo(proxy, ECHO_V4, udp_port),
+        )
+        .await;
+        core.stop().await.unwrap();
+    }
+}
