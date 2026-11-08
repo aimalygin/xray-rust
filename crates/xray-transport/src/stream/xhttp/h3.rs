@@ -173,6 +173,9 @@ pub struct H3QuicConfig {
     /// The `realm` UDP mask, outside the others: each connection's socket is
     /// introduced to the server first.
     pub udp_realm: Option<Arc<crate::realm::RealmConfig>>,
+    /// The `xicmp` UDP mask, outside the others, carrying every datagram in
+    /// ICMP echoes.
+    pub udp_xicmp: Option<Arc<crate::xicmp::XicmpConfig>>,
     pub debug: bool,
 }
 
@@ -201,6 +204,7 @@ impl Default for H3QuicConfig {
             udp_sudoku: None,
             udp_xdns: None,
             udp_realm: None,
+            udp_xicmp: None,
             debug: false,
         }
     }
@@ -250,6 +254,14 @@ impl H3QuicConfig {
                 H3Error::UdpSocket(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "an invalid xdns UDP mask, or one with udphop or sudoku",
+                ))
+            })?;
+        }
+        if self.udp_xicmp.is_some() {
+            self.hop_carrier().validate().map_err(|_| {
+                H3Error::UdpSocket(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "an xicmp UDP mask with udphop, xdns, realm, header-custom or sudoku",
                 ))
             })?;
         }
@@ -334,6 +346,7 @@ impl H3QuicConfig {
             sudoku: self.udp_sudoku.clone(),
             xdns: self.udp_xdns.clone(),
             realm: self.udp_realm.clone(),
+            xicmp: self.udp_xicmp.clone(),
             ..Default::default()
         }
     }
@@ -1249,6 +1262,10 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
             .open_xdns(carrier, config.socket_protector.clone())
             .await
             .map_err(H3Error::UdpSocket)?;
+        session
+            .open_xicmp(carrier, remote_addr.ip(), config.socket_protector.clone())
+            .await
+            .map_err(H3Error::UdpSocket)?;
         wire_peer = realm_peer.unwrap_or_else(|| carrier.next_peer(remote_addr));
         crate::hysteria::carrier::wrap(socket, remote_addr, wire_peer, carrier, &session)
             .map_err(H3Error::UdpSocket)?
@@ -1309,7 +1326,10 @@ pub async fn connect_h3_candidates(
     // A realm socket goes to the punched peer whatever the address: racing
     // candidates would introduce several sockets for one connection.
     let Some(happy_eyeballs) = happy_eyeballs.filter(|policy| {
-        !policy.try_delay.is_zero() && candidates.len() >= 2 && config.quic.udp_realm.is_none()
+        !policy.try_delay.is_zero()
+            && candidates.len() >= 2
+            && config.quic.udp_realm.is_none()
+            && config.quic.udp_xicmp.is_none()
     }) else {
         let mut config = config;
         config.remote_addr = first;

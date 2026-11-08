@@ -76,6 +76,7 @@ impl Parser<'_> {
         let udp_sudoku = self.parse_udp_sudoku(stream, index);
         let udp_xdns = self.parse_udp_xdns(stream, index);
         let udp_realm = self.parse_udp_realm(stream, index);
+        let udp_xicmp = self.parse_udp_xicmp(stream, index);
         let socket_options = self.parse_socket_options(stream, index);
         if let Some(stream) = stream {
             self.validate_stream_settings_compatibility(stream, index);
@@ -205,6 +206,54 @@ impl Parser<'_> {
                 );
             }
         }
+        if udp_xicmp.is_some() {
+            let has = |kind: &str| {
+                stream
+                    .and_then(|s| s.pointer("/finalmask/udp"))
+                    .and_then(Value::as_array)
+                    .is_some_and(|masks| {
+                        masks.iter().any(|mask| {
+                            mask.get("type")
+                                .and_then(Value::as_str)
+                                .is_some_and(|t| crate::go_lowercase(t) == kind)
+                        })
+                    })
+            };
+            let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp");
+            if !udp_carrier {
+                self.error(
+                    &path,
+                    "an xicmp UDP mask requires mKCP, Hysteria or XHTTP with exact h3 ALPN",
+                );
+            }
+            // Each must be the last mask: udphop and xicmp both open their
+            // own sockets, xdns sends to resolvers and realm punches.
+            for other in ["udphop", "xdns", "realm"] {
+                if has(other) {
+                    self.error(
+                        &path,
+                        format!("an xicmp UDP mask cannot be combined with {other}"),
+                    );
+                }
+            }
+            // Xray-core writes to the server's address and port under xicmp
+            // but reads from the replying address without one, so a
+            // header-custom mask's state never matches.
+            if udp_header_custom.is_some() {
+                self.error(
+                    &path,
+                    "a header-custom UDP mask cannot be combined with xicmp",
+                );
+            }
+            // An echo carries at most 4080 bytes; sudoku's datagram is four
+            // times a QUIC packet of at least 1200.
+            if is_quic && udp_sudoku.is_some() {
+                self.error(
+                    &path,
+                    "a sudoku UDP mask cannot run under xicmp on QUIC: its datagrams exceed the 4080 bytes an echo carries",
+                );
+            }
+        }
         // Xray-core writes to 0.0.0.0:0 under udphop but reads from the hop's
         // address, so its standalone reply never completes and prefix
         // captures never match.
@@ -261,6 +310,7 @@ impl Parser<'_> {
             tcp_xmc: tcp_masks.xmc,
             udp_xdns,
             udp_realm,
+            udp_xicmp,
             udp_noise,
             socket_options,
         })

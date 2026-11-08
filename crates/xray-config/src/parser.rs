@@ -24,6 +24,7 @@ mod vmess;
 mod wireguard;
 mod xdns;
 mod xhttp;
+mod xicmp;
 mod xmc;
 mod xray_lists;
 use xray_lists::PlainDomain;

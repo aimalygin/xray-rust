@@ -64,11 +64,11 @@ their original source identities.
 ## Still out of scope
 
 The v26.10.21 record's stage 2 remains planned separately: MASQUE/WARP,
-XDRIVE, Lua for DNS/routing/noise, newer FinalMask types (xicmp, filter),
-DNS over HTTPS resolvers for xdns and realm's UPnP/NAT-PMP `portMapping`.
+XDRIVE, Lua for DNS/routing/noise, the newer FinalMask type filter, DNS
+over HTTPS resolvers for xdns and realm's UPnP/NAT-PMP `portMapping`.
 `localOS` and custom Blackhole responses arrived in 0.10.0, and so did the
 mKCP transport with its `mkcp-legacy` masks and the `header-custom`,
-`sudoku`, `xmc`, `xdns` and `realm` masks.
+`sudoku`, `xmc`, `xdns`, `realm` and `xicmp` masks.
 
 ## Evidence
 

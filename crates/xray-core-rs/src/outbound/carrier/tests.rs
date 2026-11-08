@@ -503,3 +503,39 @@ fn realm_reaches_mkcp_and_xhttp_h3_with_its_tls_and_family() {
     tls.alpn = vec!["h2".into()];
     assert!(build_transport_layer(&h3.stream, &server, 443, &transport, VLESS_PATHS).is_err());
 }
+
+#[test]
+fn xicmp_reaches_mkcp_and_xhttp_h3_and_needs_an_address_to_send_to() {
+    let xicmp =
+        json!({"type":"xicmp","settings":{"dgram":true,"ips":["192.0.2.7","::ffff:c000:208"]}});
+    let server = TargetAddr::Domain("server.example".into());
+    let kcp = vless(json!({"network":"kcp","finalmask":{"udp":[xicmp]}}));
+    let transport = build_connector(&kcp.stream.security, &server);
+    let TransportLayer::Kcp(layer) =
+        build_transport_layer(&kcp.stream, &server, 443, &transport, VLESS_PATHS).unwrap()
+    else {
+        panic!("not mKCP")
+    };
+    let expected = xray_transport::xicmp::XicmpConfig {
+        dgram: true,
+        ips: vec!["192.0.2.7".parse().unwrap(), "192.0.2.8".parse().unwrap()],
+    };
+    assert_eq!(layer.xicmp.as_deref(), Some(&expected));
+    let h3 = vless(json!({"network":"xhttp","security":"tls",
+        "tlsSettings":{"serverName":"server.example","alpn":["h3"]},
+        "finalmask":{"udp":[xicmp],"quicParams":{"disableChromeParrot":true}}}));
+    let transport = build_connector(&h3.stream.security, &server);
+    let TransportLayer::Xhttp(xhttp) =
+        build_transport_layer(&h3.stream, &server, 443, &transport, VLESS_PATHS).unwrap()
+    else {
+        panic!("not xhttp")
+    };
+    assert_eq!(xhttp.h3_quic_config().udp_xicmp.as_deref(), Some(&expected));
+    // Without addresses Xray-core sends to the outbound's, which it never
+    // resolves: a name there fails every dial, an IP address does not.
+    let bare = vless(json!({"network":"kcp","finalmask":{"udp":[{"type":"xicmp"}]}}));
+    let transport = build_connector(&bare.stream.security, &server);
+    assert!(build_transport_layer(&bare.stream, &server, 443, &transport, VLESS_PATHS).is_err());
+    let literal = TargetAddr::Ip("192.0.2.9".parse().unwrap());
+    assert!(build_transport_layer(&bare.stream, &literal, 443, &transport, VLESS_PATHS).is_ok());
+}

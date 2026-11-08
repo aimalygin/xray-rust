@@ -35,6 +35,7 @@ fn freedom(tag: &str) -> OutboundConfig {
             tcp_xmc: None,
             udp_xdns: None,
             udp_realm: None,
+            udp_xicmp: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,

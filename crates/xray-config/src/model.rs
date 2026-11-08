@@ -1603,6 +1603,9 @@ pub struct StreamSettings {
     /// masks: the carrier's socket meets the server through a rendezvous and
     /// a punched hole.
     pub udp_realm: Option<RealmMask>,
+    /// The `xicmp` UDP mask, the outermost of mKCP's or a QUIC carrier's
+    /// masks: it carries the datagrams in ICMP echo messages.
+    pub udp_xicmp: Option<XicmpMask>,
     pub udp_noise: Option<UdpNoiseSettings>,
     pub socket_options: Option<SocketOptions>,
 }
@@ -1710,6 +1713,18 @@ pub struct XdnsResolver {
 pub enum XdnsProtocol {
     Udp,
     Tcp,
+}
+
+/// The `xicmp` mask, as Xray-core v26.10.31's `Xicmp.Build` reads it: the
+/// carrier's datagrams ride in ICMP echo requests to the server and come
+/// back in its echo replies.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct XicmpMask {
+    /// Unprivileged datagram ICMP sockets, rather than raw ones.
+    pub dgram: bool,
+    /// The server addresses to send to, one drawn for each packet; the
+    /// outbound's address when empty.
+    pub ips: Vec<std::net::IpAddr>,
 }
 
 /// The `realm` mask, as Xray-core v26.10.31's `Realm.Build` reads it: the

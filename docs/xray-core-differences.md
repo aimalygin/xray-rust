@@ -646,6 +646,44 @@ and noise inside realm; XHTTP over HTTP/3 and Hysteria, alone and with
 Salamander inside, carry the same; an unknown realm name gets no
 introduction.
 
+## xicmp
+
+The `xicmp` UDP mask writes and reads echo messages as Xray-core
+v26.10.31's client does: its identifier, sequence, client id and checksum,
+x/net/icmp's reading of replies, the drop of the system's own echo and of a
+raw socket's foreign identifiers, and Go's stripping of a raw IPv4 header.
+Deliberate differences:
+
+- Each server address gets its own socket, never bound and connected to it.
+  Xray-core binds one unconnected socket per family to the wildcard, which a
+  Network Extension refuses; replies here come only from the address each
+  packet went to, as Xray-core's Linux server sends them. A family the
+  addresses do not use needs no socket, where Xray-core fails every dial
+  unless sockets of both families open.
+- It must be the last UDP mask, and runs neither with udphop, xdns, realm
+  nor header-custom, nor on QUIC with sudoku: Xray-core fails every dial
+  with it anywhere else, the others send elsewhere, header-custom keys its
+  state by the server's port while replies come without one, and sudoku's
+  datagrams exceed what an echo carries.
+- An outbound address that is a name, with no `ips`, is refused when the
+  core starts; Xray-core never resolves it and fails every dial. With `ips`,
+  a name there must still resolve.
+- An Apple datagram socket keeps the client's identifier and receives every
+  reply from its address, so replies are told apart by identifier, as on a
+  raw socket. Xray-core's datagram sockets there also read the replies meant
+  for other connections to the same server.
+- An echo the socket has no room for is dropped, as a datagram would be;
+  Xray-core's writer waits.
+
+Evidence: `tools/xicmp-oracle` records `Xicmp.Build`'s verdicts on 36
+addresses and 13 settings, 44 echoes from Xray-core's `marshal`, 32
+checksums and 160 messages read by x/net/icmp's `ParseMessage`; the tests
+replay them all. Live against Xray-core's server on Linux, which reads ICMP
+on raw sockets, mKCP carries a TCP echo and UDP over datagram sockets, to
+the outbound's address and to two listed ones, and over raw sockets, with
+AES and noise inside xicmp; XHTTP over HTTP/3 and Hysteria, alone and with
+Salamander inside, before and after a rebind, carry the same.
+
 ## DNS `UseSystem` route probe
 
 `queryStrategy: "UseSystem"` narrows each lookup to the address families the

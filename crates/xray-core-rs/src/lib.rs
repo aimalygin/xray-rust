@@ -774,7 +774,8 @@ impl Core {
                 || outbound.stream.udp_header_custom.is_some()
                 || outbound.stream.udp_sudoku.is_some()
                 || outbound.stream.udp_xdns.is_some()
-                || outbound.stream.udp_realm.is_some())
+                || outbound.stream.udp_realm.is_some()
+                || outbound.stream.udp_xicmp.is_some())
                 && matches!(
                     outbound.settings,
                     xray_config::OutboundSettings::Freedom(_)

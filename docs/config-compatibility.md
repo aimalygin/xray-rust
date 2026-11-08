@@ -2304,6 +2304,64 @@ dial is introduced again; XHTTP introduces every QUIC connection it opens.
 `scripts/check-realm-interop.sh` replays what Xray-core's own realm code
 does and runs each carrier against its server through a local rendezvous.
 
+### xicmp mask
+
+`xicmp` carries a UDP carrier in ICMP echo messages: mKCP, Hysteria or XHTTP
+with exact `h3` ALPN. The server reads echo requests on raw ICMP sockets and
+answers in echo replies; the client sends echo requests:
+
+```json
+"finalmask": {"udp": [{"type": "xicmp", "settings": {
+  "dgram": true,
+  "ips": ["203.0.113.5"]
+}}]}
+```
+
+- `dgram`: datagram ICMP sockets, which need no privilege where the system
+  grants them (below). Without it the sockets are raw, which need root or
+  `CAP_NET_RAW`.
+- `ips`: the server addresses, read with Go's `netip.ParseAddr`; one is
+  drawn for each packet. A zone on an IPv6 address is dropped, as Xray-core
+  drops it, and an IPv4-mapped address is the IPv4 one. Empty sends to the
+  outbound's address, which must then be an IP address, else the core
+  refuses to start: Xray-core never resolves it. With `ips`, the outbound's
+  address is not used, but a name there must still resolve.
+
+Every datagram goes out as an echo request: a random identifier for the
+connection, a sequence number counting from one, then the client's random
+8-byte id and the packet, at most 4080 bytes; a larger one is dropped. The
+server answers with the identifier and sequence of the client's last request
+and the packet alone. The server's own system echoes each request back as
+well; the client drops a reply that starts with its id. On a raw socket,
+and on an Apple datagram socket, which keeps the identifier and receives
+every reply from its address, it also drops replies with another
+identifier; a Linux datagram socket gets only its own.
+
+Where the sockets come from:
+
+| System | `dgram: true` | `dgram: false` |
+|---|---|---|
+| macOS | Granted to any process (checked) | Root only |
+| Linux | Granted to the groups in `net.ipv4.ping_group_range`: the kernel's default `1 0` refuses everyone, systemd and Docker set `0 2147483647` (both checked in a container) | `CAP_NET_RAW` |
+| Android | Granted to apps: `init.rc` sets `ping_group_range` to `0 2147483647`; the sockets take the VPN's protection like the core's others (not checked on a device) | Not granted to apps |
+| iOS | Granted without entitlements, as Apple's SimplePing uses them; inside a Network Extension Apple's forum reports `bind` and reads on an unconnected socket failing with `EPERM`, which the client avoids (not checked on a device) | Not granted |
+
+Each server address gets its own socket, never bound and connected to it: an
+unbound socket is bound on its first send, and replies come only from the
+address each packet went to, as Xray-core's Linux server makes them. Linux
+datagram sockets put their own identifier in the request, and the server's
+replies with it reach them. On macOS and iOS an IPv4 datagram socket would
+return the IP header, which the client switches off as Go does.
+
+The mask must be the last UDP mask: Xray-core fails every dial with it
+anywhere else. The masks listed before it run inside it. It cannot run with
+udphop, xdns or realm, which send elsewhere, nor with header-custom, whose
+state Xray-core keys by the server's address and port while replies come
+without a port, nor on QUIC with sudoku, whose datagrams exceed what an echo
+carries. A QUIC carrier keeps its path MTU discovery off, as quic-go's is on
+a masked conn. `scripts/check-xicmp-interop.sh` compares the messages with
+Xray-core's own code and, on Linux, runs each carrier against its server.
+
 ### TLS ClientHello shaping
 
 `security: "tls"` sends a uTLS-shaped ClientHello, as Xray-core does on every

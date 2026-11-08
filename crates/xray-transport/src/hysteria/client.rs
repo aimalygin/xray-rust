@@ -410,6 +410,16 @@ impl HysteriaClient {
             .open_xdns(&config.carrier, tls.socket_protector_arc())
             .await
             .map_err(|_| HysteriaError::Connect)?;
+        // Opened with the session, so a rebind keeps the id the server
+        // knows.
+        session
+            .open_xicmp(
+                &config.carrier,
+                crate::canonicalize_socket_addr(config.remote_addr).ip(),
+                tls.socket_protector_arc(),
+            )
+            .await
+            .map_err(|_| HysteriaError::Connect)?;
         // Hysteria's default mode picks Brutal or BBR from the server's reply.
         let negotiation = match config.quic.congestion {
             H3Congestion::Brutal {
