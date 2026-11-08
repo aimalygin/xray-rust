@@ -5093,6 +5093,127 @@
         "/outbounds/0/streamSettings/finalmask/tcp/0/settings/seed": 1
       },
       "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.seed"
+    },
+    {
+      "name": "xdns-udp-kcp",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "kcp",
+              "finalmask": {
+                "udp": [
+                  {
+                    "type": "mkcp-legacy",
+                    "settings": {
+                      "value": "synthetic-seed"
+                    }
+                  },
+                  {
+                    "type": "xdns",
+                    "settings": {
+                      "domains": [
+                        {
+                          "names": [
+                            "t.example.com"
+                          ],
+                          "lenLimit": 200,
+                          "labelLimit": 40,
+                          "types": [
+                            16,
+                            1
+                          ],
+                          "edns0": 1232
+                        }
+                      ],
+                      "resolvers": [
+                        {
+                          "addrs": [
+                            "192.0.2.53",
+                            "tcp://198.51.100.53:53"
+                          ],
+                          "worker": 0
+                        }
+                      ],
+                      "extraPoll": 1
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "XDNS_MASK": "/outbounds/0/streamSettings/finalmask/udp/1/settings",
+        "XDNS_DOMAIN": "/outbounds/0/streamSettings/finalmask/udp/1/settings/domains/0",
+        "XDNS_RESOLVER": "/outbounds/0/streamSettings/finalmask/udp/1/settings/resolvers/0"
+      }
+    },
+    {
+      "name": "xdns-bad-label",
+      "accepted": false,
+      "base": "xdns-udp-kcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/domains/0/names/0": "t.example.com."
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.domains[0].names[0]"
+    },
+    {
+      "name": "xdns-resolver-name",
+      "accepted": false,
+      "base": "xdns-udp-kcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/resolvers/0/addrs/0": "dns.example"
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.resolvers[0].addrs[0]"
+    },
+    {
+      "name": "xdns-extra-poll",
+      "accepted": false,
+      "base": "xdns-udp-kcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/extraPoll": 4
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.extraPoll"
+    },
+    {
+      "name": "xdns-unknown-field",
+      "accepted": false,
+      "base": "xdns-udp-kcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/seed": 1
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.seed"
     }
   ]
 }

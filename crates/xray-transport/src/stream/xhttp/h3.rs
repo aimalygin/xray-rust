@@ -168,6 +168,8 @@ pub struct H3QuicConfig {
     pub udp_header_custom: Option<crate::hysteria::HeaderCustomCarrier>,
     /// A `sudoku` UDP mask, at its place among the other masks.
     pub udp_sudoku: Option<crate::hysteria::SudokuCarrier>,
+    /// The `xdns` UDP mask, outside the others, carrying every datagram.
+    pub udp_xdns: Option<Arc<crate::xdns::XdnsConfig>>,
     pub debug: bool,
 }
 
@@ -194,6 +196,7 @@ impl Default for H3QuicConfig {
             udp_noise: None,
             udp_header_custom: None,
             udp_sudoku: None,
+            udp_xdns: None,
             debug: false,
         }
     }
@@ -235,6 +238,14 @@ impl H3QuicConfig {
                 H3Error::UdpSocket(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "an invalid header-custom UDP mask, or one with udphop",
+                ))
+            })?;
+        }
+        if self.udp_xdns.is_some() {
+            self.hop_carrier().validate().map_err(|_| {
+                H3Error::UdpSocket(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "an invalid xdns UDP mask, or one with udphop or sudoku",
                 ))
             })?;
         }
@@ -309,6 +320,7 @@ impl H3QuicConfig {
             noise: self.udp_noise.clone(),
             header_custom: self.udp_header_custom.clone(),
             sudoku: self.udp_sudoku.clone(),
+            xdns: self.udp_xdns.clone(),
             ..Default::default()
         }
     }
@@ -1186,7 +1198,14 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
     socket.set_nonblocking(true).map_err(H3Error::UdpSocket)?;
 
     let mut wire_peer = remote_addr;
+    let mut session = session;
     let socket = if let Some(carrier) = carrier.filter(|c| c.enabled()) {
+        // An xdns client opens with the connection, unless the caller's
+        // session brought one.
+        session
+            .open_xdns(carrier, config.socket_protector.clone())
+            .await
+            .map_err(H3Error::UdpSocket)?;
         wire_peer = carrier.next_peer(remote_addr);
         crate::hysteria::carrier::wrap(socket, remote_addr, wire_peer, carrier, &session)
             .map_err(H3Error::UdpSocket)?

@@ -111,15 +111,7 @@ pub(super) fn build_xhttp_download(
     Ok(Some(XhttpDownloadOutbound {
         server: Target::new(addr, download.port, RoutingNetwork::Tcp),
         connector: carrier::build_connector(&download.stream.security, &download.address),
-        transport: build_xhttp_transport(
-            settings,
-            &download.stream.security,
-            &download.address,
-            download.stream.quic_params.as_ref(),
-            download.stream.udp_noise.as_ref(),
-            download.stream.udp_header_custom.as_ref(),
-            download.stream.udp_sudoku.as_ref(),
-        )?,
+        transport: build_xhttp_transport(settings, &download.stream, &download.address)?,
         happy_eyeballs: happy_eyeballs_config(&download.stream),
         socket_options: if penetrate {
             DownloadSocketOptions::Upload
@@ -134,15 +126,19 @@ pub(super) fn build_xhttp_download(
     }))
 }
 
+/// The XHTTP transport `stream` describes: its security, its QUIC
+/// parameters and UDP masks when it selects HTTP/3.
 pub(super) fn build_xhttp_transport(
     settings: &XhttpSettings,
-    security: &StreamSecurity,
+    stream: &xray_config::StreamSettings,
     destination: &TargetAddr,
-    quic_params: Option<&QuicParamsSettings>,
-    noise: Option<&xray_config::UdpNoiseSettings>,
-    header_custom: Option<&xray_config::HeaderCustomUdp>,
-    sudoku: Option<&xray_config::UdpSudoku>,
 ) -> Result<XhttpTransport, CoreError> {
+    let security = &stream.security;
+    let quic_params = stream.quic_params.as_ref();
+    let noise = stream.udp_noise.as_ref();
+    let header_custom = stream.udp_header_custom.as_ref();
+    let sudoku = stream.udp_sudoku.as_ref();
+    let xdns = stream.udp_xdns.as_ref();
     let http_version = xhttp_http_version(security)?;
     let endpoint = xhttp_endpoint(settings, security, destination)?;
     let config = xhttp_config(settings, matches!(security, StreamSecurity::Reality(_)))?;
@@ -168,9 +164,15 @@ pub(super) fn build_xhttp_transport(
             "a sudoku UDP mask requires XHTTP H3",
         ));
     }
+    if xdns.is_some() && http_version != XhttpHttpVersion::Http3 {
+        return Err(invalid_xhttp_configuration(
+            "an xdns UDP mask requires XHTTP H3",
+        ));
+    }
     h3_quic.udp_noise = noise.map(udp_noise_config).transpose()?;
     h3_quic.udp_header_custom = header_custom.map(super::carrier::quic_header_custom);
     h3_quic.udp_sudoku = sudoku.map(super::carrier::quic_sudoku);
+    h3_quic.udp_xdns = xdns.map(super::carrier::xdns_config);
     XhttpTransport::new_with_h3_quic(config, endpoint, http_version, xmux, h3_quic)
         .map_err(invalid_xhttp_configuration)
 }

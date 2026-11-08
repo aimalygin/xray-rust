@@ -797,6 +797,39 @@
       "notes": "TCP: the last mask, outermost on the wire; UDP: mKCP, Hysteria and XHTTP with exact h3 ALPN, where the carrier lets the system fragment its datagrams. ascii is entropy (default) or ascii; customTable(s) are 8 characters of 2 x, 2 p and 4 v, ignored in ASCII mode; padding is a percentage range, each end at most 100. A snake_case name applies when its camelCase field is empty or zero. Unknown modes and malformed tables are refused here, where Xray-core fails every dial."
     },
     {
+      "context": "streamSettings.finalmask.udp[].settings (xdns)",
+      "fields": [
+        "domains",
+        "resolvers",
+        "extraPoll"
+      ],
+      "id": "XDNS_MASK",
+      "notes": "mKCP, Hysteria and XHTTP with exact h3 ALPN; the last UDP mask, never with udphop, nor with sudoku on QUIC. Every datagram rides in the names of DNS queries to the resolvers, which reach the server's domain; polls keep queries waiting there for what it sends back. extraPoll is 0 to 3 polls after each packet and poll. At least one domain name and one resolver address are required."
+    },
+    {
+      "context": "streamSettings.finalmask.udp[].settings.domains[] (xdns)",
+      "fields": [
+        "names",
+        "lenLimit",
+        "labelLimit",
+        "types",
+        "edns0"
+      ],
+      "id": "XDNS_DOMAIN",
+      "notes": "names are the domains, each its own entry. lenLimit (0 reads 255) bounds a query's name and labelLimit (0 reads 63) its data labels; together they must leave 17 bytes per query. types are A (1), CNAME (5), TXT (16) or AAAA (28), one drawn per packet, TXT when empty; Xray-core refuses another only at dial, here it is refused. edns0 is 0 or 512 to 4096, the UDP size an OPT record advertises. A name with an empty label or one longer than 63 bytes is refused, where Xray-core's client panics at the first query."
+    },
+    {
+      "context": "streamSettings.finalmask.udp[].settings.resolvers[] (xdns)",
+      "fields": [
+        "addrs",
+        "worker",
+        "tlsConfig",
+        "quicConfig"
+      ],
+      "id": "XDNS_RESOLVER",
+      "notes": "addrs are udp:// (the default) or tcp:// with an IP address and an optional port, 53 by default. DNS over TCP sends each message after its two-byte length, which Xray-core's client fails to write. Names, https:// resolvers and their tlsConfig and quicConfig are not supported yet. worker is read and, as in Xray-core, only DNS over HTTPS would use it."
+    },
+    {
       "context": "streamSettings.finalmask.tcp[].settings (xmc)",
       "fields": [
         "hostname",

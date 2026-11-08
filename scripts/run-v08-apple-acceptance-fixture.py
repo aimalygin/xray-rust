@@ -14,6 +14,7 @@ import importlib.util
 import json
 from pathlib import Path
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
@@ -142,15 +143,43 @@ def write_ciphers_v09(root, bind, tcp_port, udp_port, dns_port, **kwargs):
     save(root, server, envelope)
 
 
+LEGACY_V09_PARTS = [("legacy", None), ("v07", "both"), ("v08", "v08")]
+
+
 def write_legacy_v09(root, bind, tcp_port, udp_port, dns_port, **kwargs):
     """The nine v0.9 legacy-regression protocols in one fixture.
 
     Each generator writes its keys under parts/<name>; the base fixture removes
     that tree on shutdown. Labels equal the evidence transition names.
+
+    Each generator reserves its ports alone and releases them before the next
+    one runs, so two of them can be handed the same free port. The parts are
+    then generated again until no carrier port repeats.
     """
+    for _ in range(16):
+        server, cases = legacy_v09_parts(root, bind, tcp_port, udp_port, dns_port, **kwargs)
+        ports = [inbound["port"] for inbound in server["inbounds"]]
+        if len(set(ports)) == len(ports):
+            break
+    else:
+        raise RuntimeError("legacy generators allocated the same carrier port twice")
+    labels = [case["label"] for case in cases]
+    if sorted(labels) != sorted(LEGACY_V09):
+        raise RuntimeError(f"unexpected legacy-regression cases: {labels}")
+    save(root, server, {"cases": cases, "tcpPort": tcp_port, "udpPort": udp_port,
+                        "mode": kwargs.get("mode", "smoke"), "probeHost": kwargs.get("probe_host", "v07-probe.test")})
+
+
+LEGACY_V09 = ("vless-reality", "xhttp-h1", "xhttp-h2", "xhttp-h3", "hysteria2", "wireguard",
+              "trojan", "shadowsocks2022", "vmess")
+
+
+def legacy_v09_parts(root, bind, tcp_port, udp_port, dns_port, **kwargs):
+    """One run of the three legacy generators, each in a fresh parts/<name>."""
     server, cases = None, []
-    for name, protocol in [("legacy", None), ("v07", "both"), ("v08", "v08")]:
+    for name, protocol in LEGACY_V09_PARTS:
         part = root / "parts" / name
+        shutil.rmtree(part, ignore_errors=True)
         part.mkdir(parents=True, mode=0o700)
         if protocol is None:
             write_legacy(part, bind, tcp_port, udp_port, dns_port, **{**kwargs, "port": None})
@@ -167,18 +196,7 @@ def write_legacy_v09(root, bind, tcp_port, udp_port, dns_port, **kwargs):
         cases.extend(part_cases)
         (part / "server.json").unlink()
         (part / "v07-probe.json").unlink()
-    ports = [(inbound["port"], inbound["protocol"]) for inbound in server["inbounds"]]
-    if len({port for port, _ in ports}) != len(ports):
-        raise RuntimeError("legacy generators allocated the same carrier port twice")
-    labels = [case["label"] for case in cases]
-    if sorted(labels) != sorted(LEGACY_V09):
-        raise RuntimeError(f"unexpected legacy-regression cases: {labels}")
-    save(root, server, {"cases": cases, "tcpPort": tcp_port, "udpPort": udp_port,
-                        "mode": kwargs.get("mode", "smoke"), "probeHost": kwargs.get("probe_host", "v07-probe.test")})
-
-
-LEGACY_V09 = ("vless-reality", "xhttp-h1", "xhttp-h2", "xhttp-h3", "hysteria2", "wireguard",
-              "trojan", "shadowsocks2022", "vmess")
+    return server, cases
 
 
 def save(root, server, envelope):

@@ -112,6 +112,11 @@ impl HysteriaOutbound {
                 .udp_sudoku
                 .as_ref()
                 .map(super::carrier::quic_sudoku),
+            xdns: config
+                .stream
+                .udp_xdns
+                .as_ref()
+                .map(super::carrier::xdns_config),
             ..Default::default()
         };
         let (quic, receive_bytes_per_second) =

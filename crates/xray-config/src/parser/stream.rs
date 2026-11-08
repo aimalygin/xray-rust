@@ -74,6 +74,7 @@ impl Parser<'_> {
         let udp_noise = self.parse_udp_noise(stream, stream_network, index);
         let udp_header_custom = self.parse_udp_header_custom(stream, index);
         let udp_sudoku = self.parse_udp_sudoku(stream, index);
+        let udp_xdns = self.parse_udp_xdns(stream, index);
         let socket_options = self.parse_socket_options(stream, index);
         if let Some(stream) = stream {
             self.validate_stream_settings_compatibility(stream, index);
@@ -127,6 +128,40 @@ impl Parser<'_> {
                 format!("$.outbounds[{index}].streamSettings.finalmask.udp"),
                 "a header-custom UDP mask requires mKCP, Hysteria or XHTTP with exact h3 ALPN",
             );
+        }
+        if udp_xdns.is_some() {
+            let has = |kind: &str| {
+                stream
+                    .and_then(|s| s.pointer("/finalmask/udp"))
+                    .and_then(Value::as_array)
+                    .is_some_and(|masks| {
+                        masks.iter().any(|mask| {
+                            mask.get("type")
+                                .and_then(Value::as_str)
+                                .is_some_and(|t| crate::go_lowercase(t) == kind)
+                        })
+                    })
+            };
+            let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp");
+            if !udp_carrier {
+                self.error(
+                    &path,
+                    "an xdns UDP mask requires mKCP, Hysteria or XHTTP with exact h3 ALPN",
+                );
+            }
+            // Both must be the last mask; under xdns, Xray-core opens the
+            // hopping socket and never uses it.
+            if has("udphop") {
+                self.error(&path, "an xdns UDP mask cannot be combined with udphop");
+            }
+            // One xdns packet takes 4096 bytes; sudoku's datagram is four
+            // times a QUIC packet of at least 1200.
+            if is_quic && udp_sudoku.is_some() {
+                self.error(
+                    &path,
+                    "a sudoku UDP mask cannot run under xdns on QUIC: its datagrams exceed the 4096 bytes an xdns packet takes",
+                );
+            }
         }
         // Xray-core writes to 0.0.0.0:0 under udphop but reads from the hop's
         // address, so its standalone reply never completes and prefix
@@ -182,6 +217,7 @@ impl Parser<'_> {
             tcp_sudoku: tcp_masks.sudoku,
             udp_sudoku,
             tcp_xmc: tcp_masks.xmc,
+            udp_xdns,
             udp_noise,
             socket_options,
         })
@@ -1055,7 +1091,7 @@ impl Parser<'_> {
 
     /// A Go `int32` field: absent and null are zero, and only an integer
     /// literal within range decodes, as `encoding/json` decodes one.
-    fn go_int32_at(&mut self, value: &Value, key: &str, path: String) -> Option<i32> {
+    pub(super) fn go_int32_at(&mut self, value: &Value, key: &str, path: String) -> Option<i32> {
         match value.get(key) {
             None | Some(Value::Null) => Some(0),
             Some(raw) => match raw.as_i64().and_then(|value| i32::try_from(value).ok()) {
@@ -1085,7 +1121,12 @@ impl Parser<'_> {
 
     /// A Go `[]string` field: absent and null are empty, and a null element
     /// is an empty string.
-    fn go_string_list_at(&mut self, value: &Value, key: &str, path: String) -> Option<Vec<String>> {
+    pub(super) fn go_string_list_at(
+        &mut self,
+        value: &Value,
+        key: &str,
+        path: String,
+    ) -> Option<Vec<String>> {
         match value.get(key) {
             None | Some(Value::Null) => Some(Vec::new()),
             Some(Value::Array(items)) => {

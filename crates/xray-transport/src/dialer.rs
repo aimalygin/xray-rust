@@ -476,7 +476,7 @@ impl TransportDialer {
             return Err(no_resolved_candidates_error(original_target));
         }
         let stream: BoxedTransportStream =
-            Box::new(crate::kcp::connect(candidates, self.socket_protector(), kcp).await?);
+            Box::new(crate::kcp::connect(candidates, self.socket_protector.clone(), kcp).await?);
         match prepared {
             None => Ok(stream),
             Some(prepared) => {

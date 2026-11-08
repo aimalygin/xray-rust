@@ -15,6 +15,7 @@ fn config(masks: Vec<KcpMask>) -> KcpConfig {
         max_sending_window: 2 * 1024 * 1024,
         masks,
         noise: None,
+        xdns: None,
     }
 }
 
@@ -259,8 +260,8 @@ async fn the_socket_is_protected_before_it_sends() {
         }
     }
     let (peer, _) = echo_peer(Vec::new()).await;
-    let counting = Counting::default();
-    let _stream = connect(&[peer], Some(&counting), &config(Vec::new()))
+    let counting = Arc::new(Counting::default());
+    let _stream = connect(&[peer], Some(counting.clone()), &config(Vec::new()))
         .await
         .unwrap();
     assert_eq!(counting.0.load(Ordering::SeqCst), 1);
@@ -272,7 +273,7 @@ async fn the_socket_is_protected_before_it_sends() {
         }
     }
     assert!(matches!(
-        connect(&[peer], Some(&Refusing), &config(Vec::new())).await,
+        connect(&[peer], Some(Arc::new(Refusing)), &config(Vec::new())).await,
         Err(TransportError::SocketProtection(_))
     ));
 }

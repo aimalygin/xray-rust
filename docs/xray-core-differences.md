@@ -564,6 +564,40 @@ gRPC and XHTTP each carry a TCP echo and UDP, as does a `header-custom`
 handshake inside xmc; a client with another password, or with a profile the
 server does not hold, never gets through.
 
+## xdns
+
+The `xdns` UDP mask queries resolvers as Xray-core v26.10.31's client does:
+its domain capacities, base32 names under the domain, the client id with
+the query type in its low bits, padding and fragments, polls whose delay
+doubles to ten seconds, the resolver balance, and answers read as Go's
+`dnsmessage` unpacks them, base32 and IDNA quirks included. Deliberate
+differences:
+
+- DNS over TCP sends each message after its two-byte length. Xray-core's
+  `TCPResolver` hands an `int` to `binary.Write`, which writes nothing, so it
+  sends bare messages no real resolver reads.
+- A domain with an empty label or one longer than 63 bytes fails the
+  configuration. Xray-core accepts it and its client panics at the first
+  query, when the name does not pack.
+- An unknown record type, no domain name and no resolver fail the
+  configuration; Xray-core fails every dial.
+- It must be the last UDP mask, and runs neither with udphop nor, on QUIC,
+  with sudoku: Xray-core dials the masks after it for nothing, and sudoku's
+  datagrams exceed the 4096 bytes an xdns packet takes.
+- Resolvers are IP addresses over UDP or TCP. Names, DNS over HTTPS and its
+  `tlsConfig` and `quicConfig` are not supported yet.
+- A packet waiting for a full resolver queue is dropped, as a datagram
+  would be; Xray-core's writer waits.
+
+Evidence: `tools/xdns-oracle` records `NewDomain`'s verdicts, encoded names,
+queries, the server's answers and the client's reading of mutated answers,
+which the tests replay; `scripts/check-xdns-interop.sh` regenerates a larger
+corpus each run. Live against Xray-core's server, mKCP carries a TCP echo and
+UDP through UDP and TCP resolvers, both at once, with extra polls and with
+AES and noise inside xdns; XHTTP over HTTP/3 and Hysteria, alone and with
+Salamander inside, before and after a rebind, carry the same. A client with
+another domain never gets through.
+
 ## DNS `UseSystem` route probe
 
 `queryStrategy: "UseSystem"` narrows each lookup to the address families the

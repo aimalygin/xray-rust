@@ -1996,6 +1996,7 @@ fn rust_vless_outbound(
             udp_header_custom: None,
             tcp_sudoku: None,
             tcp_xmc: None,
+            udp_xdns: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -3663,6 +3664,9 @@ mod sudoku;
 
 #[path = "local_xray_interop_tests/xmc.rs"]
 mod xmc;
+
+#[path = "local_xray_interop_tests/xdns.rs"]
+mod xdns;
 
 /// Record-level observer: it forwards the finalized ClientHello unchanged and
 /// then becomes a byte relay, including Vision's later direct-mode payload.

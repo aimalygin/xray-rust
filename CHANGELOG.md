@@ -10,6 +10,21 @@ long-term supported release series.
 
 ## Unreleased
 
+- The `xdns` UDP mask carries mKCP, Hysteria and XHTTP over HTTP/3 in DNS,
+  as Xray-core's client does: every datagram rides in base32 in the names of
+  queries to recursive resolvers, which reach the server's domain, and comes
+  back in TXT, A, AAAA or CNAME answers; polls keep queries waiting at the
+  server for what it sends. See
+  [xdns mask](docs/config-compatibility.md#xdns-mask).
+  - Resolvers are DNS over UDP or TCP at an IP address. Names and DNS over
+    HTTPS are not supported yet and fail the configuration.
+  - DNS over TCP sends each message after its two-byte length. Xray-core's
+    client fails to write it, so its TCP resolvers reach no real resolver.
+  - It must be the last UDP mask, and runs neither with udphop nor, on QUIC,
+    with sudoku. A domain with an empty label or one longer than 63 bytes
+    fails the configuration, where Xray-core's client panics at its first
+    query, and so does an unknown record type, which Xray-core refuses at
+    every dial.
 - The `xmc` TCP mask makes every TCP carrier a Minecraft 26.1.2 login, as
   Xray-core's does: a handshake and Login Start as one of the profiles, the
   server's RSA key checked against the one the password derives, AES-128-CFB8,

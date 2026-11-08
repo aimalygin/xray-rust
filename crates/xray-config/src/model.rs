@@ -1596,6 +1596,9 @@ pub struct StreamSettings {
     pub udp_sudoku: Option<UdpSudoku>,
     /// The `xmc` TCP mask, the outermost of the TCP masks, as `sudoku` is.
     pub tcp_xmc: Option<XmcMask>,
+    /// The `xdns` UDP mask, the outermost of mKCP's or a QUIC carrier's
+    /// masks: it carries the datagrams in DNS queries.
+    pub udp_xdns: Option<XdnsMask>,
     pub udp_noise: Option<UdpNoiseSettings>,
     pub socket_options: Option<SocketOptions>,
 }
@@ -1665,6 +1668,44 @@ pub struct UdpSudoku {
     pub before_noise: bool,
     /// Listed before `header-custom`, whose prefixes it then encodes.
     pub before_header_custom: bool,
+}
+
+/// The `xdns` mask, as Xray-core v26.10.31's `XDNS.Build` reads it: one
+/// domain per name, with the defaults filled in.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct XdnsMask {
+    pub domains: Vec<XdnsDomain>,
+    pub resolvers: Vec<XdnsResolver>,
+    /// Polls sent after each packet and each poll, 0 to 3.
+    pub extra_poll: u8,
+}
+
+/// One domain the client tunnels under.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XdnsDomain {
+    pub name: String,
+    /// The longest query name: 255 when the config gives 0.
+    pub len_limit: i32,
+    /// The longest label carrying data: 63 when the config gives 0.
+    pub label_limit: i32,
+    /// The record types the client asks for, each A (1), CNAME (5), TXT
+    /// (16) or AAAA (28); empty asks for TXT.
+    pub types: Vec<u16>,
+    /// The UDP size the client's OPT record advertises, 0 for none.
+    pub edns0: u16,
+}
+
+/// A resolver the client sends its queries to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XdnsResolver {
+    pub protocol: XdnsProtocol,
+    pub address: std::net::SocketAddr,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XdnsProtocol {
+    Udp,
+    Tcp,
 }
 
 /// The `xmc` mask, as Xray-core v26.10.31's `XMC.Build` reads it: a

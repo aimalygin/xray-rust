@@ -2194,6 +2194,54 @@ REALITY server panics on every connection through xmc.
 `scripts/check-xmc-interop.sh` compares the keys Xray-core derives and runs
 every carrier against its server.
 
+### xdns mask
+
+`xdns` carries a UDP carrier in DNS: mKCP, Hysteria or XHTTP with exact `h3`
+ALPN. The server answers as the domain's authoritative DNS server, so its
+inbound listens where the domain's NS records point, and the client sends
+its queries to recursive resolvers:
+
+```json
+"finalmask": {"udp": [{"type": "xdns", "settings": {
+  "domains": [{"names": ["t.example.com"], "types": [16, 1, 28],
+    "edns0": 1232}],
+  "resolvers": [{"addrs": ["1.1.1.1", "tcp://9.9.9.9"]}],
+  "extraPoll": 1
+}}]}
+```
+
+- `domains`: each name is its own entry. `lenLimit` (0 reads 255) bounds a
+  query's name and `labelLimit` (0 reads 63) its data labels; together they
+  must leave at least 17 bytes per query. `types` are the record types to
+  ask for, one drawn for each packet: A (1), CNAME (5), TXT (16) or AAAA
+  (28), TXT when empty. `edns0` is 0 or 512 to 4096, the UDP size an OPT
+  record advertises. Sizes and types keep their low 16 bits, as Go converts
+  them.
+- `resolvers`: `udp://` (the default) or `tcp://` with an IP address and an
+  optional port, 53 by default. The client picks the next resolver that has
+  sent fewer queries since it last answered, as Xray-core does. `worker` is
+  read and only DNS over HTTPS would use it.
+- `extraPoll`: 0 to 3 polls after each packet and each poll.
+
+Every datagram goes out in base32 in the names of queries: the client's
+8-byte id, three bytes of padding and the packet, or fragments of a larger
+one. Polls, eight bytes of padding after the id, start with the first answer
+and keep queries waiting at the server, which answers each with the packets
+it has, after up to a second. A QUIC packet takes several queries; an answer
+carries whole packets, so on QUIC carriers `edns0` must leave room for one,
+and resolvers that cut EDNS to 1232 bytes are too small.
+
+The mask must be the last UDP mask: its client opens its own sockets to the
+resolvers, and Xray-core dials the masks listed after it for nothing. The
+masks listed before it work inside it. It cannot run with udphop, nor with
+sudoku on QUIC carriers, whose datagrams exceed the 4096 bytes one xdns
+packet takes. Not supported yet: resolver names, DNS over HTTPS and its
+`tlsConfig` and `quicConfig`. DNS over TCP sends each message after its
+two-byte length; Xray-core's client fails to write the length, so its TCP
+resolvers reach no real resolver. `scripts/check-xdns-interop.sh` compares
+the encoding with Xray-core's own code and runs each carrier against its
+server.
+
 ### TLS ClientHello shaping
 
 `security: "tls"` sends a uTLS-shaped ClientHello, as Xray-core does on every

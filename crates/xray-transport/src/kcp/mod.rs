@@ -5,6 +5,9 @@
 //! drives it the way Xray's two updaters do: every `tti` milliseconds while
 //! data or acks are pending, every five seconds regardless, and at once when
 //! a write, a read or an arriving segment wakes it.
+//!
+//! With the `xdns` mask there is no socket to the server: the datagrams go
+//! out in DNS queries to the resolvers and come back in their answers.
 mod engine;
 mod mask;
 mod segment;
@@ -45,6 +48,8 @@ pub struct KcpConfig {
     pub masks: Vec<KcpMask>,
     /// The settings of the noise mask in `masks`, if there is one.
     pub noise: Option<UdpNoiseConfig>,
+    /// The `xdns` mask, which carries the datagrams instead of a socket.
+    pub xdns: Option<Arc<crate::xdns::XdnsConfig>>,
 }
 
 /// A `finalmask.udp` mask on an mKCP stream.
@@ -130,18 +135,36 @@ fn count_up(counter: &AtomicU32) -> u16 {
 /// for. Nothing is sent until the stream is written to.
 pub async fn connect(
     candidates: &[SocketAddr],
-    protector: Option<&dyn SocketProtector>,
+    protector: Option<Arc<dyn SocketProtector>>,
     config: &KcpConfig,
 ) -> Result<KcpStream, TransportError> {
     let engine_config = config.engine_config().map_err(TransportError::Kcp)?;
     let masks = Masks::new(&config.masks, config.noise.as_ref()).map_err(TransportError::Kcp)?;
+    if let Some(xdns) = &config.xdns {
+        let peer = candidates.first().copied().ok_or_else(|| {
+            TransportError::Kcp(io::Error::new(
+                io::ErrorKind::AddrNotAvailable,
+                "no mKCP server address",
+            ))
+        })?;
+        let client = crate::xdns::XdnsClient::connect(xdns, protector)
+            .await
+            .map_err(|error| TransportError::Kcp(io::Error::other(error)))?;
+        return Ok(KcpStream::start(
+            KcpSocket::Xdns(Box::new(client)),
+            crate::canonicalize_socket_addr(peer),
+            masks,
+            next_conversation(),
+            engine_config,
+        ));
+    }
     let mut last = None;
     for &candidate in candidates {
         let peer = crate::canonicalize_socket_addr(candidate);
-        match open_socket(peer, protector) {
+        match open_socket(peer, protector.as_deref()) {
             Ok(socket) => {
                 return Ok(KcpStream::start(
-                    socket,
+                    KcpSocket::Udp(socket),
                     peer,
                     masks,
                     next_conversation(),
@@ -173,6 +196,44 @@ fn open_socket(
     crate::protect_std_udp_socket(&socket, protector)?;
     socket.set_nonblocking(true).map_err(TransportError::Kcp)?;
     UdpSocket::from_std(socket).map_err(TransportError::Kcp)
+}
+
+/// What carries the connection's datagrams.
+enum KcpSocket {
+    Udp(UdpSocket),
+    Xdns(Box<crate::xdns::XdnsClient>),
+}
+
+impl KcpSocket {
+    /// A datagram and where it came from: for xdns, the resolver.
+    async fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
+        match self {
+            Self::Udp(socket) => socket.recv_from(buf).await,
+            Self::Xdns(client) => {
+                let packet = client.recv().await.ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::ConnectionAborted, "the xdns client stopped")
+                })?;
+                let length = packet.data.len().min(buf.len());
+                buf[..length].copy_from_slice(&packet.data[..length]);
+                Ok((length, packet.from))
+            }
+        }
+    }
+
+    async fn send_to(&self, datagram: &[u8], peer: SocketAddr) -> io::Result<()> {
+        match self {
+            Self::Udp(socket) => socket.send_to(datagram, peer).await.map(drop),
+            Self::Xdns(client) => client.send(datagram),
+        }
+    }
+
+    /// Xray's xdns client reports the IPv4 wildcard.
+    fn local_addr(&self) -> io::Result<SocketAddr> {
+        match self {
+            Self::Udp(socket) => socket.local_addr(),
+            Self::Xdns(_) => Ok((std::net::Ipv4Addr::UNSPECIFIED, 0).into()),
+        }
+    }
 }
 
 /// Milliseconds since `since`, as Xray's `Elapsed` counts them.
@@ -239,7 +300,7 @@ impl std::fmt::Debug for KcpStream {
 
 impl KcpStream {
     fn start(
-        socket: UdpSocket,
+        socket: KcpSocket,
         peer: SocketAddr,
         masks: Masks,
         conv: u16,
@@ -376,7 +437,7 @@ enum Awaited {
 
 struct Driver {
     shared: Arc<Shared>,
-    socket: UdpSocket,
+    socket: KcpSocket,
     peer: SocketAddr,
     masks: Masks,
     /// The local address a `header-custom` mask writes with. Go listens on
@@ -390,7 +451,7 @@ struct Driver {
 }
 
 impl Driver {
-    fn new(shared: Arc<Shared>, socket: UdpSocket, peer: SocketAddr, masks: Masks) -> Self {
+    fn new(shared: Arc<Shared>, socket: KcpSocket, peer: SocketAddr, masks: Masks) -> Self {
         let since = shared.since;
         let interval = Duration::from_millis(shared.lock().engine.tti().into());
         let local = socket
