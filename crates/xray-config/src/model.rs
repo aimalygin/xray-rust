@@ -1626,6 +1626,10 @@ pub struct HeaderCustomUdp {
     pub standalone: bool,
     pub client: Vec<HeaderCustomItem>,
     pub server: Vec<HeaderCustomItem>,
+    /// Listed before Salamander, which then obfuscates it.
+    pub before_salamander: bool,
+    /// Listed before noise, whose packets then pass through it.
+    pub before_noise: bool,
 }
 
 /// One `header-custom` item: random bytes, fixed bytes, a captured variable

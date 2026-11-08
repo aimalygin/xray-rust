@@ -761,7 +761,7 @@ impl Core {
         ensure_effective_dns_tag(&mut config);
         for outbound in &config.outbounds {
             outbound::validate_udp_noise(&outbound.stream)?;
-            if outbound.stream.udp_noise.is_some()
+            if (outbound.stream.udp_noise.is_some() || outbound.stream.udp_header_custom.is_some())
                 && matches!(
                     outbound.settings,
                     xray_config::OutboundSettings::Freedom(_)

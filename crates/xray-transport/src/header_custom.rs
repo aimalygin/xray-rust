@@ -11,6 +11,7 @@ use std::{collections::HashMap, fmt, io, net::SocketAddr, time::Duration};
 use rand::Rng;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+pub(crate) mod quic;
 pub(crate) mod udp;
 pub use udp::HeaderCustomUdpConfig;
 

@@ -113,24 +113,24 @@ impl Parser<'_> {
     }
 
     /// The `header-custom` entry of `finalmask.udp`, as `HeaderCustomUDP.Build`
-    /// reads it. mKCP is the one UDP carrier that applies it here.
+    /// reads it, with its place among the noise and Salamander masks. The
+    /// stream checks its carrier.
     pub(super) fn parse_udp_header_custom(
         &mut self,
         stream: Option<&Value>,
-        network: StreamNetwork,
         index: usize,
     ) -> Option<HeaderCustomUdp> {
         let masks = stream?.pointer("/finalmask/udp")?.as_array()?;
-        let (i, mask) = masks.iter().enumerate().find(|(_, mask)| {
-            mask.get("type")
-                .and_then(Value::as_str)
-                .is_some_and(|kind| go_lowercase(kind) == "header-custom")
-        })?;
+        let position = |name: &str| {
+            masks.iter().position(|mask| {
+                mask.get("type")
+                    .and_then(Value::as_str)
+                    .is_some_and(|kind| go_lowercase(kind) == name)
+            })
+        };
+        let i = position("header-custom")?;
+        let mask = &masks[i];
         let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp[{i}]");
-        if network != StreamNetwork::Kcp {
-            self.error(&path, "a header-custom UDP mask requires mKCP here");
-            return None;
-        }
         let settings_path = format!("{path}.settings");
         let settings = match mask.get("settings") {
             None | Some(Value::Null) => &Value::Null,
@@ -168,6 +168,8 @@ impl Parser<'_> {
             standalone,
             client: client?,
             server: server?,
+            before_salamander: position("salamander").is_some_and(|s| i < s),
+            before_noise: position("noise").is_some_and(|n| i < n),
         })
     }
 

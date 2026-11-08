@@ -268,3 +268,6 @@ mod network_change;
 
 #[path = "hysteria/carrier.rs"]
 mod carrier;
+
+#[path = "hysteria/header_custom.rs"]
+mod header_custom;

@@ -102,6 +102,11 @@ impl HysteriaOutbound {
                 .as_ref()
                 .map(super::xhttp::udp_noise_config)
                 .transpose()?,
+            header_custom: config
+                .stream
+                .udp_header_custom
+                .as_ref()
+                .map(super::carrier::quic_header_custom),
             ..Default::default()
         };
         let (quic, receive_bytes_per_second) =

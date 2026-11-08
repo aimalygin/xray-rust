@@ -201,3 +201,32 @@ fn udp_header_custom_reaches_the_kcp_carrier_in_order() {
         assert!(kcp_config(settings, &missing).is_err());
     }
 }
+
+#[test]
+fn udp_header_custom_reaches_xhttp_h3_and_not_xhttp_h2() {
+    let mut outbound = vless(json!({"network":"xhttp","security":"tls",
+        "tlsSettings":{"serverName":"server.example","alpn":["h3"]},
+        "finalmask":{"udp":[
+            {"type":"noise","settings":{"noise":[{"type":"str","packet":"noise"}]}},
+            {"type":"header-custom","settings":{
+                "client":[{"type":"str","packet":"hi"}],"server":[{"type":"str","packet":"ok"}]}}
+        ],"quicParams":{"disableChromeParrot":true}}}));
+    let server = TargetAddr::Domain("server.example".into());
+    let transport = build_connector(&outbound.stream.security, &server);
+    let layer =
+        build_transport_layer(&outbound.stream, &server, 443, &transport, VLESS_PATHS).unwrap();
+    let TransportLayer::Xhttp(xhttp) = layer else {
+        panic!("not xhttp")
+    };
+    let header = xhttp.h3_quic_config().udp_header_custom.as_ref().unwrap();
+    assert!(!header.config.standalone);
+    assert!(!header.before_noise);
+    // The same mask on XHTTP over TCP is refused.
+    let StreamSecurity::Tls(tls) = &mut outbound.stream.security else {
+        panic!("not tls")
+    };
+    tls.alpn = vec!["h2".into()];
+    assert!(
+        build_transport_layer(&outbound.stream, &server, 443, &transport, VLESS_PATHS,).is_err()
+    );
+}

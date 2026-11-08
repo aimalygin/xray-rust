@@ -202,7 +202,7 @@ pub(super) struct Shared {
     // The remote address the current carrier sends to, so the next hop
     // starts from it.
     wire_peer: Mutex<SocketAddr>,
-    noise_state: Option<Arc<crate::udp_noise::UdpNoiseState>>,
+    session: super::carrier::CarrierSession,
     protector: Option<Arc<dyn crate::SocketProtector>>,
     pub limits: HysteriaLimits,
     pub tcp_slots: Arc<Semaphore>,
@@ -303,7 +303,7 @@ impl Shared {
                 logical_peer,
                 wire_peer,
                 &self.carrier,
-                self.noise_state.clone(),
+                &self.session,
             )
             .map_err(|_| HysteriaError::Connect)?;
             endpoint
@@ -390,12 +390,8 @@ impl HysteriaClient {
         let tls_config = tls
             .quic_client_config_for(&config.tls, b"h3")
             .map_err(|_| HysteriaError::TlsConfiguration)?;
-        let noise_state = config
-            .carrier
-            .noise
-            .as_ref()
-            .filter(|noise| !noise.items.is_empty())
-            .map(|_| Arc::new(crate::udp_noise::UdpNoiseState::default()));
+        let session = super::carrier::CarrierSession::new(&config.carrier)
+            .map_err(|_| HysteriaError::Configuration)?;
         // Hysteria's default mode picks Brutal or BBR from the server's reply.
         let negotiation = match config.quic.congestion {
             H3Congestion::Brutal {
@@ -418,7 +414,7 @@ impl HysteriaClient {
                 QUIC_DATAGRAM_FRAME_SIZE,
             )),
             Some(&config.carrier),
-            noise_state.clone(),
+            session.clone(),
             negotiation.as_ref().map(|(_, decision)| decision),
         )
         .await
@@ -496,7 +492,7 @@ impl HysteriaClient {
             bind_addr,
             carrier: config.carrier.clone(),
             wire_peer: Mutex::new(wire_peer),
-            noise_state,
+            session,
             protector: tls.socket_protector_arc(),
             limits: config.limits,
             tcp_slots: Arc::new(Semaphore::new(config.limits.max_tcp_streams)),

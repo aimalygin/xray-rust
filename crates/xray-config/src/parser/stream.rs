@@ -63,7 +63,7 @@ impl Parser<'_> {
         }
         let (tcp_fragment, tcp_header_custom) = self.parse_tcp_masks(stream, index);
         let udp_noise = self.parse_udp_noise(stream, stream_network, index);
-        let udp_header_custom = self.parse_udp_header_custom(stream, stream_network, index);
+        let udp_header_custom = self.parse_udp_header_custom(stream, index);
         let socket_options = self.parse_socket_options(stream, index);
         if let Some(stream) = stream {
             self.validate_stream_settings_compatibility(stream, index);
@@ -97,14 +97,39 @@ impl Parser<'_> {
             }
         }
 
-        if udp_noise.is_some()
-            && !matches!(stream_network, StreamNetwork::Hysteria | StreamNetwork::Kcp)
-            && !(stream_network == StreamNetwork::Xhttp
-                && matches!(&security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]))
-        {
+        let udp_carrier = matches!(stream_network, StreamNetwork::Hysteria | StreamNetwork::Kcp)
+            || stream_network == StreamNetwork::Xhttp
+                && matches!(&security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]);
+        if udp_noise.is_some() && !udp_carrier {
             self.error(
                 format!("$.outbounds[{index}].streamSettings.finalmask.udp"),
                 "UDP noise requires Hysteria, mKCP or XHTTP with exact h3 ALPN",
+            );
+        }
+        if udp_header_custom.is_some() && !udp_carrier {
+            self.error(
+                format!("$.outbounds[{index}].streamSettings.finalmask.udp"),
+                "a header-custom UDP mask requires mKCP, Hysteria or XHTTP with exact h3 ALPN",
+            );
+        }
+        // Xray-core writes to 0.0.0.0:0 under udphop but reads from the hop's
+        // address, so its standalone reply never completes and prefix
+        // captures never match.
+        if udp_header_custom.is_some()
+            && stream
+                .and_then(|s| s.pointer("/finalmask/udp"))
+                .and_then(Value::as_array)
+                .is_some_and(|masks| {
+                    masks.iter().any(|mask| {
+                        mask.get("type")
+                            .and_then(Value::as_str)
+                            .is_some_and(|kind| kind.eq_ignore_ascii_case("udphop"))
+                    })
+                })
+        {
+            self.error(
+                format!("$.outbounds[{index}].streamSettings.finalmask.udp"),
+                "a header-custom UDP mask cannot be combined with udphop",
             );
         }
         if stream_network != StreamNetwork::Hysteria
