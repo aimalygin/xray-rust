@@ -16,7 +16,10 @@ members = [
     "fuzz",
 ]
 resolver = "2"
-exclude = ["vendor/gotatun", "vendor/smoltcp", "vendor/quinn", "vendor/h2", "vendor/h3"]
+# `.claude` holds agent worktrees, each a checkout with its own workspace.
+# Without it here, cargo resolves their excluded vendor crates to this
+# workspace and fails ("believes it's in a workspace when it's not").
+exclude = ["vendor/gotatun", "vendor/smoltcp", "vendor/quinn", "vendor/h2", "vendor/h3", ".claude"]
 
 [workspace.package]
 version = "0.9.0"
