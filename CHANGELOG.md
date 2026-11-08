@@ -10,6 +10,21 @@ long-term supported release series.
 
 ## Unreleased
 
+- `quicParams.bbrProfile` `conservative` and `aggressive` work on Hysteria and
+  XHTTP over HTTP/3: they run a port of Xray-core's own BBR sender with the
+  profile's gains, startup rounds and options, where they failed to parse
+  before. See [BBR profiles](docs/config-compatibility.md#bbr-profiles).
+  - As in Xray-core, the controller takes over from quic-go's default Reno,
+    here Quinn's NewReno, once the connection is up: right after the
+    handshake on XHTTP, after the authentication reply on Hysteria. Brutal,
+    `force-brutal` and the profile's BBR when a Hysteria server announces no
+    rate now switch at the same points. Before, Hysteria's Brutal and its BBR
+    fallback ran Quinn's BBR until the reply, and `force-brutal` ran Brutal
+    from the first packet.
+  - `standard`, the default, still runs Quinn's BBR. The port runs it too,
+    but switching the default is left for a separate decision.
+  - A profile is read with Go's lowercasing, so `AGGRESSİVE` is accepted as
+    Xray-core accepts it.
 - The `xdns` UDP mask carries mKCP, Hysteria and XHTTP over HTTP/3 in DNS,
   as Xray-core's client does: every datagram rides in base32 in the names of
   queries to recursive resolvers, which reach the server's domain, and comes

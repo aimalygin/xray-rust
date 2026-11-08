@@ -229,6 +229,7 @@ async fn pinned_reference_brutal_paces_both_directions_at_the_negotiated_rate() 
     };
     let brutal = H3Congestion::Brutal {
         up_bytes_per_second: 100 << 17,
+        bbr_profile: xray_transport::stream::H3BbrProfile::Standard,
     };
 
     // Upload: Brutal at the server's announced 8 Mbps, not our 100 Mbps.
@@ -277,3 +278,6 @@ mod sudoku;
 
 #[path = "hysteria/xdns.rs"]
 mod xdns;
+
+#[path = "hysteria/bbr_profiles.rs"]
+mod bbr_profiles;

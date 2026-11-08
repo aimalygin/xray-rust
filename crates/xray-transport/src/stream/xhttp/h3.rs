@@ -28,7 +28,10 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep_until, Instant};
 
-use crate::quic_congestion::{BrutalDecision, BrutalFactory, BrutalRate, NegotiatedBrutalFactory};
+use crate::quic_congestion::{
+    bbr_for_profile, quinn_bbr, BbrProfile, BrutalRate, ControllerSwitch, Installed,
+    SwitchedFactory, STANDARD_RUNS_XRAY_BBR,
+};
 use crate::{
     canonicalize_socket_addr, memory_class, HappyEyeballsConfig, MemoryClass, SocketHandle,
     SocketProtector, TransportError,
@@ -48,7 +51,6 @@ const XRAY_MAX_CONNECTION_RECEIVE_WINDOW: u64 = 15 * 1024 * 1024;
 /// quic-go keeps a connection window of at least 1.5 stream windows
 /// (`ConnectionFlowControlMultiplier`).
 const CONNECTION_FLOW_CONTROL_MULTIPLIER: f64 = 1.5;
-const XRAY_BBR_INITIAL_WINDOW: u64 = 32 * 1280;
 /// Datagrams an XHTTP H3 or DoQ endpoint reads per receive call.
 ///
 /// Every XHTTP H3 request owns a QUIC connection and its own endpoint, and
@@ -80,26 +82,115 @@ pub enum H3QuicVersion {
     V2,
 }
 
+/// Xray's `quicParams.bbrProfile`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum H3BbrProfile {
+    Conservative,
+    #[default]
+    Standard,
+    Aggressive,
+}
+
+impl H3BbrProfile {
+    fn sender_profile(self) -> BbrProfile {
+        match self {
+            Self::Conservative => BbrProfile::Conservative,
+            Self::Standard => BbrProfile::Standard,
+            Self::Aggressive => BbrProfile::Aggressive,
+        }
+    }
+}
+
 /// Congestion-control choices understood by XHTTP and Hysteria configuration.
+///
+/// Except for [`Self::Reno`] and, while it runs quinn's BBR,
+/// [`Self::BbrStandard`], which run from the first packet, a connection
+/// starts with NewReno, quic-go's default sender, and switches when Xray's
+/// dialer installs its controller: after the handshake on XHTTP, after
+/// authentication on Hysteria.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum H3Congestion {
-    /// Quinn's BBR implementation with Xray's standard initial window.
+    /// The `standard` profile: quinn's BBR implementation with Xray's
+    /// standard initial window, unless the port of Xray's sender is chosen
+    /// for it.
     BbrStandard,
     Reno,
-    /// Xray's conservative BBR profile; not implemented, so rejected.
+    /// Xray's BBR sender with its conservative profile.
     BbrConservative,
-    /// Xray's aggressive BBR profile; not implemented, so rejected.
+    /// Xray's BBR sender with its aggressive profile.
     BbrAggressive,
-    /// Hysteria's default: BBR, or Brutal at the lower of this rate and the
-    /// receive rate the server announces once both are nonzero. Only a
-    /// Hysteria connection can negotiate it; XHTTP rejects it.
+    /// Hysteria's default: Brutal at the lower of this rate and the receive
+    /// rate the server announces once both are nonzero, otherwise BBR with
+    /// `bbr_profile`. Only a Hysteria connection can negotiate it; XHTTP
+    /// rejects it.
     Brutal {
         up_bytes_per_second: u64,
+        bbr_profile: H3BbrProfile,
     },
     /// Brutal at this fixed rate, whatever the peer announces.
     ForceBrutal {
         bytes_per_second: u64,
     },
+}
+
+impl H3Congestion {
+    /// The BBR this choice runs, if it is one.
+    pub fn from_bbr_profile(profile: H3BbrProfile) -> Self {
+        match profile {
+            H3BbrProfile::Conservative => Self::BbrConservative,
+            H3BbrProfile::Standard => Self::BbrStandard,
+            H3BbrProfile::Aggressive => Self::BbrAggressive,
+        }
+    }
+
+    /// Whether the connection starts with quic-go's default sender and
+    /// switches once up.
+    fn switches(self) -> bool {
+        match self {
+            Self::BbrStandard => STANDARD_RUNS_XRAY_BBR,
+            Self::Reno => false,
+            Self::BbrConservative
+            | Self::BbrAggressive
+            | Self::Brutal { .. }
+            | Self::ForceBrutal { .. } => true,
+        }
+    }
+}
+
+impl H3QuicConfig {
+    /// What Xray's dialer installs once the connection is up, given the
+    /// receive rate a Hysteria server announced, if any. `None` keeps the
+    /// controller the connection started with.
+    pub(crate) fn installed_controller(
+        &self,
+        server_receive_rate: Option<u64>,
+    ) -> Option<Installed> {
+        let brutal = |bytes_per_second| {
+            Installed::Brutal(BrutalRate {
+                bytes_per_second,
+                disable_loss_compensation: self.brutal_disable_loss_compensation,
+            })
+        };
+        match self.congestion {
+            H3Congestion::Reno => None,
+            H3Congestion::BbrStandard => {
+                STANDARD_RUNS_XRAY_BBR.then(|| bbr_for_profile(BbrProfile::Standard))
+            }
+            H3Congestion::BbrConservative => Some(bbr_for_profile(BbrProfile::Conservative)),
+            H3Congestion::BbrAggressive => Some(bbr_for_profile(BbrProfile::Aggressive)),
+            H3Congestion::ForceBrutal { bytes_per_second } => Some(brutal(bytes_per_second)),
+            // Xray: Brutal at min(brutalUp, server rate) once both are known.
+            H3Congestion::Brutal {
+                up_bytes_per_second,
+                bbr_profile,
+            } => Some(match server_receive_rate.unwrap_or(0) {
+                rate if up_bytes_per_second > 0 && rate > 0 => {
+                    brutal(up_bytes_per_second.min(rate))
+                }
+                _ => bbr_for_profile(bbr_profile.sender_profile()),
+            }),
+        }
+    }
 }
 
 /// UDP-hop policy for the QUIC carrier, Xray's `udphop` finalmask.
@@ -282,7 +373,10 @@ impl H3QuicConfig {
         }
 
         let congestion = match self.congestion {
+            H3Congestion::BbrStandard if STANDARD_RUNS_XRAY_BBR => "xray-bbr-standard",
             H3Congestion::BbrStandard => "quinn-bbr-standard-approximation",
+            H3Congestion::BbrConservative => "xray-bbr-conservative",
+            H3Congestion::BbrAggressive => "xray-bbr-aggressive",
             H3Congestion::Reno => "new-reno",
             H3Congestion::ForceBrutal { bytes_per_second } if bytes_per_second > 0 => "brutal",
             H3Congestion::Brutal { .. } => "brutal-if-negotiated",
@@ -930,6 +1024,14 @@ impl H3Client {
         &self.diagnostics
     }
 
+    /// The congestion controller the connection runs now: `new-reno`,
+    /// `quinn-bbr`, `xray-bbr-<profile>` or `brutal`. For diagnostics and
+    /// tests.
+    #[doc(hidden)]
+    pub fn congestion_controller(&self) -> &'static str {
+        crate::quic_congestion::controller_name(self.driver.connection.congestion_state())
+    }
+
     /// Sends a fixed body and validates its response while upload can progress.
     pub async fn send_fixed(
         &self,
@@ -1158,15 +1260,19 @@ pub(crate) async fn connect_quic_transport(
 
 /// Optional receive/send byte budgets and advertised frame-size cap for QUIC datagrams.
 /// `None` preserves the existing XHTTP/DoQ transport configuration.
-/// `negotiation` settles Hysteria's [`H3Congestion::Brutal`] after
-/// authentication; without it that mode is rejected.
+///
+/// A congestion choice that switches once the connection is up does so with
+/// `switch` when the caller passes one, as Hysteria does after
+/// authentication; otherwise right after the handshake, as Xray's XHTTP
+/// dialer does after `DialEarly`. Hysteria's [`H3Congestion::Brutal`] needs
+/// the caller's switch.
 pub(crate) async fn connect_quic_transport_with_datagrams(
     config: H3ConnectConfig,
     expected_alpn: &'static [u8],
     datagram_buffers: Option<(usize, usize, u16)>,
     carrier: Option<&crate::hysteria::HysteriaCarrierConfig>,
     session: crate::hysteria::carrier::CarrierSession,
-    negotiation: Option<&Arc<BrutalDecision>>,
+    switch: Option<&Arc<ControllerSwitch>>,
 ) -> Result<(Endpoint, quinn::Connection, H3Diagnostics, SocketAddr), H3Error> {
     drop(crate::tls::parse_tls_server_name(&config.server_name)?);
     let diagnostics = config.quic.diagnostics()?;
@@ -1179,11 +1285,18 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
 
     let own_carrier = config.quic.hop_carrier();
     let carrier = carrier.or_else(|| own_carrier.enabled().then_some(&own_carrier));
+    if matches!(config.quic.congestion, H3Congestion::Brutal { .. }) && switch.is_none() {
+        return Err(H3Error::BrutalNeedsHysteria);
+    }
+    // Without the caller's switch, this connection installs its controller
+    // itself once the handshake completes.
+    let own_switch = (switch.is_none() && config.quic.congestion.switches())
+        .then(|| Arc::new(ControllerSwitch::default()));
     let (endpoint_config, client_config) = build_quinn_config(
         &config,
         datagram_buffers,
         carrier.map_or(0, |c| c.wire_overhead()),
-        negotiation,
+        switch.or(own_switch.as_ref()),
     )?;
     let remote_addr = canonicalize_socket_addr(config.remote_addr);
     let bind_addr = unspecified_bind_addr(remote_addr);
@@ -1244,6 +1357,11 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
         .connect_with(client_config, remote_addr, &config.server_name)
         .map_err(H3Error::ConnectStart)?;
     let connection = connecting.await.map_err(H3Error::Connect)?;
+    if let Some(own_switch) = own_switch {
+        if let Some(installed) = config.quic.installed_controller(None) {
+            own_switch.install(installed);
+        }
+    }
     Ok((endpoint, connection, diagnostics, wire_peer))
 }
 
@@ -1367,7 +1485,7 @@ fn build_quinn_config(
     config: &H3ConnectConfig,
     datagram_buffers: Option<(usize, usize, u16)>,
     wire_overhead: usize,
-    negotiation: Option<&Arc<BrutalDecision>>,
+    switch: Option<&Arc<ControllerSwitch>>,
 ) -> Result<(EndpointConfig, ClientConfig), H3Error> {
     let mut endpoint = EndpointConfig::default();
     endpoint.supported_versions(vec![QUIC_V1]);
@@ -1424,36 +1542,35 @@ fn build_quinn_config(
     }
     // quic-go's `Transport.DisableGSO`.
     transport.enable_segmentation_offload(!config.quic.disable_gso);
-    let standard_bbr = || {
-        let mut bbr = quinn::congestion::BbrConfig::default();
-        bbr.initial_window(XRAY_BBR_INITIAL_WINDOW);
-        Arc::new(bbr)
-    };
-    let disable_loss_compensation = config.quic.brutal_disable_loss_compensation;
     match config.quic.congestion {
-        H3Congestion::BbrStandard => {
-            transport.congestion_controller_factory(standard_bbr());
+        H3Congestion::BbrStandard if !STANDARD_RUNS_XRAY_BBR => {
+            transport.congestion_controller_factory(quinn_bbr());
         }
         H3Congestion::Reno => {
             transport.congestion_controller_factory(Arc::new(
                 quinn::congestion::NewRenoConfig::default(),
             ));
         }
-        H3Congestion::ForceBrutal { bytes_per_second } if bytes_per_second > 0 => {
-            transport.congestion_controller_factory(Arc::new(BrutalFactory(BrutalRate {
-                bytes_per_second,
-                disable_loss_compensation,
-            })));
+        H3Congestion::ForceBrutal {
+            bytes_per_second: 0,
+        } => {
+            return Err(H3Error::UnsupportedCongestion {
+                requested: config.quic.congestion,
+            });
         }
-        H3Congestion::Brutal { .. } => {
-            let decision = negotiation.ok_or(H3Error::BrutalNeedsHysteria)?;
-            transport.congestion_controller_factory(Arc::new(NegotiatedBrutalFactory {
-                bbr: standard_bbr(),
-                disable_loss_compensation,
-                decision: Arc::clone(decision),
-            }));
+        H3Congestion::BbrStandard
+        | H3Congestion::BbrConservative
+        | H3Congestion::BbrAggressive
+        | H3Congestion::Brutal { .. }
+        | H3Congestion::ForceBrutal { .. } => {
+            let Some(switch) = switch else {
+                return Err(match config.quic.congestion {
+                    H3Congestion::Brutal { .. } => H3Error::BrutalNeedsHysteria,
+                    requested => H3Error::UnsupportedCongestion { requested },
+                });
+            };
+            transport.congestion_controller_factory(Arc::new(SwitchedFactory(Arc::clone(switch))));
         }
-        requested => return Err(H3Error::UnsupportedCongestion { requested }),
     }
 
     let crypto = QuicClientConfig::try_from(Arc::clone(&config.tls_config))

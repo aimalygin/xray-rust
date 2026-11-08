@@ -191,14 +191,14 @@ impl PacketBuilder {
         let ack_eliciting = self.ack_eliciting;
         let exact_number = self.exact_number;
         let space_id = self.space;
-        let (size, padded) = self.finish(conn, now, buffer);
+        let (encrypted_size, padded) = self.finish(conn, now, buffer);
         let sent = match sent {
             Some(sent) => sent,
             None => return,
         };
 
         let size = match padded || ack_eliciting {
-            true => size as u16,
+            true => encrypted_size as u16,
             false => 0,
         };
 
@@ -214,6 +214,12 @@ impl PacketBuilder {
                 conn.app_limited,
             )
         } else {
+            conn.path.congestion.on_sent_not_ack_eliciting(
+                now,
+                encrypted_size as u64,
+                exact_number,
+                conn.path.in_flight.bytes,
+            );
             0
         };
 

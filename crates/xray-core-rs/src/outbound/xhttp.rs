@@ -301,11 +301,9 @@ pub(super) fn invalid_xhttp_configuration(error: impl ToString) -> CoreError {
 /// Maps Xray's QUIC surface into the phase-one HTTP/3 engine.
 ///
 /// Defaults remain usable and interoperable, with the engine's diagnostics
-/// naming its fixed-window and Quinn-BBR performance approximations. Explicit
-/// UDP hopping, debug side-effects, adaptive receive-window pairs,
-/// non-standard BBR profiles and Brutal are retained by the parser but
-/// rejected by `H3QuicConfig` (or here) until their runtime implementation
-/// exists.
+/// naming its Quinn-BBR approximation for the `standard` BBR profile. Debug
+/// side-effects and `brutal` over XHTTP are retained by the parser but
+/// rejected by `H3QuicConfig` (or here).
 pub(super) fn xhttp_h3_quic_config(
     settings: Option<&QuicParamsSettings>,
 ) -> Result<H3QuicConfig, CoreError> {
@@ -374,6 +372,7 @@ pub(super) fn xhttp_h3_quic_config(
         // The XHTTP transport refuses it: only Hysteria announces rates.
         xray_config::QuicCongestion::Brutal => H3Congestion::Brutal {
             up_bytes_per_second: settings.brutal_up_bytes_per_sec,
+            bbr_profile: h3_bbr_profile(settings.bbr_profile),
         },
         xray_config::QuicCongestion::ForceBrutal => H3Congestion::ForceBrutal {
             bytes_per_second: settings.brutal_up_bytes_per_sec,
@@ -414,12 +413,16 @@ pub(super) fn udp_hop_config(
     }
 }
 
-/// The BBR variant for Xray's `bbrProfile`; only standard is implemented.
-pub(super) const fn bbr_congestion(profile: xray_config::QuicBbrProfile) -> H3Congestion {
+/// The BBR variant for Xray's `bbrProfile`.
+pub(super) fn bbr_congestion(profile: xray_config::QuicBbrProfile) -> H3Congestion {
+    H3Congestion::from_bbr_profile(h3_bbr_profile(profile))
+}
+
+pub(super) const fn h3_bbr_profile(profile: xray_config::QuicBbrProfile) -> H3BbrProfile {
     match profile {
-        xray_config::QuicBbrProfile::Conservative => H3Congestion::BbrConservative,
-        xray_config::QuicBbrProfile::Standard => H3Congestion::BbrStandard,
-        xray_config::QuicBbrProfile::Aggressive => H3Congestion::BbrAggressive,
+        xray_config::QuicBbrProfile::Conservative => H3BbrProfile::Conservative,
+        xray_config::QuicBbrProfile::Standard => H3BbrProfile::Standard,
+        xray_config::QuicBbrProfile::Aggressive => H3BbrProfile::Aggressive,
     }
 }
 
