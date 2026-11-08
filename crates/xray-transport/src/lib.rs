@@ -27,6 +27,7 @@ pub mod header_custom;
 pub mod hysteria;
 pub mod kcp;
 mod memory_class;
+pub mod realm;
 pub mod sudoku;
 pub mod xdns;
 pub mod xmc;
@@ -202,6 +203,8 @@ pub enum TransportError {
     Xhttp(String),
     #[error("mKCP dial failed: {0}")]
     Kcp(std::io::Error),
+    #[error("realm socket failed: {0}")]
+    RealmSocket(std::io::Error),
     #[error(transparent)]
     Http2Connect(#[from] stream::Http2ConnectError),
     #[error("reality handshake failed: {0}")]

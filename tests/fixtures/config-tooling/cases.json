@@ -5214,6 +5214,145 @@
         "/outbounds/0/streamSettings/finalmask/udp/1/settings/seed": 1
       },
       "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.seed"
+    },
+    {
+      "name": "realm-udp-kcp",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "kcp",
+              "finalmask": {
+                "udp": [
+                  {
+                    "type": "mkcp-legacy",
+                    "settings": {
+                      "value": "synthetic-seed"
+                    }
+                  },
+                  {
+                    "type": "realm",
+                    "settings": {
+                      "url": "realm://synthetic-token@rendezvous.example/synthetic-realm",
+                      "stunServers": [
+                        "stun.example.net:3478",
+                        "192.0.2.10:3478"
+                      ],
+                      "tlsConfig": {
+                        "serverName": "rendezvous.example"
+                      },
+                      "ipMode": "v4",
+                      "portMapping": {
+                        "enabled": true,
+                        "timeout": 5,
+                        "lifetime": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "REALM_MASK": "/outbounds/0/streamSettings/finalmask/udp/1/settings",
+        "REALM_PORT_MAPPING": "/outbounds/0/streamSettings/finalmask/udp/1/settings/portMapping"
+      }
+    },
+    {
+      "name": "realm-bad-scheme",
+      "accepted": false,
+      "base": "realm-udp-kcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/url": "https://synthetic-token@rendezvous.example/synthetic-realm"
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.url"
+    },
+    {
+      "name": "realm-no-token",
+      "accepted": false,
+      "base": "realm-udp-kcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/url": "realm://rendezvous.example/synthetic-realm"
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.url"
+    },
+    {
+      "name": "realm-no-name",
+      "accepted": false,
+      "base": "realm-udp-kcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/url": "realm://synthetic-token@rendezvous.example"
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.url"
+    },
+    {
+      "name": "realm-no-stun",
+      "accepted": false,
+      "base": "realm-udp-kcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/stunServers": []
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.stunServers"
+    },
+    {
+      "name": "realm-stun-without-port",
+      "accepted": false,
+      "base": "realm-udp-kcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/stunServers": [
+          "stun.example.net"
+        ]
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.stunServers[0]"
+    },
+    {
+      "name": "realm-port-mapping-type",
+      "accepted": false,
+      "base": "realm-udp-kcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/portMapping/timeout": "5"
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.portMapping.timeout"
+    },
+    {
+      "name": "realm-unknown-field",
+      "accepted": false,
+      "base": "realm-udp-kcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/seed": 1
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.seed"
     }
   ]
 }

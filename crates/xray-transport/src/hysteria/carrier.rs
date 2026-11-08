@@ -47,6 +47,10 @@ pub struct HysteriaCarrierConfig {
     /// The `xdns` mask, the outermost: the datagrams go to its resolvers,
     /// never to the server's address.
     pub xdns: Option<Arc<crate::xdns::XdnsConfig>>,
+    /// The `realm` mask, the outermost: the socket is introduced to the
+    /// server through a rendezvous, and the datagrams go to the address that
+    /// answered its punch.
+    pub realm: Option<Arc<crate::realm::RealmConfig>>,
 }
 
 /// A `sudoku` UDP mask and its place among the carrier's masks.
@@ -80,6 +84,7 @@ impl fmt::Debug for HysteriaCarrierConfig {
             .field("header_custom", &self.header_custom.is_some())
             .field("sudoku", &self.sudoku.is_some())
             .field("xdns", &self.xdns.is_some())
+            .field("realm", &self.realm.is_some())
             .finish()
     }
 }
@@ -177,6 +182,19 @@ impl HysteriaCarrierConfig {
                 return Err(HysteriaError::Configuration);
             }
         }
+        if let Some(realm) = &self.realm {
+            // Its socket goes to the punched peer, never hops, and is no
+            // resolver's; header-custom's state would key the server's
+            // address while replies come from the peer's.
+            if self.udp_hop.is_active()
+                || self.xdns.is_some()
+                || self.header_custom.is_some()
+                || realm.stun_servers.is_empty()
+                || (realm.scheme == crate::realm::RealmScheme::Https && realm.tls.is_none())
+            {
+                return Err(HysteriaError::Configuration);
+            }
+        }
         if self
             .salamander_password
             .as_ref()
@@ -227,6 +245,7 @@ impl HysteriaCarrierConfig {
             || self.header_custom.is_some()
             || self.sudoku.is_some()
             || self.xdns.is_some()
+            || self.realm.is_some()
     }
 
     /// What the masks add to every QUIC datagram: Salamander's salt and a
@@ -415,11 +434,19 @@ pub(crate) fn wrap(
         .as_ref()
         .map(|_| socket.try_clone())
         .transpose()?;
-    // Socket protection has already happened, before connect or any send.
-    #[cfg(target_os = "macos")]
-    let socket = crate::connected_quic::wrap(socket, wire_peer)?;
-    #[cfg(not(target_os = "macos"))]
-    let socket = quinn::TokioRuntime.wrap_udp_socket(socket)?;
+    // A realm socket is unconnected and may be dual-stack, its peer of
+    // another family than the server's address.
+    let socket = if config.realm.is_some() {
+        use quinn::Runtime as _;
+        crate::realm::quic::wrap(quinn::TokioRuntime.wrap_udp_socket(socket)?, logical_peer)?
+    } else {
+        // Socket protection has already happened, before connect or any send.
+        #[cfg(target_os = "macos")]
+        let socket = crate::connected_quic::wrap(socket, wire_peer)?;
+        #[cfg(not(target_os = "macos"))]
+        let socket = quinn::TokioRuntime.wrap_udp_socket(socket)?;
+        socket
+    };
     if let Some(clone) = fragmenting {
         crate::sudoku::quic::allow_fragmentation(&clone)?;
     }
@@ -1177,6 +1204,54 @@ mod tests {
         config.xdns = Some(xdns);
         let session = CarrierSession::new(&config).unwrap();
         assert!(wrap(socket, peer, peer, &config, &session).is_err());
+    }
+
+    #[test]
+    fn realm_runs_without_udphop_xdns_and_header_custom() {
+        let realm = Arc::new(crate::realm::RealmConfig {
+            scheme: crate::realm::RealmScheme::Http,
+            host: "127.0.0.1".into(),
+            port_text: "80".into(),
+            port: 80,
+            token: Arc::new(Zeroizing::new("t".into())),
+            id: "x".into(),
+            stun_servers: vec![crate::realm::RealmStunServer {
+                host: "127.0.0.1".into(),
+                port_text: "3478".into(),
+                port: 3478,
+            }],
+            tls: None,
+            family: crate::realm::RealmFamily::Dual,
+        });
+        let mut config = HysteriaCarrierConfig {
+            realm: Some(realm.clone()),
+            ..Default::default()
+        };
+        assert!(config.enabled());
+        config.validate().unwrap();
+        config.udp_hop.ports = vec![443, 8443];
+        config.udp_hop.local = true;
+        assert!(config.validate().is_err(), "udphop");
+        config.udp_hop = Default::default();
+        config.header_custom = Some(HeaderCustomCarrier {
+            config: Arc::new(HeaderCustomUdpConfig::default()),
+            before_salamander: false,
+            before_noise: false,
+        });
+        assert!(config.validate().is_err(), "header-custom");
+        config.header_custom = None;
+        config.xdns = Some(Arc::new(crate::xdns::XdnsConfig::default()));
+        assert!(config.validate().is_err(), "xdns");
+        config.xdns = None;
+        // HTTPS needs its TLS settings.
+        config.realm = Some(Arc::new(crate::realm::RealmConfig {
+            scheme: crate::realm::RealmScheme::Https,
+            ..(*realm).clone()
+        }));
+        assert!(config.validate().is_err(), "HTTPS without TLS");
+        config.salamander_password = Some(Arc::new(Zeroizing::new("synthetic".into())));
+        config.realm = Some(realm);
+        config.validate().unwrap();
     }
 
     #[test]

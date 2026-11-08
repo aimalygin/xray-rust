@@ -2242,6 +2242,68 @@ resolvers reach no real resolver. `scripts/check-xdns-interop.sh` compares
 the encoding with Xray-core's own code and runs each carrier against its
 server.
 
+### realm mask
+
+`realm` reaches a server behind NAT through a rendezvous, as Hysteria's
+Realms do, on mKCP, Hysteria or XHTTP with exact `h3` ALPN. The server's
+inbound registers its public addresses with the rendezvous under a realm
+name; the client finds its own, asks the rendezvous to introduce it, and
+both send punch packets until one arrives. The rendezvous carries no
+traffic.
+
+```json
+"finalmask": {"udp": [{"type": "realm", "settings": {
+  "url": "realm://public@realm.hy2.io/my-long-random-name",
+  "stunServers": ["stun.nextcloud.com:3478", "stun.sip.us:3478",
+    "global.stun.twilio.com:3478"],
+  "ipMode": "dual"
+}}]}
+```
+
+- `url`: `realm://token@host[:port]/name` over HTTPS, port 443 by default,
+  or `realm+http://` over HTTP, port 80. It is read with Go's `url.Parse`,
+  as Xray-core reads it: the user information, unescaped, is the bearer
+  token, the path without its first slash, unescaped, is the name, and the
+  query and fragment are ignored. The outbound's own address and port are
+  not used; the address must still resolve.
+- `stunServers`: one or more `host:port` entries, each port 1 to 65535. Each
+  is resolved to one address, the first of the family `ipMode` and the
+  socket allow that no earlier server took. The client waits up to four
+  seconds for their answers. Several servers expose a predictable symmetric
+  NAT, whose neighbouring ports are then punched too.
+- `tlsConfig`: `tlsSettings`' fields for an HTTPS rendezvous. `serverName`
+  defaults to the URL's host; `pinnedPeerCertSha256` and
+  `verifyPeerCertByName` apply as they do there. `fingerprint` is checked
+  and not used, as in Xray-core, whose HTTP client sends Go's own
+  ClientHello; this one sends rustls's. `alpn` is read and not used: the
+  rendezvous is spoken over HTTP/1.1.
+- `ipMode`: `dual` (the default, a dual-stack socket), `v4` or `v6`,
+  case-insensitive. Xray-core reads any other value as `dual`.
+- `portMapping`: `enabled`, `timeout` and `lifetime` (seconds) are read as
+  Xray-core reads them, but no UPnP or NAT-PMP mapping is made yet, as when
+  Xray-core finds no gateway, so the gateway's address is never offered.
+
+An attempt sends Binding requests to the STUN servers over the carrier's
+socket, then `POST /v1/{name}/connect` to the rendezvous with the addresses
+they reported and the attempt's 16-byte nonce and 32-byte key, then hello
+packets every 100 ms, for up to ten seconds, to the server's addresses in
+the families the client has addresses in. The first punch packet of the
+attempt names the peer, and a hello is answered. With the rendezvous's
+ten-second wait for the server, an attempt takes up to about 35 seconds,
+which Hysteria's dial deadline allows for.
+
+The mask must be the last UDP mask. Xray-core sends its STUN and punch
+packets through the masks listed after it, which mangle them or, for noise,
+announce them; list noise before realm. The masks listed before it run on
+the carrier's datagrams inside it. It cannot run with udphop or xdns, which
+send elsewhere, nor with header-custom, whose state Xray-core keys by the
+server's address while replies come from the peer's. The names of the
+rendezvous and of the STUN servers are resolved like the outbound's server
+address. A Hysteria connection whose network changes closes, and the next
+dial is introduced again; XHTTP introduces every QUIC connection it opens.
+`scripts/check-realm-interop.sh` replays what Xray-core's own realm code
+does and runs each carrier against its server through a local rendezvous.
+
 ### TLS ClientHello shaping
 
 `security: "tls"` sends a uTLS-shaped ClientHello, as Xray-core does on every

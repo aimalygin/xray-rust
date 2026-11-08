@@ -41,8 +41,9 @@ pub use model::{
 };
 pub use model::{
     BlackholeOutboundSettings, BlackholeResponse, HttpInboundSettings, HttpOutboundSettings,
-    SocksInboundSettings, SocksOutboundSettings, TproxySettings, UdpNoiseItem, UdpNoiseSettings,
-    UdpSudoku, XdnsDomain, XdnsMask, XdnsProtocol, XdnsResolver, XmcMask, XmcProfile,
+    RealmIpMode, RealmMask, RealmPortMapping, RealmScheme, RealmStunServer, SocksInboundSettings,
+    SocksOutboundSettings, TproxySettings, UdpNoiseItem, UdpNoiseSettings, UdpSudoku, XdnsDomain,
+    XdnsMask, XdnsProtocol, XdnsResolver, XmcMask, XmcProfile,
 };
 pub use parser::{
     parse_xray_json, parse_xray_json_with_exclusive_geodata_dirs, parse_xray_json_with_geodata_dir,

@@ -424,3 +424,82 @@ fn xdns_reaches_mkcp_and_xhttp_h3_and_not_xhttp_h2() {
     tls.alpn = vec!["h2".into()];
     assert!(build_transport_layer(&h3.stream, &server, 443, &transport, VLESS_PATHS).is_err());
 }
+
+#[test]
+fn realm_reaches_mkcp_and_xhttp_h3_with_its_tls_and_family() {
+    let realm = json!({"type":"realm","settings":{
+        "url":"realm://synthetic-token@rendezvous.example:8443/synthetic-realm",
+        "stunServers":["stun.example.net:3478","192.0.2.10:+3479"],
+        "ipMode":"V6",
+        "tlsConfig":{"pinnedPeerCertSha256":"11".repeat(32)}}});
+    let server = TargetAddr::Domain("server.example".into());
+    let kcp = vless(json!({"network":"kcp","finalmask":{"udp":[realm]}}));
+    let transport = build_connector(&kcp.stream.security, &server);
+    let TransportLayer::Kcp(layer) =
+        build_transport_layer(&kcp.stream, &server, 443, &transport, VLESS_PATHS).unwrap()
+    else {
+        panic!("not mKCP")
+    };
+    let config = layer.realm.as_deref().unwrap();
+    assert_eq!(config.scheme, xray_transport::realm::RealmScheme::Https);
+    assert_eq!(
+        (config.host.as_str(), config.port, config.port_text.as_str()),
+        ("rendezvous.example", 8443, "8443")
+    );
+    assert_eq!(config.token.as_str(), "synthetic-token");
+    assert_eq!(config.id, "synthetic-realm");
+    assert_eq!(config.family, xray_transport::realm::RealmFamily::V6);
+    assert_eq!(
+        config
+            .stun_servers
+            .iter()
+            .map(|s| (s.host.as_str(), s.port_text.as_str(), s.port))
+            .collect::<Vec<_>>(),
+        vec![
+            ("stun.example.net", "3478", 3478),
+            ("192.0.2.10", "+3479", 3479)
+        ]
+    );
+    // The rendezvous host names the TLS server unless tlsConfig does, and
+    // the hello is never shaped.
+    let tls = config.tls.as_ref().unwrap();
+    assert_eq!(tls.server_name, "rendezvous.example");
+    assert_eq!(tls.pinned_peer_cert_sha256, vec![[0x11; 32]]);
+    assert!(tls.fingerprint.is_none() && tls.alpn.is_empty());
+    let named = vless(
+        json!({"network":"kcp","finalmask":{"udp":[{"type":"realm","settings":{
+        "url":"realm+http://t@192.0.2.1/x","stunServers":["192.0.2.2:3478"],
+        "tlsConfig":{"serverName":"front.example"}}}]}}),
+    );
+    let TransportLayer::Kcp(layer) =
+        build_transport_layer(&named.stream, &server, 443, &transport, VLESS_PATHS).unwrap()
+    else {
+        panic!("not mKCP")
+    };
+    let config = layer.realm.as_deref().unwrap();
+    assert_eq!(config.scheme, xray_transport::realm::RealmScheme::Http);
+    assert!(config.tls.is_none(), "HTTP needs no TLS");
+    assert_eq!(config.port, 80);
+    let mut h3 = vless(json!({"network":"xhttp","security":"tls",
+        "tlsSettings":{"serverName":"server.example","alpn":["h3"]},
+        "finalmask":{"udp":[realm],"quicParams":{"disableChromeParrot":true}}}));
+    let transport = build_connector(&h3.stream.security, &server);
+    let TransportLayer::Xhttp(xhttp) =
+        build_transport_layer(&h3.stream, &server, 443, &transport, VLESS_PATHS).unwrap()
+    else {
+        panic!("not xhttp")
+    };
+    assert_eq!(
+        xhttp
+            .h3_quic_config()
+            .udp_realm
+            .as_deref()
+            .map(|r| r.id.as_str()),
+        Some("synthetic-realm")
+    );
+    let StreamSecurity::Tls(tls) = &mut h3.stream.security else {
+        panic!("not tls")
+    };
+    tls.alpn = vec!["h2".into()];
+    assert!(build_transport_layer(&h3.stream, &server, 443, &transport, VLESS_PATHS).is_err());
+}

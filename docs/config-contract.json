@@ -830,6 +830,28 @@
       "notes": "addrs are udp:// (the default) or tcp:// with an IP address and an optional port, 53 by default. DNS over TCP sends each message after its two-byte length, which Xray-core's client fails to write. Names, https:// resolvers and their tlsConfig and quicConfig are not supported yet. worker is read and, as in Xray-core, only DNS over HTTPS would use it."
     },
     {
+      "context": "streamSettings.finalmask.udp[].settings (realm)",
+      "fields": [
+        "url",
+        "stunServers",
+        "tlsConfig",
+        "ipMode",
+        "portMapping"
+      ],
+      "id": "REALM_MASK",
+      "notes": "mKCP, Hysteria and XHTTP with exact h3 ALPN; the last UDP mask, never with udphop, xdns or header-custom. The client finds its public addresses with STUN over the carrier's socket, asks the rendezvous at url to introduce it to the server registered under the realm name, punches a hole to the addresses the server reports and sends the carrier's datagrams to the one that answers. url is realm://token@host[:port]/name over HTTPS (port 443) or realm+http:// over HTTP (port 80), read with Go's url.Parse; its query and fragment are ignored. stunServers are one or more host:port entries, each port 1 to 65535. tlsConfig takes tlsSettings' fields for an HTTPS rendezvous; its fingerprint is checked and not used, as in Xray-core's HTTP client. ipMode is dual, v4 or v6, any other value reading as dual. Names are resolved like the outbound's server address."
+    },
+    {
+      "context": "streamSettings.finalmask.udp[].settings.portMapping (realm)",
+      "fields": [
+        "enabled",
+        "timeout",
+        "lifetime"
+      ],
+      "id": "REALM_PORT_MAPPING",
+      "notes": "Read as Xray-core reads it, enabled a boolean and timeout and lifetime 64-bit integers of seconds, but not acted on yet: no UPnP or NAT-PMP mapping is made, as when Xray-core finds no gateway."
+    },
+    {
       "context": "streamSettings.finalmask.tcp[].settings (xmc)",
       "fields": [
         "hostname",

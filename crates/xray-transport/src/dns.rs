@@ -1036,6 +1036,7 @@ pub async fn exchange_dns_quic_candidates(
             tls_config: Arc::clone(&tls_config),
             socket_protector: socket_protector.clone(),
             quic: crate::stream::H3QuicConfig::default(),
+            realm: None,
         };
         let (endpoint, connection, _, _) =
             match crate::stream::connect_quic_transport(config, b"doq").await {

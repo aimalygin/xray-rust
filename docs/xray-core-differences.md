@@ -598,6 +598,54 @@ AES and noise inside xdns; XHTTP over HTTP/3 and Hysteria, alone and with
 Salamander inside, before and after a rebind, carry the same. A client with
 another domain never gets through.
 
+## realm
+
+The `realm` UDP mask introduces the carrier's socket as Xray-core
+v26.10.31's client does: its URL read with Go's `url.Parse`, STUN answers
+read as pion/stun reads them, the rendezvous request written as Go's HTTP
+client writes it over HTTP/1.1 and its answer read as `encoding/json` reads
+it, the candidates and predictable symmetric-NAT ports it punches, and punch
+packets with their salt, padding and SHA-256 mask. Deliberate differences:
+
+- `portMapping` is not acted on yet: no UPnP or NAT-PMP mapping is made and
+  the gateway's external address is never offered, as when Xray-core finds
+  no gateway. Xray-core spends up to twice the timeout looking for one at
+  every dial.
+- It must be the last UDP mask, and runs neither with udphop, xdns nor
+  header-custom: Xray-core sends STUN and punch packets through the masks
+  after it, udphop and xdns send elsewhere, and header-custom keys its state
+  by the server's address while replies come from the peer's.
+- A URL port of 0 or above 65535, a host with a colon that is no IPv6
+  address, a token with control characters, a token or name that does not
+  unescape to UTF-8, and a STUN server whose port does not read as 1 to
+  65535 fail the configuration. Xray-core accepts them, then fails every
+  dial or skips the server.
+- The rendezvous is spoken over HTTP/1.1, where Go's client may negotiate
+  HTTP/2 over TLS, and over rustls's TLS, unshaped, where Xray-core uses
+  Go's own. `tlsConfig.alpn` is read and not used.
+- Names are resolved like the outbound's server address; Xray-core asks
+  Go's resolver.
+- The rendezvous call gives up after 20 seconds; Go's client waits for good.
+- The socket closes with the connection; Xray-core leaves it open until the
+  garbage collector finds it.
+- With `ipMode` `dual` on a system without IPv6 sockets, STUN servers
+  resolve to IPv4 only.
+- A Hysteria connection whose network changes closes, and the next dial is
+  introduced again: a new socket needs a new hole.
+- A peer address with a named IPv6 zone does not parse, which loses the
+  whole list, as any address Go cannot parse does there.
+
+Evidence: `tools/realm-oracle` records `Realm.Build`'s verdicts on 77 URLs,
+23 STUN servers and 29 settings, 720 STUN answers read by
+`parseSTUNBindingResponse`, 138 punch packets read by `DecodePunchPacket`,
+18 candidate sets and 31 rendezvous exchanges with Go's `realm.Client`; the
+tests replay them all, the requests byte for byte. Live against Xray-core's
+server through a local rendezvous speaking Hysteria's realm API, mKCP
+carries a TCP echo and UDP over a dual-stack and an IPv4 socket, with AES
+and noise inside realm; XHTTP over HTTP/3 and Hysteria, alone and with
+Salamander inside, carry the same; an unknown realm name gets no
+introduction.
+
 ## DNS `UseSystem` route probe
 
 `queryStrategy: "UseSystem"` narrows each lookup to the address families the
