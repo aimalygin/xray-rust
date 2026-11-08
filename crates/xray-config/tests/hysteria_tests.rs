@@ -83,11 +83,6 @@ fn hysteria2_rejects_unsupported_or_inconsistent_settings_without_exposing_auth(
         ("/outbounds/0/settings", "udpIdleTimeout", json!(60)),
         (
             "/outbounds/0/streamSettings",
-            "finalmask",
-            json!({"quicParams":{"bbrProfile":"aggressive"}}),
-        ),
-        (
-            "/outbounds/0/streamSettings",
             "sockopt",
             json!({"dialerProxy":"direct"}),
         ),
@@ -200,7 +195,7 @@ fn hysteria_salamander_hopping_and_fail_closed_masks() {
         assert!(!format!("{error:?}").contains("synthetic-secret"));
     }
     for quic in [
-        json!({"bbrProfile":"conservative"}),
+        json!({"bbrProfile":"turbo"}),
         json!({"congestion":"force-brutal"}),
         json!({"udpHop":{"ports":"1-65535,1"}}),
         json!({"udpHop":{"ports":443,"interval":4}}),

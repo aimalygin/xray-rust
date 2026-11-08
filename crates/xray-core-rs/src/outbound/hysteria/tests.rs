@@ -216,12 +216,14 @@ fn hysteria_quic_params_follow_xrays_hysteria_dialer() {
             xray_config::QuicCongestion::Default,
             H3Congestion::Brutal {
                 up_bytes_per_second: 1_250_000,
+                bbr_profile: H3BbrProfile::Standard,
             },
         ),
         (
             xray_config::QuicCongestion::Brutal,
             H3Congestion::Brutal {
                 up_bytes_per_second: 1_250_000,
+                bbr_profile: H3BbrProfile::Standard,
             },
         ),
         (xray_config::QuicCongestion::Bbr, H3Congestion::BbrStandard),
@@ -245,6 +247,46 @@ fn hysteria_quic_params_follow_xrays_hysteria_dialer() {
     // Without its own rate the client stays on BBR.
     let (quic, _) = hysteria_quic_config(Some(&QuicParamsSettings::default())).unwrap();
     assert_eq!(quic.congestion, H3Congestion::BbrStandard);
+
+    // The profile chooses the BBR, directly or when the server announces no
+    // rate.
+    for (profile, bbr, h3_profile) in [
+        (
+            xray_config::QuicBbrProfile::Conservative,
+            H3Congestion::BbrConservative,
+            H3BbrProfile::Conservative,
+        ),
+        (
+            xray_config::QuicBbrProfile::Aggressive,
+            H3Congestion::BbrAggressive,
+            H3BbrProfile::Aggressive,
+        ),
+    ] {
+        for congestion in [
+            xray_config::QuicCongestion::Default,
+            xray_config::QuicCongestion::Bbr,
+        ] {
+            let settings = QuicParamsSettings {
+                congestion,
+                bbr_profile: profile,
+                ..QuicParamsSettings::default()
+            };
+            let (quic, _) = hysteria_quic_config(Some(&settings)).unwrap();
+            assert_eq!(quic.congestion, bbr, "{congestion:?} {profile:?}");
+        }
+        let settings = QuicParamsSettings {
+            bbr_profile: profile,
+            ..base.clone()
+        };
+        let (quic, _) = hysteria_quic_config(Some(&settings)).unwrap();
+        assert_eq!(
+            quic.congestion,
+            H3Congestion::Brutal {
+                up_bytes_per_second: 1_250_000,
+                bbr_profile: h3_profile,
+            }
+        );
+    }
 
     let (quic, _) = hysteria_quic_config(Some(&QuicParamsSettings {
         init_stream_receive_window: 8 * 1024 * 1024,
@@ -274,22 +316,11 @@ fn hysteria_quic_params_follow_xrays_hysteria_dialer() {
     );
     assert!(quic.disable_gso && quic.brutal_disable_loss_compensation);
 
-    for invalid in [
-        QuicParamsSettings {
-            debug: true,
-            ..QuicParamsSettings::default()
-        },
-        QuicParamsSettings {
-            bbr_profile: xray_config::QuicBbrProfile::Conservative,
-            ..QuicParamsSettings::default()
-        },
-        QuicParamsSettings {
-            bbr_profile: xray_config::QuicBbrProfile::Aggressive,
-            ..base.clone()
-        },
-    ] {
-        assert!(hysteria_quic_config(Some(&invalid)).is_err(), "{invalid:?}");
-    }
+    let debug = QuicParamsSettings {
+        debug: true,
+        ..QuicParamsSettings::default()
+    };
+    assert!(hysteria_quic_config(Some(&debug)).is_err());
 }
 
 #[tokio::test]

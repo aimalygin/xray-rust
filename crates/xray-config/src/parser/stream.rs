@@ -655,10 +655,12 @@ impl Parser<'_> {
 
         // Go's encoding/json treats null for scalar struct fields as their
         // existing zero value. The nullable helpers below preserve that rule.
-        let congestion = match self
-            .nullable_string_at(quic, "congestion", format!("{quic_path}.congestion"))?
-            .to_lowercase()
-            .as_str()
+        let congestion = match crate::go_lowercase(&self.nullable_string_at(
+            quic,
+            "congestion",
+            format!("{quic_path}.congestion"),
+        )?)
+        .as_ref()
         {
             "" => QuicCongestion::Default,
             "brutal" => QuicCongestion::Brutal,
@@ -673,10 +675,14 @@ impl Parser<'_> {
                 return None;
             }
         };
-        let bbr_profile = match self
-            .nullable_string_at(quic, "bbrProfile", format!("{quic_path}.bbrProfile"))?
-            .to_lowercase()
-            .as_str()
+        // Xray-core accepts every profile wherever quicParams goes; its
+        // Hysteria and XHTTP H3 dialers run them all.
+        let bbr_profile = match crate::go_lowercase(&self.nullable_string_at(
+            quic,
+            "bbrProfile",
+            format!("{quic_path}.bbrProfile"),
+        )?)
+        .as_ref()
         {
             "" | "standard" => QuicBbrProfile::Standard,
             "conservative" => QuicBbrProfile::Conservative,
@@ -708,19 +714,6 @@ impl Parser<'_> {
             self.error(
                 format!("{quic_path}.congestion"),
                 "force-brutal requires nonzero brutalUp",
-            );
-        }
-        // Fail closed where Xray would run what this runtime lacks.
-        let uses_bbr_profile = match congestion {
-            QuicCongestion::Default | QuicCongestion::Bbr => true,
-            // Hysteria falls back to BBR unless both sides announce a rate.
-            QuicCongestion::Brutal => network == StreamNetwork::Hysteria,
-            QuicCongestion::Reno | QuicCongestion::ForceBrutal => false,
-        };
-        if is_quic && uses_bbr_profile && bbr_profile != QuicBbrProfile::Standard {
-            self.error(
-                format!("{quic_path}.bbrProfile"),
-                "only the standard BBR profile is implemented; conservative and aggressive need Xray's own BBR sender",
             );
         }
         if is_quic && network == StreamNetwork::Xhttp && congestion == QuicCongestion::Brutal {

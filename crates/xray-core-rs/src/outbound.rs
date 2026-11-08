@@ -69,7 +69,8 @@ use xray_proxy::vless::{
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::stream::{
-    resolve_user_agent, Authority, GrpcConfig, GrpcTransport, H3Congestion, H3QuicConfig,
+    resolve_user_agent, Authority, GrpcConfig, GrpcTransport, H3BbrProfile, H3Congestion,
+    H3QuicConfig,
     H3UdpHopConfig, HeaderMap, HeaderValue, HttpUpgradeConfig, TransportLayer, WebSocketConfig,
     XhttpConfig, XhttpConfigInput, XhttpEndpoint, XhttpHttpVersion, XhttpMetadataPlacement,
     XhttpModeSelection, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpRange, XhttpScheme,
