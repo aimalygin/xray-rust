@@ -56,29 +56,11 @@ impl Config {
         }
         Ok(())
     }
-    pub(crate) fn local_for(&self, remote: SocketAddr) -> Result<IpAddr, Error> {
-        if remote.port() == 0
-            || !usable_ip(remote.ip())
-            || scoped(remote)
-            || !self
-                .peers
-                .iter()
-                .flat_map(|p| &p.allowed_ips)
-                .any(|p| p.contains(remote.ip()))
-        {
-            return Err(Error::NoRoute);
-        }
-        self.addresses
-            .iter()
-            .copied()
-            .find(|ip| ip.is_ipv4() == remote.is_ipv4())
-            .ok_or(Error::NoRoute)
-    }
 }
-fn scoped(addr: SocketAddr) -> bool {
+pub(crate) fn scoped(addr: SocketAddr) -> bool {
     matches!(addr, SocketAddr::V6(v6) if v6.scope_id() != 0 || v6.flowinfo() != 0)
 }
-fn usable_ip(ip: IpAddr) -> bool {
+pub(crate) fn usable_ip(ip: IpAddr) -> bool {
     !ip.is_unspecified()
         && !ip.is_multicast()
         && match ip {

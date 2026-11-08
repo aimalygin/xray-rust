@@ -90,16 +90,32 @@ impl Stop {
     }
 }
 
+/// Where a stack's flows may go.
+pub(crate) enum Routes {
+    /// WireGuard's cryptokey routing: the peers' allowed IPs.
+    AllowedIps(Vec<xray_proxy::wireguard::AllowedIp>),
+    /// Anywhere the stack has a local address of the family for.
+    Everywhere,
+}
+
+/// The front of a userspace stack, shared by a WireGuard client and a bare
+/// [`crate::Netstack`]: route checks, flow slots and opens through the actor.
+pub(crate) struct Flows {
+    pub(crate) addresses: Vec<IpAddr>,
+    pub(crate) mtu: u16,
+    pub(crate) routes: Routes,
+    pub(crate) commands: mpsc::Sender<Command>,
+    pub(crate) stop: Stop,
+    pub(crate) wake: Arc<Notify>,
+    pub(crate) tcp: Arc<Semaphore>,
+    pub(crate) udp: Arc<Semaphore>,
+    pub(crate) next: AtomicU64,
+}
+
 struct Owner {
-    config: Config,
-    commands: mpsc::Sender<Command>,
-    stop: Stop,
+    flows: Flows,
     finished: watch::Receiver<bool>,
-    wake: Arc<Notify>,
     rebind: Arc<RebindRequest>,
-    tcp: Arc<Semaphore>,
-    udp: Arc<Semaphore>,
-    next: AtomicU64,
 }
 
 #[derive(Default)]
@@ -109,7 +125,7 @@ struct RebindRequest {
 }
 impl Drop for Owner {
     fn drop(&mut self) {
-        self.stop.close();
+        self.flows.stop.close();
     }
 }
 
@@ -118,7 +134,7 @@ pub struct Client(Arc<Owner>);
 impl fmt::Debug for Client {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WireGuardClient")
-            .field("closed", &self.0.stop.is_closed())
+            .field("closed", &self.0.flows.stop.is_closed())
             .finish_non_exhaustive()
     }
 }
@@ -135,7 +151,14 @@ impl Client {
         let (to_engine, ip_rx) = mpsc::channel(IP_PACKET_QUEUE);
         let (ip_tx, from_engine) = mpsc::channel(IP_PACKET_QUEUE);
         let (commands, requests) = mpsc::channel(COMMAND_QUEUE);
-        let stack = stack::Stack::new(&config, to_engine, from_engine, requests, wake.clone());
+        let stack = stack::Stack::new(
+            &config.addresses,
+            config.mtu,
+            to_engine,
+            from_engine,
+            requests,
+            wake.clone(),
+        );
         let protection_failed = Arc::new(AtomicBool::new(false));
         let peers = config.peers.iter().map(|settings| {
             let mut peer = gotatun::device::Peer::new(x25519_dalek::PublicKey::from(
@@ -231,19 +254,29 @@ impl Client {
         // Drop must no longer cancel after the owner has taken responsibility.
         guard.0 = None;
         Ok(Self(Arc::new(Owner {
-            config,
-            commands,
-            stop,
+            flows: Flows {
+                routes: Routes::AllowedIps(
+                    config
+                        .peers
+                        .iter()
+                        .flat_map(|peer| peer.allowed_ips.iter().cloned())
+                        .collect(),
+                ),
+                addresses: config.addresses,
+                mtu: config.mtu,
+                commands,
+                stop,
+                wake,
+                tcp: Arc::new(Semaphore::new(TCP_LIMIT)),
+                udp: Arc::new(Semaphore::new(UDP_LIMIT)),
+                next: AtomicU64::new(1),
+            },
             finished: done,
-            wake,
             rebind,
-            tcp: Arc::new(Semaphore::new(TCP_LIMIT)),
-            udp: Arc::new(Semaphore::new(UDP_LIMIT)),
-            next: AtomicU64::new(1),
         })))
     }
     pub fn is_live(&self) -> bool {
-        !self.0.stop.is_closed()
+        self.0.flows.is_live()
     }
     /// Requests fresh protected carrier sockets while retaining WireGuard
     /// sessions, pending packets, the inner stack and its flows. This does not resolve endpoints.
@@ -259,7 +292,7 @@ impl Client {
         true
     }
     pub fn close(&self) {
-        self.0.stop.close();
+        self.0.flows.stop.close();
     }
     pub async fn shutdown(&self) {
         self.close();
@@ -269,25 +302,54 @@ impl Client {
         }
     }
     pub fn available_tcp_slots(&self) -> usize {
-        self.0.tcp.available_permits()
+        self.0.flows.tcp.available_permits()
     }
     pub fn available_udp_slots(&self) -> usize {
-        self.0.udp.available_permits()
+        self.0.flows.udp.available_permits()
+    }
+    pub async fn connect(&self, remote: SocketAddr) -> Result<TcpStream, Error> {
+        self.0.flows.connect(remote).await
+    }
+    pub async fn open_udp(&self, remote: SocketAddr) -> Result<UdpSession, Error> {
+        self.0.flows.open_udp(remote).await
+    }
+}
+impl Flows {
+    pub(crate) fn is_live(&self) -> bool {
+        !self.stop.is_closed()
+    }
+    /// The local address a flow to `remote` leaves from.
+    fn local_for(&self, remote: SocketAddr) -> Result<IpAddr, Error> {
+        if remote.port() == 0
+            || !crate::config::usable_ip(remote.ip())
+            || crate::config::scoped(remote)
+            || match &self.routes {
+                Routes::AllowedIps(allowed) => !allowed.iter().any(|p| p.contains(remote.ip())),
+                Routes::Everywhere => false,
+            }
+        {
+            return Err(Error::NoRoute);
+        }
+        self.addresses
+            .iter()
+            .copied()
+            .find(|ip| ip.is_ipv4() == remote.is_ipv4())
+            .ok_or(Error::NoRoute)
     }
     fn lease(&self, tcp: bool) -> Result<(Arc<Flow>, OwnedSemaphorePermit), Error> {
         if !self.is_live() {
             return Err(Error::Closed);
         }
-        let semaphore = if tcp { &self.0.tcp } else { &self.0.udp };
+        let semaphore = if tcp { &self.tcp } else { &self.udp };
         let permit = semaphore
             .clone()
             .try_acquire_owned()
             .map_err(|_| Error::Busy)?;
         let flow = Arc::new(Flow {
-            id: self.0.next.fetch_add(1, Ordering::Relaxed),
+            id: self.next.fetch_add(1, Ordering::Relaxed),
             closed: AtomicBool::new(false),
             reset: AtomicBool::new(false),
-            wake: self.0.wake.clone(),
+            wake: self.wake.clone(),
         });
         Ok((flow, permit))
     }
@@ -301,17 +363,17 @@ impl Client {
         ready: oneshot::Receiver<Result<(), Error>>,
     ) -> Result<(), Error> {
         let open = async {
-            let slot = self.0.commands.reserve().await.map_err(|_| Error::Closed)?;
+            let slot = self.commands.reserve().await.map_err(|_| Error::Closed)?;
             slot.send(command);
             ready.await.map_err(|_| Error::Closed)?
         };
         tokio::select! { biased;
-            _ = self.0.stop.cancelled() => Err(Error::Closed),
+            _ = self.stop.cancelled() => Err(Error::Closed),
             result = tokio::time::timeout(OPEN_TIMEOUT, open) => result.map_err(|_| Error::Timeout)?,
         }
     }
-    pub async fn connect(&self, remote: SocketAddr) -> Result<TcpStream, Error> {
-        let local = self.0.config.local_for(remote)?;
+    pub(crate) async fn connect(&self, remote: SocketAddr) -> Result<TcpStream, Error> {
+        let local = self.local_for(remote)?;
         let (flow, permit) = self.lease(true)?;
         let guard = FlowGuard(flow.clone());
         let (reply, ready) = oneshot::channel();
@@ -333,8 +395,8 @@ impl Client {
             _guard: guard,
         })
     }
-    pub async fn open_udp(&self, remote: SocketAddr) -> Result<UdpSession, Error> {
-        let local = self.0.config.local_for(remote)?;
+    pub(crate) async fn open_udp(&self, remote: SocketAddr) -> Result<UdpSession, Error> {
+        let local = self.local_for(remote)?;
         let (flow, permit) = self.lease(false)?;
         let guard = FlowGuard(flow.clone());
         let (reply, ready) = oneshot::channel();
@@ -355,10 +417,10 @@ impl Client {
             remote,
             flow,
             _guard: guard,
-            commands: self.0.commands.clone(),
+            commands: self.commands.clone(),
             incoming: Mutex::new(packets),
-            stop: self.0.stop.clone(),
-            max_payload: usize::from(self.0.config.mtu) - if remote.is_ipv4() { 28 } else { 48 },
+            stop: self.stop.clone(),
+            max_payload: usize::from(self.mtu) - if remote.is_ipv4() { 28 } else { 48 },
         })
     }
 }
