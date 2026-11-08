@@ -8,6 +8,8 @@
 pub mod client;
 
 mod config;
+// xray-rust: the peer settings `client::SendRequest::peer_settings` returns.
+pub use config::Settings;
 //pub mod error;
 pub mod ext;
 pub mod quic;

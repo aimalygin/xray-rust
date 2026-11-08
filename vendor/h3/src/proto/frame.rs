@@ -406,7 +406,8 @@ impl SettingId {
                 | SettingId::ENABLE_CONNECT_PROTOCOL
                 | SettingId::ENABLE_WEBTRANSPORT
                 | SettingId::WEBTRANSPORT_MAX_SESSIONS
-                | SettingId::H3_DATAGRAM,
+                | SettingId::H3_DATAGRAM
+                | SettingId::H3_DATAGRAM_DRAFT00,
         )
     }
 
@@ -455,6 +456,8 @@ setting_identifiers! {
     H3_SETTING_ENABLE_DATAGRAM_CHROME_SPECIFIC= 0xFFD277,
 
     WEBTRANSPORT_MAX_SESSIONS = 0x2b603743,
+    // xray-rust: draft-ietf-masque-h3-datagram-00, which Cloudflare WARP uses
+    H3_DATAGRAM_DRAFT00 = 0x276,
 }
 
 const SETTINGS_LEN: usize = 8;

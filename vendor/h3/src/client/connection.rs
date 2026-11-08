@@ -142,6 +142,12 @@ where
     T: quic::OpenStreams<B>,
     B: Buf,
 {
+    /// xray-rust: waits for the server's SETTINGS frame. `None` means the
+    /// connection failed before it came. One task at a time may wait.
+    pub async fn peer_settings(&self) -> Option<crate::config::Settings> {
+        future::poll_fn(|cx| self.poll_peer_settings(cx)).await
+    }
+
     /// Send an HTTP/3 request to the server
     #[cfg_attr(feature = "tracing", instrument(skip_all, level = "trace"))]
     pub async fn send_request(

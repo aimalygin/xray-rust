@@ -41,6 +41,8 @@ pub struct Settings {
     pub(crate) enable_datagram: bool,
     /// The maximum number of concurrent streams that can be opened by the peer.
     pub(crate) max_webtransport_sessions: u64,
+    /// xray-rust: the draft-00 HTTP Datagram setting (0x276) set to 1
+    pub(crate) enable_datagram_draft00: bool,
 }
 
 impl From<&frame::Settings> for Settings {
@@ -65,6 +67,8 @@ impl From<&frame::Settings> for Settings {
                 .get(frame::SettingId::ENABLE_CONNECT_PROTOCOL)
                 .map(|value| value != 0)
                 .unwrap_or(defaults.enable_extended_connect),
+            // quic-go's MASQUE clients take only the value 1.
+            enable_datagram_draft00: settings.get(frame::SettingId::H3_DATAGRAM_DRAFT00) == Some(1),
         }
     }
 }
@@ -85,6 +89,7 @@ impl TryFrom<Config> for frame::Settings {
                     enable_extended_connect,
                     enable_datagram,
                     max_webtransport_sessions,
+                    enable_datagram_draft00,
                 },
         } = value;
 
@@ -132,6 +137,10 @@ impl TryFrom<Config> for frame::Settings {
                 frame::SettingId::WEBTRANSPORT_MAX_SESSIONS,
                 max_webtransport_sessions,
             ),
+            (
+                frame::SettingId::H3_DATAGRAM_DRAFT00,
+                enable_datagram_draft00 as u64,
+            ),
         ] {
             if value != 0 {
                 settings.insert(id, value)?;
@@ -150,6 +159,7 @@ impl Default for Settings {
             enable_extended_connect: false,
             enable_datagram: false,
             max_webtransport_sessions: 0,
+            enable_datagram_draft00: false,
         }
     }
 }
@@ -172,6 +182,11 @@ impl Settings {
     /// for extended CONNECT in HTTP/3; instead, the SETTINGS_ENABLE_WEBTRANSPORT setting implies that an endpoint supports extended CONNECT.
     pub fn enable_extended_connect(&self) -> bool {
         self.enable_extended_connect
+    }
+
+    /// xray-rust: whether the draft-00 HTTP Datagram setting (0x276) is 1
+    pub fn enable_datagram_draft00(&self) -> bool {
+        self.enable_datagram_draft00
     }
 }
 
@@ -202,6 +217,31 @@ mod xray_tests {
         settings.encode(&mut encoded);
         // SETTINGS (0x4), length 5, id 0x6, varint 10 MiB.
         assert_eq!(encoded, [0x04, 0x05, 0x06, 0x80, 0xa0, 0x00, 0x00]);
+    }
+
+    /// Xray's WARP dial announces 0x276 = 1 after quic-go's two settings,
+    /// and its check of the server takes only the value 1.
+    #[test]
+    fn draft_datagram_setting_goes_last_and_reads_back_only_as_one() {
+        let mut config = Config::default();
+        config.send_grease = false;
+        config.settings.max_field_section_size = 10 << 20;
+        config.settings.enable_datagram = true;
+        config.settings.enable_datagram_draft00 = true;
+        let settings = frame::Settings::try_from(config).unwrap();
+        let mut encoded = Vec::new();
+        settings.encode(&mut encoded);
+        assert_eq!(
+            encoded,
+            [0x04, 0x0a, 0x06, 0x80, 0xa0, 0x00, 0x00, 0x33, 0x01, 0x42, 0x76, 0x01]
+        );
+        assert!(Settings::from(&settings).enable_datagram_draft00());
+        let mut other = frame::Settings::default();
+        other
+            .insert(frame::SettingId::H3_DATAGRAM_DRAFT00, 2)
+            .unwrap();
+        assert!(!Settings::from(&other).enable_datagram_draft00());
+        assert!(!Settings::from(&frame::Settings::default()).enable_datagram_draft00());
     }
 
     #[test]
