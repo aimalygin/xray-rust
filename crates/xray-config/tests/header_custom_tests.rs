@@ -74,6 +74,17 @@ fn absent_or_null_parts_are_empty() {
     }
     let parsed = header(json!({"clients": [null, [], [{}]]})).unwrap();
     assert_eq!(parsed.clients, [vec![], vec![], vec![plain()]]);
+    // Go leaves a null item as the zero item, in either form.
+    assert_eq!(item(json!(null)).unwrap(), plain());
+    let udp = udp_config(json!({"client": [null], "server": [null, {}]}));
+    let parsed = parse_xray_json(&udp.to_string()).unwrap();
+    let parsed = parsed.config.outbounds[0]
+        .stream
+        .udp_header_custom
+        .clone()
+        .unwrap();
+    assert_eq!(parsed.client, [plain()]);
+    assert_eq!(parsed.server, [plain(), plain()]);
 }
 
 #[test]
@@ -318,4 +329,92 @@ fn settings_must_be_objects_of_arrays() {
         "a header-custom item must be an object",
     );
     refused(json!({"other": []}), "unsupported field `other`");
+}
+
+fn udp_config(settings: Value) -> Value {
+    let mut value: Value = serde_json::from_str(&config(json!([]))).unwrap();
+    value["outbounds"][0]["streamSettings"] = json!({"network":"kcp",
+        "finalmask":{"udp":[{"type":"header-custom","settings":settings}]}});
+    value
+}
+
+#[test]
+fn udp_modes_and_items_are_parsed_in_mask_order() {
+    for (mode, standalone) in [("", false), ("prefix", false), ("standalone", true)] {
+        let mut cfg = udp_config(json!({"mode":mode,"client":[
+            {"type":"str","packet":"hi","capture":"greeting"},
+            {"rand":2,"randRange":"2-4"}],"server":[{"reuse":"greeting"}]}));
+        cfg["outbounds"][0]["streamSettings"]["finalmask"]["udp"]
+            .as_array_mut()
+            .unwrap()
+            .insert(
+                0,
+                json!({"type":"mkcp-legacy","settings":{"header":"srtp"}}),
+            );
+        let parsed = parse_xray_json(&cfg.to_string()).unwrap();
+        let stream = &parsed.config.outbounds[0].stream;
+        let header = stream.udp_header_custom.as_ref().unwrap();
+        assert_eq!(header.standalone, standalone);
+        assert_eq!(header.client[0].packet, b"hi");
+        assert_eq!(header.client[1].rand_range, (2, 4));
+        assert_eq!(header.server[0].reuse, "greeting");
+        let xray_config::StreamTransport::Kcp(kcp) = &stream.transport else {
+            panic!("not kcp")
+        };
+        assert_eq!(
+            kcp.masks,
+            [
+                xray_config::KcpMask::Header(xray_config::KcpHeader::Srtp),
+                xray_config::KcpMask::HeaderCustom
+            ]
+        );
+    }
+    for settings in [
+        json!(null),
+        json!({}),
+        json!({"mode":null,"client":null,"server":null}),
+    ] {
+        let parsed = parse_xray_json(&udp_config(settings).to_string()).unwrap();
+        assert_eq!(
+            parsed.config.outbounds[0].stream.udp_header_custom,
+            Some(Default::default())
+        );
+    }
+}
+
+#[test]
+fn udp_rejects_invalid_settings_tcp_fields_and_other_carriers() {
+    for (settings, expected) in [
+        (json!({"mode":"PREFIX"}), "unknown udp mode"),
+        (json!({"mode":1}), "must be a string"),
+        (json!({"client":{}}), "array or null"),
+        (json!({"client":[{"delay":1}]}), "unsupported field `delay`"),
+        (json!({"clients":[]}), "unsupported field `clients`"),
+        (
+            json!({"server":[{"rand":2,"packet":[1]}]}),
+            "exactly one item kind",
+        ),
+    ] {
+        let errors = parse_xray_json(&udp_config(settings).to_string()).unwrap_err();
+        assert!(
+            errors
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains(expected)),
+            "{errors:?}"
+        );
+    }
+    let mut cfg = udp_config(json!({}));
+    cfg["outbounds"][0]["streamSettings"]["network"] = "raw".into();
+    let errors = parse_xray_json(&cfg.to_string()).unwrap_err();
+    assert!(errors
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("requires mKCP")));
+    let mut cfg = udp_config(json!({}));
+    let masks = cfg["outbounds"][0]["streamSettings"]["finalmask"]["udp"]
+        .as_array_mut()
+        .unwrap();
+    masks.push(masks[0].clone());
+    assert!(parse_xray_json(&cfg.to_string()).is_err());
 }

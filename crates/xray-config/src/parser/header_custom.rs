@@ -3,7 +3,7 @@
 use super::*;
 use crate::{
     go_lowercase, HeaderCustomArg, HeaderCustomExpr, HeaderCustomItem, HeaderCustomTcp,
-    TcpFragmentSettings,
+    HeaderCustomUdp, TcpFragmentSettings,
 };
 use base64::Engine as _;
 
@@ -112,6 +112,65 @@ impl Parser<'_> {
         })
     }
 
+    /// The `header-custom` entry of `finalmask.udp`, as `HeaderCustomUDP.Build`
+    /// reads it. mKCP is the one UDP carrier that applies it here.
+    pub(super) fn parse_udp_header_custom(
+        &mut self,
+        stream: Option<&Value>,
+        network: StreamNetwork,
+        index: usize,
+    ) -> Option<HeaderCustomUdp> {
+        let masks = stream?.pointer("/finalmask/udp")?.as_array()?;
+        let (i, mask) = masks.iter().enumerate().find(|(_, mask)| {
+            mask.get("type")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| go_lowercase(kind) == "header-custom")
+        })?;
+        let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp[{i}]");
+        if network != StreamNetwork::Kcp {
+            self.error(&path, "a header-custom UDP mask requires mKCP here");
+            return None;
+        }
+        let settings_path = format!("{path}.settings");
+        let settings = match mask.get("settings") {
+            None | Some(Value::Null) => &Value::Null,
+            Some(settings) if settings.is_object() => settings,
+            Some(_) => {
+                self.error(
+                    settings_path,
+                    "header-custom settings must be an object or null",
+                );
+                return None;
+            }
+        };
+        self.reject_unknown_fields(settings, &settings_path, &surface::HEADER_CUSTOM_UDP);
+        let mode = self.nullable_string_at(settings, "mode", format!("{settings_path}.mode"))?;
+        // A switch on the exact string there.
+        let standalone = match mode {
+            "" | "prefix" => false,
+            "standalone" => true,
+            _ => {
+                self.error(format!("{settings_path}.mode"), "unknown udp mode");
+                return None;
+            }
+        };
+        let client = self.parse_header_custom_items(
+            settings.get("client").unwrap_or(&Value::Null),
+            &format!("{settings_path}.client"),
+            false,
+        );
+        let server = self.parse_header_custom_items(
+            settings.get("server").unwrap_or(&Value::Null),
+            &format!("{settings_path}.server"),
+            false,
+        );
+        Some(HeaderCustomUdp {
+            standalone,
+            client: client?,
+            server: server?,
+        })
+    }
+
     /// One sequence: an array of items, or null for none.
     pub(super) fn parse_header_custom_items(
         &mut self,
@@ -143,11 +202,22 @@ impl Parser<'_> {
         path: &str,
         tcp: bool,
     ) -> Option<HeaderCustomItem> {
+        // Go leaves a null element as the zero item, which has no kind.
+        let empty = Value::Object(Default::default());
+        let item = if item.is_null() { &empty } else { item };
         if !item.is_object() {
             self.error(path, "a header-custom item must be an object");
             return None;
         }
-        self.reject_unknown_fields(item, path, &surface::HEADER_CUSTOM_TCP_ITEM);
+        self.reject_unknown_fields(
+            item,
+            path,
+            if tcp {
+                &surface::HEADER_CUSTOM_TCP_ITEM
+            } else {
+                &surface::HEADER_CUSTOM_UDP_ITEM
+            },
+        );
         let capture = self.nullable_string_at(item, "capture", format!("{path}.capture"));
         let reuse = self.nullable_string_at(item, "reuse", format!("{path}.reuse"));
         let kind = self.nullable_string_at(item, "type", format!("{path}.type"));

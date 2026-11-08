@@ -109,16 +109,17 @@ impl Parser<'_> {
         let mut noise = None;
         let mut salamander = None;
         let mut hop = None;
+        let mut header = None;
         // mKCP takes any number of `mkcp-legacy` masks besides these.
         let legacy = |mask: &Value| {
             mask.get("type")
                 .and_then(Value::as_str)
                 .is_some_and(|kind| go_lowercase(kind) == "mkcp-legacy")
         };
-        if masks.iter().filter(|mask| !legacy(mask)).count() > 3 {
+        if masks.iter().filter(|mask| !legacy(mask)).count() > 4 {
             self.error(
                 &path,
-                "at most one udphop, one noise and one Salamander mask are supported",
+                "at most one udphop, one noise, one Salamander and one header-custom mask are supported",
             );
             return None;
         }
@@ -140,12 +141,16 @@ impl Parser<'_> {
                 Some("udphop") if hop.is_none() => {
                     hop = Some(i);
                 }
+                // Read by `parse_udp_header_custom`.
+                Some("header-custom") if header.is_none() => {
+                    header = Some(i);
+                }
                 // Read by `parse_kcp_masks`.
                 Some("mkcp-legacy") if network == StreamNetwork::Kcp => {}
                 Some("mkcp-legacy") => self.error(&p, "mkcp-legacy requires mKCP"),
                 _ => self.error(
                     &p,
-                    "only one udphop, one noise and one Salamander UDP mask are supported",
+                    "only one udphop, one noise, one Salamander and one header-custom UDP mask are supported",
                 ),
             }
         }

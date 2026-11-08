@@ -1,12 +1,12 @@
 //! mKCP's `finalmask.udp` masks as Xray-core v26.10.31 applies them: the
-//! `mkcp-legacy` header, original and AES-128-GCM masks, and noise.
+//! `mkcp-legacy`, noise and `header-custom` masks.
 //!
 //! Xray applies masks in array order on the way out, so the last one is
 //! outermost on the wire. Consecutive legacy masks share one
 //! `headerManagerConn`, which drops a datagram over 4096 bytes. Noise sends
-//! its packets through the masks after it, and splits the legacy masks into
-//! the group before it and the group after it.
-use std::{io, ops::Range, time::Duration};
+//! its packets through the masks after it. Noise and custom headers split
+//! the legacy masks into separate groups.
+use std::{collections::VecDeque, io, net::SocketAddr, ops::Range, time::Duration};
 
 use aes_gcm::{
     aead::{AeadInOut, KeyInit},
@@ -17,7 +17,10 @@ use sha2::{Digest, Sha256};
 use tokio::time::Instant;
 
 use super::{KcpHeader, KcpMask};
-use crate::udp_noise::UdpNoiseConfig;
+use crate::{
+    header_custom::udp::{UdpHeader, Write},
+    udp_noise::UdpNoiseConfig,
+};
 
 /// Xray's `finalmask.UDPSize`.
 const UDP_SIZE: usize = 4096;
@@ -50,7 +53,7 @@ enum Legacy {
 impl Legacy {
     fn new(mask: &KcpMask) -> io::Result<Option<Self>> {
         Ok(Some(match mask {
-            KcpMask::Noise => return Ok(None),
+            KcpMask::Noise | KcpMask::HeaderCustom(_) => return Ok(None),
             KcpMask::Original => Self::Original,
             KcpMask::Aes128Gcm(password) => {
                 let key = Sha256::digest(password.as_bytes());
@@ -236,101 +239,184 @@ struct Noise {
     reset_at: Option<Instant>,
 }
 
-/// One datagram on the wire.
-pub(super) struct Wrapped {
-    /// Noise packets due first, each with the pause after it; `None` for
-    /// one the masks after noise dropped.
-    pub(super) noise: Vec<(Option<Vec<u8>>, Duration)>,
-    /// The datagram, unless the masks after noise dropped it.
-    pub(super) datagram: Option<Vec<u8>>,
+/// Consecutive legacy masks share a size limit; other masks split groups.
+enum Layer {
+    Legacy(Group),
+    Noise(Noise),
+    Header(Box<UdpHeader>),
 }
 
-/// The masks of one mKCP connection, in Xray's order.
+enum Pending {
+    Packet(Vec<u8>, usize),
+    Pause(Duration),
+    NoiseSent(usize),
+    Handshake(Vec<u8>, usize),
+}
+
+pub(super) enum Action {
+    Send(Vec<u8>),
+    Pause(Duration),
+    Wait,
+}
+
+/// Writes resume after each wire operation, so a standalone handshake can
+/// receive its answer before the original packet advances to the next mask.
 pub(super) struct Masks {
-    inner: Group,
-    noise: Option<Noise>,
-    outer: Group,
+    layers: Vec<Layer>,
+    pending: VecDeque<Pending>,
 }
 
 impl Masks {
-    /// The masks `masks` lists. A noise entry takes `noise`.
     pub(super) fn new(masks: &[KcpMask], noise: Option<&UdpNoiseConfig>) -> io::Result<Self> {
-        let mut inner = Group::default();
-        let mut outer = Group::default();
-        let mut seen_noise = None;
+        let mut layers = Vec::new();
+        let mut seen_noise = false;
+        let mut seen_header = false;
         for mask in masks {
-            match Legacy::new(mask)? {
-                Some(legacy) if seen_noise.is_some() => outer.0.push(legacy),
-                Some(legacy) => inner.0.push(legacy),
-                None => {
+            if let Some(legacy) = Legacy::new(mask)? {
+                if let Some(Layer::Legacy(group)) = layers.last_mut() {
+                    group.0.push(legacy);
+                } else {
+                    layers.push(Layer::Legacy(Group(vec![legacy])));
+                }
+                continue;
+            }
+            match mask {
+                KcpMask::Noise => {
                     let Some(config) = noise else {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
                             "an mKCP noise mask without noise settings",
                         ));
                     };
-                    if seen_noise.is_some() {
+                    if seen_noise {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
                             "mKCP takes one noise mask",
                         ));
                     }
                     config.validate()?;
-                    seen_noise = Some(Noise {
+                    seen_noise = true;
+                    layers.push(Layer::Noise(Noise {
                         config: config.clone(),
                         reset_at: None,
-                    });
+                    }));
                 }
+                KcpMask::HeaderCustom(config) => {
+                    if seen_header {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            "mKCP takes one header-custom mask",
+                        ));
+                    }
+                    seen_header = true;
+                    layers.push(Layer::Header(Box::new(UdpHeader::new(config.clone())?)));
+                }
+                _ => unreachable!("legacy masks handled above"),
             }
         }
         Ok(Self {
-            inner,
-            noise: seen_noise,
-            outer,
+            layers,
+            pending: VecDeque::new(),
         })
     }
 
-    /// What goes on the wire for `datagram` at `now`; `None` when the masks
-    /// before noise drop it.
-    pub(super) fn wrap(&mut self, datagram: Vec<u8>, now: Instant) -> Option<Wrapped> {
-        let datagram = self.inner.seal(datagram)?;
-        let noise = match &self.noise {
-            Some(noise)
-                if noise
-                    .reset_at
-                    .is_none_or(|reset_at| noise.config.reset_secs.to > 0 && now > reset_at) =>
-            {
-                noise
-                    .config
-                    .items
-                    .iter()
-                    .map(|item| {
-                        let pause = Duration::from_millis(item.delay_ms.sample().into());
-                        (self.outer.seal(item.build()), pause)
-                    })
-                    .collect()
+    pub(super) fn start(&mut self, datagram: Vec<u8>) {
+        self.pending.push_back(Pending::Packet(datagram, 0));
+    }
+
+    pub(super) fn next(
+        &mut self,
+        now: Instant,
+        local: Option<SocketAddr>,
+        peer: SocketAddr,
+    ) -> Option<Action> {
+        while let Some(pending) = self.pending.pop_front() {
+            match pending {
+                Pending::Pause(pause) => return Some(Action::Pause(pause)),
+                Pending::NoiseSent(index) => {
+                    if let Layer::Noise(noise) = &mut self.layers[index] {
+                        noise.reset_at = Some(
+                            now + Duration::from_secs(noise.config.reset_secs.sample().into()),
+                        );
+                    }
+                }
+                Pending::Handshake(data, index) => {
+                    if let Layer::Header(header) = &self.layers[index] {
+                        if header.waiting() {
+                            self.pending.push_front(Pending::Handshake(data, index));
+                            return Some(Action::Wait);
+                        }
+                    }
+                    self.pending.push_front(Pending::Packet(data, index + 1));
+                }
+                Pending::Packet(data, index) => {
+                    let Some(layer) = self.layers.get_mut(index) else {
+                        return Some(Action::Send(data));
+                    };
+                    match layer {
+                        Layer::Legacy(group) => {
+                            if let Some(data) = group.seal(data) {
+                                self.pending.push_front(Pending::Packet(data, index + 1));
+                            }
+                        }
+                        Layer::Noise(noise) => {
+                            self.pending.push_front(Pending::Packet(data, index + 1));
+                            self.pending.push_front(Pending::NoiseSent(index));
+                            if noise
+                                .reset_at
+                                .is_none_or(|reset| noise.config.reset_secs.to > 0 && now > reset)
+                            {
+                                // Expand in reverse to send items in configuration order.
+                                for item in noise.config.items.iter().rev() {
+                                    let pause =
+                                        Duration::from_millis(item.delay_ms.sample().into());
+                                    self.pending.push_front(Pending::Pause(pause));
+                                    self.pending
+                                        .push_front(Pending::Packet(item.build(), index + 1));
+                                }
+                            }
+                        }
+                        Layer::Header(header) => match header.write(&data, local, peer, now) {
+                            Write::Packet(data) => {
+                                self.pending.push_front(Pending::Packet(data, index + 1))
+                            }
+                            Write::Handshake(request) => {
+                                self.pending.push_front(Pending::Handshake(data, index));
+                                self.pending.push_front(Pending::Packet(request, index + 1));
+                            }
+                            Write::Waiting => {
+                                self.pending.push_front(Pending::Packet(data, index));
+                                return Some(Action::Wait);
+                            }
+                            Write::Drop => {}
+                        },
+                    }
+                }
             }
-            _ => Vec::new(),
-        };
-        Some(Wrapped {
-            noise,
-            datagram: self.outer.seal(datagram),
-        })
-    }
-
-    /// The noise mask saw a datagram at `now`: noise is due again once the
-    /// connection idles past a reset interval drawn afresh.
-    pub(super) fn sent(&mut self, now: Instant) {
-        if let Some(noise) = &mut self.noise {
-            noise.reset_at =
-                Some(now + Duration::from_secs(noise.config.reset_secs.sample().into()));
         }
+        None
     }
 
-    /// Unwraps a received datagram in place, returning the segments' range.
-    pub(super) fn open(&self, buf: &mut [u8]) -> Option<Range<usize>> {
-        let range = self.outer.open(buf, 0..buf.len())?;
-        self.inner.open(buf, range)
+    pub(super) fn open(
+        &mut self,
+        buf: &mut [u8],
+        peer: SocketAddr,
+        now: Instant,
+    ) -> Option<Range<usize>> {
+        let mut range = 0..buf.len();
+        for layer in self.layers.iter_mut().rev() {
+            match layer {
+                Layer::Legacy(group) => range = group.open(buf, range)?,
+                Layer::Noise(_) => {}
+                Layer::Header(header) => {
+                    range.end = range
+                        .end
+                        .min(range.start.saturating_add(header.receive_limit()));
+                    range.start += header.read(&buf[range.clone()], peer, now)?;
+                }
+            }
+        }
+        Some(range)
     }
 }
 

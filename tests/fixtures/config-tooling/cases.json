@@ -4708,6 +4708,103 @@
       },
       "accepted": false,
       "errorPath": "$.outbounds[0].streamSettings.tlsSettings.enableSessionResumption"
+    },
+    {
+      "name": "header-custom-udp",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "kcp",
+              "finalmask": {
+                "udp": [
+                  {
+                    "type": "header-custom",
+                    "settings": {
+                      "mode": "prefix",
+                      "client": [
+                        {
+                          "rand": 0,
+                          "randRange": "0-255",
+                          "capture": "greeting",
+                          "type": "str",
+                          "reuse": "",
+                          "transform": null,
+                          "packet": "HELLO"
+                        }
+                      ],
+                      "server": [
+                        {
+                          "reuse": "greeting"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "HEADER_CUSTOM_UDP": "/outbounds/0/streamSettings/finalmask/udp/0/settings",
+        "HEADER_CUSTOM_UDP_ITEM": "/outbounds/0/streamSettings/finalmask/udp/0/settings/client/0"
+      }
+    },
+    {
+      "name": "header-custom-udp-standalone",
+      "accepted": true,
+      "base": "header-custom-udp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/0/settings/mode": "standalone"
+      }
+    },
+    {
+      "name": "header-custom-udp-bad-mode",
+      "accepted": false,
+      "base": "header-custom-udp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/0/settings/mode": "PREFIX"
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[0].settings.mode"
+    },
+    {
+      "name": "header-custom-udp-delay",
+      "accepted": false,
+      "base": "header-custom-udp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/0/settings/client/0/delay": 1
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[0].settings.client[0].delay"
     }
   ]
 }

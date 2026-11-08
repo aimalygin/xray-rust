@@ -45,7 +45,7 @@ async fn echo_peer(masks: Vec<KcpMask>) -> (SocketAddr, Arc<StdMutex<Seen>>) {
                     client = Some(from);
                     let datagram = &mut buf[..length];
                     record.lock().unwrap().raw.push(datagram.to_vec());
-                    let Some(range) = masks.open(datagram) else { continue };
+                    let Some(range) = masks.open(datagram, from, Instant::now()) else { continue };
                     let segments = read_segments(&datagram[range]);
                     let Some(first) = segments.first() else { continue };
                     record.lock().unwrap().segments.extend(segments.iter().cloned());
@@ -63,8 +63,9 @@ async fn echo_peer(masks: Vec<KcpMask>) -> (SocketAddr, Arc<StdMutex<Seen>>) {
             if let (Some(engine), Some(client)) = (engine.as_mut(), client) {
                 engine.flush(elapsed(since));
                 for datagram in std::mem::take(&mut engine.out) {
-                    if let Some(wrapped) = masks.wrap(datagram, Instant::now()) {
-                        if let Some(datagram) = wrapped.datagram {
+                    masks.start(datagram);
+                    while let Some(action) = masks.next(Instant::now(), Some(address), client) {
+                        if let Action::Send(datagram) = action {
                             let _ = socket.send_to(&datagram, client).await;
                         }
                     }
@@ -324,4 +325,92 @@ fn conversations_count_up_from_the_drawn_number() {
     // A Go uint32 counter truncated to 16 bits wraps to zero.
     assert_eq!(count_up(&counter), 0);
     assert_eq!(count_up(&counter), 1);
+}
+
+#[tokio::test]
+async fn dropping_a_stream_waiting_for_a_standalone_reply_releases_the_driver() {
+    use crate::header_custom::HeaderCustomUdpConfig;
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let peer = socket.local_addr().unwrap();
+    let mut stream = connect(
+        &[peer],
+        None,
+        &config(vec![KcpMask::HeaderCustom(Arc::new(
+            HeaderCustomUdpConfig {
+                standalone: true,
+                ..Default::default()
+            },
+        ))]),
+    )
+    .await
+    .unwrap();
+    let weak = Arc::downgrade(&stream.shared);
+    stream.write_all(b"pending").await.unwrap();
+    let mut buf = [0; 8192];
+    assert_eq!(within(socket.recv_from(&mut buf)).await.unwrap().0, 0);
+    drop(stream);
+    within(async {
+        while weak.upgrade().is_some() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn custom_headers_write_with_go_dual_stack_local_address() {
+    use crate::header_custom::{CustomArg, CustomExpr, CustomItem, HeaderCustomUdpConfig};
+    let fields = |fields: &[(&str, &str)]| {
+        let client = fields
+            .iter()
+            .map(|(op, name)| CustomItem {
+                delay: (0, 0),
+                rand: 0,
+                rand_range: (0, 255),
+                packet: vec![],
+                capture: String::new(),
+                reuse: String::new(),
+                transform: Some(CustomExpr {
+                    op: (*op).into(),
+                    args: vec![CustomArg::Metadata((*name).into())],
+                }),
+            })
+            .collect();
+        config(vec![KcpMask::HeaderCustom(Arc::new(
+            HeaderCustomUdpConfig {
+                standalone: false,
+                client,
+                server: vec![],
+            },
+        ))])
+    };
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let peer = socket.local_addr().unwrap();
+    let mut buf = [0; 8192];
+    // Go's wildcard socket has a local port, but no local IPv4 address.
+    let mut stream = connect(
+        &[peer],
+        None,
+        &fields(&[("be32", "remote_ip4_u32"), ("be16", "local_port")]),
+    )
+    .await
+    .unwrap();
+    stream.write_all(b"port").await.unwrap();
+    let (length, from) = within(socket.recv_from(&mut buf)).await.unwrap();
+    assert!(length > 6);
+    assert_eq!(buf[..4], [127, 0, 0, 1]);
+    assert_eq!(buf[4..6], from.port().to_be_bytes());
+    // The first stream keeps resending to its unanswering peer.
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let peer = socket.local_addr().unwrap();
+    let mut stream = connect(&[peer], None, &fields(&[("be32", "local_ip4_u32")]))
+        .await
+        .unwrap();
+    stream.write_all(b"dropped").await.unwrap();
+    let received =
+        tokio::time::timeout(Duration::from_millis(300), socket.recv_from(&mut buf)).await;
+    assert!(
+        received.is_err(),
+        "a write without a local IPv4 address went out"
+    );
 }

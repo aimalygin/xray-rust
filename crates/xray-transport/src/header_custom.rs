@@ -1,6 +1,6 @@
 //! The `header-custom` mask of Xray-core v26.10.31: items that send random
 //! bytes, fixed bytes, captured variables or the value of a transform, and
-//! the TCP handshake that sends and checks them before any other byte.
+//! the TCP handshake and UDP prefix or standalone exchange that use them.
 //!
 //! Xray runs the client's handshake on the first write. A client always
 //! writes first, so the dialer runs it as soon as TCP connects, which gives
@@ -10,6 +10,9 @@ use std::{collections::HashMap, fmt, io, net::SocketAddr, time::Duration};
 
 use rand::Rng;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+
+pub(crate) mod udp;
+pub use udp::HeaderCustomUdpConfig;
 
 /// The `header-custom` TCP mask a client applies.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -205,12 +208,18 @@ fn measure_expr(expr: &CustomExpr, sizes: &HashMap<String, usize>) -> Result<usi
             return Err(error(format!("{} expects {count} args", expr.op)));
         }
         match &expr.args[index] {
-            CustomArg::U64(value) => Ok(*value as usize),
+            CustomArg::U64(value) => {
+                usize::try_from(*value).map_err(|_| error("item size overflow"))
+            }
             _ => Err(error(format!("{what} length must be u64"))),
         }
     };
     match expr.op.as_str() {
-        "concat" => expr.args.iter().map(|arg| measure_arg(arg, sizes)).sum(),
+        "concat" => expr.args.iter().try_fold(0usize, |total, arg| {
+            total
+                .checked_add(measure_arg(arg, sizes)?)
+                .ok_or_else(|| error("item size overflow"))
+        }),
         "slice" => literal_length(2, 3, "slice"),
         "be16" | "le16" => Ok(2),
         "be32" | "le32" => Ok(4),

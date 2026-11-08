@@ -1,0 +1,447 @@
+[
+  {
+    "name": "prefix-empty",
+    "settings": {
+      "mode": "prefix",
+      "client": [],
+      "server": []
+    },
+    "clientToServer": [
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ],
+    "serverToClient": [
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ]
+  },
+  {
+    "name": "prefix-fixed",
+    "settings": {
+      "mode": "prefix",
+      "client": [
+        {
+          "type": "str",
+          "packet": "hello"
+        }
+      ],
+      "server": [
+        {
+          "type": "hex",
+          "packet": "aabb"
+        }
+      ]
+    },
+    "clientToServer": [
+      "68656c6c6f5041594c4f414430",
+      "68656c6c6f5041594c4f414431"
+    ],
+    "serverToClient": [
+      "aabb5041594c4f414430",
+      "aabb5041594c4f414431"
+    ]
+  },
+  {
+    "name": "prefix-capture-reuse",
+    "settings": {
+      "mode": "prefix",
+      "client": [
+        {
+          "type": "str",
+          "packet": "token",
+          "capture": "x"
+        },
+        {
+          "reuse": "x"
+        }
+      ],
+      "server": [
+        {
+          "reuse": "x"
+        }
+      ]
+    },
+    "clientToServer": [
+      "746f6b656e746f6b656e5041594c4f414430",
+      "746f6b656e746f6b656e5041594c4f414431"
+    ],
+    "serverToClient": [
+      "746f6b656e5041594c4f414430",
+      "746f6b656e5041594c4f414431"
+    ]
+  },
+  {
+    "name": "prefix-random-fixed-range",
+    "settings": {
+      "mode": "prefix",
+      "client": [
+        {
+          "rand": 4,
+          "randRange": 65,
+          "capture": "x"
+        }
+      ],
+      "server": [
+        {
+          "reuse": "x"
+        }
+      ]
+    },
+    "clientToServer": [
+      "414141415041594c4f414430",
+      "414141415041594c4f414431"
+    ],
+    "serverToClient": [
+      "414141415041594c4f414430",
+      "414141415041594c4f414431"
+    ]
+  },
+  {
+    "name": "prefix-transform",
+    "settings": {
+      "mode": "prefix",
+      "client": [
+        {
+          "type": "str",
+          "packet": "ABCD",
+          "capture": "x"
+        },
+        {
+          "transform": {
+            "op": "slice",
+            "args": [
+              {
+                "reuse": "x"
+              },
+              {
+                "u64": 1
+              },
+              {
+                "u64": 2
+              }
+            ]
+          },
+          "capture": "slice"
+        }
+      ],
+      "server": [
+        {
+          "transform": {
+            "op": "concat",
+            "args": [
+              {
+                "reuse": "slice"
+              },
+              {
+                "type": "base64",
+                "bytes": "IQ=="
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientToServer": [
+      "4142434442435041594c4f414430",
+      "4142434442435041594c4f414431"
+    ],
+    "serverToClient": [
+      "4243215041594c4f414430",
+      "4243215041594c4f414431"
+    ]
+  },
+  {
+    "name": "prefix-integer-transform",
+    "settings": {
+      "mode": "prefix",
+      "client": [
+        {
+          "transform": {
+            "op": "be16",
+            "args": [
+              {
+                "transform": {
+                  "op": "xor16",
+                  "args": [
+                    {
+                      "u64": 443
+                    },
+                    {
+                      "u64": 255
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "capture": "port"
+        }
+      ],
+      "server": [
+        {
+          "reuse": "port"
+        }
+      ]
+    },
+    "clientToServer": [
+      "01445041594c4f414430",
+      "01445041594c4f414431"
+    ],
+    "serverToClient": [
+      "01445041594c4f414430",
+      "01445041594c4f414431"
+    ]
+  },
+  {
+    "name": "standalone-empty",
+    "settings": {
+      "mode": "standalone",
+      "client": [],
+      "server": []
+    },
+    "clientToServer": [
+      "",
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ],
+    "serverToClient": [
+      "",
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ]
+  },
+  {
+    "name": "standalone-fixed",
+    "settings": {
+      "mode": "standalone",
+      "client": [
+        {
+          "type": "str",
+          "packet": "hello"
+        }
+      ],
+      "server": [
+        {
+          "type": "hex",
+          "packet": "aabb"
+        }
+      ]
+    },
+    "clientToServer": [
+      "68656c6c6f",
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ],
+    "serverToClient": [
+      "aabb",
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ]
+  },
+  {
+    "name": "standalone-capture-reuse",
+    "settings": {
+      "mode": "standalone",
+      "client": [
+        {
+          "type": "str",
+          "packet": "token",
+          "capture": "x"
+        },
+        {
+          "reuse": "x"
+        }
+      ],
+      "server": [
+        {
+          "reuse": "x"
+        }
+      ]
+    },
+    "clientToServer": [
+      "746f6b656e746f6b656e",
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ],
+    "serverToClient": [
+      "746f6b656e",
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ]
+  },
+  {
+    "name": "standalone-random-fixed-range",
+    "settings": {
+      "mode": "standalone",
+      "client": [
+        {
+          "rand": 4,
+          "randRange": 65,
+          "capture": "x"
+        }
+      ],
+      "server": [
+        {
+          "reuse": "x"
+        }
+      ]
+    },
+    "clientToServer": [
+      "41414141",
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ],
+    "serverToClient": [
+      "41414141",
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ]
+  },
+  {
+    "name": "standalone-transform",
+    "settings": {
+      "mode": "standalone",
+      "client": [
+        {
+          "type": "str",
+          "packet": "ABCD",
+          "capture": "x"
+        },
+        {
+          "transform": {
+            "op": "slice",
+            "args": [
+              {
+                "reuse": "x"
+              },
+              {
+                "u64": 1
+              },
+              {
+                "u64": 2
+              }
+            ]
+          },
+          "capture": "slice"
+        }
+      ],
+      "server": [
+        {
+          "transform": {
+            "op": "concat",
+            "args": [
+              {
+                "reuse": "slice"
+              },
+              {
+                "type": "base64",
+                "bytes": "IQ=="
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientToServer": [
+      "414243444243",
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ],
+    "serverToClient": [
+      "424321",
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ]
+  },
+  {
+    "name": "standalone-integer-transform",
+    "settings": {
+      "mode": "standalone",
+      "client": [
+        {
+          "transform": {
+            "op": "be16",
+            "args": [
+              {
+                "transform": {
+                  "op": "xor16",
+                  "args": [
+                    {
+                      "u64": 443
+                    },
+                    {
+                      "u64": 255
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "capture": "port"
+        }
+      ],
+      "server": [
+        {
+          "reuse": "port"
+        }
+      ]
+    },
+    "clientToServer": [
+      "0144",
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ],
+    "serverToClient": [
+      "0144",
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ]
+  },
+  {
+    "name": "standalone-computed-pad",
+    "settings": {
+      "mode": "standalone",
+      "client": [
+        {
+          "transform": {
+            "op": "pad",
+            "args": [
+              {
+                "type": "str",
+                "bytes": "x"
+              },
+              {
+                "transform": {
+                  "op": "shr",
+                  "args": [
+                    {
+                      "metadata": "remote_port"
+                    },
+                    {
+                      "u64": 6
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "str",
+                "bytes": "-"
+              }
+            ]
+          }
+        }
+      ],
+      "server": []
+    },
+    "clientToServer": [
+      "782d2d2d2d2d",
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ],
+    "serverToClient": [
+      "",
+      "5041594c4f414430",
+      "5041594c4f414431"
+    ]
+  }
+]

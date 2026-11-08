@@ -203,3 +203,32 @@ async fn kcp_vision_switches_to_direct_mode_under_inner_tls() {
         StreamTransport::Kcp(xray_config::KcpSettings::default());
     run_inner_tls_interop_scenario(xray, config, Some(dialer)).await;
 }
+
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-header-custom-interop.sh"]
+async fn kcp_header_custom_udp_modes_and_mask_order() {
+    let checkout = resolve_xray_checkout();
+    let noise = json!({"type":"noise","settings":{"noise":[{"type":"str","packet":"noise","delay":"1-2"}]}});
+    let legacy = json!({"type":"mkcp-legacy","settings":{"value":"header-udp-seed"}});
+    for mode in ["prefix", "standalone"] {
+        let header = json!({"type":"header-custom","settings":{"mode":mode,
+            "client":[{"rand":8,"capture":"token"},{"type":"str","packet":"hello"}],
+            "server":[{"reuse":"token"},{"transform":{"op":"be16","args":[{"u64":443}]}}]}});
+        for (order, masks) in [
+            ("plain", json!([header])),
+            ("noise-inner", json!([noise, header, legacy])),
+            ("noise-outer", json!([legacy, header, noise])),
+        ] {
+            let server =
+                start_server(&checkout, "vless", XrayInboundSecurity::None, &masks, None).await;
+            let stream = json!({"network":"kcp","finalmask":{"udp":masks}});
+            check(
+                &server,
+                profile("vless", server.addr.port(), &stream),
+                true,
+                &format!("header-custom {mode} {order}"),
+            )
+            .await;
+        }
+    }
+}

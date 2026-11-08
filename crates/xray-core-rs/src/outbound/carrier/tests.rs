@@ -170,3 +170,34 @@ fn direct_and_dns_dials_take_no_handshake() {
         );
     }
 }
+
+#[test]
+fn udp_header_custom_reaches_the_kcp_carrier_in_order() {
+    use xray_transport::{header_custom::CustomArg, kcp::KcpMask};
+    for mode in ["prefix", "standalone"] {
+        let outbound = vless(json!({"network":"kcp","finalmask":{"udp":[
+            {"type":"noise","settings":{"noise":[{"type":"str","packet":"noise"}]}},
+            {"type":"header-custom","settings":{"mode":mode,
+                "client":[{"type":"str","packet":"hi","capture":"x"}],
+                "server":[{"transform":{"op":"concat","args":[{"reuse":"x"}]}}]}}
+        ]}}));
+        let StreamTransport::Kcp(settings) = &outbound.stream.transport else {
+            panic!("not kcp")
+        };
+        let mapped = kcp_config(settings, &outbound.stream).unwrap();
+        assert!(matches!(mapped.masks[0], KcpMask::Noise));
+        let KcpMask::HeaderCustom(header) = &mapped.masks[1] else {
+            panic!("not header-custom")
+        };
+        assert_eq!(header.standalone, mode == "standalone");
+        assert_eq!(header.client[0].packet, b"hi");
+        assert_eq!(header.client[0].capture, "x");
+        assert_eq!(
+            header.server[0].transform.as_ref().unwrap().args,
+            [CustomArg::Reuse("x".into())]
+        );
+        let mut missing = outbound.stream.clone();
+        missing.udp_header_custom = None;
+        assert!(kcp_config(settings, &missing).is_err());
+    }
+}

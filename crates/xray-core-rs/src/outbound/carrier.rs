@@ -285,7 +285,7 @@ fn build_transport_layer(
     })
 }
 
-/// mKCP's settings and masks, with the stream's noise for its noise mask.
+/// mKCP's settings and masks, with the stream's noise and custom sequences.
 fn kcp_config(
     kcp: &xray_config::KcpSettings,
     stream: &StreamSettings,
@@ -295,20 +295,35 @@ fn kcp_config(
     let masks = kcp
         .masks
         .iter()
-        .map(|mask| match mask {
-            KcpMask::Original => Mask::Original,
-            KcpMask::Aes128Gcm(password) => Mask::Aes128Gcm(password.clone()),
-            KcpMask::Noise => Mask::Noise,
-            KcpMask::Header(header) => Mask::Header(match header {
-                KcpHeader::Dns(domain) => Header::Dns(domain.clone()),
-                KcpHeader::Dtls => Header::Dtls,
-                KcpHeader::Srtp => Header::Srtp,
-                KcpHeader::Utp => Header::Utp,
-                KcpHeader::Wechat => Header::Wechat,
-                KcpHeader::Wireguard => Header::Wireguard,
-            }),
+        .map(|mask| {
+            Ok(match mask {
+                KcpMask::Original => Mask::Original,
+                KcpMask::Aes128Gcm(password) => Mask::Aes128Gcm(password.clone()),
+                KcpMask::Noise => Mask::Noise,
+                KcpMask::HeaderCustom => {
+                    let header = stream
+                        .udp_header_custom
+                        .as_ref()
+                        .ok_or(CoreError::UnsupportedOutboundNetwork)?;
+                    Mask::HeaderCustom(Arc::new(
+                        xray_transport::header_custom::HeaderCustomUdpConfig {
+                            standalone: header.standalone,
+                            client: custom_items(&header.client),
+                            server: custom_items(&header.server),
+                        },
+                    ))
+                }
+                KcpMask::Header(header) => Mask::Header(match header {
+                    KcpHeader::Dns(domain) => Header::Dns(domain.clone()),
+                    KcpHeader::Dtls => Header::Dtls,
+                    KcpHeader::Srtp => Header::Srtp,
+                    KcpHeader::Utp => Header::Utp,
+                    KcpHeader::Wechat => Header::Wechat,
+                    KcpHeader::Wireguard => Header::Wireguard,
+                }),
+            })
         })
-        .collect();
+        .collect::<Result<_, CoreError>>()?;
     Ok(xray_transport::kcp::KcpConfig {
         mtu: kcp.mtu,
         tti: kcp.tti,
@@ -532,7 +547,26 @@ fn host_and_port(server: &TargetAddr, port: u16) -> String {
 pub(super) fn header_custom_config(
     header: Option<&xray_config::HeaderCustomTcp>,
 ) -> Option<Arc<xray_transport::header_custom::HeaderCustomTcpConfig>> {
-    use xray_transport::header_custom::{CustomArg, CustomExpr, CustomItem, HeaderCustomTcpConfig};
+    header.map(|header| {
+        Arc::new(xray_transport::header_custom::HeaderCustomTcpConfig {
+            clients: header
+                .clients
+                .iter()
+                .map(|items| custom_items(items))
+                .collect(),
+            servers: header
+                .servers
+                .iter()
+                .map(|items| custom_items(items))
+                .collect(),
+        })
+    })
+}
+
+fn custom_items(
+    items: &[xray_config::HeaderCustomItem],
+) -> Vec<xray_transport::header_custom::CustomItem> {
+    use xray_transport::header_custom::{CustomArg, CustomExpr, CustomItem};
     fn expr(source: &xray_config::HeaderCustomExpr) -> CustomExpr {
         CustomExpr {
             op: source.op.clone(),
@@ -553,32 +587,18 @@ pub(super) fn header_custom_config(
                 .collect(),
         }
     }
-    let items = |sequences: &[Vec<xray_config::HeaderCustomItem>]| {
-        sequences
-            .iter()
-            .map(|sequence| {
-                sequence
-                    .iter()
-                    .map(|item| CustomItem {
-                        delay: item.delay,
-                        rand: item.rand,
-                        // The parser keeps the range within 0..=255.
-                        rand_range: (item.rand_range.0 as u8, item.rand_range.1 as u8),
-                        packet: item.packet.clone(),
-                        capture: item.capture.clone(),
-                        reuse: item.reuse.clone(),
-                        transform: item.transform.as_ref().map(expr),
-                    })
-                    .collect()
-            })
-            .collect()
-    };
-    header.map(|header| {
-        Arc::new(HeaderCustomTcpConfig {
-            clients: items(&header.clients),
-            servers: items(&header.servers),
+    items
+        .iter()
+        .map(|item| CustomItem {
+            delay: item.delay,
+            rand: item.rand,
+            rand_range: (item.rand_range.0 as u8, item.rand_range.1 as u8),
+            packet: item.packet.clone(),
+            capture: item.capture.clone(),
+            reuse: item.reuse.clone(),
+            transform: item.transform.as_ref().map(expr),
         })
-    })
+        .collect()
 }
 
 pub(super) fn fragment_config(

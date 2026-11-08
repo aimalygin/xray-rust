@@ -1278,6 +1278,9 @@ pub enum KcpMask {
     /// The stream's noise mask, read into `StreamSettings::udp_noise`, at
     /// its place in the array.
     Noise,
+    /// The stream's `header-custom` mask, read into
+    /// `StreamSettings::udp_header_custom`, at its place in the array.
+    HeaderCustom,
 }
 
 impl fmt::Debug for KcpMask {
@@ -1287,6 +1290,7 @@ impl fmt::Debug for KcpMask {
             Self::Aes128Gcm(_) => f.write_str("Aes128Gcm(<redacted>)"),
             Self::Header(header) => f.debug_tuple("Header").field(header).finish(),
             Self::Noise => f.write_str("Noise"),
+            Self::HeaderCustom => f.write_str("HeaderCustom"),
         }
     }
 }
@@ -1578,6 +1582,9 @@ pub struct StreamSettings {
     /// The `header-custom` TCP mask: the handshake every TCP carrier sends
     /// and checks before anything else.
     pub tcp_header_custom: Option<HeaderCustomTcp>,
+    /// The `header-custom` UDP mask, at its place among the stream's UDP
+    /// masks.
+    pub udp_header_custom: Option<HeaderCustomUdp>,
     pub udp_noise: Option<UdpNoiseSettings>,
     pub socket_options: Option<SocketOptions>,
 }
@@ -1607,6 +1614,18 @@ pub struct HeaderCustomTcp {
     /// What a server answers a client sequence that does not match; read
     /// for parity, never sent by a client.
     pub errors: Vec<Vec<HeaderCustomItem>>,
+}
+
+/// The `header-custom` UDP mask, as Xray-core v26.10.31's `HeaderCustomUDP`
+/// reads it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HeaderCustomUdp {
+    /// `standalone`: exchange the client's and server's items separately
+    /// before the first datagram and the first write after five seconds.
+    /// Otherwise (`prefix`) every datagram carries the items in front.
+    pub standalone: bool,
+    pub client: Vec<HeaderCustomItem>,
+    pub server: Vec<HeaderCustomItem>,
 }
 
 /// One `header-custom` item: random bytes, fixed bytes, a captured variable
