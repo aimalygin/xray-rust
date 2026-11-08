@@ -20,7 +20,7 @@ pub(crate) use h2::{
 };
 pub(crate) use h3::{
     configure_quic_datagram_socket, connect_quic_transport, connect_quic_transport_with_datagrams,
-    H3ConnectConfig, H3Error, QuicSendWindow, QUIC_INITIAL_SEND_WINDOW,
+    hop_udp_carrier, H3ConnectConfig, H3Error, QuicSendWindow, QUIC_INITIAL_SEND_WINDOW,
     QUIC_SEND_WINDOW_SAMPLE_BYTES,
 };
 pub use h3::{H3Congestion, H3QuicConfig, H3QuicVersion, H3UdpHopConfig};

@@ -3266,6 +3266,9 @@ async fn open_raw_dns_tcp_candidate(
         TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
             effective_policy_for_level(&context.config, Some(0)).handshake
         }
+        TcpOutbound::Masque(_) => crate::outbound::masque::open_timeout(
+            effective_policy_for_level(&context.config, Some(0)).handshake,
+        ),
         TcpOutbound::Freedom(_) => context.inbound_policy.handshake,
         TcpOutbound::Trojan(outbound) => {
             effective_policy_for_level(&context.config, Some(outbound.level())).handshake
@@ -3527,7 +3530,8 @@ async fn proxy_udp_payload(
                     | UdpOutbound::Shadowsocks2022(_)
                     | UdpOutbound::Vless(_)
                     | UdpOutbound::Hysteria(_)
-                    | UdpOutbound::Wireguard(_) => DNS_PROXY_VLESS_ATTEMPT_TIMEOUT,
+                    | UdpOutbound::Wireguard(_)
+                    | UdpOutbound::Masque(_) => DNS_PROXY_VLESS_ATTEMPT_TIMEOUT,
                 };
                 let outbound_label = crate::debug_log::udp_outbound_label(&outbound);
                 let attempt = timeout(

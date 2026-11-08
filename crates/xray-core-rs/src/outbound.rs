@@ -23,6 +23,8 @@ pub(crate) mod hysteria;
 pub use hysteria::HysteriaOutbound;
 pub(crate) mod wireguard;
 pub use wireguard::WireguardOutbound;
+pub(crate) mod masque;
+pub use masque::MasqueOutbound;
 mod address_port;
 mod carrier;
 pub(crate) mod datagram;
@@ -390,6 +392,7 @@ pub enum TcpOutbound {
     Shadowsocks2022(Shadowsocks2022Outbound),
     Hysteria(HysteriaOutbound),
     Wireguard(WireguardOutbound),
+    Masque(MasqueOutbound),
     Chained {
         outbound: Box<TcpOutbound>,
         proxy: Box<TcpOutbound>,
@@ -412,6 +415,7 @@ pub enum UdpOutbound {
     Shadowsocks2022(Shadowsocks2022Outbound),
     Hysteria(HysteriaOutbound),
     Wireguard(WireguardOutbound),
+    Masque(MasqueOutbound),
 }
 
 /// One configured handler selected for a TCP session. DNS remains a message
@@ -1030,7 +1034,8 @@ impl TcpOutbound {
             | Self::Http(_)
             | Self::Shadowsocks2022(_)
             | Self::Hysteria(_)
-            | Self::Wireguard(_) => None,
+            | Self::Wireguard(_)
+            | Self::Masque(_) => None,
             Self::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
         }
     }
@@ -1089,6 +1094,9 @@ impl ResolvedTcpConnector for OutboundProxyTcpConnector {
             }
             TcpOutbound::Wireguard(_) => Err(TransportError::ChainedOutbound(
                 "WireGuard chaining is unsupported".into(),
+            )),
+            TcpOutbound::Masque(_) => Err(TransportError::ChainedOutbound(
+                "MASQUE chaining is unsupported".into(),
             )),
             TcpOutbound::Hysteria(_) => Err(TransportError::ChainedOutbound(
                 "Hysteria chaining is unsupported".into(),
@@ -1215,6 +1223,9 @@ fn prepare_outbound_proxy_dialer<'a>(
             TcpOutbound::Wireguard(_) => {
                 return Err(CoreError::UnsupportedOutboundProxyNetwork("WireGuard"));
             }
+            TcpOutbound::Masque(_) => {
+                return Err(CoreError::UnsupportedOutboundProxyNetwork("MASQUE"));
+            }
             TcpOutbound::Hysteria(_) => {
                 return Err(CoreError::UnsupportedOutboundProxyNetwork("Hysteria"))
             }
@@ -1255,7 +1266,8 @@ fn proxy_chain_requires_local_resolution(proxy: &TcpOutbound) -> bool {
         | TcpOutbound::Vmess(_)
         | TcpOutbound::Shadowsocks2022(_)
         | TcpOutbound::Hysteria(_)
-        | TcpOutbound::Wireguard(_) => false,
+        | TcpOutbound::Wireguard(_)
+        | TcpOutbound::Masque(_) => false,
         TcpOutbound::Freedom(freedom) => match proxy {
             TcpOutbound::Chained { proxy, .. } => proxy_chain_requires_local_resolution(proxy),
             // The redirect address replaces the next hop's server.
@@ -1351,6 +1363,7 @@ struct CachedOutboundEntry {
     shadowsocks: OnceLock<Result<Shadowsocks2022Outbound, CachedOutboundError>>,
     hysteria: OnceLock<Result<HysteriaOutbound, CachedOutboundError>>,
     wireguard: OnceLock<Result<WireguardOutbound, CachedOutboundError>>,
+    masque: OnceLock<Result<MasqueOutbound, CachedOutboundError>>,
 }
 
 /// Opaque identity of one configured node in one immutable outbound graph.
@@ -1367,6 +1380,7 @@ pub struct OutboundNodeId {
 pub enum OutboundNodeKind {
     Hysteria,
     Wireguard,
+    Masque,
     Freedom,
     Vless,
     Trojan,
@@ -1588,6 +1602,7 @@ impl OutboundGraph {
                     OutboundSettings::Shadowsocks2022(_) => OutboundNodeKind::Shadowsocks2022,
                     OutboundSettings::Hysteria(_) => OutboundNodeKind::Hysteria,
                     OutboundSettings::Wireguard(_) => OutboundNodeKind::Wireguard,
+                    OutboundSettings::Masque(_) => OutboundNodeKind::Masque,
                     OutboundSettings::Dns(_) => OutboundNodeKind::Dns,
                     OutboundSettings::Blackhole(_) => OutboundNodeKind::Blackhole,
                     OutboundSettings::Loopback(_) => OutboundNodeKind::Loopback,
@@ -3640,6 +3655,33 @@ impl OutboundFactory {
         result
     }
 
+    fn cached_masque_outbound(
+        &self,
+        node: OutboundNodeId,
+    ) -> Result<MasqueOutbound, CachedOutboundError> {
+        if self.sessions_closed.load(Ordering::Acquire) {
+            return Err(CachedOutboundError::NoSupportedOutbound);
+        }
+        let configured = self
+            .graph
+            .configured_outbound(node)
+            .ok_or(CachedOutboundError::NoSupportedOutbound)?;
+        let result = self
+            .entry(node)?
+            .masque
+            .get_or_init(|| {
+                MasqueOutbound::new(configured).map_err(CachedOutboundError::from_core_error)
+            })
+            .clone();
+        if self.sessions_closed.load(Ordering::Acquire) {
+            if let Ok(outbound) = &result {
+                outbound.close();
+            }
+            return Err(CachedOutboundError::NoSupportedOutbound);
+        }
+        result
+    }
+
     pub(crate) fn close_sessions(&self) {
         self.sessions_closed.store(true, Ordering::Release);
         for entry in &self.entries {
@@ -3659,6 +3701,9 @@ impl OutboundFactory {
                 outbound.close();
             }
             if let Some(Ok(outbound)) = entry.wireguard.get() {
+                outbound.close();
+            }
+            if let Some(Ok(outbound)) = entry.masque.get() {
                 outbound.close();
             }
             if let Some(Ok(outbound)) = entry.hysteria.get() {
@@ -3745,6 +3790,9 @@ impl OutboundFactory {
             OutboundSettings::Wireguard(_) => self
                 .cached_wireguard_outbound(node)
                 .map(TcpOutbound::Wireguard),
+            OutboundSettings::Masque(_) => {
+                self.cached_masque_outbound(node).map(TcpOutbound::Masque)
+            }
             OutboundSettings::Trojan(_) => {
                 self.cached_trojan_outbound(node).map(TcpOutbound::Trojan)
             }
@@ -3833,6 +3881,9 @@ impl OutboundFactory {
             OutboundSettings::Wireguard(_) => self
                 .cached_wireguard_outbound(node)
                 .map(UdpOutbound::Wireguard),
+            OutboundSettings::Masque(_) => {
+                self.cached_masque_outbound(node).map(UdpOutbound::Masque)
+            }
             OutboundSettings::Trojan(_) => {
                 self.cached_trojan_outbound(node).map(UdpOutbound::Trojan)
             }
@@ -3909,6 +3960,7 @@ impl OutboundFactory {
             | OutboundSettings::Vmess(_)
             | OutboundSettings::Shadowsocks2022(_)
             | OutboundSettings::Wireguard(_)
+            | OutboundSettings::Masque(_)
             | OutboundSettings::Socks(_)
             | OutboundSettings::Http(_) => Err(CachedOutboundError::NoSupportedOutbound),
         }
@@ -3948,6 +4000,7 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
         OutboundSettings::Wireguard(_) => {
             WireguardOutbound::new(outbound).map(TcpOutbound::Wireguard)
         }
+        OutboundSettings::Masque(_) => MasqueOutbound::new(outbound).map(TcpOutbound::Masque),
         OutboundSettings::Trojan(_) => TrojanOutbound::new(outbound).map(TcpOutbound::Trojan),
         OutboundSettings::Vmess(_) => VmessOutbound::new(outbound).map(TcpOutbound::Vmess),
         OutboundSettings::Shadowsocks2022(_) => {
@@ -3979,6 +4032,7 @@ fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreErro
         OutboundSettings::Wireguard(_) => {
             WireguardOutbound::new(outbound).map(UdpOutbound::Wireguard)
         }
+        OutboundSettings::Masque(_) => MasqueOutbound::new(outbound).map(UdpOutbound::Masque),
         OutboundSettings::Trojan(_) => TrojanOutbound::new(outbound).map(UdpOutbound::Trojan),
         OutboundSettings::Vmess(_) => VmessOutbound::new(outbound).map(UdpOutbound::Vmess),
         OutboundSettings::Shadowsocks2022(_) => {
@@ -4472,6 +4526,10 @@ async fn open_plain_tcp_stream_with_resolvers_and_dialer(
                 transport_dialer,
             ))
             .await
+        }
+        // Destination domains resolve through the tunnel.
+        TcpOutbound::Masque(outbound) => {
+            Box::pin(outbound.open_tcp(target, bootstrap_resolver, transport_dialer)).await
         }
         TcpOutbound::Hysteria(outbound) => {
             Box::pin(outbound.open_tcp(target, bootstrap_resolver, transport_dialer)).await

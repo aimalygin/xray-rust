@@ -470,6 +470,9 @@ jobs:
       - name: Verify WireGuard fixture UDP source-port reuse in an isolated network
         run: bash scripts/check-wireguard-direct-fixture.sh
 
+      - name: Verify the MASQUE client against pinned Xray-core
+        run: bash scripts/check-masque-interop.sh
+
       # Keep this step last: it shows how much room the steps above leave.
       - name: Report disk use
         if: always()

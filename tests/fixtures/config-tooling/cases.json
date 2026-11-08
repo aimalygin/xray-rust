@@ -1781,6 +1781,111 @@
       }
     },
     {
+      "name": "masque",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "masque",
+            "settings": {
+              "address": "masque.example",
+              "port": 443,
+              "remoteDNS": [
+                "192.0.2.53"
+              ]
+            },
+            "streamSettings": {
+              "network": "masque",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "masque.example",
+                "alpn": [
+                  "h3"
+                ]
+              },
+              "masqueSettings": {
+                "host": "masque.example",
+                "path": "/masque/{target}/{ipproto}/",
+                "user": "synthetic-user",
+                "pass": "synthetic-masque-pass",
+                "headers": {
+                  "X-Synthetic": "1"
+                },
+                "xmux": {
+                  "maxConcurrency": "4-8",
+                  "hKeepAlivePeriod": 20
+                }
+              },
+              "finalmask": {
+                "quicParams": {
+                  "congestion": "bbr",
+                  "disableChromeParrot": true
+                }
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "MASQUE": "/outbounds/0/settings",
+        "MASQUE_TRANSPORT": "/outbounds/0/streamSettings/masqueSettings"
+      }
+    },
+    {
+      "name": "masque-path-variable",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.masqueSettings.path",
+      "base": "masque",
+      "set": {
+        "/outbounds/0/streamSettings/masqueSettings/path": "/masque/{other}"
+      }
+    },
+    {
+      "name": "masque-without-tls",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.security",
+      "base": "masque",
+      "set": {
+        "/outbounds/0/streamSettings/security": "none"
+      }
+    },
+    {
+      "name": "masque-transport-on-vless",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.network",
+      "base": "masque",
+      "set": {
+        "/outbounds/0/protocol": "vless",
+        "/outbounds/0/settings": {
+          "vnext": [
+            {
+              "address": "masque.example",
+              "port": 443,
+              "users": [
+                {
+                  "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                  "encryption": "none"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "header-custom-tcp",
       "accepted": true,
       "config": {

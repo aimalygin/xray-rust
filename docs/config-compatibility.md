@@ -2242,6 +2242,83 @@ resolvers reach no real resolver. `scripts/check-xdns-interop.sh` compares
 the encoding with Xray-core's own code and runs each carrier against its
 server.
 
+### MASQUE
+
+The `masque` outbound reaches a MASQUE proxy, such as Xray-core's own
+`masque` inbound, through a CONNECT-IP tunnel (RFC 9484), as Xray-core
+v26.10.31's client does. It requires `network: "masque"`, `security: "tls"`
+and no chaining; the `masque` network takes no other outbound.
+
+```json
+{"protocol": "masque",
+ "settings": {"address": "masque.example", "port": 443,
+   "remoteDNS": ["1.1.1.1", "2606:4700:4700::1111"]},
+ "streamSettings": {"network": "masque", "security": "tls",
+   "tlsSettings": {"serverName": "masque.example"},
+   "masqueSettings": {"path": "/masque/{target}/{ipproto}/",
+     "user": "alice", "pass": "secret"}}}
+```
+
+- `settings`: a nonempty `address` and a nonzero `port`, as Xray-core
+  requires. `remoteDNS` takes up to 8 IP addresses, scoped IPv6 ones
+  refused; absent, null or empty means Cloudflare's `1.1.1.1`, `1.0.0.1`,
+  `2606:4700:4700::1111` and `2606:4700:4700::1001`.
+- `masqueSettings.host` is the request authority and must be what Go's
+  `url.Parse` reads back as the host; empty takes the TLS server name, with
+  the port unless it is 443. `path` defaults to `/.well-known/masque/ip/*/*/`;
+  `{target}` and `{ipproto}` and their query forms become `*`, as the client
+  asks for all traffic, and any other brace fails.
+- `user` and `pass` send `Authorization: Basic`; `user` takes no colon.
+  `headers` are Go header fields: at most 64, values of at most 8 KiB, no
+  `Host` or `Capsule-Protocol`, and no `Authorization` beside `user` or
+  `pass`. `User-Agent` defaults to Chrome's; `chrome`, `firefox`, `safari`,
+  `edge` and `curl` are presets, `golang` leaves quic-go's own and empty
+  sends none.
+- `xmux` reuses tunnels as Xray-core's `XmuxManager` does. An all-zero
+  `xmux` means one tunnel, retired after 1800 to 3000 seconds; an absent
+  `masqueSettings` keeps the one tunnel for good. `maxConcurrency` bounds a
+  tunnel's flows, `cMaxReuseTimes` counts the flows that take a tunnel, and
+  `hMaxRequestTimes` changes nothing. A retired tunnel closes with its last
+  flow. After a failed dial, flows take a working tunnel or the same error
+  for a second before the next dial.
+
+The client uses HTTP/3 unless `tlsSettings.alpn` names `h2` and not `h3`;
+that HTTP/2 form and `warp` are not supported yet and fail the
+configuration. Over HTTP/3 the TLS ALPN is `h3` alone and the fingerprint is
+not used: Xray-core's MASQUE dial shapes neither its TLS nor its QUIC
+handshake. The QUIC connection starts with 1350-byte packets and never goes
+below them, issues 4-byte connection IDs, refuses incoming streams, and
+keeps `finalmask.quicParams` and the UDP masks; quic-go's receive windows,
+a 30-second idle timeout and a 10-second keepalive apply where
+`quicParams` is silent, and `xmux.hKeepAlivePeriod` sets the keepalive when
+nonzero, negative turning it off. Congestion `brutal` runs BBR, as in
+Xray-core; `force-brutal` runs Brutal. The TCP fragment mask fails on
+MASQUE over HTTP/3, which other TCP masks do not reach.
+
+A tunnel is one QUIC connection with one extended CONNECT whose
+`:protocol` is `connect-ip`, sent once the server's SETTINGS allow extended
+CONNECT and HTTP datagrams. The client asks for one address of each family
+and waits up to ten seconds, with the dial, for an assignment; it closes the
+tunnel when the proxy withdraws an address, and refuses the proxy's own
+address requests. Packets travel in QUIC DATAGRAM frames with context ID 0,
+their TTL or hop limit lowered by one; a packet too big for the path comes
+back to its sender as an ICMP Packet Too Big, and the tunnel must carry at
+least 1280-byte packets.
+
+Each tunnel runs the WireGuard outbound's userspace TCP/IP stack, MTU 1280,
+on the assigned addresses: 16 TCP and 512 UDP flows at once, the stack's
+bounds. TCP and UDP flows from SOCKS, HTTP and TUN go to their destination
+through it; a name resolves through the tunnel, with the `remoteDNS`
+servers of the families the tunnel has an address of (all of them when none
+matches), for those families, IPv6 first when there is one. A TCP flow tries
+up to eight of its addresses, three seconds each and ten for the last; a UDP
+flow goes to the first. A flow's open deadline is the handshake timeout plus
+the ten seconds a tunnel dial may take, which goes on for the next flows if
+the one that started it gives up. `scripts/check-masque-interop.sh` compares
+the capsules and packets with Xray-core's own code, rechecks the
+configuration verdicts with `xray run -test` and runs the client against
+Xray-core's server.
+
 ### TLS ClientHello shaping
 
 `security: "tls"` sends a uTLS-shaped ClientHello, as Xray-core does on every
@@ -2545,9 +2622,10 @@ Differences from Xray-core:
   five times. xray-rust tries the permitted addresses in order, as for any
   other candidates, and a UDP flow takes the first one.
 - Xray-core's WireGuard picks one of the addresses kept at random.
-  xray-rust's takes the first.
+  xray-rust's takes the first. MASQUE reads it for its server's address the
+  same way.
 - Outbounds other than freedom accept only `AsIs` in `targetStrategy`, and
-  those other than freedom and WireGuard only `AsIs` in
+  those other than freedom, WireGuard and MASQUE only `AsIs` in
   `sockopt.domainStrategy`. A different value on VLESS, Trojan and the other
   proxies fails parsing, because their server lookup and target resolution do
   not read a strategy yet. For the same reason, `dialerProxy` refuses a

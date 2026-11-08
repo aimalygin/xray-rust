@@ -3668,6 +3668,9 @@ mod xmc;
 #[path = "local_xray_interop_tests/xdns.rs"]
 mod xdns;
 
+#[path = "local_xray_interop_tests/masque.rs"]
+mod masque;
+
 /// Record-level observer: it forwards the finalized ClientHello unchanged and
 /// then becomes a byte relay, including Vision's later direct-mode payload.
 async fn fragment_observer(

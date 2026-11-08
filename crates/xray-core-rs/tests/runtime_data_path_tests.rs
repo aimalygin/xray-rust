@@ -88,6 +88,8 @@ mod freedom_settings;
 mod http_inbound;
 #[path = "runtime_data_path_tests/loopback_outbound.rs"]
 mod loopback_outbound;
+#[path = "runtime_data_path_tests/masque_tun.rs"]
+mod masque_tun;
 #[path = "runtime_data_path_tests/routing_attributes.rs"]
 mod routing_attributes;
 #[path = "runtime_data_path_tests/routing_origin.rs"]
@@ -138,6 +140,7 @@ fn compile_vless_tcp_outbound_one_shot(config: &CoreConfig) -> Result<VlessTcpOu
         | TcpOutbound::Shadowsocks2022(_)
         | TcpOutbound::Hysteria(_)
         | TcpOutbound::Wireguard(_)
+        | TcpOutbound::Masque(_)
         | TcpOutbound::Chained { .. } => Err(CoreError::NoSupportedOutbound),
     }
 }

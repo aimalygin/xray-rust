@@ -351,6 +351,8 @@ pub enum CoreError {
     Hysteria(#[from] xray_transport::hysteria::HysteriaError),
     #[error(transparent)]
     Wireguard(#[from] xray_wireguard::Error),
+    #[error(transparent)]
+    Masque(#[from] xray_transport::masque::MasqueError),
     #[error("TUN MTU {0} is outside {min}..={max}", min = TunMtu::MIN, max = TunMtu::MAX)]
     InvalidTunMtu(u32),
     #[error("core is already running")]

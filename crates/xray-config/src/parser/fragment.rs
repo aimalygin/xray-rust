@@ -245,6 +245,15 @@ impl Parser<'_> {
             self.error(path, "tlshello fragmentation requires a TCP TLS/REALITY carrier or a raw freedom outbound");
             return;
         }
+        if matches!(outbound.stream.transport, StreamTransport::Masque(_))
+            && matches!(&outbound.stream.security, StreamSecurity::Tls(tls)
+                if !super::masque::masque_uses_http2(&tls.alpn))
+        {
+            self.error(
+                &path,
+                "TCP fragmentation cannot be applied to QUIC or split XHTTP downloads",
+            );
+        }
         if let StreamTransport::Xhttp(xhttp) = &outbound.stream.transport {
             if xhttp.download.is_some()
                 || matches!(&outbound.stream.security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"])

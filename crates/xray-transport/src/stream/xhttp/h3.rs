@@ -171,6 +171,12 @@ pub struct H3QuicConfig {
     /// The `xdns` UDP mask, outside the others, carrying every datagram.
     pub udp_xdns: Option<Arc<crate::xdns::XdnsConfig>>,
     pub debug: bool,
+    /// quic-go's `InitialPacketSize`: the first packets' size, never
+    /// lowered by black-hole detection. `None` keeps Quinn's 1200.
+    pub initial_packet_size: Option<u16>,
+    /// The length of the connection IDs this end issues, as quic-go's
+    /// `Transport.ConnectionIDLength`. `None` keeps the carrier's default.
+    pub connection_id_len: Option<u8>,
 }
 
 impl Default for H3QuicConfig {
@@ -198,6 +204,8 @@ impl Default for H3QuicConfig {
             udp_sudoku: None,
             udp_xdns: None,
             debug: false,
+            initial_packet_size: None,
+            connection_id_len: None,
         }
     }
 }
@@ -314,7 +322,7 @@ impl H3QuicConfig {
     /// The carrier transforms this XHTTP connection applies itself: UDP hop,
     /// noise, a custom header and sudoku. Hysteria passes its own carrier
     /// instead.
-    fn hop_carrier(&self) -> crate::hysteria::HysteriaCarrierConfig {
+    pub(crate) fn hop_carrier(&self) -> crate::hysteria::HysteriaCarrierConfig {
         crate::hysteria::HysteriaCarrierConfig {
             udp_hop: self.udp_hop.clone(),
             noise: self.udp_noise.clone(),
@@ -1080,7 +1088,7 @@ pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
 /// previous socket until the new path authenticates, and the task ends with
 /// the connection. A failed hop keeps the current protected path until the
 /// next interval, as in Xray.
-async fn hop_udp_carrier(
+pub(crate) async fn hop_udp_carrier(
     endpoint: Endpoint,
     connection: quinn::Connection,
     carrier: crate::hysteria::HysteriaCarrierConfig,
@@ -1371,7 +1379,11 @@ fn build_quinn_config(
 ) -> Result<(EndpointConfig, ClientConfig), H3Error> {
     let mut endpoint = EndpointConfig::default();
     endpoint.supported_versions(vec![QUIC_V1]);
-    if datagram_buffers.is_some() {
+    if let Some(len) = config.quic.connection_id_len {
+        let len = usize::from(len);
+        endpoint
+            .cid_generator(move || Box::new(quinn_proto::RandomConnectionIdGenerator::new(len)));
+    } else if datagram_buffers.is_some() {
         // Hysteria owns one connection per endpoint and keeps a fixed server
         // address, so incoming packets need no connection ID for demultiplexing.
         // This saves eight bytes per server packet. Local socket rebinds still
@@ -1418,6 +1430,9 @@ fn build_quinn_config(
         let budget = 1452usize.saturating_sub(wire_overhead).max(1200);
         mtu.upper_bound(budget as u16);
         transport.mtu_discovery_config(Some(mtu));
+    }
+    if let Some(size) = config.quic.initial_packet_size {
+        transport.initial_mtu(size).min_mtu(size);
     }
     if config.quic.disable_path_mtu_discovery {
         transport.mtu_discovery_config(None);

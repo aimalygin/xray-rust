@@ -598,6 +598,50 @@ AES and noise inside xdns; XHTTP over HTTP/3 and Hysteria, alone and with
 Salamander inside, before and after a rebind, carry the same. A client with
 another domain never gets through.
 
+## MASQUE
+
+The `masque` outbound runs Xray-core v26.10.31's MASQUE client over HTTP/3:
+its configuration checks and defaults, the CONNECT-IP request with its
+authority, path, User-Agent presets and Basic authorization, the server
+settings it waits for, the address request and assignment rules, the
+datagram format and packet admission, ICMP Packet Too Big, the tunnel pool
+of its `xmux` with the one-second retry rule, and the stack over each tunnel
+with `remoteDNS`. Deliberate differences:
+
+- HTTP/2 and `warp` are not supported yet and fail the configuration.
+- The stack is the WireGuard outbound's smoltcp stack, not gVisor: 16 TCP
+  and 512 UDP flows a tunnel, its buffers and its TCP. smoltcp does not act
+  on ICMP Packet Too Big; the QUIC connection never goes below its 1350-byte
+  first packets, so the stack's 1280-byte packets always fit.
+- A name tries up to eight addresses, three seconds each and ten for the
+  last, as the WireGuard outbound does; Xray's stack divides the handshake
+  timeout between them. A flow's open deadline is the handshake timeout plus
+  the ten-second tunnel dial.
+- An empty `address` fails the configuration; Xray-core accepts it and fails
+  every dial. `remoteDNS` takes at most 8 servers and no scoped IPv6
+  address; Xray-core takes any.
+- Chaining (`proxySettings`, `dialerProxy`) and Mux fail the configuration,
+  as for Hysteria and WireGuard, and so does the TCP fragment mask, which
+  Xray-core's HTTP/3 dial ignores. Unknown fields fail, as everywhere.
+- The HTTP/3 request lists its pseudo-fields in h3's order and its fields
+  sorted; quic-go starts with `:authority` and sends fields in map order.
+  Neither is visible outside the TLS session.
+
+Evidence: `tools/masque-oracle` runs inside Xray-core's `connectip` package
+through a `go test -overlay` and records its capsule encodings, its reading
+of valid and mutated capsules, the datagrams `composeDatagram` builds, its
+ICMP messages and which packets it admits; the tests replay them and
+`scripts/check-masque-interop.sh` regenerates a corpus ten times larger each
+run. 104 configuration cases carry `xray run -test` verdicts, rechecked with
+the binary each run: 94 match and 10 differ as listed above. Live against
+Xray-core's MASQUE server over HTTP/3: TCP with a 128 KiB echo to IPv4, IPv6
+and a name resolved through the tunnel, UDP to the same three, TCP through
+the HTTP inbound, TCP and UDP through the TUN, eight parallel flows sharing
+one tunnel, the default path with a preset User-Agent, and a wrong password
+refused. Mutating 22 key branches (TTL, checksum, admission, capsule
+checks, address choice, authority, User-Agent, the pool's limits and retry,
+the host and path checks) fails the tests each time.
+
 ## DNS `UseSystem` route probe
 
 `queryStrategy: "UseSystem"` narrows each lookup to the address families the

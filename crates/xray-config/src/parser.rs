@@ -8,6 +8,7 @@ mod http_outbound;
 mod hysteria;
 mod kcp;
 mod loopback;
+mod masque;
 mod noise;
 mod routing;
 mod shadowsocks;
@@ -85,6 +86,7 @@ enum StreamNetwork {
     Grpc,
     Xhttp,
     Kcp,
+    Masque,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1072,6 +1074,7 @@ impl Parser<'_> {
             Some("loopback") => OutboundProtocol::Loopback,
             Some("socks") => OutboundProtocol::Socks,
             Some("http") => OutboundProtocol::Http,
+            Some("masque") => OutboundProtocol::Masque,
             Some(protocol) => {
                 self.error(
                     protocol_path,
@@ -1123,6 +1126,9 @@ impl Parser<'_> {
             OutboundProtocol::Http => {
                 OutboundSettings::Http(self.parse_http_outbound_settings(outbound, index)?)
             }
+            OutboundProtocol::Masque => {
+                OutboundSettings::Masque(self.parse_masque_settings(outbound, index)?)
+            }
         };
         let target_strategy = self.domain_strategy_at(
             outbound,
@@ -1150,16 +1156,18 @@ impl Parser<'_> {
                     "targetStrategy is supported only on freedom outbounds",
                 );
             }
-            // WireGuard reads it for its peer endpoints.
-            if protocol != OutboundProtocol::Wireguard
-                && stream
-                    .socket_options
-                    .as_ref()
-                    .is_some_and(|options| options.domain_strategy.has_strategy())
+            // WireGuard reads it for its peer endpoints, MASQUE for its server.
+            if !matches!(
+                protocol,
+                OutboundProtocol::Wireguard | OutboundProtocol::Masque
+            ) && stream
+                .socket_options
+                .as_ref()
+                .is_some_and(|options| options.domain_strategy.has_strategy())
             {
                 self.error(
                     format!("$.outbounds[{index}].streamSettings.sockopt.domainStrategy"),
-                    "sockopt.domainStrategy is supported only on freedom and WireGuard outbounds",
+                    "sockopt.domainStrategy is supported only on freedom, WireGuard and MASQUE outbounds",
                 );
             }
         }
@@ -1200,6 +1208,7 @@ impl Parser<'_> {
             }
         }
         self.validate_hysteria_pair(&settings, &stream, proxy_settings.is_some(), index);
+        self.validate_masque_pair(&settings, &stream, proxy_settings.is_some(), index);
         self.validate_trojan_stream(&settings, &stream, index);
 
         // Xray v26.7.28 applies this policy only to its simplified top-level
@@ -1229,7 +1238,9 @@ impl Parser<'_> {
             // Basic credentials then travel in cleartext, which is
             // documented, not rejected.
             | OutboundSettings::Socks(_)
-            | OutboundSettings::Http(_) => false,
+            | OutboundSettings::Http(_)
+            // MASQUE requires TLS.
+            | OutboundSettings::Masque(_) => false,
         };
         if rejects_plaintext_server {
             self.error(
