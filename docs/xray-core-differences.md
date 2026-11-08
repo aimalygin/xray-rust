@@ -684,6 +684,30 @@ the outbound's address and to two listed ones, and over raw sockets, with
 AES and noise inside xicmp; XHTTP over HTTP/3 and Hysteria, alone and with
 Salamander inside, before and after a rebind, carry the same.
 
+## QUIC BBR profiles
+
+`quicParams.bbrProfile` `conservative` and `aggressive` run a port of
+Xray-core v26.10.31's BBR sender with the profile's settings, on Hysteria and
+XHTTP H3, from where Xray's dialers install it: after the handshake on XHTTP,
+after the authentication reply on Hysteria. Before that the connection runs
+Quinn's NewReno, as Xray's runs quic-go's Reno. Deliberate differences:
+
+- `standard`, the default, still runs Quinn's BBR from the first packet. The
+  port runs `standard` as well; switching the default is a separate decision.
+- Quinn paces from the sender's rate with its own token bucket, which caps a
+  burst at 256 datagrams; Xray's pacer has no cap.
+- Quinn lowers the datagram size after detecting a black hole. Xray's sender
+  panics if asked to; the port scales its windows down.
+- Quinn's startup NewReno starts at 12,000 bytes, quic-go's Reno at 32
+  datagrams.
+
+Evidence: `tools/bbr-oracle` records Xray-core's own sender over fifteen
+simulated paths, and the port replays every call to the same 54 state values
+after each congestion event; `scripts/check-bbr-interop.sh` regenerates the
+trace each run and runs every profile live against Xray-core's Hysteria and
+XHTTP H3 servers. `xray run -test` and the parser agree on 184 configurations
+of `bbrProfile` and `congestion`.
+
 ## DNS `UseSystem` route probe
 
 `queryStrategy: "UseSystem"` narrows each lookup to the address families the

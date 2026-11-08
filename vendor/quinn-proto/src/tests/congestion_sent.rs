@@ -440,3 +440,214 @@ fn pending_ack_bypasses_full_congestion_window() {
 fn pending_ack_bypasses_exhausted_pacer() {
     pending_ack_bypasses_blocked_data(true);
 }
+
+/// One `on_congestion_event_end` and what came before it.
+#[derive(Debug, Default)]
+struct RecordedEvent {
+    prior_in_flight: u64,
+    acked: Vec<(u64, u64)>,
+    lost: Vec<(u64, u64)>,
+}
+
+#[derive(Debug, Default)]
+struct EventLog {
+    sent: std::collections::BTreeMap<u64, u64>,
+    acked: Vec<(u64, u64)>,
+    lost: Vec<(u64, u64)>,
+    events: Vec<RecordedEvent>,
+    not_ack_eliciting: u64,
+    counted_losses: (u64, u64),
+}
+
+struct EventRecorder(Arc<Mutex<EventLog>>);
+
+impl ControllerFactory for EventRecorder {
+    fn build(self: Arc<Self>, now: Instant, mtu: u16) -> Box<dyn Controller> {
+        Box::new(EventController {
+            log: self.0.clone(),
+            next_token: 1,
+            inner: Arc::new(CubicConfig::default()).build(now, mtu),
+        })
+    }
+}
+
+/// Records what quic-go's `OnCongestionEventEx` would carry.
+struct EventController {
+    log: Arc<Mutex<EventLog>>,
+    next_token: u64,
+    inner: Box<dyn Controller>,
+}
+
+impl Controller for EventController {
+    fn on_sent_with_in_flight(
+        &mut self,
+        now: Instant,
+        bytes: u64,
+        pn: u64,
+        flight: u64,
+        limited: bool,
+    ) -> u64 {
+        self.inner
+            .on_sent_with_in_flight(now, bytes, pn, flight, limited);
+        let token = self.next_token;
+        self.next_token += 1;
+        self.log.lock().unwrap().sent.insert(token, bytes);
+        token
+    }
+    fn on_sent_not_ack_eliciting(&mut self, _now: Instant, bytes: u64, _pn: u64, _flight: u64) {
+        assert!(bytes > 0, "the encrypted size of the packet");
+        self.log.lock().unwrap().not_ack_eliciting += 1;
+    }
+    fn on_ack_with_token(
+        &mut self,
+        now: Instant,
+        sent: Instant,
+        bytes: u64,
+        limited: bool,
+        rtt: &RttEstimator,
+        token: u64,
+    ) {
+        let mut log = self.log.lock().unwrap();
+        assert_eq!(log.sent.get(&token), Some(&bytes));
+        log.acked.push((token, bytes));
+        drop(log);
+        self.inner.on_ack(now, sent, bytes, limited, rtt);
+    }
+    fn on_packet_lost_with_token(&mut self, _now: Instant, bytes: u64, token: u64) {
+        let mut log = self.log.lock().unwrap();
+        assert_eq!(log.sent.get(&token), Some(&bytes));
+        log.lost.push((token, bytes));
+    }
+    fn on_packets_lost(&mut self, _now: Instant, packets: u64, bytes: u64) {
+        let mut log = self.log.lock().unwrap();
+        log.counted_losses.0 += packets;
+        log.counted_losses.1 += bytes;
+    }
+    fn on_congestion_event_end(&mut self, _now: Instant, prior_in_flight: u64) {
+        let mut log = self.log.lock().unwrap();
+        let event = RecordedEvent {
+            prior_in_flight,
+            acked: std::mem::take(&mut log.acked),
+            lost: std::mem::take(&mut log.lost),
+        };
+        log.events.push(event);
+    }
+    fn on_congestion_event(&mut self, now: Instant, sent: Instant, persistent: bool, lost: u64) {
+        self.inner.on_congestion_event(now, sent, persistent, lost);
+    }
+    fn on_mtu_update(&mut self, mtu: u16) {
+        self.inner.on_mtu_update(mtu);
+    }
+    fn window(&self) -> u64 {
+        self.inner.window()
+    }
+    fn initial_window(&self) -> u64 {
+        self.inner.initial_window()
+    }
+    fn clone_box(&self) -> Box<dyn Controller> {
+        Box::new(Self {
+            log: self.log.clone(),
+            next_token: self.next_token,
+            inner: self.inner.clone_box(),
+        })
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+}
+
+fn event_pair(discovery: bool) -> (Pair, ConnectionHandle, ConnectionHandle, Arc<Mutex<EventLog>>) {
+    let log = Arc::new(Mutex::new(EventLog::default()));
+    let mut transport = TransportConfig::default();
+    if discovery {
+        let mut mtu = MtuDiscoveryConfig::default();
+        mtu.upper_bound(1600);
+        transport.mtu_discovery_config(Some(mtu));
+    } else {
+        transport.mtu_discovery_config(None);
+    }
+    transport.congestion_controller_factory(Arc::new(EventRecorder(log.clone())));
+    let mut config = client_config();
+    config.transport_config(Arc::new(transport));
+    let mut pair = Pair::default();
+    let (client, server) = pair.connect_with(config);
+    (pair, client, server, log)
+}
+
+#[test]
+fn acknowledgements_and_losses_close_in_one_congestion_event() {
+    let (mut pair, client, server, log) = event_pair(false);
+    pair.latency = Duration::from_millis(25);
+    let stream = pair.client_streams(client).open(Dir::Uni).unwrap();
+    let payload = vec![0x42; 64 * 1024];
+    assert_eq!(
+        pair.client_send(client, stream).write(&payload).unwrap(),
+        payload.len()
+    );
+    pair.client_send(client, stream).finish().unwrap();
+    let lost_bytes_before = pair.client_conn_mut(client).stats().path.lost_bytes;
+    let tokens_before = log.lock().unwrap().sent.keys().last().copied().unwrap_or(0);
+    pair.drive_client();
+    // The first two 1-RTT datagrams of the transfer, one packet each.
+    assert!(pair.server.inbound.pop_front().is_some(), "drop a sent datagram");
+    assert!(pair.server.inbound.pop_front().is_some(), "drop a second one");
+    let mut idle = false;
+    for _ in 0..1000 {
+        if !pair.step() {
+            idle = true;
+            break;
+        }
+    }
+    assert!(idle, "transfer must complete without an endless timer loop");
+    pair.server_conn_mut(server).ping();
+    pair.drive();
+
+    let lost_bytes = pair.client_conn_mut(client).stats().path.lost_bytes - lost_bytes_before;
+    let log = log.lock().unwrap();
+    assert!(
+        log.acked.is_empty() && log.lost.is_empty(),
+        "every acknowledgement and loss ends in an event"
+    );
+    let lost: Vec<_> = log.events.iter().flat_map(|e| e.lost.iter().copied()).collect();
+    assert_eq!(lost.iter().map(|(_, bytes)| bytes).sum::<u64>(), lost_bytes);
+    assert_eq!(
+        (lost.len() as u64, lost_bytes),
+        log.counted_losses,
+        "the per-packet losses are the counted ones"
+    );
+    for dropped in [tokens_before + 1, tokens_before + 2] {
+        assert!(
+            lost.iter().any(|(token, _)| *token == dropped),
+            "dropped packet {dropped} reported lost: {lost:?}"
+        );
+    }
+    for event in &log.events {
+        let removed: u64 = event.acked.iter().chain(&event.lost).map(|(_, b)| b).sum();
+        assert!(
+            event.prior_in_flight >= removed,
+            "the flight before the event holds what it removed: {event:?}"
+        );
+    }
+    assert!(
+        log.not_ack_eliciting > 0,
+        "ACK-only packets are reported too"
+    );
+}
+
+#[test]
+fn lost_mtu_probes_are_reported_per_packet_only() {
+    let (pair, _, _, log) = event_pair(true);
+    drop(pair);
+    let log = log.lock().unwrap();
+    let probes: Vec<_> = log
+        .events
+        .iter()
+        .flat_map(|e| e.lost.iter())
+        .filter(|(_, bytes)| *bytes > DEFAULT_MTU as u64)
+        .collect();
+    assert!(!probes.is_empty(), "oversized probes are lost on this path");
+    assert_eq!(
+        log.counted_losses.1, 0,
+        "lost probes stay out of the counted congestion losses"
+    );
+}
