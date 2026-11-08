@@ -232,14 +232,14 @@ fn go_atoi(text: &str) -> i64 {
 }
 
 #[cfg(unix)]
-mod sys {
+pub(crate) mod sys {
     use std::{io, os::fd::RawFd};
 
     use libc::{c_int, c_void, socklen_t};
 
     use super::{bind_error, go_atoi, option_error, ApplyError, SocketKind, SocketOptions};
 
-    fn set_int(fd: RawFd, level: c_int, name: c_int, value: c_int) -> io::Result<()> {
+    pub(crate) fn set_int(fd: RawFd, level: c_int, name: c_int, value: c_int) -> io::Result<()> {
         // SAFETY: `fd` is a live socket owned by the caller, and the option
         // value is a local `c_int` whose size is passed with it.
         let result = unsafe {
@@ -277,7 +277,7 @@ mod sys {
         }
     }
 
-    fn get_int(fd: RawFd, level: c_int, name: c_int) -> io::Result<c_int> {
+    pub(crate) fn get_int(fd: RawFd, level: c_int, name: c_int) -> io::Result<c_int> {
         let mut value: c_int = 0;
         let mut length = std::mem::size_of::<c_int>() as socklen_t;
         // SAFETY: `fd` is a live socket, and `value` and `length` are local

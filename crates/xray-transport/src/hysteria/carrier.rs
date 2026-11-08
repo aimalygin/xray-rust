@@ -43,6 +43,19 @@ pub struct HysteriaCarrierConfig {
     pub udp_hop: H3UdpHopConfig,
     pub noise: Option<crate::udp_noise::UdpNoiseConfig>,
     pub header_custom: Option<HeaderCustomCarrier>,
+    pub sudoku: Option<SudokuCarrier>,
+}
+
+/// A `sudoku` UDP mask and its place among the carrier's masks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SudokuCarrier {
+    pub config: Arc<crate::sudoku::SudokuConfig>,
+    /// Listed before Salamander, which then obfuscates it.
+    pub before_salamander: bool,
+    /// Listed before noise, whose packets then pass through it.
+    pub before_noise: bool,
+    /// Listed before `header-custom`, whose prefixes it then encodes.
+    pub before_header_custom: bool,
 }
 
 /// A `header-custom` UDP mask and its place among the carrier's masks.
@@ -62,6 +75,7 @@ impl fmt::Debug for HysteriaCarrierConfig {
             .field("gecko", &self.gecko)
             .field("udp_hop", &self.udp_hop)
             .field("header_custom", &self.header_custom.is_some())
+            .field("sudoku", &self.sudoku.is_some())
             .finish()
     }
 }
@@ -72,6 +86,7 @@ enum Mask {
     Noise,
     Salamander,
     Header,
+    Sudoku,
 }
 
 /// One QUIC connection's mask state, which its rebound sockets keep:
@@ -122,6 +137,12 @@ impl HysteriaCarrierConfig {
             }
             UdpHeader::new(header.config.clone()).map_err(|_| HysteriaError::Configuration)?;
         }
+        if let Some(sudoku) = &self.sudoku {
+            sudoku
+                .config
+                .tables()
+                .map_err(|_| HysteriaError::Configuration)?;
+        }
         if self
             .salamander_password
             .as_ref()
@@ -170,6 +191,7 @@ impl HysteriaCarrierConfig {
             || self.udp_hop.is_active()
             || self.noise.is_some()
             || self.header_custom.is_some()
+            || self.sudoku.is_some()
     }
 
     /// What the masks add to every QUIC datagram: Salamander's salt and a
@@ -188,34 +210,50 @@ impl HysteriaCarrierConfig {
         salt + prefix
     }
 
-    /// The masks from the innermost. Salamander ranks 4 and the others go
-    /// either side of it; a custom header on noise's side sits next to it.
+    /// The masks from the innermost, as `finalmask.udp` lists them: each
+    /// after as many of the others as are listed before it.
     fn mask_order(&self) -> Vec<Mask> {
-        let side = |before: bool| if before { 2 } else { 6 };
         let mut masks = Vec::new();
         if self.salamander_password.is_some() {
-            masks.push((4, Mask::Salamander));
+            masks.push(Mask::Salamander);
         }
-        if let Some(noise) = &self.noise {
-            masks.push((side(noise.before_salamander), Mask::Noise));
+        if self.noise.is_some() {
+            masks.push(Mask::Noise);
         }
-        if let Some(header) = &self.header_custom {
-            let mut rank = side(header.before_salamander);
-            if self
-                .noise
-                .as_ref()
-                .is_some_and(|noise| noise.before_salamander == header.before_salamander)
-            {
-                rank = if header.before_noise {
-                    rank - 1
-                } else {
-                    rank + 1
-                };
-            }
-            masks.push((rank, Mask::Header));
+        if self.header_custom.is_some() {
+            masks.push(Mask::Header);
         }
-        masks.sort_by_key(|(rank, _)| *rank);
-        masks.into_iter().map(|(_, mask)| mask).collect()
+        if self.sudoku.is_some() {
+            masks.push(Mask::Sudoku);
+        }
+        let rank = |mask: Mask| {
+            masks
+                .iter()
+                .filter(|&&other| other != mask && self.listed_before(other, mask))
+                .count()
+        };
+        let mut ranked: Vec<(usize, Mask)> = masks.iter().map(|&mask| (rank(mask), mask)).collect();
+        ranked.sort_by_key(|(rank, _)| *rank);
+        ranked.into_iter().map(|(_, mask)| mask).collect()
+    }
+
+    /// Whether `first` is listed before `second`.
+    fn listed_before(&self, first: Mask, second: Mask) -> bool {
+        let noise = self.noise.as_ref();
+        let header = self.header_custom.as_ref();
+        let sudoku = self.sudoku.as_ref();
+        let before = |first: Mask, second: Mask| match (first, second) {
+            (Mask::Noise, Mask::Salamander) => noise.map(|noise| noise.before_salamander),
+            (Mask::Header, Mask::Salamander) => header.map(|header| header.before_salamander),
+            (Mask::Header, Mask::Noise) => header.map(|header| header.before_noise),
+            (Mask::Sudoku, Mask::Salamander) => sudoku.map(|sudoku| sudoku.before_salamander),
+            (Mask::Sudoku, Mask::Noise) => sudoku.map(|sudoku| sudoku.before_noise),
+            (Mask::Sudoku, Mask::Header) => sudoku.map(|sudoku| sudoku.before_header_custom),
+            _ => None,
+        };
+        before(first, second)
+            .or_else(|| before(second, first).map(|after| !after))
+            .unwrap_or(false)
     }
 
     /// The first remote address: with `remote` or `remote_once`, a random
@@ -320,11 +358,21 @@ pub(crate) fn wrap(
     config: &HysteriaCarrierConfig,
     session: &CarrierSession,
 ) -> io::Result<Arc<dyn AsyncUdpSocket>> {
+    // Quinn sets the don't-fragment bit as it wraps the socket; sudoku's
+    // datagrams need it clear again, through a clone of the socket.
+    let fragmenting = config
+        .sudoku
+        .as_ref()
+        .map(|_| socket.try_clone())
+        .transpose()?;
     // Socket protection has already happened, before connect or any send.
     #[cfg(target_os = "macos")]
     let mut socket = crate::connected_quic::wrap(socket, wire_peer)?;
     #[cfg(not(target_os = "macos"))]
     let mut socket = quinn::TokioRuntime.wrap_udp_socket(socket)?;
+    if let Some(clone) = fragmenting {
+        crate::sudoku::quic::allow_fragmentation(&clone)?;
+    }
     // Built from the wire inwards. Masks outside the carrier socket see the
     // wire peer and those inside it the logical one; it sits at Salamander's
     // place, or innermost without Salamander.
@@ -335,6 +383,10 @@ pub(crate) fn wrap(
             (Mask::Noise, Some(noise), _) => {
                 crate::udp_noise::wrap(socket, peer, noise.clone(), session.noise.clone())?
             }
+            (Mask::Sudoku, ..) => match &config.sudoku {
+                Some(sudoku) => crate::sudoku::quic::wrap(socket, &sudoku.config)?,
+                None => socket,
+            },
             (Mask::Header, _, Some(header)) => {
                 let state = match &session.header {
                     Some(state) => state.clone(),
@@ -1015,6 +1067,155 @@ mod tests {
         config.udp_hop.ports = vec![443, 8443];
         config.udp_hop.local = true;
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn sudoku_ranks_against_every_other_mask() {
+        use crate::header_custom::HeaderCustomUdpConfig;
+        use crate::udp_noise::{NoiseRange, UdpNoiseConfig};
+        use Mask::{Header as H, Noise as N, Salamander as S, Sudoku as K};
+        // Each position of a list as Xray-core reads it, from the innermost.
+        let lists: [&[Mask]; 6] = [
+            &[K, S],
+            &[S, K],
+            &[K, N, H, S],
+            &[N, S, K, H],
+            &[H, K, S, N],
+            &[S, H, N, K],
+        ];
+        for list in lists {
+            let at = |mask| list.iter().position(|&m| m == mask);
+            let before = |first, second| at(first).zip(at(second)).is_some_and(|(a, b)| a < b);
+            let config = HysteriaCarrierConfig {
+                salamander_password: at(S).map(|_| Arc::new(Zeroizing::new("synthetic".into()))),
+                noise: at(N).map(|_| UdpNoiseConfig {
+                    items: vec![],
+                    reset_secs: NoiseRange { from: 0, to: 0 },
+                    before_salamander: before(N, S),
+                }),
+                header_custom: at(H).map(|_| HeaderCustomCarrier {
+                    config: Arc::new(HeaderCustomUdpConfig::default()),
+                    before_salamander: before(H, S),
+                    before_noise: before(H, N),
+                }),
+                sudoku: at(K).map(|_| SudokuCarrier {
+                    config: Arc::new(crate::sudoku::SudokuConfig::default()),
+                    before_salamander: before(K, S),
+                    before_noise: before(K, N),
+                    before_header_custom: before(K, H),
+                }),
+                ..Default::default()
+            };
+            assert_eq!(config.mask_order(), list, "{list:?}");
+        }
+        // An unbuildable table is refused.
+        let config = HysteriaCarrierConfig {
+            sudoku: Some(SudokuCarrier {
+                config: Arc::new(crate::sudoku::SudokuConfig {
+                    ascii: "text".into(),
+                    ..Default::default()
+                }),
+                before_salamander: false,
+                before_noise: false,
+                before_header_custom: false,
+            }),
+            ..Default::default()
+        };
+        assert!(config.enabled());
+        assert!(config.validate().is_err());
+    }
+
+    /// Sudoku outside Salamander: the wire carries sudoku, Salamander
+    /// inside it, and the reply comes back through both.
+    #[tokio::test]
+    async fn the_carrier_puts_sudoku_at_its_place_and_lets_it_fragment() {
+        use crate::sudoku::{datagram::DatagramMask, SudokuConfig};
+        use std::future::poll_fn;
+        const PASSWORD: &str = "synthetic-password";
+        let sudoku = SudokuConfig {
+            password: "synthetic-sudoku".into(),
+            ..Default::default()
+        };
+        let mask = DatagramMask::new(&sudoku).unwrap();
+        let peer = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let wire_peer = peer.local_addr().unwrap();
+        let local = UdpSocket::bind("127.0.0.1:0").unwrap();
+        local.set_nonblocking(true).unwrap();
+        // A clone shows the socket's options after the carrier took it.
+        let probe = local.try_clone().unwrap();
+        let config = HysteriaCarrierConfig {
+            salamander_password: Some(Arc::new(Zeroizing::new(PASSWORD.into()))),
+            sudoku: Some(SudokuCarrier {
+                config: Arc::new(sudoku),
+                before_salamander: false,
+                before_noise: false,
+                before_header_custom: false,
+            }),
+            ..Default::default()
+        };
+        config.validate().unwrap();
+        let client = wrap(
+            local,
+            wire_peer,
+            wire_peer,
+            &config,
+            &CarrierSession::default(),
+        )
+        .unwrap();
+        assert!(client.may_fragment());
+        assert_eq!(client.max_transmit_segments(), 1);
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "android",
+            target_os = "macos",
+            target_os = "ios"
+        ))]
+        {
+            use std::os::fd::AsRawFd;
+            let [(level, name, allowed), _] = crate::sudoku::quic::FRAGMENTATION;
+            let value = crate::socket_options::sys::get_int(probe.as_raw_fd(), level, name);
+            assert_eq!(value.unwrap(), allowed, "the system may fragment");
+        }
+        drop(probe);
+        let packet = vec![0x5a; 1200];
+        let transmit = udp::Transmit {
+            destination: wire_peer,
+            ecn: None,
+            contents: &packet,
+            segment_size: None,
+            src_ip: None,
+        };
+        let mut poller = client.clone().create_io_poller();
+        loop {
+            match client.try_send(&transmit) {
+                Ok(()) => break,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    poll_fn(|cx| poller.as_mut().poll_writable(cx))
+                        .await
+                        .unwrap()
+                }
+                Err(e) => panic!("{e}"),
+            }
+        }
+        let mut wire = vec![0; 65_536];
+        let (n, from) = peer.recv_from(&mut wire).await.unwrap();
+        assert!(n >= (packet.len() + SALT_LEN) * 4, "{n}");
+        let inner = mask.decode(&mut wire, 0..n).unwrap();
+        assert_eq!(salamander_plaintext(PASSWORD, &wire[inner]), packet);
+
+        let reply = mask.encode(&salamander_datagram(PASSWORD, b"reply"));
+        peer.send_to(&reply, from).await.unwrap();
+        let mut output = vec![0; 1472];
+        let mut bufs = [IoSliceMut::new(&mut output)];
+        let mut meta = [udp::RecvMeta::default()];
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            poll_fn(|cx| client.poll_recv(cx, &mut bufs, &mut meta)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(&output[..meta[0].len], b"reply");
     }
 
     #[test]

@@ -511,12 +511,18 @@ Deliberate differences:
 
 - The TCP mask must be the last one in `finalmask.tcp`; Xray-core also
   accepts it before other TCP masks.
-- The UDP form is refused on Hysteria and XHTTP over HTTP/3. Sudoku makes
-  each QUIC packet at least four times its size, which only IP
-  fragmentation carries; quic-go on Xray's masked conn leaves fragmentation
-  to the system, where Quinn's sockets forbid it.
 - An unknown `ascii` mode or a malformed custom table fails the
   configuration, where Xray-core accepts it and fails every dial.
+
+On Hysteria and XHTTP over HTTP/3 sudoku makes each QUIC packet at least four
+times its size, which only IP fragmentation carries past the path MTU.
+quic-go writes to Xray's masked conn, whose don't-fragment bit it cannot
+set, so the system fragments and quic-go turns its path MTU discovery off.
+Quinn sets that bit on its sockets, so the carrier clears it again on every
+socket, the rebound ones included, and Quinn's path MTU discovery is off too.
+Xray-core's Salamander sits in its group of header masks, which takes at most
+4096 bytes, so when Salamander comes after sudoku its server drops every
+reply; the same happens on mKCP with legacy masks after sudoku.
 
 Evidence: `tools/sudoku-oracle` records Xray-core's own classic datagrams and
 packed server writes for entropy, ASCII, custom and rotating custom tables,
@@ -526,7 +532,9 @@ Live against Xray-core's server, raw (plain, TLS and REALITY), WebSocket,
 HTTPUpgrade, gRPC and XHTTP each carry a TCP echo and UDP, as do ASCII mode
 and a `header-custom` handshake inside sudoku; a client with another
 password never gets through. mKCP carries the same with sudoku alone, behind
-noise, and around a legacy mask.
+noise, and around a legacy mask; Hysteria with sudoku alone and outside
+Salamander, before and after a rebind; and XHTTP over HTTP/3 with sudoku
+alone and with noise on either side.
 
 ## xmc
 

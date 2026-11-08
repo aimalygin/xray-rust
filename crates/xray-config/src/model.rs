@@ -1591,8 +1591,9 @@ pub struct StreamSettings {
     pub udp_header_custom: Option<HeaderCustomUdp>,
     /// The `sudoku` TCP mask, the outermost of the TCP masks.
     pub tcp_sudoku: Option<SudokuMask>,
-    /// The `sudoku` UDP mask, at its place among mKCP's masks.
-    pub udp_sudoku: Option<SudokuMask>,
+    /// The `sudoku` UDP mask, at its place among mKCP's or a QUIC carrier's
+    /// masks.
+    pub udp_sudoku: Option<UdpSudoku>,
     /// The `xmc` TCP mask, the outermost of the TCP masks, as `sudoku` is.
     pub tcp_xmc: Option<XmcMask>,
     pub udp_noise: Option<UdpNoiseSettings>,
@@ -1651,6 +1652,19 @@ impl fmt::Debug for SudokuMask {
             .field("padding_max", &self.padding_max)
             .finish()
     }
+}
+
+/// The `sudoku` UDP mask and its place among a QUIC carrier's other masks;
+/// mKCP keeps its own order in `KcpSettings::masks`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UdpSudoku {
+    pub mask: SudokuMask,
+    /// Listed before Salamander, which then obfuscates it.
+    pub before_salamander: bool,
+    /// Listed before noise, whose packets then pass through it.
+    pub before_noise: bool,
+    /// Listed before `header-custom`, whose prefixes it then encodes.
+    pub before_header_custom: bool,
 }
 
 /// The `xmc` mask, as Xray-core v26.10.31's `XMC.Build` reads it: a

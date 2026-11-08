@@ -30,12 +30,20 @@ cd "$WORKSPACE_ROOT"
 XRAY_SUDOKU_VECTORS="$TEST_ROOT/vectors.json" \
   cargo test --locked -p xray-transport --lib sudoku::
 cargo test --locked -p xray-transport --lib kcp::mask
+cargo test --locked -p xray-transport --lib hysteria::carrier
 cargo test --locked -p xray-config --test sudoku_tests
 cargo test --locked -p xray-core-rs --lib outbound::carrier::tests
+cargo test --locked -p xray-core-rs --lib outbound::hysteria
 
-# The client against Xray-core's own servers: every TCP carrier and mKCP.
+# The client against Xray-core's own servers: every TCP carrier, mKCP and
+# XHTTP over HTTP/3.
 env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
   go -C "$CHECKOUT" build -mod=readonly -o "$TEST_ROOT/xray" ./main
 XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT" \
   cargo test --locked -p xray-core-rs --test local_xray_interop_tests sudoku \
+    -- --ignored --nocapture --test-threads=1
+
+# Hysteria against Xray-core's server, alone and outside Salamander.
+env -u NATIVE_HYSTERIA_BINARY XRAY_HYSTERIA_BINARY="$TEST_ROOT/xray" \
+  cargo test --locked -p xray-transport --test hysteria_interop_tests sudoku:: \
     -- --ignored --nocapture --test-threads=1

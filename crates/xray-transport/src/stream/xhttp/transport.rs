@@ -321,7 +321,8 @@ pub struct XhttpTransport {
     config: Arc<XhttpConfig>,
     endpoint: XhttpEndpoint,
     http_version: XhttpHttpVersion,
-    h3_quic: H3QuicConfig,
+    /// Shared: every H3 dial takes its own copy.
+    h3_quic: Arc<H3QuicConfig>,
     rng: Arc<StdMutex<Box<dyn RngCore + Send>>>,
     xmux: Arc<XmuxManager>,
 }
@@ -391,7 +392,7 @@ impl XhttpTransport {
             config: Arc::new(config),
             endpoint,
             http_version,
-            h3_quic,
+            h3_quic: Arc::new(h3_quic),
             rng,
             xmux,
         })
@@ -595,7 +596,7 @@ impl XhttpTransport {
             let dial: XhttpH3Dial = Arc::new(move || {
                 let candidates = candidates.clone();
                 let material = material.clone();
-                let quic = quic.clone();
+                let quic = H3QuicConfig::clone(&quic);
                 Box::pin(async move {
                     let remote_addr = candidates
                         .first()

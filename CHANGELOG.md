@@ -28,11 +28,15 @@ long-term supported release series.
   likely; the reader now keeps what it took.
 - The `sudoku` mask hides every byte as sudoku clues, with Xray-core's
   tables: as a TCP mask on every TCP carrier, REALITY included, and as a UDP
-  mask on mKCP. Entropy, ASCII and custom layouts, rotating tables and
-  padding are read as Xray-core reads them. See
+  mask on mKCP, Hysteria and XHTTP over HTTP/3. Entropy, ASCII and custom
+  layouts, rotating tables and padding are read as Xray-core reads them. See
   [sudoku mask](docs/config-compatibility.md#sudoku-mask).
-  - The TCP mask must be the last TCP mask; the UDP form is refused on
-    Hysteria and XHTTP over HTTP/3.
+  - The TCP mask must be the last TCP mask.
+  - On Hysteria and XHTTP over HTTP/3 every QUIC packet goes out at least
+    four times its size. The carrier lets the system fragment such datagrams
+    and turns path MTU discovery off, as quic-go is on Xray-core's masked
+    conn. Xray-core's server drops every reply when Salamander comes after
+    sudoku, so list Salamander first.
   - An unknown `ascii` mode or a malformed custom table fails the
     configuration, where Xray-core fails every dial.
 - `udphop` is now the last UDP mask, where Xray-core dials it: Xray-core

@@ -145,6 +145,30 @@ fn a_header_custom_mask_reaches_the_carrier_at_its_place() {
 }
 
 #[test]
+fn a_sudoku_mask_reaches_the_carrier_at_its_place() {
+    let mut value: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tests/fixtures/configs/hysteria2.json"
+    ))
+    .unwrap();
+    value["outbounds"][0]["streamSettings"]["finalmask"] = serde_json::json!({"udp":[
+        {"type":"salamander","settings":{"password":"synthetic-secret"}},
+        {"type":"sudoku","settings":{"password":"synthetic-sudoku","paddingMax":7}}
+    ],"quicParams":{"disableChromeParrot":true}});
+    let config = xray_config::parse_xray_json(&value.to_string())
+        .unwrap()
+        .config
+        .outbounds
+        .remove(0);
+    let outbound = HysteriaOutbound::new(&config).unwrap();
+    let sudoku = outbound.inner.carrier.sudoku.as_ref().unwrap();
+    assert_eq!(sudoku.config.password, "synthetic-sudoku");
+    assert_eq!(sudoku.config.padding_max, 7);
+    assert!(!sudoku.before_salamander);
+    assert!(!sudoku.before_noise);
+    assert!(!sudoku.before_header_custom);
+}
+
+#[test]
 fn hysteria_quic_params_follow_xrays_hysteria_dialer() {
     let (quic, receive) = hysteria_quic_config(None).unwrap();
     assert_eq!(quic.max_idle_timeout, Duration::from_secs(30));

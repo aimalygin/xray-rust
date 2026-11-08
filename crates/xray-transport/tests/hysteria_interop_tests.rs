@@ -271,3 +271,6 @@ mod carrier;
 
 #[path = "hysteria/header_custom.rs"]
 mod header_custom;
+
+#[path = "hysteria/sudoku.rs"]
+mod sudoku;

@@ -300,6 +300,7 @@ fn build_transport_layer(
             stream.quic_params.as_ref(),
             stream.udp_noise.as_ref(),
             stream.udp_header_custom.as_ref(),
+            stream.udp_sudoku.as_ref(),
         )?),
         StreamTransport::Kcp(kcp) => TransportLayer::Kcp(Arc::new(kcp_config(kcp, stream)?)),
     })
@@ -332,7 +333,7 @@ fn kcp_config(
                         .udp_sudoku
                         .as_ref()
                         .ok_or(CoreError::UnsupportedOutboundNetwork)?;
-                    Mask::Sudoku(Arc::new(sudoku_config(sudoku)))
+                    Mask::Sudoku(Arc::new(sudoku_config(&sudoku.mask)))
                 }
                 KcpMask::Header(header) => Mask::Header(match header {
                     KcpHeader::Dns(domain) => Header::Dns(domain.clone()),
@@ -627,6 +628,19 @@ fn udp_header_config(
         client: custom_items(&header.client),
         server: custom_items(&header.server),
     })
+}
+
+/// A QUIC carrier's `sudoku` UDP mask, at its place among the carrier's
+/// other masks.
+pub(super) fn quic_sudoku(
+    sudoku: &xray_config::UdpSudoku,
+) -> xray_transport::hysteria::SudokuCarrier {
+    xray_transport::hysteria::SudokuCarrier {
+        config: Arc::new(sudoku_config(&sudoku.mask)),
+        before_salamander: sudoku.before_salamander,
+        before_noise: sudoku.before_noise,
+        before_header_custom: sudoku.before_header_custom,
+    }
 }
 
 /// A QUIC carrier's `header-custom` UDP mask, at its place among the

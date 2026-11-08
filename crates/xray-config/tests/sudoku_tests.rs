@@ -109,25 +109,67 @@ fn sudoku_is_the_last_tcp_mask() {
 }
 
 #[test]
-fn the_udp_mask_takes_its_place_on_mkcp_only() {
+fn the_udp_mask_takes_its_place_on_udp_carriers() {
     let sudoku = json!({"type":"sudoku","settings":{"password":"secret"}});
     let legacy = json!({"type":"mkcp-legacy","settings":{"header":"srtp"}});
     let parsed = parse_xray_json(&config(json!({"network":"kcp",
         "finalmask":{"udp":[legacy, sudoku]}})))
     .unwrap();
     let stream = &parsed.config.outbounds[0].stream;
-    assert!(stream.udp_sudoku.is_some());
+    assert_eq!(
+        stream.udp_sudoku.as_ref().unwrap().mask.password.as_str(),
+        "secret"
+    );
     let StreamTransport::Kcp(kcp) = &stream.transport else {
         panic!("not kcp")
     };
     assert_eq!(kcp.masks[1], KcpMask::Sudoku);
-    let hysteria = json!({"outbounds":[{"protocol":"hysteria",
-        "settings":{"version":2,"address":"192.0.2.1","port":443},
-        "streamSettings":{"network":"hysteria","security":"tls",
-            "tlsSettings":{"serverName":"server.example","alpn":["h3"]},
-            "hysteriaSettings":{"version":2,"auth":"synthetic"},
-            "finalmask":{"udp":[sudoku],"quicParams":{"disableChromeParrot":true}}}}]});
-    assert!(errors(&hysteria.to_string())
-        .iter()
-        .any(|e| e.contains("a sudoku UDP mask requires mKCP")));
+    // On Hysteria, its place among the other QUIC masks.
+    let hysteria = |masks: Value| {
+        json!({"outbounds":[{"protocol":"hysteria",
+            "settings":{"version":2,"address":"192.0.2.1","port":443},
+            "streamSettings":{"network":"hysteria","security":"tls",
+                "tlsSettings":{"serverName":"server.example","alpn":["h3"]},
+                "hysteriaSettings":{"version":2,"auth":"synthetic"},
+                "finalmask":{"udp":masks,"quicParams":{"disableChromeParrot":true}}}}]})
+        .to_string()
+    };
+    let salamander = json!({"type":"salamander","settings":{"password":"synthetic-password"}});
+    let noise = json!({"type":"noise","settings":{"noise":[{"type":"str","packet":"n"}]}});
+    let header =
+        json!({"type":"header-custom","settings":{"client":[{"type":"str","packet":"h"}]}});
+    for (masks, places) in [
+        (json!([sudoku, salamander]), (true, false, false)),
+        (json!([salamander, sudoku]), (false, false, false)),
+        (
+            json!([noise, sudoku, header, salamander]),
+            (true, false, true),
+        ),
+        (
+            json!([header, salamander, noise, sudoku]),
+            (false, false, false),
+        ),
+    ] {
+        let parsed = parse_xray_json(&hysteria(masks.clone())).unwrap();
+        let sudoku = parsed.config.outbounds[0]
+            .stream
+            .udp_sudoku
+            .clone()
+            .unwrap();
+        assert_eq!(
+            (
+                sudoku.before_salamander,
+                sudoku.before_noise,
+                sudoku.before_header_custom
+            ),
+            places,
+            "{masks}"
+        );
+    }
+    // A carrier without UDP takes none.
+    assert!(errors(&config(
+        json!({"network":"raw","finalmask":{"udp":[sudoku]}})
+    ))
+    .iter()
+    .any(|e| e.contains("a sudoku UDP mask requires mKCP, Hysteria or XHTTP")));
 }

@@ -4893,6 +4893,27 @@
       }
     },
     {
+      "name": "sudoku-udp-hysteria",
+      "accepted": true,
+      "base": "hysteria2",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp": [
+          {
+            "type": "salamander",
+            "settings": {
+              "password": "synthetic-contract-password"
+            }
+          },
+          {
+            "type": "sudoku",
+            "settings": {
+              "password": "synthetic-sudoku-password"
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "sudoku-bad-ascii",
       "accepted": false,
       "base": "sudoku-tcp",
