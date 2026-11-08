@@ -2719,6 +2719,80 @@
    "ours": "error",
    "why": "this HTTP/2 client refuses a TE header other than \"trailers\", which Xray's sends",
    "xray": "ok"
+  },
+  {
+   "name": "bbr conservative profile",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "bbrProfile": "conservative"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "bbr aggressive profile under brutal",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "congestion": "brutal",
+       "brutalUp": "100 mbps",
+       "bbrProfile": "aggressive"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "unknown bbr profile",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "bbrProfile": "fast"
+      }
+     }
+    }
+   },
+   "xray": "infra/conf: unknown bbr profile"
   }
  ]
 }

@@ -119,8 +119,9 @@ Bandwidths use Xray's binary units: one `mbps` is 2^20 bits per second.
 its own Brutal rate sends at the lower of its `brutalUp` and this value; zero
 leaves the server on BBR. With the default congestion or `brutal`, the client
 sends with Brutal at the lower of `brutalUp` and the rate the server announces
-once both are nonzero, and with standard BBR otherwise. `force-brutal` sends at
-`brutalUp` whatever the server announces; `bbr` and `reno` ignore the rates.
+once both are nonzero, and otherwise with the BBR of its `bbrProfile` (see
+[BBR profiles](#bbr-profiles)). `force-brutal` sends at `brutalUp` whatever the
+server announces; `bbr` and `reno` ignore the rates.
 
 Brutal is ported from Xray-core's sender. It paces at its rate, which loss does
 not lower, and lets twice the rate's bandwidth-delay product be in flight.
@@ -139,10 +140,7 @@ fixed, so the larger of the two is the window. Without either, the 2 MiB stream
 and 3 MiB connection windows remain; Xray's Hysteria dialer defaults to 8 MiB
 and 20 MiB. `disableGSO` turns off segmentation offload. `maxIncomingStreams`
 has no effect, as in Xray's dialer, and `disableStatelessReset` only affects
-Xray-core's servers. Only the standard BBR profile is implemented: a
-conservative or aggressive `bbrProfile` fails to parse wherever BBR may run,
-which for Hysteria includes the default and `brutal` modes. `debug: true` fails
-before the outbound starts.
+Xray-core's servers. `debug: true` fails before the outbound starts.
 
 An ignored interop test transfers 3 MiB each way through pinned Xray-core with
 server rates `brutalUp: "100 mbps"` and `brutalDown: "8 mbps"`. A client with
@@ -156,6 +154,71 @@ The transport tests exercise TCP, inner TLS, fragmented UDP, automatic hopping,
 manual rebind and rejected socket protection against pinned Xray-core and
 independent official Hysteria v2.12.2. This is client carrier support, not a
 change to the congestion-control parity or published v0.7 artifacts.
+
+### BBR profiles
+
+`quicParams.bbrProfile` takes `conservative`, `standard` and `aggressive` in
+any case, as Xray-core v26.10.31 does, on Hysteria and XHTTP H3 alike; any
+other value fails to parse. `conservative` and `aggressive` run a port of
+Xray-core's own BBR sender (`transport/internet/hysteria/congestion/bbr`) with
+the profile's settings:
+
+| Profile | STARTUP pacing / window gain | PROBE_BW window gain | Rounds without 25% growth that end STARTUP | Options |
+| --- | --- | --- | --- | --- |
+| `conservative` | 2.25 / 1.75 | 1.75 | 2 | stays in the low gain until the flight drains to the target; slows an overshooting STARTUP once loss shows it; avoids overestimating bandwidth from compressed ACKs; recalculates the ACK aggregation it adds to the window on a new bandwidth maximum |
+| `standard` | 2.885 / 2.0 | 2.0 | 3 | none |
+| `aggressive` | 3.0 / 2.25 | 2.5 | 4 | adds the latest ACK aggregation to the STARTUP window and forgets older aggregation when bandwidth grows |
+
+`standard`, which an absent or empty `bbrProfile` also means, still runs
+Quinn's BBR with Xray's initial window, as before this release. The port runs
+`standard` too and replays Xray's sender for it like the others, but switching
+the default moves every Hysteria and XHTTP H3 connection to another
+congestion controller, so that waits for a separate decision.
+
+As in Xray, the controller takes over from quic-go's default sender, Reno,
+only once the connection is up: on XHTTP H3 right after the handshake, and on
+Hysteria after the server's authentication reply, which also decides whether
+Brutal runs instead. Until then the connection runs Quinn's NewReno.
+`force-brutal` switches at the same points, and `reno` keeps NewReno. Quinn's
+BBR for `standard` runs from the first packet.
+
+What differs from Xray, deliberately:
+
+- Pacing. Quinn paces from the sender's rate with its own token bucket. Like
+  Xray's pacer it keeps four milliseconds of credit and at least ten
+  datagrams, but caps a burst at 256 datagrams, which only binds above about
+  600 Mbit/s.
+- quic-go never lowers a connection's datagram size, and Xray's sender panics
+  if asked to. Quinn lowers it after detecting a black hole; the port then
+  scales its windows down as it scales them up.
+- The startup sender. quic-go's is its cubic sender in Reno mode with a
+  32-datagram window of 1,280 bytes each; Quinn's NewReno starts at 12,000
+  bytes. It only carries the handshake, plus the authentication request on
+  Hysteria.
+- The window rule. quic-go sends while the bytes in flight are below the
+  window; Quinn sends a packet while the bytes in flight plus that packet stay
+  below it, so the window Quinn sees is Xray's plus one datagram.
+
+The sender starts with the smaller of Quinn's initial datagram size and 1,280
+bytes, as Xray seeds it from quic-go's, and with the connection's minimum RTT
+so far, as quic-go hands it the connection's RTT statistics. It sees what
+quic-go would hand it: every sent packet with its packet number, ACK-only
+packets included, and one congestion event per ACK frame or loss timeout
+listing the packets acknowledged and lost, MTU probes included, with the
+bytes in flight before it. Callbacks added to the vendored `quinn-proto`
+report these.
+
+`tools/bbr-oracle` drives Xray-core's own sender over fifteen simulated paths,
+five per profile, with drop-tail queues, random loss, ACK aggregation, idle
+periods answered by ACK-only packets, a rate change and a larger datagram, and
+records every call it received with a digest of 54 state values after each of
+its 4,399 congestion events and three datagram-size changes. The port replays the calls and reaches the same
+state at every one, PROBE_BW gain-cycle draws included; the run is
+deterministic, and `scripts/check-bbr-interop.sh` regenerates the trace and
+requires it to match the fixture. The same script runs each profile live
+against Xray-core's servers: Hysteria, also with `brutal` falling back to the
+profile's BBR and with Brutal once the server announces a rate, and XHTTP H3
+through the core with every congestion mode.
 
 ## WireGuard destination DNS
 
@@ -1629,9 +1692,10 @@ segmentation offload, `brutalDisableLossCompensation` applies to
 read, is accepted without effect.
 
 `streamSettings.finalmask.quicParams` is parsed for every stream but applied
-only to H3. The phase-one engine implements QUIC v1, Reno, the default/standard
-BBR selection, `force-brutal` (the Brutal sender described in the Hysteria
-section, at `brutalUp`), initial and maximum receive windows,
+only to H3. The phase-one engine implements QUIC v1, Reno, BBR with each
+`bbrProfile` (see [BBR profiles](#bbr-profiles)), `force-brutal` (the Brutal
+sender described in the Hysteria section, at `brutalUp`), initial and maximum
+receive windows,
 `maxIdleTimeout`, `keepAlivePeriod`, `disablePathMTUDiscovery`,
 `maxIncomingStreams` and `disableGSO`. With no overrides it uses Xray's 2 MiB
 stream and 3 MiB connection initial windows, a 300-second idle timeout, and a
@@ -1639,13 +1703,13 @@ ten-second H3 keepalive.
 
 XHTTP downloads grow their receive windows from the initial values toward the
 maxima, by default 6 MiB per stream and 15 MiB per connection, as quic-go does;
-a constrained host keeps the initial windows. Standard BBR is a Quinn-BBR
-approximation with Xray's initial congestion window, not quic-go's exact
-controller. A maximum below its initial window, QUIC v2 through the transport
-API and `debug: true` fail closed before opening a socket. A conservative or
-aggressive `bbrProfile` with BBR selected fails to parse, and so does plain
-`brutal`: it follows the rate a Hysteria server announces, and Xray-core's
-XHTTP dialer has no case for it and panics when dialing. H3 accepts the
+a constrained host keeps the initial windows. The standard BBR profile is a
+Quinn-BBR approximation with Xray's initial congestion window; conservative and
+aggressive run the port of Xray's sender. A maximum below its initial window,
+QUIC v2 through the transport API and `debug: true` fail closed before opening
+a socket. Plain `brutal` fails to parse: it follows the rate a Hysteria server
+announces, and Xray-core's XHTTP dialer has no case for it and panics when
+dialing. H3 accepts the
 UDP-hop mask, or the legacy `quicParams.udpHop`, with
 the Hysteria rules above: with a remote mode the first Initial already goes
 to a drawn address, and each interval of an interval mode moves the
@@ -2293,8 +2357,11 @@ below them, issues 4-byte connection IDs, refuses incoming streams, and
 keeps `finalmask.quicParams` and the UDP masks; quic-go's receive windows,
 a 30-second idle timeout and a 10-second keepalive apply where
 `quicParams` is silent, and `xmux.hKeepAlivePeriod` sets the keepalive when
-nonzero, negative turning it off. Congestion `brutal` runs BBR, as in
-Xray-core; `force-brutal` runs Brutal. The TCP fragment mask fails on
+nonzero, negative turning it off. Congestion `brutal` runs BBR with
+`bbrProfile`, as in Xray-core, and `force-brutal` runs Brutal; as on XHTTP
+over HTTP/3, a profile's BBR and Brutal take over from NewReno once the
+handshake completes, where Xray-core's dial installs them (see
+[BBR profiles](#bbr-profiles)). The TCP fragment mask fails on
 MASQUE over HTTP/3, which other TCP masks do not reach. `sockopt` applies
 to the QUIC socket, and `addressPortStrategy` and `domainStrategy` choose
 the server's address, as Xray-core's system dialer does.

@@ -24,8 +24,8 @@ use xray_transport::stream::xhttp_composer_test_only::{
     XhttpScheme,
 };
 use xray_transport::stream::xhttp_h3_test_only::{
-    connect_h3, H3Client, H3Congestion, H3ConnectConfig, H3Error, H3QuicConfig, H3QuicVersion,
-    H3UdpHopConfig,
+    connect_h3, H3BbrProfile, H3Client, H3Congestion, H3ConnectConfig, H3Error, H3QuicConfig,
+    H3QuicVersion, H3UdpHopConfig,
 };
 use xray_transport::stream::xhttp_transport_test_only::{
     XhttpClock, XhttpH3Dial, XhttpHttpVersion, XhttpTransport, XhttpXmuxPolicy,
@@ -342,6 +342,52 @@ async fn serve_clean_exchange(server: &TestServer) -> (Method, String, Vec<u8>) 
         .expect("response headers");
     stream.finish().await.expect("response finish");
     (method, path, body)
+}
+
+/// Xray's XHTTP dialer installs its controller right after `DialEarly`:
+/// quinn's BBR and NewReno run from the start, the rest replace NewReno
+/// once the handshake is done.
+#[tokio::test]
+async fn each_congestion_choice_runs_its_controller_after_the_handshake() {
+    for (congestion, expected) in [
+        (H3Congestion::BbrStandard, "quinn-bbr"),
+        (H3Congestion::Reno, "new-reno"),
+        (H3Congestion::BbrConservative, "xray-bbr-conservative"),
+        (H3Congestion::BbrAggressive, "xray-bbr-aggressive"),
+        (
+            H3Congestion::ForceBrutal {
+                bytes_per_second: 10 << 20,
+            },
+            "brutal",
+        ),
+    ] {
+        let (client_tls, server_addr, server) = server_with_options(None).await;
+        let client = connect_h3(H3ConnectConfig {
+            remote_addr: server_addr,
+            server_name: "localhost".to_owned(),
+            tls_config: client_tls,
+            socket_protector: None,
+            quic: H3QuicConfig {
+                congestion,
+                ..H3QuicConfig::default()
+            },
+        })
+        .await
+        .expect("connect HTTP/3 client");
+        let handler = tokio::spawn({
+            let server = server.clone();
+            async move { serve_clean_exchange(&server).await }
+        });
+        let payload = Bytes::from(vec![0x5a; 256 * 1024]);
+        let mut body = client
+            .send_fixed(request(Method::POST, "/congestion"), payload.clone())
+            .await
+            .expect("status 200");
+        body.read_to_end(&mut Vec::new()).await.unwrap();
+        let (_, _, received) = handler.await.unwrap();
+        assert_eq!(received, payload, "{congestion:?}");
+        assert_eq!(client.congestion_controller(), expected, "{congestion:?}");
+    }
 }
 
 #[tokio::test]
@@ -2798,12 +2844,12 @@ fn unsupported_quic_parity_modes_fail_closed() {
     ));
 
     config.max_stream_receive_window = None;
-    for requested in [H3Congestion::BbrConservative, H3Congestion::BbrAggressive] {
+    for (requested, name) in [
+        (H3Congestion::BbrConservative, "xray-bbr-conservative"),
+        (H3Congestion::BbrAggressive, "xray-bbr-aggressive"),
+    ] {
         config.congestion = requested;
-        assert!(matches!(
-            config.diagnostics(),
-            Err(H3Error::UnsupportedCongestion { requested: actual }) if actual == requested
-        ));
+        assert_eq!(config.diagnostics().unwrap().congestion, name);
     }
     config.congestion = H3Congestion::ForceBrutal {
         bytes_per_second: 0,
@@ -2820,6 +2866,7 @@ fn unsupported_quic_parity_modes_fail_closed() {
     // bandwidth exchange, so an XHTTP transport refuses it up front.
     config.congestion = H3Congestion::Brutal {
         up_bytes_per_second: 65_536,
+        bbr_profile: H3BbrProfile::Standard,
     };
     assert!(config.diagnostics().is_ok());
     let (xhttp, endpoint) = xhttp_config(XhttpModeSelection::StreamOne, 4);

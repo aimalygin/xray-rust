@@ -8,18 +8,28 @@
 //! one-second slots, never by less than 0.8, once those slots hold at least 50
 //! packets.
 //!
-//! Hysteria's default mode only learns whether Brutal applies from the server's
-//! authentication reply, after the connection exists. quinn builds a
-//! connection's controller up front, so [`NegotiatedBrutalFactory`] starts with
-//! BBR and switches to Brutal once [`BrutalDecision::decide`] supplies a rate,
-//! as Xray's `congestion.UseBrutal` replaces the connection's sender.
+//! [`XrayBbr`] runs the port of Xray's BBR sender ([`bbr`]) with its
+//! `conservative`, `standard` and `aggressive` profiles.
+//!
+//! Xray replaces a connection's controller only once the connection is up:
+//! XHTTP H3 right after the handshake, Hysteria after the server's
+//! authentication reply, which also tells it whether Brutal applies. Until
+//! then quic-go's default sender, Reno, runs. quinn builds a connection's
+//! controller up front, so [`SwitchedFactory`] starts with NewReno and
+//! switches to what [`ControllerSwitch::install`] names, as Xray's
+//! `congestion.UseBBR` and `UseBrutal` replace the connection's sender.
+
+mod bbr;
 
 use std::any::Any;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-use quinn::congestion::{BbrConfig, Controller, ControllerFactory};
+use quinn::congestion::{BbrConfig, Controller, ControllerFactory, NewRenoConfig};
 use quinn_proto::RttEstimator;
+
+pub(crate) use bbr::BbrProfile;
+use bbr::{AckedPacket, BbrSender, LostPacket, Time, UDP_INITIAL_PACKET_SIZE};
 
 /// One-second slots of acknowledgement and loss counts.
 const SLOT_COUNT: usize = 5;
@@ -202,92 +212,337 @@ impl Brutal {
     }
 }
 
-/// Builds a [`Brutal`] sender at a fixed rate: Xray's `force-brutal`.
-pub(crate) struct BrutalFactory(pub(crate) BrutalRate);
+/// How far quic-go's clock is from zero when a controller is built: its
+/// monotonic time starts an hour in the past, and zero means unset.
+const QUIC_GO_CLOCK_START: Time = 3_600 * 1_000_000_000;
 
-impl ControllerFactory for BrutalFactory {
-    fn build(self: Arc<Self>, now: Instant, current_mtu: u16) -> Box<dyn Controller> {
-        Box::new(Brutal::new(self.0, now, current_mtu))
+/// Xray's BBR sender ([`bbr::BbrSender`]) driven by quinn's callbacks.
+///
+/// quic-go hands its controller the bytes in flight after counting a sent
+/// packet, every packet including ACK-only ones, and one
+/// `OnCongestionEventEx` per ACK frame or loss timeout with the packets it
+/// acknowledged and lost. quinn reports the same through
+/// `on_sent_with_in_flight` (before counting), `on_sent_not_ack_eliciting`,
+/// `on_ack_with_token` and `on_packet_lost_with_token`, closed by
+/// `on_congestion_event_end`. A sent packet's delivery token is its packet
+/// number, which the sender keys its samples by, as in quic-go.
+#[derive(Debug, Clone)]
+pub(crate) struct XrayBbr {
+    sender: BbrSender,
+    epoch: Instant,
+    /// quinn's datagram size, which turns quic-go's window rule into quinn's.
+    mtu: u64,
+    acked: Vec<AckedPacket>,
+    lost: Vec<LostPacket>,
+}
+
+impl XrayBbr {
+    /// A sender seeded like Xray's `UseBBR`: with the smaller of QUIC's
+    /// initial datagram size and the 1,280 bytes it assumes for UDP.
+    pub(crate) fn new(profile: BbrProfile, now: Instant, initial_mtu: u16, mtu: u16) -> Self {
+        let seed = i64::from(initial_mtu).min(UDP_INITIAL_PACKET_SIZE);
+        Self {
+            sender: BbrSender::new(QUIC_GO_CLOCK_START, seed, profile),
+            epoch: now,
+            mtu: u64::from(mtu),
+            acked: Vec::new(),
+            lost: Vec::new(),
+        }
+    }
+
+    fn time(&self, now: Instant) -> Time {
+        let elapsed = now.saturating_duration_since(self.epoch).as_nanos();
+        QUIC_GO_CLOCK_START.saturating_add(i64::try_from(elapsed).unwrap_or(i64::MAX))
+    }
+
+    fn record_ack(&mut self, bytes: u64, token: u64) {
+        self.acked.push(AckedPacket {
+            packet_number: signed(token),
+            bytes_acked: signed(bytes),
+        });
     }
 }
 
-/// Hysteria's choice between BBR and Brutal, settled by the server's reply.
+/// quinn counts bytes and packet numbers as `u64`, quic-go as `int64`.
+fn signed(value: u64) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
+}
+
+impl Controller for XrayBbr {
+    fn on_sent_with_in_flight(
+        &mut self,
+        now: Instant,
+        bytes: u64,
+        last_packet_number: u64,
+        in_flight: u64,
+        _app_limited: bool,
+    ) -> u64 {
+        self.sender.on_packet_sent(
+            self.time(now),
+            signed(in_flight.saturating_add(bytes)),
+            signed(last_packet_number),
+            signed(bytes),
+            true,
+        );
+        last_packet_number
+    }
+
+    fn on_sent_not_ack_eliciting(
+        &mut self,
+        now: Instant,
+        bytes: u64,
+        packet_number: u64,
+        in_flight: u64,
+    ) {
+        self.sender.on_packet_sent(
+            self.time(now),
+            signed(in_flight),
+            signed(packet_number),
+            signed(bytes),
+            false,
+        );
+    }
+
+    fn on_ack_with_token(
+        &mut self,
+        _now: Instant,
+        _sent: Instant,
+        bytes: u64,
+        _app_limited: bool,
+        _rtt: &RttEstimator,
+        token: u64,
+    ) {
+        self.record_ack(bytes, token);
+    }
+
+    fn on_rtt_sample(&mut self, _now: Instant, rtt: Duration, _app_limited: bool) {
+        self.sender
+            .on_rtt_sample(i64::try_from(rtt.as_nanos()).unwrap_or(i64::MAX));
+    }
+
+    fn on_packet_lost_with_token(&mut self, _now: Instant, bytes: u64, token: u64) {
+        self.lost.push(LostPacket {
+            packet_number: signed(token),
+            bytes_lost: signed(bytes),
+        });
+    }
+
+    fn on_congestion_event_end(&mut self, now: Instant, prior_in_flight: u64) {
+        if self.acked.is_empty() && self.lost.is_empty() {
+            return;
+        }
+        // quic-go lists both in packet-number order; quinn reports a lost MTU
+        // probe after the other losses.
+        self.acked.sort_by_key(|packet| packet.packet_number);
+        self.lost.sort_by_key(|packet| packet.packet_number);
+        let time = self.time(now);
+        self.sender
+            .on_congestion_event(signed(prior_in_flight), time, &self.acked, &self.lost);
+        self.acked.clear();
+        self.lost.clear();
+    }
+
+    /// The sender reacts to the losses of the whole event, in
+    /// `on_congestion_event_end`; like quic-go's BBR it ignores persistent
+    /// congestion and ECN.
+    fn on_congestion_event(
+        &mut self,
+        _now: Instant,
+        _sent: Instant,
+        _is_persistent_congestion: bool,
+        _lost_bytes: u64,
+    ) {
+    }
+
+    fn on_mtu_update(&mut self, new_mtu: u16) {
+        self.mtu = u64::from(new_mtu);
+        self.sender.set_max_datagram_size(i64::from(new_mtu));
+    }
+
+    /// quic-go sends while the bytes in flight are below the window; quinn
+    /// sends a packet while the flight plus that packet stays below it.
+    fn window(&self) -> u64 {
+        u64::try_from(self.sender.congestion_window())
+            .unwrap_or(0)
+            .saturating_add(self.mtu)
+    }
+
+    fn pacing_rate(&self) -> Option<u64> {
+        u64::try_from(self.sender.bandwidth_for_pacer()).ok()
+    }
+
+    fn clone_box(&self) -> Box<dyn Controller> {
+        Box::new(self.clone())
+    }
+
+    fn initial_window(&self) -> u64 {
+        self.window()
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+}
+
+/// What Xray's dialer installs once a connection is up, with
+/// `congestion.UseBBR` or `UseBrutal`. Its `reno` keeps quic-go's default
+/// sender, which needs no switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Installed {
+    /// quinn's BBR, which `standard` keeps (see [`bbr_for_profile`]).
+    QuinnBbr,
+    /// Xray's BBR sender.
+    XrayBbr(BbrProfile),
+    Brutal(BrutalRate),
+}
+
+/// Whether `bbrProfile: standard`, the default, runs the port of Xray's
+/// sender, switching from quic-go's startup Reno like the other profiles,
+/// rather than quinn's BBR from the first packet. The port is complete for
+/// `standard` too, but this moves every default Hysteria and XHTTP H3
+/// connection to another congestion controller, so it waits for a decision.
+pub(crate) const STANDARD_RUNS_XRAY_BBR: bool = false;
+
+/// The BBR Xray's `UseBBR` installs for `profile`.
+pub(crate) const fn bbr_for_profile(profile: BbrProfile) -> Installed {
+    match profile {
+        BbrProfile::Standard if !STANDARD_RUNS_XRAY_BBR => Installed::QuinnBbr,
+        profile => Installed::XrayBbr(profile),
+    }
+}
+
+/// Settles once what replaces a connection's startup controller.
 #[derive(Debug, Default)]
-pub(crate) struct BrutalDecision(OnceLock<Option<u64>>);
+pub(crate) struct ControllerSwitch(OnceLock<Installed>);
 
-impl BrutalDecision {
-    /// Settles the choice once: a nonzero rate switches to Brutal at that
-    /// rate, `None` or zero keeps BBR. Later calls are ignored.
-    pub(crate) fn decide(&self, bytes_per_second: Option<u64>) {
-        let _ = self.0.set(bytes_per_second.filter(|rate| *rate > 0));
+impl ControllerSwitch {
+    /// Names the replacement; later calls are ignored.
+    pub(crate) fn install(&self, installed: Installed) {
+        let _ = self.0.set(installed);
     }
 
-    fn rate(&self) -> Option<u64> {
-        self.0.get().copied().flatten()
+    fn installed(&self) -> Option<Installed> {
+        self.0.get().copied()
     }
 }
 
-/// Builds controllers that run BBR until a [`BrutalDecision`] selects Brutal.
-pub(crate) struct NegotiatedBrutalFactory {
-    pub(crate) bbr: Arc<BbrConfig>,
-    pub(crate) disable_loss_compensation: bool,
-    pub(crate) decision: Arc<BrutalDecision>,
+/// quic-go's sender before Xray replaces it: Reno, as quinn's NewReno.
+fn startup_controller(now: Instant, mtu: u16) -> Box<dyn Controller> {
+    Arc::new(NewRenoConfig::default()).build(now, mtu)
 }
 
-impl ControllerFactory for NegotiatedBrutalFactory {
+/// Builds controllers that start as quic-go's default sender, as an Xray
+/// connection does, and switch once [`ControllerSwitch::install`] names the
+/// replacement: after the handshake on XHTTP, after authentication on
+/// Hysteria.
+pub(crate) struct SwitchedFactory(pub(crate) Arc<ControllerSwitch>);
+
+impl ControllerFactory for SwitchedFactory {
     fn build(self: Arc<Self>, now: Instant, current_mtu: u16) -> Box<dyn Controller> {
-        let mut controller = NegotiatedBrutal {
-            bbr: Arc::clone(&self.bbr).build(now, current_mtu),
-            brutal: None,
-            decision: Arc::clone(&self.decision),
-            disable_loss_compensation: self.disable_loss_compensation,
+        let mut controller = Switched {
+            startup: startup_controller(now, current_mtu),
+            replacement: None,
+            switch: Arc::clone(&self.0),
+            initial_mtu: current_mtu,
             mtu: current_mtu,
+            min_rtt: None,
+            smoothed_rtt: None,
         };
         controller.settle(now);
         Box::new(controller)
     }
 }
 
-/// BBR until the decision names a rate, then a fresh Brutal sender, which,
-/// like Xray's replaced sender, starts without loss history.
-struct NegotiatedBrutal {
-    bbr: Box<dyn Controller>,
-    brutal: Option<Brutal>,
-    decision: Arc<BrutalDecision>,
-    disable_loss_compensation: bool,
-    mtu: u16,
+/// Marks a token as a packet sent before the switch; the rest of it is the
+/// packet number.
+const SENT_BEFORE_SWITCH: u64 = 1 << 63;
+
+/// The replacement and the kind it is, which says how it reads tokens.
+struct Replacement {
+    installed: Installed,
+    controller: Box<dyn Controller>,
 }
 
-impl NegotiatedBrutal {
-    fn settle(&mut self, now: Instant) {
-        if self.brutal.is_none() {
-            if let Some(bytes_per_second) = self.decision.rate() {
-                let rate = BrutalRate {
-                    bytes_per_second,
-                    disable_loss_compensation: self.disable_loss_compensation,
-                };
-                self.brutal = Some(Brutal::new(rate, now, self.mtu));
-            }
+impl Replacement {
+    /// The token the replacement reads for a packet: its own, the packet
+    /// number for Xray's BBR when sent before the switch, or `None` for
+    /// quinn's untokened path.
+    fn token(&self, token: u64) -> Option<u64> {
+        if token & SENT_BEFORE_SWITCH == 0 {
+            return Some(token);
         }
+        match self.installed {
+            Installed::XrayBbr(_) => Some(token & !SENT_BEFORE_SWITCH),
+            Installed::QuinnBbr | Installed::Brutal(_) => None,
+        }
+    }
+}
+
+/// quic-go's default sender until the switch, then a fresh replacement that,
+/// like Xray's, starts without the old one's history but with the
+/// connection's RTT statistics, which quic-go hands it. Packets sent before
+/// the switch carry their packet number as token, so Xray's BBR can tell
+/// them from its own when they are acknowledged or lost, as quic-go's does.
+struct Switched {
+    startup: Box<dyn Controller>,
+    replacement: Option<Replacement>,
+    switch: Arc<ControllerSwitch>,
+    initial_mtu: u16,
+    mtu: u16,
+    /// quic-go's `MinRTT`: the smallest raw RTT sample so far.
+    min_rtt: Option<Duration>,
+    /// The path's latest smoothed RTT.
+    smoothed_rtt: Option<Duration>,
+}
+
+impl Switched {
+    fn settle(&mut self, now: Instant) {
+        if self.replacement.is_some() {
+            return;
+        }
+        let Some(installed) = self.switch.installed() else {
+            return;
+        };
+        let controller: Box<dyn Controller> = match installed {
+            Installed::QuinnBbr => quinn_bbr().build(now, self.mtu),
+            Installed::XrayBbr(profile) => {
+                let mut bbr = XrayBbr::new(profile, now, self.initial_mtu, self.mtu);
+                if let Some(min_rtt) = self.min_rtt {
+                    bbr.on_rtt_sample(now, min_rtt, false);
+                }
+                Box::new(bbr)
+            }
+            Installed::Brutal(rate) => {
+                let mut brutal = Brutal::new(rate, now, self.mtu);
+                if let Some(smoothed) = self.smoothed_rtt {
+                    brutal.observe_rtt(smoothed);
+                }
+                Box::new(brutal)
+            }
+        };
+        self.replacement = Some(Replacement {
+            installed,
+            controller,
+        });
     }
 
     fn active(&mut self, now: Instant) -> &mut dyn Controller {
         self.settle(now);
-        match &mut self.brutal {
-            Some(brutal) => brutal,
-            None => self.bbr.as_mut(),
+        match &mut self.replacement {
+            Some(replacement) => replacement.controller.as_mut(),
+            None => self.startup.as_mut(),
         }
     }
 
     fn current(&self) -> &dyn Controller {
-        match &self.brutal {
-            Some(brutal) => brutal,
-            None => self.bbr.as_ref(),
+        match &self.replacement {
+            Some(replacement) => replacement.controller.as_ref(),
+            None => self.startup.as_ref(),
         }
     }
 }
 
-impl Controller for NegotiatedBrutal {
+impl Controller for Switched {
     fn on_sent(&mut self, now: Instant, bytes: u64, last_packet_number: u64) {
         self.active(now).on_sent(now, bytes, last_packet_number);
     }
@@ -300,13 +555,37 @@ impl Controller for NegotiatedBrutal {
         in_flight: u64,
         app_limited: bool,
     ) -> u64 {
-        self.active(now).on_sent_with_in_flight(
-            now,
-            bytes,
-            last_packet_number,
-            in_flight,
-            app_limited,
-        )
+        self.settle(now);
+        match &mut self.replacement {
+            Some(replacement) => replacement.controller.on_sent_with_in_flight(
+                now,
+                bytes,
+                last_packet_number,
+                in_flight,
+                app_limited,
+            ),
+            None => {
+                self.startup.on_sent_with_in_flight(
+                    now,
+                    bytes,
+                    last_packet_number,
+                    in_flight,
+                    app_limited,
+                );
+                SENT_BEFORE_SWITCH | last_packet_number
+            }
+        }
+    }
+
+    fn on_sent_not_ack_eliciting(
+        &mut self,
+        now: Instant,
+        bytes: u64,
+        packet_number: u64,
+        in_flight: u64,
+    ) {
+        self.active(now)
+            .on_sent_not_ack_eliciting(now, bytes, packet_number, in_flight);
     }
 
     fn on_ack_with_token(
@@ -318,8 +597,24 @@ impl Controller for NegotiatedBrutal {
         rtt: &RttEstimator,
         token: u64,
     ) {
-        self.active(now)
-            .on_ack_with_token(now, sent, bytes, app_limited, rtt, token);
+        self.smoothed_rtt = Some(rtt.get());
+        self.settle(now);
+        let Some(replacement) = &mut self.replacement else {
+            return self
+                .startup
+                .on_ack_with_token(now, sent, bytes, app_limited, rtt, token);
+        };
+        match replacement.token(token) {
+            Some(token) => {
+                replacement
+                    .controller
+                    .on_ack_with_token(now, sent, bytes, app_limited, rtt, token)
+            }
+            // The replacement never issued this token.
+            None => replacement
+                .controller
+                .on_ack(now, sent, bytes, app_limited, rtt),
+        }
     }
 
     fn on_ack(
@@ -330,10 +625,14 @@ impl Controller for NegotiatedBrutal {
         app_limited: bool,
         rtt: &RttEstimator,
     ) {
+        self.smoothed_rtt = Some(rtt.get());
         self.active(now).on_ack(now, sent, bytes, app_limited, rtt);
     }
 
     fn on_rtt_sample(&mut self, now: Instant, rtt: Duration, app_limited: bool) {
+        if !rtt.is_zero() && self.min_rtt.is_none_or(|min| rtt < min) {
+            self.min_rtt = Some(rtt);
+        }
         self.active(now).on_rtt_sample(now, rtt, app_limited);
     }
 
@@ -352,6 +651,25 @@ impl Controller for NegotiatedBrutal {
         self.active(now).on_packets_lost(now, packets, bytes);
     }
 
+    fn on_packet_lost_with_token(&mut self, now: Instant, bytes: u64, token: u64) {
+        self.settle(now);
+        match &mut self.replacement {
+            Some(replacement) => {
+                if let Some(token) = replacement.token(token) {
+                    replacement
+                        .controller
+                        .on_packet_lost_with_token(now, bytes, token);
+                }
+            }
+            None => self.startup.on_packet_lost_with_token(now, bytes, token),
+        }
+    }
+
+    fn on_congestion_event_end(&mut self, now: Instant, prior_in_flight: u64) {
+        self.active(now)
+            .on_congestion_event_end(now, prior_in_flight);
+    }
+
     fn on_congestion_event(
         &mut self,
         now: Instant,
@@ -365,9 +683,9 @@ impl Controller for NegotiatedBrutal {
 
     fn on_mtu_update(&mut self, new_mtu: u16) {
         self.mtu = new_mtu;
-        self.bbr.on_mtu_update(new_mtu);
-        if let Some(brutal) = &mut self.brutal {
-            brutal.on_mtu_update(new_mtu);
+        self.startup.on_mtu_update(new_mtu);
+        if let Some(replacement) = &mut self.replacement {
+            replacement.controller.on_mtu_update(new_mtu);
         }
     }
 
@@ -381,22 +699,71 @@ impl Controller for NegotiatedBrutal {
 
     fn clone_box(&self) -> Box<dyn Controller> {
         Box::new(Self {
-            bbr: self.bbr.clone_box(),
-            brutal: self.brutal.clone(),
-            decision: Arc::clone(&self.decision),
-            disable_loss_compensation: self.disable_loss_compensation,
+            startup: self.startup.clone_box(),
+            replacement: self.replacement.as_ref().map(|replacement| Replacement {
+                installed: replacement.installed,
+                controller: replacement.controller.clone_box(),
+            }),
+            switch: Arc::clone(&self.switch),
+            initial_mtu: self.initial_mtu,
             mtu: self.mtu,
+            min_rtt: self.min_rtt,
+            smoothed_rtt: self.smoothed_rtt,
         })
     }
 
     fn initial_window(&self) -> u64 {
-        self.bbr.initial_window()
+        self.current().initial_window()
     }
 
     fn into_any(self: Box<Self>) -> Box<dyn Any> {
         self
     }
 }
+
+/// The controller a connection runs now, by name: `new-reno`, `quinn-bbr`,
+/// `xray-bbr-conservative`, `xray-bbr-standard`, `xray-bbr-aggressive` or
+/// `brutal`.
+pub(crate) fn controller_name(controller: Box<dyn Controller>) -> &'static str {
+    fn name(controller: Box<dyn Any>) -> &'static str {
+        let controller = match controller.downcast::<Switched>() {
+            Ok(switched) => {
+                return match switched.replacement {
+                    Some(replacement) => name(replacement.controller.into_any()),
+                    None => name(switched.startup.into_any()),
+                }
+            }
+            Err(other) => other,
+        };
+        if let Some(bbr) = controller.downcast_ref::<XrayBbr>() {
+            return match bbr.sender.profile() {
+                BbrProfile::Conservative => "xray-bbr-conservative",
+                BbrProfile::Standard => "xray-bbr-standard",
+                BbrProfile::Aggressive => "xray-bbr-aggressive",
+            };
+        }
+        if controller.is::<Brutal>() {
+            "brutal"
+        } else if controller.is::<quinn::congestion::Bbr>() {
+            "quinn-bbr"
+        } else if controller.is::<quinn::congestion::NewReno>() {
+            "new-reno"
+        } else {
+            "other"
+        }
+    }
+    name(controller.into_any())
+}
+
+/// quinn's BBR as this project configures it: quic-go's 32-datagram initial
+/// window of 1,280 bytes.
+pub(crate) fn quinn_bbr() -> Arc<BbrConfig> {
+    let mut bbr = BbrConfig::default();
+    bbr.initial_window(QUINN_BBR_INITIAL_WINDOW);
+    Arc::new(bbr)
+}
+
+const QUINN_BBR_INITIAL_WINDOW: u64 = 32 * 1280;
 
 #[cfg(test)]
 mod tests {
@@ -546,59 +913,334 @@ mod tests {
         );
     }
 
-    fn negotiated(decision: &Arc<BrutalDecision>) -> Box<dyn Controller> {
-        Arc::new(NegotiatedBrutalFactory {
-            bbr: Arc::new(BbrConfig::default()),
-            disable_loss_compensation: false,
-            decision: Arc::clone(decision),
-        })
-        .build(Instant::now(), 1200)
+    fn switched(switch: &Arc<ControllerSwitch>) -> Box<dyn Controller> {
+        Arc::new(SwitchedFactory(Arc::clone(switch))).build(Instant::now(), 1200)
+    }
+
+    fn downcast(controller: Box<dyn Controller>) -> Box<Switched> {
+        controller.into_any().downcast::<Switched>().ok().unwrap()
     }
 
     #[test]
-    fn negotiation_keeps_bbr_until_the_server_names_a_rate() {
-        let decision = Arc::new(BrutalDecision::default());
-        let mut controller = negotiated(&decision);
-        assert_ne!(controller.pacing_rate(), Some(MIB));
-
-        decision.decide(Some(MIB));
-        decision.decide(Some(2 * MIB));
+    fn the_startup_controller_runs_until_a_replacement_is_installed() {
+        let switch = Arc::new(ControllerSwitch::default());
+        let mut controller = switched(&switch);
+        let reno = startup_controller(Instant::now(), 1200);
+        assert_eq!(controller.window(), reno.window());
+        assert_eq!(controller.pacing_rate(), None, "Reno paces from its window");
         let now = Instant::now();
-        controller.on_sent_with_in_flight(now, 1200, 1, 1200, false);
+        let token = controller.on_sent_with_in_flight(now, 1200, 7, 0, false);
+        assert_eq!(token, SENT_BEFORE_SWITCH | 7);
+
+        switch.install(Installed::Brutal(BrutalRate {
+            bytes_per_second: MIB,
+            disable_loss_compensation: false,
+        }));
+        switch.install(Installed::QuinnBbr);
+        assert_eq!(
+            controller.on_sent_with_in_flight(now, 1200, 8, 1200, false),
+            0
+        );
         assert_eq!(
             controller.pacing_rate(),
             Some(MIB),
-            "the first decision wins"
+            "the first install wins"
         );
         assert_eq!(controller.window(), NO_RTT_WINDOW + 1200 + 1);
-        let controller = controller
-            .into_any()
-            .downcast::<NegotiatedBrutal>()
-            .unwrap();
-        assert!(controller.brutal.is_some());
     }
 
     #[test]
-    fn negotiation_without_a_rate_stays_on_bbr() {
-        for rate in [None, Some(0)] {
-            let decision = Arc::new(BrutalDecision::default());
-            let mut controller = negotiated(&decision);
-            decision.decide(rate);
-            let now = Instant::now();
-            controller.on_sent_with_in_flight(now, 1200, 1, 1200, false);
-            let controller = controller
+    fn standard_keeps_quinn_bbr_and_other_profiles_run_xray_bbr() {
+        assert_eq!(bbr_for_profile(BbrProfile::Standard), Installed::QuinnBbr);
+        for profile in [BbrProfile::Conservative, BbrProfile::Aggressive] {
+            assert_eq!(bbr_for_profile(profile), Installed::XrayBbr(profile));
+            let switch = Arc::new(ControllerSwitch::default());
+            switch.install(bbr_for_profile(profile));
+            let controller = downcast(switched(&switch));
+            let replacement = controller.replacement.unwrap();
+            let bbr = replacement
+                .controller
                 .into_any()
-                .downcast::<NegotiatedBrutal>()
+                .downcast::<XrayBbr>()
+                .ok()
                 .unwrap();
-            assert!(controller.brutal.is_none(), "{rate:?} must keep BBR");
+            assert_eq!(bbr.sender.congestion_window(), 32 * 1200);
+        }
+    }
+
+    /// The packets Xray's BBR saw, through the switch.
+    fn xray_bbr_events(switch: &Arc<ControllerSwitch>) -> (Box<dyn Controller>, Instant) {
+        let now = Instant::now();
+        let mut controller = switched(switch);
+        // Sent before the switch: packet 3.
+        let early = controller.on_sent_with_in_flight(now, 1000, 3, 0, false);
+        switch.install(Installed::XrayBbr(BbrProfile::Aggressive));
+        let late = controller.on_sent_with_in_flight(now, 1100, 4, 1000, false);
+        assert_eq!((early, late), (SENT_BEFORE_SWITCH | 3, 4));
+        let later = now + Duration::from_millis(30);
+        controller.on_packet_lost_with_token(later, 1000, early);
+        controller.on_packet_lost_with_token(later, 1100, late);
+        (controller, later)
+    }
+
+    #[test]
+    fn xray_bbr_reads_the_packet_number_of_packets_sent_before_the_switch() {
+        let switch = Arc::new(ControllerSwitch::default());
+        let (controller, _) = xray_bbr_events(&switch);
+        let controller = downcast(controller);
+        let bbr = controller
+            .replacement
+            .unwrap()
+            .controller
+            .into_any()
+            .downcast::<XrayBbr>()
+            .ok()
+            .unwrap();
+        assert_eq!(
+            bbr.lost,
+            [
+                LostPacket {
+                    packet_number: 3,
+                    bytes_lost: 1000
+                },
+                LostPacket {
+                    packet_number: 4,
+                    bytes_lost: 1100
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn replacements_read_tokens_of_packets_sent_before_the_switch() {
+        let replacement = |installed| Replacement {
+            installed,
+            controller: startup_controller(Instant::now(), 1200),
+        };
+        let bbr = replacement(Installed::XrayBbr(BbrProfile::Conservative));
+        assert_eq!(bbr.token(SENT_BEFORE_SWITCH | 9), Some(9));
+        assert_eq!(bbr.token(9), Some(9));
+        let brutal = replacement(Installed::Brutal(BrutalRate {
+            bytes_per_second: MIB,
+            disable_loss_compensation: false,
+        }));
+        for other in [replacement(Installed::QuinnBbr), brutal] {
+            assert_eq!(other.token(SENT_BEFORE_SWITCH | 9), None);
+            assert_eq!(other.token(5), Some(5));
         }
     }
 
     #[test]
-    fn controllers_built_after_the_decision_start_as_brutal() {
-        let decision = Arc::new(BrutalDecision::default());
-        decision.decide(Some(3 * MIB));
-        let controller = negotiated(&decision);
+    fn an_event_end_hands_xray_bbr_the_whole_event_in_order() {
+        let now = Instant::now();
+        let mut bbr = XrayBbr::new(BbrProfile::Conservative, now, 1200, 1200);
+        for packet_number in 0..4 {
+            bbr.on_sent_with_in_flight(now, 1200, packet_number, packet_number * 1200, false);
+        }
+        assert_eq!(bbr.sender.max_datagram_size(), 1200);
+        let later = now + Duration::from_millis(40);
+        bbr.on_rtt_sample(later, Duration::from_millis(40), false);
+        bbr.record_ack(1200, 3);
+        bbr.record_ack(1200, 2);
+        bbr.on_packet_lost_with_token(later, 1200, 1);
+        bbr.on_packet_lost_with_token(later, 1200, 0);
+        let mut reference = BbrSender::new(QUIC_GO_CLOCK_START, 1200, BbrProfile::Conservative);
+        for packet_number in 0..4 {
+            reference.on_packet_sent(
+                QUIC_GO_CLOCK_START,
+                (packet_number + 1) * 1200,
+                packet_number,
+                1200,
+                true,
+            );
+        }
+        reference.on_rtt_sample(40_000_000);
+        reference.on_congestion_event(
+            4 * 1200,
+            QUIC_GO_CLOCK_START + 40_000_000,
+            &[
+                AckedPacket {
+                    packet_number: 2,
+                    bytes_acked: 1200,
+                },
+                AckedPacket {
+                    packet_number: 3,
+                    bytes_acked: 1200,
+                },
+            ],
+            &[
+                LostPacket {
+                    packet_number: 0,
+                    bytes_lost: 1200,
+                },
+                LostPacket {
+                    packet_number: 1,
+                    bytes_lost: 1200,
+                },
+            ],
+        );
+        bbr.on_congestion_event_end(later, 4 * 1200);
+        assert!(bbr.acked.is_empty() && bbr.lost.is_empty());
+        assert_eq!(format!("{:?}", bbr.sender), format!("{reference:?}"));
+        assert_eq!(
+            bbr.window(),
+            reference.congestion_window() as u64 + 1200,
+            "quinn's window is quic-go's plus the packet it checks"
+        );
+        assert_eq!(
+            bbr.pacing_rate(),
+            Some(reference.bandwidth_for_pacer() as u64)
+        );
+        // Nothing to report: no event.
+        bbr.on_congestion_event_end(later, 0);
+        assert_eq!(format!("{:?}", bbr.sender), format!("{reference:?}"));
+        // A loss timeout: quinn reports a lost MTU probe after the others,
+        // and the last lost packet bounds what the sampler forgets.
+        for packet_number in 4..8 {
+            bbr.on_sent_with_in_flight(later, 1200, packet_number, 0, false);
+            reference.on_packet_sent(
+                QUIC_GO_CLOCK_START + 40_000_000,
+                1200,
+                packet_number as i64,
+                1200,
+                true,
+            );
+        }
+        bbr.on_packet_lost_with_token(later, 1200, 6);
+        bbr.on_packet_lost_with_token(later, 1200, 5);
+        bbr.on_congestion_event_end(later, 4 * 1200);
+        reference.on_congestion_event(
+            4 * 1200,
+            QUIC_GO_CLOCK_START + 40_000_000,
+            &[],
+            &[
+                LostPacket {
+                    packet_number: 5,
+                    bytes_lost: 1200,
+                },
+                LostPacket {
+                    packet_number: 6,
+                    bytes_lost: 1200,
+                },
+            ],
+        );
+        assert_eq!(format!("{:?}", bbr.sender), format!("{reference:?}"));
+    }
+
+    #[test]
+    fn xrays_dialers_choose_the_controller_they_install() {
+        use crate::stream::{H3BbrProfile, H3Congestion, H3QuicConfig};
+        let config = |congestion| H3QuicConfig {
+            congestion,
+            brutal_disable_loss_compensation: true,
+            ..H3QuicConfig::default()
+        };
+        let brutal = |bytes_per_second| {
+            Some(Installed::Brutal(BrutalRate {
+                bytes_per_second,
+                disable_loss_compensation: true,
+            }))
+        };
+        let negotiated = |up_bytes_per_second, bbr_profile| {
+            config(H3Congestion::Brutal {
+                up_bytes_per_second,
+                bbr_profile,
+            })
+        };
+        // Brutal at the lower rate once both are known.
+        let aggressive = negotiated(10 * MIB, H3BbrProfile::Aggressive);
+        assert_eq!(aggressive.installed_controller(Some(MIB)), brutal(MIB));
+        assert_eq!(
+            aggressive.installed_controller(Some(20 * MIB)),
+            brutal(10 * MIB)
+        );
+        // Otherwise the profile's BBR.
+        for rate in [Some(0), None] {
+            assert_eq!(
+                aggressive.installed_controller(rate),
+                Some(Installed::XrayBbr(BbrProfile::Aggressive))
+            );
+        }
+        assert_eq!(
+            negotiated(0, H3BbrProfile::Conservative).installed_controller(Some(MIB)),
+            Some(Installed::XrayBbr(BbrProfile::Conservative))
+        );
+        assert_eq!(
+            negotiated(MIB, H3BbrProfile::Standard).installed_controller(Some(0)),
+            Some(Installed::QuinnBbr)
+        );
+        let forced = config(H3Congestion::ForceBrutal {
+            bytes_per_second: 10 * MIB,
+        });
+        assert_eq!(forced.installed_controller(Some(MIB)), brutal(10 * MIB));
+        assert_eq!(
+            config(H3Congestion::BbrConservative).installed_controller(None),
+            Some(Installed::XrayBbr(BbrProfile::Conservative))
+        );
+        assert_eq!(
+            config(H3Congestion::BbrStandard).installed_controller(None),
+            None
+        );
+        assert_eq!(
+            config(H3Congestion::Reno).installed_controller(Some(MIB)),
+            None
+        );
+    }
+
+    #[test]
+    fn xray_bbr_is_seeded_with_at_most_1280_byte_datagrams() {
+        let now = Instant::now();
+        let bbr = XrayBbr::new(BbrProfile::Standard, now, 1452, 1452);
+        assert_eq!(bbr.sender.max_datagram_size(), 1280);
+        assert_eq!(bbr.window(), 32 * 1280 + 1452);
+        let mut bbr = XrayBbr::new(BbrProfile::Standard, now, 1200, 1400);
+        assert_eq!(bbr.sender.max_datagram_size(), 1200);
+        bbr.on_mtu_update(1452);
+        assert_eq!(bbr.sender.max_datagram_size(), 1452);
+        assert_eq!(bbr.sender.congestion_window(), 32 * 1452);
+    }
+
+    #[test]
+    fn a_replacement_starts_with_the_connections_rtt() {
+        let switch = Arc::new(ControllerSwitch::default());
+        let mut controller = switched(&switch);
+        let now = Instant::now();
+        for rtt in [30, 12, 20] {
+            controller.on_rtt_sample(now, Duration::from_millis(rtt), false);
+        }
+        switch.install(Installed::XrayBbr(BbrProfile::Conservative));
+        controller.on_sent_with_in_flight(now, 1200, 9, 0, false);
+        let mut reference = BbrSender::new(QUIC_GO_CLOCK_START, 1200, BbrProfile::Conservative);
+        reference.on_rtt_sample(12_000_000);
+        assert_eq!(
+            controller.pacing_rate(),
+            Some(reference.bandwidth_for_pacer() as u64),
+            "paced from the 12 ms minimum, not the 100 ms default"
+        );
+
+        let switch = Arc::new(ControllerSwitch::default());
+        let mut switched = downcast(switched(&switch));
+        switched.smoothed_rtt = Some(Duration::from_millis(100));
+        switch.install(Installed::Brutal(BrutalRate {
+            bytes_per_second: MIB,
+            disable_loss_compensation: false,
+        }));
+        switched.settle(now);
+        assert_eq!(
+            switched.window(),
+            2 * MIB / 10 + 1200 + 1,
+            "two bandwidth-delay products at once"
+        );
+    }
+
+    #[test]
+    fn controllers_built_after_the_install_start_replaced() {
+        let switch = Arc::new(ControllerSwitch::default());
+        switch.install(Installed::Brutal(BrutalRate {
+            bytes_per_second: 3 * MIB,
+            disable_loss_compensation: false,
+        }));
+        let controller = switched(&switch);
         assert_eq!(controller.pacing_rate(), Some(3 * MIB));
     }
 }

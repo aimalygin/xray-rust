@@ -653,14 +653,14 @@ ICMP messages and which packets it admits; the tests replay them and
 `scripts/check-masque-interop.sh` regenerates a corpus ten times larger each
 run. A second oracle in the `masque` package records the frames Xray-core's
 HTTP/2 client writes up to its request for eight requests; ours match them
-byte for byte. 117 configuration cases
-carry `xray run -test` verdicts, rechecked with the binary each run: 106
+byte for byte. 120 configuration cases
+carry `xray run -test` verdicts, rechecked with the binary each run: 109
 match and 11 differ as listed above. Live against
 Xray-core's MASQUE server over HTTP/3: TCP with a 128 KiB echo to IPv4, IPv6
 and a name resolved through the tunnel, UDP to the same three, TCP through
 the HTTP inbound, TCP and UDP through the TUN, eight parallel flows sharing
-one tunnel, the default path with a preset User-Agent, and a wrong password
-refused. Over HTTP/2 the same flows run live, through a uTLS fingerprint as
+one tunnel, the default path with a preset User-Agent, the `conservative` and
+`aggressive` BBR profiles, and a wrong password refused. Over HTTP/2 the same flows run live, through a uTLS fingerprint as
 well, plus the default path with Go's User-Agent and no keepalive.
 Mutating 22 key branches (TTL, checksum, admission, capsule
 checks, address choice, authority, User-Agent, the pool's limits and retry,
@@ -669,6 +669,30 @@ the host and path checks) fails the tests each time, and so does mutating
 write buffer and windows, the keepalive, the extended CONNECT check, the
 header block options and field order, ALPN, keepalive defaults and the TE
 check).
+
+## QUIC BBR profiles
+
+`quicParams.bbrProfile` `conservative` and `aggressive` run a port of
+Xray-core v26.10.31's BBR sender with the profile's settings, on Hysteria and
+XHTTP H3, from where Xray's dialers install it: after the handshake on XHTTP,
+after the authentication reply on Hysteria. Before that the connection runs
+Quinn's NewReno, as Xray's runs quic-go's Reno. Deliberate differences:
+
+- `standard`, the default, still runs Quinn's BBR from the first packet. The
+  port runs `standard` as well; switching the default is a separate decision.
+- Quinn paces from the sender's rate with its own token bucket, which caps a
+  burst at 256 datagrams; Xray's pacer has no cap.
+- Quinn lowers the datagram size after detecting a black hole. Xray's sender
+  panics if asked to; the port scales its windows down.
+- Quinn's startup NewReno starts at 12,000 bytes, quic-go's Reno at 32
+  datagrams.
+
+Evidence: `tools/bbr-oracle` records Xray-core's own sender over fifteen
+simulated paths, and the port replays every call to the same 54 state values
+after each congestion event; `scripts/check-bbr-interop.sh` regenerates the
+trace each run and runs every profile live against Xray-core's Hysteria and
+XHTTP H3 servers. `xray run -test` and the parser agree on 184 configurations
+of `bbrProfile` and `congestion`.
 
 ## DNS `UseSystem` route probe
 

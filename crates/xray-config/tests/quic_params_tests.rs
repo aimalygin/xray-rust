@@ -74,46 +74,102 @@ fn hysteria_takes_every_quic_parameter_its_dialer_reads() {
 }
 
 #[test]
-fn bbr_profiles_other_than_standard_are_refused_where_bbr_may_run() {
-    for raw in [
-        hysteria(json!({"bbrProfile": "conservative"})),
-        hysteria(json!({"congestion": "bbr", "bbrProfile": "aggressive"})),
+fn every_bbr_profile_is_taken_wherever_bbr_may_run() {
+    for (raw, profile) in [
+        (
+            hysteria(json!({"bbrProfile": "conservative"})),
+            QuicBbrProfile::Conservative,
+        ),
+        (
+            hysteria(json!({"congestion": "bbr", "bbrProfile": "Aggressive"})),
+            QuicBbrProfile::Aggressive,
+        ),
         // Hysteria falls back to BBR when the server announces no rate.
-        hysteria(
-            json!({"congestion": "brutal", "brutalUp": "10 mbps", "bbrProfile": "aggressive"}),
+        (
+            hysteria(
+                json!({"congestion": "brutal", "brutalUp": "10 mbps", "bbrProfile": "aggressive"}),
+            ),
+            QuicBbrProfile::Aggressive,
         ),
-        xhttp("h3", json!({"bbrProfile": "aggressive"})),
-        xhttp(
-            "h3",
-            json!({"congestion": "bbr", "bbrProfile": "conservative"}),
+        (
+            xhttp("h3", json!({"bbrProfile": "AGGRESSIVE"})),
+            QuicBbrProfile::Aggressive,
         ),
-    ] {
-        assert_eq!(
-            error_path(&raw),
-            Some(format!("{QUIC}.bbrProfile")),
-            "{raw}"
-        );
-    }
-    for raw in [
-        hysteria(json!({"congestion": "reno", "bbrProfile": "conservative"})),
-        hysteria(
-            json!({"congestion": "force-brutal", "brutalUp": "10 mbps", "bbrProfile": "aggressive"}),
+        (
+            xhttp(
+                "h3",
+                json!({"congestion": "bbr", "bbrProfile": "conservative"}),
+            ),
+            QuicBbrProfile::Conservative,
         ),
-        xhttp(
-            "h3",
-            json!({"congestion": "reno", "bbrProfile": "aggressive"}),
+        (
+            hysteria(json!({"congestion": "reno", "bbrProfile": "conservative"})),
+            QuicBbrProfile::Conservative,
+        ),
+        (
+            hysteria(
+                json!({"congestion": "force-brutal", "brutalUp": "10 mbps", "bbrProfile": "aggressive"}),
+            ),
+            QuicBbrProfile::Aggressive,
+        ),
+        (
+            xhttp("h3", json!({"bbrProfile": "standard"})),
+            QuicBbrProfile::Standard,
+        ),
+        (
+            xhttp("h3", json!({"bbrProfile": ""})),
+            QuicBbrProfile::Standard,
+        ),
+        (
+            xhttp("h3", json!({"bbrProfile": null})),
+            QuicBbrProfile::Standard,
         ),
         // Off h3, Xray does not consult quicParams at all.
-        xhttp("h2", json!({"bbrProfile": "conservative"})),
+        (
+            xhttp("h2", json!({"bbrProfile": "conservative"})),
+            QuicBbrProfile::Conservative,
+        ),
+        // Go's strings.ToLower turns `İ` into a plain `i`.
+        (
+            xhttp("h3", json!({"bbrProfile": "AGGRESSİVE"})),
+            QuicBbrProfile::Aggressive,
+        ),
     ] {
         let parsed = parse_xray_json(&raw).unwrap_or_else(|e| panic!("{raw}: {e:?}"));
+        assert!(
+            !parsed
+                .diagnostics
+                .iter()
+                .any(|d| d.path.as_deref() == Some(&format!("{QUIC}.bbrProfile"))),
+            "{:?}",
+            parsed.diagnostics
+        );
         let quic = parsed.config.outbounds[0]
             .stream
             .quic_params
             .as_ref()
             .unwrap();
-        assert_ne!(quic.bbr_profile, QuicBbrProfile::Standard);
+        assert_eq!(quic.bbr_profile, profile, "{raw}");
     }
+}
+
+#[test]
+fn an_unknown_bbr_profile_is_refused_as_xray_refuses_it() {
+    for profile in [json!("turbo"), json!("standard "), json!("bbr")] {
+        for raw in [
+            hysteria(json!({"bbrProfile": profile})),
+            xhttp("h3", json!({"bbrProfile": profile})),
+            // Xray builds quicParams even where it never runs them.
+            xhttp("h2", json!({"bbrProfile": profile})),
+        ] {
+            assert_eq!(
+                error_path(&raw),
+                Some(format!("{QUIC}.bbrProfile")),
+                "{raw}"
+            );
+        }
+    }
+    assert!(parse_xray_json(&hysteria(json!({"bbrProfile": 1}))).is_err());
 }
 
 #[test]

@@ -19,7 +19,8 @@ long-term supported release series.
   [MASQUE](docs/config-compatibility.md#masque).
   - Tunnels are reused as Xray-core's `xmux` reuses them: by default one,
     retired after 1800 to 3000 seconds. `finalmask.quicParams` and the UDP
-    masks apply; congestion `brutal` runs BBR, as in Xray-core.
+    masks apply; congestion `brutal` runs BBR, as in Xray-core, and the BBR
+    profiles take over after the handshake, as on XHTTP over HTTP/3.
   - Over HTTP/2 (`tlsSettings.alpn` naming `h2` and not `h3`) the client
     dials TCP and TLS as the stream settings ask, uTLS fingerprint, `sockopt`
     and TCP masks included, and runs Xray-core's own HTTP/2 client: its
@@ -34,6 +35,21 @@ long-term supported release series.
     over HTTP/2.
 - The WireGuard outbound's userspace TCP/IP stack now takes IP packets from
   any source, as MASQUE needs; WireGuard itself is unchanged.
+- `quicParams.bbrProfile` `conservative` and `aggressive` work on Hysteria and
+  XHTTP over HTTP/3: they run a port of Xray-core's own BBR sender with the
+  profile's gains, startup rounds and options, where they failed to parse
+  before. See [BBR profiles](docs/config-compatibility.md#bbr-profiles).
+  - As in Xray-core, the controller takes over from quic-go's default Reno,
+    here Quinn's NewReno, once the connection is up: right after the
+    handshake on XHTTP, after the authentication reply on Hysteria. Brutal,
+    `force-brutal` and the profile's BBR when a Hysteria server announces no
+    rate now switch at the same points. Before, Hysteria's Brutal and its BBR
+    fallback ran Quinn's BBR until the reply, and `force-brutal` ran Brutal
+    from the first packet.
+  - `standard`, the default, still runs Quinn's BBR. The port runs it too,
+    but switching the default is left for a separate decision.
+  - A profile is read with Go's lowercasing, so `AGGRESSİVE` is accepted as
+    Xray-core accepts it.
 - The `xdns` UDP mask carries mKCP, Hysteria and XHTTP over HTTP/3 in DNS,
   as Xray-core's client does: every datagram rides in base32 in the names of
   queries to recursive resolvers, which reach the server's domain, and comes

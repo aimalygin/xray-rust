@@ -71,11 +71,11 @@ use xray_proxy::vless::{
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::stream::{
-    resolve_user_agent, Authority, GrpcConfig, GrpcTransport, H3Congestion, H3QuicConfig,
-    H3UdpHopConfig, HeaderMap, HeaderValue, HttpUpgradeConfig, TransportLayer, WebSocketConfig,
-    XhttpConfig, XhttpConfigInput, XhttpEndpoint, XhttpHttpVersion, XhttpMetadataPlacement,
-    XhttpModeSelection, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpRange, XhttpScheme,
-    XhttpTransport, XhttpUplinkDataPlacement, XhttpXmuxPolicy,
+    resolve_user_agent, Authority, GrpcConfig, GrpcTransport, H3BbrProfile, H3Congestion,
+    H3QuicConfig, H3UdpHopConfig, HeaderMap, HeaderValue, HttpUpgradeConfig, TransportLayer,
+    WebSocketConfig, XhttpConfig, XhttpConfigInput, XhttpEndpoint, XhttpHttpVersion,
+    XhttpMetadataPlacement, XhttpModeSelection, XhttpPaddingMethod, XhttpPaddingPlacement,
+    XhttpRange, XhttpScheme, XhttpTransport, XhttpUplinkDataPlacement, XhttpXmuxPolicy,
 };
 use xray_transport::{
     BoxedTransportStream, ConnectorConfig, DnsResolver, HappyEyeballsConfig, RealityClientConfig,
@@ -8547,14 +8547,28 @@ mod tests {
         build_vless_tcp_outbound(&h2)
             .expect("Xray does not consult QUIC-only settings on the H2 branch");
 
+        // Every BBR profile runs on H3.
+        for bbr_profile in [
+            xray_config::QuicBbrProfile::Conservative,
+            xray_config::QuicBbrProfile::Aggressive,
+        ] {
+            let mut profiled = xhttp_vless(
+                XhttpSettings::default(),
+                tls_security(Some("sni.example"), &["h3"]),
+                TargetAddr::Domain("origin.example".to_owned()),
+                443,
+            );
+            profiled.stream.quic_params = Some(QuicParamsSettings {
+                congestion: xray_config::QuicCongestion::Bbr,
+                bbr_profile,
+                ..QuicParamsSettings::default()
+            });
+            build_vless_tcp_outbound(&profiled).expect("H3 runs Xray's BBR profiles");
+        }
+
         for invalid in [
             QuicParamsSettings {
                 debug: true,
-                ..QuicParamsSettings::default()
-            },
-            QuicParamsSettings {
-                congestion: xray_config::QuicCongestion::Bbr,
-                bbr_profile: xray_config::QuicBbrProfile::Conservative,
                 ..QuicParamsSettings::default()
             },
             // A maximum below its initial window; distinct maxima above it
