@@ -169,6 +169,35 @@ fn a_sudoku_mask_reaches_the_carrier_at_its_place() {
 }
 
 #[test]
+fn an_xdns_mask_reaches_the_carrier() {
+    let mut value: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../tests/fixtures/configs/hysteria2.json"
+    ))
+    .unwrap();
+    value["outbounds"][0]["streamSettings"]["finalmask"] = serde_json::json!({"udp":[
+        {"type":"salamander","settings":{"password":"synthetic-secret"}},
+        {"type":"xdns","settings":{"domains":[{"names":["t.example.com"],"edns0":4096}],
+            "resolvers":[{"addrs":["192.0.2.53"]}]}}
+    ],"quicParams":{"disableChromeParrot":true}});
+    let config = xray_config::parse_xray_json(&value.to_string())
+        .unwrap()
+        .config
+        .outbounds
+        .remove(0);
+    let outbound = HysteriaOutbound::new(&config).unwrap();
+    let xdns = outbound.inner.carrier.xdns.as_ref().unwrap();
+    assert_eq!(xdns.domains[0].name, "t.example.com");
+    assert_eq!(xdns.domains[0].edns0, 4096);
+    assert_eq!(
+        xdns.resolvers,
+        [xray_transport::xdns::XdnsResolver::Udp(vec![
+            "192.0.2.53:53".parse().unwrap()
+        ])]
+    );
+    assert!(outbound.inner.carrier.salamander_password.is_some());
+}
+
+#[test]
 fn hysteria_quic_params_follow_xrays_hysteria_dialer() {
     let (quic, receive) = hysteria_quic_config(None).unwrap();
     assert_eq!(quic.max_idle_timeout, Duration::from_secs(30));

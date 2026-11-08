@@ -390,8 +390,12 @@ impl HysteriaClient {
         let tls_config = tls
             .quic_client_config_for(&config.tls, b"h3")
             .map_err(|_| HysteriaError::TlsConfiguration)?;
-        let session = super::carrier::CarrierSession::new(&config.carrier)
+        let mut session = super::carrier::CarrierSession::new(&config.carrier)
             .map_err(|_| HysteriaError::Configuration)?;
+        session
+            .open_xdns(&config.carrier, tls.socket_protector_arc())
+            .await
+            .map_err(|_| HysteriaError::Connect)?;
         // Hysteria's default mode picks Brutal or BBR from the server's reply.
         let negotiation = match config.quic.congestion {
             H3Congestion::Brutal {

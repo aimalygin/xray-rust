@@ -436,6 +436,8 @@ jobs:
         run: bash scripts/check-sudoku-interop.sh
       - name: Verify the xmc mask against pinned Xray-core
         run: bash scripts/check-xmc-interop.sh
+      - name: Verify the xdns mask against pinned Xray-core
+        run: bash scripts/check-xdns-interop.sh
 
       - name: Check out independent native Hysteria reference
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

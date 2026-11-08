@@ -28,6 +28,7 @@ pub mod hysteria;
 pub mod kcp;
 mod memory_class;
 pub mod sudoku;
+pub mod xdns;
 pub mod xmc;
 
 /// Validate a TLS DNS/IP verification name without performing network I/O.

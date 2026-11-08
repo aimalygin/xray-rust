@@ -274,3 +274,6 @@ mod header_custom;
 
 #[path = "hysteria/sudoku.rs"]
 mod sudoku;
+
+#[path = "hysteria/xdns.rs"]
+mod xdns;

@@ -379,3 +379,48 @@ fn xmc_reaches_tcp_carriers_and_no_udp_carrier_or_direct_dial() {
         Err(CoreError::UnsupportedOutboundNetwork)
     ));
 }
+
+#[test]
+fn xdns_reaches_mkcp_and_xhttp_h3_and_not_xhttp_h2() {
+    let xdns = json!({"type":"xdns","settings":{
+        "domains":[{"names":["t.example.com"],"types":[16,1],"edns0":1232}],
+        "resolvers":[{"addrs":["1.1.1.1","tcp://9.9.9.9:5353"]}],"extraPoll":2}});
+    let server = TargetAddr::Domain("server.example".into());
+    let expected = xray_transport::xdns::XdnsConfig {
+        domains: vec![xray_transport::xdns::XdnsDomain {
+            name: "t.example.com".into(),
+            len_limit: 255,
+            label_limit: 63,
+            types: vec![16, 1],
+            edns0: 1232,
+        }],
+        resolvers: vec![
+            xray_transport::xdns::XdnsResolver::Udp(vec!["1.1.1.1:53".parse().unwrap()]),
+            xray_transport::xdns::XdnsResolver::Tcp(vec!["9.9.9.9:5353".parse().unwrap()]),
+        ],
+        extra_poll: 2,
+    };
+    let kcp = vless(json!({"network":"kcp","finalmask":{"udp":[xdns]}}));
+    let transport = build_connector(&kcp.stream.security, &server);
+    let TransportLayer::Kcp(layer) =
+        build_transport_layer(&kcp.stream, &server, 443, &transport, VLESS_PATHS).unwrap()
+    else {
+        panic!("not mKCP")
+    };
+    assert_eq!(layer.xdns.as_deref(), Some(&expected));
+    let mut h3 = vless(json!({"network":"xhttp","security":"tls",
+        "tlsSettings":{"serverName":"server.example","alpn":["h3"]},
+        "finalmask":{"udp":[xdns],"quicParams":{"disableChromeParrot":true}}}));
+    let transport = build_connector(&h3.stream.security, &server);
+    let TransportLayer::Xhttp(xhttp) =
+        build_transport_layer(&h3.stream, &server, 443, &transport, VLESS_PATHS).unwrap()
+    else {
+        panic!("not xhttp")
+    };
+    assert_eq!(xhttp.h3_quic_config().udp_xdns.as_deref(), Some(&expected));
+    let StreamSecurity::Tls(tls) = &mut h3.stream.security else {
+        panic!("not tls")
+    };
+    tls.alpn = vec!["h2".into()];
+    assert!(build_transport_layer(&h3.stream, &server, 443, &transport, VLESS_PATHS).is_err());
+}

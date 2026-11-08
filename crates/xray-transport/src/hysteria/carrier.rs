@@ -44,6 +44,9 @@ pub struct HysteriaCarrierConfig {
     pub noise: Option<crate::udp_noise::UdpNoiseConfig>,
     pub header_custom: Option<HeaderCustomCarrier>,
     pub sudoku: Option<SudokuCarrier>,
+    /// The `xdns` mask, the outermost: the datagrams go to its resolvers,
+    /// never to the server's address.
+    pub xdns: Option<Arc<crate::xdns::XdnsConfig>>,
 }
 
 /// A `sudoku` UDP mask and its place among the carrier's masks.
@@ -76,6 +79,7 @@ impl fmt::Debug for HysteriaCarrierConfig {
             .field("udp_hop", &self.udp_hop)
             .field("header_custom", &self.header_custom.is_some())
             .field("sudoku", &self.sudoku.is_some())
+            .field("xdns", &self.xdns.is_some())
             .finish()
     }
 }
@@ -95,6 +99,9 @@ enum Mask {
 pub(crate) struct CarrierSession {
     pub(crate) noise: Option<Arc<UdpNoiseState>>,
     pub(crate) header: Option<Arc<HeaderCustomState>>,
+    /// The xdns client, whose id the server knows the connection by, so
+    /// every rebound socket goes through it.
+    pub(crate) xdns: Option<Arc<crate::xdns::XdnsClient>>,
 }
 
 impl fmt::Debug for CarrierSession {
@@ -102,6 +109,7 @@ impl fmt::Debug for CarrierSession {
         f.debug_struct("CarrierSession")
             .field("noise", &self.noise.is_some())
             .field("header", &self.header.is_some())
+            .field("xdns", &self.xdns.is_some())
             .finish()
     }
 }
@@ -120,7 +128,24 @@ impl CarrierSession {
                 .as_ref()
                 .map(|header| HeaderCustomState::new(header.config.clone()))
                 .transpose()?,
+            xdns: None,
         })
+    }
+
+    /// Opens the xdns client `config` asks for, unless there is one. A
+    /// resolver that does not open fails the dial, as in Xray-core.
+    pub(crate) async fn open_xdns(
+        &mut self,
+        config: &HysteriaCarrierConfig,
+        protector: Option<Arc<dyn crate::SocketProtector>>,
+    ) -> io::Result<()> {
+        if let (Some(xdns), None) = (&config.xdns, &self.xdns) {
+            let client = crate::xdns::XdnsClient::connect(xdns, protector)
+                .await
+                .map_err(io::Error::other)?;
+            self.xdns = Some(Arc::new(client));
+        }
+        Ok(())
     }
 }
 
@@ -142,6 +167,15 @@ impl HysteriaCarrierConfig {
                 .config
                 .tables()
                 .map_err(|_| HysteriaError::Configuration)?;
+        }
+        if let Some(xdns) = &self.xdns {
+            // Neither hops: xdns has no socket to the server, and Xray-core
+            // ignores the udphop socket under it. Sudoku's datagrams are
+            // four times a QUIC packet, past what one xdns packet takes.
+            xdns.validate().map_err(|_| HysteriaError::Configuration)?;
+            if self.udp_hop.is_active() || self.sudoku.is_some() {
+                return Err(HysteriaError::Configuration);
+            }
         }
         if self
             .salamander_password
@@ -192,6 +226,7 @@ impl HysteriaCarrierConfig {
             || self.noise.is_some()
             || self.header_custom.is_some()
             || self.sudoku.is_some()
+            || self.xdns.is_some()
     }
 
     /// What the masks add to every QUIC datagram: Salamander's salt and a
@@ -358,6 +393,21 @@ pub(crate) fn wrap(
     config: &HysteriaCarrierConfig,
     session: &CarrierSession,
 ) -> io::Result<Arc<dyn AsyncUdpSocket>> {
+    // The xdns client carries every datagram; the socket goes unused, as
+    // the one Xray-core dials under xdns does.
+    if config.xdns.is_some() {
+        let client = session.xdns.clone().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotConnected, "the xdns client is not open")
+        })?;
+        drop(socket);
+        return wrap_masks(
+            crate::xdns::quic::socket(client, wire_peer),
+            logical_peer,
+            wire_peer,
+            config,
+            session,
+        );
+    }
     // Quinn sets the don't-fragment bit as it wraps the socket; sudoku's
     // datagrams need it clear again, through a clone of the socket.
     let fragmenting = config
@@ -367,12 +417,23 @@ pub(crate) fn wrap(
         .transpose()?;
     // Socket protection has already happened, before connect or any send.
     #[cfg(target_os = "macos")]
-    let mut socket = crate::connected_quic::wrap(socket, wire_peer)?;
+    let socket = crate::connected_quic::wrap(socket, wire_peer)?;
     #[cfg(not(target_os = "macos"))]
-    let mut socket = quinn::TokioRuntime.wrap_udp_socket(socket)?;
+    let socket = quinn::TokioRuntime.wrap_udp_socket(socket)?;
     if let Some(clone) = fragmenting {
         crate::sudoku::quic::allow_fragmentation(&clone)?;
     }
+    wrap_masks(socket, logical_peer, wire_peer, config, session)
+}
+
+/// The masks over the carrier's socket, built from the wire inwards.
+fn wrap_masks(
+    mut socket: Arc<dyn AsyncUdpSocket>,
+    logical_peer: SocketAddr,
+    wire_peer: SocketAddr,
+    config: &HysteriaCarrierConfig,
+    session: &CarrierSession,
+) -> io::Result<Arc<dyn AsyncUdpSocket>> {
     // Built from the wire inwards. Masks outside the carrier socket see the
     // wire peer and those inside it the logical one; it sits at Salamander's
     // place, or innermost without Salamander.
@@ -1067,6 +1128,55 @@ mod tests {
         config.udp_hop.ports = vec![443, 8443];
         config.udp_hop.local = true;
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn xdns_runs_without_udphop_and_sudoku_and_needs_its_client() {
+        let xdns = Arc::new(crate::xdns::XdnsConfig {
+            domains: vec![crate::xdns::XdnsDomain {
+                name: "t.example.com".into(),
+                len_limit: 255,
+                label_limit: 63,
+                types: vec![],
+                edns0: 0,
+            }],
+            resolvers: vec![crate::xdns::XdnsResolver::Udp(vec!["127.0.0.1:53"
+                .parse()
+                .unwrap()])],
+            extra_poll: 0,
+        });
+        let mut config = HysteriaCarrierConfig {
+            xdns: Some(xdns.clone()),
+            ..Default::default()
+        };
+        assert!(config.enabled());
+        config.validate().unwrap();
+        config.udp_hop.ports = vec![443, 8443];
+        config.udp_hop.local = true;
+        assert!(config.validate().is_err(), "udphop");
+        config.udp_hop = Default::default();
+        config.sudoku = Some(SudokuCarrier {
+            config: Arc::new(crate::sudoku::SudokuConfig {
+                password: "synthetic".into(),
+                ..Default::default()
+            }),
+            before_salamander: false,
+            before_noise: false,
+            before_header_custom: false,
+        });
+        assert!(config.validate().is_err(), "sudoku");
+        config.sudoku = None;
+        config.xdns = Some(Arc::new(crate::xdns::XdnsConfig {
+            resolvers: vec![],
+            ..(*xdns).clone()
+        }));
+        assert!(config.validate().is_err(), "no resolver");
+        // The session opens the client; without it the socket is refused.
+        let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let peer: SocketAddr = "127.0.0.1:443".parse().unwrap();
+        config.xdns = Some(xdns);
+        let session = CarrierSession::new(&config).unwrap();
+        assert!(wrap(socket, peer, peer, &config, &session).is_err());
     }
 
     #[test]

@@ -293,15 +293,9 @@ fn build_transport_layer(
             permit_without_stream: grpc.permit_without_stream,
             initial_windows_size: grpc.initial_windows_size,
         })),
-        StreamTransport::Xhttp(xhttp) => TransportLayer::Xhttp(build_xhttp_transport(
-            xhttp,
-            &stream.security,
-            server,
-            stream.quic_params.as_ref(),
-            stream.udp_noise.as_ref(),
-            stream.udp_header_custom.as_ref(),
-            stream.udp_sudoku.as_ref(),
-        )?),
+        StreamTransport::Xhttp(xhttp) => {
+            TransportLayer::Xhttp(build_xhttp_transport(xhttp, stream, server)?)
+        }
         StreamTransport::Kcp(kcp) => TransportLayer::Kcp(Arc::new(kcp_config(kcp, stream)?)),
     })
 }
@@ -359,6 +353,7 @@ fn kcp_config(
             .as_ref()
             .map(super::xhttp::udp_noise_config)
             .transpose()?,
+        xdns: stream.udp_xdns.as_ref().map(xdns_config),
     })
 }
 
@@ -627,6 +622,33 @@ fn udp_header_config(
         standalone: header.standalone,
         client: custom_items(&header.client),
         server: custom_items(&header.server),
+    })
+}
+
+/// The `xdns` mask's client settings.
+pub(super) fn xdns_config(xdns: &xray_config::XdnsMask) -> Arc<xray_transport::xdns::XdnsConfig> {
+    use xray_transport::xdns::{XdnsDomain, XdnsResolver};
+    Arc::new(xray_transport::xdns::XdnsConfig {
+        domains: xdns
+            .domains
+            .iter()
+            .map(|domain| XdnsDomain {
+                name: domain.name.clone(),
+                len_limit: domain.len_limit,
+                label_limit: domain.label_limit,
+                types: domain.types.clone(),
+                edns0: domain.edns0,
+            })
+            .collect(),
+        resolvers: xdns
+            .resolvers
+            .iter()
+            .map(|resolver| match resolver.protocol {
+                xray_config::XdnsProtocol::Udp => XdnsResolver::Udp(vec![resolver.address]),
+                xray_config::XdnsProtocol::Tcp => XdnsResolver::Tcp(vec![resolver.address]),
+            })
+            .collect(),
+        extra_poll: xdns.extra_poll,
     })
 }
 

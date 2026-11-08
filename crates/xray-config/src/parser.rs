@@ -20,6 +20,7 @@ mod trojan;
 mod vless;
 mod vmess;
 mod wireguard;
+mod xdns;
 mod xhttp;
 mod xmc;
 mod xray_lists;
