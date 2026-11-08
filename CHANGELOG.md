@@ -10,6 +10,12 @@ long-term supported release series.
 
 ## Unreleased
 
+- `udphop` is now the last UDP mask, where Xray-core dials it: Xray-core
+  reverses the list and dials only an outermost `udphop`, so a mask after it
+  fails every dial with `incorrect index`. The first place used to be
+  required here, which refused working Xray-core configurations and took ones
+  it cannot dial. Hysteria links with port hopping and Salamander now import
+  with the hop last.
 - The `header-custom` TCP mask runs Xray-core's handshake on every TCP
   carrier before anything else: raw, WebSocket, HTTPUpgrade, gRPC and XHTTP,
   under none, TLS or REALITY. Every item kind and transform op is read, with

@@ -120,8 +120,9 @@ within the implemented runtime subset:
   `streamSettings.finalmask`, validated like canonical JSON; masks the core
   does not implement fail with an error naming `fm`, and an empty `fm` is
   absent. The import still sets `quicParams.disableChromeParrot=true` when the
-  mask leaves it out, and adds the link's port hopping as an `udphop` mask (a
-  second hopping mask in `fm` is refused). Remnawave also writes the mask's
+  mask leaves it out, and adds the link's port hopping as an `udphop` mask
+  after the others, the only place Xray-core dials it (a second hopping mask
+  in `fm` is refused). Remnawave also writes the mask's
   Salamander entry as `obfs`/`obfs-password` for Hysteria's own client, which
   ignores `fm`: with both present, `fm` must contain a Salamander entry with
   the same password (with `packetSize` exactly when `obfs=gecko`), which

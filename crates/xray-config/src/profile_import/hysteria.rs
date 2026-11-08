@@ -194,19 +194,17 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
     let masks = root.0["outbounds"][0]["streamSettings"]["finalmask"]["udp"]
         .as_array_mut()
         .unwrap();
-    if let Some(ports) = hopping_ports {
-        masks.insert(
-            0,
-            json!({"type":"udphop","settings":{
-            "mode":"intervalLocal,intervalRemote","remotePorts":ports}}),
-        );
-    }
     if let Some((password, gecko)) = salamander {
         let mut mask = json!({"type":"salamander", "settings":{"password":password.as_str()}});
         if let Some(size) = gecko {
             mask["settings"]["packetSize"] = json!(size);
         }
         masks.push(mask);
+    }
+    // Xray-core dials only an outermost udphop: the last mask in the list.
+    if let Some(ports) = hopping_ports {
+        masks.push(json!({"type":"udphop","settings":{
+            "mode":"intervalLocal,intervalRemote","remotePorts":ports}}));
     }
     if let Some(pin) = &pin {
         root.0["outbounds"][0]["streamSettings"]["tlsSettings"]["pinnedPeerCertSha256"] =

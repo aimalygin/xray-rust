@@ -13,13 +13,14 @@ fn hysteria_imports_salamander_and_bounded_port_lists_without_dropping_options()
         let imported = import_profile(ProfileFormat::Hysteria2, &text, None, &[]).unwrap();
         let config: serde_json::Value = serde_json::from_str(&imported.config_json).unwrap();
         let mask = &config["outbounds"][0]["streamSettings"]["finalmask"];
-        assert_eq!(mask["udp"][1]["settings"]["password"], "test+pass");
-        assert_eq!(mask["udp"][0]["type"], "udphop");
+        // Salamander first: Xray-core dials only an outermost, last udphop.
+        assert_eq!(mask["udp"][0]["settings"]["password"], "test+pass");
+        assert_eq!(mask["udp"][1]["type"], "udphop");
         assert_eq!(
-            mask["udp"][0]["settings"]["mode"],
+            mask["udp"][1]["settings"]["mode"],
             "intervalLocal,intervalRemote"
         );
-        assert_eq!(mask["udp"][0]["settings"]["remotePorts"], "443,8443-8445");
+        assert_eq!(mask["udp"][1]["settings"]["remotePorts"], "443,8443-8445");
         assert!(!format!("{imported:?}").contains("test+pass"));
     }
     for authority in ["server.example:443-445", "[2001:db8::1]:443-445"] {
@@ -123,8 +124,8 @@ fn hysteria_fm_carries_the_finalmask_and_must_agree_with_obfs() {
     assert_eq!(
         finalmask(&format!("mport=443%2C8443&fm={}", fm(&quic))),
         json!({"quicParams":{"brutalUp":"50 mbps","disableChromeParrot":true},"udp":[
-            {"type":"udphop","settings":{"mode":"intervalLocal,intervalRemote","remotePorts":"443,8443"}},
-            salamander]})
+            salamander,
+            {"type":"udphop","settings":{"mode":"intervalLocal,intervalRemote","remotePorts":"443,8443"}}]})
     );
     assert_eq!(
         finalmask("fm="),
