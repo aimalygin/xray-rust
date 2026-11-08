@@ -36,6 +36,16 @@ regexes = [
   '''^\s*"xray-rust": "6e378c68d0326d631b44cab20a884128cec7e0918611018f3c6980de2cf4a77b",?\s*$''',
 ]
 
+# The xmc oracle derives a key from this synthetic password; the generic rule
+# reads its 32 hex digits as an API key.
+[[allowlists]]
+description = "Synthetic xmc oracle password"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^tests/fixtures/xmc/vectors\.json$''']
+regexes = ['''^\s*"password": "0123456789abcdef0123456789abcdef",?\s*$''']
+
 # The generic rule reads the case id after "socks-password" as its value.
 [[allowlists]]
 description = "0.9.0 UDP cancellation collector case-id filter"

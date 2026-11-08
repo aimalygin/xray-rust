@@ -446,6 +446,19 @@ class EvidenceAllowlists(unittest.TestCase):
             "unreviewed.json": lines,
         }), {(name, "generic-api-key") for name in (path, "unreviewed.json")})
 
+    def test_xmc_oracle_password_exception_is_narrow(self):
+        path = "tests/fixtures/xmc/vectors.json"
+        sample = "0123456789abcdef" * 2
+        keys = json.loads((ROOT / path).read_text())["keys"]
+        self.assertIn(sample, [key["password"] for key in keys])
+        line = '      "password": "' + sample + '",\n'
+        self.assertEqual(self.scan({path: line}), set())
+        other = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({
+            path: '      "password": "' + other + '",\n',
+            "unreviewed.json": line,
+        }), {(name, "generic-api-key") for name in (path, "unreviewed.json")})
+
     def scan(self, files):
         binary = os.environ["GITLEAKS_BINARY"]
         with tempfile.TemporaryDirectory(prefix="xray-gitleaks-guards-") as name:
