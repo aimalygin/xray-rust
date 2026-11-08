@@ -68,7 +68,12 @@ async fn round_trip(client: &HysteriaClient, target: &Target) {
     assert!(received.iter().enumerate().all(|(i, b)| *b == pattern(i)));
 }
 
-async fn check(server: &ReferenceServer, target: &Target, congestion: H3Congestion, expected: &str) {
+async fn check(
+    server: &ReferenceServer,
+    target: &Target,
+    congestion: H3Congestion,
+    expected: &str,
+) {
     let mut config = server.config();
     config.quic.congestion = congestion;
     let client = HysteriaClient::connect(config, &server.connector)
@@ -114,13 +119,7 @@ async fn pinned_reference_runs_each_bbr_profile_after_authentication() {
     // A server that announces its rate: Brutal replaces quic-go's startup
     // Reno instead, whatever the profile.
     let server = ReferenceServer::start_with_bandwidth("100 mbps", "100 mbps").await;
-    check(
-        &server,
-        &target,
-        brutal(H3BbrProfile::Aggressive),
-        "brutal",
-    )
-    .await;
+    check(&server, &target, brutal(H3BbrProfile::Aggressive), "brutal").await;
     check(
         &server,
         &target,

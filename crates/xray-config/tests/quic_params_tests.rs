@@ -116,7 +116,10 @@ fn every_bbr_profile_is_taken_wherever_bbr_may_run() {
             xhttp("h3", json!({"bbrProfile": "standard"})),
             QuicBbrProfile::Standard,
         ),
-        (xhttp("h3", json!({"bbrProfile": ""})), QuicBbrProfile::Standard),
+        (
+            xhttp("h3", json!({"bbrProfile": ""})),
+            QuicBbrProfile::Standard,
+        ),
         (
             xhttp("h3", json!({"bbrProfile": null})),
             QuicBbrProfile::Standard,

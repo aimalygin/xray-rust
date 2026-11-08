@@ -200,7 +200,9 @@ pub(crate) enum GainCycleDraw {
 impl GainCycleDraw {
     fn next(&mut self) -> u32 {
         match self {
-            Self::Random => rand::Rng::gen_range(&mut rand::thread_rng(), 0..PACKETS_PER_CONNECTION_ID),
+            Self::Random => {
+                rand::Rng::gen_range(&mut rand::thread_rng(), 0..PACKETS_PER_CONNECTION_ID)
+            }
             #[cfg(test)]
             Self::Scripted(draws) => draws.pop_front().expect("a recorded gain-cycle draw"),
         }
@@ -304,7 +306,11 @@ pub(crate) struct BbrSender {
 
 impl BbrSender {
     /// `NewBbrSender`: a 32-datagram initial window, at most 20,000.
-    pub(crate) fn new(now: Time, initial_max_datagram_size: ByteCount, profile: BbrProfile) -> Self {
+    pub(crate) fn new(
+        now: Time,
+        initial_max_datagram_size: ByteCount,
+        profile: BbrProfile,
+    ) -> Self {
         Self::with_windows(
             now,
             initial_max_datagram_size,
@@ -394,10 +400,9 @@ impl BbrSender {
         if config.enable_overestimate_avoidance {
             self.sampler.enable_overestimate_avoidance();
         }
-        self.sampler
-            .set_reduce_extra_acked_on_bandwidth_increase(
-                config.reduce_extra_acked_on_bandwidth_increase,
-            );
+        self.sampler.set_reduce_extra_acked_on_bandwidth_increase(
+            config.reduce_extra_acked_on_bandwidth_increase,
+        );
     }
 
     pub(crate) fn profile(&self) -> BbrProfile {
@@ -421,8 +426,11 @@ impl BbrSender {
     fn rescale_packet_sized_windows(&mut self, max_datagram_size: ByteCount) {
         let old = self.max_datagram_size;
         self.max_datagram_size = max_datagram_size;
-        self.initial_congestion_window =
-            scale_byte_window_for_datagram_size(self.initial_congestion_window, old, max_datagram_size);
+        self.initial_congestion_window = scale_byte_window_for_datagram_size(
+            self.initial_congestion_window,
+            old,
+            max_datagram_size,
+        );
         self.max_congestion_window =
             scale_byte_window_for_datagram_size(self.max_congestion_window, old, max_datagram_size);
         self.min_congestion_window = min_congestion_window_for_max_datagram_size(max_datagram_size);
@@ -688,8 +696,7 @@ impl BbrSender {
         self.congestion_window_gain = self.congestion_window_gain_constant;
         // A random start in {0, 2..7}: never 1, so the raised gain is always
         // followed by the lowered one.
-        self.cycle_current_offset =
-            self.gain_cycle_draw.next() as usize % (GAIN_CYCLE_LENGTH - 1);
+        self.cycle_current_offset = self.gain_cycle_draw.next() as usize % (GAIN_CYCLE_LENGTH - 1);
         if self.cycle_current_offset >= 1 {
             self.cycle_current_offset += 1;
         }
@@ -893,22 +900,24 @@ impl BbrSender {
                 .bytes_lost_while_detecting_overshooting
                 .wrapping_add(bytes_lost);
             // Overshooting: the rate is above the target and loss happened.
-            if self.pacing_rate > target_rate && self.bytes_lost_while_detecting_overshooting > 0 {
-                if self.has_no_app_limited_sample
-                    || self.bytes_lost_while_detecting_overshooting.wrapping_mul(ByteCount::from(
+            // It is fairly sure with a non-application-limited sample, or
+            // once enough of the initial window is lost: slow down.
+            let lost_enough =
+                self.bytes_lost_while_detecting_overshooting
+                    .wrapping_mul(ByteCount::from(
                         self.bytes_lost_multiplier_while_detecting_overshooting,
-                    )) > self.initial_congestion_window
-                {
-                    // Fairly sure of overshoot with a non-application-limited
-                    // sample, or once enough of the initial window is lost:
-                    // slow down.
-                    self.pacing_rate = target_rate.max(bandwidth_from_delta(
-                        self.cwnd_to_calculate_min_pacing_rate,
-                        self.rtt_stats_min_rtt,
-                    ));
-                    self.bytes_lost_while_detecting_overshooting = 0;
-                    self.detect_overshooting = false;
-                }
+                    ))
+                    > self.initial_congestion_window;
+            if self.pacing_rate > target_rate
+                && self.bytes_lost_while_detecting_overshooting > 0
+                && (self.has_no_app_limited_sample || lost_enough)
+            {
+                self.pacing_rate = target_rate.max(bandwidth_from_delta(
+                    self.cwnd_to_calculate_min_pacing_rate,
+                    self.rtt_stats_min_rtt,
+                ));
+                self.bytes_lost_while_detecting_overshooting = 0;
+                self.detect_overshooting = false;
             }
         }
 
@@ -933,7 +942,8 @@ impl BbrSender {
 
         // Grow toward the target by the bytes acknowledged at a time.
         if self.is_at_full_bandwidth {
-            self.congestion_window = target_window.min(self.congestion_window.wrapping_add(bytes_acked));
+            self.congestion_window =
+                target_window.min(self.congestion_window.wrapping_add(bytes_acked));
         } else if self.congestion_window < target_window
             || self.sampler.total_bytes_acked() < self.initial_congestion_window
         {

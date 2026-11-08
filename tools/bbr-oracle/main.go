@@ -57,15 +57,15 @@ type rttStats struct {
 	min, latest, smoothed, meanDeviation time.Duration
 }
 
-func (r *rttStats) MinRTT() time.Duration          { return r.min }
-func (r *rttStats) LatestRTT() time.Duration       { return r.latest }
-func (r *rttStats) SmoothedRTT() time.Duration     { return r.smoothed }
-func (r *rttStats) MeanDeviation() time.Duration   { return r.meanDeviation }
-func (r *rttStats) MaxAckDelay() time.Duration     { return 25 * time.Millisecond }
-func (r *rttStats) PTO(bool) time.Duration         { return r.pto() }
-func (r *rttStats) UpdateRTT(_, _ time.Duration)   {}
-func (r *rttStats) SetMaxAckDelay(time.Duration)   {}
-func (r *rttStats) SetInitialRTT(time.Duration)    {}
+func (r *rttStats) MinRTT() time.Duration        { return r.min }
+func (r *rttStats) LatestRTT() time.Duration     { return r.latest }
+func (r *rttStats) SmoothedRTT() time.Duration   { return r.smoothed }
+func (r *rttStats) MeanDeviation() time.Duration { return r.meanDeviation }
+func (r *rttStats) MaxAckDelay() time.Duration   { return 25 * time.Millisecond }
+func (r *rttStats) PTO(bool) time.Duration       { return r.pto() }
+func (r *rttStats) UpdateRTT(_, _ time.Duration) {}
+func (r *rttStats) SetMaxAckDelay(time.Duration) {}
+func (r *rttStats) SetInitialRTT(time.Duration)  {}
 
 func (r *rttStats) sample(rtt time.Duration) {
 	if rtt <= 0 {

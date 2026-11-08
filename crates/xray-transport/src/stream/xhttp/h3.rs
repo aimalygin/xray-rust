@@ -30,7 +30,7 @@ use tokio::time::{sleep_until, Instant};
 
 use crate::quic_congestion::{
     bbr_for_profile, quinn_bbr, BbrProfile, BrutalRate, ControllerSwitch, Installed,
-    SwitchedFactory,
+    SwitchedFactory, STANDARD_RUNS_XRAY_BBR,
 };
 use crate::{
     canonicalize_socket_addr, memory_class, HappyEyeballsConfig, MemoryClass, SocketHandle,
@@ -103,14 +103,16 @@ impl H3BbrProfile {
 
 /// Congestion-control choices understood by XHTTP and Hysteria configuration.
 ///
-/// Except for [`Self::BbrStandard`] and [`Self::Reno`], which run from the
-/// first packet, a connection starts with NewReno, quic-go's default sender,
-/// and switches when Xray's dialer installs its controller: after the
-/// handshake on XHTTP, after authentication on Hysteria.
+/// Except for [`Self::Reno`] and, while it runs quinn's BBR,
+/// [`Self::BbrStandard`], which run from the first packet, a connection
+/// starts with NewReno, quic-go's default sender, and switches when Xray's
+/// dialer installs its controller: after the handshake on XHTTP, after
+/// authentication on Hysteria.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum H3Congestion {
-    /// Quinn's BBR implementation with Xray's standard initial window, for
-    /// the `standard` profile.
+    /// The `standard` profile: quinn's BBR implementation with Xray's
+    /// standard initial window, unless the port of Xray's sender is chosen
+    /// for it.
     BbrStandard,
     Reno,
     /// Xray's BBR sender with its conservative profile.
@@ -144,10 +146,14 @@ impl H3Congestion {
     /// Whether the connection starts with quic-go's default sender and
     /// switches once up.
     fn switches(self) -> bool {
-        matches!(
-            self,
-            Self::BbrConservative | Self::BbrAggressive | Self::Brutal { .. } | Self::ForceBrutal { .. }
-        )
+        match self {
+            Self::BbrStandard => STANDARD_RUNS_XRAY_BBR,
+            Self::Reno => false,
+            Self::BbrConservative
+            | Self::BbrAggressive
+            | Self::Brutal { .. }
+            | Self::ForceBrutal { .. } => true,
+        }
     }
 }
 
@@ -155,7 +161,10 @@ impl H3QuicConfig {
     /// What Xray's dialer installs once the connection is up, given the
     /// receive rate a Hysteria server announced, if any. `None` keeps the
     /// controller the connection started with.
-    pub(crate) fn installed_controller(&self, server_receive_rate: Option<u64>) -> Option<Installed> {
+    pub(crate) fn installed_controller(
+        &self,
+        server_receive_rate: Option<u64>,
+    ) -> Option<Installed> {
         let brutal = |bytes_per_second| {
             Installed::Brutal(BrutalRate {
                 bytes_per_second,
@@ -163,7 +172,10 @@ impl H3QuicConfig {
             })
         };
         match self.congestion {
-            H3Congestion::BbrStandard | H3Congestion::Reno => None,
+            H3Congestion::Reno => None,
+            H3Congestion::BbrStandard => {
+                STANDARD_RUNS_XRAY_BBR.then(|| bbr_for_profile(BbrProfile::Standard))
+            }
             H3Congestion::BbrConservative => Some(bbr_for_profile(BbrProfile::Conservative)),
             H3Congestion::BbrAggressive => Some(bbr_for_profile(BbrProfile::Aggressive)),
             H3Congestion::ForceBrutal { bytes_per_second } => Some(brutal(bytes_per_second)),
@@ -172,7 +184,9 @@ impl H3QuicConfig {
                 up_bytes_per_second,
                 bbr_profile,
             } => Some(match server_receive_rate.unwrap_or(0) {
-                rate if up_bytes_per_second > 0 && rate > 0 => brutal(up_bytes_per_second.min(rate)),
+                rate if up_bytes_per_second > 0 && rate > 0 => {
+                    brutal(up_bytes_per_second.min(rate))
+                }
                 _ => bbr_for_profile(bbr_profile.sender_profile()),
             }),
         }
@@ -359,6 +373,7 @@ impl H3QuicConfig {
         }
 
         let congestion = match self.congestion {
+            H3Congestion::BbrStandard if STANDARD_RUNS_XRAY_BBR => "xray-bbr-standard",
             H3Congestion::BbrStandard => "quinn-bbr-standard-approximation",
             H3Congestion::BbrConservative => "xray-bbr-conservative",
             H3Congestion::BbrAggressive => "xray-bbr-aggressive",
@@ -1528,7 +1543,7 @@ fn build_quinn_config(
     // quic-go's `Transport.DisableGSO`.
     transport.enable_segmentation_offload(!config.quic.disable_gso);
     match config.quic.congestion {
-        H3Congestion::BbrStandard => {
+        H3Congestion::BbrStandard if !STANDARD_RUNS_XRAY_BBR => {
             transport.congestion_controller_factory(quinn_bbr());
         }
         H3Congestion::Reno => {
@@ -1536,12 +1551,15 @@ fn build_quinn_config(
                 quinn::congestion::NewRenoConfig::default(),
             ));
         }
-        H3Congestion::ForceBrutal { bytes_per_second: 0 } => {
+        H3Congestion::ForceBrutal {
+            bytes_per_second: 0,
+        } => {
             return Err(H3Error::UnsupportedCongestion {
                 requested: config.quic.congestion,
             });
         }
-        H3Congestion::BbrConservative
+        H3Congestion::BbrStandard
+        | H3Congestion::BbrConservative
         | H3Congestion::BbrAggressive
         | H3Congestion::Brutal { .. }
         | H3Congestion::ForceBrutal { .. } => {

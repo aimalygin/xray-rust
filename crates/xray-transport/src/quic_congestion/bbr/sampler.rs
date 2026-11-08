@@ -113,7 +113,8 @@ impl MaxAckHeightTracker {
             ];
             self.max_ack_height_filter.clear();
             for mut event in saved {
-                let expected = bytes_from_bandwidth_and_time_delta(bandwidth_estimate, event.time_delta);
+                let expected =
+                    bytes_from_bandwidth_and_time_delta(bandwidth_estimate, event.time_delta);
                 if expected < event.bytes_acked {
                     event.extra_acked = event.bytes_acked - expected;
                     self.max_ack_height_filter.update(event, event.round);
@@ -457,7 +458,11 @@ impl BandwidthSampler {
         event_sample
     }
 
-    fn on_packet_lost(&mut self, packet_number: PacketNumber, bytes_lost: ByteCount) -> SendTimeState {
+    fn on_packet_lost(
+        &mut self,
+        packet_number: PacketNumber,
+        bytes_lost: ByteCount,
+    ) -> SendTimeState {
         self.total_bytes_lost = self.total_bytes_lost.wrapping_add(bytes_lost);
         self.connection_state_map
             .get(packet_number)
@@ -540,7 +545,11 @@ impl BandwidthSampler {
         a0
     }
 
-    fn on_packet_acknowledged(&mut self, ack_time: Time, packet_number: PacketNumber) -> BandwidthSample {
+    fn on_packet_acknowledged(
+        &mut self,
+        ack_time: Time,
+        packet_number: PacketNumber,
+    ) -> BandwidthSample {
         let mut sample = BandwidthSample::new();
         let Some(sent) = self.connection_state_map.get(packet_number).copied() else {
             return sample;
@@ -578,7 +587,8 @@ impl BandwidthSampler {
                 sent.send_time_state
                     .total_bytes_sent
                     .wrapping_sub(sent.total_bytes_sent_at_last_acked_packet),
-                sent.sent_time.wrapping_sub(sent.last_acked_packet_sent_time),
+                sent.sent_time
+                    .wrapping_sub(sent.last_acked_packet_sent_time),
             );
         }
 
@@ -643,5 +653,98 @@ impl BandwidthSampler {
                 .push_back(self.recent_ack_points.less_recent_point());
         }
         extra_acked
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MS: Nanos = 1_000_000;
+    const T: Time = 3_600_000 * MS;
+
+    fn acked(packet_number: PacketNumber) -> AckedPacket {
+        AckedPacket {
+            packet_number,
+            bytes_acked: 1000,
+        }
+    }
+
+    fn lost(packet_number: PacketNumber) -> LostPacket {
+        LostPacket {
+            packet_number,
+            bytes_lost: 1000,
+        }
+    }
+
+    /// Packet 0 acknowledged, then packet 1 sent normally and packet 2 in
+    /// an application-limited phase.
+    fn sampler() -> BandwidthSampler {
+        let mut sampler = BandwidthSampler::new(10);
+        sampler.on_packet_sent(T, 0, 1000, 1000, true);
+        sampler.on_congestion_event(T + 40 * MS, &[acked(0)], &[], 0, INF_BANDWIDTH, 1);
+        sampler.on_packet_sent(T + 41 * MS, 1, 1000, 1000, true);
+        sampler.on_app_limited();
+        sampler.on_packet_sent(T + 42 * MS, 2, 1000, 2000, true);
+        sampler
+    }
+
+    #[test]
+    fn the_later_of_an_events_last_packets_supplies_the_send_state() {
+        // A late loss alarm: packet 2 lost after packet 1 was acknowledged.
+        let event = sampler().on_congestion_event(
+            T + 81 * MS,
+            &[acked(1)],
+            &[lost(2)],
+            0,
+            INF_BANDWIDTH,
+            2,
+        );
+        let state = event.last_packet_send_state;
+        assert!(
+            state.is_app_limited && state.bytes_in_flight == 3000,
+            "{state:?}"
+        );
+        // The usual order: the acknowledged packet is the later one.
+        let event = sampler().on_congestion_event(
+            T + 82 * MS,
+            &[acked(2)],
+            &[lost(1)],
+            0,
+            INF_BANDWIDTH,
+            2,
+        );
+        let state = event.last_packet_send_state;
+        assert!(
+            state.is_app_limited && state.bytes_in_flight == 3000,
+            "{state:?}"
+        );
+        let event =
+            sampler().on_congestion_event(T + 82 * MS, &[acked(1)], &[], 0, INF_BANDWIDTH, 2);
+        assert!(!event.last_packet_send_state.is_app_limited);
+    }
+
+    #[test]
+    fn heights_reinserted_on_a_new_maximum_keep_gos_round_of_zero() {
+        let mut tracker = MaxAckHeightTracker::new(10);
+        tracker.reduce_extra_acked_on_bandwidth_increase = true;
+        let measured = ExtraAckedEvent {
+            extra_acked: 5000,
+            bytes_acked: 10_000,
+            time_delta: 10 * MS,
+            round: 0,
+        };
+        tracker.max_ack_height_filter.update(measured, 15);
+        // A new maximum in round 20 recalculates the height and reinserts it
+        // at the event's own round, which Go leaves at zero for a measured
+        // event, then opens an aggregation epoch.
+        let extra = tracker.update(8000, true, 20, T, 3000);
+        assert_eq!(extra, 0);
+        assert_eq!(tracker.get(), 10_000 - 10);
+        // Round 21 is more than ten rounds after round zero: the next
+        // measurement replaces the reinserted height.
+        let extra = tracker.update(8000, false, 21, T + 1000 * MS, 500);
+        assert_eq!(extra, 3000 + 500 - 1000);
+        assert_eq!(tracker.get(), 2500);
     }
 }

@@ -103,7 +103,11 @@ fn profile(name: &str) -> BbrProfile {
 
 /// Replays one run, returning how many snapshots matched.
 fn replay(run: &Value, fields: &[&str]) -> usize {
-    let name = format!("{}/{}", run["profile"].as_str().unwrap(), run["name"].as_str().unwrap());
+    let name = format!(
+        "{}/{}",
+        run["profile"].as_str().unwrap(),
+        run["name"].as_str().unwrap()
+    );
     let steps = run["steps"].as_array().expect("steps");
     // What Go's global math/rand source yielded, in order.
     let draws: VecDeque<u32> = run["draws"]

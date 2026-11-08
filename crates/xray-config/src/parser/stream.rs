@@ -655,7 +655,7 @@ impl Parser<'_> {
 
         // Go's encoding/json treats null for scalar struct fields as their
         // existing zero value. The nullable helpers below preserve that rule.
-        let congestion = match crate::go_lowercase(&self.nullable_string_at(
+        let congestion = match crate::go_lowercase(self.nullable_string_at(
             quic,
             "congestion",
             format!("{quic_path}.congestion"),
@@ -677,7 +677,7 @@ impl Parser<'_> {
         };
         // Xray-core accepts every profile wherever quicParams goes; its
         // Hysteria and XHTTP H3 dialers run them all.
-        let bbr_profile = match crate::go_lowercase(&self.nullable_string_at(
+        let bbr_profile = match crate::go_lowercase(self.nullable_string_at(
             quic,
             "bbrProfile",
             format!("{quic_path}.bbrProfile"),

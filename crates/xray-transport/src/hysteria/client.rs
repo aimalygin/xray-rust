@@ -17,7 +17,8 @@ use zeroize::Zeroizing;
 
 use crate::quic_congestion::ControllerSwitch;
 use crate::stream::{
-    configure_quic_datagram_socket, connect_quic_transport_with_datagrams, H3ConnectConfig, H3Error, H3QuicConfig, QuicSendWindow, QUIC_INITIAL_SEND_WINDOW,
+    configure_quic_datagram_socket, connect_quic_transport_with_datagrams, H3ConnectConfig,
+    H3Error, H3QuicConfig, QuicSendWindow, QUIC_INITIAL_SEND_WINDOW,
 };
 use crate::{TlsClientConfig, TlsConnector, TransportError};
 

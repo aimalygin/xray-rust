@@ -19,7 +19,10 @@ fn set_max_datagram_size_rescales_packet_sized_windows() {
 
     assert_eq!(sender.initial_congestion_window, 20 * NEW);
     assert_eq!(sender.max_congestion_window, 80 * NEW);
-    assert_eq!(sender.min_congestion_window, MIN_CONGESTION_WINDOW_PACKETS * NEW);
+    assert_eq!(
+        sender.min_congestion_window,
+        MIN_CONGESTION_WINDOW_PACKETS * NEW
+    );
     assert_eq!(sender.congestion_window, 20 * NEW);
 }
 
@@ -108,13 +111,17 @@ fn new_bbr_sender_applies_profiles() {
         );
         assert_eq!(sender.num_startup_rtts, case.num_startup_rtts, "{name}");
         assert_eq!(sender.drain_to_target, case.drain_to_target, "{name}");
-        assert_eq!(sender.detect_overshooting, case.detect_overshooting, "{name}");
+        assert_eq!(
+            sender.detect_overshooting, case.detect_overshooting,
+            "{name}"
+        );
         assert_eq!(
             sender.bytes_lost_multiplier_while_detecting_overshooting, case.bytes_lost_multiplier,
             "{name}"
         );
         assert_eq!(
-            sender.enable_ack_aggregation_during_startup, case.enable_ack_aggregation_during_startup,
+            sender.enable_ack_aggregation_during_startup,
+            case.enable_ack_aggregation_during_startup,
             "{name}"
         );
         assert_eq!(
@@ -132,7 +139,10 @@ fn new_bbr_sender_applies_profiles() {
             "{name}"
         );
         assert_eq!(sender.pacing_gain, sender.high_gain, "{name}");
-        assert_eq!(sender.congestion_window_gain, sender.high_cwnd_gain, "{name}");
+        assert_eq!(
+            sender.congestion_window_gain, sender.high_cwnd_gain,
+            "{name}"
+        );
         assert_eq!(sender.drain_gain, 1.0 / case.high_gain, "{name}");
     }
 }
@@ -241,7 +251,8 @@ impl Path {
                 packet_number,
                 bytes_acked: bytes,
             }];
-            self.sender.on_congestion_event(prior, self.now, &acked, &[]);
+            self.sender
+                .on_congestion_event(prior, self.now, &acked, &[]);
         }
     }
 }
@@ -281,7 +292,11 @@ fn the_gain_cycle_never_starts_in_the_lowered_phase() {
 
 #[test]
 fn a_steady_flow_reaches_probe_bw_near_the_bottleneck_rate() {
-    for profile in [BbrProfile::Conservative, BbrProfile::Standard, BbrProfile::Aggressive] {
+    for profile in [
+        BbrProfile::Conservative,
+        BbrProfile::Standard,
+        BbrProfile::Aggressive,
+    ] {
         let mut path = Path::new(profile, 40 * MS, 2_500_000);
         path.run(3000, |_| false);
         assert_eq!(path.sender.mode, Mode::ProbeBw, "{profile:?}");
@@ -307,7 +322,10 @@ fn loss_after_startup_enters_recovery_and_a_clean_round_leaves_it() {
     }
     assert_eq!(path.sender.recovery_state, RecoveryState::Conservation);
     let window = path.sender.congestion_window();
-    assert!(window < path.sender.congestion_window, "the recovery window binds");
+    assert!(
+        window < path.sender.congestion_window,
+        "the recovery window binds"
+    );
     // A second loss, the first packet sent in CONSERVATION, is found by the
     // acknowledgement that starts the next round: GROWTH, until a clean
     // acknowledgement passes the packets sent by then.
@@ -400,7 +418,10 @@ fn without_a_clean_sample_conservative_waits_for_lost_bytes_beyond_the_initial_w
 
 #[test]
 fn aggressive_adds_the_latest_excess_to_its_startup_window() {
-    for (profile, added) in [(BbrProfile::Aggressive, true), (BbrProfile::Standard, false)] {
+    for (profile, added) in [
+        (BbrProfile::Aggressive, true),
+        (BbrProfile::Standard, false),
+    ] {
         let mut sender = BbrSender::new(START, 1200, profile);
         // Acknowledge more than the initial window: from then on the
         // STARTUP window only grows while below its target.
@@ -416,14 +437,21 @@ fn aggressive_adds_the_latest_excess_to_its_startup_window() {
         sender.congestion_window = target + 10_000;
         // An excess of 20,000 bytes lifts the target above the window.
         sender.calculate_congestion_window(1200, 20_000);
-        let expected = if added { target + 11_200 } else { target + 10_000 };
+        let expected = if added {
+            target + 11_200
+        } else {
+            target + 10_000
+        };
         assert_eq!(sender.congestion_window, expected, "{profile:?}");
     }
 }
 
 #[test]
 fn drain_to_target_holds_the_low_gain_until_the_flight_drains() {
-    for (profile, held) in [(BbrProfile::Conservative, true), (BbrProfile::Standard, false)] {
+    for (profile, held) in [
+        (BbrProfile::Conservative, true),
+        (BbrProfile::Standard, false),
+    ] {
         let mut sender = BbrSender::new(START, 1200, profile);
         sender.on_rtt_sample(100 * MS);
         sender.max_bandwidth.update(8_000_000, 1);
@@ -460,7 +488,10 @@ fn bandwidth_arithmetic_matches_go() {
     assert_eq!(bandwidth_from_delta(1000, MS), 8_000_000);
     // Integer division happens before the final multiplication by eight.
     assert_eq!(bandwidth_from_delta(1, 3), 333_333_333 * 8);
-    assert_eq!(bytes_from_bandwidth_and_time_delta(8_000_000, SECOND), 1_000_000);
+    assert_eq!(
+        bytes_from_bandwidth_and_time_delta(8_000_000, SECOND),
+        1_000_000
+    );
     assert_eq!(bdp_from_rtt_and_bandwidth(100 * MS, 8_000_000), 100_000);
     // Go's int64 products wrap instead of saturating.
     assert_eq!(
