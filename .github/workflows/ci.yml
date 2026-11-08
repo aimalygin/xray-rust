@@ -355,6 +355,12 @@ jobs:
     runs-on: ubuntu-24.04
     # The pinned-interop steps run about 21 minutes; leave room for a slow runner.
     timeout-minutes: 30
+    # Every step builds its test binaries into one target directory, once per
+    # run. Incremental caches and full debug info only cost disk here, and the
+    # runner ran out of it after the xdns step; line tables keep panic locations.
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -463,6 +469,13 @@ jobs:
 
       - name: Verify WireGuard fixture UDP source-port reuse in an isolated network
         run: bash scripts/check-wireguard-direct-fixture.sh
+
+      # Keep this step last: it shows how much room the steps above leave.
+      - name: Report disk use
+        if: always()
+        run: |
+          df -h /
+          du -sh target ~/.cache/go-build ~/go/pkg/mod 2>/dev/null || true
 
   rc-interop:
     if: needs.release-metadata.outputs.run_release_gates == 'true'
