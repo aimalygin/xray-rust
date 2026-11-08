@@ -36,14 +36,16 @@ pub struct TransportDialer {
 
 /// What [`TransportDialer::with_route_probe`],
 /// [`TransportDialer::with_record_resolver`],
-/// [`TransportDialer::with_tcp_header_custom`] and
-/// [`TransportDialer::with_tcp_sudoku`] set.
+/// [`TransportDialer::with_tcp_header_custom`],
+/// [`TransportDialer::with_tcp_sudoku`] and [`TransportDialer::with_tcp_xmc`]
+/// set.
 #[derive(Clone, Default)]
 struct Replaced {
     route_probe: Option<Arc<dyn RouteProbe>>,
     record_resolver: Option<Arc<dyn RecordResolver>>,
     tcp_header_custom: Option<Arc<crate::header_custom::HeaderCustomTcpConfig>>,
     tcp_sudoku: Option<Arc<crate::sudoku::SudokuConfig>>,
+    tcp_xmc: Option<Arc<crate::xmc::XmcConfig>>,
 }
 
 #[derive(Clone)]
@@ -236,18 +238,47 @@ impl TransportDialer {
             .and_then(|replaced| replaced.tcp_sudoku.as_deref())
     }
 
-    /// A connected carrier in the masks the TCP mask list puts outside the
-    /// `header-custom` handshake: `sudoku`, when it is set.
-    fn sudoku_carrier(
+    /// Logs every TCP carrier in through the `xmc` mask as soon as it
+    /// connects, outside the `header-custom` handshake, the fragment mask,
+    /// TLS and REALITY.
+    pub fn with_tcp_xmc(mut self, config: Arc<crate::xmc::XmcConfig>) -> Self {
+        Arc::make_mut(self.replaced.get_or_insert_with(Default::default)).tcp_xmc = Some(config);
+        self
+    }
+
+    fn tcp_xmc(&self) -> Option<&crate::xmc::XmcConfig> {
+        self.replaced
+            .as_ref()
+            .and_then(|replaced| replaced.tcp_xmc.as_deref())
+    }
+
+    /// Whether a mask that transforms every byte, `sudoku` or `xmc`, sits
+    /// outermost on the wire.
+    fn has_wire_mask(&self) -> bool {
+        self.tcp_sudoku().is_some() || self.tcp_xmc().is_some()
+    }
+
+    /// A connected carrier, whose remote end is `remote`, in the mask the
+    /// TCP mask list puts outside the `header-custom` handshake: `sudoku` or
+    /// `xmc`, when one is set.
+    async fn wire_carrier(
         &self,
         stream: BoxedTransportStream,
+        remote: SocketAddr,
     ) -> Result<BoxedTransportStream, TransportError> {
-        match self.tcp_sudoku() {
-            Some(config) => Ok(Box::new(
+        if let Some(config) = self.tcp_sudoku() {
+            return Ok(Box::new(
                 crate::sudoku::SudokuStream::new(stream, config).map_err(TransportError::Tcp)?,
-            )),
-            None => Ok(stream),
+            ));
         }
+        if let Some(config) = self.tcp_xmc() {
+            return Ok(Box::new(
+                crate::xmc::connect(stream, config, remote)
+                    .await
+                    .map_err(TransportError::Tcp)?,
+            ));
+        }
+        Ok(stream)
     }
 
     /// This dialer with its own sockets instead of the outbound that
@@ -620,7 +651,7 @@ impl TransportDialer {
                     let (stream, peer) = self
                         .connect_candidates(candidates, first, race_config)
                         .await?;
-                    if self.tcp_sudoku().is_some() {
+                    if self.has_wire_mask() {
                         let stream = self.masked_direct_carrier(stream, peer).await?;
                         let stream = crate::fragment::FragmentStream::new(stream, fragment.clone());
                         return prepared.complete_over_stream(Box::new(stream)).await;
@@ -646,6 +677,9 @@ impl TransportDialer {
                     if self.tcp_sudoku().is_some() {
                         return Err(TransportError::UnsupportedConnectorConfig("REALITY sudoku"));
                     }
+                    if self.tcp_xmc().is_some() {
+                        return Err(TransportError::UnsupportedConnectorConfig("REALITY xmc"));
+                    }
                     // Legacy engines remain usable. They may override
                     // `connect_socket_addr` to preserve scoped IPv6 metadata.
                     return reality
@@ -655,7 +689,7 @@ impl TransportDialer {
                 let (stream, peer) = self
                     .connect_candidates(candidates, first, race_config)
                     .await?;
-                if self.tcp_sudoku().is_some() {
+                if self.has_wire_mask() {
                     let stream = self.masked_direct_carrier(stream, peer).await?;
                     return prepared.complete_over_stream(stream).await;
                 }
@@ -697,9 +731,9 @@ impl TransportDialer {
             let stream = connector
                 .connect_resolved(original_target, candidates, happy_eyeballs)
                 .await?;
-            let mut stream = self.sudoku_carrier(stream)?;
             // Xray's chained connection says 0.0.0.0:0 for both of its ends.
             let unspecified = SocketAddr::from(([0, 0, 0, 0], 0));
+            let mut stream = self.wire_carrier(stream, unspecified).await?;
             self.header_custom_handshake(&mut stream, unspecified, unspecified)
                 .await?;
             return Ok(stream);
@@ -711,20 +745,20 @@ impl TransportDialer {
         self.masked_direct_carrier(stream, peer).await
     }
 
-    /// A direct carrier in `sudoku`, then past the `header-custom`
+    /// A direct carrier in `sudoku` or `xmc`, then past the `header-custom`
     /// handshake, which reads the socket's own addresses.
     async fn masked_direct_carrier(
         &self,
         mut stream: tokio::net::TcpStream,
         peer: SocketAddr,
     ) -> Result<BoxedTransportStream, TransportError> {
-        if self.tcp_sudoku().is_none() {
+        if !self.has_wire_mask() {
             self.direct_header_custom_handshake(&mut stream, peer)
                 .await?;
             return Ok(Box::new(stream));
         }
         let local = stream.local_addr().map_err(TransportError::Tcp)?;
-        let mut stream = self.sudoku_carrier(Box::new(stream))?;
+        let mut stream = self.wire_carrier(Box::new(stream), peer).await?;
         self.header_custom_handshake(&mut stream, local, peer)
             .await?;
         Ok(stream)

@@ -61,7 +61,16 @@ impl Parser<'_> {
             }
             quic_params.get_or_insert_with(Default::default).udp_hop = hop;
         }
-        let (tcp_fragment, tcp_header_custom, tcp_sudoku) = self.parse_tcp_masks(stream, index);
+        let tcp_masks = self.parse_tcp_masks(stream, index);
+        // Xray-core v26.10.31's REALITY server asserts that its connection
+        // can half-close, which xmc's server connection cannot: every
+        // connection through both panics the server, so no server takes them.
+        if tcp_masks.xmc.is_some() && matches!(security, StreamSecurity::Reality(_)) {
+            self.error(
+                format!("$.outbounds[{index}].streamSettings.security"),
+                "REALITY cannot run over an xmc mask: Xray-core's REALITY server panics on every connection through one",
+            );
+        }
         let udp_noise = self.parse_udp_noise(stream, stream_network, index);
         let udp_header_custom = self.parse_udp_header_custom(stream, index);
         let udp_sudoku = self.parse_udp_sudoku(stream, index);
@@ -169,11 +178,12 @@ impl Parser<'_> {
             transport,
             security,
             quic_params,
-            tcp_fragment,
-            tcp_header_custom,
+            tcp_fragment: tcp_masks.fragment,
+            tcp_header_custom: tcp_masks.header,
             udp_header_custom,
-            tcp_sudoku,
+            tcp_sudoku: tcp_masks.sudoku,
             udp_sudoku,
+            tcp_xmc: tcp_masks.xmc,
             udp_noise,
             socket_options,
         })

@@ -50,6 +50,39 @@ pub(crate) fn parse(text: &str) -> Option<Uuid> {
     }
 }
 
+/// Reads `text` as `github.com/google/uuid` v1.6.0's `Parse` does, which
+/// Xray-core's `xmc` profiles use. By length in bytes:
+///
+/// - 36: hex digits in groups of 8, 4, 4, 4 and 12, joined by `-`;
+/// - 45: the same after `urn:uuid:`, in any case;
+/// - 38: the same after any first byte, with any last byte, which `Parse`
+///   never checks for braces;
+/// - 32: 32 hex digits.
+pub(crate) fn parse_google(text: &str) -> Option<[u8; 16]> {
+    let bytes = text.as_bytes();
+    let mut id = [0_u8; 16];
+    let grouped = match bytes.len() {
+        36 => bytes,
+        45 if bytes[..9].eq_ignore_ascii_case(b"urn:uuid:") => &bytes[9..],
+        38 => &bytes[1..],
+        32 => {
+            for (index, pair) in bytes.chunks_exact(2).enumerate() {
+                id[index] = hex(pair[0])? << 4 | hex(pair[1])?;
+            }
+            return Some(id);
+        }
+        _ => return None,
+    };
+    if [8, 13, 18, 23].iter().any(|&dash| grouped[dash] != b'-') {
+        return None;
+    }
+    let starts = [0, 2, 4, 6, 9, 11, 14, 16, 19, 21, 24, 26, 28, 30, 32, 34];
+    for (index, start) in starts.into_iter().enumerate() {
+        id[index] = hex(grouped[start])? << 4 | hex(grouped[start + 1])?;
+    }
+    Some(id)
+}
+
 fn hex(digit: u8) -> Option<u8> {
     match digit {
         b'0'..=b'9' => Some(digit - b'0'),
@@ -90,6 +123,36 @@ mod tests {
             "27848739 7e62 4138 9fd3 098a63964b6b",
         ] {
             assert_eq!(parse(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn google_parse_reads_its_four_forms() {
+        let id = *Uuid::parse_str(ID).unwrap().as_bytes();
+        for text in [
+            ID,
+            "27848739-7E62-4138-9FD3-098A63964B6B",
+            "urn:uuid:27848739-7e62-4138-9fd3-098a63964b6b",
+            "URN:UUID:27848739-7e62-4138-9fd3-098a63964b6b",
+            "{27848739-7e62-4138-9fd3-098a63964b6b}",
+            // Parse drops the first byte and never reads the last.
+            "x27848739-7e62-4138-9fd3-098a63964b6bx",
+            "278487397e6241389fd3098a63964b6b",
+        ] {
+            assert_eq!(parse_google(text), Some(id), "{text}");
+        }
+        for text in [
+            "",
+            "27848739-7e62-4138-9fd3-098a63964b6",
+            "urn:uuix:27848739-7e62-4138-9fd3-098a63964b6b",
+            "27848739_7e62-4138-9fd3-098a63964b6b",
+            "g7848739-7e62-4138-9fd3-098a63964b6b",
+            "278487397e6241389fd3098a63964b6g",
+            "-278487397e62-41389fd3098a63964b6b",
+            // Xray's own short ids are not UUIDs here.
+            "my-short-id",
+        ] {
+            assert_eq!(parse_google(text), None, "{text}");
         }
     }
 

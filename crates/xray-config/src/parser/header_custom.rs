@@ -11,73 +11,80 @@ use base64::Engine as _;
 /// `rand` says, which a large value turns into an out-of-memory crash.
 pub(super) const MAX_HEADER_CUSTOM_RAND: i32 = 65_536;
 
+/// The masks `finalmask.tcp` holds.
+#[derive(Default)]
+pub(super) struct TcpMasks {
+    pub(super) fragment: Option<TcpFragmentSettings>,
+    pub(super) header: Option<HeaderCustomTcp>,
+    pub(super) sudoku: Option<crate::SudokuMask>,
+    pub(super) xmc: Option<crate::XmcMask>,
+}
+
 impl Parser<'_> {
-    /// `finalmask.tcp`: at most one `fragment` and one `header-custom` mask.
-    /// Both may stand together only with the fragment first: Xray-core
-    /// fragments just the first write through it, which after
-    /// `header-custom` is the handshake rather than the TLS ClientHello.
-    pub(super) fn parse_tcp_masks(
-        &mut self,
-        stream: Option<&Value>,
-        index: usize,
-    ) -> (
-        Option<TcpFragmentSettings>,
-        Option<HeaderCustomTcp>,
-        Option<crate::SudokuMask>,
-    ) {
+    /// `finalmask.tcp`: at most one `fragment`, one `header-custom` and one
+    /// `sudoku` or `xmc` mask. The fragment and `header-custom` may stand
+    /// together only with the fragment first: Xray-core fragments just the
+    /// first write through it, which after `header-custom` is the handshake
+    /// rather than the TLS ClientHello.
+    pub(super) fn parse_tcp_masks(&mut self, stream: Option<&Value>, index: usize) -> TcpMasks {
+        let mut found = TcpMasks::default();
         let Some(raw) = stream
             .and_then(|stream| stream.get("finalmask"))
             .and_then(|finalmask| finalmask.get("tcp"))
             .filter(|raw| !raw.is_null())
         else {
-            return (None, None, None);
+            return found;
         };
         let path = format!("$.outbounds[{index}].streamSettings.finalmask.tcp");
         let Some(masks) = raw.as_array() else {
             self.error(path, "finalmask.tcp must be an array or null");
-            return (None, None, None);
+            return found;
         };
         let mut fragment = None;
         let mut header = None;
         let mut sudoku = None;
+        let mut xmc = None;
         for (i, mask) in masks.iter().enumerate() {
             let mask_path = format!("{path}[{i}]");
             self.reject_unknown_fields(mask, &mask_path, &surface::TCP_MASK_ENTRY);
             let settings = mask.get("settings").unwrap_or(&Value::Null);
             let kind = mask.get("type").and_then(Value::as_str).map(go_lowercase);
-            // Sudoku transforms every byte the masks before it write, so it
-            // goes last here, outermost on the wire.
-            if sudoku.is_some() {
-                self.error(&mask_path, "sudoku must be the last TCP mask here");
+            // Sudoku and xmc transform every byte the masks before them
+            // write, so either goes last here, outermost on the wire.
+            let last = match (&sudoku, &xmc) {
+                (Some(_), _) => Some("sudoku"),
+                (_, Some(_)) => Some("xmc"),
+                _ => None,
+            };
+            if let Some(last) = last {
+                self.error(&mask_path, format!("{last} must be the last TCP mask here"));
                 continue;
             }
+            let settings_path = format!("{mask_path}.settings");
             match kind.as_deref() {
-                Some("sudoku") => {
-                    sudoku = Some(self.parse_sudoku(settings, &format!("{mask_path}.settings")));
-                }
+                Some("sudoku") => sudoku = Some(self.parse_sudoku(settings, &settings_path)),
+                Some("xmc") => xmc = Some(self.parse_xmc(settings, &settings_path)),
                 Some("fragment") if fragment.is_none() && header.is_none() => {
-                    fragment = Some(self.parse_tcp_fragment(
-                        settings,
-                        &format!("{mask_path}.settings"),
-                        false,
-                    ));
+                    fragment = Some(self.parse_tcp_fragment(settings, &settings_path, false));
                 }
                 Some("fragment") if fragment.is_none() => self.error(
                     &mask_path,
                     "a fragment mask after header-custom fragments the handshake, not the TLS ClientHello; put it first",
                 ),
                 Some("header-custom") if header.is_none() => {
-                    header = Some(
-                        self.parse_header_custom_tcp(settings, &format!("{mask_path}.settings")),
-                    );
+                    header = Some(self.parse_header_custom_tcp(settings, &settings_path));
                 }
                 _ => self.error(
                     &mask_path,
-                    "only one fragment, one header-custom and one sudoku TCP mask are supported",
+                    "only one fragment, one header-custom and one sudoku or xmc TCP mask are supported",
                 ),
             }
         }
-        (fragment.flatten(), header.flatten(), sudoku.flatten())
+        found.fragment = fragment.flatten();
+        found.header = header.flatten();
+        found.sudoku = sudoku.flatten();
+        found.xmc = xmc.flatten();
+        found
     }
 
     /// `HeaderCustomTCP`: `clients`, `servers` and `errors`, each a list of

@@ -52,8 +52,7 @@ use crate::{
     OutboundRouter, RuntimeLogger, TunAdmissionPolicy, TunRuntimeOptions, TunRuntimeProfile,
 };
 use xray_proxy::vless::{
-    encode_udp_packet, encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet,
-    read_xudp_packet,
+    encode_udp_packet, encode_xudp_keep_packet, encode_xudp_new_packet, UdpResponseReader,
 };
 
 const DEFAULT_RANDOM_SEED: u64 = 0x7872_6179_7275_7374;
@@ -5456,6 +5455,9 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
         timing.record_written(first_payload_len);
     }
 
+    // The read below loses to every other branch it is still waiting in;
+    // the bytes it took wait here for the next one.
+    let mut responses = UdpResponseReader::default();
     loop {
         tokio::select! {
             biased;
@@ -5504,7 +5506,7 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
                 traffic.record_uplink(payload_len as u64);
                 timing.record_written(payload_len);
             }
-            packet = read_vless_udp_response(remote_reader, framing, fallback_source) => {
+            packet = read_vless_udp_response(&mut responses, remote_reader, framing, fallback_source) => {
                 let (source, payload) = match packet {
                     Ok(packet) => packet,
                     Err(error) => {
@@ -5759,6 +5761,7 @@ fn build_udp_packet(source: IpEndpoint, destination: IpEndpoint, payload: &[u8])
 }
 
 async fn read_vless_udp_response<R>(
+    responses: &mut UdpResponseReader,
     reader: &mut R,
     framing: VlessUdpFraming,
     fallback_source: IpEndpoint,
@@ -5768,11 +5771,11 @@ where
 {
     match framing {
         VlessUdpFraming::LengthPrefixed => {
-            let payload = read_udp_packet(reader).await?;
+            let payload = responses.read_udp_packet(reader).await?;
             Ok((fallback_source, payload))
         }
         VlessUdpFraming::Xudp => {
-            let packet = read_xudp_packet(reader).await?;
+            let packet = responses.read_xudp_packet(reader).await?;
             let source = packet
                 .source
                 .as_ref()

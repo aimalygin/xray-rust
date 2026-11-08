@@ -4921,6 +4921,157 @@
         "/outbounds/0/streamSettings/finalmask/tcp/0/settings/seed": 1
       },
       "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.seed"
+    },
+    {
+      "name": "xmc-tcp",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "server.example"
+              },
+              "finalmask": {
+                "tcp": [
+                  {
+                    "type": "xmc",
+                    "settings": {
+                      "hostname": "mc.example.com",
+                      "password": "synthetic-xmc-password",
+                      "profiles": [
+                        {
+                          "username": "Steve",
+                          "uuid": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                          "texturesValue": "dGV4dHVyZXM=",
+                          "texturesSignature": "c2lnbmF0dXJl"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "XMC_MASK": "/outbounds/0/streamSettings/finalmask/tcp/0/settings",
+        "XMC_PROFILE": "/outbounds/0/streamSettings/finalmask/tcp/0/settings/profiles/0"
+      }
+    },
+    {
+      "name": "xmc-no-profiles",
+      "accepted": false,
+      "base": "xmc-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp/0/settings/profiles": null
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.profiles"
+    },
+    {
+      "name": "xmc-bad-username",
+      "accepted": false,
+      "base": "xmc-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp/0/settings/profiles/0/username": "Steve!"
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.profiles[0].username"
+    },
+    {
+      "name": "xmc-bad-uuid",
+      "accepted": false,
+      "base": "xmc-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp/0/settings/profiles/0/uuid": "my-short-id"
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.profiles[0].uuid"
+    },
+    {
+      "name": "xmc-long-password",
+      "accepted": false,
+      "base": "xmc-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp/0/settings/password": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.password"
+    },
+    {
+      "name": "xmc-not-last",
+      "accepted": false,
+      "base": "xmc-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp": [
+          {
+            "type": "xmc",
+            "settings": {
+              "hostname": "mc.example.com",
+              "password": "synthetic-xmc-password",
+              "profiles": [
+                {
+                  "username": "Steve",
+                  "uuid": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                  "texturesValue": "dGV4dHVyZXM=",
+                  "texturesSignature": "c2lnbmF0dXJl"
+                }
+              ]
+            }
+          },
+          {
+            "type": "header-custom",
+            "settings": {
+              "clients": [
+                [
+                  {
+                    "type": "str",
+                    "packet": "HELLO"
+                  }
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[1]"
+    },
+    {
+      "name": "xmc-unknown-field",
+      "accepted": false,
+      "base": "xmc-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp/0/settings/seed": 1
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.seed"
     }
   ]
 }

@@ -3137,6 +3137,7 @@ dependencies = [
  "idna",
  "libc",
  "ml-dsa",
+ "num-bigint",
  "polyval",
  "quinn",
  "quinn-proto",

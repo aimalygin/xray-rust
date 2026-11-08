@@ -328,6 +328,12 @@ fn trojan_uri_maps_fm_to_finalmask_through_the_shared_validator() {
     let sudoku = serde_json::json!({"tcp":[{"type":"sudoku","settings":{"password":"synthetic"}}]});
     let tls = stream(&format!("security=tls&sni=example.test&fm={}", fm(&sudoku)));
     assert_eq!(tls["finalmask"], sudoku);
+    // And an xmc TCP mask.
+    let xmc = serde_json::json!({"tcp":[{"type":"xmc","settings":{"password":"synthetic",
+        "profiles":[{"username":"Steve","uuid":"00010203-0405-0607-0809-0a0b0c0d0e0f",
+            "texturesValue":"dGV4dHVyZXM=","texturesSignature":"c2lnbmF0dXJl"}]}}]});
+    let tls = stream(&format!("security=tls&sni=example.test&fm={}", fm(&xmc)));
+    assert_eq!(tls["finalmask"], xmc);
     // An empty `fm` is no mask.
     assert!(stream("fm=").get("finalmask").is_none());
 
@@ -343,6 +349,7 @@ fn trojan_uri_maps_fm_to_finalmask_through_the_shared_validator() {
     for mask in [
         serde_json::json!({"udp":[{"type":"noise","settings":{"noise":[{"rand":"10-20"}]}}]}),
         serde_json::json!({"tcp":[{"type":"fragment","settings":{"packets":"1-3","length":"100-200"}}]}),
+        serde_json::json!({"tcp":[{"type":"filter","settings":{}}]}),
         serde_json::json!({"tcp":[{"type":"xmc","settings":{}}]}),
         serde_json::json!({"unknown":[]}),
     ] {

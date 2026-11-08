@@ -10,6 +10,22 @@ long-term supported release series.
 
 ## Unreleased
 
+- The `xmc` TCP mask makes every TCP carrier a Minecraft 26.1.2 login, as
+  Xray-core's does: a handshake and Login Start as one of the profiles, the
+  server's RSA key checked against the one the password derives, AES-128-CFB8,
+  about a second of padding that copies a real login, then the proxied bytes
+  in custom payload packets. See
+  [xmc mask](docs/config-compatibility.md#xmc-mask).
+  - It must be the last TCP mask, and REALITY cannot run over it:
+    Xray-core's REALITY server panics on every connection through xmc.
+  - A password over 113 bytes fails the configuration, where Xray-core fails
+    every login.
+- VLESS UDP through SOCKS or TUN no longer stops for good when a response
+  arrives in pieces. The relay dropped a response read that had already taken
+  a frame's head whenever an outgoing datagram or a flush came first, and
+  then read the rest of the stream out of step. Transports that deliver one
+  write in several reads (WebSocket, gRPC, XHTTP and now `xmc`) made it
+  likely; the reader now keeps what it took.
 - The `sudoku` mask hides every byte as sudoku clues, with Xray-core's
   tables: as a TCP mask on every TCP carrier, REALITY included, and as a UDP
   mask on mKCP. Entropy, ASCII and custom layouts, rotating tables and

@@ -29,6 +29,8 @@ pub(super) struct StreamCarrier {
     pub(super) header_custom: Option<Arc<xray_transport::header_custom::HeaderCustomTcpConfig>>,
     /// The `sudoku` TCP mask, outermost on every TCP carrier it opens.
     pub(super) sudoku: Option<Arc<xray_transport::sudoku::SudokuConfig>>,
+    /// The `xmc` TCP mask, outermost on every TCP carrier it opens.
+    pub(super) xmc: Option<Arc<xray_transport::xmc::XmcConfig>>,
     /// `sockopt`, for every socket the carrier opens.
     pub(super) socket_options: Option<Arc<xray_transport::SocketOptions>>,
     /// `sockopt.addressPortStrategy`, for the server's address and port.
@@ -53,11 +55,12 @@ impl StreamCarrier {
             .tcp_sudoku
             .as_ref()
             .map(|mask| Arc::new(sudoku_config(mask)));
+        let xmc = stream.tcp_xmc.as_ref().map(xmc_config).transpose()?;
         let transport = build_connector(&stream.security, server);
         let transport_layer = build_transport_layer(stream, server, port, &transport, paths)?;
         // Only TCP carriers take TCP masks; a split XHTTP download keeps its
         // own dialer, which does not run the handshake.
-        if (header_custom.is_some() || sudoku.is_some())
+        if (header_custom.is_some() || sudoku.is_some() || xmc.is_some())
             && (matches!(&transport_layer, TransportLayer::Xhttp(xhttp) if xhttp.http_version() == XhttpHttpVersion::Http3)
                 || matches!(transport_layer, TransportLayer::Kcp(_))
                 || matches!(&stream.transport, StreamTransport::Xhttp(xhttp) if xhttp.download.is_some()))
@@ -82,6 +85,7 @@ impl StreamCarrier {
             fragment,
             header_custom,
             sudoku,
+            xmc,
             transport,
             download: build_xhttp_download(stream, unencrypted_payload)?,
             happy_eyeballs: happy_eyeballs_config(stream),
@@ -101,8 +105,12 @@ impl StreamCarrier {
             Some(header) => Cow::Owned(dialer.into_owned().with_tcp_header_custom(header.clone())),
             None => dialer,
         };
-        match &self.sudoku {
+        let dialer = match &self.sudoku {
             Some(sudoku) => Cow::Owned(dialer.into_owned().with_tcp_sudoku(sudoku.clone())),
+            None => dialer,
+        };
+        match &self.xmc {
+            Some(xmc) => Cow::Owned(dialer.into_owned().with_tcp_xmc(xmc.clone())),
             None => dialer,
         }
     }
@@ -574,6 +582,26 @@ pub(super) fn header_custom_config(
                 .collect(),
         })
     })
+}
+
+/// The `xmc` mask's settings, with the key its password derives, once per
+/// outbound.
+pub(super) fn xmc_config(
+    mask: &xray_config::XmcMask,
+) -> Result<Arc<xray_transport::xmc::XmcConfig>, CoreError> {
+    let profiles = mask
+        .profiles
+        .iter()
+        .map(|profile| xray_transport::xmc::XmcProfile {
+            username: profile.username.clone(),
+            uuid: profile.uuid,
+            textures_value: profile.textures_value.clone(),
+            textures_signature: profile.textures_signature.clone(),
+        })
+        .collect();
+    xray_transport::xmc::XmcConfig::new(mask.hostname.clone(), profiles, mask.password.as_str())
+        .map(Arc::new)
+        .map_err(|_| CoreError::UnsupportedOutboundNetwork)
 }
 
 /// The `sudoku` mask's settings, for either network.

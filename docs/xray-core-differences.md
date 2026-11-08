@@ -528,6 +528,34 @@ and a `header-custom` handshake inside sudoku; a client with another
 password never gets through. mKCP carries the same with sudoku alone, behind
 noise, and around a legacy mask.
 
+## xmc
+
+The `xmc` TCP mask logs in as Xray-core v26.10.31's client does: its
+handshake and Login Start, the RSA key `DeriveRSAKey` derives from the
+password (primes from a SHA-256 stream, reimplemented here), PKCS #1 v1.5,
+AES-128-CFB8, the Minecraft 26.1.2 padding schedule with its burst choices
+and timing bands, then custom payload packets of at most 24 KiB with the
+server's keep-alives answered. Deliberate differences:
+
+- It must be the last mask in `finalmask.tcp`; Xray-core also accepts it
+  before other TCP masks.
+- REALITY cannot run over it. Xray-core's REALITY server asserts that its
+  connection can half-close, which xmc's server connection cannot, so every
+  connection through both panics the server process, on RAW, gRPC and XHTTP
+  alike.
+- A password over 113 bytes fails the configuration: PKCS #1 v1.5 with the
+  1024-bit key carries 117 bytes, and the server's verify token takes four.
+  Xray-core accepts the configuration and fails every login.
+- The login runs as the carrier connects. Xray-core's runs on the first read
+  or write, which every client protocol makes at once.
+
+Evidence: `tools/xmc-oracle` records the key Xray-core derives from four
+passwords, which `scripts/check-xmc-interop.sh` compares on every run. Live
+against Xray-core's server, raw (plain and TLS), WebSocket, HTTPUpgrade,
+gRPC and XHTTP each carry a TCP echo and UDP, as does a `header-custom`
+handshake inside xmc; a client with another password, or with a profile the
+server does not hold, never gets through.
+
 ## DNS `UseSystem` route probe
 
 `queryStrategy: "UseSystem"` narrows each lookup to the address families the

@@ -29,6 +29,7 @@ hmac.workspace = true
 http.workspace = true
 idna.workspace = true
 ml-dsa.workspace = true
+num-bigint.workspace = true
 polyval.workspace = true
 rand.workspace = true
 regex.workspace = true

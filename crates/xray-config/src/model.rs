@@ -1593,6 +1593,8 @@ pub struct StreamSettings {
     pub tcp_sudoku: Option<SudokuMask>,
     /// The `sudoku` UDP mask, at its place among mKCP's masks.
     pub udp_sudoku: Option<SudokuMask>,
+    /// The `xmc` TCP mask, the outermost of the TCP masks, as `sudoku` is.
+    pub tcp_xmc: Option<XmcMask>,
     pub udp_noise: Option<UdpNoiseSettings>,
     pub socket_options: Option<SocketOptions>,
 }
@@ -1649,6 +1651,36 @@ impl fmt::Debug for SudokuMask {
             .field("padding_max", &self.padding_max)
             .finish()
     }
+}
+
+/// The `xmc` mask, as Xray-core v26.10.31's `XMC.Build` reads it: a
+/// Minecraft login as one of the profiles, keyed by the password.
+#[derive(Clone, PartialEq, Eq)]
+pub struct XmcMask {
+    /// The handshake's server address; empty sends the server's IP address.
+    pub hostname: String,
+    pub password: zeroize::Zeroizing<String>,
+    pub profiles: Vec<XmcProfile>,
+}
+
+impl fmt::Debug for XmcMask {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("XmcMask")
+            .field("hostname", &self.hostname)
+            .field("password", &"<redacted>")
+            .field("profiles", &self.profiles)
+            .finish()
+    }
+}
+
+/// A signed Minecraft profile the `xmc` client logs in as, which its server
+/// must hold too.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XmcProfile {
+    pub username: String,
+    pub uuid: [u8; 16],
+    pub textures_value: String,
+    pub textures_signature: String,
 }
 
 /// The `header-custom` UDP mask, as Xray-core v26.10.31's `HeaderCustomUDP`
