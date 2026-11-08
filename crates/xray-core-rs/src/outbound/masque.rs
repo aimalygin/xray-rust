@@ -1,6 +1,7 @@
 //! The MASQUE outbound, as Xray-core v26.10.31's `proxy/masque` client runs
-//! it: CONNECT-IP tunnels pooled as its `XmuxManager` pools them, each with
-//! a userspace TCP/IP stack that every TCP and UDP flow goes through.
+//! it: CONNECT-IP tunnels over HTTP/3 or HTTP/2, pooled as its
+//! `XmuxManager` pools them, each with a userspace TCP/IP stack that every
+//! TCP and UDP flow goes through.
 use super::*;
 use std::sync::atomic::{AtomicBool, AtomicI32};
 use std::sync::Weak;
@@ -11,9 +12,9 @@ use tokio::sync::{watch, Mutex as AsyncMutex};
 use tokio::task::JoinHandle;
 use xray_config::{MasqueOutboundSettings, MasqueSettings, XhttpXmuxSettings};
 use xray_transport::masque::{
-    dial_h3, MasqueError, MasqueH3Config, MasqueRequest, MasqueTunnel, WriteOutcome,
-    ESTABLISH_TIMEOUT, INITIAL_PACKET_SIZE, MIN_PACKET_SIZE, QUIC_CONNECTION_ID_LEN,
-    QUIC_IDLE_TIMEOUT, QUIC_KEEP_ALIVE,
+    dial_h2, dial_h3, MasqueError, MasqueH2Config, MasqueH3Config, MasqueRequest, MasqueTunnel,
+    WriteOutcome, ESTABLISH_TIMEOUT, H2_KEEP_ALIVE, INITIAL_PACKET_SIZE, MIN_PACKET_SIZE,
+    QUIC_CONNECTION_ID_LEN, QUIC_IDLE_TIMEOUT, QUIC_KEEP_ALIVE,
 };
 use xray_wireguard::Netstack;
 
@@ -31,14 +32,18 @@ const DEFAULT_REMOTE_DNS: [&str; 4] = [
 /// `quicParams` sets them.
 const QUIC_GO_STREAM_WINDOW: u64 = 512 * 1024;
 const QUIC_GO_CONNECTION_WINDOW: u64 = 768 * 1024;
+/// Where the HTTP/2 carrier's errors point in the config.
+const MASQUE_PATHS: super::carrier::ServerConfigPaths = super::carrier::ServerConfigPaths {
+    address: "settings.address",
+    endpoint: "settings.address and settings.port",
+};
 
 #[derive(Clone, Debug)]
 pub struct MasqueOutbound(Arc<Owner>);
 
 struct Owner {
     settings: MasqueOutboundSettings,
-    tls: TlsClientConfig,
-    quic: H3QuicConfig,
+    dial: Dial,
     authority: String,
     request: MasqueRequest,
     remote_dns: Vec<IpAddr>,
@@ -62,6 +67,52 @@ impl std::fmt::Debug for Owner {
             .field("port", &self.settings.port)
             .field("authority", &self.authority)
             .finish_non_exhaustive()
+    }
+}
+
+/// How tunnels are dialed: Xray's `usesHTTP2` picks HTTP/2 when the TLS
+/// ALPN names `h2` and not `h3`.
+enum Dial {
+    H3 {
+        tls: TlsClientConfig,
+        quic: Box<H3QuicConfig>,
+    },
+    /// TCP and TLS as the stream settings ask, then Xray's HTTP/2 client.
+    H2 {
+        carrier: Box<super::carrier::StreamCarrier>,
+        keep_alive: Option<Duration>,
+    },
+}
+
+/// Where a dial goes: the QUIC server's address, or the TCP candidates.
+enum Endpoint {
+    Quic(SocketAddr),
+    Tcp(Vec<SocketAddr>),
+}
+
+/// Xray's `usesHTTP2`.
+fn uses_http2(alpn: &[String]) -> bool {
+    alpn.iter().any(|p| p == "h2") && !alpn.iter().any(|p| p == "h3")
+}
+
+/// The HTTP/2 keepalive for `xmux.hKeepAlivePeriod`: Chrome's 45 seconds
+/// for zero, none when negative.
+fn h2_keep_alive(secs: i64) -> Option<Duration> {
+    match secs {
+        0 => Some(H2_KEEP_ALIVE),
+        secs if secs > 0 => Some(Duration::from_secs(secs as u64)),
+        _ => None,
+    }
+}
+
+/// Xray's check of the HTTP/2 carrier's ALPN: `h2` or nothing to dial.
+fn negotiated_h2(alpn: Option<&[u8]>) -> Result<(), MasqueError> {
+    match alpn {
+        Some(b"h2") => Ok(()),
+        other => Err(MasqueError::Dial(format!(
+            "the server negotiated {:?} instead of h2",
+            String::from_utf8_lossy(other.unwrap_or_default())
+        ))),
     }
 }
 
@@ -155,10 +206,7 @@ impl MasqueOutbound {
         let StreamSecurity::Tls(tls) = &outbound.stream.security else {
             return Err(CoreError::UnsupportedOutboundSecurity);
         };
-        if outbound.proxy_settings.is_some()
-            || transport.warp.is_some()
-            || tls.alpn.iter().any(|p| p == "h2") && !tls.alpn.iter().any(|p| p == "h3")
-        {
+        if outbound.proxy_settings.is_some() || transport.warp.is_some() {
             return Err(CoreError::UnsupportedOutboundNetwork);
         }
         let server_name = tls
@@ -171,9 +219,36 @@ impl MasqueOutbound {
             });
         xray_transport::validate_tls_server_name(&server_name)
             .map_err(|_| CoreError::UnsupportedOutboundSecurity)?;
-        let quic = masque_quic_config(&outbound.stream, transport)?;
-        quic.diagnostics()
-            .map_err(|error| CoreError::InvalidXhttpConfiguration(error.to_string()))?;
+        let dial = if uses_http2(&tls.alpn) {
+            let mut stream = outbound.stream.clone();
+            stream.network = Network::Tcp;
+            stream.transport = StreamTransport::Raw;
+            Dial::H2 {
+                carrier: Box::new(super::carrier::StreamCarrier::new(
+                    &stream,
+                    &settings.server,
+                    settings.port,
+                    false,
+                    MASQUE_PATHS,
+                )?),
+                keep_alive: h2_keep_alive(transport.xmux.h_keep_alive_period_secs),
+            }
+        } else {
+            let quic = masque_quic_config(&outbound.stream, transport)?;
+            quic.diagnostics()
+                .map_err(|error| CoreError::InvalidXhttpConfiguration(error.to_string()))?;
+            Dial::H3 {
+                tls: TlsClientConfig {
+                    server_name: server_name.clone(),
+                    allow_insecure: tls.allow_insecure,
+                    pinned_peer_cert_sha256: tls.pinned_peer_cert_sha256.clone(),
+                    verify_peer_cert_by_name: tls.verify_peer_cert_by_name.clone(),
+                    alpn: vec!["h3".into()],
+                    fingerprint: None,
+                },
+                quic: Box::new(quic),
+            }
+        };
         let remote_dns = if settings.remote_dns.is_empty() {
             DEFAULT_REMOTE_DNS
                 .iter()
@@ -194,15 +269,7 @@ impl MasqueOutbound {
         };
         Ok(Self(Arc::new(Owner {
             settings: settings.clone(),
-            tls: TlsClientConfig {
-                server_name,
-                allow_insecure: tls.allow_insecure,
-                pinned_peer_cert_sha256: tls.pinned_peer_cert_sha256.clone(),
-                verify_peer_cert_by_name: tls.verify_peer_cert_by_name.clone(),
-                alpn: vec!["h3".into()],
-                fingerprint: None,
-            },
-            quic,
+            dial,
             authority,
             request: MasqueRequest {
                 host: transport.host.clone(),
@@ -282,6 +349,7 @@ impl MasqueOutbound {
         bootstrap: &dyn DnsResolver,
         dialer: &TransportDialer,
     ) -> Result<Lease, CoreError> {
+        let base = dialer.clone();
         let dialer = self.socket_dialer(dialer).into_owned();
         let mut pool = Arc::clone(&self.0.pool).lock_owned().await;
         if *self.0.shutdown.borrow() {
@@ -292,13 +360,24 @@ impl MasqueOutbound {
             Take::Failed(error) => return Err(MasqueError::Dial(error).into()),
             Take::Dial => {}
         }
-        let remote_addr = match self.server_address(bootstrap, &dialer).await {
-            Ok(addr) => addr,
+        let endpoint = match &self.0.dial {
+            Dial::H3 { .. } => self
+                .server_address(bootstrap, &dialer)
+                .await
+                .map(Endpoint::Quic),
+            // The carrier applies the socket options itself.
+            Dial::H2 { carrier, .. } => carrier
+                .resolve_server(bootstrap, &base)
+                .await
+                .map(Endpoint::Tcp),
+        };
+        let endpoint = match endpoint {
+            Ok(endpoint) => endpoint,
             Err(error) => return pool.dialed(Err(error)),
         };
         let outbound = self.clone();
         let task = tokio::spawn(async move {
-            let result = outbound.establish(remote_addr, &dialer).await;
+            let result = outbound.establish(endpoint, &dialer, &base).await;
             pool.dialed(result)
         });
         let lease = task.await.map_err(|_| {
@@ -340,24 +419,54 @@ impl MasqueOutbound {
     }
 
     /// Xray's `establish`: a CONNECT-IP tunnel within ten seconds and the
-    /// stack over it.
+    /// stack over it. `dialer` carries this outbound's socket options;
+    /// `base`, for the HTTP/2 carrier, does not.
     async fn establish(
         &self,
-        remote_addr: SocketAddr,
+        endpoint: Endpoint,
         dialer: &TransportDialer,
+        base: &TransportDialer,
     ) -> Result<Arc<Tunnel>, CoreError> {
         let mut shutdown = self.0.shutdown.subscribe();
-        let dial = dial_h3(
-            MasqueH3Config {
-                remote_addr,
-                tls: self.0.tls.clone(),
-                socket_protector: dialer.socket_protector_arc(),
-                quic: self.0.quic.clone(),
-                authority: self.0.authority.clone(),
-                request: self.0.request.clone(),
-            },
-            dialer.tls_connector(),
-        );
+        let dial = async {
+            match (&self.0.dial, endpoint) {
+                (Dial::H3 { tls, quic }, Endpoint::Quic(remote_addr)) => Ok(dial_h3(
+                    MasqueH3Config {
+                        remote_addr,
+                        tls: tls.clone(),
+                        socket_protector: dialer.socket_protector_arc(),
+                        quic: (**quic).clone(),
+                        authority: self.0.authority.clone(),
+                        request: self.0.request.clone(),
+                    },
+                    dialer.tls_connector(),
+                )
+                .await?),
+                (
+                    Dial::H2 {
+                        carrier,
+                        keep_alive,
+                    },
+                    Endpoint::Tcp(candidates),
+                ) => {
+                    let mut stream = carrier.open(&candidates, &[], base).await?;
+                    negotiated_h2(stream.negotiated_alpn())?;
+                    stream.release_record_alignment();
+                    Ok(dial_h2(
+                        stream,
+                        MasqueH2Config {
+                            authority: self.0.authority.clone(),
+                            request: self.0.request.clone(),
+                            keep_alive: *keep_alive,
+                        },
+                    )
+                    .await?)
+                }
+                _ => Err(CoreError::from(MasqueError::Dial(
+                    "the dial and its endpoint disagree".into(),
+                ))),
+            }
+        };
         let masque = tokio::select! { biased;
             _ = shutdown.changed() => return Err(MasqueError::Closed("the outbound is closed".into()).into()),
             result = tokio::time::timeout(ESTABLISH_TIMEOUT, dial) => {

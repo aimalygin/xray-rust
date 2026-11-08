@@ -401,11 +401,21 @@ impl Parser<'_> {
             );
             return;
         };
+        // Xray's HTTP/2 client sends any TE value; this one refuses the
+        // request with one other than "trailers", so the config does.
         if masque_uses_http2(&tls.alpn) {
-            self.error(
-                format!("$.outbounds[{index}].streamSettings.tlsSettings.alpn"),
-                "MASQUE over HTTP/2 is not supported yet",
-            );
+            if let StreamTransport::Masque(masque) = &stream.transport {
+                if let Some((name, _)) = masque.headers.iter().find(|(name, value)| {
+                    name.eq_ignore_ascii_case("te") && !value.eq_ignore_ascii_case("trailers")
+                }) {
+                    self.error(
+                        format!(
+                            "$.outbounds[{index}].streamSettings.masqueSettings.headers.{name}"
+                        ),
+                        r#"MASQUE over HTTP/2 can't send a "TE" header other than "trailers""#,
+                    );
+                }
+            }
         }
         if chained {
             self.error(

@@ -600,15 +600,18 @@ another domain never gets through.
 
 ## MASQUE
 
-The `masque` outbound runs Xray-core v26.10.31's MASQUE client over HTTP/3:
-its configuration checks and defaults, the CONNECT-IP request with its
-authority, path, User-Agent presets and Basic authorization, the server
-settings it waits for, the address request and assignment rules, the
-datagram format and packet admission, ICMP Packet Too Big, the tunnel pool
-of its `xmux` with the one-second retry rule, and the stack over each tunnel
-with `remoteDNS`. Deliberate differences:
+The `masque` outbound runs Xray-core v26.10.31's MASQUE client over HTTP/3
+and HTTP/2: its configuration checks and defaults, the CONNECT-IP request
+with its authority, path, User-Agent presets and Basic authorization, the
+server settings it waits for, the address request and assignment rules, the
+datagram and capsule formats and packet admission, ICMP Packet Too Big, the
+tunnel pool of its `xmux` with the one-second retry rule, and the stack over
+each tunnel with `remoteDNS`. Over HTTP/2 it runs Xray-core's own HTTP/2
+client: its SETTINGS, connection window and header block byte for byte, its
+stream windows, the 32 KiB write buffer, the 128 queued packets and the
+keepalive. Deliberate differences:
 
-- HTTP/2 and `warp` are not supported yet and fail the configuration.
+- `warp` is not supported yet and fails the configuration.
 - The stack is the WireGuard outbound's smoltcp stack, not gVisor: 16 TCP
   and 512 UDP flows a tunnel, its buffers and its TCP. smoltcp does not act
   on ICMP Packet Too Big; the QUIC connection never goes below its 1350-byte
@@ -626,21 +629,46 @@ with `remoteDNS`. Deliberate differences:
 - The HTTP/3 request lists its pseudo-fields in h3's order and its fields
   sorted; quic-go starts with `:authority` and sends fields in map order.
   Neither is visible outside the TLS session.
+- Over HTTP/2, UDP masks and a `TE` header other than `trailers` fail the
+  configuration: Xray-core ignores the masks on its TCP dial and sends the
+  header, which this HTTP/2 client refuses to.
+- The HTTP/2 keepalive counts any bytes from the server as a frame, where
+  Xray-core counts whole frames, and keeps one PING outstanding, with h2's
+  own payload; Xray-core sends a zero payload and may send another while the
+  first is unanswered. Neither is visible outside the TLS session.
+- Over HTTP/2 the stream's window also opens once an update would double
+  what the server may still send, Go's rule; Xray-core waits for 1 MiB read
+  each time. The connection's window opens once what was read reaches half
+  of what the server may still send, h2's rule, where Xray-core opens it
+  with the stream's. One tunnel's stream stays the tighter limit either
+  way.
+- A closing HTTP/2 tunnel closes its TCP connection; Xray-core first ends
+  its request stream and resets it. A non-ASCII authority goes out in
+  punycode, as over HTTP/3; Xray-core's HTTP/2 client sends it as it is.
 
 Evidence: `tools/masque-oracle` runs inside Xray-core's `connectip` package
 through a `go test -overlay` and records its capsule encodings, its reading
 of valid and mutated capsules, the datagrams `composeDatagram` builds, its
 ICMP messages and which packets it admits; the tests replay them and
 `scripts/check-masque-interop.sh` regenerates a corpus ten times larger each
-run. 104 configuration cases carry `xray run -test` verdicts, rechecked with
-the binary each run: 94 match and 10 differ as listed above. Live against
+run. A second oracle in the `masque` package records the frames Xray-core's
+HTTP/2 client writes up to its request for eight requests; ours match them
+byte for byte. 117 configuration cases
+carry `xray run -test` verdicts, rechecked with the binary each run: 106
+match and 11 differ as listed above. Live against
 Xray-core's MASQUE server over HTTP/3: TCP with a 128 KiB echo to IPv4, IPv6
 and a name resolved through the tunnel, UDP to the same three, TCP through
 the HTTP inbound, TCP and UDP through the TUN, eight parallel flows sharing
 one tunnel, the default path with a preset User-Agent, and a wrong password
-refused. Mutating 22 key branches (TTL, checksum, admission, capsule
+refused. Over HTTP/2 the same flows run live, through a uTLS fingerprint as
+well, plus the default path with Go's User-Agent and no keepalive.
+Mutating 22 key branches (TTL, checksum, admission, capsule
 checks, address choice, authority, User-Agent, the pool's limits and retry,
-the host and path checks) fails the tests each time.
+the host and path checks) fails the tests each time, and so does mutating
+27 of the HTTP/2 path (capsule framing, the bare read rule, the
+write buffer and windows, the keepalive, the extended CONNECT check, the
+header block options and field order, ALPN, keepalive defaults and the TE
+check).
 
 ## DNS `UseSystem` route probe
 

@@ -12,9 +12,12 @@ use crate::stream::masquerade::{
 pub const DEFAULT_PATH: &str = "/.well-known/masque/ip/*/*/";
 /// quic-go's `http3.defaultUserAgent`, which Xray's `golang` preset leaves.
 pub(crate) const QUIC_GO_USER_AGENT: &str = "quic-go HTTP/3";
+/// Xray's `http2DefaultUserAgent`, its HTTP/2 client's `golang` default.
+pub(crate) const GO_HTTP2_USER_AGENT: &str = "Go-http-client/2.0";
 
-/// What `masqueSettings` asks of the request.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What `masqueSettings` asks of the request. Its `Debug` leaves the header
+/// values out, Authorization among them.
+#[derive(Clone, PartialEq, Eq)]
 pub struct MasqueRequest {
     /// `masqueSettings.host`; empty takes the TLS server name.
     pub host: String,
@@ -22,6 +25,23 @@ pub struct MasqueRequest {
     pub path: String,
     /// Header fields with canonical names, Authorization included.
     pub headers: Vec<(String, String)>,
+}
+
+impl std::fmt::Debug for MasqueRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MasqueRequest")
+            .field("host", &self.host)
+            .field("path", &self.path)
+            .field(
+                "headers",
+                &self
+                    .headers
+                    .iter()
+                    .map(|(name, _)| name)
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
+    }
 }
 
 impl Default for MasqueRequest {
@@ -86,10 +106,26 @@ pub(crate) fn user_agent(headers: &[(String, String)]) -> UserAgent {
     }
 }
 
+/// Whether a configured field goes out: quic-go and Xray's HTTP/2 client
+/// both leave out the authority's and the connection's own fields.
+fn is_sent(name: &str) -> bool {
+    !matches!(
+        name.to_ascii_lowercase().as_str(),
+        "host"
+            | "content-length"
+            | "connection"
+            | "proxy-connection"
+            | "keep-alive"
+            | "transfer-encoding"
+            | "upgrade"
+    )
+}
+
 /// The request's header fields, lowercased and sorted by name, without
 /// pseudo-fields: the configured ones, Capsule-Protocol unless WARP over
 /// HTTP/2 replaces it, and the User-Agent with `library_default` standing in
-/// for the library's own.
+/// for the library's own. quic-go sends them in map order, which no order
+/// reproduces.
 pub(crate) fn request_fields(
     request: &MasqueRequest,
     capsule_protocol: bool,
@@ -98,7 +134,7 @@ pub(crate) fn request_fields(
     let mut fields: Vec<(String, String)> = request
         .headers
         .iter()
-        .filter(|(name, _)| !name.eq_ignore_ascii_case("user-agent"))
+        .filter(|(name, _)| !name.eq_ignore_ascii_case("user-agent") && is_sent(name))
         .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
         .collect();
     if capsule_protocol {
@@ -114,6 +150,44 @@ pub(crate) fn request_fields(
         UserAgent::Omitted => {}
     }
     fields.sort_by(|a, b| a.0.cmp(&b.0));
+    fields
+}
+
+/// The request's header fields as Xray's HTTP/2 client writes them: its
+/// default User-Agent first when the `golang` preset leaves none, then
+/// every field of the request's `http.Header` in the order of its canonical
+/// names, lowercased. `extra` holds fields the dial adds, canonical names
+/// first: Capsule-Protocol, or WARP's own.
+pub(crate) fn h2_request_fields(
+    request: &MasqueRequest,
+    extra: &[(&str, &str)],
+) -> Vec<(String, String)> {
+    let mut header: Vec<(String, String)> = request
+        .headers
+        .iter()
+        .filter(|(name, _)| !name.eq_ignore_ascii_case("user-agent"))
+        .cloned()
+        .chain(
+            extra
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned())),
+        )
+        .collect();
+    let mut fields = Vec::with_capacity(header.len() + 1);
+    match user_agent(&request.headers) {
+        UserAgent::LibraryDefault => {
+            fields.push(("user-agent".to_owned(), GO_HTTP2_USER_AGENT.to_owned()))
+        }
+        UserAgent::Value(value) => header.push(("User-Agent".to_owned(), value)),
+        UserAgent::Omitted => {}
+    }
+    header.sort_by(|a, b| a.0.cmp(&b.0));
+    fields.extend(
+        header
+            .into_iter()
+            .filter(|(name, _)| is_sent(name))
+            .map(|(name, value)| (name.to_ascii_lowercase(), value)),
+    );
     fields
 }
 
@@ -195,6 +269,79 @@ mod tests {
                 ("user-agent".to_owned(), QUIC_GO_USER_AGENT.to_owned()),
                 ("x-custom".to_owned(), "1".to_owned()),
             ]
+        );
+    }
+
+    #[test]
+    fn connection_fields_stay_out_as_quic_go_and_xray_leave_them() {
+        let request = MasqueRequest {
+            headers: vec![
+                ("Connection".to_owned(), "close".to_owned()),
+                ("Content-Length".to_owned(), "0".to_owned()),
+                ("Keep-Alive".to_owned(), "1".to_owned()),
+                ("Proxy-Connection".to_owned(), "1".to_owned()),
+                ("Transfer-Encoding".to_owned(), "chunked".to_owned()),
+                ("Upgrade".to_owned(), "h2c".to_owned()),
+                ("User-Agent".to_owned(), String::new()),
+                ("X-Kept".to_owned(), "1".to_owned()),
+            ],
+            ..MasqueRequest::default()
+        };
+        let kept = vec![("x-kept".to_owned(), "1".to_owned())];
+        assert_eq!(request_fields(&request, false, None), kept);
+        assert_eq!(h2_request_fields(&request, &[]), kept);
+    }
+
+    #[test]
+    fn http2_fields_follow_xrays_client() {
+        let mut request = MasqueRequest {
+            headers: vec![
+                ("Authorization".to_owned(), "Basic dTpw".to_owned()),
+                ("User-Agent".to_owned(), "golang".to_owned()),
+                ("X-A".to_owned(), "1".to_owned()),
+            ],
+            ..MasqueRequest::default()
+        };
+        // The default User-Agent leads; Go sorts the canonical names, and
+        // `X-A` sorts before `X-_`, which lowercase names would reverse.
+        request.headers.push(("X-_".to_owned(), "2".to_owned()));
+        assert_eq!(
+            h2_request_fields(&request, &[("Capsule-Protocol", "?1")]),
+            [
+                ("user-agent", GO_HTTP2_USER_AGENT),
+                ("authorization", "Basic dTpw"),
+                ("capsule-protocol", "?1"),
+                ("x-a", "1"),
+                ("x-_", "2"),
+            ]
+            .map(|(name, value)| (name.to_owned(), value.to_owned()))
+        );
+        request.headers[1].1 = "custom/1.0".to_owned();
+        assert_eq!(
+            h2_request_fields(&request, &[("Capsule-Protocol", "?1")])
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "authorization",
+                "capsule-protocol",
+                "user-agent",
+                "x-a",
+                "x-_"
+            ]
+        );
+    }
+
+    #[test]
+    fn debug_leaves_header_values_out() {
+        let request = MasqueRequest {
+            headers: vec![("Authorization".to_owned(), "Basic c2VjcmV0".to_owned())],
+            ..MasqueRequest::default()
+        };
+        let debug = format!("{request:?}");
+        assert!(
+            debug.contains("Authorization") && !debug.contains("c2VjcmV0"),
+            "{debug}"
         );
     }
 

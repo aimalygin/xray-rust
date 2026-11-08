@@ -1,8 +1,10 @@
 //! MASQUE CONNECT-IP client tunnels (RFC 9484), as Xray-core v26.10.31's
 //! `transport/internet/masque` dials them: over HTTP/3 by default, with
-//! IP packets in HTTP datagrams. Its `proxy/masque` client runs a userspace
-//! TCP/IP stack over each tunnel, which `xray-core-rs` supplies.
+//! IP packets in HTTP datagrams, or over HTTP/2 with the packets in
+//! capsules. Its `proxy/masque` client runs a userspace TCP/IP stack over
+//! each tunnel, which `xray-core-rs` supplies.
 mod capsule;
+mod h2;
 mod h3;
 mod packet;
 mod request;
@@ -12,6 +14,7 @@ mod session;
 mod oracle_tests;
 
 pub use capsule::{AssignedAddress, IpPrefix, IpRoute};
+pub use h2::{dial_h2, MasqueH2Config, H2_KEEP_ALIVE};
 pub use h3::{dial_h3, MasqueH3Config};
 pub use request::{authority, MasqueRequest, DEFAULT_PATH};
 pub use session::{MasqueError, MasqueTunnel, WriteOutcome, MAX_TUNNEL_PACKET};

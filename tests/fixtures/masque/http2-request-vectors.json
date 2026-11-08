@@ -1,0 +1,374 @@
+{
+ "versions": {
+  "chrome": 148,
+  "firefox": 150
+ },
+ "userAgents": {
+  "chrome": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+  "firefox": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0"
+ },
+ "cases": [
+  {
+   "name": "defaults",
+   "serverName": "masque.example",
+   "port": 443,
+   "host": "",
+   "path": "/.well-known/masque/ip/*/*/",
+   "headers": null,
+   "canonical": [],
+   "frames": [
+    {
+     "type": 4,
+     "flags": 0,
+     "stream": 0,
+     "payload": "000100010000000200000000000400600000000600040000"
+    },
+    {
+     "type": 8,
+     "flags": 0,
+     "stream": 0,
+     "payload": "00ef0001"
+    },
+    {
+     "type": 4,
+     "flags": 1,
+     "stream": 0,
+     "payload": ""
+    },
+    {
+     "type": 1,
+     "flags": 4,
+     "stream": 1,
+     "payload": "200307434f4e4e454354018aa468ed69572f91d35d05870595617f05a285bad47f153148d1dad2b06ad8f963e58f0087b95d8749c87a3f8721eaa8a44ac6af008b20eb45b4156aec3a4e43d1023f310f2bd5d07f66a281b0dae053fae46aa43f8429a77a8102e0fb5391aa71afb53cb8d7f6a435d74179163cc64b0db2eaecb8a7f59b1efd19fe94a0dd4aa62293a9ffb52f4f61e92b0169e5c0b817029b8728ec330db2eaecb9"
+    }
+   ]
+  },
+  {
+   "name": "credentials, a port and a custom header",
+   "serverName": "masque.example",
+   "port": 8443,
+   "host": "",
+   "path": "/masque/*/*/",
+   "headers": {
+    "Authorization": "Basic bWFzcXVlQHRlc3Q6c3ludGhldGlj",
+    "x-custom": "1"
+   },
+   "canonical": [
+    [
+     "Authorization",
+     "Basic bWFzcXVlQHRlc3Q6c3ludGhldGlj"
+    ],
+    [
+     "X-Custom",
+     "1"
+    ]
+   ],
+   "frames": [
+    {
+     "type": 4,
+     "flags": 0,
+     "stream": 0,
+     "payload": "000100010000000200000000000400600000000600040000"
+    },
+    {
+     "type": 8,
+     "flags": 0,
+     "stream": 0,
+     "payload": "00ef0001"
+    },
+    {
+     "type": 4,
+     "flags": 1,
+     "stream": 0,
+     "payload": ""
+    },
+    {
+     "type": 1,
+     "flags": 4,
+     "stream": 1,
+     "payload": "200307434f4e4e454354018ea468ed69572f91d35d05b8f34d3387058a6291a3b5a563e58f963f0087b95d8749c87a3f8721eaa8a44ac6af0f089bba34188a47cb0fb27e71a3663db4119d8e119a2d9314f4498a8e9f008b20eb45b4156aec3a4e43d1023f310f2bd5d07f66a281b0dae053fae46aa43f8429a77a8102e0fb5391aa71afb53cb8d7f6a435d74179163cc64b0db2eaecb8a7f59b1efd19fe94a0dd4aa62293a9ffb52f4f61e92b0169e5c0b817029b8728ec330db2eaecb90086f2b12d424f4f0131"
+    }
+   ]
+  },
+  {
+   "name": "the golang preset",
+   "serverName": "masque.example",
+   "port": 443,
+   "host": "",
+   "path": "/.well-known/masque/ip/*/*/",
+   "headers": {
+    "User-Agent": "golang",
+    "X-A": "1",
+    "X-_": "2"
+   },
+   "canonical": [
+    [
+     "User-Agent",
+     "golang"
+    ],
+    [
+     "X-A",
+     "1"
+    ],
+    [
+     "X-_",
+     "2"
+    ]
+   ],
+   "frames": [
+    {
+     "type": 4,
+     "flags": 0,
+     "stream": 0,
+     "payload": "000100010000000200000000000400600000000600040000"
+    },
+    {
+     "type": 8,
+     "flags": 0,
+     "stream": 0,
+     "payload": "00ef0001"
+    },
+    {
+     "type": 4,
+     "flags": 1,
+     "stream": 0,
+     "payload": ""
+    },
+    {
+     "type": 1,
+     "flags": 4,
+     "stream": 1,
+     "payload": "200307434f4e4e454354018aa468ed69572f91d35d05870595617f05a285bad47f153148d1dad2b06ad8f963e58f0087b95d8749c87a3f8721eaa8a44ac6af0f2b8dc475a74a6b589418b525812e0f008b20eb45b4156aec3a4e43d1023f310003782d6101310003782d5f0132"
+    }
+   ]
+  },
+  {
+   "name": "no user agent",
+   "serverName": "masque.example",
+   "port": 443,
+   "host": "",
+   "path": "/.well-known/masque/ip/*/*/",
+   "headers": {
+    "User-Agent": ""
+   },
+   "canonical": [
+    [
+     "User-Agent",
+     ""
+    ]
+   ],
+   "frames": [
+    {
+     "type": 4,
+     "flags": 0,
+     "stream": 0,
+     "payload": "000100010000000200000000000400600000000600040000"
+    },
+    {
+     "type": 8,
+     "flags": 0,
+     "stream": 0,
+     "payload": "00ef0001"
+    },
+    {
+     "type": 4,
+     "flags": 1,
+     "stream": 0,
+     "payload": ""
+    },
+    {
+     "type": 1,
+     "flags": 4,
+     "stream": 1,
+     "payload": "200307434f4e4e454354018aa468ed69572f91d35d05870595617f05a285bad47f153148d1dad2b06ad8f963e58f0087b95d8749c87a3f8721eaa8a44ac6af008b20eb45b4156aec3a4e43d1023f31"
+    }
+   ]
+  },
+  {
+   "name": "firefox and a host",
+   "serverName": "masque.example",
+   "port": 443,
+   "host": "proxy.example",
+   "path": "/.well-known/masque/ip/*/*/",
+   "headers": {
+    "User-Agent": "firefox"
+   },
+   "canonical": [
+    [
+     "User-Agent",
+     "firefox"
+    ]
+   ],
+   "frames": [
+    {
+     "type": 4,
+     "flags": 0,
+     "stream": 0,
+     "payload": "000100010000000200000000000400600000000600040000"
+    },
+    {
+     "type": 8,
+     "flags": 0,
+     "stream": 0,
+     "payload": "00ef0001"
+    },
+    {
+     "type": 4,
+     "flags": 1,
+     "stream": 0,
+     "payload": ""
+    },
+    {
+     "type": 1,
+     "flags": 4,
+     "stream": 1,
+     "payload": "200307434f4e4e454354018aaec3f9f4b97c8e9ae82f870595617f05a285bad47f153148d1dad2b06ad8f963e58f0087b95d8749c87a3f8721eaa8a44ac6af008b20eb45b4156aec3a4e43d1023f310f2bbcd07f66a281b0dae053fae46aa43f8429a77a8102e0fb5391aa71afb53cb8d7da9677b816c0b83fb531149d4ec0801000200a984d61653f9602d81707"
+    }
+   ]
+  },
+  {
+   "name": "an IPv6 server name",
+   "serverName": "[2001:db8::1]",
+   "port": 8443,
+   "host": "",
+   "path": "/.well-known/masque/ip/*/*/",
+   "headers": null,
+   "canonical": [],
+   "frames": [
+    {
+     "type": 4,
+     "flags": 0,
+     "stream": 0,
+     "payload": "000100010000000200000000000400600000000600040000"
+    },
+    {
+     "type": 8,
+     "flags": 0,
+     "stream": 0,
+     "payload": "00ef0001"
+    },
+    {
+     "type": 4,
+     "flags": 1,
+     "stream": 0,
+     "payload": ""
+    },
+    {
+     "type": 1,
+     "flags": 4,
+     "stream": 1,
+     "payload": "200307434f4e4e4543540190ffd88000dc9237ae5c0fff2e3cd34cff870595617f05a285bad47f153148d1dad2b06ad8f963e58f0087b95d8749c87a3f8721eaa8a44ac6af008b20eb45b4156aec3a4e43d1023f310f2bd5d07f66a281b0dae053fae46aa43f8429a77a8102e0fb5391aa71afb53cb8d7f6a435d74179163cc64b0db2eaecb8a7f59b1efd19fe94a0dd4aa62293a9ffb52f4f61e92b0169e5c0b817029b8728ec330db2eaecb9"
+    }
+   ]
+  },
+  {
+   "name": "connection fields",
+   "serverName": "masque.example",
+   "port": 443,
+   "host": "",
+   "path": "/.well-known/masque/ip/*/*/",
+   "headers": {
+    "Connection": "close",
+    "Keep-Alive": "1",
+    "Proxy-Connection": "1",
+    "Te": "trailers",
+    "Transfer-Encoding": "chunked",
+    "Upgrade": "websocket"
+   },
+   "canonical": [
+    [
+     "Connection",
+     "close"
+    ],
+    [
+     "Keep-Alive",
+     "1"
+    ],
+    [
+     "Proxy-Connection",
+     "1"
+    ],
+    [
+     "Te",
+     "trailers"
+    ],
+    [
+     "Transfer-Encoding",
+     "chunked"
+    ],
+    [
+     "Upgrade",
+     "websocket"
+    ]
+   ],
+   "frames": [
+    {
+     "type": 4,
+     "flags": 0,
+     "stream": 0,
+     "payload": "000100010000000200000000000400600000000600040000"
+    },
+    {
+     "type": 8,
+     "flags": 0,
+     "stream": 0,
+     "payload": "00ef0001"
+    },
+    {
+     "type": 4,
+     "flags": 1,
+     "stream": 0,
+     "payload": ""
+    },
+    {
+     "type": 1,
+     "flags": 4,
+     "stream": 1,
+     "payload": "200307434f4e4e454354018aa468ed69572f91d35d05870595617f05a285bad47f153148d1dad2b06ad8f963e58f0087b95d8749c87a3f8721eaa8a44ac6af008b20eb45b4156aec3a4e43d1023f3100027465864d833505b11f0f2bd5d07f66a281b0dae053fae46aa43f8429a77a8102e0fb5391aa71afb53cb8d7f6a435d74179163cc64b0db2eaecb8a7f59b1efd19fe94a0dd4aa62293a9ffb52f4f61e92b0169e5c0b817029b8728ec330db2eaecb9"
+    }
+   ]
+  },
+  {
+   "name": "a long header",
+   "serverName": "masque.example",
+   "port": 443,
+   "host": "",
+   "path": "/.well-known/masque/ip/*/*/",
+   "headers": {
+    "X-Padding": "abcdefghijklmnopqrstuvwxyz0123456789-abcdefghijklmnopqrstuvwxyz0123456789-abcdefghijklmnopqrstuvwxyz0123456789-abcdefghijklmnopqrstuvwxyz0123456789-abcdefghijklmnopqrstuvwxyz0123456789-abcdefghijklmnopqrstuvwxyz0123456789-abcdefghijklmnopqrstuvwxyz0123456789-abcdefghijklmnopqrstuvwxyz0123456789-abcd"
+   },
+   "canonical": [
+    [
+     "X-Padding",
+     "abcdefghijklmnopqrstuvwxyz0123456789-abcdefghijklmnopqrstuvwxyz0123456789-abcdefghijklmnopqrstuvwxyz0123456789-abcdefghijklmnopqrstuvwxyz0123456789-abcdefghijklmnopqrstuvwxyz0123456789-abcdefghijklmnopqrstuvwxyz0123456789-abcdefghijklmnopqrstuvwxyz0123456789-abcdefghijklmnopqrstuvwxyz0123456789-abcd"
+    ]
+   ],
+   "frames": [
+    {
+     "type": 4,
+     "flags": 0,
+     "stream": 0,
+     "payload": "000100010000000200000000000400600000000600040000"
+    },
+    {
+     "type": 8,
+     "flags": 0,
+     "stream": 0,
+     "payload": "00ef0001"
+    },
+    {
+     "type": 4,
+     "flags": 1,
+     "stream": 0,
+     "payload": ""
+    },
+    {
+     "type": 1,
+     "flags": 4,
+     "stream": 1,
+     "payload": "200307434f4e4e454354018aa468ed69572f91d35d05870595617f05a285bad47f153148d1dad2b06ad8f963e58f0087b95d8749c87a3f8721eaa8a44ac6af008b20eb45b4156aec3a4e43d1023f310f2bd5d07f66a281b0dae053fae46aa43f8429a77a8102e0fb5391aa71afb53cb8d7f6a435d74179163cc64b0db2eaecb8a7f59b1efd19fe94a0dd4aa62293a9ffb52f4f61e92b0169e5c0b817029b8728ec330db2eaecb90087f2b56392435537ff601c6490b2cd39ba75a29a8f5f6b109b7bf8f3ebd802265a6dc75e7d61c6490b2cd39ba75a29a8f5f6b109b7bf8f3ebd802265a6dc75e7d61c6490b2cd39ba75a29a8f5f6b109b7bf8f3ebd802265a6dc75e7d61c6490b2cd39ba75a29a8f5f6b109b7bf8f3ebd802265a6dc75e7d61c6490b2cd39ba75a29a8f5f6b109b7bf8f3ebd802265a6dc75e7d61c6490b2cd39ba75a29a8f5f6b109b7bf8f3ebd802265a6dc75e7d61c6490b2cd39ba75a29a8f5f6b109b7bf8f3ebd802265a6dc75e7d61c6490b2cd39ba75a29a8f5f6b109b7bf8f3ebd802265a6dc75e7d61c6493"
+    }
+   ]
+  }
+ ]
+}

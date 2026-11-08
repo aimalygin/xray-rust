@@ -1,7 +1,8 @@
 // Records what Xray-core v26.10.31's connectip package writes and reads:
 // CONNECT-IP capsules, the datagrams composeDatagram builds, the ICMP
-// messages composeICMPTooLargePacket builds and which incoming packets
-// handleIncomingProxiedPacket accepts. Randomness is seeded, so a fresh run
+// messages composeICMPTooLargePacket builds, which incoming packets
+// handleIncomingProxiedPacket accepts and what ReadPacket takes from the
+// datagrams of a capsule stream. Randomness is seeded, so a fresh run
 // matches tests/fixtures/masque/connectip-vectors.json byte for byte.
 //
 // It runs inside the package, added without touching the checkout:
@@ -82,12 +83,22 @@ type xrayRustIncoming struct {
 	Allowed  bool            `json:"allowed"`
 }
 
+// xrayRustRead is a DATAGRAM capsule's value as ReadPacket reads it over
+// HTTP/2: the packet after its context ID, or, bare, as WARP sends it.
+type xrayRustRead struct {
+	Datagram string `json:"datagram"`
+	Bare     bool   `json:"bare"`
+	Packet   string `json:"packet,omitempty"`
+	Dropped  bool   `json:"dropped,omitempty"`
+}
+
 type xrayRustVectors struct {
 	Encode   []xrayRustEncode   `json:"encode"`
 	Parse    []xrayRustParse    `json:"parse"`
 	Compose  []xrayRustCompose  `json:"compose"`
 	Icmp     []xrayRustIcmp     `json:"icmp"`
 	Incoming []xrayRustIncoming `json:"incoming"`
+	Read     []xrayRustRead     `json:"read"`
 }
 
 // Fixtures carry no globally routable address (scripts/tests/
@@ -523,6 +534,50 @@ func TestXrayRustOracle(t *testing.T) {
 			}
 		}
 		v.Incoming = append(v.Incoming, result)
+	}
+
+	// Datagrams a capsule stream reads, each followed by a sentinel packet
+	// that ReadPacket returns when it dropped the first. Every destination
+	// is assigned, so only the form decides.
+	sentinel := make([]byte, 20)
+	sentinel[0], sentinel[3], sentinel[8], sentinel[9] = 0x45, 20, 64, 17
+	copy(sentinel[12:], []byte{10, 0, 0, 2, 10, 0, 0, 1})
+	for range xrayRustCount(100) {
+		packet := xrayRustPacket(r, false)
+		var datagram []byte
+		switch r.IntN(6) {
+		case 0, 1:
+			datagram = slices.Clone(packet)
+		case 2:
+			datagram = append([]byte{0}, packet...)
+		case 3:
+			datagram = append([]byte{0x40, 0}, packet...)
+		case 4:
+			datagram = append(quicvarint.Append(nil, uint64(1+r.IntN(20000))), packet...)
+		case 5:
+			datagram = slices.Clone(packet[:min(len(packet), r.IntN(3))])
+		}
+		for _, bare := range []bool{false, true} {
+			c := &Conn{
+				bare:      bare,
+				datagrams: make(chan []byte, 2),
+				closeChan: make(chan struct{}),
+				assignedAddresses: []netip.Prefix{
+					netip.MustParsePrefix("0.0.0.0/0"), netip.MustParsePrefix("::/0"),
+				},
+			}
+			c.datagrams <- slices.Clone(datagram)
+			c.datagrams <- append([]byte{0}, sentinel...)
+			b := make([]byte, 8192)
+			n, err := c.ReadPacket(b)
+			result := xrayRustRead{Datagram: hex.EncodeToString(datagram), Bare: bare}
+			if err != nil || bytes.Equal(b[:n], sentinel) {
+				result.Dropped = true
+			} else {
+				result.Packet = hex.EncodeToString(b[:n])
+			}
+			v.Read = append(v.Read, result)
+		}
 	}
 
 	data, err := json.MarshalIndent(v, "", " ")

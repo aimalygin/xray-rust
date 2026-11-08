@@ -1,6 +1,6 @@
-//! TUN TCP and UDP through the MASQUE outbound to Xray-core v26.10.31's own
-//! MASQUE server, whose freedom outbound redirects each flow from its
-//! documentation address to the loopback echo servers.
+//! TUN TCP and UDP through the MASQUE outbound, over HTTP/3 and HTTP/2, to
+//! Xray-core v26.10.31's own MASQUE server, whose freedom outbound redirects
+//! each flow from its documentation address to the loopback echo servers.
 use super::*;
 use sha2::Digest as _;
 
@@ -43,7 +43,8 @@ fn pem(label: &str, der: &[u8]) -> String {
     )
 }
 
-async fn reference() -> Reference {
+/// Xray-core's MASQUE server on `alpn`: HTTP/3 on UDP, HTTP/2 on TCP.
+async fn reference(alpn: &str) -> Reference {
     let binary =
         std::env::var_os("XRAY_CLIENT_PROTOCOL_BINARY").expect("run check-masque-interop.sh");
     let directory = std::env::temp_dir().join(format!(
@@ -64,18 +65,26 @@ async fn reference() -> Reference {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
-    let port = std::net::UdpSocket::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    let port = if alpn == "h3" {
+        std::net::UdpSocket::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    } else {
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    };
     let config = serde_json::json!({
         "log": {"loglevel": "debug"},
         "inbounds": [{"listen": "127.0.0.1", "port": port, "protocol": "masque",
             "settings": {"users": [{"email": MASQUE_USER, "pass": MASQUE_PASS}],
                 "address": ["10.78.0.1/24"]},
             "streamSettings": {"network": "masque", "security": "tls",
-                "tlsSettings": {"certificates": [{
+                "tlsSettings": {"alpn": [alpn], "certificates": [{
                     "certificateFile": directory.join("cert.pem"),
                     "keyFile": directory.join("key.pem")}]}}}],
         "outbounds": [{"protocol": "freedom", "settings": {"redirect": "127.0.0.1:0"}}]
@@ -109,8 +118,18 @@ async fn reference() -> Reference {
 #[tokio::test]
 #[ignore = "requires a pinned Xray-core; run check-masque-interop.sh"]
 async fn masque_tun_tcp_and_udp_reach_xrays_masque_server() {
+    tun_tcp_and_udp("h3").await;
+}
+
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-masque-interop.sh"]
+async fn masque_tun_over_h2_tcp_and_udp_reach_xrays_masque_server() {
+    tun_tcp_and_udp("h2").await;
+}
+
+async fn tun_tcp_and_udp(alpn: &str) {
     timeout(Duration::from_secs(60), async {
-        let server = reference().await;
+        let server = reference(alpn).await;
         let tcp = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let tcp_port = tcp.local_addr().unwrap().port();
         let _tcp = tokio::spawn(async move {
@@ -136,7 +155,8 @@ async fn masque_tun_tcp_and_udp_reach_xrays_masque_server() {
             "outbounds": [{"tag": "masque", "protocol": "masque",
                 "settings": {"address": "127.0.0.1", "port": server.port},
                 "streamSettings": {"network": "masque", "security": "tls",
-                    "tlsSettings": {"serverName": "masque.test", "pinnedPeerCertSha256": server.pin},
+                    "tlsSettings": {"serverName": "masque.test", "alpn": [alpn],
+                    "pinnedPeerCertSha256": server.pin},
                     "masqueSettings": {"user": MASQUE_USER, "pass": MASQUE_PASS}}}]
         });
         let mut core = Core::new(parse_xray_json(&profile.to_string()).unwrap().config).unwrap();
@@ -161,7 +181,10 @@ async fn masque_tun_tcp_and_udp_reach_xrays_masque_server() {
             received.len() >= payload.len()
         })
         .await;
-        assert_eq!(received, payload, "the TUN TCP echo through the tunnel differs");
+        assert_eq!(
+            received, payload,
+            "the TUN TCP echo through the tunnel differs"
+        );
 
         let client_ip = Ipv4Addr::new(10, 10, 0, 2);
         let udp_payload = vec![0x5a; 1200];
@@ -178,9 +201,11 @@ async fn masque_tun_tcp_and_udp_reach_xrays_masque_server() {
                 .unwrap();
             let reply = timeout(
                 Duration::from_secs(1),
-                poll_tun_outbound_until_with_timeout(core.tun(), Duration::from_secs(1), |packet| {
-                    ipv4_udp_payload(packet).is_some_and(|p| p == udp_payload)
-                }),
+                poll_tun_outbound_until_with_timeout(
+                    core.tun(),
+                    Duration::from_secs(1),
+                    |packet| ipv4_udp_payload(packet).is_some_and(|p| p == udp_payload),
+                ),
             )
             .await;
             if let Ok(reply) = reply {
