@@ -333,3 +333,30 @@ fn standalone_receive_buffer_matches_xrays_4096_byte_limit() {
         Some(2..5000)
     );
 }
+
+#[test]
+fn sudoku_encodes_each_datagram_and_drops_what_does_not_decode() {
+    let config = crate::sudoku::SudokuConfig {
+        password: "synthetic".into(),
+        ..Default::default()
+    };
+    let sudoku = KcpMask::Sudoku(std::sync::Arc::new(config));
+    // Inside the original mask: its checksum covers sudoku's bytes.
+    let mut masks = Masks::new(&[sudoku.clone(), KcpMask::Original], None).unwrap();
+    let mut sent = wire(&mut masks, b"segment".to_vec()).remove(0);
+    assert!(sent.len() >= 4 + 7 * 4);
+    let range = masks.open(&mut sent, peer(), Instant::now()).unwrap();
+    assert_eq!(&sent[range], b"segment");
+    // Without padding every byte is four clues: a datagram cut by one
+    // ends in an unfinished tuple and is dropped, as one that is not sudoku.
+    let mut alone = Masks::new(&[sudoku], None).unwrap();
+    let datagram = wire(&mut alone, b"segment".to_vec()).remove(0);
+    assert_eq!(datagram.len(), 7 * 4);
+    let mut short = datagram[..datagram.len() - 1].to_vec();
+    assert!(alone.open(&mut short, peer(), Instant::now()).is_none());
+    let mut whole = datagram.clone();
+    let range = alone.open(&mut whole, peer(), Instant::now()).unwrap();
+    assert_eq!(&whole[range], b"segment");
+    let mut garbage = vec![0x41; 8];
+    assert!(alone.open(&mut garbage, peer(), Instant::now()).is_none());
+}

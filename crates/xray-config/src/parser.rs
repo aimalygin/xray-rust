@@ -14,6 +14,7 @@ mod shadowsocks;
 mod socks;
 mod socks_outbound;
 mod stream;
+mod sudoku;
 mod tproxy;
 mod trojan;
 mod vless;

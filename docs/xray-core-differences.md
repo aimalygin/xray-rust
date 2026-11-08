@@ -502,6 +502,32 @@ both modes alone and with noise on either side; on both, a client whose
 sequence the server does not expect never connects. See
 [configuration](config-compatibility.md#header-custom-udp-mask).
 
+## sudoku
+
+The `sudoku` TCP and mKCP masks build Xray-core v26.10.31's tables: the 288
+4x4 grids, the clue sets only one grid has, and the order Go's `math/rand`
+gives them for the password, reimplemented here with Go's own constants.
+Deliberate differences:
+
+- The TCP mask must be the last one in `finalmask.tcp`; Xray-core also
+  accepts it before other TCP masks.
+- The UDP form is refused on Hysteria and XHTTP over HTTP/3. Sudoku makes
+  each QUIC packet at least four times its size, which only IP
+  fragmentation carries; quic-go on Xray's masked conn leaves fragmentation
+  to the system, where Quinn's sockets forbid it.
+- An unknown `ascii` mode or a malformed custom table fails the
+  configuration, where Xray-core accepts it and fails every dial.
+
+Evidence: `tools/sudoku-oracle` records Xray-core's own classic datagrams and
+packed server writes for entropy, ASCII, custom and rotating custom tables,
+an empty password and padding, and every byte decodes; its output is
+random, so `scripts/check-sudoku-interop.sh` decodes a fresh run each time.
+Live against Xray-core's server, raw (plain, TLS and REALITY), WebSocket,
+HTTPUpgrade, gRPC and XHTTP each carry a TCP echo and UDP, as do ASCII mode
+and a `header-custom` handshake inside sudoku; a client with another
+password never gets through. mKCP carries the same with sudoku alone, behind
+noise, and around a legacy mask.
+
 ## DNS `UseSystem` route probe
 
 `queryStrategy: "UseSystem"` narrows each lookup to the address families the

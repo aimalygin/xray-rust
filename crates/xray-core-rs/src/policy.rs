@@ -448,6 +448,8 @@ mod tests {
                     tcp_fragment: None,
                     tcp_header_custom: None,
                     udp_header_custom: None,
+                    tcp_sudoku: None,
+                    udp_sudoku: None,
                     udp_noise: None,
                     socket_options: None,
                 },

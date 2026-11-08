@@ -27,6 +27,8 @@ pub(super) struct StreamCarrier {
     pub(super) fragment: Option<Arc<xray_transport::TcpFragmentConfig>>,
     /// The `header-custom` TCP mask, run on every TCP carrier it opens.
     pub(super) header_custom: Option<Arc<xray_transport::header_custom::HeaderCustomTcpConfig>>,
+    /// The `sudoku` TCP mask, outermost on every TCP carrier it opens.
+    pub(super) sudoku: Option<Arc<xray_transport::sudoku::SudokuConfig>>,
     /// `sockopt`, for every socket the carrier opens.
     pub(super) socket_options: Option<Arc<xray_transport::SocketOptions>>,
     /// `sockopt.addressPortStrategy`, for the server's address and port.
@@ -47,11 +49,15 @@ impl StreamCarrier {
         super::validate_udp_noise(stream)?;
         let fragment = fragment_config(stream)?;
         let header_custom = header_custom_config(stream.tcp_header_custom.as_ref());
+        let sudoku = stream
+            .tcp_sudoku
+            .as_ref()
+            .map(|mask| Arc::new(sudoku_config(mask)));
         let transport = build_connector(&stream.security, server);
         let transport_layer = build_transport_layer(stream, server, port, &transport, paths)?;
         // Only TCP carriers take TCP masks; a split XHTTP download keeps its
         // own dialer, which does not run the handshake.
-        if header_custom.is_some()
+        if (header_custom.is_some() || sudoku.is_some())
             && (matches!(&transport_layer, TransportLayer::Xhttp(xhttp) if xhttp.http_version() == XhttpHttpVersion::Http3)
                 || matches!(transport_layer, TransportLayer::Kcp(_))
                 || matches!(&stream.transport, StreamTransport::Xhttp(xhttp) if xhttp.download.is_some()))
@@ -75,6 +81,7 @@ impl StreamCarrier {
             transport_layer,
             fragment,
             header_custom,
+            sudoku,
             transport,
             download: build_xhttp_download(stream, unencrypted_payload)?,
             happy_eyeballs: happy_eyeballs_config(stream),
@@ -90,8 +97,12 @@ impl StreamCarrier {
             Some(fragment) => Cow::Owned(dialer.into_owned().with_tcp_fragment(fragment.clone())),
             None => dialer,
         };
-        match &self.header_custom {
+        let dialer = match &self.header_custom {
             Some(header) => Cow::Owned(dialer.into_owned().with_tcp_header_custom(header.clone())),
+            None => dialer,
+        };
+        match &self.sudoku {
+            Some(sudoku) => Cow::Owned(dialer.into_owned().with_tcp_sudoku(sudoku.clone())),
             None => dialer,
         }
     }
@@ -307,6 +318,13 @@ fn kcp_config(
                         .as_ref()
                         .ok_or(CoreError::UnsupportedOutboundNetwork)?;
                     Mask::HeaderCustom(udp_header_config(header))
+                }
+                KcpMask::Sudoku => {
+                    let sudoku = stream
+                        .udp_sudoku
+                        .as_ref()
+                        .ok_or(CoreError::UnsupportedOutboundNetwork)?;
+                    Mask::Sudoku(Arc::new(sudoku_config(sudoku)))
                 }
                 KcpMask::Header(header) => Mask::Header(match header {
                     KcpHeader::Dns(domain) => Header::Dns(domain.clone()),
@@ -556,6 +574,20 @@ pub(super) fn header_custom_config(
                 .collect(),
         })
     })
+}
+
+/// The `sudoku` mask's settings, for either network.
+pub(super) fn sudoku_config(
+    mask: &xray_config::SudokuMask,
+) -> xray_transport::sudoku::SudokuConfig {
+    xray_transport::sudoku::SudokuConfig {
+        password: mask.password.to_string(),
+        ascii: mask.ascii.clone(),
+        custom_table: mask.custom_table.clone(),
+        custom_tables: mask.custom_tables.clone(),
+        padding_min: mask.padding_min,
+        padding_max: mask.padding_max,
+    }
 }
 
 /// A `header-custom` UDP mask's sequences.

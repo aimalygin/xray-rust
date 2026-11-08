@@ -230,3 +230,47 @@ fn udp_header_custom_reaches_xhttp_h3_and_not_xhttp_h2() {
         build_transport_layer(&outbound.stream, &server, 443, &transport, VLESS_PATHS,).is_err()
     );
 }
+
+#[test]
+fn sudoku_reaches_tcp_carriers_and_mkcp_and_no_direct_dial() {
+    let sudoku = json!({"type": "sudoku", "settings": {"password": "secret", "paddingMax": 9}});
+    let tls = json!({"serverName": "server.example"});
+    for stream in [
+        json!({"security": "tls", "tlsSettings": tls, "finalmask": {"tcp": [sudoku]}}),
+        json!({"network": "ws", "finalmask": {"tcp": [sudoku]}}),
+    ] {
+        let built = super::super::build_vless_tcp_outbound(&vless(stream.clone())).unwrap();
+        let mask = built.payload.carrier.sudoku.as_ref().unwrap();
+        assert_eq!((mask.password.as_str(), mask.padding_max), ("secret", 9));
+    }
+    // The TCP mask on mKCP, which carries no TCP, is refused.
+    assert!(matches!(
+        super::super::build_vless_tcp_outbound(&vless(
+            json!({"network": "kcp", "finalmask": {"tcp": [sudoku]}})
+        )),
+        Err(CoreError::UnsupportedOutboundNetwork)
+    ));
+    // The UDP mask reaches mKCP at its place.
+    let outbound = vless(json!({"network": "kcp", "finalmask": {"udp": [
+        {"type": "mkcp-legacy", "settings": {"header": "srtp"}}, sudoku]}}));
+    let StreamTransport::Kcp(settings) = &outbound.stream.transport else {
+        panic!("not kcp")
+    };
+    let mapped = kcp_config(settings, &outbound.stream).unwrap();
+    assert!(matches!(
+        &mapped.masks[1],
+        xray_transport::kcp::KcpMask::Sudoku(config) if config.password == "secret"
+    ));
+    // Not on freedom's direct dials.
+    let config = xray_config::parse_xray_json(
+        &json!({"outbounds": [{"protocol": "freedom",
+            "streamSettings": {"finalmask": {"tcp": [sudoku]}}}]})
+        .to_string(),
+    )
+    .unwrap()
+    .config;
+    assert!(matches!(
+        crate::Core::new(config),
+        Err(CoreError::UnsupportedOutboundNetwork)
+    ));
+}

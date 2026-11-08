@@ -89,6 +89,18 @@ pub trait RealityTlsSession: Send {
             "REALITY tlshello fragmentation",
         ))
     }
+
+    /// Completes TLS over a carrier that TCP masks already wrap.
+    async fn complete_over_stream(
+        self: Box<Self>,
+        _stream: BoxedTransportStream,
+        _prepared: RealityPreparedHandshake,
+        _mldsa65_verify: Option<Vec<u8>>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        Err(TransportError::UnsupportedConnectorConfig(
+            "REALITY over a masked carrier",
+        ))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -60,6 +60,8 @@ pub enum KcpMask {
     Noise,
     /// A custom UDP prefix or standalone handshake.
     HeaderCustom(Arc<crate::header_custom::HeaderCustomUdpConfig>),
+    /// The sudoku transform of every datagram.
+    Sudoku(Arc<crate::sudoku::SudokuConfig>),
 }
 
 impl std::fmt::Debug for KcpMask {
@@ -70,6 +72,7 @@ impl std::fmt::Debug for KcpMask {
             Self::Header(header) => f.debug_tuple("Header").field(header).finish(),
             Self::Noise => f.write_str("Noise"),
             Self::HeaderCustom(config) => f.debug_tuple("HeaderCustom").field(config).finish(),
+            Self::Sudoku(config) => f.debug_tuple("Sudoku").field(config).finish(),
         }
     }
 }

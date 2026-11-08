@@ -232,3 +232,34 @@ async fn kcp_header_custom_udp_modes_and_mask_order() {
         }
     }
 }
+
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-sudoku-interop.sh"]
+async fn kcp_sudoku_alone_and_among_other_masks() {
+    let checkout = resolve_xray_checkout();
+    let sudoku = |password: &str| json!({"type":"sudoku","settings":{"password":password,"paddingMin":5,"paddingMax":20}});
+    let noise = json!({"type":"noise","settings":{"noise":[{"type":"str","packet":"noise","delay":"1-2"}]}});
+    let legacy = json!({"type":"mkcp-legacy","settings":{"value":"sudoku-udp-seed"}});
+    // A legacy mask outside sudoku would drop every segment: it takes at
+    // most 4096 bytes, and sudoku makes mKCP's 1350 at least four times
+    // that, in Xray-core as here.
+    for (order, masks) in [
+        ("alone", json!([sudoku("synthetic-sudoku")])),
+        ("noise-inner", json!([noise, sudoku("synthetic-sudoku")])),
+        (
+            "legacy-inner",
+            json!([legacy, sudoku("synthetic-sudoku"), noise]),
+        ),
+    ] {
+        let server =
+            start_server(&checkout, "vless", XrayInboundSecurity::None, &masks, None).await;
+        let stream = json!({"network":"kcp","finalmask":{"udp":masks}});
+        check(
+            &server,
+            profile("vless", server.addr.port(), &stream),
+            true,
+            &format!("sudoku {order}"),
+        )
+        .await;
+    }
+}

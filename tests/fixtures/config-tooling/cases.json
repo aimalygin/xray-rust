@@ -4805,6 +4805,122 @@
         "/outbounds/0/streamSettings/finalmask/udp/0/settings/client/0/delay": 1
       },
       "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[0].settings.client[0].delay"
+    },
+    {
+      "name": "sudoku-tcp",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "server.example"
+              },
+              "finalmask": {
+                "tcp": [
+                  {
+                    "type": "sudoku",
+                    "settings": {
+                      "password": "synthetic-sudoku-password",
+                      "ascii": "prefer_entropy",
+                      "customTables": [
+                        "xppvvvvx",
+                        "vvxpvxpv"
+                      ],
+                      "paddingMin": 10,
+                      "paddingMax": 30
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "SUDOKU_MASK": "/outbounds/0/streamSettings/finalmask/tcp/0/settings"
+      }
+    },
+    {
+      "name": "sudoku-udp-kcp",
+      "accepted": true,
+      "base": "sudoku-tcp",
+      "set": {
+        "/outbounds/0/streamSettings": {
+          "network": "kcp",
+          "finalmask": {
+            "udp": [
+              {
+                "type": "sudoku",
+                "settings": {
+                  "password": "synthetic-sudoku-password",
+                  "ascii": "ascii"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "sudoku-bad-ascii",
+      "accepted": false,
+      "base": "sudoku-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp/0/settings/ascii": "text"
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.ascii"
+    },
+    {
+      "name": "sudoku-bad-table",
+      "accepted": false,
+      "base": "sudoku-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp/0/settings/customTables": [
+          "xxppvvvv",
+          "xxxpvvvv"
+        ]
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.customTable"
+    },
+    {
+      "name": "sudoku-unknown-field",
+      "accepted": false,
+      "base": "sudoku-tcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/tcp/0/settings/seed": 1
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp[0].settings.seed"
     }
   ]
 }

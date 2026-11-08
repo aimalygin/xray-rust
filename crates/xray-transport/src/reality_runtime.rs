@@ -63,21 +63,36 @@ impl PreparedRealityTlsConnection for DeferredRuntimeRealityConnection {
         self: Box<Self>,
         tcp_stream: tokio::net::TcpStream,
     ) -> Result<BoxedTransportStream, TransportError> {
-        self.complete_inner(tcp_stream, None).await
+        self.complete_inner(Carrier::Tcp(tcp_stream)).await
     }
     async fn complete_fragmented(
         self: Box<Self>,
         tcp_stream: tokio::net::TcpStream,
         fragment: Arc<crate::TcpFragmentConfig>,
     ) -> Result<BoxedTransportStream, TransportError> {
-        self.complete_inner(tcp_stream, Some(fragment)).await
+        self.complete_inner(Carrier::Fragmented(tcp_stream, fragment))
+            .await
+    }
+    async fn complete_over_stream(
+        self: Box<Self>,
+        stream: BoxedTransportStream,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        self.complete_inner(Carrier::Masked(stream)).await
     }
 }
+
+/// What the handshake completes over.
+enum Carrier {
+    Tcp(tokio::net::TcpStream),
+    Fragmented(tokio::net::TcpStream, Arc<crate::TcpFragmentConfig>),
+    /// A carrier the TCP masks already wrap.
+    Masked(BoxedTransportStream),
+}
+
 impl DeferredRuntimeRealityConnection {
     async fn complete_inner(
         self: Box<Self>,
-        tcp_stream: tokio::net::TcpStream,
-        fragment: Option<Arc<crate::TcpFragmentConfig>>,
+        carrier: Carrier,
     ) -> Result<BoxedTransportStream, TransportError> {
         let Self {
             mut config,
@@ -96,15 +111,20 @@ impl DeferredRuntimeRealityConnection {
             connector.prepare_handshake_with_client_hello(prepared_client_hello, context)?;
         let mldsa65_verify = config.mldsa65_verify.take();
 
-        match fragment {
-            Some(fragment) => {
+        match carrier {
+            Carrier::Tcp(tcp_stream) => {
+                session
+                    .complete(tcp_stream, prepared_handshake, mldsa65_verify)
+                    .await
+            }
+            Carrier::Fragmented(tcp_stream, fragment) => {
                 session
                     .complete_fragmented(tcp_stream, prepared_handshake, mldsa65_verify, fragment)
                     .await
             }
-            None => {
+            Carrier::Masked(stream) => {
                 session
-                    .complete(tcp_stream, prepared_handshake, mldsa65_verify)
+                    .complete_over_stream(stream, prepared_handshake, mldsa65_verify)
                     .await
             }
         }

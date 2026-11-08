@@ -35,13 +35,15 @@ pub struct TransportDialer {
 }
 
 /// What [`TransportDialer::with_route_probe`],
-/// [`TransportDialer::with_record_resolver`] and
-/// [`TransportDialer::with_tcp_header_custom`] set.
+/// [`TransportDialer::with_record_resolver`],
+/// [`TransportDialer::with_tcp_header_custom`] and
+/// [`TransportDialer::with_tcp_sudoku`] set.
 #[derive(Clone, Default)]
 struct Replaced {
     route_probe: Option<Arc<dyn RouteProbe>>,
     record_resolver: Option<Arc<dyn RecordResolver>>,
     tcp_header_custom: Option<Arc<crate::header_custom::HeaderCustomTcpConfig>>,
+    tcp_sudoku: Option<Arc<crate::sudoku::SudokuConfig>>,
 }
 
 #[derive(Clone)]
@@ -218,6 +220,34 @@ impl TransportDialer {
         self.replaced
             .as_ref()
             .and_then(|replaced| replaced.tcp_header_custom.as_deref())
+    }
+
+    /// Wraps every TCP carrier in the `sudoku` mask as soon as it connects,
+    /// outside the `header-custom` handshake, the fragment mask, TLS and
+    /// REALITY.
+    pub fn with_tcp_sudoku(mut self, config: Arc<crate::sudoku::SudokuConfig>) -> Self {
+        Arc::make_mut(self.replaced.get_or_insert_with(Default::default)).tcp_sudoku = Some(config);
+        self
+    }
+
+    fn tcp_sudoku(&self) -> Option<&crate::sudoku::SudokuConfig> {
+        self.replaced
+            .as_ref()
+            .and_then(|replaced| replaced.tcp_sudoku.as_deref())
+    }
+
+    /// A connected carrier in the masks the TCP mask list puts outside the
+    /// `header-custom` handshake: `sudoku`, when it is set.
+    fn sudoku_carrier(
+        &self,
+        stream: BoxedTransportStream,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        match self.tcp_sudoku() {
+            Some(config) => Ok(Box::new(
+                crate::sudoku::SudokuStream::new(stream, config).map_err(TransportError::Tcp)?,
+            )),
+            None => Ok(stream),
+        }
     }
 
     /// This dialer with its own sockets instead of the outbound that
@@ -475,11 +505,11 @@ impl TransportDialer {
                 ));
             }
         };
-        let (mut tcp, peer) = self
+        let (tcp, peer) = self
             .connect_direct_tcp(original_target, candidates, happy_eyeballs)
             .await?;
-        self.direct_header_custom_handshake(&mut tcp, peer).await?;
-        let stream = self.mask_tcp_carrier(Box::new(tcp));
+        let stream = self.masked_direct_carrier(tcp, peer).await?;
+        let stream = self.mask_tcp_carrier(stream);
         let stream = match prepared {
             Some(prepared) => {
                 self.tls
@@ -587,9 +617,15 @@ impl TransportDialer {
                         .ok_or(TransportError::UnsupportedConnectorConfig(
                             "REALITY tlshello fragmentation",
                         ))?;
-                    let (mut stream, peer) = self
+                    let (stream, peer) = self
                         .connect_candidates(candidates, first, race_config)
                         .await?;
+                    if self.tcp_sudoku().is_some() {
+                        let stream = self.masked_direct_carrier(stream, peer).await?;
+                        let stream = crate::fragment::FragmentStream::new(stream, fragment.clone());
+                        return prepared.complete_over_stream(Box::new(stream)).await;
+                    }
+                    let mut stream = stream;
                     self.direct_header_custom_handshake(&mut stream, peer)
                         .await?;
                     return prepared.complete_fragmented(stream, fragment.clone()).await;
@@ -601,11 +637,14 @@ impl TransportDialer {
                     reality.prepare_preconnected(reality_config, original_target)?
                 else {
                     // A legacy engine dials its own socket, which this
-                    // dialer cannot run the handshake on.
+                    // dialer cannot run the handshake on or mask.
                     if self.tcp_header_custom().is_some() {
                         return Err(TransportError::UnsupportedConnectorConfig(
                             "REALITY header-custom",
                         ));
+                    }
+                    if self.tcp_sudoku().is_some() {
+                        return Err(TransportError::UnsupportedConnectorConfig("REALITY sudoku"));
                     }
                     // Legacy engines remain usable. They may override
                     // `connect_socket_addr` to preserve scoped IPv6 metadata.
@@ -613,9 +652,14 @@ impl TransportDialer {
                         .connect_socket_addr(reality_config, original_target, first)
                         .await;
                 };
-                let (mut stream, peer) = self
+                let (stream, peer) = self
                     .connect_candidates(candidates, first, race_config)
                     .await?;
+                if self.tcp_sudoku().is_some() {
+                    let stream = self.masked_direct_carrier(stream, peer).await?;
+                    return prepared.complete_over_stream(stream).await;
+                }
+                let mut stream = stream;
                 self.direct_header_custom_handshake(&mut stream, peer)
                     .await?;
 
@@ -650,9 +694,10 @@ impl TransportDialer {
         happy_eyeballs: Option<&HappyEyeballsConfig>,
     ) -> Result<BoxedTransportStream, TransportError> {
         if let Some(connector) = &self.resolved_tcp_connector {
-            let mut stream = connector
+            let stream = connector
                 .connect_resolved(original_target, candidates, happy_eyeballs)
                 .await?;
+            let mut stream = self.sudoku_carrier(stream)?;
             // Xray's chained connection says 0.0.0.0:0 for both of its ends.
             let unspecified = SocketAddr::from(([0, 0, 0, 0], 0));
             self.header_custom_handshake(&mut stream, unspecified, unspecified)
@@ -660,12 +705,29 @@ impl TransportDialer {
             return Ok(stream);
         }
 
-        let (mut stream, peer) = self
+        let (stream, peer) = self
             .connect_direct_tcp(original_target, candidates, happy_eyeballs)
             .await?;
-        self.direct_header_custom_handshake(&mut stream, peer)
+        self.masked_direct_carrier(stream, peer).await
+    }
+
+    /// A direct carrier in `sudoku`, then past the `header-custom`
+    /// handshake, which reads the socket's own addresses.
+    async fn masked_direct_carrier(
+        &self,
+        mut stream: tokio::net::TcpStream,
+        peer: SocketAddr,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        if self.tcp_sudoku().is_none() {
+            self.direct_header_custom_handshake(&mut stream, peer)
+                .await?;
+            return Ok(Box::new(stream));
+        }
+        let local = stream.local_addr().map_err(TransportError::Tcp)?;
+        let mut stream = self.sudoku_carrier(Box::new(stream))?;
+        self.header_custom_handshake(&mut stream, local, peer)
             .await?;
-        Ok(Box::new(stream))
+        Ok(stream)
     }
 
     /// The `header-custom` handshake over a direct socket connected to `peer`.

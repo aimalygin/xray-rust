@@ -1994,6 +1994,8 @@ fn rust_vless_outbound(
             tcp_fragment: None,
             tcp_header_custom: None,
             udp_header_custom: None,
+            tcp_sudoku: None,
+            udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
         },
@@ -3654,6 +3656,9 @@ mod kcp_carriers;
 
 #[path = "local_xray_interop_tests/header_custom.rs"]
 mod header_custom;
+
+#[path = "local_xray_interop_tests/sudoku.rs"]
+mod sudoku;
 
 /// Record-level observer: it forwards the finalized ClientHello unchanged and
 /// then becomes a byte relay, including Vision's later direct-mode payload.

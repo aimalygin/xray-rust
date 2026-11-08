@@ -19,6 +19,7 @@ use tokio::time::Instant;
 use super::{KcpHeader, KcpMask};
 use crate::{
     header_custom::udp::{UdpHeader, Write},
+    sudoku::datagram::DatagramMask,
     udp_noise::UdpNoiseConfig,
 };
 
@@ -53,7 +54,7 @@ enum Legacy {
 impl Legacy {
     fn new(mask: &KcpMask) -> io::Result<Option<Self>> {
         Ok(Some(match mask {
-            KcpMask::Noise | KcpMask::HeaderCustom(_) => return Ok(None),
+            KcpMask::Noise | KcpMask::HeaderCustom(_) | KcpMask::Sudoku(_) => return Ok(None),
             KcpMask::Original => Self::Original,
             KcpMask::Aes128Gcm(password) => {
                 let key = Sha256::digest(password.as_bytes());
@@ -244,6 +245,7 @@ enum Layer {
     Legacy(Group),
     Noise(Noise),
     Header(Box<UdpHeader>),
+    Sudoku(DatagramMask),
 }
 
 enum Pending {
@@ -311,6 +313,7 @@ impl Masks {
                     seen_header = true;
                     layers.push(Layer::Header(Box::new(UdpHeader::new(config.clone())?)));
                 }
+                KcpMask::Sudoku(config) => layers.push(Layer::Sudoku(DatagramMask::new(config)?)),
                 _ => unreachable!("legacy masks handled above"),
             }
         }
@@ -395,6 +398,10 @@ impl Masks {
                                 }
                             }
                         }
+                        Layer::Sudoku(sudoku) => {
+                            let data = sudoku.encode(&data);
+                            self.pending.push_front(Pending::Packet(data, index + 1));
+                        }
                         Layer::Header(header) => match header.write(&data, local, peer, now) {
                             Write::Packet(data) => {
                                 self.pending.push_front(Pending::Packet(data, index + 1))
@@ -427,6 +434,7 @@ impl Masks {
             match layer {
                 Layer::Legacy(group) => range = group.open(buf, range)?,
                 Layer::Noise(_) => {}
+                Layer::Sudoku(sudoku) => range = sudoku.decode(buf, range)?,
                 Layer::Header(header) => {
                     range.end = range
                         .end

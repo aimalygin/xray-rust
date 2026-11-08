@@ -4817,6 +4817,10 @@ pub(crate) fn validate_udp_noise(stream: &StreamSettings) -> Result<(), CoreErro
     if (stream.udp_noise.is_some() || stream.udp_header_custom.is_some()) && !udp_carrier {
         return Err(CoreError::UnsupportedOutboundNetwork);
     }
+    // Sudoku's fourfold datagrams need fragments that QUIC's sockets forbid.
+    if stream.udp_sudoku.is_some() && !matches!(stream.transport, StreamTransport::Kcp(_)) {
+        return Err(CoreError::UnsupportedOutboundNetwork);
+    }
     if let Some(noise) = &stream.udp_noise {
         xhttp::udp_noise_config(noise)?;
     }
@@ -4912,6 +4916,8 @@ mod tests {
                 tcp_fragment: None,
                 tcp_header_custom: None,
                 udp_header_custom: None,
+                tcp_sudoku: None,
+                udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -4932,6 +4938,8 @@ mod tests {
                 tcp_fragment: None,
                 tcp_header_custom: None,
                 udp_header_custom: None,
+                tcp_sudoku: None,
+                udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -4963,6 +4971,8 @@ mod tests {
                 tcp_fragment: None,
                 tcp_header_custom: None,
                 udp_header_custom: None,
+                tcp_sudoku: None,
+                udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -5285,6 +5295,8 @@ mod tests {
                 tcp_fragment: None,
                 tcp_header_custom: None,
                 udp_header_custom: None,
+                tcp_sudoku: None,
+                udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -5329,6 +5341,8 @@ mod tests {
                     tcp_fragment: None,
                     tcp_header_custom: None,
                     udp_header_custom: None,
+                    tcp_sudoku: None,
+                    udp_sudoku: None,
                     udp_noise: None,
                     socket_options: None,
                 },
@@ -5368,6 +5382,8 @@ mod tests {
             tcp_fragment: None,
             tcp_header_custom: None,
             udp_header_custom: None,
+            tcp_sudoku: None,
+            udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
         };
@@ -5404,6 +5420,8 @@ mod tests {
                 tcp_fragment: None,
                 tcp_header_custom: None,
                 udp_header_custom: None,
+                tcp_sudoku: None,
+                udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -5481,6 +5499,8 @@ mod tests {
                 tcp_fragment: None,
                 tcp_header_custom: None,
                 udp_header_custom: None,
+                tcp_sudoku: None,
+                udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -5521,6 +5541,8 @@ mod tests {
                 tcp_fragment: None,
                 tcp_header_custom: None,
                 udp_header_custom: None,
+                tcp_sudoku: None,
+                udp_sudoku: None,
                 udp_noise: None,
                 socket_options: Some(SocketOptions {
                     happy_eyeballs: Some(HappyEyeballsSettings {
@@ -5567,6 +5589,8 @@ mod tests {
                 tcp_fragment: None,
                 tcp_header_custom: None,
                 udp_header_custom: None,
+                tcp_sudoku: None,
+                udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -5588,6 +5612,8 @@ mod tests {
                 tcp_fragment: None,
                 tcp_header_custom: None,
                 udp_header_custom: None,
+                tcp_sudoku: None,
+                udp_sudoku: None,
                 udp_noise: None,
                 socket_options: Some(SocketOptions {
                     happy_eyeballs: Some(HappyEyeballsSettings::default()),
@@ -5615,6 +5641,8 @@ mod tests {
                 tcp_fragment: None,
                 tcp_header_custom: None,
                 udp_header_custom: None,
+                tcp_sudoku: None,
+                udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -5639,6 +5667,8 @@ mod tests {
                 tcp_fragment: None,
                 tcp_header_custom: None,
                 udp_header_custom: None,
+                tcp_sudoku: None,
+                udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
             },
@@ -6161,6 +6191,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     header_custom: None,
+                    sudoku: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
@@ -9428,6 +9459,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     header_custom: None,
+                    sudoku: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
@@ -9471,6 +9503,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     header_custom: None,
+                    sudoku: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
@@ -9532,6 +9565,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     header_custom: None,
+                    sudoku: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
@@ -9618,6 +9652,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     header_custom: None,
+                    sudoku: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
@@ -9699,6 +9734,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     header_custom: None,
+                    sudoku: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
@@ -9767,6 +9803,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     header_custom: None,
+                    sudoku: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
@@ -9845,6 +9882,7 @@ mod tests {
                 carrier: StreamCarrier {
                     fragment: None,
                     header_custom: None,
+                    sudoku: None,
                     socket_options: None,
                     address_port: Default::default(),
                     download: None,
