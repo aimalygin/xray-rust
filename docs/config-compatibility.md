@@ -2149,6 +2149,47 @@ when the configuration is read; Xray-core fails every dial with it.
 `scripts/check-sudoku-interop.sh` decodes fresh output of Xray-core's own
 mask and runs every carrier against its servers.
 
+### xmc mask
+
+`xmc` makes every TCP carrier look like a Minecraft 26.1.2 login. It is
+supported as a TCP mask on raw, TLS, WebSocket, HTTPUpgrade, gRPC and XHTTP
+over TCP, but not under REALITY:
+
+```json
+"finalmask": {"tcp": [{"type": "xmc", "settings": {
+  "hostname": "mc.example.com",
+  "password": "synthetic-example-password",
+  "profiles": [{"username": "Steve",
+    "uuid": "8667ba71-b85a-4004-af54-457a9734eed7",
+    "texturesValue": "<the session server's value>",
+    "texturesSignature": "<its signature>"}]
+}}]}
+```
+
+- `hostname` is the server address the handshake names. Empty names the
+  server's IP address, or `0.0.0.0` through a `dialerProxy` chain, whose
+  connection reports no address, as in Xray-core.
+- `password` derives the server's RSA key and goes to the server encrypted.
+  It is 1 to 113 bytes here; Xray-core accepts a longer one and fails every
+  login.
+- `profiles` are signed profiles the server holds too; each connection picks
+  one. `username` is 3 to 16 ASCII letters, digits or underscores, `uuid` is
+  any form `github.com/google/uuid` reads, and `texturesValue` and
+  `texturesSignature` are required.
+
+The client sends a handshake for protocol 775 and a Login Start, checks that
+the server's key is the one the password derives, and sends a shared secret
+and the password under that key. Both sides then switch to AES-128-CFB8. Once
+the server confirms the profile, they exchange about a second of padding
+that copies the lengths and write boundaries of a real login, then carry the
+proxied bytes in configuration-state custom payload packets of at most
+24 KiB; the client answers the server's keep-alives. The mask must be the
+last one in `finalmask.tcp`, so the `fragment` and `header-custom` masks
+before it run inside the login. REALITY is refused over it: Xray-core's
+REALITY server panics on every connection through xmc.
+`scripts/check-xmc-interop.sh` compares the keys Xray-core derives and runs
+every carrier against its server.
+
 ### TLS ClientHello shaping
 
 `security: "tls"` sends a uTLS-shaped ClientHello, as Xray-core does on every

@@ -274,3 +274,51 @@ fn sudoku_reaches_tcp_carriers_and_mkcp_and_no_direct_dial() {
         Err(CoreError::UnsupportedOutboundNetwork)
     ));
 }
+
+#[test]
+fn xmc_reaches_tcp_carriers_and_no_udp_carrier_or_direct_dial() {
+    let xmc = json!({"type": "xmc", "settings": {"hostname": "mc.example.com",
+        "password": "secret", "profiles": [{"username": "Steve",
+            "uuid": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+            "texturesValue": "dGV4dHVyZXM=", "texturesSignature": "c2lnbmF0dXJl"}]}});
+    let tls = json!({"serverName": "server.example"});
+    for stream in [
+        json!({"security": "tls", "tlsSettings": tls, "finalmask": {"tcp": [xmc]}}),
+        json!({"network": "ws", "finalmask": {"tcp": [xmc]}}),
+    ] {
+        let built = super::super::build_vless_tcp_outbound(&vless(stream.clone())).unwrap();
+        let mask = built.payload.carrier.xmc.as_ref().unwrap();
+        let shown = format!("{mask:?}");
+        assert!(
+            shown.contains("mc.example.com") && !shown.contains("secret"),
+            "{shown}"
+        );
+    }
+    // Carriers without TCP are refused.
+    for stream in [
+        json!({"network": "kcp", "finalmask": {"tcp": [xmc]}}),
+        json!({"network": "xhttp", "security": "tls",
+            "tlsSettings": {"serverName": "server.example", "alpn": ["h3"]},
+            "finalmask": {"tcp": [xmc], "quicParams": {"disableChromeParrot": true}}}),
+    ] {
+        assert!(
+            matches!(
+                super::super::build_vless_tcp_outbound(&vless(stream.clone())),
+                Err(CoreError::UnsupportedOutboundNetwork)
+            ),
+            "{stream}"
+        );
+    }
+    // Not on freedom's direct dials.
+    let config = xray_config::parse_xray_json(
+        &json!({"outbounds": [{"protocol": "freedom",
+            "streamSettings": {"finalmask": {"tcp": [xmc]}}}]})
+        .to_string(),
+    )
+    .unwrap()
+    .config;
+    assert!(matches!(
+        crate::Core::new(config),
+        Err(CoreError::UnsupportedOutboundNetwork)
+    ));
+}
