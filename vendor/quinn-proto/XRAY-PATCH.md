@@ -61,6 +61,29 @@ datagrams and checks the callback's totals against the connection's loss
 statistics; it fails when the call is removed. The complete 300-test library
 suite passes in the reconstruction.
 
+## quic-go's congestion event
+
+Xray-core's BBR sender takes what quic-go hands a controller: every sent
+packet with its number, ACK-only packets included, and one
+`OnCongestionEventEx` per ACK frame or loss timeout listing the packets it
+acknowledged and lost, by number, with the bytes in flight before it. Three
+callbacks, each ignored by default, report the same from quinn:
+`Controller::on_sent_not_ack_eliciting` for a sent packet that elicits no
+acknowledgement, `on_packet_lost_with_token` for each lost ack-eliciting
+packet with the token recorded when it was sent, and
+`on_congestion_event_end(now, prior_in_flight)` once an ACK frame that
+acknowledged new packets, or a loss-detection timeout, has been processed.
+Lost MTU probes are reported per packet, as quic-go reports them, while
+`on_packets_lost` and `on_congestion_event` still leave them out. Other
+controllers are unchanged. `acknowledgements_and_losses_close_in_one_congestion_event`
+drops two real datagrams and checks that every acknowledgement and loss is
+closed by an event, that the per-packet losses carry the dropped packets'
+tokens and add up to the connection's loss statistics, that the flight
+before each event holds what it removed, and that ACK-only packets are
+reported; `lost_mtu_probes_are_reported_per_packet_only` checks that an
+oversized probe's loss reaches the per-packet callback alone. The complete
+302-test library suite passes in the reconstruction.
+
 ## Measured RTT and periodic probing
 
 An unset RTT epoch is a fresh connection, not an expired sample. The initial

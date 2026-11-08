@@ -59,6 +59,7 @@ recorded with its original RC identity.
 | sudoku mask | Implemented in development 0.10 | The TCP mask on every TCP carrier, REALITY included, outermost of the TCP masks, and the UDP mask on mKCP, Hysteria and XHTTP H3, whose carrier lets the system fragment its datagrams, with entropy, ASCII and custom layouts and padding. Tables from Go `math/rand` reimplemented; fresh output of Xray-core's own mask decoded on every run, and live interop against its servers on each carrier with another password refused; [configuration limits](config-compatibility.md#sudoku-mask) |
 | xmc mask | Implemented in development 0.10 | The TCP mask on every TCP carrier except REALITY, outermost of the TCP masks: a Minecraft 26.1.2 login with the RSA key Xray-core derives from the password, AES-128-CFB8, the startup padding schedule, and custom payload packets with keep-alives answered. The keys Xray-core derives are compared on every run, and live interop against its server on each carrier carries TCP and UDP, with another password and an unknown profile refused; [configuration limits](config-compatibility.md#xmc-mask) |
 | MASQUE client | Implemented in development 0.10 | The `masque` outbound and transport over HTTP/3: CONNECT-IP tunnels pooled as Xray-core's `xmux` pools them, Basic authorization, assigned addresses, and TCP and UDP from SOCKS, HTTP and TUN through the WireGuard outbound's userspace stack, names resolved through the tunnel. Capsules, datagrams, ICMP Packet Too Big and packet admission compared with Xray-core v26.10.31's own `connectip` code on every run, 104 configuration cases against `xray run -test` (94 matching, 10 deliberate), and live interop against its MASQUE server: TCP and UDP of both families, names, eight flows on one tunnel, a refused password (`scripts/check-masque-interop.sh`). HTTP/2 and `warp` are not supported yet; [configuration limits](config-compatibility.md#masque) |
+| QUIC BBR profiles | Implemented in development 0.10 | `quicParams.bbrProfile` `conservative` and `aggressive` on Hysteria and XHTTP H3 run a port of Xray-core's BBR sender, switching from NewReno where Xray's dialer installs its controller; `standard` keeps Quinn's BBR pending a decision. Xray-core's own sender replayed to the same state after each of 4,399 recorded congestion events, 184 matching `xray run -test` verdicts, and live interop with every profile against its Hysteria and XHTTP H3 servers; [profiles and differences](config-compatibility.md#bbr-profiles) |
 | UDP noise | Implemented in development 0.8 | Bounded FinalMask for Hysteria2/XHTTP H3; idle reset, cancellable delays and Salamander order. Pinned interop covers both Hysteria mask orders/hopping and all three H3 modes. Freedom's deprecated `noises` since 0.10.0, before each SOCKS and TUN UDP flow's first datagram. |
 | Linux TPROXY inbound | Implemented in development 0.8 | Transparent IPv4/IPv6 TCP/UDP with shared routing/protocol handling, bounded flows and source-preserving replies; exercised through actual Linux interception in an isolated network. Requires operator-owned firewall/routes; unsupported mobile platforms reject startup. |
 | Hysteria 2 / WireGuard | Supported subset since 0.7 | Bounded TCP/UDP client paths, shared imports, native adapters and independent-server tests; v0.8 adds Hysteria Salamander/port hopping, host stream budgets and Android rebind; [configuration limits](config-compatibility.md) and [0.7 performance evidence](v07-performance.md) retain their original acceptance boundaries. |
@@ -201,11 +202,12 @@ Three performance details are explicit approximations rather than parity
 claims. First, Quinn uses static receive windows (2 MiB per stream and 3 MiB
 per connection by default), while quic-go adapts those initial values toward
 6 MiB and 15 MiB. Second, Xray's standard BBR selection maps to Quinn BBR with
-Xray's initial window, not quic-go's controller. Third, the pool conservatively
+Xray's initial window, not quic-go's controller; the conservative and
+aggressive profiles run a port of Xray's sender. Third, the pool conservatively
 allows one active HTTP request per QUIC connection, opening another connection
 for concurrent work instead of claiming broader request multiplexing. Explicit
-unequal initial/maximum receive windows, QUIC v2, conservative/aggressive BBR
-profiles, Brutal/force-Brutal, non-empty UDP hopping, and QUIC debug side
+unequal initial/maximum receive windows, QUIC v2,
+Brutal/force-Brutal, non-empty UDP hopping, and QUIC debug side
 effects fail closed before a socket is opened. The ignored live Xray-core
 matrix has passed all three XHTTP modes, establishing functional
 interoperability for those cases. RC4 publishes five-run H3 upload, download,

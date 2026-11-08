@@ -94,6 +94,41 @@ pub trait Controller: Send + Sync {
     #[allow(unused_variables)]
     fn on_packets_lost(&mut self, now: Instant, packets: u64, bytes: u64) {}
 
+    /// A packet that elicits no acknowledgement, such as one carrying only
+    /// ACK frames, was just sent with `in_flight` bytes in flight.
+    ///
+    /// `bytes` is the size of this encrypted packet. quic-go reports every
+    /// packet to its congestion controller; the default ignores these.
+    #[allow(unused_variables)]
+    fn on_sent_not_ack_eliciting(
+        &mut self,
+        now: Instant,
+        bytes: u64,
+        packet_number: u64,
+        in_flight: u64,
+    ) {
+    }
+
+    /// One ack-eliciting packet was declared lost, with the token recorded
+    /// when it was sent.
+    ///
+    /// Unlike `on_packets_lost`, lost MTU probes are included, as quic-go
+    /// reports them to its controller. Called before the
+    /// `on_congestion_event_end` of the ACK or loss timeout that found it.
+    /// The default ignores it.
+    #[allow(unused_variables)]
+    fn on_packet_lost_with_token(&mut self, now: Instant, bytes: u64, token: u64) {}
+
+    /// The processing of one ACK frame that acknowledged new packets, or of
+    /// one loss-detection timeout, finished.
+    ///
+    /// Every `on_ack_with_token` and `on_packet_lost_with_token` it caused
+    /// came before; `prior_in_flight` is the bytes in flight before it
+    /// started. Together they are what quic-go hands a controller in one
+    /// `OnCongestionEventEx`. The default ignores it.
+    #[allow(unused_variables)]
+    fn on_congestion_event_end(&mut self, now: Instant, prior_in_flight: u64) {}
+
     /// Packets were deemed lost or marked congested
     ///
     /// `in_persistent_congestion` indicates whether all packets sent within the persistent

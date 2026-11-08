@@ -3863,10 +3863,18 @@
       "accepted": true
     },
     {
-      "name": "quic-unsupported-bbrProfile",
+      "name": "quic-bbrProfile-conservative",
       "base": "udp-hop-mask-261021",
       "set": {
         "/outbounds/0/streamSettings/finalmask/quicParams/bbrProfile": "conservative"
+      },
+      "accepted": true
+    },
+    {
+      "name": "quic-unknown-bbrProfile",
+      "base": "udp-hop-mask-261021",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/quicParams/bbrProfile": "turbo"
       },
       "accepted": false,
       "errorPath": "$.outbounds[0].streamSettings.finalmask.quicParams.bbrProfile"

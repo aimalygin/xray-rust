@@ -470,6 +470,9 @@ jobs:
       - name: Verify WireGuard fixture UDP source-port reuse in an isolated network
         run: bash scripts/check-wireguard-direct-fixture.sh
 
+      - name: Verify the BBR profiles against pinned Xray-core's sender and servers
+        run: bash scripts/check-bbr-interop.sh
+
       - name: Verify the MASQUE client against pinned Xray-core
         run: bash scripts/check-masque-interop.sh
 

@@ -23,7 +23,7 @@ pub(crate) use h3::{
     hop_udp_carrier, H3ConnectConfig, H3Error, QuicSendWindow, QUIC_INITIAL_SEND_WINDOW,
     QUIC_SEND_WINDOW_SAMPLE_BYTES,
 };
-pub use h3::{H3Congestion, H3QuicConfig, H3QuicVersion, H3UdpHopConfig};
+pub use h3::{H3BbrProfile, H3Congestion, H3QuicConfig, H3QuicVersion, H3UdpHopConfig};
 pub use transport::{XhttpConnectTarget, XhttpHttpVersion, XhttpTransport, XhttpXmuxPolicy};
 
 /// Internal HTTP/1.1 engine surface used by XHTTP orchestration and focused
@@ -51,9 +51,9 @@ pub mod h2_test_only {
 #[doc(hidden)]
 pub mod h3_test_only {
     pub use super::h3::{
-        connect_h3, connect_h3_candidates, H3Client, H3Congestion, H3ConnectConfig, H3Diagnostics,
-        H3Error, H3PendingResponse, H3QuicConfig, H3QuicVersion, H3ResponseBody, H3UdpHopConfig,
-        H3Upload,
+        connect_h3, connect_h3_candidates, H3BbrProfile, H3Client, H3Congestion, H3ConnectConfig,
+        H3Diagnostics, H3Error, H3PendingResponse, H3QuicConfig, H3QuicVersion, H3ResponseBody,
+        H3UdpHopConfig, H3Upload,
     };
 }
 
