@@ -2293,7 +2293,9 @@ a 30-second idle timeout and a 10-second keepalive apply where
 `quicParams` is silent, and `xmux.hKeepAlivePeriod` sets the keepalive when
 nonzero, negative turning it off. Congestion `brutal` runs BBR, as in
 Xray-core; `force-brutal` runs Brutal. The TCP fragment mask fails on
-MASQUE over HTTP/3, which other TCP masks do not reach.
+MASQUE over HTTP/3, which other TCP masks do not reach. `sockopt` applies
+to the QUIC socket, and `addressPortStrategy` and `domainStrategy` choose
+the server's address, as Xray-core's system dialer does.
 
 A tunnel is one QUIC connection with one extended CONNECT whose
 `:protocol` is `connect-ip`, sent once the server's SETTINGS allow extended

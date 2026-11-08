@@ -44,6 +44,9 @@ struct Owner {
     remote_dns: Vec<IpAddr>,
     socket_options: Option<Arc<xray_transport::SocketOptions>>,
     endpoint_strategy: DomainStrategy,
+    /// `sockopt.addressPortStrategy`, which Xray's system dialer applies to
+    /// the server.
+    address_port: xray_config::AddressPortStrategy,
     socket_dialer: Mutex<Option<(TransportDialer, TransportDialer)>>,
     pool: Arc<AsyncMutex<Pool>>,
     /// Every live tunnel, for closing the outbound while a dial holds the
@@ -214,6 +217,7 @@ impl MasqueOutbound {
                 .as_ref()
                 .map(|options| options.domain_strategy)
                 .unwrap_or_default(),
+            address_port: super::carrier::address_port_strategy(&outbound.stream),
             socket_dialer: Mutex::new(None),
             pool: Arc::new(AsyncMutex::new(Pool {
                 xmux,
@@ -288,7 +292,7 @@ impl MasqueOutbound {
             Take::Failed(error) => return Err(MasqueError::Dial(error).into()),
             Take::Dial => {}
         }
-        let remote_addr = match self.server_address(bootstrap).await {
+        let remote_addr = match self.server_address(bootstrap, &dialer).await {
             Ok(addr) => addr,
             Err(error) => return pool.dialed(Err(error)),
         };
@@ -306,10 +310,14 @@ impl MasqueOutbound {
         Ok(lease)
     }
 
-    /// The server's address, as Xray's system dialer picks it: an IP as
-    /// given, a domain's first address of the families `sockopt.domainStrategy`
-    /// prefers.
-    async fn server_address(&self, bootstrap: &dyn DnsResolver) -> Result<SocketAddr, CoreError> {
+    /// The server's address, as Xray's system dialer picks it: after
+    /// `sockopt.addressPortStrategy`, an IP as given, a domain's first
+    /// address of the families `sockopt.domainStrategy` prefers.
+    async fn server_address(
+        &self,
+        bootstrap: &dyn DnsResolver,
+        dialer: &TransportDialer,
+    ) -> Result<SocketAddr, CoreError> {
         let settings = &self.0.settings;
         let server = Target::new(
             match &settings.server {
@@ -319,7 +327,9 @@ impl MasqueOutbound {
             settings.port,
             RoutingNetwork::Udp,
         );
-        let candidates = resolve_server_candidates(&server, bootstrap).await?;
+        let candidates =
+            super::address_port::resolve_server(&server, self.0.address_port, bootstrap, dialer)
+                .await?;
         match &settings.server {
             TargetAddr::Ip(_) => candidates.into_iter().next(),
             TargetAddr::Domain(_) => {
