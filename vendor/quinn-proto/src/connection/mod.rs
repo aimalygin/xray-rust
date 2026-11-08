@@ -1511,6 +1511,7 @@ impl Connection {
             return Ok(());
         }
 
+        let prior_in_flight = self.path.in_flight.bytes;
         let mut ack_eliciting_acked = false;
         for packet in newly_acked.elts() {
             if let Some(info) = self.spaces[space].take(packet) {
@@ -1572,6 +1573,9 @@ impl Connection {
 
         // Must be called before crypto/pto_count are clobbered
         self.detect_lost_packets(now, space, true);
+        self.path
+            .congestion
+            .on_congestion_event_end(now, prior_in_flight);
 
         if self.peer_completed_address_validation() {
             self.pto_count = 0;
@@ -1674,7 +1678,11 @@ impl Connection {
     fn on_loss_detection_timeout(&mut self, now: Instant) {
         if let Some((_, pn_space)) = self.loss_time_and_space() {
             // Time threshold loss Detection
+            let prior_in_flight = self.path.in_flight.bytes;
             self.detect_lost_packets(now, pn_space, false);
+            self.path
+                .congestion
+                .on_congestion_event_end(now, prior_in_flight);
             self.set_loss_detection_timer(now);
             return;
         }
@@ -1806,6 +1814,13 @@ impl Connection {
                     self.orig_rem_cid,
                 );
                 self.remove_in_flight(&info);
+                if info.ack_eliciting {
+                    self.path.congestion.on_packet_lost_with_token(
+                        now,
+                        info.size.into(),
+                        info.delivery_token,
+                    );
+                }
                 for frame in info.stream_frames {
                     self.streams.retransmit(frame);
                 }
@@ -1846,6 +1861,11 @@ impl Connection {
         if let Some(packet) = lost_mtu_probe {
             let info = self.spaces[SpaceId::Data].take(packet).unwrap(); // safe: lost_mtu_probe is omitted from lost_packets, and therefore must not have been removed yet
             self.remove_in_flight(&info);
+            self.path.congestion.on_packet_lost_with_token(
+                now,
+                info.size.into(),
+                info.delivery_token,
+            );
             self.path.mtud.on_probe_lost();
             self.stats.path.lost_plpmtud_probes += 1;
         }

@@ -132,7 +132,17 @@ async fn packets_go_out_encoded_and_come_back_decoded() {
 #[tokio::test]
 async fn a_datagram_that_does_not_decode_is_dropped() {
     let (fake, socket, mask) = masked();
-    let mut cut = mask.encode(b"whole");
+    // Padding carries no clue and an encoding may end in it, so a cut of one
+    // byte could leave the datagram whole. Without padding every byte is four
+    // clues, and a datagram cut by one ends in an unfinished tuple.
+    let unpadded = DatagramMask::new(&SudokuConfig {
+        padding_min: 0,
+        padding_max: 0,
+        ..config()
+    })
+    .unwrap();
+    let mut cut = unpadded.encode(b"whole");
+    assert_eq!(cut.len(), 5 * 4);
     cut.truncate(cut.len() - 1);
     let incoming = [cut, b"plain bytes".to_vec(), mask.encode(b"next")];
     for datagram in incoming {

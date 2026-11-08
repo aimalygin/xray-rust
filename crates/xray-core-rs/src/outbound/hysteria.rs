@@ -422,13 +422,10 @@ pub(super) fn hysteria_quic_config(
             xray_config::QuicCongestion::Default | xray_config::QuicCongestion::Brutal
         );
         if negotiates {
-            // The parser rejects these profiles; never fall back silently.
-            if settings.bbr_profile != xray_config::QuicBbrProfile::Standard {
-                return Err(CoreError::UnsupportedOutboundNetwork);
-            }
             quic.congestion = if settings.brutal_up_bytes_per_sec > 0 {
                 H3Congestion::Brutal {
                     up_bytes_per_second: settings.brutal_up_bytes_per_sec,
+                    bbr_profile: super::xhttp::h3_bbr_profile(settings.bbr_profile),
                 }
             } else {
                 // Without its own rate the client never uses Brutal: BBR.

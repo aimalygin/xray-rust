@@ -3941,6 +3941,91 @@ async fn udp_hop_xhttp_h3_keeps_a_flow_across_hops_to_xray() {
     .expect("bounded XHTTP H3 UDP-hop interop");
 }
 
+/// Every `bbrProfile` with each congestion mode XHTTP H3 runs, through Xray's
+/// own server: the controller replaces quic-go's startup Reno after the
+/// handshake, and a megabyte echoes back intact.
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary"]
+async fn xhttp_h3_bbr_profiles_interop() {
+    timeout(Duration::from_secs(120), async {
+        let xray = timeout(
+            Duration::from_secs(60),
+            start_xray_vless_server(
+                &resolve_xray_checkout(),
+                XrayVlessServerConfig {
+                    security: XrayInboundSecurity::Tls,
+                    transport: XrayInboundTransport::Xhttp {
+                        path: XHTTP_PATH,
+                        mode: "stream-one",
+                        tls_alpn: Some("h3"),
+                    },
+                    flow: None,
+                },
+            ),
+        )
+        .await
+        .expect("start XHTTP H3 Xray server timeout");
+        for quic in [
+            serde_json::json!({"bbrProfile":"conservative"}),
+            serde_json::json!({"congestion":"bbr","bbrProfile":"aggressive"}),
+            serde_json::json!({"bbrProfile":"standard"}),
+            serde_json::json!({"congestion":"force-brutal","brutalUp":"100 mbps","bbrProfile":"aggressive"}),
+            serde_json::json!({"congestion":"reno","bbrProfile":"conservative"}),
+        ] {
+            let mut quic_params = quic.clone();
+            quic_params["disableChromeParrot"] = serde_json::json!(true);
+            let mut rust_config = rust_xhttp_core_config(
+                xray.addr,
+                StreamSecurity::Tls(TlsSettings {
+                    server_name: Some(TLS_SERVER_NAME.to_owned()),
+                    fingerprint: Some("chrome".to_owned()),
+                    allow_insecure: true,
+                    pinned_peer_cert_sha256: Vec::new(),
+                    verify_peer_cert_by_name: Vec::new(),
+                    alpn: vec!["h3".to_owned()],
+                }),
+                XhttpMode::StreamOne,
+            );
+            let raw = serde_json::json!({"outbounds":[{"protocol":"freedom","streamSettings":{
+                "network":"xhttp","security":"tls","tlsSettings":{"serverName":"example.com","alpn":["h3"]},
+                "finalmask":{"quicParams":quic_params}}}]});
+            rust_config.outbounds[0].stream.quic_params = parse_xray_json(&raw.to_string())
+                .unwrap()
+                .config
+                .outbounds[0]
+                .stream
+                .quic_params
+                .clone();
+            assert!(rust_config.outbounds[0].stream.quic_params.is_some());
+
+            let mut core = Core::new(rust_config).expect("create Rust XHTTP core");
+            core.start().await.expect("start Rust XHTTP core");
+            let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+            // The echo server takes one connection.
+            let (echo_addr, _echo) = spawn_echo_server().await;
+            let mut client = open_socks_flow(&xray, socks_addr, echo_addr).await;
+            let payload = bulk_interop_payload(1024 * 1024);
+            let mut echoed = vec![0; payload.len()];
+            let started = std::time::Instant::now();
+            let (mut reader, mut writer) = client.split();
+            let (written, read) = tokio::join!(writer.write_all(&payload), async {
+                timeout(Duration::from_secs(30), reader.read_exact(&mut echoed)).await
+            });
+            written.unwrap();
+            if let Err(error) = read.expect("echo deadline") {
+                eprintln!("{}", xray.logs());
+                panic!("{quic}: {error}");
+            }
+            eprintln!("XHTTP H3 {quic}: 1 MiB echoed in {:?}", started.elapsed());
+            assert_eq!(echoed, payload, "{quic}");
+            drop(client);
+            core.stop().await.unwrap();
+        }
+    })
+    .await
+    .expect("bounded XHTTP H3 BBR profile interop");
+}
+
 /// Xray-core v26.10.31 stopped answering every OPTIONS request as a CORS
 /// preflight (XTLS/Xray-core#7290): one without
 /// `Access-Control-Request-Method` is an uplink, as any other non-GET method

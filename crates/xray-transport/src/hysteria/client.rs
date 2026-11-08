@@ -15,10 +15,10 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use zeroize::Zeroizing;
 
-use crate::quic_congestion::BrutalDecision;
+use crate::quic_congestion::ControllerSwitch;
 use crate::stream::{
-    configure_quic_datagram_socket, connect_quic_transport_with_datagrams, H3Congestion,
-    H3ConnectConfig, H3Error, H3QuicConfig, QuicSendWindow, QUIC_INITIAL_SEND_WINDOW,
+    configure_quic_datagram_socket, connect_quic_transport_with_datagrams, H3ConnectConfig,
+    H3Error, H3QuicConfig, QuicSendWindow, QUIC_INITIAL_SEND_WINDOW,
 };
 use crate::{TlsClientConfig, TlsConnector, TransportError};
 
@@ -410,13 +410,10 @@ impl HysteriaClient {
             .open_xdns(&config.carrier, tls.socket_protector_arc())
             .await
             .map_err(|_| HysteriaError::Connect)?;
-        // Hysteria's default mode picks Brutal or BBR from the server's reply.
-        let negotiation = match config.quic.congestion {
-            H3Congestion::Brutal {
-                up_bytes_per_second,
-            } => Some((up_bytes_per_second, Arc::new(BrutalDecision::default()))),
-            _ => None,
-        };
+        // Xray's Hysteria dialer installs its controller after
+        // authentication: Brutal or BBR, in its default mode by the server's
+        // reply.
+        let switch = Arc::new(ControllerSwitch::default());
         let (endpoint, connection, _, wire_peer) = connect_quic_transport_with_datagrams(
             H3ConnectConfig {
                 remote_addr: config.remote_addr,
@@ -434,7 +431,7 @@ impl HysteriaClient {
             )),
             Some(&config.carrier),
             session.clone(),
-            negotiation.as_ref().map(|(_, decision)| decision),
+            Some(&switch),
         )
         .await
         .map_err(|error| match error {
@@ -484,11 +481,8 @@ impl HysteriaClient {
             return Err(HysteriaError::Authentication);
         }
         let (udp_enabled, server_receive_rate) = parse_auth_headers(response.headers())?;
-        if let Some((up, decision)) = &negotiation {
-            // Xray: Brutal at min(brutalUp, server rate) once both are known.
-            decision.decide(
-                (*up > 0 && server_receive_rate > 0).then(|| (*up).min(server_receive_rate)),
-            );
+        if let Some(installed) = config.quic.installed_controller(Some(server_receive_rate)) {
+            switch.install(installed);
         }
         stream.stop_sending(h3::error::Code::H3_REQUEST_CANCELLED);
         drop(stream);
@@ -594,6 +588,16 @@ impl HysteriaClient {
     }
     pub fn active_udp_sessions(&self) -> usize {
         self.shared.udp.len()
+    }
+    /// The congestion controller the connection runs now: `new-reno`,
+    /// `quinn-bbr`, `xray-bbr-<profile>` or `brutal`. For diagnostics and
+    /// tests.
+    #[doc(hidden)]
+    pub fn congestion_controller(&self) -> Option<&'static str> {
+        let connection = self.shared.connection().ok()?;
+        Some(crate::quic_congestion::controller_name(
+            connection.congestion_state(),
+        ))
     }
 }
 
