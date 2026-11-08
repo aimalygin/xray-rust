@@ -3,6 +3,7 @@
 mod codec;
 pub(crate) mod datagram;
 mod gorand;
+pub(crate) mod quic;
 mod stream;
 mod table;
 

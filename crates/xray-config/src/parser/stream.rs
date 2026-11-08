@@ -116,12 +116,10 @@ impl Parser<'_> {
                 "UDP noise requires Hysteria, mKCP or XHTTP with exact h3 ALPN",
             );
         }
-        // Sudoku inflates every datagram at least fourfold: QUIC's packets
-        // would need the system to fragment them, which its sockets forbid.
-        if udp_sudoku.is_some() && stream_network != StreamNetwork::Kcp {
+        if udp_sudoku.is_some() && !udp_carrier {
             self.error(
                 format!("$.outbounds[{index}].streamSettings.finalmask.udp"),
-                "a sudoku UDP mask requires mKCP here",
+                "a sudoku UDP mask requires mKCP, Hysteria or XHTTP with exact h3 ALPN",
             );
         }
         if udp_header_custom.is_some() && !udp_carrier {

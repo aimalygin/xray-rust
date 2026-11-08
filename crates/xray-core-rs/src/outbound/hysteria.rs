@@ -107,6 +107,11 @@ impl HysteriaOutbound {
                 .udp_header_custom
                 .as_ref()
                 .map(super::carrier::quic_header_custom),
+            sudoku: config
+                .stream
+                .udp_sudoku
+                .as_ref()
+                .map(super::carrier::quic_sudoku),
             ..Default::default()
         };
         let (quic, receive_bytes_per_second) =

@@ -2110,7 +2110,7 @@ exchanges and both modes against Xray-core v26.10.31's servers.
 shuffled by the password, with padding bytes between clues. It has no
 handshake. It is supported as a TCP mask on every TCP carrier (raw, TLS,
 REALITY, WebSocket, HTTPUpgrade, gRPC and XHTTP over TCP) and as a UDP mask
-on mKCP:
+on mKCP, Hysteria and XHTTP over HTTP/3:
 
 ```json
 "finalmask": {"tcp": [{"type": "sudoku", "settings": {
@@ -2142,10 +2142,14 @@ be the last one in `finalmask.tcp`: the `fragment` and `header-custom` masks
 before it go through it, so the `header-custom` handshake is encoded too.
 On mKCP each datagram is encoded on its own, at least four times its size;
 a legacy mask after it drops mKCP's datagrams past 4096 bytes, as in
-Xray-core, so put legacy masks before it. Hysteria and XHTTP over HTTP/3
-refuse the UDP form here: their sockets forbid the IP fragments a fourfold
-QUIC packet needs. An unknown `ascii` mode or a malformed table is refused
-when the configuration is read; Xray-core fails every dial with it.
+Xray-core, so put legacy masks before it. On Hysteria and XHTTP over HTTP/3
+each QUIC packet is encoded the same way, so a 1200-byte packet becomes a
+datagram of about 5 KB. The carrier lets the system fragment it and turns
+path MTU discovery off, as quic-go is on Xray-core's masked conn. Put
+Salamander before sudoku: after it, Xray-core's server drops every reply
+longer than 4096 bytes, which is all of them. An unknown `ascii` mode or a
+malformed table is refused when the configuration is read; Xray-core fails
+every dial with it.
 `scripts/check-sudoku-interop.sh` decodes fresh output of Xray-core's own
 mask and runs every carrier against its servers.
 

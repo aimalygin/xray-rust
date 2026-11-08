@@ -166,6 +166,8 @@ pub struct H3QuicConfig {
     pub udp_noise: Option<crate::udp_noise::UdpNoiseConfig>,
     /// A `header-custom` UDP mask, at its place among the noise mask.
     pub udp_header_custom: Option<crate::hysteria::HeaderCustomCarrier>,
+    /// A `sudoku` UDP mask, at its place among the other masks.
+    pub udp_sudoku: Option<crate::hysteria::SudokuCarrier>,
     pub debug: bool,
 }
 
@@ -191,6 +193,7 @@ impl Default for H3QuicConfig {
             udp_hop: H3UdpHopConfig::default(),
             udp_noise: None,
             udp_header_custom: None,
+            udp_sudoku: None,
             debug: false,
         }
     }
@@ -218,6 +221,14 @@ impl H3QuicConfig {
     pub fn diagnostics(&self) -> Result<H3Diagnostics, H3Error> {
         if let Some(noise) = &self.udp_noise {
             noise.validate().map_err(H3Error::UdpSocket)?;
+        }
+        if self.udp_sudoku.is_some() {
+            self.hop_carrier().validate().map_err(|_| {
+                H3Error::UdpSocket(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "an invalid sudoku UDP mask",
+                ))
+            })?;
         }
         if self.udp_header_custom.is_some() {
             self.hop_carrier().validate().map_err(|_| {
@@ -290,12 +301,14 @@ impl H3QuicConfig {
     }
 
     /// The carrier transforms this XHTTP connection applies itself: UDP hop,
-    /// noise and a custom header. Hysteria passes its own carrier instead.
+    /// noise, a custom header and sudoku. Hysteria passes its own carrier
+    /// instead.
     fn hop_carrier(&self) -> crate::hysteria::HysteriaCarrierConfig {
         crate::hysteria::HysteriaCarrierConfig {
             udp_hop: self.udp_hop.clone(),
             noise: self.udp_noise.clone(),
             header_custom: self.udp_header_custom.clone(),
+            sudoku: self.udp_sudoku.clone(),
             ..Default::default()
         }
     }

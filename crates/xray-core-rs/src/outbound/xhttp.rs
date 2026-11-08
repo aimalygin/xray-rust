@@ -118,6 +118,7 @@ pub(super) fn build_xhttp_download(
             download.stream.quic_params.as_ref(),
             download.stream.udp_noise.as_ref(),
             download.stream.udp_header_custom.as_ref(),
+            download.stream.udp_sudoku.as_ref(),
         )?,
         happy_eyeballs: happy_eyeballs_config(&download.stream),
         socket_options: if penetrate {
@@ -140,6 +141,7 @@ pub(super) fn build_xhttp_transport(
     quic_params: Option<&QuicParamsSettings>,
     noise: Option<&xray_config::UdpNoiseSettings>,
     header_custom: Option<&xray_config::HeaderCustomUdp>,
+    sudoku: Option<&xray_config::UdpSudoku>,
 ) -> Result<XhttpTransport, CoreError> {
     let http_version = xhttp_http_version(security)?;
     let endpoint = xhttp_endpoint(settings, security, destination)?;
@@ -161,8 +163,14 @@ pub(super) fn build_xhttp_transport(
             "a header-custom UDP mask requires XHTTP H3",
         ));
     }
+    if sudoku.is_some() && http_version != XhttpHttpVersion::Http3 {
+        return Err(invalid_xhttp_configuration(
+            "a sudoku UDP mask requires XHTTP H3",
+        ));
+    }
     h3_quic.udp_noise = noise.map(udp_noise_config).transpose()?;
     h3_quic.udp_header_custom = header_custom.map(super::carrier::quic_header_custom);
+    h3_quic.udp_sudoku = sudoku.map(super::carrier::quic_sudoku);
     XhttpTransport::new_with_h3_quic(config, endpoint, http_version, xmux, h3_quic)
         .map_err(invalid_xhttp_configuration)
 }

@@ -794,7 +794,7 @@
         "padding_max"
       ],
       "id": "SUDOKU_MASK",
-      "notes": "TCP: the last mask, outermost on the wire; UDP: mKCP only here. ascii is entropy (default) or ascii; customTable(s) are 8 characters of 2 x, 2 p and 4 v, ignored in ASCII mode; padding is a percentage range, each end at most 100. A snake_case name applies when its camelCase field is empty or zero. Unknown modes and malformed tables are refused here, where Xray-core fails every dial."
+      "notes": "TCP: the last mask, outermost on the wire; UDP: mKCP, Hysteria and XHTTP with exact h3 ALPN, where the carrier lets the system fragment its datagrams. ascii is entropy (default) or ascii; customTable(s) are 8 characters of 2 x, 2 p and 4 v, ignored in ASCII mode; padding is a percentage range, each end at most 100. A snake_case name applies when its camelCase field is empty or zero. Unknown modes and malformed tables are refused here, where Xray-core fails every dial."
     },
     {
       "context": "streamSettings.finalmask.tcp[].settings (xmc)",

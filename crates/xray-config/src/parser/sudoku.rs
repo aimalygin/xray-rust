@@ -1,6 +1,6 @@
 //! The `sudoku` finalmask, as Xray-core v26.10.31's `Sudoku.Build` reads it.
 use super::*;
-use crate::{go_lowercase, SudokuMask};
+use crate::{go_lowercase, SudokuMask, UdpSudoku};
 
 impl Parser<'_> {
     /// The settings of a `sudoku` mask, TCP or UDP. Xray-core leaves an
@@ -113,19 +113,30 @@ impl Parser<'_> {
         }
     }
 
-    /// The `sudoku` entry of `finalmask.udp`. The stream checks its carrier.
+    /// The `sudoku` entry of `finalmask.udp`, with its place among a QUIC
+    /// carrier's other masks. The stream checks its carrier.
     pub(super) fn parse_udp_sudoku(
         &mut self,
         stream: Option<&Value>,
         index: usize,
-    ) -> Option<SudokuMask> {
+    ) -> Option<UdpSudoku> {
         let masks = stream?.pointer("/finalmask/udp")?.as_array()?;
-        let (i, mask) = masks.iter().enumerate().find(|(_, mask)| {
-            mask.get("type")
-                .and_then(Value::as_str)
-                .is_some_and(|kind| go_lowercase(kind) == "sudoku")
-        })?;
+        let position = |name: &str| {
+            masks.iter().position(|mask| {
+                mask.get("type")
+                    .and_then(Value::as_str)
+                    .is_some_and(|kind| go_lowercase(kind) == name)
+            })
+        };
+        let i = position("sudoku")?;
         let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp[{i}].settings");
-        self.parse_sudoku(mask.get("settings").unwrap_or(&Value::Null), &path)
+        let mask = self.parse_sudoku(masks[i].get("settings").unwrap_or(&Value::Null), &path)?;
+        let before = |name: &str| position(name).is_some_and(|other| i < other);
+        Some(UdpSudoku {
+            mask,
+            before_salamander: before("salamander"),
+            before_noise: before("noise"),
+            before_header_custom: before("header-custom"),
+        })
     }
 }
