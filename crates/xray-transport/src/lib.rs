@@ -27,6 +27,7 @@ pub mod header_custom;
 pub mod hysteria;
 pub mod kcp;
 mod memory_class;
+pub mod sudoku;
 
 /// Validate a TLS DNS/IP verification name without performing network I/O.
 pub fn validate_tls_server_name(server_name: &str) -> Result<(), TransportError> {
@@ -418,6 +419,17 @@ pub trait PreparedRealityTlsConnection: Send {
     ) -> Result<BoxedTransportStream, TransportError> {
         Err(TransportError::UnsupportedConnectorConfig(
             "REALITY tlshello fragmentation",
+        ))
+    }
+
+    /// Completes the handshake over a carrier that TCP masks already wrap,
+    /// such as `sudoku`. Legacy engines fail explicitly.
+    async fn complete_over_stream(
+        self: Box<Self>,
+        _stream: BoxedTransportStream,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        Err(TransportError::UnsupportedConnectorConfig(
+            "REALITY over a masked carrier",
         ))
     }
 }

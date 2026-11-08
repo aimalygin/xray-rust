@@ -524,6 +524,14 @@ impl RealityTlsSession for RustlsRealityTlsSession {
         let stream = crate::fragment::FragmentStream::new(Box::new(tcp_stream), fragment);
         self.complete_over(stream, prepared, mldsa65_verify).await
     }
+    async fn complete_over_stream(
+        self: Box<Self>,
+        stream: BoxedTransportStream,
+        prepared: crate::reality::RealityPreparedHandshake,
+        mldsa65_verify: Option<Vec<u8>>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        self.complete_over(stream, prepared, mldsa65_verify).await
+    }
 }
 impl RustlsRealityTlsSession {
     async fn complete_over<S>(

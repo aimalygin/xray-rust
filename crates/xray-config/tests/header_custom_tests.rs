@@ -290,11 +290,11 @@ fn the_mask_list_takes_a_fragment_first_then_header_custom() {
         ),
         (
             json!([header.clone(), header.clone()]),
-            "only one fragment and one header-custom",
+            "only one fragment, one header-custom and one sudoku",
         ),
         (
-            json!([{"type": "sudoku"}]),
-            "only one fragment and one header-custom",
+            json!([{"type": "sudoku"}, header.clone()]),
+            "sudoku must be the last TCP mask",
         ),
     ] {
         let errors = parse_xray_json(&config(masks.clone()))

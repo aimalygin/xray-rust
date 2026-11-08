@@ -20,31 +20,41 @@ impl Parser<'_> {
         &mut self,
         stream: Option<&Value>,
         index: usize,
-    ) -> (Option<TcpFragmentSettings>, Option<HeaderCustomTcp>) {
+    ) -> (
+        Option<TcpFragmentSettings>,
+        Option<HeaderCustomTcp>,
+        Option<crate::SudokuMask>,
+    ) {
         let Some(raw) = stream
             .and_then(|stream| stream.get("finalmask"))
             .and_then(|finalmask| finalmask.get("tcp"))
             .filter(|raw| !raw.is_null())
         else {
-            return (None, None);
+            return (None, None, None);
         };
         let path = format!("$.outbounds[{index}].streamSettings.finalmask.tcp");
         let Some(masks) = raw.as_array() else {
             self.error(path, "finalmask.tcp must be an array or null");
-            return (None, None);
+            return (None, None, None);
         };
         let mut fragment = None;
         let mut header = None;
+        let mut sudoku = None;
         for (i, mask) in masks.iter().enumerate() {
             let mask_path = format!("{path}[{i}]");
             self.reject_unknown_fields(mask, &mask_path, &surface::TCP_MASK_ENTRY);
             let settings = mask.get("settings").unwrap_or(&Value::Null);
-            match mask
-                .get("type")
-                .and_then(Value::as_str)
-                .map(go_lowercase)
-                .as_deref()
-            {
+            let kind = mask.get("type").and_then(Value::as_str).map(go_lowercase);
+            // Sudoku transforms every byte the masks before it write, so it
+            // goes last here, outermost on the wire.
+            if sudoku.is_some() {
+                self.error(&mask_path, "sudoku must be the last TCP mask here");
+                continue;
+            }
+            match kind.as_deref() {
+                Some("sudoku") => {
+                    sudoku = Some(self.parse_sudoku(settings, &format!("{mask_path}.settings")));
+                }
                 Some("fragment") if fragment.is_none() && header.is_none() => {
                     fragment = Some(self.parse_tcp_fragment(
                         settings,
@@ -63,11 +73,11 @@ impl Parser<'_> {
                 }
                 _ => self.error(
                     &mask_path,
-                    "only one fragment and one header-custom TCP mask are supported",
+                    "only one fragment, one header-custom and one sudoku TCP mask are supported",
                 ),
             }
         }
-        (fragment.flatten(), header.flatten())
+        (fragment.flatten(), header.flatten(), sudoku.flatten())
     }
 
     /// `HeaderCustomTCP`: `clients`, `servers` and `errors`, each a list of

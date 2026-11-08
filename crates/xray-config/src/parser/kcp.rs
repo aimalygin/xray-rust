@@ -139,6 +139,7 @@ impl Parser<'_> {
                 }
                 "noise" => result.push(KcpMask::Noise),
                 "header-custom" => result.push(KcpMask::HeaderCustom),
+                "sudoku" => result.push(KcpMask::Sudoku),
                 _ => {}
             }
         }

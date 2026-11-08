@@ -61,9 +61,10 @@ impl Parser<'_> {
             }
             quic_params.get_or_insert_with(Default::default).udp_hop = hop;
         }
-        let (tcp_fragment, tcp_header_custom) = self.parse_tcp_masks(stream, index);
+        let (tcp_fragment, tcp_header_custom, tcp_sudoku) = self.parse_tcp_masks(stream, index);
         let udp_noise = self.parse_udp_noise(stream, stream_network, index);
         let udp_header_custom = self.parse_udp_header_custom(stream, index);
+        let udp_sudoku = self.parse_udp_sudoku(stream, index);
         let socket_options = self.parse_socket_options(stream, index);
         if let Some(stream) = stream {
             self.validate_stream_settings_compatibility(stream, index);
@@ -104,6 +105,14 @@ impl Parser<'_> {
             self.error(
                 format!("$.outbounds[{index}].streamSettings.finalmask.udp"),
                 "UDP noise requires Hysteria, mKCP or XHTTP with exact h3 ALPN",
+            );
+        }
+        // Sudoku inflates every datagram at least fourfold: QUIC's packets
+        // would need the system to fragment them, which its sockets forbid.
+        if udp_sudoku.is_some() && stream_network != StreamNetwork::Kcp {
+            self.error(
+                format!("$.outbounds[{index}].streamSettings.finalmask.udp"),
+                "a sudoku UDP mask requires mKCP here",
             );
         }
         if udp_header_custom.is_some() && !udp_carrier {
@@ -163,6 +172,8 @@ impl Parser<'_> {
             tcp_fragment,
             tcp_header_custom,
             udp_header_custom,
+            tcp_sudoku,
+            udp_sudoku,
             udp_noise,
             socket_options,
         })

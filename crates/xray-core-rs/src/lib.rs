@@ -761,7 +761,9 @@ impl Core {
         ensure_effective_dns_tag(&mut config);
         for outbound in &config.outbounds {
             outbound::validate_udp_noise(&outbound.stream)?;
-            if (outbound.stream.udp_noise.is_some() || outbound.stream.udp_header_custom.is_some())
+            if (outbound.stream.udp_noise.is_some()
+                || outbound.stream.udp_header_custom.is_some()
+                || outbound.stream.udp_sudoku.is_some())
                 && matches!(
                     outbound.settings,
                     xray_config::OutboundSettings::Freedom(_)
@@ -801,9 +803,10 @@ impl Core {
                 )
                 .map_err(|_| CoreError::UnsupportedOutboundNetwork)?;
             }
-            // `header-custom` runs on the TCP carriers of the outbounds that
-            // proxy over a stream transport, not on direct or DNS dials.
-            if outbound.stream.tcp_header_custom.is_some()
+            // `header-custom` and `sudoku` run on the TCP carriers of the
+            // outbounds that proxy over a stream transport, not on direct or
+            // DNS dials.
+            if (outbound.stream.tcp_header_custom.is_some() || outbound.stream.tcp_sudoku.is_some())
                 && !matches!(
                     outbound.settings,
                     xray_config::OutboundSettings::Vless(_)

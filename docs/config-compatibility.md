@@ -2104,6 +2104,51 @@ Other UDP carriers, duplicate custom masks and TCP-only item fields are
 rejected. `scripts/check-header-custom-interop.sh` checks the recorded UDP
 exchanges and both modes against Xray-core v26.10.31's servers.
 
+### sudoku mask
+
+`sudoku` hides every byte as four clues of a 4x4 sudoku grid, the grids
+shuffled by the password, with padding bytes between clues. It has no
+handshake. It is supported as a TCP mask on every TCP carrier (raw, TLS,
+REALITY, WebSocket, HTTPUpgrade, gRPC and XHTTP over TCP) and as a UDP mask
+on mKCP:
+
+```json
+"finalmask": {"tcp": [{"type": "sudoku", "settings": {
+  "password": "synthetic-example-password",
+  "ascii": "prefer_entropy",
+  "customTables": ["xppvvvvx", "vvxpvxpv"],
+  "paddingMin": 5, "paddingMax": 25
+}}]}
+```
+
+- `password` picks the grids, through Go's `math/rand` seeded from its
+  SHA-256, which this implementation reproduces.
+- `ascii` is empty, `entropy` or `prefer_entropy` for clue bytes with
+  bits `0x90` clear, or `ascii` or `prefer_ascii` for printable ones,
+  case-insensitive and trimmed.
+- `customTable`, or a list in `customTables` that the bytes take in turn,
+  places the clue bits in a byte: 8 characters of two `x` (always set), two
+  `p` and four `v`, case-insensitive, spaces ignored. ASCII mode ignores
+  them.
+- `paddingMin` and `paddingMax` are percentages, each capped at 100; one
+  chance between them is drawn per connection or datagram and decides each
+  padding byte.
+- `custom_table`, `custom_tables`, `padding_min` and `padding_max` apply when
+  their camelCase field is empty or zero, as in Xray-core.
+
+Over TCP the client writes classic sudoku, at least four bytes per byte,
+and reads the server's packed form, four bytes per three. The TCP mask must
+be the last one in `finalmask.tcp`: the `fragment` and `header-custom` masks
+before it go through it, so the `header-custom` handshake is encoded too.
+On mKCP each datagram is encoded on its own, at least four times its size;
+a legacy mask after it drops mKCP's datagrams past 4096 bytes, as in
+Xray-core, so put legacy masks before it. Hysteria and XHTTP over HTTP/3
+refuse the UDP form here: their sockets forbid the IP fragments a fourfold
+QUIC packet needs. An unknown `ascii` mode or a malformed table is refused
+when the configuration is read; Xray-core fails every dial with it.
+`scripts/check-sudoku-interop.sh` decodes fresh output of Xray-core's own
+mask and runs every carrier against its servers.
+
 ### TLS ClientHello shaping
 
 `security: "tls"` sends a uTLS-shaped ClientHello, as Xray-core does on every

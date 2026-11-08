@@ -10,6 +10,15 @@ long-term supported release series.
 
 ## Unreleased
 
+- The `sudoku` mask hides every byte as sudoku clues, with Xray-core's
+  tables: as a TCP mask on every TCP carrier, REALITY included, and as a UDP
+  mask on mKCP. Entropy, ASCII and custom layouts, rotating tables and
+  padding are read as Xray-core reads them. See
+  [sudoku mask](docs/config-compatibility.md#sudoku-mask).
+  - The TCP mask must be the last TCP mask; the UDP form is refused on
+    Hysteria and XHTTP over HTTP/3.
+  - An unknown `ascii` mode or a malformed custom table fails the
+    configuration, where Xray-core fails every dial.
 - `udphop` is now the last UDP mask, where Xray-core dials it: Xray-core
   reverses the list and dials only an outermost `udphop`, so a mask after it
   fails every dial with `incorrect index`. The first place used to be

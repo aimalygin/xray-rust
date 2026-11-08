@@ -1281,6 +1281,9 @@ pub enum KcpMask {
     /// The stream's `header-custom` mask, read into
     /// `StreamSettings::udp_header_custom`, at its place in the array.
     HeaderCustom,
+    /// The stream's `sudoku` mask, read into `StreamSettings::udp_sudoku`,
+    /// at its place in the array.
+    Sudoku,
 }
 
 impl fmt::Debug for KcpMask {
@@ -1291,6 +1294,7 @@ impl fmt::Debug for KcpMask {
             Self::Header(header) => f.debug_tuple("Header").field(header).finish(),
             Self::Noise => f.write_str("Noise"),
             Self::HeaderCustom => f.write_str("HeaderCustom"),
+            Self::Sudoku => f.write_str("Sudoku"),
         }
     }
 }
@@ -1585,6 +1589,10 @@ pub struct StreamSettings {
     /// The `header-custom` UDP mask, at its place among the stream's UDP
     /// masks.
     pub udp_header_custom: Option<HeaderCustomUdp>,
+    /// The `sudoku` TCP mask, the outermost of the TCP masks.
+    pub tcp_sudoku: Option<SudokuMask>,
+    /// The `sudoku` UDP mask, at its place among mKCP's masks.
+    pub udp_sudoku: Option<SudokuMask>,
     pub udp_noise: Option<UdpNoiseSettings>,
     pub socket_options: Option<SocketOptions>,
 }
@@ -1614,6 +1622,33 @@ pub struct HeaderCustomTcp {
     /// What a server answers a client sequence that does not match; read
     /// for parity, never sent by a client.
     pub errors: Vec<Vec<HeaderCustomItem>>,
+}
+
+/// The `sudoku` mask, as Xray-core v26.10.31's `Sudoku` reads it: the
+/// camelCase fields, or their snake_case names when those are unset.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct SudokuMask {
+    pub password: zeroize::Zeroizing<String>,
+    /// `ascii`: empty, `entropy` or `prefer_entropy`, or `ascii` or
+    /// `prefer_ascii`, as given.
+    pub ascii: String,
+    pub custom_table: String,
+    pub custom_tables: Vec<String>,
+    pub padding_min: u32,
+    pub padding_max: u32,
+}
+
+impl fmt::Debug for SudokuMask {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SudokuMask")
+            .field("password", &"<redacted>")
+            .field("ascii", &self.ascii)
+            .field("custom_table", &self.custom_table)
+            .field("custom_tables", &self.custom_tables)
+            .field("padding_min", &self.padding_min)
+            .field("padding_max", &self.padding_max)
+            .finish()
+    }
 }
 
 /// The `header-custom` UDP mask, as Xray-core v26.10.31's `HeaderCustomUDP`
