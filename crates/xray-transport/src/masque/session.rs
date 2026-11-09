@@ -297,6 +297,9 @@ impl Drop for MasqueTunnel {
 pub(crate) enum Addressing {
     /// Ask for one address of each family, as Xray's client does.
     Request,
+    /// WARP's addresses, which the proxy assigns without being asked:
+    /// Xray's `SetAssignedAddresses`.
+    Fixed(Vec<IpPrefix>),
 }
 
 /// The writer's share of the DATAGRAM capsules, over HTTP/2.
@@ -403,6 +406,15 @@ pub(crate) async fn start(
                     break local;
                 }
             }
+        }
+        // The addresses as written, not their prefixes' first hosts.
+        Addressing::Fixed(prefixes) => {
+            shared
+                .destinations
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .assigned = prefixes.clone();
+            prefixes.iter().map(|prefix| prefix.addr).collect()
         }
     };
     let _ = shared.local.set(local.clone());

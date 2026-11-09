@@ -78,7 +78,7 @@ pub use socket_options::{
     DEFAULT_TCP_KEEPALIVE_SECS,
 };
 pub use system_records::{is_domain_name, RecordResolver, SrvRecord, SystemRecordResolver};
-pub use tls::{plain_tls_client_hello_bytes, TlsConnector};
+pub use tls::{plain_tls_client_hello_bytes, TlsConnector, WarpTls};
 pub use utls_profiles::draw_modern_fingerprint;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
