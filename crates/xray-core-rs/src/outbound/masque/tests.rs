@@ -261,3 +261,108 @@ fn quic_runs_xrays_congestion_choices_and_bbr_profiles() {
         H3Congestion::ForceBrutal { .. }
     ));
 }
+
+/// A MASQUE outbound to `address` over HTTP/3 with `udp` as its UDP masks.
+fn masque_with_masks(address: &str, udp: serde_json::Value) -> OutboundConfig {
+    let config = serde_json::json!({"outbounds": [{"protocol": "masque",
+        "settings": {"address": address, "port": 443},
+        "streamSettings": {"network": "masque", "security": "tls",
+            "tlsSettings": {"serverName": "masque.example"},
+            "finalmask": {"udp": udp}}}]});
+    xray_config::parse_xray_json(&config.to_string())
+        .unwrap()
+        .config
+        .outbounds
+        .remove(0)
+}
+
+/// Xray's MASQUE dial opens its UDP socket through `FinalMask.DialUDP`, as
+/// XHTTP over HTTP/3 does: every UDP mask rides it, realm and xicmp too.
+#[test]
+fn every_udp_mask_rides_masque_over_http3() {
+    use serde_json::json;
+    let masks = [
+        (
+            "noise",
+            json!({"type": "noise", "settings": {"noise": [{"rand": "10-20"}]}}),
+        ),
+        (
+            "header-custom",
+            json!({"type": "header-custom", "settings": {
+                "client": [{"type": "str", "packet": "hi"}],
+                "server": [{"type": "str", "packet": "ok"}]}}),
+        ),
+        (
+            "sudoku",
+            json!({"type": "sudoku", "settings": {"password": "synthetic-sudoku"}}),
+        ),
+        (
+            "xdns",
+            json!({"type": "xdns", "settings": {
+                "domains": [{"names": ["t.example"], "types": [1, 5, 16, 28], "edns0": 4096}],
+                "resolvers": [{"addrs": ["192.0.2.53:53"]}]}}),
+        ),
+        (
+            "realm",
+            json!({"type": "realm", "settings": {
+                "url": "realm+http://synthetic-token@192.0.2.80:8080/masque",
+                "stunServers": ["192.0.2.3:3478"]}}),
+        ),
+        ("xicmp", json!({"type": "xicmp"})),
+    ];
+    for (name, mask) in masks {
+        let outbound = masque_with_masks("192.0.2.1", json!([mask]));
+        super::super::validate_udp_noise(&outbound.stream)
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let masque =
+            MasqueOutbound::new(&outbound).unwrap_or_else(|error| panic!("{name}: {error}"));
+        let quic = &masque.0.quic;
+        let set = match name {
+            "noise" => quic.udp_noise.is_some(),
+            "header-custom" => quic.udp_header_custom.is_some(),
+            "sudoku" => quic.udp_sudoku.is_some(),
+            "xdns" => quic.udp_xdns.is_some(),
+            "realm" => quic.udp_realm.is_some(),
+            _ => quic.udp_xicmp.is_some(),
+        };
+        assert!(set, "{name} must reach the QUIC carrier");
+
+        // Over HTTP/2 the carrier is TCP: the core refuses what the
+        // configuration would.
+        let with_alpn = |alpn: &[&str]| {
+            let mut stream = outbound.stream.clone();
+            let StreamSecurity::Tls(tls) = &mut stream.security else {
+                unreachable!()
+            };
+            tls.alpn = alpn.iter().map(|p| p.to_string()).collect();
+            super::super::validate_udp_noise(&stream)
+        };
+        assert!(with_alpn(&["h2"]).is_err(), "{name} over HTTP/2");
+        assert!(
+            with_alpn(&["h2", "h3"]).is_ok(),
+            "{name} over h2 and h3 runs HTTP/3"
+        );
+    }
+}
+
+/// Xray's xicmp client sends to its `ips`, else to the outbound's address,
+/// which it never resolves; a name without `ips` fails at start, as on
+/// every other carrier.
+#[test]
+fn xicmp_to_a_named_server_needs_its_ips() {
+    use serde_json::json;
+    let refused = MasqueOutbound::new(&masque_with_masks(
+        "masque.example",
+        json!([{"type": "xicmp"}]),
+    ));
+    assert!(
+        matches!(refused, Err(CoreError::UnsupportedOutboundNetwork)),
+        "{refused:?}"
+    );
+    MasqueOutbound::new(&masque_with_masks(
+        "masque.example",
+        json!([{"type": "xicmp", "settings": {"ips": ["192.0.2.1"]}}]),
+    ))
+    .unwrap();
+    MasqueOutbound::new(&masque_with_masks("192.0.2.1", json!([{"type": "xicmp"}]))).unwrap();
+}

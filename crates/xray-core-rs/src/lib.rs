@@ -850,6 +850,11 @@ impl Core {
             ) {
                 outbound::HysteriaOutbound::new(outbound)?;
             }
+            // Built for each flow's first use; its refusals belong to the
+            // start, as Hysteria's and WireGuard's.
+            if matches!(outbound.settings, xray_config::OutboundSettings::Masque(_)) {
+                outbound::MasqueOutbound::new(outbound)?;
+            }
         }
         let config = Arc::new(config);
         // Before any outbound exists: transports read it as they connect.

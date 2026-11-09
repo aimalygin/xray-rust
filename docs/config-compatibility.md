@@ -2103,14 +2103,16 @@ REALITY. A `fragment` mask may stand before it in the array; after it, Xray-core
 fragments the handshake rather than the TLS ClientHello, so that order is
 refused. The TCP `header-custom` form is refused on mKCP, XHTTP over HTTP/3,
 a split XHTTP download and outbounds that dial directly. The UDP form is
-supported on mKCP, Hysteria and XHTTP over HTTP/3, as described below.
+supported on mKCP, Hysteria, XHTTP over HTTP/3 and MASQUE over HTTP/3, as
+described below.
 Deliberate differences and the evidence are in
 [header-custom TCP](xray-core-differences.md#header-custom-tcp).
 
 ### header-custom UDP mask
 
 One `header-custom` entry in `streamSettings.finalmask.udp` is supported on
-mKCP, Hysteria and XHTTP with exact `h3` ALPN, at its position among the
+mKCP, Hysteria, XHTTP with exact `h3` ALPN and MASQUE over HTTP/3, at its
+position among the
 `noise`, `salamander` and `mkcp-legacy` entries:
 
 ```json
@@ -2359,7 +2361,12 @@ nonzero, negative turning it off. Congestion `brutal` runs BBR with
 `bbrProfile`, as in Xray-core, and `force-brutal` runs Brutal; as on XHTTP
 over HTTP/3, a profile's BBR and Brutal take over from NewReno once the
 handshake completes, where Xray-core's dial installs them (see
-[BBR profiles](#bbr-profiles)). The TCP fragment mask fails on
+[BBR profiles](#bbr-profiles)). Every UDP mask applies as on XHTTP over
+HTTP/3, [realm](#realm-mask) and [xicmp](#xicmp-mask) included, since
+Xray-core's dial opens the QUIC socket through the same `finalmask` path: a
+realm introduction counts toward the ten seconds a tunnel dial may take, as
+it runs under Xray-core's dial context, and an xicmp outbound whose address
+is a name needs `ips`. The TCP fragment mask fails on
 MASQUE over HTTP/3, which other TCP masks do not reach. `sockopt` applies
 to the QUIC socket, and `addressPortStrategy` and `domainStrategy` choose
 the server's address, as Xray-core's system dialer does.
@@ -2391,7 +2398,8 @@ Xray-core's server.
 ### realm mask
 
 `realm` reaches a server behind NAT through a rendezvous, as Hysteria's
-Realms do, on mKCP, Hysteria or XHTTP with exact `h3` ALPN. The server's
+Realms do, on mKCP, Hysteria, XHTTP with exact `h3` ALPN or MASQUE over
+HTTP/3. The server's
 inbound registers its public addresses with the rendezvous under a realm
 name; the client finds its own, asks the rendezvous to introduce it, and
 both send punch packets until one arrives. The rendezvous carries no
@@ -2452,8 +2460,8 @@ does and runs each carrier against its server through a local rendezvous.
 
 ### xicmp mask
 
-`xicmp` carries a UDP carrier in ICMP echo messages: mKCP, Hysteria or XHTTP
-with exact `h3` ALPN. The server reads echo requests on raw ICMP sockets and
+`xicmp` carries a UDP carrier in ICMP echo messages: mKCP, Hysteria, XHTTP
+with exact `h3` ALPN or MASQUE over HTTP/3. The server reads echo requests on raw ICMP sockets and
 answers in echo replies; the client sends echo requests:
 
 ```json

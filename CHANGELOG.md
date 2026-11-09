@@ -21,6 +21,10 @@ long-term supported release series.
     retired after 1800 to 3000 seconds. `finalmask.quicParams` and the UDP
     masks apply; congestion `brutal` runs BBR, as in Xray-core, and the BBR
     profiles take over after the handshake, as on XHTTP over HTTP/3.
+  - Every UDP mask rides the tunnel's QUIC socket as on XHTTP over HTTP/3,
+    `realm` and `xicmp` included, since Xray-core's dial opens it through the
+    same `finalmask` path. A realm introduction counts toward the tunnel's
+    ten seconds, as it runs under Xray-core's dial context.
   - MASQUE over HTTP/2 (`tlsSettings.alpn` naming `h2` and not `h3`) and
     `warp` are not supported yet and fail the configuration.
   - Deliberate differences: a tunnel takes 16 TCP and 512 UDP flows, the
@@ -29,8 +33,8 @@ long-term supported release series.
     chaining, Mux and the TCP fragment mask fail the configuration.
 - The WireGuard outbound's userspace TCP/IP stack now takes IP packets from
   any source, as MASQUE needs; WireGuard itself is unchanged.
-- The `xicmp` UDP mask carries mKCP, Hysteria and XHTTP over HTTP/3 in
-  ICMP, as Xray-core's client does: every datagram rides in an echo request
+- The `xicmp` UDP mask carries mKCP, Hysteria, XHTTP over HTTP/3 and
+  MASQUE over HTTP/3 in ICMP, as Xray-core's client does: every datagram rides in an echo request
   to the server after the client's 8-byte id, and the server's come back in
   its echo replies. See [xicmp mask](docs/config-compatibility.md#xicmp-mask).
   - `dgram` takes datagram ICMP sockets, which macOS, iOS, Android and Linux
@@ -44,7 +48,8 @@ long-term supported release series.
     a name, with no `ips`, is refused when the core starts, where Xray-core
     fails every dial.
 - The `realm` UDP mask reaches a server behind NAT, as Xray-core's client
-  does: mKCP, Hysteria and XHTTP over HTTP/3 learn their public addresses
+  does: mKCP, Hysteria, XHTTP over HTTP/3 and MASQUE over HTTP/3 learn their
+  public addresses
   from STUN servers over the carrier's own socket, a Hysteria realm
   rendezvous introduces them to the server registered under the realm's
   name, both sides punch, and the carrier's datagrams go to the address that

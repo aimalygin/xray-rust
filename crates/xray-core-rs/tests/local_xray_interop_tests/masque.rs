@@ -1,7 +1,9 @@
 //! The MASQUE client against Xray-core v26.10.31's own MASQUE server:
 //! CONNECT-IP over HTTP/3, TCP and UDP of both families through the
 //! tunnel's stack, destination names resolved through the tunnel,
-//! authentication and tunnel reuse.
+//! authentication, tunnel reuse, and the UDP masks under HTTP/3, realm's
+//! introduction among them (xicmp's is in its own suite, which runs as
+//! root).
 //!
 //! Targets are documentation addresses: Xray's server hands each flow to a
 //! freedom outbound whose redirect sends it to the loopback echo servers,
@@ -15,13 +17,13 @@ use tokio::net::UdpSocket;
 const USER: &str = "masque@test";
 const PASS: &str = "synthetic-masque-pass";
 const PATH: &str = "/masque/{target}/{ipproto}/";
-const ECHO_V4: &str = "192.0.2.10";
-const ECHO_V6: &str = "2001:db8::10";
+pub(super) const ECHO_V4: &str = "192.0.2.10";
+pub(super) const ECHO_V6: &str = "2001:db8::10";
 const ECHO_NAME: &str = "echo.masque.test";
 const DNS_V4: &str = "192.0.2.53";
 const DNS_V6: &str = "2001:db8::53";
 
-struct Task(tokio::task::JoinHandle<()>);
+pub(super) struct Task(tokio::task::JoinHandle<()>);
 impl Drop for Task {
     fn drop(&mut self) {
         self.0.abort();
@@ -38,7 +40,7 @@ impl DnsResolver for Resolver {
 
 /// Xray-core's MASQUE server on `alpn`, with one user, an IPv4 and an IPv6
 /// pool, a freedom outbound redirected to the loopback and a DNS outbound.
-async fn start_server(
+pub(super) async fn start_server(
     checkout: &Path,
     alpn: &str,
     customize: impl FnOnce(&mut Value),
@@ -113,7 +115,13 @@ async fn start_server(
         .spawn()
         .expect("start xray process");
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-    if h3 {
+    // An xicmp server reads raw ICMP and binds no UDP port.
+    let xicmp = config["inbounds"][0]["streamSettings"]["finalmask"]["udp"]
+        .as_array()
+        .is_some_and(|masks| masks.iter().any(|mask| mask["type"] == "xicmp"));
+    if xicmp {
+        wait_for_xray_startup(&mut child, &stdout_path, &stderr_path).await;
+    } else if h3 {
         wait_for_udp_listener(&mut child, addr, &stdout_path, &stderr_path).await;
     } else {
         wait_for_tcp_listener(&mut child, addr, &stdout_path, &stderr_path).await;
@@ -129,7 +137,7 @@ async fn start_server(
 }
 
 /// Our client: a SOCKS inbound and the MASQUE outbound to `server`.
-fn client_config(server: &XrayServer, alpn: &str, masque: Value) -> Value {
+pub(super) fn client_config(server: &XrayServer, alpn: &str, masque: Value) -> Value {
     json!({
         "inbounds": [{"protocol": "socks", "tag": "socks-in", "listen": "127.0.0.1", "port": 0,
             "settings": {"udp": true}},
@@ -144,7 +152,7 @@ fn client_config(server: &XrayServer, alpn: &str, masque: Value) -> Value {
     })
 }
 
-fn credentials() -> Value {
+pub(super) fn credentials() -> Value {
     json!({"path": PATH, "user": USER, "pass": PASS})
 }
 
@@ -204,7 +212,7 @@ async fn socks(
 }
 
 /// A loopback TCP echo that greets first, and a UDP echo.
-async fn echo_servers() -> (u16, u16, Task, Task) {
+pub(super) async fn echo_servers() -> (u16, u16, Task, Task) {
     let tcp = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let tcp_port = tcp.local_addr().unwrap().port();
     let tcp_task = Task(tokio::spawn(async move {
@@ -234,7 +242,7 @@ async fn echo_servers() -> (u16, u16, Task, Task) {
 }
 
 /// One TCP flow echoing 128 KiB through the tunnel to `target`.
-async fn tcp_echo(proxy: SocketAddr, target: &str, port: u16) -> std::io::Result<()> {
+pub(super) async fn tcp_echo(proxy: SocketAddr, target: &str, port: u16) -> std::io::Result<()> {
     let (mut stream, _) = socks(proxy, 1, target, port).await?;
     let mut greeting = [0; 8];
     stream.read_exact(&mut greeting).await?;
@@ -283,7 +291,7 @@ async fn http_connect_echo(proxy: SocketAddr, target: &str, port: u16) -> std::i
 }
 
 /// One UDP association echoing three sizes through the tunnel to `target`.
-async fn udp_echo(proxy: SocketAddr, target: &str, port: u16) -> std::io::Result<()> {
+pub(super) async fn udp_echo(proxy: SocketAddr, target: &str, port: u16) -> std::io::Result<()> {
     let (_control, relay) = socks(proxy, 3, "0.0.0.0", 0).await?;
     let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?;
     for size in [1usize, 512, 1200] {
@@ -328,7 +336,7 @@ async fn udp_echo(proxy: SocketAddr, target: &str, port: u16) -> std::io::Result
     Ok(())
 }
 
-async fn core(config: Value) -> Core {
+pub(super) async fn core(config: Value) -> Core {
     let dialer = Arc::new(TransportDialer::system().unwrap());
     let mut core = Core::with_runtime_dependencies(
         parse_xray_json(&config.to_string()).unwrap().config,
@@ -340,7 +348,11 @@ async fn core(config: Value) -> Core {
     core
 }
 
-async fn check(server: &XrayServer, case: &str, run: impl Future<Output = std::io::Result<()>>) {
+pub(super) async fn check(
+    server: &XrayServer,
+    case: &str,
+    run: impl Future<Output = std::io::Result<()>>,
+) {
     eprintln!("MASQUE {case}");
     let result = timeout(Duration::from_secs(60), run).await;
     assert!(
@@ -496,4 +508,108 @@ async fn masque_h3_runs_xrays_bbr_profiles() {
         .await;
         core.stop().await.unwrap();
     }
+}
+
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-masque-interop.sh"]
+async fn masque_h3_runs_under_udp_masks() {
+    let checkout = resolve_xray_checkout();
+    let (tcp_port, udp_port, _tcp, _udp) = echo_servers().await;
+    let header = json!({"type": "header-custom", "settings": {
+        "client": [{"type": "str", "packet": "synthetic-hello"}],
+        "server": [{"type": "str", "packet": "synthetic-ok"}]}});
+    let sudoku = |password: &str| json!({"type": "sudoku", "settings": {"password": password, "paddingMin": 5, "paddingMax": 25}});
+    let noise = json!({"type": "noise", "settings": {"noise": [
+        {"type": "str", "packet": "synthetic-noise", "delay": 2}]}});
+    for (case, server_masks, client_masks) in [
+        ("header-custom", json!([header]), json!([header])),
+        (
+            "sudoku with noise inside",
+            json!([sudoku("synthetic-sudoku")]),
+            json!([noise, sudoku("synthetic-sudoku")]),
+        ),
+    ] {
+        let server = start_server(&checkout, "h3", |config| {
+            config["inbounds"][0]["streamSettings"]["finalmask"] = json!({"udp": server_masks});
+        })
+        .await;
+        let mut config = client_config(&server, "h3", credentials());
+        config["outbounds"][0]["streamSettings"]["finalmask"] = json!({"udp": client_masks});
+        let mut core = core(config).await;
+        let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+        check(
+            &server,
+            &format!("H3 TCP under {case}"),
+            tcp_echo(proxy, ECHO_V4, tcp_port),
+        )
+        .await;
+        check(
+            &server,
+            &format!("H3 UDP over IPv6 under {case}"),
+            udp_echo(proxy, ECHO_V6, udp_port),
+        )
+        .await;
+        core.stop().await.unwrap();
+    }
+
+    // The mask is applied: another password carries nothing.
+    let server = start_server(&checkout, "h3", |config| {
+        config["inbounds"][0]["streamSettings"]["finalmask"] =
+            json!({"udp": [sudoku("synthetic-sudoku")]});
+    })
+    .await;
+    let mut config = client_config(&server, "h3", credentials());
+    config["outbounds"][0]["streamSettings"]["finalmask"] =
+        json!({"udp": [sudoku("another-password")]});
+    let mut core = core(config).await;
+    let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+    let result = timeout(Duration::from_secs(30), tcp_echo(proxy, ECHO_V4, tcp_port)).await;
+    assert!(
+        !matches!(result, Ok(Ok(()))),
+        "another sudoku password must carry nothing"
+    );
+    core.stop().await.unwrap();
+}
+
+/// realm: the tunnel's QUIC socket is introduced to Xray's server through a
+/// local rendezvous first, then the tunnel runs over the punched path.
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-masque-interop.sh"]
+async fn masque_h3_is_introduced_by_realm() {
+    use super::realm_rendezvous::{stun_server, Rendezvous};
+    let checkout = resolve_xray_checkout();
+    let rendezvous = Rendezvous::start("interop-token").await;
+    let (stun, _stun) = stun_server().await;
+    let name = "masque-realm";
+    let realm = json!({"type": "realm", "settings": {
+        "url": rendezvous.url(name), "stunServers": [stun.to_string()]}});
+    let server = start_server(&checkout, "h3", |config| {
+        config["inbounds"][0]["streamSettings"]["finalmask"] = json!({"udp": [realm.clone()]});
+    })
+    .await;
+    rendezvous.registered(name).await;
+    let (tcp_port, udp_port, _tcp, _udp) = echo_servers().await;
+    let mut config = client_config(&server, "h3", credentials());
+    config["outbounds"][0]["streamSettings"]["finalmask"] = json!({"udp": [realm]});
+    let mut core = core(config).await;
+    let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+    check(
+        &server,
+        "H3 TCP over realm",
+        tcp_echo(proxy, ECHO_V4, tcp_port),
+    )
+    .await;
+    check(
+        &server,
+        "H3 UDP over realm",
+        udp_echo(proxy, ECHO_V6, udp_port),
+    )
+    .await;
+    assert_eq!(
+        rendezvous.connects(),
+        1,
+        "one tunnel, one introduction; {}",
+        server.logs()
+    );
+    core.stop().await.unwrap();
 }

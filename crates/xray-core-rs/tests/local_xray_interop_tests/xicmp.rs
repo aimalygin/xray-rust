@@ -192,3 +192,45 @@ async fn xicmp_carries_xhttp_h3() {
     .await
     .unwrap();
 }
+
+/// MASQUE over HTTP/3: every packet of the tunnel's QUIC connection in an
+/// echo, TCP and UDP through the tunnel.
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core with raw ICMP sockets; run check-xicmp-interop.sh"]
+async fn xicmp_carries_masque_h3() {
+    use super::masque::{
+        check, client_config, core, credentials, echo_servers, start_server, tcp_echo, udp_echo,
+        ECHO_V4, ECHO_V6,
+    };
+    if !live() {
+        return;
+    }
+    let checkout = resolve_xray_checkout();
+    let server = timeout(
+        Duration::from_secs(60),
+        start_server(&checkout, "h3", |config| {
+            config["inbounds"][0]["streamSettings"]["finalmask"] =
+                json!({"udp": [xicmp(false, &[])]});
+        }),
+    )
+    .await
+    .unwrap();
+    let (tcp_port, udp_port, _tcp, _udp) = echo_servers().await;
+    let mut config = client_config(&server, "h3", credentials());
+    config["outbounds"][0]["streamSettings"]["finalmask"] = json!({"udp": [xicmp(true, &[])]});
+    let mut core = core(config).await;
+    let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+    check(
+        &server,
+        "H3 TCP over xicmp",
+        tcp_echo(proxy, ECHO_V4, tcp_port),
+    )
+    .await;
+    check(
+        &server,
+        "H3 UDP over IPv6 over xicmp",
+        udp_echo(proxy, ECHO_V6, udp_port),
+    )
+    .await;
+    core.stop().await.unwrap();
+}

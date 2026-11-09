@@ -155,12 +155,10 @@ impl MasqueOutbound {
         let StreamSecurity::Tls(tls) = &outbound.stream.security else {
             return Err(CoreError::UnsupportedOutboundSecurity);
         };
-        if outbound.proxy_settings.is_some()
-            || transport.warp.is_some()
-            || tls.alpn.iter().any(|p| p == "h2") && !tls.alpn.iter().any(|p| p == "h3")
-        {
+        if outbound.proxy_settings.is_some() || transport.warp.is_some() || uses_http2(&tls.alpn) {
             return Err(CoreError::UnsupportedOutboundNetwork);
         }
+        super::carrier::check_xicmp_server(&outbound.stream, &settings.server)?;
         let server_name = tls
             .server_name
             .clone()
@@ -355,6 +353,9 @@ impl MasqueOutbound {
                 quic: self.0.quic.clone(),
                 authority: self.0.authority.clone(),
                 request: self.0.request.clone(),
+                // A realm introduction counts toward the ten seconds, as it
+                // runs under the context of Xray's dial.
+                realm: self.0.quic.udp_realm.as_ref().map(|_| dialer.realm_env()),
             },
             dialer.tls_connector(),
         );
@@ -747,7 +748,14 @@ fn masque_quic_config(
         .map(super::carrier::quic_header_custom);
     config.udp_sudoku = stream.udp_sudoku.as_ref().map(super::carrier::quic_sudoku);
     config.udp_xdns = stream.udp_xdns.as_ref().map(super::carrier::xdns_config);
+    config.udp_realm = stream.udp_realm.as_ref().map(super::carrier::realm_config);
+    config.udp_xicmp = stream.udp_xicmp.as_ref().map(super::carrier::xicmp_config);
     Ok(config)
+}
+
+/// Xray's `usesHTTP2`: HTTP/2 when the ALPN names `h2` and not `h3`.
+pub(super) fn uses_http2(alpn: &[String]) -> bool {
+    alpn.iter().any(|p| p == "h2") && !alpn.iter().any(|p| p == "h3")
 }
 
 /// A TCP flow through a tunnel; it holds the tunnel while open.
