@@ -190,8 +190,8 @@ fn reverse_is_refused_and_testpre_is_read() {
     };
     for (settings, path) in [
         (
-            flat(json!({"reverse": {"tag": "r"}})),
-            "$.outbounds[0].settings.reverse",
+            flat(json!({"reverse": {"tag": ""}})),
+            "$.outbounds[0].settings.reverse.tag",
         ),
         (
             vnext(json!({"reverse": {"tag": "r"}})),
@@ -224,6 +224,8 @@ fn reverse_is_refused_and_testpre_is_read() {
         (flat(json!({"testpre": null})), 0),
         (flat(json!({})), 0),
         (vnext(json!({"testpre": 1})), 1),
+        // Xray-core keeps no connections ahead for a reverse outbound.
+        (flat(json!({"testpre": 4, "reverse": {"tag": "r"}})), 0),
     ] {
         assert_eq!(
             parsed_vless(settings.clone()).users[0].pre_connections,

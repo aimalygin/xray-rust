@@ -59,6 +59,7 @@ fn runtime_config() -> CoreConfig {
                     vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
                     pre_connections: 0,
                 }],
+                reverse: None,
             }),
         }],
         default_outbound_tag: None,

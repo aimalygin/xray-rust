@@ -67,6 +67,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                 vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
                 pre_connections: 0,
             }],
+            reverse: None,
         }),
     };
 
@@ -139,6 +140,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                     vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
                     pre_connections: 0,
                 }],
+                reverse: None,
             }),
         }],
         default_outbound_tag: Some("proxy".to_owned()),

@@ -2028,6 +2028,7 @@ fn rust_vless_outbound(
                 vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
                 pre_connections: 0,
             }],
+            reverse: None,
         }),
     }
 }

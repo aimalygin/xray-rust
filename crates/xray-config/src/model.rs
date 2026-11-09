@@ -1606,6 +1606,24 @@ pub struct VlessOutboundSettings {
     pub server: TargetAddr,
     pub port: u16,
     pub users: Vec<VlessUser>,
+    /// `reverse`, which only the simplified form takes: the outbound is then
+    /// the bridge of Xray-core's VLESS reverse proxy.
+    pub reverse: Option<VlessReverseSettings>,
+}
+
+/// The bridge side of Xray-core v26.10.31's VLESS reverse proxy. The
+/// outbound keeps tunnels open to its server, and the server opens
+/// connections back through them, each routed as if an inbound tagged `tag`
+/// had accepted it. Those connections reach only what routing sends them to,
+/// and a freedom outbound refuses them unless its `finalRules` allow.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VlessReverseSettings {
+    /// The inbound tag routing sees on the connections the server opens.
+    pub tag: String,
+    /// The outbound's `email`: the user routing sees on them.
+    pub email: String,
+    /// `sniffing`, as an inbound takes it: `None` unless enabled.
+    pub sniffing: Option<InboundSniffingConfig>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
