@@ -14,14 +14,18 @@
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::task::{ready, Context, Poll};
 use std::time::Duration;
 
 use async_compression::tokio::bufread::GzipDecoder;
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use http::Method;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+use tokio::io::{
+    AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf,
+};
 use tokio::sync::Semaphore;
 use tokio::time::Instant;
 use xray_proxy::go_url;
@@ -597,19 +601,10 @@ async fn send_http1(
         && response
             .content_encoding()
             .is_some_and(|encoding| encoding.eq_ignore_ascii_case(b"gzip"));
-    let mut raw = Vec::new();
     let limit = request.max_body.saturating_add(1);
-    if gzip {
-        let mut encoded = Vec::new();
-        response.read_to_end(&mut encoded).await.map_err(network)?;
-        raw = gunzip(&encoded, limit).await?;
-    } else {
-        (&mut response)
-            .take(limit as u64)
-            .read_to_end(&mut raw)
-            .await
-            .map_err(network)?;
-    }
+    let raw = read_body(tokio::io::BufReader::new(&mut response), gzip, limit).await?;
+    // A body read only up to the limit leaves the connection unusable, as
+    // Go does not reuse one whose body was closed before its end.
     let reusable = response.is_complete();
     let stream = if reusable {
         match response.into_reusable() {
@@ -634,15 +629,95 @@ async fn send_http1(
     ))
 }
 
-/// Decodes a gzip body, up to `limit` bytes of it.
-pub(crate) async fn gunzip(encoded: &[u8], limit: usize) -> Result<Vec<u8>, ServiceError> {
-    let mut decoded = Vec::new();
-    GzipDecoder::new(encoded)
-        .take(limit as u64)
-        .read_to_end(&mut decoded)
-        .await
-        .map_err(|error| ServiceError::Network(format!("gzip: {error}")))?;
-    Ok(decoded)
+/// A response body as Xray-core reads it from Go's transport, through
+/// `io.LimitReader(body, max+1)`: up to `limit` bytes, decoded as they
+/// arrive when the transport asked for gzip and got it, with Go's gzip
+/// reader's concatenated members read as one stream and an empty body
+/// read as nothing. What lies past the limit is never read, compressed or
+/// not: the caller lets that connection or stream go.
+pub(crate) async fn read_body<R: AsyncBufRead + Unpin>(
+    mut body: R,
+    gzip: bool,
+    limit: usize,
+) -> Result<Vec<u8>, ServiceError> {
+    let failed = |error: io::Error| ServiceError::Network(error.to_string());
+    let mut taken = Vec::new();
+    if gzip {
+        // Go's gzip.NewReader meets the end of an empty body as io.EOF,
+        // which ends the read without an error.
+        if body.fill_buf().await.map_err(failed)?.is_empty() {
+            return Ok(taken);
+        }
+        let mut decoder = GzipDecoder::new(body);
+        decoder.multiple_members(true);
+        decoder
+            .take(limit as u64)
+            .read_to_end(&mut taken)
+            .await
+            .map_err(failed)?;
+    } else {
+        body.take(limit as u64)
+            .read_to_end(&mut taken)
+            .await
+            .map_err(failed)?;
+    }
+    Ok(taken)
+}
+
+/// A body that arrives in chunks, HTTP/2's DATA frames or HTTP/3's, read
+/// as a byte stream: `next` polls for the next chunk, `None` at the end.
+pub(crate) struct ChunkedBody<F> {
+    next: F,
+    chunk: Bytes,
+    ended: bool,
+}
+
+impl<F> ChunkedBody<F> {
+    pub(crate) fn new(next: F) -> Self {
+        Self {
+            next,
+            chunk: Bytes::new(),
+            ended: false,
+        }
+    }
+}
+
+impl<F> AsyncBufRead for ChunkedBody<F>
+where
+    F: FnMut(&mut Context<'_>) -> Poll<Option<io::Result<Bytes>>> + Unpin,
+{
+    fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
+        let this = self.get_mut();
+        while this.chunk.is_empty() && !this.ended {
+            match ready!((this.next)(cx)) {
+                Some(Ok(chunk)) => this.chunk = chunk,
+                Some(Err(error)) => return Poll::Ready(Err(error)),
+                None => this.ended = true,
+            }
+        }
+        Poll::Ready(Ok(&this.chunk))
+    }
+
+    fn consume(self: Pin<&mut Self>, amount: usize) {
+        self.get_mut().chunk.advance(amount);
+    }
+}
+
+impl<F> AsyncRead for ChunkedBody<F>
+where
+    F: FnMut(&mut Context<'_>) -> Poll<Option<io::Result<Bytes>>> + Unpin,
+{
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let available = ready!(self.as_mut().poll_fill_buf(cx))?;
+        let taken = available.len().min(buf.remaining());
+        buf.put_slice(&available[..taken]);
+        self.consume(taken);
+        Poll::Ready(Ok(()))
+    }
 }
 
 /// When a request last moved a byte of either body.

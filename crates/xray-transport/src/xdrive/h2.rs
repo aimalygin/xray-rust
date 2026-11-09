@@ -4,14 +4,16 @@
 //! `keep_alive` without a frame from the server, and Go's request rules for
 //! `content-length` and the user agent.
 
+use std::io;
 use std::sync::Arc;
+use std::task::{ready, Context, Poll};
 use std::time::Duration;
 
 use bytes::Bytes;
 use http::{HeaderName, HeaderValue, Request};
 use tokio::task::{AbortHandle, JoinHandle};
 
-use super::client::{gunzip, Prepared, Progress, ServiceError, ServiceResponse};
+use super::client::{read_body, ChunkedBody, Prepared, Progress, ServiceError, ServiceResponse};
 use crate::masque::h2::{keep_alive, LastFrame, Watched};
 use crate::BoxedTransportStream;
 
@@ -148,23 +150,18 @@ impl H2Connection {
                 .get(http::header::CONTENT_ENCODING)
                 .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"gzip"));
         let limit = prepared.request.max_body.saturating_add(1);
-        let mut raw = Vec::new();
-        while let Some(chunk) = received.data().await {
-            let chunk = chunk.map_err(failed)?;
-            let _ = received.flow_control().release_capacity(chunk.len());
-            progress.alive();
-            raw.extend_from_slice(&chunk);
-            // A gzip body is bounded once decoded; a plain one here.
-            if !gzip && raw.len() >= limit {
-                raw.truncate(limit);
-                break;
-            }
-        }
-        let body = if gzip {
-            gunzip(&raw, limit).await?
-        } else {
-            raw
-        };
+        let chunks = ChunkedBody::new(|cx: &mut Context<'_>| {
+            let polled = ready!(received.poll_data(cx));
+            Poll::Ready(polled.map(|chunk| {
+                let chunk = chunk.map_err(|error| io::Error::other(format!("http2: {error}")))?;
+                let _ = received.flow_control().release_capacity(chunk.len());
+                progress.alive();
+                Ok(chunk)
+            }))
+        });
+        // Dropped before its end, the stream is reset, as Go's transport
+        // resets one whose body was closed early.
+        let body = read_body(chunks, gzip, limit).await?;
         Ok(ServiceResponse {
             status: parts.status.as_u16(),
             retry_after,

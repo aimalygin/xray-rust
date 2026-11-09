@@ -6,9 +6,12 @@
 //! Xray-core shapes that connection as Chrome unless `disableChromeParrot`
 //! is set; this one is Quinn's own.
 
+use std::io;
+use std::task::{ready, Context, Poll};
+
 use bytes::{Buf, Bytes};
 
-use super::client::{gunzip, Prepared, Progress, ServiceError, ServiceResponse};
+use super::client::{read_body, ChunkedBody, Prepared, Progress, ServiceError, ServiceResponse};
 use super::h2::build_request;
 use crate::stream::xhttp::H3Client;
 
@@ -50,20 +53,23 @@ pub(crate) async fn send(
             .get(http::header::CONTENT_ENCODING)
             .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"gzip"));
     let limit = prepared.request.max_body.saturating_add(1);
-    let mut raw = Vec::new();
-    while let Some(mut chunk) = stream.recv_data().await.map_err(failed)? {
-        progress.alive();
-        raw.extend_from_slice(&chunk.copy_to_bytes(chunk.remaining()));
-        if !gzip && raw.len() >= limit {
-            raw.truncate(limit);
-            break;
-        }
+    let chunks = ChunkedBody::new(|cx: &mut Context<'_>| {
+        let polled = ready!(stream.poll_recv_data(cx));
+        Poll::Ready(match polled {
+            Ok(Some(mut chunk)) => {
+                progress.alive();
+                Some(Ok(chunk.copy_to_bytes(chunk.remaining())))
+            }
+            Ok(None) => None,
+            Err(error) => Some(Err(io::Error::other(format!("http3: {error}")))),
+        })
+    });
+    let body = read_body(chunks, gzip, limit).await?;
+    // A body read only up to the limit is cancelled, as quic-go's client
+    // cancels one whose body was closed early.
+    if body.len() >= limit {
+        stream.stop_sending(h3::error::Code::H3_REQUEST_CANCELLED);
     }
-    let body = if gzip {
-        gunzip(&raw, limit).await?
-    } else {
-        raw
-    };
     Ok(ServiceResponse {
         status: response.status().as_u16(),
         retry_after,
