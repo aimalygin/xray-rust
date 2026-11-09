@@ -78,6 +78,10 @@ APPROVED_TEST_CREDENTIAL_DIGESTS = frozenset(
         "e34f7b59834d35a6dcb646f99b7d856df3ffbc955cece7c90714d13705703680",
         # WireGuard PSK: repeated synthetic 0x64 bytes, hex encoded.
         "f572435c3fd11241828de21d1f590ee80ca6331356a2ae1f978ea655052737d7",
+        # MASQUE WARP example keys: the P-256 scalar 1 as SEC 1, and an
+        # Ed25519 public key of repeated synthetic 0x53 bytes.
+        "0f1407943dea23f50af0b743e5901c3454d51d6529eada87f7c2a76ca6020b4f",
+        "bb2b644f6023c5cb01e7a9ae9b4b7e710419d98869e16d7e908b14d84f75eba6",
         # WireGuard example keys: repeated synthetic 0x42 / 0x53 bytes.
         "2d23b34a69ee132da2f1ade478741b06190067c4e249a71e7a2fe79ef959309e",
         "2954fb4e2f086a9706ad69dd33cb676a508ab5816b8a42617ddec899f0554b95",

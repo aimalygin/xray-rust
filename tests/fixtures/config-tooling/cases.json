@@ -1886,6 +1886,84 @@
       }
     },
     {
+      "name": "masque-warp",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "masque",
+            "settings": {
+              "address": "masque.example",
+              "port": 443,
+              "remoteDNS": [
+                "192.0.2.53"
+              ]
+            },
+            "streamSettings": {
+              "network": "masque",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "masque.example",
+                "alpn": [
+                  "h3"
+                ]
+              },
+              "masqueSettings": {
+                "host": "masque.example",
+                "path": "/masque/{target}/{ipproto}/",
+                "headers": {
+                  "X-Synthetic": "1"
+                },
+                "xmux": {
+                  "maxConcurrency": "4-8",
+                  "hKeepAlivePeriod": 20
+                },
+                "warp": {
+                  "privateKey": "MDECAQEEIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABoAoGCCqGSM49AwEH",
+                  "publicKey": "MCowBQYDK2VwAyEAU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1M=",
+                  "address": [
+                    "172.16.0.2/32",
+                    "fd00::2/128"
+                  ]
+                }
+              },
+              "finalmask": {
+                "quicParams": {
+                  "congestion": "bbr",
+                  "disableChromeParrot": true
+                }
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "MASQUE_WARP": "/outbounds/0/streamSettings/masqueSettings/warp"
+      }
+    },
+    {
+      "name": "masque-warp-with-user",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.masqueSettings.warp",
+      "base": "masque-warp",
+      "set": {
+        "/outbounds/0/streamSettings/masqueSettings/user": "synthetic-user"
+      }
+    },
+    {
       "name": "header-custom-tcp",
       "accepted": true,
       "config": {
