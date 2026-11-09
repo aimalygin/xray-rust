@@ -806,8 +806,20 @@ the portal's side is not supported. Deliberate differences:
 
 - A tunnel holds at most 512 sessions at once and a bridge keeps at most 16
   tunnels, draining ones included. A session past the bound is refused with
-  an error End. Xray-core sets no bound; its portal drains a tunnel after 256
-  sessions, so its own never reach these.
+  an error End. Xray-core sets no bound; its portal drains a tunnel once more
+  than 256 sessions, its control session included, were opened on it, so its
+  own never reach these.
+- Over a `dialerProxy` chain whose link is an XHTTP carrier, the freedom the
+  chain ends on does not refuse the portal's sessions, nor a tunnel over an
+  XHTTP carrier: XHTTP's connections are shared across flows here, and one
+  refused for a reverse session would stall the others. Xray-core's XHTTP dial
+  carries the session's context, so its freedom refuses them. (Over Mux,
+  `testpre` and gRPC neither refuses: Xray-core opens those connections
+  without the session's context.)
+- A `dialerProxy` to a dedicated freedom fragment outbound is folded into the
+  outbound here, so that freedom is no link: its final rules, and the reverse
+  sessions' refusal, do not apply to the connections or the tunnel it carries.
+  Xray-core's freedom refuses both unless its `finalRules` allow the server.
 - Each destination of a UDP session is a flow of its own, routed and relayed
   as a SOCKS association's flows are, and the session ends once its flows went
   idle, after 60 seconds. Xray-core routes the session once by its target and
@@ -839,11 +851,18 @@ takes (an unknown field in `reverse`, a VLESS inbound), and each case the
 parser takes builds a core but two with Vision on a raw carrier. A portal
 written in the tests from the same sources drives the core's monitor, Mux
 server and routing: TCP and UDP, freedom's refusal, routing by tag, source
-and email, a drained and a lost tunnel. Live, with Xray-core as the portal,
+and email, a drained and a lost tunnel, the freedom a chain ends on, under one
+freedom and under two, refusing sessions and a tunnel until it allows the next
+hop. Xray-core as the bridge, checked first against its own portal, refuses
+sessions at the freedom a chain ends on over raw, WebSocket, HTTPUpgrade,
+XHTTP, HTTP and SOCKS links and a tunnel through a freedom, and refuses none
+over Mux, gRPC or `testpre`. Live, with Xray-core as the portal,
 TCP and UDP services behind the bridge answer over raw, VLESS encryption,
 TLS with Vision, WebSocket, gRPC and XHTTP; freedom without final rules
 dials nothing; a wrong UUID gets no tunnel; and after 260 sessions the
-portal drains the first tunnel and the bridge opens a second
+portal drains the first tunnel and the bridge opens a second; chains through
+one and two freedoms are refused until the last allows the relay, Mux and gRPC
+links are not, and a tunnel through a freedom opens once it allows the portal
 (`scripts/check-reverse-interop.sh`).
 
 ## QUIC BBR profiles

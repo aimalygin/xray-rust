@@ -4920,9 +4920,7 @@ pub(crate) async fn open_vless_reverse_tunnel(
         },
         _ => return Err(CoreError::UnsupportedOutboundNetwork),
     };
-    let reverse_proxy = proxy
-        .filter(|_| vless.carrier().opens_a_connection_per_stream())
-        .map(|proxy| proxy.clone().for_reverse());
+    let reverse_proxy = proxy.and_then(|proxy| reverse_tunnel_proxy(vless, proxy));
     let proxy = reverse_proxy.as_ref().or(proxy);
     let flow = validate_outbound_flow(vless)?;
     let mut failures = 0;
@@ -4950,6 +4948,16 @@ pub(crate) async fn open_vless_reverse_tunnel(
             RoutingNetwork::Tcp,
         ),
     )
+}
+
+/// The chain a reverse tunnel dials through, as a session would meet it,
+/// or `None` to keep it: a gRPC or XHTTP carrier's connections are shared.
+/// The outbound's `mux` and `testpre` do not count, as they carry no tunnel.
+fn reverse_tunnel_proxy(vless: &VlessTcpOutbound, proxy: &TcpOutbound) -> Option<TcpOutbound> {
+    vless
+        .carrier()
+        .opens_a_connection_per_stream()
+        .then(|| proxy.clone().for_reverse())
 }
 
 /// One dial of a reverse tunnel's carrier, through `proxy` when the outbound
@@ -11676,5 +11684,216 @@ mod kcp_tests {
             router.select_tcp_outbound_direct(Some("proxy")),
             Err(CoreError::UnsupportedOutboundProxyNetwork("mKCP"))
         ));
+    }
+}
+
+#[cfg(test)]
+mod reverse_chain_tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    /// The first outbound of `outbounds`, compiled, with a `link` freedom
+    /// and a `hop` freedom that dials through it.
+    fn compile(first: Value) -> TcpOutbound {
+        let config = json!({"outbounds": [first,
+            {"tag": "hop", "protocol": "freedom",
+             "streamSettings": {"sockopt": {"dialerProxy": "link"}}},
+            {"tag": "link", "protocol": "freedom"}]});
+        let config = xray_config::parse_xray_json(&config.to_string())
+            .unwrap_or_else(|error| panic!("{:?}", error.diagnostics))
+            .config;
+        OutboundRouter::new(Arc::new(config))
+            .select_tcp_outbound()
+            .expect("compile the chain")
+    }
+
+    /// Whether the freedom a chain ends on refuses everything after its own
+    /// rules, which the `link` here has none of.
+    fn ends_on_a_refusing_freedom(outbound: &TcpOutbound) -> bool {
+        match outbound {
+            TcpOutbound::Chained { proxy, .. } => ends_on_a_refusing_freedom(proxy),
+            TcpOutbound::Freedom(freedom) => !freedom.final_rules().is_empty(),
+            _ => false,
+        }
+    }
+
+    fn vless(stream: Value) -> Value {
+        json!({"tag": "via", "protocol": "vless",
+            "settings": {"address": "127.0.0.1", "port": 443,
+                "id": "27848739-7e62-4138-9fd3-098a63964b6b", "encryption": "none"},
+            "streamSettings": stream})
+    }
+
+    fn through(proxy: &str, mut stream: Value) -> Value {
+        stream["sockopt"] = json!({"dialerProxy": proxy});
+        stream
+    }
+
+    #[test]
+    fn a_reverse_session_meets_the_chains_freedom_only_on_a_connection_of_its_own() {
+        let raw = json!({"network": "raw"});
+        let mut testpre = vless(through("link", raw.clone()));
+        testpre["settings"]["testpre"] = 2.into();
+        let with_mux = |concurrency: i32| {
+            let mut outbound = vless(through("link", raw.clone()));
+            outbound["mux"] = json!({"enabled": true, "concurrency": concurrency});
+            outbound
+        };
+        let cases = [
+            ("raw", vless(through("link", raw.clone())), true),
+            (
+                "WebSocket",
+                vless(through("link", json!({"network": "ws"}))),
+                true,
+            ),
+            (
+                "HTTPUpgrade",
+                vless(through("link", json!({"network": "httpupgrade"}))),
+                true,
+            ),
+            ("two freedoms", vless(through("hop", raw.clone())), true),
+            ("Mux without TCP pooling", with_mux(-1), true),
+            (
+                "SOCKS",
+                json!({"protocol": "socks",
+                    "settings": {"address": "127.0.0.1", "port": 1080},
+                    "streamSettings": through("link", raw.clone())}),
+                true,
+            ),
+            (
+                "a freedom through a freedom",
+                json!({"protocol": "freedom", "streamSettings": through("link", raw.clone())}),
+                true,
+            ),
+            (
+                "HTTP",
+                json!({"protocol": "http",
+                    "settings": {"address": "127.0.0.1", "port": 8080},
+                    "streamSettings": through("link", raw.clone())}),
+                true,
+            ),
+            (
+                "VMess",
+                json!({"protocol": "vmess",
+                    "settings": {"address": "127.0.0.1", "port": 443,
+                        "id": "27848739-7e62-4138-9fd3-098a63964b6b"},
+                    "streamSettings": through("link", raw.clone())}),
+                true,
+            ),
+            (
+                "VMess with Mux",
+                json!({"protocol": "vmess",
+                    "settings": {"address": "127.0.0.1", "port": 443,
+                        "id": "27848739-7e62-4138-9fd3-098a63964b6b"},
+                    "streamSettings": through("link", raw.clone()),
+                    "mux": {"enabled": true, "concurrency": 8}}),
+                false,
+            ),
+            (
+                "Shadowsocks",
+                json!({"protocol": "shadowsocks",
+                    "settings": {"address": "127.0.0.1", "port": 8388,
+                        "method": "aes-128-gcm", "password": "secret"},
+                    "streamSettings": through("link", raw.clone())}),
+                true,
+            ),
+            (
+                "Shadowsocks with Mux",
+                json!({"protocol": "shadowsocks",
+                    "settings": {"address": "127.0.0.1", "port": 8388,
+                        "method": "aes-128-gcm", "password": "secret"},
+                    "streamSettings": through("link", raw.clone()),
+                    "mux": {"enabled": true, "concurrency": 8}}),
+                false,
+            ),
+            (
+                "gRPC",
+                vless(through(
+                    "link",
+                    json!({"network": "grpc", "grpcSettings": {"serviceName": "relay"}}),
+                )),
+                false,
+            ),
+            (
+                "XHTTP",
+                vless(through(
+                    "link",
+                    json!({"network": "xhttp", "xhttpSettings": {"path": "/relay"}}),
+                )),
+                false,
+            ),
+            ("Mux", with_mux(8), false),
+            ("testpre", testpre, false),
+            (
+                "Trojan with Mux",
+                json!({"protocol": "trojan",
+                    "settings": {"address": "127.0.0.1", "port": 443, "password": "secret"},
+                    "streamSettings": through("link", json!({"network": "raw", "security": "tls"})),
+                    "mux": {"enabled": true, "concurrency": 8}}),
+                false,
+            ),
+        ];
+        for (name, first, refused) in cases {
+            let outbound = compile(first);
+            assert!(
+                !ends_on_a_refusing_freedom(&outbound),
+                "{name}: as compiled"
+            );
+            assert_eq!(
+                ends_on_a_refusing_freedom(&outbound.for_reverse()),
+                refused,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_tunnel_meets_the_chains_freedom_unless_its_carrier_is_shared() {
+        let bridge = |stream: Value, mux: bool| {
+            let mut outbound = vless(through("link", stream));
+            outbound["settings"]["reverse"] = json!({"tag": "r-in"});
+            if mux {
+                outbound["mux"] = json!({"enabled": true, "concurrency": 8});
+            }
+            outbound
+        };
+        let cases = [
+            ("raw", bridge(json!({"network": "raw"}), false), true),
+            // The outbound's Mux carries no tunnel.
+            (
+                "raw with Mux",
+                bridge(json!({"network": "raw"}), true),
+                true,
+            ),
+            (
+                "gRPC",
+                bridge(
+                    json!({"network": "grpc", "grpcSettings": {"serviceName": "rvs"}}),
+                    false,
+                ),
+                false,
+            ),
+            (
+                "XHTTP",
+                bridge(
+                    json!({"network": "xhttp", "xhttpSettings": {"path": "/rvs"}}),
+                    false,
+                ),
+                false,
+            ),
+        ];
+        for (name, first, refused) in cases {
+            let TcpOutbound::Chained { outbound, proxy } = compile(first) else {
+                panic!("{name}: a chain");
+            };
+            let TcpOutbound::Vless(vless) = outbound.as_ref() else {
+                panic!("{name}: a VLESS bridge");
+            };
+            let chain = reverse_tunnel_proxy(vless, &proxy);
+            assert_eq!(chain.is_some(), refused, "{name}");
+            if let Some(chain) = chain {
+                assert!(ends_on_a_refusing_freedom(&chain), "{name}");
+            }
+        }
     }
 }

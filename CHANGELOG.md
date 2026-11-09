@@ -20,12 +20,16 @@ long-term supported release series.
     `email` as its user and `reverse.sniffing` as its sniffing. A freedom
     outbound refuses these connections unless its `finalRules` allow them,
     as Xray-core's freedom does, so each service the portal may reach needs
-    an `allow` rule.
+    an `allow` rule. So does the freedom a `dialerProxy` chain ends on, for
+    the hop before it, and for the tunnel when the outbound dials through
+    one; under a shared Mux, `testpre`, gRPC or XHTTP connection the chain is
+    left as it is.
   - Tunnels are kept as Xray-core keeps them: every two seconds the bridge
     opens one when none is active or each holds more than 16 sessions, and
-    another when the portal drains one after 256 sessions. A tunnel lost to
-    a network change is replaced once the carrier fails or nothing crossed it
-    for the `connIdle` of the outbound user's level, 300 seconds by default.
+    another when the portal drains one after more than 256 sessions. A
+    tunnel lost to a network change is replaced once the carrier fails or
+    nothing crossed it for the `connIdle` of the outbound user's level, 300
+    seconds by default.
   - A tunnel is a VLESS request with the reverse command over the outbound's
     whole carrier: every transport and security, VLESS encryption, Vision,
     the TCP masks, `sockopt` and `dialerProxy`. A core with only a bridge
@@ -36,7 +40,9 @@ long-term supported release series.
   - Deliberate differences: a tunnel holds at most 512 sessions and a bridge
     16 tunnels; each destination of a UDP session is routed on its own, as a
     SOCKS association's are; a bridge whose outbound cannot be built, such as
-    Vision without TLS or REALITY, fails the core's start.
+    Vision without TLS or REALITY, fails the core's start; an XHTTP link of a
+    chain, and a dedicated freedom fragment `dialerProxy`, are not refused
+    as Xray-core refuses them.
 - The `masque` outbound and `masque` transport connect to a MASQUE proxy as
   Xray-core v26.10.31's client does: one CONNECT-IP tunnel (RFC 9484) over
   HTTP/3 or HTTP/2, with Basic authorization from `user` and `pass`, the addresses the

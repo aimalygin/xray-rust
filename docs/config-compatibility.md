@@ -1155,7 +1155,17 @@ through them to the services the bridge's routing lets it reach:
   rule that blocks every address: a refused TCP connection is held and
   discarded as a blocked final rule holds it, a refused UDP flow drops its
   datagrams. Write an `allow` rule for each service the portal may reach.
-  Through `dialerProxy` freedom applies no final rule, as in Xray-core.
+- The freedom a `dialerProxy` chain ends on refuses them too, unless its
+  `finalRules` allow the hop before it: routed to a `vless` outbound with
+  `dialerProxy: "direct"`, a connection opens only when `direct` allows the
+  VLESS server, as Xray-core hands each link of a chain the connection's
+  context. A freedom that itself dials through `dialerProxy` applies no rule.
+  Under a link whose connections other flows share, a `mux` or `testpre` one
+  or a gRPC or XHTTP carrier, the chain is left as it is: Xray-core opens
+  Mux, `testpre` and gRPC connections without the connection's context, and
+  a refused shared connection would stall every flow on it (XHTTP is a
+  [difference](xray-core-differences.md#vless-reverse-proxy)). UDP does not
+  go through `dialerProxy` here at all.
 - Other outbounds take what routing sends them: another proxy, `blackhole`,
   `dns`. Without a matching rule the first outbound does; when that is the
   bridge itself, its server refuses the request, as a user with `reverse` may
@@ -1167,7 +1177,10 @@ through them to the services the bridge's routing lets it reach:
   goes alone, Vision padding an empty frame; the carrier is dialed up to five
   times. Inside it the portal is a Mux.Cool client and the bridge its server.
   `testpre` is not used and the outbound's `mux` applies only to connections
-  routed to it, as in Xray-core.
+  routed to it, as in Xray-core. Through `dialerProxy`, the freedom the chain
+  ends on refuses the tunnel unless its `finalRules` allow the portal's
+  address, as Xray-core's bridge then never connects; over a gRPC or XHTTP
+  carrier the chain is left as it is.
 - Two seconds after the start, and every two seconds after that, the bridge
   opens a tunnel when none is active or the active ones hold more than 16
   sessions each. A tunnel stops being active when it closes or when the
