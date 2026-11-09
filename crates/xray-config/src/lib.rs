@@ -40,6 +40,7 @@ pub use model::{
     DEFAULT_OBSERVATORY_PROBE_URL, LOCAL_OS, MAX_DNS_SERVER_TIMEOUT_MS,
     MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
 };
+pub use model::{xdrive_default_xmux, XdriveS3Settings, XdriveService, XdriveSettings};
 pub use model::{
     BlackholeOutboundSettings, BlackholeResponse, HttpInboundSettings, HttpOutboundSettings,
     NoiseSegment, RealmIpMode, RealmMask, RealmPortMapping, RealmScheme, RealmStunServer,

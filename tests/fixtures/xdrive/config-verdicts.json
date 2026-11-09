@@ -1,0 +1,6650 @@
+{
+ "comment": "XDRIVE configurations and what `xray run -test` of Xray-core v26.10.31 says of each: \"ok\" or a substring of its error. \"ours\" records a deliberate difference of the parser, \"core\" a refusal when the core starts (a substring of its error). Rechecked by scripts/check-config-verdicts.py in scripts/check-xdrive-interop.sh.",
+ "cases": [
+  {
+   "name": "minimal local",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "vnext form",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "127.0.0.1",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "method instead of network",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "method": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "network upper case",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "XDRIVE",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "domain server address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "xdrive.example",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "absent xdriveSettings",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive"
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "unsupported service"
+  },
+  {
+   "name": "null xdriveSettings",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": null
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "unsupported service"
+  },
+  {
+   "name": "xdriveSettings not an object",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": 5
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number into Go struct field Config.outbounds.0.streamSettings.xdriveSettings of type conf.XDriveConfig"
+  },
+  {
+   "name": "xdriveSettings array",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": []
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal array into Go struct field Config.outbounds.0.streamSettings.xdriveSettings of type conf.XDriveConfig"
+  },
+  {
+   "name": "empty xdriveSettings",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {}
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: unknown \"service\": \"\", use \"google-drive\", \"template\", \"s3\" or \"local\""
+  },
+  {
+   "name": "service case differs",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "Local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: unknown \"service\": \"Local\", use \"google-drive\", \"template\", \"s3\" or \"local\""
+  },
+  {
+   "name": "service unknown",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "dropbox"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: unknown \"service\": \"dropbox\", use \"google-drive\", \"template\", \"s3\" or \"local\""
+  },
+  {
+   "name": "service null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": null
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: unknown \"service\": \"\", use \"google-drive\", \"template\", \"s3\" or \"local\""
+  },
+  {
+   "name": "service number",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": 1
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.service of type string"
+  },
+  {
+   "name": "local without remoteFolder",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "empty \"remoteFolder\""
+  },
+  {
+   "name": "local remoteFolder null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": null,
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "empty \"remoteFolder\""
+  },
+  {
+   "name": "local remoteFolder number",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": 7,
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.remoteFolder of type string"
+  },
+  {
+   "name": "local relative remoteFolder",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive-folder",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "local with secrets",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "secrets": [
+       "a",
+       "b"
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "local with s3 block ignored",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "s3": {
+       "endpoint": "ftp://bad",
+       "bucket": "a/b"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "local with s3 null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "s3": null
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "local with s3 not object",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "s3": "x"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.s3 of type conf.XDriveS3Config"
+  },
+  {
+   "name": "local with template",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "template": {
+       "anything": 1
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "local unknown field",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "folder": "x"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "ours": "error"
+  },
+  {
+   "name": "local field case differs",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "RemoteFolder": "/tmp/x"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "ours": "error"
+  },
+  {
+   "name": "segmentBytes positive",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "segmentBytes": 1000
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "segmentBytes negative",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "segmentBytes": -1
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number -1 into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.segmentBytes of type uint32"
+  },
+  {
+   "name": "flushIntervalMs positive",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "flushIntervalMs": 1000
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "flushIntervalMs negative",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "flushIntervalMs": -1
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number -1 into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.flushIntervalMs of type uint32"
+  },
+  {
+   "name": "pollIntervalMs positive",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "pollIntervalMs": 1000
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "pollIntervalMs negative",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "pollIntervalMs": -1
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number -1 into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.pollIntervalMs of type uint32"
+  },
+  {
+   "name": "maxPollIntervalMs positive",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "maxPollIntervalMs": 1000
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "maxPollIntervalMs negative",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "maxPollIntervalMs": -1
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number -1 into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.maxPollIntervalMs of type uint32"
+  },
+  {
+   "name": "sessionTtlSeconds positive",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "sessionTtlSeconds": 1000
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "sessionTtlSeconds negative",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "sessionTtlSeconds": -1
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number -1 into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.sessionTtlSeconds of type uint32"
+  },
+  {
+   "name": "concurrency positive",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "concurrency": 1000
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "concurrency negative",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "concurrency": -1
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number -1 into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.concurrency of type uint32"
+  },
+  {
+   "name": "eagerWindowMs positive",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "eagerWindowMs": 1000
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "eagerWindowMs negative",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "eagerWindowMs": -1
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number -1 into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.eagerWindowMs of type uint32"
+  },
+  {
+   "name": "holeTimeoutMs positive",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "holeTimeoutMs": 1000
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "holeTimeoutMs negative",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "holeTimeoutMs": -1
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number -1 into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.holeTimeoutMs of type uint32"
+  },
+  {
+   "name": "segmentBytes zero",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "segmentBytes": 0
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "segmentBytes null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "segmentBytes": null
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "segmentBytes u32 max",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "segmentBytes": 4294967295
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "segmentBytes above u32",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "segmentBytes": 4294967296
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number 4294967296 into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.segmentBytes of type uint32"
+  },
+  {
+   "name": "segmentBytes fraction",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "segmentBytes": 1.5
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number 1.5 into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.segmentBytes of type uint32"
+  },
+  {
+   "name": "segmentBytes exponent",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "segmentBytes": 1000.0
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number 1000.0 into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.segmentBytes of type uint32"
+  },
+  {
+   "name": "segmentBytes string",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "segmentBytes": "5"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.segmentBytes of type uint32"
+  },
+  {
+   "name": "segmentBytes bool",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "segmentBytes": true
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal bool into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.segmentBytes of type uint32"
+  },
+  {
+   "name": "segmentBytes above cap",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "segmentBytes": 33554432
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "concurrency above cap",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "concurrency": 1000
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "maxPoll below poll",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "pollIntervalMs": 200,
+      "maxPollIntervalMs": 10
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "google-drive",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "google-drive"
+  },
+  {
+   "name": "google-drive deprecated name",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "Google Drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "google-drive"
+  },
+  {
+   "name": "google-drive two secrets",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "a",
+       "b"
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: Google Drive needs 3 secrets in order of ClientID, ClientSecret, RefreshToken"
+  },
+  {
+   "name": "google-drive four secrets",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "a",
+       "b",
+       "c",
+       "d"
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: Google Drive needs 3 secrets in order of ClientID, ClientSecret, RefreshToken"
+  },
+  {
+   "name": "google-drive no secrets",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: Google Drive needs 3 secrets in order of ClientID, ClientSecret, RefreshToken"
+  },
+  {
+   "name": "google-drive secrets null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": null
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: Google Drive needs 3 secrets in order of ClientID, ClientSecret, RefreshToken"
+  },
+  {
+   "name": "google-drive empty secrets",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "",
+       "",
+       ""
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "google-drive"
+  },
+  {
+   "name": "google-drive null secret",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "a",
+       null,
+       "c"
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "google-drive"
+  },
+  {
+   "name": "google-drive secret number",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "a",
+       2,
+       "c"
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number into Config.outbounds.0.streamSettings.xdriveSettings.secrets.1 of type string"
+  },
+  {
+   "name": "google-drive secrets string",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": "a,b,c"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.secrets of type []string"
+  },
+  {
+   "name": "google-drive without folder",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "google-drive"
+  },
+  {
+   "name": "deprecated name two secrets",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "Google Drive",
+      "secrets": [
+       "a",
+       "b"
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: Google Drive needs 3 secrets in order of ClientID, ClientSecret, RefreshToken"
+  },
+  {
+   "name": "template",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder",
+      "service": "template",
+      "secrets": [
+       "user",
+       "pass"
+      ],
+      "template": {
+       "flatten": true,
+       "auth": {
+        "type": "basic",
+        "username": "{secret0}",
+        "password": "{secret1}"
+       },
+       "put": {
+        "method": "PUT",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "get": {
+        "method": "GET",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "delete": {
+        "method": "DELETE",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "list": {
+        "method": "PROPFIND",
+        "url": "https://dav.example/{folder}/",
+        "namesRegex": "<d:href>/folder/([^<]+)</d:href>"
+       }
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "template"
+  },
+  {
+   "name": "template missing",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder",
+      "service": "template",
+      "secrets": [
+       "user",
+       "pass"
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: service \"template\" needs a \"template\" object"
+  },
+  {
+   "name": "template null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder",
+      "service": "template",
+      "secrets": [
+       "user",
+       "pass"
+      ],
+      "template": null
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "template"
+  },
+  {
+   "name": "template string",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder",
+      "service": "template",
+      "secrets": [
+       "user",
+       "pass"
+      ],
+      "template": "{}"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "template"
+  },
+  {
+   "name": "template number",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder",
+      "service": "template",
+      "secrets": [
+       "user",
+       "pass"
+      ],
+      "template": 5
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "template"
+  },
+  {
+   "name": "template empty object",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder",
+      "service": "template",
+      "secrets": [
+       "user",
+       "pass"
+      ],
+      "template": {}
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "template"
+  },
+  {
+   "name": "template array",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder",
+      "service": "template",
+      "secrets": [
+       "user",
+       "pass"
+      ],
+      "template": [
+       1,
+       2
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "template"
+  },
+  {
+   "name": "template without secrets",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder",
+      "service": "template",
+      "template": {
+       "flatten": true,
+       "auth": {
+        "type": "basic",
+        "username": "{secret0}",
+        "password": "{secret1}"
+       },
+       "put": {
+        "method": "PUT",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "get": {
+        "method": "GET",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "delete": {
+        "method": "DELETE",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "list": {
+        "method": "PROPFIND",
+        "url": "https://dav.example/{folder}/",
+        "namesRegex": "<d:href>/folder/([^<]+)</d:href>"
+       }
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "template"
+  },
+  {
+   "name": "s3 path style",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 missing block",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: service \"s3\" needs an \"s3\" object"
+  },
+  {
+   "name": "s3 null block",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": null
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: service \"s3\" needs an \"s3\" object"
+  },
+  {
+   "name": "s3 block not object",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": []
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal array into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.s3 of type conf.XDriveS3Config"
+  },
+  {
+   "name": "s3 unknown field",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket",
+       "acl": "private"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "ours": "error"
+  },
+  {
+   "name": "s3 http endpoint with port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "http://127.0.0.1:9000",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 endpoint with path prefix",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example/storage/prefix",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 endpoint escaped path",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example/a%2Fb/c%20d",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 endpoint upper scheme",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "HTTPS://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 endpoint ftp",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "ftp://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 endpoint must be an http(s) URL without credentials, query or fragment"
+  },
+  {
+   "name": "s3 endpoint empty",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 endpoint must be an http(s) URL without credentials, query or fragment"
+  },
+  {
+   "name": "s3 endpoint null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": null,
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 endpoint must be an http(s) URL without credentials, query or fragment"
+  },
+  {
+   "name": "s3 endpoint no host",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https:///bucket",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 endpoint must be an http(s) URL without credentials, query or fragment"
+  },
+  {
+   "name": "s3 endpoint only port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://:9000",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 endpoint must be an http(s) URL without credentials, query or fragment"
+  },
+  {
+   "name": "s3 endpoint user",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://user@s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 endpoint must be an http(s) URL without credentials, query or fragment"
+  },
+  {
+   "name": "s3 endpoint empty user",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://@s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 endpoint must be an http(s) URL without credentials, query or fragment"
+  },
+  {
+   "name": "s3 endpoint query",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example/?x=1",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 endpoint must be an http(s) URL without credentials, query or fragment"
+  },
+  {
+   "name": "s3 endpoint bare question mark",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example/?",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 endpoint must be an http(s) URL without credentials, query or fragment"
+  },
+  {
+   "name": "s3 endpoint fragment",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example/#f",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 endpoint must be an http(s) URL without credentials, query or fragment"
+  },
+  {
+   "name": "s3 endpoint empty fragment",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example/#",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 endpoint opaque",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https:s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 endpoint must be an http(s) URL without credentials, query or fragment"
+  },
+  {
+   "name": "s3 endpoint bad port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example:http",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 endpoint must be an http(s) URL without credentials, query or fragment"
+  },
+  {
+   "name": "s3 endpoint bad escape",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example/%zz",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 endpoint must be an http(s) URL without credentials, query or fragment"
+  },
+  {
+   "name": "s3 endpoint control byte",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example/\u0001",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 endpoint must be an http(s) URL without credentials, query or fragment"
+  },
+  {
+   "name": "s3 endpoint ipv6",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "http://[::1]:9000",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 region empty",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 region null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": null,
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 region slash",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us/west",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: invalid S3 signing region"
+  },
+  {
+   "name": "s3 region comma",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us,west",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: invalid S3 signing region"
+  },
+  {
+   "name": "s3 region space",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us west",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: invalid S3 signing region"
+  },
+  {
+   "name": "s3 region tab",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us\twest",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: invalid S3 signing region"
+  },
+  {
+   "name": "s3 region newline",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us\nwest",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: invalid S3 signing region"
+  },
+  {
+   "name": "s3 region unicode",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "régión",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 bucket empty",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": ""
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 needs a bucket name without path separators"
+  },
+  {
+   "name": "s3 bucket slash",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "a/b"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 needs a bucket name without path separators"
+  },
+  {
+   "name": "s3 bucket dot",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "."
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 needs a bucket name without path separators"
+  },
+  {
+   "name": "s3 bucket dotdot",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": ".."
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 needs a bucket name without path separators"
+  },
+  {
+   "name": "s3 bucket backslash",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "a\\b"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 needs a bucket name without path separators"
+  },
+  {
+   "name": "s3 bucket control",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "ab"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 needs a bucket name without path separators"
+  },
+  {
+   "name": "s3 bucket upper path style",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "Bucket_Name"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 path style false dns",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket",
+       "pathStyle": false
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 path style true",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket",
+       "pathStyle": true
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 path style null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket",
+       "pathStyle": null
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 path style string",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket",
+       "pathStyle": "false"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.s3.pathStyle of type bool"
+  },
+  {
+   "name": "s3 virtual hosted ipv4",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://192.0.2.10",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket",
+       "pathStyle": false
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 virtual-hosted addressing requires a DNS endpoint"
+  },
+  {
+   "name": "s3 virtual hosted ipv6",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://[2001:db8::10]",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket",
+       "pathStyle": false
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 virtual-hosted addressing requires a DNS endpoint"
+  },
+  {
+   "name": "s3 virtual hosted zone",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://[fe80::1%25en0]",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket",
+       "pathStyle": false
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 virtual hosted leading zero ipv4",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://010.0.0.1",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket",
+       "pathStyle": false
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 virtual hosted upper bucket",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "Bucket",
+       "pathStyle": false
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 virtual-hosted addressing requires a DNS-compatible bucket name"
+  },
+  {
+   "name": "s3 virtual hosted underscore",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "a_b",
+       "pathStyle": false
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 virtual-hosted addressing requires a DNS-compatible bucket name"
+  },
+  {
+   "name": "s3 virtual hosted double dot",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "a..b",
+       "pathStyle": false
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 virtual-hosted addressing requires a DNS-compatible bucket name"
+  },
+  {
+   "name": "s3 virtual hosted leading dot",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": ".ab",
+       "pathStyle": false
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 virtual-hosted addressing requires a DNS-compatible bucket name"
+  },
+  {
+   "name": "s3 virtual hosted trailing dot",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "ab.",
+       "pathStyle": false
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 virtual-hosted addressing requires a DNS-compatible bucket name"
+  },
+  {
+   "name": "s3 folder trailing slash",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 folder two trailing slashes",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive//",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 remoteFolder must be a nonempty relative prefix without empty, '.' or '..' components"
+  },
+  {
+   "name": "s3 folder empty",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 remoteFolder must be a nonempty relative prefix without empty, '.' or '..' components"
+  },
+  {
+   "name": "s3 folder slash",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 remoteFolder must be a nonempty relative prefix without empty, '.' or '..' components"
+  },
+  {
+   "name": "s3 folder absolute",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/xdrive",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 remoteFolder must be a nonempty relative prefix without empty, '.' or '..' components"
+  },
+  {
+   "name": "s3 folder dotdot",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "a/../b",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 remoteFolder must be a nonempty relative prefix without empty, '.' or '..' components"
+  },
+  {
+   "name": "s3 folder dot",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "./a",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 remoteFolder must be a nonempty relative prefix without empty, '.' or '..' components"
+  },
+  {
+   "name": "s3 folder spaces",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "my folder/x",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 three secrets",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key",
+       "session-token"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 empty token",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key",
+       ""
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 one secret",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 needs AccessKeyID, SecretAccessKey and optionally SessionToken in secrets"
+  },
+  {
+   "name": "s3 four secrets",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "a",
+       "b",
+       "c",
+       "d"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 needs AccessKeyID, SecretAccessKey and optionally SessionToken in secrets"
+  },
+  {
+   "name": "s3 empty access key",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 needs AccessKeyID, SecretAccessKey and optionally SessionToken in secrets"
+  },
+  {
+   "name": "s3 empty secret key",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       ""
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: S3 needs AccessKeyID, SecretAccessKey and optionally SessionToken in secrets"
+  },
+  {
+   "name": "s3 access key slash",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKID/EXAMPLE",
+       "k"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: invalid S3 AccessKeyID"
+  },
+  {
+   "name": "s3 access key comma",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKID,EXAMPLE",
+       "k"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: invalid S3 AccessKeyID"
+  },
+  {
+   "name": "s3 access key tab",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKID\tEXAMPLE",
+       "k"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: invalid S3 AccessKeyID"
+  },
+  {
+   "name": "s3 secret key slash",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "k/with/slash"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "s3 secret newline",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "k\nv"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: invalid S3 secret"
+  },
+  {
+   "name": "s3 token control",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "k",
+       "t\u0000"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "transport/internet/xdrive: invalid S3 secret"
+  },
+  {
+   "name": "s3 token tab",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "k",
+       "t\tt"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "s3"
+  },
+  {
+   "name": "xmux null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "xmux": null
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "xmux empty",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "xmux": {}
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "xmux not object",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "xmux": "x"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.xmux of type conf.XmuxConfig"
+  },
+  {
+   "name": "xmux ranges",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "xmux": {
+       "maxConcurrency": "1-2",
+       "hMaxRequestTimes": 100,
+       "hKeepAlivePeriod": -1
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "xmux connections and concurrency",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "xmux": {
+       "maxConnections": 2,
+       "maxConcurrency": 8
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: maxConnections cannot be specified together with maxConcurrency"
+  },
+  {
+   "name": "xmux connections only",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "xmux": {
+       "maxConnections": 3,
+       "cMaxReuseTimes": "5-10",
+       "hMaxReusableSecs": 60
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "xmux unknown field",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "xmux": {
+       "maxStreams": 1
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "ours": "error"
+  },
+  {
+   "name": "xmux bad range",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "xmux": {
+       "maxConnections": "a-b"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: Invalid integer range, expected either string of form \"1-2\" or plain integer."
+  },
+  {
+   "name": "xmux keepalive string",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local",
+      "xmux": {
+       "hKeepAlivePeriod": "5"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field Config.outbounds.0.streamSettings.xdriveSettings.xmux.hKeepAlivePeriod of type int64"
+  },
+  {
+   "name": "google-drive xmux concurrency",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ],
+      "xmux": {
+       "maxConcurrency": "1-2"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "google-drive"
+  },
+  {
+   "name": "encryption none",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "none"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: the xdrive transport needs VLESS \"encryption\", run \"xray vlessenc\" to get one"
+  },
+  {
+   "name": "encryption none public address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "xdrive.example",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "none"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: the xdrive transport needs VLESS \"encryption\", run \"xray vlessenc\" to get one"
+  },
+  {
+   "name": "encryption absent",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: VLESS users: please add/set \"encryption\":\"none\" for every user"
+  },
+  {
+   "name": "mux absent",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    }
+   },
+   "xray": "infra/conf: the xdrive transport needs \"mux\" enabled, with no negative \"concurrency\" or \"xudpConcurrency\" and no \"xudpProxyUDP443\":\"skip\""
+  },
+  {
+   "name": "mux disabled",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": false
+    }
+   },
+   "xray": "infra/conf: the xdrive transport needs \"mux\" enabled, with no negative \"concurrency\" or \"xudpConcurrency\" and no \"xudpProxyUDP443\":\"skip\""
+  },
+  {
+   "name": "mux negative concurrency",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "concurrency": -1
+    }
+   },
+   "xray": "infra/conf: the xdrive transport needs \"mux\" enabled, with no negative \"concurrency\" or \"xudpConcurrency\" and no \"xudpProxyUDP443\":\"skip\""
+  },
+  {
+   "name": "mux negative xudp",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "xudpConcurrency": -1
+    }
+   },
+   "xray": "infra/conf: the xdrive transport needs \"mux\" enabled, with no negative \"concurrency\" or \"xudpConcurrency\" and no \"xudpProxyUDP443\":\"skip\""
+  },
+  {
+   "name": "mux udp443 skip",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "xudpProxyUDP443": "skip"
+    }
+   },
+   "xray": "infra/conf: the xdrive transport needs \"mux\" enabled, with no negative \"concurrency\" or \"xudpConcurrency\" and no \"xudpProxyUDP443\":\"skip\""
+  },
+  {
+   "name": "mux udp443 allow",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "concurrency": 0,
+     "xudpConcurrency": 8,
+     "xudpProxyUDP443": "allow"
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "mux udp443 reject",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "xudpProxyUDP443": "reject"
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "mux concurrency 16",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "concurrency": 16
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "flow vision",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I",
+     "flow": "xtls-rprx-vision"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "concurrency": -1
+    }
+   },
+   "xray": "infra/conf: the xdrive transport doesn't support VLESS \"flow\""
+  },
+  {
+   "name": "flow vision with mux",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I",
+     "flow": "xtls-rprx-vision"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: the xdrive transport doesn't support VLESS \"flow\""
+  },
+  {
+   "name": "vnext flow vision",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "127.0.0.1",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I",
+         "flow": "xtls-rprx-vision"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "concurrency": -1
+    }
+   },
+   "xray": "infra/conf: the xdrive transport doesn't support VLESS \"flow\""
+  },
+  {
+   "name": "testpre",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I",
+     "testpre": 1
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: the xdrive transport doesn't support VLESS \"testpre\""
+  },
+  {
+   "name": "testpre zero",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I",
+     "testpre": 0
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "reverse without mux",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I",
+     "reverse": {
+      "tag": "r"
+     }
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    }
+   },
+   "xray": "ok",
+   "ours": "error"
+  },
+  {
+   "name": "vmess",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vmess",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: the xdrive transport can only be used by VLESS"
+  },
+  {
+   "name": "trojan",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "trojan",
+    "settings": {
+     "address": "xdrive.example",
+     "port": 443,
+     "password": "p"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: the xdrive transport can only be used by VLESS"
+  },
+  {
+   "name": "shadowsocks",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "shadowsocks",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "method": "2022-blake3-aes-128-gcm",
+     "password": "AQEBAQEBAQEBAQEBAQEBAQ=="
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: the xdrive transport can only be used by VLESS"
+  },
+  {
+   "name": "freedom",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "freedom",
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    }
+   },
+   "xray": "infra/conf: the xdrive transport can only be used by VLESS"
+  },
+  {
+   "name": "tls security",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "tls fingerprint firefox",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "fingerprint": "firefox"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "tls alpn http1",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "alpn": [
+       "http/1.1"
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "reality security",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "security": "reality",
+     "realitySettings": {
+      "serverName": "xdrive.example",
+      "publicKey": "Z84J2IelR9ch3k8VtlVhhs5ycBUlXA7wHBWcBrjqnAw",
+      "shortId": "0123"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: REALITY only supports RAW, XHTTP and gRPC for now."
+  },
+  {
+   "name": "sockopt",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "sockopt": {
+      "tcpKeepAliveIdle": 30
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "tcp header-custom mask",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "header-custom",
+        "settings": {
+         "clients": [
+          [
+           {
+            "packet": [
+             1
+            ]
+           }
+          ]
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "tcp fragment mask without tls",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "fragment",
+        "settings": {
+         "packets": "tlshello",
+         "length": "100-200",
+         "delay": "10-20"
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "ours": "error"
+  },
+  {
+   "name": "tcp fragment mask with tls",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "fragment",
+        "settings": {
+         "packets": "tlshello",
+         "length": "100-200",
+         "delay": "10-20"
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "tcp sudoku mask",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "sudoku",
+        "settings": {
+         "password": "p"
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "dialer proxy",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "sockopt": {
+      "dialerProxy": "direct"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "extraOutbounds": [
+    {
+     "tag": "direct",
+     "protocol": "freedom"
+    }
+   ]
+  },
+  {
+   "name": "drive h3 noise",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "noise",
+        "settings": {
+         "noise": [
+          {
+           "rand": "50-100"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "google-drive"
+  },
+  {
+   "name": "drive h3 noise upper",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "Noise",
+        "settings": {
+         "noise": [
+          {
+           "rand": "50-100"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "google-drive"
+  },
+  {
+   "name": "drive h3 salamander",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "salamander",
+        "settings": {
+         "password": "p"
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: XDRIVE: over h3 to Google Drive the only \"udp\" mask that works is \"noise\", not \"salamander\""
+  },
+  {
+   "name": "drive h3 noise and salamander",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "noise",
+        "settings": {
+         "noise": [
+          {
+           "rand": "50-100"
+          }
+         ]
+        }
+       },
+       {
+        "type": "salamander",
+        "settings": {
+         "password": "p"
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: XDRIVE: over h3 to Google Drive the only \"udp\" mask that works is \"noise\", not \"salamander\""
+  },
+  {
+   "name": "drive h3 header-custom",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "header-custom",
+        "settings": {
+         "client": [
+          {
+           "packet": [
+            1,
+            2
+           ]
+          }
+         ],
+         "server": [
+          {
+           "packet": [
+            3,
+            4
+           ]
+          }
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: XDRIVE: over h3 to Google Drive the only \"udp\" mask that works is \"noise\", not \"header-custom\""
+  },
+  {
+   "name": "deprecated drive h3 header-custom",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "Google Drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "header-custom",
+        "settings": {
+         "client": [
+          {
+           "packet": [
+            1,
+            2
+           ]
+          }
+         ],
+         "server": [
+          {
+           "packet": [
+            3,
+            4
+           ]
+          }
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: XDRIVE: over h3 to Google Drive the only \"udp\" mask that works is \"noise\", not \"header-custom\""
+  },
+  {
+   "name": "local h3 noise",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "noise",
+        "settings": {
+         "noise": [
+          {
+           "rand": "50-100"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "local h3 header-custom",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "header-custom",
+        "settings": {
+         "client": [
+          {
+           "packet": [
+            1,
+            2
+           ]
+          }
+         ],
+         "server": [
+          {
+           "packet": [
+            3,
+            4
+           ]
+          }
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "local h3 salamander",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "salamander",
+        "settings": {
+         "password": "p"
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "ours": "error"
+  },
+  {
+   "name": "template h3 header-custom",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder",
+      "service": "template",
+      "secrets": [
+       "user",
+       "pass"
+      ],
+      "template": {
+       "flatten": true,
+       "auth": {
+        "type": "basic",
+        "username": "{secret0}",
+        "password": "{secret1}"
+       },
+       "put": {
+        "method": "PUT",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "get": {
+        "method": "GET",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "delete": {
+        "method": "DELETE",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "list": {
+        "method": "PROPFIND",
+        "url": "https://dav.example/{folder}/",
+        "namesRegex": "<d:href>/folder/([^<]+)</d:href>"
+       }
+      }
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "header-custom",
+        "settings": {
+         "client": [
+          {
+           "packet": [
+            1,
+            2
+           ]
+          }
+         ],
+         "server": [
+          {
+           "packet": [
+            3,
+            4
+           ]
+          }
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "template"
+  },
+  {
+   "name": "drive h2 noise",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "noise",
+        "settings": {
+         "noise": [
+          {
+           "rand": "50-100"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "ours": "error"
+  },
+  {
+   "name": "drive h3 null finalmask",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "google-drive"
+  },
+  {
+   "name": "drive h3 empty finalmask",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {}
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "google-drive"
+  },
+  {
+   "name": "drive h3 bbr",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "quicParams": {
+       "congestion": "bbr",
+       "disableChromeParrot": true
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "google-drive"
+  },
+  {
+   "name": "drive h3 reno",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "quicParams": {
+       "congestion": "reno"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "google-drive"
+  },
+  {
+   "name": "drive h3 brutal",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "quicParams": {
+       "congestion": "brutal"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: XDRIVE: brutal is for Hysteria servers, over h3 \"congestion\" is \"bbr\" or \"reno\", not \"brutal\""
+  },
+  {
+   "name": "local h3 force-brutal",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "quicParams": {
+       "congestion": "force-brutal",
+       "brutalUp": "10 mbps"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: XDRIVE: brutal is for Hysteria servers, over h3 \"congestion\" is \"bbr\" or \"reno\", not \"force-brutal\""
+  },
+  {
+   "name": "local h3 brutal upper",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "quicParams": {
+       "congestion": "Brutal"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: XDRIVE: brutal is for Hysteria servers, over h3 \"congestion\" is \"bbr\" or \"reno\", not \"brutal\""
+  },
+  {
+   "name": "drive h3 h2 brutal",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3",
+       "h2"
+      ]
+     },
+     "finalmask": {
+      "quicParams": {
+       "congestion": "brutal"
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "core": "google-drive"
+  },
+  {
+   "name": "local h3 windows",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "quicParams": {
+       "initStreamReceiveWindow": 1048576,
+       "maxIdleTimeout": 30,
+       "keepAlivePeriod": 10
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "local h3 chrome parrot off",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": true
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "local h2 chrome parrot off",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": true
+      }
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "ours": "error"
+  },
+  {
+   "name": "local no alpn noise",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "noise",
+        "settings": {
+         "noise": [
+          {
+           "rand": "50-100"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "ours": "error"
+  },
+  {
+   "name": "raw with xdriveSettings",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "raw with bad xdriveSettings",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "xdriveSettings": {
+      "service": "dropbox"
+     }
+    }
+   },
+   "xray": "infra/conf: unknown \"service\": \"dropbox\", use \"google-drive\", \"template\", \"s3\" or \"local\""
+  },
+  {
+   "name": "raw with bad s3 xdriveSettings",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "a/b",
+       "bucket": "xdrive-bucket"
+      }
+     }
+    }
+   },
+   "xray": "transport/internet/xdrive: invalid S3 signing region"
+  }
+ ]
+}

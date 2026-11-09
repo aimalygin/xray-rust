@@ -4789,11 +4789,11 @@ fn rejects_udp_stream_network_with_path() {
 
 #[test]
 fn rejects_other_stream_network_with_path() {
-    // The example moved off `grpc`, `kcp`, then `masque`, as this crate
-    // learned to parse them; `xdrive` is still a network xray-core has and
-    // xray-rust does not.
+    // The example moved off `grpc`, `kcp`, `masque`, then `xdrive`, as this
+    // crate learned to parse them; no network xray-core v26.10.31 has is
+    // left, so one it does not have stands in.
     let raw = vless_raw_with_network(
-        "xdrive",
+        "carrier-pigeon",
         r#""users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]"#,
         "",
         443,
@@ -6501,18 +6501,18 @@ fn removed_transports_say_they_were_removed() {
 }
 
 #[test]
-fn transports_xray_still_has_but_we_do_not_say_so() {
+fn xdrive_is_read_in_any_case_and_wants_vless_encryption() {
+    // It was the last network xray-core has that this parser refused; now it
+    // is read, and refused for what xray-core refuses it for.
     for network in ["xdrive", "XDRIVE"] {
         let error = parse_xray_json(&raw_with_stream_settings(&format!(
-            r#""network": "{network}", "security": "none""#
+            r#""network": "{network}", "security": "tls", "xdriveSettings": {{"service": "local", "remoteFolder": "/tmp/x"}}"#
         )))
-        .expect_err("an unimplemented transport must be rejected");
-        assert_eq!(
-            error.diagnostics[0].path.as_deref(),
-            Some("$.outbounds[0].streamSettings.network")
-        );
+        .expect_err("XDRIVE without VLESS encryption must be rejected");
         assert!(
-            error.diagnostics[0].message.contains("not supported"),
+            error.diagnostics.iter().any(|d| d
+                .message
+                .contains(r#"the xdrive transport needs VLESS "encryption""#)),
             "{network} got: {:?}",
             error.diagnostics
         );

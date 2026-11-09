@@ -36,6 +36,7 @@ mod mux;
 mod preconnect;
 mod routing;
 pub(crate) mod socket_options;
+pub(crate) mod xdrive;
 mod xhttp;
 mod xudp;
 use carrier::StreamCarrier;
@@ -4881,7 +4882,8 @@ pub(crate) fn validate_udp_noise(stream: &StreamSettings) -> Result<(), CoreErro
     ) || matches!(stream.transport, StreamTransport::Xhttp(_))
         && matches!(&stream.security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"])
         || matches!(stream.transport, StreamTransport::Masque(_))
-            && matches!(&stream.security, StreamSecurity::Tls(tls) if !masque::uses_http2(&tls.alpn));
+            && matches!(&stream.security, StreamSecurity::Tls(tls) if !masque::uses_http2(&tls.alpn))
+        || xdrive::is_xdrive_h3(stream);
     if (stream.udp_noise.is_some()
         || stream.udp_header_custom.is_some()
         || stream.udp_sudoku.is_some()

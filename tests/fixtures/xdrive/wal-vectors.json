@@ -1,0 +1,2008 @@
+{
+ "params": [
+  {
+   "input": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "output": {
+    "segmentBytes": 524288,
+    "flushIntervalNs": 20000000,
+    "minPollIntervalNs": 50000000,
+    "maxPollIntervalNs": 500000000,
+    "eagerWindowNs": 2000000000,
+    "holeTimeoutNs": 30000000000,
+    "sessionTtlNs": 300000000000,
+    "concurrency": 8
+   }
+  },
+  {
+   "input": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "output": {
+    "segmentBytes": 1,
+    "flushIntervalNs": 1000000,
+    "minPollIntervalNs": 1000000,
+    "maxPollIntervalNs": 1000000,
+    "eagerWindowNs": 1000000,
+    "holeTimeoutNs": 1000000,
+    "sessionTtlNs": 1000000000,
+    "concurrency": 1
+   }
+  },
+  {
+   "input": [
+    524288,
+    20,
+    50,
+    500,
+    300,
+    8,
+    2000,
+    30000
+   ],
+   "output": {
+    "segmentBytes": 524288,
+    "flushIntervalNs": 20000000,
+    "minPollIntervalNs": 50000000,
+    "maxPollIntervalNs": 500000000,
+    "eagerWindowNs": 2000000000,
+    "holeTimeoutNs": 30000000000,
+    "sessionTtlNs": 300000000000,
+    "concurrency": 8
+   }
+  },
+  {
+   "input": [
+    16777216,
+    0,
+    0,
+    0,
+    0,
+    64,
+    0,
+    0
+   ],
+   "output": {
+    "segmentBytes": 16777216,
+    "flushIntervalNs": 20000000,
+    "minPollIntervalNs": 50000000,
+    "maxPollIntervalNs": 500000000,
+    "eagerWindowNs": 2000000000,
+    "holeTimeoutNs": 30000000000,
+    "sessionTtlNs": 300000000000,
+    "concurrency": 64
+   }
+  },
+  {
+   "input": [
+    16777217,
+    0,
+    0,
+    0,
+    0,
+    65,
+    0,
+    0
+   ],
+   "output": {
+    "segmentBytes": 16777216,
+    "flushIntervalNs": 20000000,
+    "minPollIntervalNs": 50000000,
+    "maxPollIntervalNs": 500000000,
+    "eagerWindowNs": 2000000000,
+    "holeTimeoutNs": 30000000000,
+    "sessionTtlNs": 300000000000,
+    "concurrency": 64
+   }
+  },
+  {
+   "input": [
+    4294967295,
+    4294967295,
+    4294967295,
+    4294967295,
+    4294967295,
+    4294967295,
+    4294967295,
+    4294967295
+   ],
+   "output": {
+    "segmentBytes": 16777216,
+    "flushIntervalNs": 4294967295000000,
+    "minPollIntervalNs": 4294967295000000,
+    "maxPollIntervalNs": 4294967295000000,
+    "eagerWindowNs": 4294967295000000,
+    "holeTimeoutNs": 4294967295000000,
+    "sessionTtlNs": 4294967295000000000,
+    "concurrency": 64
+   }
+  },
+  {
+   "input": [
+    0,
+    0,
+    300,
+    100,
+    0,
+    0,
+    0,
+    0
+   ],
+   "output": {
+    "segmentBytes": 524288,
+    "flushIntervalNs": 20000000,
+    "minPollIntervalNs": 300000000,
+    "maxPollIntervalNs": 300000000,
+    "eagerWindowNs": 2000000000,
+    "holeTimeoutNs": 30000000000,
+    "sessionTtlNs": 300000000000,
+    "concurrency": 8
+   }
+  },
+  {
+   "input": [
+    0,
+    0,
+    0,
+    10,
+    0,
+    0,
+    0,
+    0
+   ],
+   "output": {
+    "segmentBytes": 524288,
+    "flushIntervalNs": 20000000,
+    "minPollIntervalNs": 50000000,
+    "maxPollIntervalNs": 50000000,
+    "eagerWindowNs": 2000000000,
+    "holeTimeoutNs": 30000000000,
+    "sessionTtlNs": 300000000000,
+    "concurrency": 8
+   }
+  },
+  {
+   "input": [
+    0,
+    0,
+    60,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "output": {
+    "segmentBytes": 524288,
+    "flushIntervalNs": 20000000,
+    "minPollIntervalNs": 60000000,
+    "maxPollIntervalNs": 500000000,
+    "eagerWindowNs": 2000000000,
+    "holeTimeoutNs": 30000000000,
+    "sessionTtlNs": 300000000000,
+    "concurrency": 8
+   }
+  },
+  {
+   "input": [
+    0,
+    0,
+    600,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "output": {
+    "segmentBytes": 524288,
+    "flushIntervalNs": 20000000,
+    "minPollIntervalNs": 600000000,
+    "maxPollIntervalNs": 600000000,
+    "eagerWindowNs": 2000000000,
+    "holeTimeoutNs": 30000000000,
+    "sessionTtlNs": 300000000000,
+    "concurrency": 8
+   }
+  },
+  {
+   "input": [
+    4096,
+    5,
+    5,
+    50,
+    30,
+    2,
+    100,
+    200
+   ],
+   "output": {
+    "segmentBytes": 4096,
+    "flushIntervalNs": 5000000,
+    "minPollIntervalNs": 5000000,
+    "maxPollIntervalNs": 50000000,
+    "eagerWindowNs": 100000000,
+    "holeTimeoutNs": 200000000,
+    "sessionTtlNs": 30000000000,
+    "concurrency": 2
+   }
+  }
+ ],
+ "objectNames": [
+  {
+   "prefix": "streams/ab/c2s",
+   "seq": 0,
+   "suffix": ".seg",
+   "name": "streams/ab/c2s/000000000.seg"
+  },
+  {
+   "prefix": "streams/ab/c2s",
+   "seq": 7,
+   "suffix": ".end",
+   "name": "streams/ab/c2s/000000007.end"
+  },
+  {
+   "prefix": "p",
+   "seq": 42,
+   "suffix": ".err",
+   "name": "p/000000042.err"
+  },
+  {
+   "prefix": "p",
+   "seq": 999999999,
+   "suffix": ".seg",
+   "name": "p/999999999.seg"
+  },
+  {
+   "prefix": "p",
+   "seq": 1000000000,
+   "suffix": ".seg",
+   "name": "p/1000000000.seg"
+  },
+  {
+   "prefix": "p",
+   "seq": 9223372036854775807,
+   "suffix": ".end",
+   "name": "p/9223372036854775807.end"
+  },
+  {
+   "prefix": "",
+   "seq": 1,
+   "suffix": ".seg",
+   "name": "/000000001.seg"
+  },
+  {
+   "prefix": "a/b/c",
+   "seq": 123456,
+   "suffix": ".err",
+   "name": "a/b/c/000123456.err"
+  }
+ ],
+ "entries": [
+  {
+   "name": "000000000.seg",
+   "seq": 0,
+   "ok": true
+  },
+  {
+   "name": "000000007.end",
+   "seq": 7,
+   "ok": true
+  },
+  {
+   "name": "000000003.err",
+   "seq": 3,
+   "ok": true
+  },
+  {
+   "name": "12.seg",
+   "seq": 12,
+   "ok": true
+  },
+  {
+   "name": "+5.seg",
+   "seq": 5,
+   "ok": true
+  },
+  {
+   "name": "-0.seg",
+   "seq": 0,
+   "ok": true
+  },
+  {
+   "name": "-1.seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "9223372036854775807.seg",
+   "seq": 9223372036854775807,
+   "ok": true
+  },
+  {
+   "name": "9223372036854775808.seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "1.tmp",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": ".seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "+.seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "-.end",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "1_000.seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": " 1.seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "1 .seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "0x1.seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "1.seg.bak",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "1.2.seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "a.b.seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": ".",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "..seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "00000000000000000000001.seg",
+   "seq": 1,
+   "ok": true
+  },
+  {
+   "name": "1.SEG",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "1.Seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "١.seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "1e3.seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "+0.err",
+   "seq": 0,
+   "ok": true
+  },
+  {
+   "name": "--1.seg",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "000000001.end.err",
+   "seq": 0,
+   "ok": false
+  },
+  {
+   "name": "999999999999999999999.end",
+   "seq": 0,
+   "ok": false
+  }
+ ],
+ "announce": [
+  {
+   "session": "0123456789abcdef0123456789abcdef",
+   "nanos": 1794200836551728000,
+   "name": "sessions/1794200836551728000-0123456789abcdef0123456789abcdef"
+  },
+  {
+   "session": "0123456789abcdef0123456789abcdef",
+   "nanos": 0,
+   "name": "sessions/0-0123456789abcdef0123456789abcdef"
+  },
+  {
+   "session": "ffffffffffffffffffffffffffffffff",
+   "nanos": 1,
+   "name": "sessions/1-ffffffffffffffffffffffffffffffff"
+  },
+  {
+   "session": "00000000000000000000000000000000",
+   "nanos": -5,
+   "name": "sessions/-5-00000000000000000000000000000000"
+  },
+  {
+   "session": "abc",
+   "nanos": 9223372036854775807,
+   "name": "sessions/9223372036854775807-abc"
+  }
+ ],
+ "resolve": [
+  {
+   "name": "sessions/1-ab",
+   "path": "sessions/1-ab"
+  },
+  {
+   "name": "streams/ab/c2s/000000000.seg",
+   "path": "streams/ab/c2s/000000000.seg"
+  },
+  {
+   "name": "a//b/./c/",
+   "path": "a/b/c"
+  },
+  {
+   "name": "../../etc/passwd",
+   "path": "etc/passwd"
+  },
+  {
+   "name": "a/../../b",
+   "path": "b"
+  },
+  {
+   "name": "",
+   "error": "transport/internet/xdrive: invalid object name: "
+  },
+  {
+   "name": "/",
+   "error": "transport/internet/xdrive: invalid object name: /"
+  },
+  {
+   "name": ".",
+   "error": "transport/internet/xdrive: invalid object name: ."
+  },
+  {
+   "name": "a/..",
+   "error": "transport/internet/xdrive: invalid object name: a/.."
+  },
+  {
+   "name": "./a",
+   "path": "a"
+  },
+  {
+   "name": "a/.xdrive-tmp-1",
+   "error": "transport/internet/xdrive: reserved object name: a/.xdrive-tmp-1"
+  },
+  {
+   "name": ".xdrive-tmp-x",
+   "error": "transport/internet/xdrive: reserved object name: .xdrive-tmp-x"
+  },
+  {
+   "name": "a/.xdrive-tmp",
+   "path": "a/.xdrive-tmp"
+  },
+  {
+   "name": "a/.xdrive-tmp-",
+   "error": "transport/internet/xdrive: reserved object name: a/.xdrive-tmp-"
+  },
+  {
+   "name": "a/x.xdrive-tmp-1",
+   "path": "a/x.xdrive-tmp-1"
+  },
+  {
+   "name": ".xdrive-tmp-1/a",
+   "path": ".xdrive-tmp-1/a"
+  },
+  {
+   "name": "streams",
+   "path": "streams"
+  },
+  {
+   "name": "a/b/../c",
+   "path": "a/c"
+  },
+  {
+   "name": "a\\b",
+   "path": "a\\b"
+  },
+  {
+   "name": " a / b ",
+   "path": " a / b "
+  },
+  {
+   "name": "...",
+   "path": "..."
+  },
+  {
+   "name": "a/...",
+   "path": "a/..."
+  }
+ ],
+ "writers": [
+  {
+   "name": "one small write, then close",
+   "segmentBytes": 16,
+   "concurrency": 0,
+   "ops": [
+    "w5",
+    "c"
+   ],
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 5,
+     "sha256": "f74b1421379962a45534bfff59f3d39431e8b80cd08f00de2d5a252a87753da3"
+    },
+    {
+     "name": "up/000000001.end",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "a write that fills segments",
+   "segmentBytes": 16,
+   "concurrency": 0,
+   "ops": [
+    "w40",
+    "c"
+   ],
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 16,
+     "sha256": "bf1bb93d74f56e14ad36b4e45c1a7c75a32d93df95150c3e280a45bc7623420c"
+    },
+    {
+     "name": "up/000000001.seg",
+     "size": 16,
+     "sha256": "010cc7aa917b518db5a046f97c73ecc29d930b2afedc8b2a5e3fe6ed22446508"
+    },
+    {
+     "name": "up/000000002.seg",
+     "size": 8,
+     "sha256": "639eeefd171e403131a49b145c95d1e2362b86deddd0a2c55a3238e54ec18005"
+    },
+    {
+     "name": "up/000000003.end",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "exactly one segment",
+   "segmentBytes": 16,
+   "concurrency": 0,
+   "ops": [
+    "w16",
+    "c"
+   ],
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 16,
+     "sha256": "bf1bb93d74f56e14ad36b4e45c1a7c75a32d93df95150c3e280a45bc7623420c"
+    },
+    {
+     "name": "up/000000001.end",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "a tick after growth holds",
+   "segmentBytes": 64,
+   "concurrency": 0,
+   "ops": [
+    "w5",
+    "t",
+    "c"
+   ],
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 5,
+     "sha256": "f74b1421379962a45534bfff59f3d39431e8b80cd08f00de2d5a252a87753da3"
+    },
+    {
+     "name": "up/000000001.end",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "a quiet tick flushes",
+   "segmentBytes": 64,
+   "concurrency": 0,
+   "ops": [
+    "w5",
+    "t",
+    "t",
+    "c"
+   ],
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 5,
+     "sha256": "f74b1421379962a45534bfff59f3d39431e8b80cd08f00de2d5a252a87753da3"
+    },
+    {
+     "name": "up/000000001.end",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "growth is held for eight ticks",
+   "segmentBytes": 1024,
+   "concurrency": 0,
+   "ops": [
+    "w1",
+    "t",
+    "w1",
+    "t",
+    "w1",
+    "t",
+    "w1",
+    "t",
+    "w1",
+    "t",
+    "w1",
+    "t",
+    "w1",
+    "t",
+    "w1",
+    "t",
+    "w1",
+    "t",
+    "w1",
+    "t",
+    "c"
+   ],
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 9,
+     "sha256": "24a1108979c137efa170e71c7f5d843874c1d3b39f812100569f10b1996f62c1"
+    },
+    {
+     "name": "up/000000001.seg",
+     "size": 1,
+     "sha256": "0a43b22d89fa2499be5c7704c9bf273260b0ca9588e4cd1897cd80f9c96cd97a"
+    },
+    {
+     "name": "up/000000002.end",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "held ticks reset after a flush",
+   "segmentBytes": 1024,
+   "concurrency": 0,
+   "ops": [
+    "w3",
+    "t",
+    "t",
+    "w4",
+    "t",
+    "w4",
+    "t",
+    "t",
+    "c"
+   ],
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 3,
+     "sha256": "17aef23a39d753e713c203c152454d29fa8e39a98e83a69b39a5094dba9ae951"
+    },
+    {
+     "name": "up/000000001.seg",
+     "size": 8,
+     "sha256": "de263fda215ede240013c9aa712c71752737705d1094d29daafc5f0887d496a4"
+    },
+    {
+     "name": "up/000000002.end",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "ticks with nothing written",
+   "segmentBytes": 16,
+   "concurrency": 0,
+   "ops": [
+    "t",
+    "t",
+    "w2",
+    "t",
+    "t",
+    "t",
+    "c"
+   ],
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 2,
+     "sha256": "4a80a67af76ac958d9b3b9af012f83a552196b0116e980d91a315c95e62f922f"
+    },
+    {
+     "name": "up/000000001.end",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "close with nothing written",
+   "segmentBytes": 16,
+   "concurrency": 0,
+   "ops": [
+    "c"
+   ],
+   "objects": [
+    {
+     "name": "up/000000000.end",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "a second close changes nothing",
+   "segmentBytes": 16,
+   "concurrency": 0,
+   "ops": [
+    "w3",
+    "c",
+    "c"
+   ],
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 3,
+     "sha256": "17aef23a39d753e713c203c152454d29fa8e39a98e83a69b39a5094dba9ae951"
+    },
+    {
+     "name": "up/000000001.end",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "a write after close",
+   "segmentBytes": 16,
+   "concurrency": 0,
+   "ops": [
+    "w3",
+    "c",
+    "w3"
+   ],
+   "writeErrors": {
+    "2": "io: read/write on closed pipe"
+   },
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 3,
+     "sha256": "17aef23a39d753e713c203c152454d29fa8e39a98e83a69b39a5094dba9ae951"
+    },
+    {
+     "name": "up/000000001.end",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "default segment size",
+   "segmentBytes": 0,
+   "concurrency": 0,
+   "ops": [
+    "w1000",
+    "t",
+    "t",
+    "w600000",
+    "c"
+   ],
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 1000,
+     "sha256": "533b698850849b7908b20a22658f639c0b2a476f1791f85f50188287c31a9aba"
+    },
+    {
+     "name": "up/000000001.seg",
+     "size": 524288,
+     "sha256": "ab2b1cfd5ee14392e8e4b9b1cd55677c6061edc6a4e909af0e4468ba7f8d8d37"
+    },
+    {
+     "name": "up/000000002.seg",
+     "size": 75712,
+     "sha256": "c4f7377f02e45045b5128170ef876650d314fab2549f1f6af72a0f77ab28b88e"
+    },
+    {
+     "name": "up/000000003.end",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "large write over small segments",
+   "segmentBytes": 7,
+   "concurrency": 2,
+   "ops": [
+    "w100",
+    "t",
+    "w3",
+    "c"
+   ],
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 7,
+     "sha256": "d68796b7712ef368707a713257728d066d10964d9ac113a284888979415d588a"
+    },
+    {
+     "name": "up/000000001.seg",
+     "size": 7,
+     "sha256": "8b8706f8f248628bf9c924daf06f905a36649b42ef69a871ce3df4ce0b47d9da"
+    },
+    {
+     "name": "up/000000002.seg",
+     "size": 7,
+     "sha256": "904b7cf4b88475a59ba13c52dd9898bb832ef34e9b2a4bb508c31576360ffc75"
+    },
+    {
+     "name": "up/000000003.seg",
+     "size": 7,
+     "sha256": "2f400e2ae78eecc44d73f952890012c30a2b8cc4aed8597cb3d7a20a94bee297"
+    },
+    {
+     "name": "up/000000004.seg",
+     "size": 7,
+     "sha256": "dbddd8859b7a503eb40a3c15b494ea0ff15ee5e3ad01cc7673a31747f33feb8b"
+    },
+    {
+     "name": "up/000000005.seg",
+     "size": 7,
+     "sha256": "91cd5c87e6e7ecf763459c2b0c48d1da3e148700f299d3b372077be1ff2a540d"
+    },
+    {
+     "name": "up/000000006.seg",
+     "size": 7,
+     "sha256": "a0ad05490d24dc8c126ec025a49600ed00d661c04853b80c9a32cf732bbe0a4f"
+    },
+    {
+     "name": "up/000000007.seg",
+     "size": 7,
+     "sha256": "7835bdd7ceff8505539cf356182de4187777153f8d48829921c138f27f592682"
+    },
+    {
+     "name": "up/000000008.seg",
+     "size": 7,
+     "sha256": "96dcffa850e587c7cd1553f4215ea7f3b2f929f72b0526ae66797738433a287e"
+    },
+    {
+     "name": "up/000000009.seg",
+     "size": 7,
+     "sha256": "f3d544767d6e6f5edd51902d7f067487d7ddcf0918251b033c446b03cb870240"
+    },
+    {
+     "name": "up/000000010.seg",
+     "size": 7,
+     "sha256": "4b6d65e4847e70bfe5bfb7f532a6235f90d9b411cc8c8c5bc4ae3bebbdeeb673"
+    },
+    {
+     "name": "up/000000011.seg",
+     "size": 7,
+     "sha256": "aec9393c503fcf5c59e1cb3eb053ff495a11cd26631acc500a78bd4e00992dd8"
+    },
+    {
+     "name": "up/000000012.seg",
+     "size": 7,
+     "sha256": "481f6cb2f451b5c7167938444d27295fa22daff3fbae4a183679b98649ffec8b"
+    },
+    {
+     "name": "up/000000013.seg",
+     "size": 7,
+     "sha256": "13d110d9c70797ddcbe4b91dd87acfeac264210025bd672ccdfdac3ea90a4926"
+    },
+    {
+     "name": "up/000000014.seg",
+     "size": 2,
+     "sha256": "436964b77fd8ccfb95a87ba5729427ca03925ace895314f4ecbe5fc96eb7cd2c"
+    },
+    {
+     "name": "up/000000015.seg",
+     "size": 3,
+     "sha256": "89a3c63132b0d4d3d7cffb3291653d2be875e0e820105f87ce306ba62f0e4043"
+    },
+    {
+     "name": "up/000000016.end",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "a refused segment fails the writer",
+   "segmentBytes": 16,
+   "concurrency": 0,
+   "ops": [
+    "w16",
+    "w16",
+    "w16",
+    "t",
+    "w5",
+    "c"
+   ],
+   "refuse": [
+    "up/000000001.seg"
+   ],
+   "writeErrors": {
+    "2": "transport/internet/xdrive: failed to store segment \u003e refused",
+    "4": "transport/internet/xdrive: failed to store segment \u003e refused"
+   },
+   "closeError": "transport/internet/xdrive: failed to store segment \u003e refused",
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 16,
+     "sha256": "bf1bb93d74f56e14ad36b4e45c1a7c75a32d93df95150c3e280a45bc7623420c"
+    },
+    {
+     "name": "up/000000001.err",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "a refused tail fails the close",
+   "segmentBytes": 16,
+   "concurrency": 0,
+   "ops": [
+    "w5",
+    "c"
+   ],
+   "refuse": [
+    "up/000000000.seg"
+   ],
+   "closeError": "transport/internet/xdrive: failed to store segment \u003e refused",
+   "objects": [
+    {
+     "name": "up/000000000.err",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  },
+  {
+   "name": "a refused end mark",
+   "segmentBytes": 16,
+   "concurrency": 0,
+   "ops": [
+    "w5",
+    "c"
+   ],
+   "refuse": [
+    "up/000000001.end"
+   ],
+   "closeError": "refused",
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 5,
+     "sha256": "f74b1421379962a45534bfff59f3d39431e8b80cd08f00de2d5a252a87753da3"
+    }
+   ]
+  },
+  {
+   "name": "segment one byte",
+   "segmentBytes": 1,
+   "concurrency": 0,
+   "ops": [
+    "w4",
+    "t",
+    "w1",
+    "c"
+   ],
+   "objects": [
+    {
+     "name": "up/000000000.seg",
+     "size": 1,
+     "sha256": "ca358758f6d27e6cf45272937977a748fd88391db679ceda7dc7bf1f005ee879"
+    },
+    {
+     "name": "up/000000001.seg",
+     "size": 1,
+     "sha256": "2d3193691934124461809fb9bc7e671215099fc7d961bfbe31943d40d477c890"
+    },
+    {
+     "name": "up/000000002.seg",
+     "size": 1,
+     "sha256": "9d1e0e2d9459d06523ad13e28a4093c2316baafe7aec5b25f30eba2e113599c4"
+    },
+    {
+     "name": "up/000000003.seg",
+     "size": 1,
+     "sha256": "9e076ceaf246b6003d9c2680a2b4cf0bffd069805902b0b5edeebf49039fe4bd"
+    },
+    {
+     "name": "up/000000004.seg",
+     "size": 1,
+     "sha256": "ab897fbdedfa502b2d839b6a56100887dccdc507555c282e59589e06300a62e2"
+    },
+    {
+     "name": "up/000000005.end",
+     "size": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ]
+  }
+ ],
+ "readers": [
+  {
+   "name": "segments in order, then the end",
+   "concurrency": 2,
+   "holeTimeout": "long",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "data of 000000000.seg"
+     ],
+     "discarded": [
+      "down/000000000.seg"
+     ],
+     "seq": 1
+    },
+    {
+     "listing": [
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      },
+      {
+       "name": "000000002.seg",
+       "data": "data of 000000002.seg"
+      },
+      {
+       "name": "000000003.seg",
+       "data": "data of 000000003.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "data of 000000001.seg",
+      "data of 000000002.seg",
+      "data of 000000003.seg"
+     ],
+     "discarded": [
+      "down/000000001.seg",
+      "down/000000002.seg",
+      "down/000000003.seg"
+     ],
+     "seq": 4
+    },
+    {
+     "listing": [
+      {
+       "name": "000000004.end",
+       "data": "data of 000000004.end"
+      }
+     ],
+     "advanced": false,
+     "eof": true,
+     "chunks": [],
+     "discarded": [
+      "down/000000004.end"
+     ],
+     "seq": 4
+    }
+   ]
+  },
+  {
+   "name": "an empty listing",
+   "concurrency": 8,
+   "holeTimeout": "long",
+   "steps": [
+    {
+     "listing": null,
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    },
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      },
+      {
+       "name": "000000001.end",
+       "data": "data of 000000001.end"
+      }
+     ],
+     "advanced": true,
+     "eof": true,
+     "chunks": [
+      "data of 000000000.seg"
+     ],
+     "discarded": [
+      "down/000000000.seg",
+      "down/000000001.end"
+     ],
+     "seq": 1
+    }
+   ]
+  },
+  {
+   "name": "an end at the head of a batch",
+   "concurrency": 4,
+   "holeTimeout": "long",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      },
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      },
+      {
+       "name": "000000002.end",
+       "data": "data of 000000002.end"
+      },
+      {
+       "name": "000000003.seg",
+       "data": "data of 000000003.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": true,
+     "chunks": [
+      "data of 000000000.seg",
+      "data of 000000001.seg"
+     ],
+     "discarded": [
+      "down/000000000.seg",
+      "down/000000001.seg",
+      "down/000000002.end"
+     ],
+     "seq": 2
+    }
+   ]
+  },
+  {
+   "name": "a hole fails on the next poll",
+   "concurrency": 8,
+   "holeTimeout": "zero",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    },
+    {
+     "listing": [
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "error": "transport/internet/xdrive: segment 0 never arrived while later ones did, the peer lost it",
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    }
+   ]
+  },
+  {
+   "name": "a hole that fills in time",
+   "concurrency": 8,
+   "holeTimeout": "zero",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    },
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      },
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "data of 000000000.seg",
+      "data of 000000001.seg"
+     ],
+     "discarded": [
+      "down/000000000.seg",
+      "down/000000001.seg"
+     ],
+     "seq": 2
+    },
+    {
+     "listing": [
+      {
+       "name": "000000003.seg",
+       "data": "data of 000000003.seg"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 2
+    },
+    {
+     "listing": [
+      {
+       "name": "000000002.seg",
+       "data": "data of 000000002.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "data of 000000002.seg"
+     ],
+     "discarded": [
+      "down/000000002.seg"
+     ],
+     "seq": 3
+    }
+   ]
+  },
+  {
+   "name": "a hole that never times out",
+   "concurrency": 8,
+   "holeTimeout": "long",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000002.seg",
+       "data": "data of 000000002.seg"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    },
+    {
+     "listing": [
+      {
+       "name": "000000002.seg",
+       "data": "data of 000000002.seg"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    },
+    {
+     "listing": [
+      {
+       "name": "000000002.seg",
+       "data": "data of 000000002.seg"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    }
+   ]
+  },
+  {
+   "name": "only an end mark ahead is a hole too",
+   "concurrency": 8,
+   "holeTimeout": "zero",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000003.end",
+       "data": "data of 000000003.end"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    },
+    {
+     "listing": [
+      {
+       "name": "000000003.end",
+       "data": "data of 000000003.end"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "error": "transport/internet/xdrive: segment 0 never arrived while later ones did, the peer lost it",
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    }
+   ]
+  },
+  {
+   "name": "a failure marker after a segment",
+   "concurrency": 8,
+   "holeTimeout": "long",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      },
+      {
+       "name": "000000001.err",
+       "data": "data of 000000001.err"
+      },
+      {
+       "name": "000000002.seg",
+       "data": "data of 000000002.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "error": "transport/internet/xdrive: the peer could not store segment 1",
+     "chunks": [
+      "data of 000000000.seg"
+     ],
+     "discarded": [
+      "down/000000000.seg",
+      "down/000000001.err"
+     ],
+     "seq": 1
+    }
+   ]
+  },
+  {
+   "name": "a failure marker ahead of the head",
+   "concurrency": 8,
+   "holeTimeout": "long",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      },
+      {
+       "name": "000000002.err",
+       "data": "data of 000000002.err"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "data of 000000000.seg"
+     ],
+     "discarded": [
+      "down/000000000.seg"
+     ],
+     "seq": 1
+    },
+    {
+     "listing": [
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      },
+      {
+       "name": "000000002.err",
+       "data": "data of 000000002.err"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "error": "transport/internet/xdrive: the peer could not store segment 2",
+     "chunks": [
+      "data of 000000001.seg"
+     ],
+     "discarded": [
+      "down/000000001.seg",
+      "down/000000002.err"
+     ],
+     "seq": 2
+    }
+   ]
+  },
+  {
+   "name": "a listed segment not there yet",
+   "concurrency": 8,
+   "holeTimeout": "long",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      },
+      {
+       "name": "000000001.seg"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    },
+    {
+     "listing": [
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    }
+   ]
+  },
+  {
+   "name": "a failing get",
+   "concurrency": 8,
+   "holeTimeout": "long",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      },
+      {
+       "name": "000000001.seg",
+       "fail": "storage exploded"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "error": "storage exploded",
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    }
+   ]
+  },
+  {
+   "name": "an inline payload",
+   "concurrency": 8,
+   "holeTimeout": "long",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "inline": "carried by the listing"
+      },
+      {
+       "name": "000000001.end"
+      }
+     ],
+     "advanced": true,
+     "eof": true,
+     "chunks": [
+      "carried by the listing"
+     ],
+     "discarded": [
+      "down/000000000.seg",
+      "down/000000001.end"
+     ],
+     "seq": 1
+    }
+   ]
+  },
+  {
+   "name": "names that are not entries",
+   "concurrency": 8,
+   "holeTimeout": "zero",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "x",
+       "data": "data of x"
+      },
+      {
+       "name": "1.tmp",
+       "data": "data of 1.tmp"
+      },
+      {
+       "name": ".xdrive-tmp-5",
+       "data": "data of .xdrive-tmp-5"
+      },
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      },
+      {
+       "name": "-1.seg",
+       "data": "data of -1.seg"
+      },
+      {
+       "name": "1.2.seg",
+       "data": "data of 1.2.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "data of 000000000.seg"
+     ],
+     "discarded": [
+      "down/000000000.seg"
+     ],
+     "seq": 1
+    },
+    {
+     "listing": [
+      {
+       "name": "+1.seg",
+       "data": "data of +1.seg"
+      },
+      {
+       "name": "000000002.end",
+       "data": "data of 000000002.end"
+      }
+     ],
+     "advanced": true,
+     "eof": true,
+     "chunks": [
+      "data of +1.seg"
+     ],
+     "discarded": [
+      "down/+1.seg",
+      "down/000000002.end"
+     ],
+     "seq": 2
+    }
+   ]
+  },
+  {
+   "name": "duplicate numbers keep the last listed",
+   "concurrency": 8,
+   "holeTimeout": "long",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "first spelling"
+      },
+      {
+       "name": "0.seg",
+       "data": "second spelling"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "second spelling"
+     ],
+     "discarded": [
+      "down/0.seg"
+     ],
+     "seq": 1
+    },
+    {
+     "listing": [
+      {
+       "name": "1.end"
+      },
+      {
+       "name": "000000001.seg",
+       "data": "a segment after an end"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "a segment after an end"
+     ],
+     "discarded": [
+      "down/000000001.seg"
+     ],
+     "seq": 2
+    }
+   ]
+  },
+  {
+   "name": "more segments than the discard queue holds",
+   "concurrency": 1,
+   "holeTimeout": "long",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      },
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      },
+      {
+       "name": "000000002.seg",
+       "data": "data of 000000002.seg"
+      },
+      {
+       "name": "000000003.seg",
+       "data": "data of 000000003.seg"
+      },
+      {
+       "name": "000000004.seg",
+       "data": "data of 000000004.seg"
+      },
+      {
+       "name": "000000005.seg",
+       "data": "data of 000000005.seg"
+      },
+      {
+       "name": "000000006.seg",
+       "data": "data of 000000006.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "data of 000000000.seg",
+      "data of 000000001.seg",
+      "data of 000000002.seg",
+      "data of 000000003.seg",
+      "data of 000000004.seg",
+      "data of 000000005.seg",
+      "data of 000000006.seg"
+     ],
+     "discarded": [
+      "down/000000000.seg",
+      "down/000000001.seg",
+      "down/000000002.seg",
+      "down/000000003.seg"
+     ],
+     "seq": 7
+    }
+   ]
+  },
+  {
+   "name": "entries behind the head are no hole",
+   "concurrency": 8,
+   "holeTimeout": "zero",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      },
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "data of 000000000.seg",
+      "data of 000000001.seg"
+     ],
+     "discarded": [
+      "down/000000000.seg",
+      "down/000000001.seg"
+     ],
+     "seq": 2
+    },
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      },
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 2
+    },
+    {
+     "listing": [
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 2
+    },
+    {
+     "listing": [
+      {
+       "name": "000000002.seg",
+       "data": "data of 000000002.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "data of 000000002.seg"
+     ],
+     "discarded": [
+      "down/000000002.seg"
+     ],
+     "seq": 3
+    }
+   ]
+  },
+  {
+   "name": "names that are no entries are no hole",
+   "concurrency": 8,
+   "holeTimeout": "zero",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "x",
+       "data": "data of x"
+      },
+      {
+       "name": "1.tmp",
+       "data": "data of 1.tmp"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    },
+    {
+     "listing": [
+      {
+       "name": "x",
+       "data": "data of x"
+      },
+      {
+       "name": "1.tmp",
+       "data": "data of 1.tmp"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    },
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "data of 000000000.seg"
+     ],
+     "discarded": [
+      "down/000000000.seg"
+     ],
+     "seq": 1
+    }
+   ]
+  },
+  {
+   "name": "batches of concurrency",
+   "concurrency": 3,
+   "holeTimeout": "long",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      },
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      },
+      {
+       "name": "000000002.seg",
+       "data": "data of 000000002.seg"
+      },
+      {
+       "name": "000000003.seg",
+       "data": "data of 000000003.seg"
+      },
+      {
+       "name": "000000004.seg",
+       "data": "data of 000000004.seg"
+      },
+      {
+       "name": "000000006.seg",
+       "data": "data of 000000006.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "data of 000000000.seg",
+      "data of 000000001.seg",
+      "data of 000000002.seg",
+      "data of 000000003.seg",
+      "data of 000000004.seg"
+     ],
+     "discarded": [
+      "down/000000000.seg",
+      "down/000000001.seg",
+      "down/000000002.seg",
+      "down/000000003.seg",
+      "down/000000004.seg"
+     ],
+     "seq": 5
+    },
+    {
+     "listing": [
+      {
+       "name": "000000005.seg",
+       "data": "data of 000000005.seg"
+      },
+      {
+       "name": "000000006.seg",
+       "data": "data of 000000006.seg"
+      },
+      {
+       "name": "000000007.err",
+       "data": "data of 000000007.err"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "error": "transport/internet/xdrive: the peer could not store segment 7",
+     "chunks": [
+      "data of 000000005.seg",
+      "data of 000000006.seg"
+     ],
+     "discarded": [
+      "down/000000005.seg",
+      "down/000000006.seg",
+      "down/000000007.err"
+     ],
+     "seq": 7
+    }
+   ]
+  }
+ ]
+}

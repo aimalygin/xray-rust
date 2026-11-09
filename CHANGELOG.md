@@ -30,7 +30,27 @@ long-term supported release series.
   HTTP/3 as on Hysteria, and Salamander on mKCP as a header mask grouped with
   `mkcp-legacy`'s, as Xray-core applies it to any UDP dial. Gecko on mKCP is
   refused for now. See [Hysteria carrier additions](docs/config-compatibility.md#v08-hysteria-carrier-additions).
-
+- The `xdrive` transport carries VLESS through a storage both ends reach, as
+  Xray-core v26.10.31's client does: each connection announces a session
+  under `sessions/`, writes its direction as numbered segments under
+  `streams/<session>/c2s` and reads the server's under `s2c`, with `.end`
+  and `.err` marks, the writer's coalescing of a growing buffer for up to
+  eight flush ticks and the reader's polling, hole timeout and deletes. The
+  `local` service keeps the objects as files in `remoteFolder`, so a client
+  and Xray-core's server meet in a shared folder. See
+  [XDRIVE](docs/config-compatibility.md#xdrive).
+  - `xdriveSettings` is read as Xray-core reads it, all four services and
+    every field; the outbound must be VLESS with `encryption`, without
+    `flow` or `testpre`, with Mux on for TCP and UDP. The server address is
+    never looked up.
+  - `google-drive`, `template` and `s3` are read and checked as Xray-core
+    does, `s3` with its endpoint, region, bucket, folder and secret rules,
+    but refused when the core starts for now.
+  - Deliberate differences: a writer waits once twice `concurrency`
+    segments are not yet stored, where Xray-core keeps cutting; no
+    `xdriveSettings` and an empty `local` folder fail when the core starts,
+    where Xray-core fails every dial; a stream dropped without shutdown
+    stores its end mark in the background for up to two minutes.
 - The `masque` outbound and `masque` transport connect to a MASQUE proxy as
   Xray-core v26.10.31's client does: one CONNECT-IP tunnel (RFC 9484) over
   HTTP/3 or HTTP/2, with Basic authorization from `user` and `pass`, the addresses the

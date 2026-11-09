@@ -472,6 +472,7 @@ impl TransportDialer {
                 self.connect_kcp(config, kcp, original_target, candidates)
                     .await
             }
+            TransportLayer::Xdrive(xdrive) => xdrive.open_stream().await,
         }
     }
 

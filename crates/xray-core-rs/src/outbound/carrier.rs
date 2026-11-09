@@ -121,12 +121,17 @@ impl StreamCarrier {
         }
     }
     /// The server's candidates, after its `addressPortStrategy`.
-    pub(super) fn resolve_server<'a>(
-        &'a self,
-        resolver: &'a dyn DnsResolver,
-        dialer: &'a TransportDialer,
-    ) -> impl Future<Output = Result<Vec<SocketAddr>, CoreError>> + 'a {
-        address_port::resolve_server(&self.server, self.address_port, resolver, dialer)
+    pub(super) async fn resolve_server(
+        &self,
+        resolver: &dyn DnsResolver,
+        dialer: &TransportDialer,
+    ) -> Result<Vec<SocketAddr>, CoreError> {
+        // An XDRIVE session meets its server in the storage: Xray-core's dial
+        // never looks the server address up.
+        if matches!(self.transport_layer, TransportLayer::Xdrive(_)) {
+            return Ok(Vec::new());
+        }
+        address_port::resolve_server(&self.server, self.address_port, resolver, dialer).await
     }
 
     /// The XHTTP download server's candidates, after its leg's
@@ -273,6 +278,9 @@ fn build_transport_layer(
         StreamTransport::Raw => TransportLayer::Raw,
         StreamTransport::Hysteria(_) | StreamTransport::Masque(_) => {
             return Err(CoreError::UnsupportedOutboundNetwork)
+        }
+        StreamTransport::Xdrive(xdrive) => {
+            TransportLayer::Xdrive(super::xdrive::build_xdrive_transport(xdrive)?)
         }
         StreamTransport::WebSocket(websocket) => TransportLayer::WebSocket(WebSocketConfig {
             path: websocket.path.clone(),

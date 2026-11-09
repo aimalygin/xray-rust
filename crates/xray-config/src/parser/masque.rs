@@ -426,31 +426,10 @@ impl Parser<'_> {
     /// `xmux`, a non-pointer Go struct: null keeps it zero. An all-zero
     /// value takes MASQUE's defaults.
     fn parse_masque_xmux(&mut self, settings: &Value, path: &str) -> Option<XhttpXmuxSettings> {
-        let xmux = match settings.get("xmux") {
-            None | Some(Value::Null) => return Some(MASQUE_DEFAULT_XMUX),
-            Some(xmux @ Value::Object(_)) => xmux,
-            Some(_) => {
-                self.error(format!("{path}.xmux"), "xmux must be an object");
-                return None;
-            }
-        };
-        let xmux_path = format!("{path}.xmux");
-        self.reject_unknown_fields(xmux, &xmux_path, &surface::XMUX);
-        let parsed = XhttpXmuxSettings {
-            max_concurrency: self.xhttp_range_at(xmux, "maxConcurrency", &xmux_path)?,
-            max_connections: self.xhttp_range_at(xmux, "maxConnections", &xmux_path)?,
-            c_max_reuse_times: self.xhttp_range_at(xmux, "cMaxReuseTimes", &xmux_path)?,
-            h_max_request_times: self.xhttp_range_at(xmux, "hMaxRequestTimes", &xmux_path)?,
-            h_max_reusable_secs: self.xhttp_range_at(xmux, "hMaxReusableSecs", &xmux_path)?,
-            h_keep_alive_period_secs: self.xhttp_nullable_i64_at(
-                xmux,
-                "hKeepAlivePeriod",
-                format!("{xmux_path}.hKeepAlivePeriod"),
-            )?,
-        };
+        let parsed = self.parse_zeroable_xmux(settings, path)?;
         if parsed.max_connections.to > 0 && parsed.max_concurrency.to > 0 {
             self.error(
-                xmux_path,
+                format!("{path}.xmux"),
                 "maxConnections cannot be specified together with maxConcurrency",
             );
             return None;
