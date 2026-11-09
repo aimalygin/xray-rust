@@ -700,6 +700,14 @@ impl VlessTcpOutbound {
             .map_or(Ok(None), |mux| mux.pool(target))
     }
 
+    /// Whether each TCP flow rides a connection opened for it alone: not a
+    /// pooled Mux.Cool or `testpre` connection, nor a gRPC or XHTTP one.
+    fn opens_a_connection_per_flow(&self) -> bool {
+        self.payload.pre_connections.is_none()
+            && self.payload.mux.as_ref().is_none_or(|mux| !mux.pools_tcp())
+            && self.payload.carrier.opens_a_connection_per_stream()
+    }
+
     /// True when Xray's Mux layer rather than the VLESS UDP command owns this
     /// UDP flow: a pooled XUDP child, or a `xudpProxyUDP443: reject` refusal.
     /// Xray's outbound handler applies both before VLESS sees the flow, so the
@@ -1016,14 +1024,46 @@ impl TcpOutbound {
         }
     }
 
-    /// The outbound a session from the portal of a VLESS reverse proxy
-    /// meets: a freedom that dials for itself refuses whatever its final
-    /// rules do not allow. Through `dialerProxy` freedom is not the final
-    /// outbound and applies none, as in Xray-core.
+    /// The outbound a TCP session from the portal of a VLESS reverse proxy,
+    /// or a tunnel of its bridge, meets. Xray-core's freedom refuses what its
+    /// final rules do not allow whenever its dial carries such a session,
+    /// and every link of a `dialerProxy` chain dials with the session's
+    /// context: so a freedom that dials for itself refuses it at the end of
+    /// a chain too. A freedom that dials through `dialerProxy` applies no
+    /// rule, as there.
+    ///
+    /// Under a link whose flows share connections, Mux.Cool's, `testpre`'s,
+    /// gRPC's or XHTTP's, the chain is left as it is: Xray-core opens Mux,
+    /// `testpre` and gRPC connections without the session's context, and a
+    /// connection refused here would stall the other flows on it.
     pub(crate) fn for_reverse(self) -> Self {
         match self {
             Self::Freedom(freedom) => Self::Freedom(freedom.for_reverse()),
+            Self::Chained { outbound, proxy } if outbound.opens_a_connection_per_flow() => {
+                Self::Chained {
+                    outbound,
+                    proxy: Box::new(proxy.for_reverse()),
+                }
+            }
             outbound => outbound,
+        }
+    }
+
+    /// Whether each TCP flow this outbound carries rides a connection opened
+    /// for it alone, so that refusing the connection reaches no other flow.
+    fn opens_a_connection_per_flow(&self) -> bool {
+        match self {
+            Self::Freedom(_) => true,
+            Self::Vless(vless) => vless.opens_a_connection_per_flow(),
+            Self::Trojan(trojan) => trojan.opens_a_connection_per_flow(),
+            Self::Vmess(vmess) => vmess.opens_a_connection_per_flow(),
+            Self::Shadowsocks2022(shadowsocks) => shadowsocks.opens_a_connection_per_flow(),
+            Self::Socks(socks) => socks.carrier().opens_a_connection_per_stream(),
+            // An HTTP outbound keeps an HTTP/2 connection only once a tunnel
+            // opened on it, and reusing it dials nothing.
+            Self::Http(http) => http.carrier().opens_a_connection_per_stream(),
+            Self::Hysteria(_) | Self::Wireguard(_) | Self::Masque(_) => false,
+            Self::Chained { outbound, .. } => outbound.opens_a_connection_per_flow(),
         }
     }
 
@@ -4861,6 +4901,12 @@ const REVERSE_DIAL_BACKOFF: Duration = Duration::from_millis(200);
 /// a first payload, as any VLESS request's does; none comes before the
 /// portal speaks, so it goes alone after 500 ms, Vision padding an empty
 /// frame. The carrier is dialed as often as Xray-core dials it.
+///
+/// The dial carries the bridge's reverse context there, so a freedom the
+/// chain ends on refuses the tunnel unless its final rules allow the
+/// portal. The outbound's `mux` and `testpre` never carry a tunnel; a gRPC
+/// or XHTTP carrier's connections are shared, and its chain is left as it
+/// is, as [`TcpOutbound::for_reverse`] leaves it.
 pub(crate) async fn open_vless_reverse_tunnel(
     outbound: &TcpOutbound,
     bootstrap_resolver: &dyn DnsResolver,
@@ -4874,6 +4920,10 @@ pub(crate) async fn open_vless_reverse_tunnel(
         },
         _ => return Err(CoreError::UnsupportedOutboundNetwork),
     };
+    let reverse_proxy = proxy
+        .filter(|_| vless.carrier().opens_a_connection_per_stream())
+        .map(|proxy| proxy.clone().for_reverse());
+    let proxy = reverse_proxy.as_ref().or(proxy);
     let flow = validate_outbound_flow(vless)?;
     let mut failures = 0;
     let stream = loop {

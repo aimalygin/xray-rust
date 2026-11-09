@@ -1172,7 +1172,7 @@ through them to the services the bridge's routing lets it reach:
   opens a tunnel when none is active or the active ones hold more than 16
   sessions each. A tunnel stops being active when it closes or when the
   portal's control session asks it to drain, which Xray-core's portal does
-  once it opened 256 sessions on it. A draining tunnel finishes its sessions
+  once more than 256 sessions, its control session included, were opened on it. A draining tunnel finishes its sessions
   and, like any tunnel, closes once it held none for a whole minute.
 - A core with a bridge starts without an inbound.
 - The legacy `reverse` at the root of the configuration, with `bridges` and

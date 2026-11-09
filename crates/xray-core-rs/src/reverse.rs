@@ -12,7 +12,7 @@
 //! tunnel when none is active, or when the active ones hold more than 16
 //! sessions each on average. A tunnel stops being active when it closes or
 //! when the portal's control session asks it to drain, which Xray-core's
-//! portal does once it opened 256 sessions on it; a draining tunnel finishes
+//! portal does once more than 256 sessions, its control session included, were opened on it; a draining tunnel finishes
 //! its sessions and closes when idle. A tunnel lost to a network change is
 //! replaced at the next run once the loss is noticed: by the carrier, or
 //! when nothing crossed it for the `connIdle` of its user's level, the

@@ -114,6 +114,16 @@ impl StreamCarrier {
             None => dialer,
         }
     }
+    /// Whether every stream this carrier opens is a connection of its own.
+    /// gRPC's and XHTTP's streams share the connections their transport
+    /// keeps.
+    pub(super) fn opens_a_connection_per_stream(&self) -> bool {
+        !matches!(
+            self.transport_layer,
+            TransportLayer::Grpc(_) | TransportLayer::Xhttp(_)
+        )
+    }
+
     /// The server's candidates, after its `addressPortStrategy`.
     pub(super) fn resolve_server<'a>(
         &'a self,

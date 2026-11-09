@@ -3,7 +3,7 @@
 //! tunnel inbounds routed into it. TCP and UDP services behind the bridge
 //! answer clients of the portal over raw, TLS with Vision, WebSocket, gRPC
 //! and XHTTP; freedom refuses what its final rules do not allow; a wrong UUID
-//! opens nothing; the portal's DRAIN after 256 sessions brings a second
+//! opens nothing; the portal's DRAIN after more than 256 sessions brings a second
 //! tunnel.
 use super::proxy_carriers::certificate_pin;
 use super::*;
@@ -73,6 +73,17 @@ async fn start_portal(
     services: &Services,
     decryption: Option<&str>,
 ) -> (XrayServer, Public) {
+    start_portal_with(checkout, server, services, decryption, |_| {}).await
+}
+
+/// [`start_portal`], with `extra` changing the portal's configuration last.
+async fn start_portal_with(
+    checkout: &Path,
+    server: XrayVlessServerConfig,
+    services: &Services,
+    decryption: Option<&str>,
+    extra: impl FnOnce(&mut Value),
+) -> (XrayServer, Public) {
     let public = Public {
         tcp: SocketAddr::from((Ipv4Addr::LOCALHOST, allocate_loopback_port())),
         udp: SocketAddr::from((Ipv4Addr::LOCALHOST, allocate_loopback_udp_port())),
@@ -98,6 +109,7 @@ async fn start_portal(
         );
         config["routing"] = json!({"rules": [{"inboundTag": ["public-tcp", "public-udp"],
             "outboundTag": "r-out"}]});
+        extra(config);
     })
     .await;
     (portal, public)
@@ -389,6 +401,190 @@ async fn reverse_bridge_freedom_refuses_and_a_wrong_uuid_opens_nothing() {
     assert_eq!(tunnels_opened(&portal), 0, "{}", portal.logs());
     assert_eq!(services.accepted.load(Ordering::SeqCst), 0);
     core.stop().await.unwrap();
+}
+
+/// The bridge's chains meet freedom's reverse rule where Xray-core's do, as
+/// checked against an Xray-core bridge: the freedom a chain ends on refuses
+/// the portal's sessions, and the tunnel, unless its final rules allow the
+/// next hop, while a Mux.Cool or gRPC connection, which Xray-core opens
+/// without the session's context, is not refused. The portal also runs plain
+/// VLESS inbounds for the chains to reach.
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-reverse-interop.sh"]
+async fn reverse_bridge_chains_meet_freedoms_rule_where_xray_does() {
+    let checkout = resolve_xray_checkout();
+    let server = XrayVlessServerConfig {
+        security: XrayInboundSecurity::None,
+        transport: XrayInboundTransport::Raw,
+        flow: None,
+    };
+    let services = start_services().await;
+    let relay_raw = SocketAddr::from((Ipv4Addr::LOCALHOST, allocate_loopback_port()));
+    let relay_grpc = SocketAddr::from((Ipv4Addr::LOCALHOST, allocate_loopback_port()));
+    let portal_freedom = allow(&services);
+    let (portal, public) = start_portal_with(&checkout, server, &services, None, |config| {
+        let relay = |tag: &str, port: u16, stream: Value| {
+            json!({"tag": tag, "protocol": "vless", "listen": "127.0.0.1", "port": port,
+                "settings": {"clients": [{"id": WRONG_UUID}], "decryption": "none"},
+                "streamSettings": stream})
+        };
+        let inbounds = config["inbounds"].as_array_mut().unwrap();
+        inbounds.push(relay(
+            "relay-raw",
+            relay_raw.port(),
+            json!({"network": "raw"}),
+        ));
+        inbounds.push(relay(
+            "relay-grpc",
+            relay_grpc.port(),
+            json!({"network": "grpc", "grpcSettings": {"serviceName": "relay"}}),
+        ));
+        // Xray-core's freedom refuses private addresses to VLESS sessions.
+        config["outbounds"] =
+            json!([{"tag": "direct", "protocol": "freedom", "settings": portal_freedom}]);
+        config["routing"]["rules"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"inboundTag": ["relay-raw", "relay-grpc"], "outboundTag": "direct"}));
+    })
+    .await;
+    let via = |relay: SocketAddr, stream: Value, mux: bool| {
+        let mut outbound = json!({"protocol": "vless", "settings": {"address": "127.0.0.1",
+            "port": relay.port(), "id": WRONG_UUID, "encryption": "none"},
+            "streamSettings": stream});
+        if mux {
+            outbound["mux"] = json!({"enabled": true, "concurrency": 8});
+        }
+        outbound
+    };
+    let through = |proxy: &str| json!({"network": "raw", "sockopt": {"dialerProxy": proxy}});
+    let grpc = json!({"network": "grpc", "grpcSettings": {"serviceName": "relay"},
+        "sockopt": {"dialerProxy": "link"}});
+    let allow_relay = json!({"finalRules": [{"action": "allow", "ip": ["127.0.0.1"],
+        "port": relay_raw.port().to_string()}]});
+    let allow_portal = json!({"finalRules": [{"action": "allow", "ip": ["127.0.0.1"],
+        "port": portal.addr.port().to_string()}]});
+    // (case, the outbound sessions take or none for freedom, the link's
+    // settings, whether the tunnel dials through the link, whether a
+    // session reaches the service)
+    let cases = [
+        (
+            "vless through a freedom",
+            Some(via(relay_raw, through("link"), false)),
+            json!({}),
+            false,
+            false,
+        ),
+        (
+            "vless through a freedom allowing it",
+            Some(via(relay_raw, through("link"), false)),
+            allow_relay.clone(),
+            false,
+            true,
+        ),
+        (
+            "vless through two freedoms",
+            Some(via(relay_raw, through("hop"), false)),
+            json!({}),
+            false,
+            false,
+        ),
+        (
+            "vless through two freedoms, the last allowing it",
+            Some(via(relay_raw, through("hop"), false)),
+            allow_relay,
+            false,
+            true,
+        ),
+        (
+            "vless with Mux through a freedom",
+            Some(via(relay_raw, through("link"), true)),
+            json!({}),
+            false,
+            true,
+        ),
+        (
+            "vless over gRPC through a freedom",
+            Some(via(relay_grpc, grpc, false)),
+            json!({}),
+            false,
+            true,
+        ),
+        ("a tunnel through a freedom", None, json!({}), true, false),
+        (
+            "a tunnel through a freedom allowing the portal",
+            None,
+            allow_portal,
+            true,
+            true,
+        ),
+    ];
+    for (name, via, link, tunnel_through_link, reaches) in cases {
+        eprintln!("reverse chain: {name}");
+        let mut portal_outbound = json!({"tag": "portal", "protocol": "vless", "settings": {
+            "address": "127.0.0.1", "port": portal.addr.port(), "id": TEST_UUID,
+            "encryption": "none", "reverse": {"tag": BRIDGE_TAG}}});
+        if tunnel_through_link {
+            portal_outbound["streamSettings"] = through("link");
+        }
+        let mut outbounds = vec![
+            portal_outbound,
+            json!({"tag": "hop", "protocol": "freedom",
+                "streamSettings": {"sockopt": {"dialerProxy": "link"}}}),
+            json!({"tag": "link", "protocol": "freedom", "settings": link}),
+            json!({"tag": "direct", "protocol": "freedom", "settings": allow(&services)}),
+        ];
+        let route = match via {
+            Some(mut via) => {
+                via["tag"] = "via".into();
+                outbounds.push(via);
+                "via"
+            }
+            None => "direct",
+        };
+        let tunnels = tunnels_opened(&portal);
+        let served = services.accepted.load(Ordering::SeqCst);
+        let mut core = start_bridge(json!({"outbounds": outbounds,
+            "routing": {"rules": [{"inboundTag": [BRIDGE_TAG], "outboundTag": route}]}}))
+        .await;
+        if reaches {
+            assert!(
+                wait_for_tunnel(public.tcp).await,
+                "{name}: nothing reached the service; {}",
+                portal.logs()
+            );
+        } else if tunnel_through_link {
+            sleep(Duration::from_secs(5)).await;
+            assert_eq!(
+                tunnels_opened(&portal),
+                tunnels,
+                "{name}; {}",
+                portal.logs()
+            );
+            assert!(
+                tcp_round_trip(public.tcp, b"no tunnel").await.is_err(),
+                "{name}"
+            );
+        } else {
+            let deadline = Instant::now() + Duration::from_secs(20);
+            while tunnels_opened(&portal) == tunnels && Instant::now() < deadline {
+                sleep(Duration::from_millis(250)).await;
+            }
+            assert!(
+                tunnels_opened(&portal) > tunnels,
+                "{name}; {}",
+                portal.logs()
+            );
+            for _ in 0..3 {
+                assert!(
+                    tcp_round_trip(public.tcp, b"refused").await.is_err(),
+                    "{name}"
+                );
+            }
+            assert_eq!(services.accepted.load(Ordering::SeqCst), served, "{name}");
+        }
+        core.stop().await.unwrap();
+    }
 }
 
 #[tokio::test]

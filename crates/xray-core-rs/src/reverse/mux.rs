@@ -32,7 +32,7 @@ use super::TunnelState;
 const SESSION_QUEUE: usize = 8;
 
 /// The sessions one tunnel holds at once. Xray-core's portal retires a
-/// tunnel once it has opened 256 sessions on it, so its own never come
+/// tunnel once more than 256 sessions, its control session included, were opened on it, so its own never come
 /// near this; Xray-core's bridge has no bound.
 pub(super) const MAX_SESSIONS: usize = 512;
 

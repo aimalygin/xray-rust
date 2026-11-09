@@ -55,6 +55,11 @@ impl VmessOutbound {
     fn mux_pool(&self, target: &Target) -> Result<Option<&super::mux::Pool>, CoreError> {
         self.0.mux.as_ref().map_or(Ok(None), |m| m.pool(target))
     }
+    /// Whether each TCP flow rides a connection opened for it alone.
+    pub(super) fn opens_a_connection_per_flow(&self) -> bool {
+        self.0.mux.as_ref().is_none_or(|m| !m.pools_tcp())
+            && self.0.carrier.opens_a_connection_per_stream()
+    }
 
     pub fn server(&self) -> &Target {
         &self.0.carrier.server
