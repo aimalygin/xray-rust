@@ -44,6 +44,7 @@ fn runtime_config() -> CoreConfig {
                 udp_xdns: None,
                 udp_realm: None,
                 udp_xicmp: None,
+                udp_salamander: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -133,6 +134,7 @@ async fn core_selector_override_is_available_before_and_during_runtime() {
             udp_xdns: None,
             udp_realm: None,
             udp_xicmp: None,
+            udp_salamander: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -594,5 +596,5 @@ async fn xdrive_profiles_xray_accepts_build_a_core() {
         }
     }
     assert!(mismatches.is_empty(), "{mismatches:#?}");
-    assert!(built >= 40, "only {built} cases built a core");
+    assert!(built >= 75, "only {built} cases built a core");
 }

@@ -779,7 +779,8 @@ impl Core {
                 || outbound.stream.udp_sudoku.is_some()
                 || outbound.stream.udp_xdns.is_some()
                 || outbound.stream.udp_realm.is_some()
-                || outbound.stream.udp_xicmp.is_some())
+                || outbound.stream.udp_xicmp.is_some()
+                || outbound.stream.udp_salamander.is_some())
                 && matches!(
                     outbound.settings,
                     xray_config::OutboundSettings::Freedom(_)
@@ -791,11 +792,15 @@ impl Core {
                 return Err(CoreError::UnsupportedOutboundNetwork);
             }
             if let Some(fragment) = &outbound.stream.tcp_fragment {
+                // `tlshello` needs a TLS record to split; raw pieces go on
+                // any TCP carrier.
+                let tls_hello = fragment.packets == xray_config::FragmentPackets::TlsHello;
                 if outbound.stream.network != xray_config::Network::Tcp
                     || matches!(outbound.settings, xray_config::OutboundSettings::Freedom(_))
                         && (outbound.stream.security != xray_config::StreamSecurity::None
                             || outbound.stream.transport != xray_config::StreamTransport::Raw)
-                    || !matches!(outbound.settings, xray_config::OutboundSettings::Freedom(_))
+                    || tls_hello
+                        && !matches!(outbound.settings, xray_config::OutboundSettings::Freedom(_))
                         && outbound.stream.security == xray_config::StreamSecurity::None
                     || matches!(&outbound.stream.transport, xray_config::StreamTransport::Xhttp(xhttp) if xhttp.download.is_some() || matches!(&outbound.stream.security, xray_config::StreamSecurity::Tls(tls) if tls.alpn == ["h3"]))
                     || matches!(
@@ -808,16 +813,12 @@ impl Core {
                             | xray_config::OutboundSettings::Hysteria(_)
                             | xray_config::OutboundSettings::Wireguard(_)
                             | xray_config::OutboundSettings::Blackhole(_)
+                            | xray_config::OutboundSettings::Loopback(_)
                     )
                 {
                     return Err(CoreError::UnsupportedOutboundNetwork);
                 }
-                xray_transport::TcpFragmentConfig::new(
-                    fragment.lengths.iter().map(|r| r.from..=r.to).collect(),
-                    fragment.delays_ms.iter().map(|r| r.from..=r.to).collect(),
-                    fragment.max_split.from..=fragment.max_split.to,
-                )
-                .map_err(|_| CoreError::UnsupportedOutboundNetwork)?;
+                outbound::tcp_fragment_config(&outbound.stream)?;
             }
             // `header-custom`, `sudoku` and `xmc` run on the TCP carriers of
             // the outbounds that proxy over a stream transport, MASQUE's over
@@ -860,7 +861,7 @@ impl Core {
             }
             // So is an XDRIVE storage.
             if let xray_config::StreamTransport::Xdrive(xdrive) = &outbound.stream.transport {
-                outbound::xdrive::build_xdrive_transport(xdrive)?;
+                outbound::xdrive::build_xdrive_transport(xdrive, &outbound.stream)?;
             }
         }
         let config = Arc::new(config);

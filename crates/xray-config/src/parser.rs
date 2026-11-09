@@ -2,7 +2,7 @@ mod blackhole;
 mod dns;
 mod fragment;
 mod freedom;
-mod go_url;
+use xray_proxy::go_url;
 mod header_custom;
 mod http_inbound;
 mod http_outbound;

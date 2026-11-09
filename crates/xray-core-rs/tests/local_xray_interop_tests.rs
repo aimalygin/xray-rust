@@ -2013,6 +2013,7 @@ fn rust_vless_outbound(
             udp_xdns: None,
             udp_realm: None,
             udp_xicmp: None,
+            udp_salamander: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -2944,7 +2945,7 @@ async fn run_local_xray_xhttp_interop_with(
     };
     xhttp.uplink_http_method = uplink_http_method.to_owned();
     if noise {
-        let raw = serde_json::json!({"outbounds":[{"protocol":"freedom","streamSettings":{"network":"xhttp","security":"tls","tlsSettings":{"serverName":"example.com","alpn":["h3"]},"finalmask":{"udp":[{"type":"noise","settings":{"noise":[{"type":"str","packet":"synthetic","delay":2},{"rand":"16-24","delay":1}]}}]}}}]});
+        let raw = serde_json::json!({"outbounds":[{"protocol":"freedom","streamSettings":{"network":"xhttp","security":"tls","tlsSettings":{"serverName":"example.com","alpn":["h3"]},"finalmask":{"udp":[{"type":"noise","settings":{"noise":[{"type":"str","packet":"synthetic","delay":2},{"rand":"16-24","delay":1},{"type":"exp","packet":"<b 16 fe ff><t><c><rc 3-5><rd 2><n><r 4-8>","delay":1}]}}]}}}]});
         rust_config.outbounds[0].stream.udp_noise =
             parse_xray_json(&raw.to_string()).unwrap().config.outbounds[0]
                 .stream
@@ -3678,6 +3679,9 @@ mod header_custom;
 #[path = "local_xray_interop_tests/sudoku.rs"]
 mod sudoku;
 
+#[path = "local_xray_interop_tests/salamander.rs"]
+mod salamander;
+
 #[path = "local_xray_interop_tests/xmc.rs"]
 mod xmc;
 
@@ -3832,6 +3836,156 @@ async fn fragment_finalmask_reality_vision_direct_interop() {
 #[ignore = "requires pinned Xray-core checkout/binary and REALITY cover network"]
 async fn fragment_legacy_dialer_proxy_reality_vision_direct_interop() {
     run_fragmented_xray_interop(true, true, true).await;
+}
+
+/// A relay that records the size of each read in which the client's bytes
+/// arrive, relaying both directions as it goes.
+async fn piece_observer(upstream: SocketAddr) -> (SocketAddr, Arc<std::sync::Mutex<Vec<usize>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let sizes = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&sizes);
+    tokio::spawn(async move {
+        let (client, _) = listener.accept().await.unwrap();
+        let server = TcpStream::connect(upstream).await.unwrap();
+        let (mut client_read, mut client_write) = client.into_split();
+        let (mut server_read, mut server_write) = server.into_split();
+        tokio::spawn(async move {
+            let _ = tokio::io::copy(&mut server_read, &mut client_write).await;
+        });
+        let mut buffer = vec![0; 65_536];
+        loop {
+            let read = match client_read.read(&mut buffer).await {
+                Ok(0) | Err(_) => break,
+                Ok(read) => read,
+            };
+            recorded.lock().unwrap().push(read);
+            if server_write.write_all(&buffer[..read]).await.is_err() {
+                break;
+            }
+        }
+        let _ = server_write.shutdown().await;
+    });
+    (addr, sizes)
+}
+
+/// VLESS over raw TCP through `fragment` to Xray-core's own server: a short
+/// echo, then a 16 KiB one, whose bytes must come back unchanged. Returns the
+/// sizes of the reads in which the server side received the client's bytes.
+async fn run_cut_writes_interop(
+    security: XrayInboundSecurity,
+    fragment: serde_json::Value,
+) -> Vec<usize> {
+    use serde_json::json;
+    let tls = matches!(security, XrayInboundSecurity::Tls);
+    let xray = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            &resolve_xray_checkout(),
+            XrayVlessServerConfig {
+                security,
+                transport: XrayInboundTransport::Raw,
+                flow: None,
+            },
+        ),
+    )
+    .await
+    .unwrap();
+    let (relay, sizes) = piece_observer(xray.addr).await;
+    let mut stream = if tls {
+        json!({"security":"tls","tlsSettings":{"serverName":TLS_SERVER_NAME}})
+    } else {
+        json!({})
+    };
+    stream["finalmask"] = json!({"tcp":[{"type":"fragment","settings":fragment}]});
+    let raw = json!({
+        "inbounds":[{"tag":"socks-in","listen":"127.0.0.1","port":0,"protocol":"socks","settings":{"auth":"noauth"}}],
+        "outbounds":[{"protocol":"vless","tag":"proxy","settings":{"vnext":[{"address":"127.0.0.1","port":relay.port(),
+            "users":[{"id":TEST_UUID,"encryption":"none"}]}]},"streamSettings":stream}]
+    });
+    let config = parse_xray_json(&raw.to_string()).unwrap().config;
+    let mut core = if tls {
+        Core::with_runtime_dependencies(
+            config,
+            Arc::new(SystemDnsResolver),
+            Arc::new(rust_tls_core_config_and_dialer(&xray, None).1),
+        )
+    } else {
+        Core::new(config)
+    }
+    .expect("create rust core");
+    timeout(Duration::from_secs(5), core.start())
+        .await
+        .expect("start rust core timeout")
+        .expect("start rust core");
+    let socks_addr = core
+        .inbound_addr(Some("socks-in"))
+        .expect("bound socks addr");
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let mut client = open_socks_flow(&xray, socks_addr, echo_addr).await;
+    let long: Vec<u8> = (0..16_384u32).map(|i| (i % 251) as u8).collect();
+    for payload in [&b"hello local xray interop"[..], &long] {
+        timeout(Duration::from_secs(20), client.write_all(payload))
+            .await
+            .expect("write payload timeout")
+            .expect("write payload");
+        let mut echoed = vec![0; payload.len()];
+        if let Err(error) = timeout(Duration::from_secs(30), client.read_exact(&mut echoed))
+            .await
+            .map_err(|elapsed| elapsed.to_string())
+            .and_then(|read| read.map_err(|error| error.to_string()))
+        {
+            eprintln!("{}", xray.logs());
+            panic!("echo through the fragment mask failed: {error}");
+        }
+        assert_eq!(echoed, payload);
+    }
+    drop(client);
+    core.stop().await.expect("stop rust core");
+    drop(xray);
+    let _ = timeout(Duration::from_secs(1), echo_handle).await;
+    let sizes = sizes.lock().unwrap().clone();
+    sizes
+}
+
+/// `packets: "1-3"`: the ClientHello and the next two writes go as pieces of
+/// at most 50 bytes, spaced by their delays; later writes go whole.
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary"]
+async fn fragment_write_range_tls_interop() {
+    let sizes = run_cut_writes_interop(
+        XrayInboundSecurity::Tls,
+        serde_json::json!({"packets":"1-3","length":"30-50","delay":"2-3"}),
+    )
+    .await;
+    assert!(
+        sizes.len() > 5 && sizes[..5].iter().all(|size| *size <= 50),
+        "the ClientHello must arrive in pieces: {sizes:?}"
+    );
+    assert!(
+        sizes.iter().any(|size| *size > 1000),
+        "writes after the third must go whole: {sizes:?}"
+    );
+}
+
+/// `packets: ""`: every write, the VLESS request header and the echoed data
+/// alike, goes as pieces of at most 200 bytes.
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary"]
+async fn fragment_every_write_plaintext_interop() {
+    let sizes = run_cut_writes_interop(
+        XrayInboundSecurity::None,
+        serde_json::json!({"packets":"","length":"100-200","delay":"3-5"}),
+    )
+    .await;
+    assert!(
+        sizes.iter().sum::<usize>() > 16_384,
+        "the long echo must cross the relay: {sizes:?}"
+    );
+    assert!(
+        sizes.iter().all(|size| *size <= 200),
+        "every write must arrive in pieces: {sizes:?}"
+    );
 }
 
 /// A server-side UDP port redirect in front of the Xray QUIC listener. Each

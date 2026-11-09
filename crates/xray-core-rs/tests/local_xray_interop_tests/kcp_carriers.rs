@@ -153,6 +153,65 @@ async fn kcp_masks_match_xrays_on_the_wire() {
     assert!(!matches!(result, Ok(Ok(()))), "a wrong seed connected");
 }
 
+/// Salamander on mKCP, a header mask Xray-core groups with mkcp-legacy's:
+/// alone, inside a header group split by noise, and with noise inside it.
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-kcp-interop.sh"]
+async fn kcp_salamander_alone_and_among_header_masks() {
+    let checkout = resolve_xray_checkout();
+    let legacy = |settings: Value| json!({"type":"mkcp-legacy","settings":settings});
+    let salamander = |password: &str| json!({"type":"salamander","settings":{"password":password}});
+    let noise = json!({"type":"noise","settings":{"noise":[{"type":"str","packet":"hello","delay":"5-10"},{"rand":"10-20"}]}});
+    let cases = [
+        ("salamander", json!([salamander("kcp-salamander")])),
+        (
+            "wechat and salamander, noise, srtp",
+            json!([
+                legacy(json!({"header":"wechat"})),
+                salamander("kcp-salamander"),
+                noise.clone(),
+                legacy(json!({"header":"srtp"})),
+            ]),
+        ),
+        (
+            "noise inside salamander, aes inside both",
+            json!([
+                legacy(json!({"value":"kcp-seed"})),
+                noise,
+                salamander("kcp-salamander"),
+            ]),
+        ),
+    ];
+    for (case, masks) in cases {
+        let server =
+            start_server(&checkout, "vless", XrayInboundSecurity::None, &masks, None).await;
+        let stream = json!({"network":"kcp","finalmask":{"udp":masks}});
+        check(
+            &server,
+            profile("vless", server.addr.port(), &stream),
+            true,
+            case,
+        )
+        .await;
+    }
+    // Another password never connects.
+    let server = start_server(
+        &checkout,
+        "vless",
+        XrayInboundSecurity::None,
+        &json!([salamander("kcp-salamander")]),
+        None,
+    )
+    .await;
+    let stream = json!({"network":"kcp","finalmask":{"udp":[salamander("another-password")]}});
+    let result = timeout(
+        Duration::from_secs(20),
+        exercise(profile("vless", server.addr.port(), &stream), false),
+    )
+    .await;
+    assert!(!matches!(result, Ok(Ok(()))), "a wrong password connected");
+}
+
 #[tokio::test]
 #[ignore = "requires a pinned Xray-core; run check-kcp-interop.sh"]
 async fn kcp_carries_mux_and_vision() {

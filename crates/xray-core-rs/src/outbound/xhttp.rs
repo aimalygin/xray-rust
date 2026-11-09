@@ -185,6 +185,16 @@ pub(super) fn build_xhttp_transport(
         ));
     }
     h3_quic.udp_xicmp = stream.udp_xicmp.as_ref().map(super::carrier::xicmp_config);
+    if stream.udp_salamander.is_some() && http_version != XhttpHttpVersion::Http3 {
+        return Err(invalid_xhttp_configuration(
+            "a Salamander UDP mask requires XHTTP H3",
+        ));
+    }
+    h3_quic.udp_salamander = stream
+        .udp_salamander
+        .as_ref()
+        .map(super::carrier::quic_salamander)
+        .transpose()?;
     XhttpTransport::new_with_h3_quic(config, endpoint, http_version, xmux, h3_quic)
         .map_err(invalid_xhttp_configuration)
 }
@@ -579,10 +589,19 @@ pub(super) const fn xhttp_uplink_data_placement(
 pub(super) fn udp_noise_config(
     noise: &xray_config::UdpNoiseSettings,
 ) -> Result<xray_transport::udp_noise::UdpNoiseConfig, CoreError> {
-    use xray_transport::udp_noise::{NoiseRange, UdpNoiseConfig, UdpNoiseItem};
+    use xray_transport::udp_noise::{NoiseRange, NoiseSegment, UdpNoiseConfig, UdpNoiseItem};
     let range = |r: xray_config::FragmentRange| NoiseRange {
         from: r.from,
         to: r.to,
+    };
+    let segment = |segment: &xray_config::NoiseSegment| match segment {
+        xray_config::NoiseSegment::Bytes(bytes) => NoiseSegment::Bytes(bytes.clone()),
+        xray_config::NoiseSegment::Random(size) => NoiseSegment::Random(range(*size)),
+        xray_config::NoiseSegment::RandomLetters(size) => NoiseSegment::RandomLetters(range(*size)),
+        xray_config::NoiseSegment::RandomDigits(size) => NoiseSegment::RandomDigits(range(*size)),
+        xray_config::NoiseSegment::Timestamp => NoiseSegment::Timestamp,
+        xray_config::NoiseSegment::Counter => NoiseSegment::Counter,
+        xray_config::NoiseSegment::Nonce => NoiseSegment::Nonce,
     };
     let config = UdpNoiseConfig {
         reset_secs: range(noise.reset_secs),
@@ -595,6 +614,7 @@ pub(super) fn udp_noise_config(
                 random_length: range(i.random_length),
                 random_bytes: range(i.random_bytes),
                 delay_ms: range(i.delay_ms),
+                segments: i.segments.iter().map(segment).collect(),
             })
             .collect(),
     };

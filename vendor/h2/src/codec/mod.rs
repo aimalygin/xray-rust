@@ -110,6 +110,11 @@ impl<T, B> Codec<T, B> {
         self.framed_write().set_go_hpack_choices(enabled)
     }
 
+    /// xray-rust: request pseudo-headers in the order of Go's client.
+    pub fn set_go_pseudo_order(&mut self, enabled: bool) {
+        self.framed_write().set_go_pseudo_order(enabled)
+    }
+
     /// Set the decoder header table size size.
     pub fn set_recv_header_table_size(&mut self, val: usize) {
         self.inner.set_header_table_size(val)

@@ -12,7 +12,7 @@ use crate::{
     ConnectorConfig, HappyEyeballsConfig, RealityRuntimeEngine, RealityTlsEngine, RecordResolver,
     ResolvedTcpConnector, RouteProbe, RustlsRealityTlsSessionProvider, SocketOptions,
     SocketOptionsProtector, SocketOptionsReport, SocketProtector, SystemRecordResolver,
-    SystemRouteProbe, TlsConnector, TransportError,
+    SystemRouteProbe, TlsClientConfig, TlsConnector, TransportError,
 };
 use xray_routing::{Target, TargetAddr};
 
@@ -475,7 +475,7 @@ impl TransportDialer {
                 self.connect_kcp(config, kcp, original_target, candidates)
                     .await
             }
-            TransportLayer::Xdrive(xdrive) => xdrive.open_stream().await,
+            TransportLayer::Xdrive(xdrive) => xdrive.open_stream(self).await,
         }
     }
 
@@ -737,6 +737,44 @@ impl TransportDialer {
                 prepared.complete(stream).await
             }
         }
+    }
+
+    /// A connection to an HTTP service, such as an XDRIVE storage: TCP to
+    /// `candidates`, through this dialer's masks, chain and protection, then
+    /// with `tls` a session offering the HTTP client's ALPN, as Xray-core's
+    /// service client dials one. Returns the protocol the server picked.
+    pub(crate) async fn connect_http_service(
+        &self,
+        tls: Option<&TlsClientConfig>,
+        original_target: &Target,
+        candidates: &[SocketAddr],
+    ) -> Result<(BoxedTransportStream, Option<Vec<u8>>), TransportError> {
+        let Some(tls) = tls else {
+            let stream = self
+                .connect_tcp_carrier(original_target, candidates, None)
+                .await?;
+            return Ok((stream, None));
+        };
+        let prepared = self.tls.prepare_stream(tls, TlsAlpnPolicy::HttpClient)?;
+        let stream = self
+            .connect_tcp_carrier(original_target, candidates, None)
+            .await?;
+        self.tls
+            .connect_prepared_stream_with_alpn(stream, prepared)
+            .await
+    }
+
+    /// Whether this dialer reaches its servers through another outbound,
+    /// which resolves their names at its far end.
+    pub(crate) fn is_chained(&self) -> bool {
+        self.resolved_tcp_connector.is_some()
+    }
+
+    /// The resolver names a dial needs beyond the outbound's server go
+    /// through: the core's, as a `realm` rendezvous uses, else the
+    /// platform's.
+    pub(crate) fn service_resolver(&self) -> Arc<dyn crate::DnsResolver> {
+        self.realm_env().resolver
     }
 
     async fn connect_tcp_carrier(

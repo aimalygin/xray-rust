@@ -56,6 +56,25 @@ pub struct HysteriaCarrierConfig {
     pub xicmp: Option<Arc<crate::xicmp::XicmpConfig>>,
 }
 
+/// A `salamander` UDP mask outside Hysteria, which keeps its own in
+/// [`HysteriaCarrierConfig`]: its place among the other masks is theirs to
+/// record, as they are listed before or after it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SalamanderCarrier {
+    pub password: Arc<Zeroizing<String>>,
+    /// Gecko's fragment sizes, Salamander's `packetSize` in Xray.
+    pub gecko: Option<GeckoPacketSize>,
+}
+
+impl fmt::Debug for SalamanderCarrier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SalamanderCarrier")
+            .field("password", &"<redacted>")
+            .field("gecko", &self.gecko)
+            .finish()
+    }
+}
+
 /// A `sudoku` UDP mask and its place among the carrier's masks.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SudokuCarrier {
@@ -676,7 +695,7 @@ impl fmt::Debug for CarrierSocket {
     }
 }
 
-fn key(password: &str, salt: &[u8]) -> [u8; 32] {
+pub(crate) fn key(password: &str, salt: &[u8]) -> [u8; 32] {
     let mut hasher = Blake2b::<U32>::new();
     hasher.update(password.as_bytes());
     hasher.update(salt);
@@ -890,6 +909,7 @@ mod tests {
                         random_length: zero(),
                         random_bytes: zero(),
                         delay_ms: zero(),
+                        segments: Vec::new(),
                     }],
                     reset_secs: zero(),
                     before_salamander: before,

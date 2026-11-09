@@ -81,6 +81,19 @@ impl Parser<'_> {
         })
     }
 
+    /// The `salamander` mask of a UDP carrier other than Hysteria.
+    pub(super) fn parse_udp_salamander(
+        &mut self,
+        stream: Option<&Value>,
+        index: usize,
+    ) -> Option<crate::SalamanderMask> {
+        self.parse_hysteria_salamander(stream, index)
+            .map(|(password, gecko_packet_size)| crate::SalamanderMask {
+                password,
+                gecko_packet_size,
+            })
+    }
+
     fn parse_hysteria_salamander(
         &mut self,
         stream: Option<&Value>,

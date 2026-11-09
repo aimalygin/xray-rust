@@ -166,7 +166,7 @@ pub(super) fn credentials() -> Value {
 }
 
 /// SOCKS5 CONNECT or UDP ASSOCIATE to an address or a name.
-async fn socks(
+pub(super) async fn socks(
     proxy: SocketAddr,
     command: u8,
     target: &str,
@@ -724,13 +724,23 @@ async fn masque_h3_runs_under_udp_masks() {
     let sudoku = |password: &str| json!({"type": "sudoku", "settings": {"password": password, "paddingMin": 5, "paddingMax": 25}});
     let noise = json!({"type": "noise", "settings": {"noise": [
         {"type": "str", "packet": "synthetic-noise", "delay": 2}]}});
+    let salamander =
+        json!({"type": "salamander", "settings": {"password": "synthetic-salamander"}});
+    let gecko = json!({"type": "salamander", "settings": {
+        "password": "synthetic-salamander", "packetSize": "512-1200"}});
     for (case, server_masks, client_masks) in [
         ("header-custom", json!([header]), json!([header])),
         (
             "sudoku with noise inside",
             json!([sudoku("synthetic-sudoku")]),
-            json!([noise, sudoku("synthetic-sudoku")]),
+            json!([noise.clone(), sudoku("synthetic-sudoku")]),
         ),
+        (
+            "salamander with noise inside",
+            json!([salamander]),
+            json!([noise, salamander]),
+        ),
+        ("salamander with gecko", json!([gecko]), json!([gecko])),
     ] {
         let server = start_server(&checkout, "h3", |config| {
             config["inbounds"][0]["streamSettings"]["finalmask"] = json!({"udp": server_masks});

@@ -1,5 +1,21 @@
 use super::*;
-use crate::{FragmentRange, TcpFragmentSettings};
+use crate::{go_lowercase, FragmentPackets, FragmentRange, TcpFragmentSettings};
+
+/// Xray's `packets`: `tlshello` in any case, empty for every write, or what
+/// `ParseRangeString` reads as one number or a `from-to` range. A zero, a
+/// negative or a reversed range, which Xray-core either refuses or accepts
+/// and never applies, is refused.
+fn parse_fragment_packets(packets: &str) -> Option<FragmentPackets> {
+    if go_lowercase(packets) == "tlshello" {
+        return Some(FragmentPackets::TlsHello);
+    }
+    if packets.is_empty() {
+        return Some(FragmentPackets::AllWrites);
+    }
+    let (from, to) = parse_xhttp_range_string(packets)?;
+    let (from, to) = (u32::try_from(from).ok()?, u32::try_from(to).ok()?);
+    (from >= 1 && to >= from).then_some(FragmentPackets::Writes { from, to })
+}
 
 impl Parser<'_> {
     pub(super) fn parse_tcp_fragment(
@@ -21,14 +37,19 @@ impl Parser<'_> {
                 &surface::TCP_FRAGMENT
             },
         );
-        if !raw
-            .get("packets")
-            .and_then(Value::as_str)
-            .is_some_and(|p| p.eq_ignore_ascii_case("tlshello"))
-        {
-            self.error(format!("{path}.packets"), "only packets=tlshello is supported; arbitrary/all-write fragmentation is unsupported");
+        // Xray reads an absent `packets` as empty: every write is cut.
+        let packets = match raw.get("packets") {
+            None | Some(Value::Null) => Some(FragmentPackets::AllWrites),
+            Some(Value::String(packets)) => parse_fragment_packets(packets),
+            Some(_) => None,
+        };
+        let Some(packets) = packets else {
+            self.error(
+                format!("{path}.packets"),
+                "fragment packets must be tlshello, empty for every write, or a write number or from-to range counting from 1",
+            );
             return None;
-        }
+        };
         let length = self.fragment_range(raw.get("length"), &format!("{path}.length"))?;
         let delay_key = if legacy { "interval" } else { "delay" };
         if legacy && raw.get(delay_key).is_none_or(Value::is_null) {
@@ -69,6 +90,7 @@ impl Parser<'_> {
             );
         }
         Some(TcpFragmentSettings {
+            packets,
             lengths,
             delays_ms,
             max_split,
@@ -224,10 +246,14 @@ impl Parser<'_> {
     }
 
     pub(super) fn validate_tcp_fragment_scope(&mut self, outbound: &OutboundConfig, index: usize) {
-        if outbound.stream.tcp_fragment.is_none() {
+        let Some(fragment) = &outbound.stream.tcp_fragment else {
             return;
-        }
+        };
         let path = format!("$.outbounds[{index}].streamSettings.finalmask.tcp");
+        // `tlshello` needs a TLS record to split; raw pieces go on any TCP
+        // carrier, as Xray-core cuts every TCP dial's writes.
+        let tls_hello = fragment.packets == FragmentPackets::TlsHello;
+        let freedom = matches!(outbound.settings, OutboundSettings::Freedom(_));
         if outbound.stream.network != Network::Tcp
             || matches!(
                 outbound.settings,
@@ -235,14 +261,22 @@ impl Parser<'_> {
                     | OutboundSettings::Hysteria(_)
                     | OutboundSettings::Wireguard(_)
                     | OutboundSettings::Blackhole(_)
+                    | OutboundSettings::Loopback(_)
             )
-            || !matches!(outbound.settings, OutboundSettings::Freedom(_))
-                && outbound.stream.security == StreamSecurity::None
-            || matches!(outbound.settings, OutboundSettings::Freedom(_))
+            || matches!(outbound.stream.transport, StreamTransport::Kcp(_))
+            || tls_hello && !freedom && outbound.stream.security == StreamSecurity::None
+            || freedom
                 && (outbound.stream.security != StreamSecurity::None
                     || outbound.stream.transport != StreamTransport::Raw)
         {
-            self.error(path, "tlshello fragmentation requires a TCP TLS/REALITY carrier or a raw freedom outbound");
+            self.error(
+                path,
+                if tls_hello {
+                    "tlshello fragmentation requires a TCP TLS/REALITY carrier or a raw freedom outbound"
+                } else {
+                    "fragmentation requires a TCP carrier: a proxy outbound over a TCP transport or a raw freedom outbound"
+                },
+            );
             return;
         }
         if matches!(outbound.stream.transport, StreamTransport::Masque(_))

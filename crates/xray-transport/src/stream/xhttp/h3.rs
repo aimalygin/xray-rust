@@ -267,6 +267,9 @@ pub struct H3QuicConfig {
     /// The `xicmp` UDP mask, outside the others, carrying every datagram in
     /// ICMP echoes.
     pub udp_xicmp: Option<Arc<crate::xicmp::XicmpConfig>>,
+    /// The `salamander` UDP mask, Gecko's fragments with it, at its place
+    /// among the noise, `header-custom` and `sudoku` masks.
+    pub udp_salamander: Option<crate::hysteria::SalamanderCarrier>,
     pub debug: bool,
     /// quic-go's `InitialPacketSize`: the first packets' size, never
     /// lowered by black-hole detection. `None` keeps Quinn's 1200.
@@ -316,6 +319,7 @@ impl Default for H3QuicConfig {
             udp_xdns: None,
             udp_realm: None,
             udp_xicmp: None,
+            udp_salamander: None,
             debug: false,
             initial_packet_size: None,
             connection_id_len: None,
@@ -452,9 +456,6 @@ impl H3QuicConfig {
         })
     }
 
-    /// The carrier transforms this XHTTP connection applies itself: UDP hop,
-    /// noise, a custom header and sudoku. Hysteria passes its own carrier
-    /// instead.
     /// The configuration a connection runs: with ChromeParrot, quic-go's
     /// `populateConfig` replaces the idle timeout, the starting windows, the
     /// incoming stream limit and the initial packet size with Chrome's, and
@@ -482,8 +483,19 @@ impl H3QuicConfig {
         std::borrow::Cow::Owned(config)
     }
 
+    /// The carrier transforms this XHTTP connection applies itself: UDP hop,
+    /// Salamander, noise, a custom header and sudoku. Hysteria passes its own
+    /// carrier instead.
     pub(crate) fn hop_carrier(&self) -> crate::hysteria::HysteriaCarrierConfig {
         crate::hysteria::HysteriaCarrierConfig {
+            salamander_password: self
+                .udp_salamander
+                .as_ref()
+                .map(|salamander| salamander.password.clone()),
+            gecko: self
+                .udp_salamander
+                .as_ref()
+                .and_then(|salamander| salamander.gecko),
             udp_hop: self.udp_hop.clone(),
             noise: self.udp_noise.clone(),
             header_custom: self.udp_header_custom.clone(),
@@ -491,7 +503,6 @@ impl H3QuicConfig {
             xdns: self.udp_xdns.clone(),
             realm: self.udp_realm.clone(),
             xicmp: self.udp_xicmp.clone(),
-            ..Default::default()
         }
     }
 
@@ -1090,6 +1101,12 @@ impl Drop for H3ConnectionDriver {
 }
 
 impl H3Client {
+    /// A handle that opens request streams on the connection, for callers
+    /// that read every status themselves, such as XDRIVE's storages.
+    pub(crate) fn request_sender(&self) -> H3SendRequest {
+        self.send_request.clone()
+    }
+
     /// Whether the HTTP/3 driver and underlying QUIC connection are live.
     pub fn is_live(&self) -> bool {
         !self.driver.task.is_finished() && self.driver.connection.close_reason().is_none()

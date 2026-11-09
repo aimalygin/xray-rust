@@ -459,6 +459,20 @@ class EvidenceAllowlists(unittest.TestCase):
             "unreviewed.json": line,
         }), {(name, "generic-api-key") for name in (path, "unreviewed.json")})
 
+    def test_xdrive_s3_oracle_signature_exception_is_narrow(self):
+        path = "tests/fixtures/xdrive/http-vectors.json"
+        lines = [line + "\n" for line in (ROOT / path).read_text().splitlines()
+                 if '"AWS4-HMAC-SHA256 Credential=' in line]
+        self.assertTrue(lines)
+        self.assertTrue(all("Credential=AKIDEXAMPLE/" in line for line in lines))
+        signed = "".join(lines)
+        self.assertIn("x-amz-security-token, Signature=", signed)
+        self.assertEqual(self.scan({path: signed}), set())
+        self.assertEqual(self.scan({
+            path: signed.replace("AKIDEXAMPLE", "AKIDREVIEWED"),
+            "unreviewed.json": signed,
+        }), {(name, "generic-api-key") for name in (path, "unreviewed.json")})
+
     def scan(self, files):
         binary = os.environ["GITLEAKS_BINARY"]
         with tempfile.TemporaryDirectory(prefix="xray-gitleaks-guards-") as name:

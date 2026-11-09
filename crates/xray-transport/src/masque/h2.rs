@@ -199,7 +199,7 @@ fn warp_authority(authority: &str) -> String {
 /// Xray's `keepAlive`: a PING once the connection has been silent for
 /// `period`, and the connection closed when nothing arrives within
 /// [`PING_TIMEOUT`] of it.
-async fn keep_alive(
+pub(crate) async fn keep_alive(
     mut ping_pong: h2::PingPong,
     last_frame: Arc<LastFrame>,
     period: Duration,
@@ -249,13 +249,13 @@ async fn keep_alive(
 /// When the connection last received anything, in nanoseconds since it
 /// opened, as Xray's `lastFrame`.
 #[derive(Debug)]
-struct LastFrame {
+pub(crate) struct LastFrame {
     epoch: Instant,
     nanos: AtomicU64,
 }
 
 impl LastFrame {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             epoch: Instant::now(),
             nanos: AtomicU64::new(0),
@@ -285,9 +285,9 @@ impl LastFrame {
 }
 
 /// The connection's stream, noting each read as a frame received.
-struct Watched<S> {
-    io: S,
-    last_frame: Arc<LastFrame>,
+pub(crate) struct Watched<S> {
+    pub(crate) io: S,
+    pub(crate) last_frame: Arc<LastFrame>,
 }
 
 impl<S: AsyncRead + Unpin> AsyncRead for Watched<S> {

@@ -91,9 +91,25 @@ impl Parser<'_> {
             self.validate_stream_settings_compatibility(stream, index);
         }
         self.validate_unconsumed_transport_settings(stream, stream_network, index);
-        let transport = self.parse_stream_transport(stream, stream_network, xdrive_h3, index)?;
+        let mut transport =
+            self.parse_stream_transport(stream, stream_network, xdrive_h3, index)?;
+        let fronting = self.parse_stream_fronting(stream, stream_network, index)?;
+        if let StreamTransport::Xdrive(settings) = &mut transport {
+            settings.fronting = fronting;
+        }
         if xdrive_h3 {
             self.validate_xdrive_h3_stream(stream, &transport, quic_params.as_ref(), index);
+            // Xray-core's XDRIVE client parrots Chrome over HTTP/3 too; this
+            // one keeps Quinn's own handshake there for now.
+            if quic_params
+                .as_ref()
+                .is_none_or(|quic| !quic.disable_chrome_parrot)
+            {
+                self.warning(
+                    format!("$.outbounds[{index}].streamSettings.finalmask.quicParams.disableChromeParrot"),
+                    "XDRIVE over h3 uses Quinn's own QUIC handshake, without Xray ChromeParrot fingerprint shaping; set disableChromeParrot=true to acknowledge this compatibility limit",
+                );
+            }
         }
         if let StreamTransport::Xhttp(xhttp) = &transport {
             if let Some(download) = &xhttp.download {
@@ -274,23 +290,31 @@ impl Parser<'_> {
                 "a header-custom UDP mask cannot be combined with udphop",
             );
         }
-        if stream_network != StreamNetwork::Hysteria
-            && stream
-                .and_then(|s| s.pointer("/finalmask/udp"))
-                .and_then(Value::as_array)
-                .is_some_and(|m| {
-                    m.iter().any(|v| {
-                        v.get("type")
-                            .and_then(Value::as_str)
-                            .is_some_and(|s| s.eq_ignore_ascii_case("salamander"))
-                    })
-                })
-        {
-            self.error(
-                format!("$.outbounds[{index}].streamSettings.finalmask.udp"),
-                "Salamander requires Hysteria",
-            );
-        }
+        // Hysteria reads its own Salamander mask; the other UDP carriers take
+        // one here, at its place among their masks.
+        let udp_salamander = if stream_network == StreamNetwork::Hysteria {
+            None
+        } else {
+            let salamander = self.parse_udp_salamander(stream, index);
+            let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp");
+            if salamander.is_some() && !udp_carrier {
+                self.error(
+                    &path,
+                    "Salamander requires Hysteria, mKCP, XHTTP with exact h3 ALPN, MASQUE over HTTP/3 or XDRIVE with exact h3 ALPN",
+                );
+            }
+            if stream_network == StreamNetwork::Kcp
+                && salamander
+                    .as_ref()
+                    .is_some_and(|salamander| salamander.gecko_packet_size.is_some())
+            {
+                self.error(
+                    &path,
+                    "Gecko, Salamander's packetSize, is not supported on mKCP yet",
+                );
+            }
+            salamander
+        };
         Some(StreamSettings {
             // Native Hysteria owns a UDP carrier; other transports retain
             // their existing TCP classification (XHTTP selects H3 later).
@@ -312,6 +336,7 @@ impl Parser<'_> {
             udp_realm,
             udp_xicmp,
             udp_noise,
+            udp_salamander,
             socket_options,
         })
     }
