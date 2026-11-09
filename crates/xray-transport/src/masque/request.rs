@@ -3,6 +3,8 @@
 //! them.
 use std::net::Ipv6Addr;
 
+use zeroize::Zeroizing;
+
 use crate::stream::masquerade::{
     anchored_chrome_user_agent, anchored_curl_user_agent, anchored_edge_user_agent,
     anchored_firefox_user_agent, anchored_safari_user_agent,
@@ -13,15 +15,34 @@ pub const DEFAULT_PATH: &str = "/.well-known/masque/ip/*/*/";
 /// quic-go's `http3.defaultUserAgent`, which Xray's `golang` preset leaves.
 pub(crate) const QUIC_GO_USER_AGENT: &str = "quic-go HTTP/3";
 
-/// What `masqueSettings` asks of the request.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What `masqueSettings` asks of the request. Its `Debug` leaves the header
+/// values out, Authorization among them.
+#[derive(Clone, PartialEq, Eq)]
 pub struct MasqueRequest {
     /// `masqueSettings.host`; empty takes the TLS server name.
     pub host: String,
     /// The path, its template variables already replaced.
     pub path: String,
-    /// Header fields with canonical names, Authorization included.
-    pub headers: Vec<(String, String)>,
+    /// Header fields with canonical names, Authorization included; the
+    /// values are wiped when dropped.
+    pub headers: Vec<(String, Zeroizing<String>)>,
+}
+
+impl std::fmt::Debug for MasqueRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MasqueRequest")
+            .field("host", &self.host)
+            .field("path", &self.path)
+            .field(
+                "headers",
+                &self
+                    .headers
+                    .iter()
+                    .map(|(name, _)| name)
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
+    }
 }
 
 impl Default for MasqueRequest {
@@ -69,7 +90,7 @@ pub(crate) enum UserAgent {
 /// Xray's `setUserAgent`: absent means `chrome`; `chrome`, `firefox`,
 /// `safari`, `edge` and `curl` are presets; `golang` leaves the library's
 /// default and empty sends none.
-pub(crate) fn user_agent(headers: &[(String, String)]) -> UserAgent {
+pub(crate) fn user_agent(headers: &[(String, Zeroizing<String>)]) -> UserAgent {
     let configured = headers
         .iter()
         .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
@@ -99,7 +120,7 @@ pub(crate) fn request_fields(
         .headers
         .iter()
         .filter(|(name, _)| !name.eq_ignore_ascii_case("user-agent"))
-        .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
+        .map(|(name, value)| (name.to_ascii_lowercase(), value.to_string()))
         .collect();
     if capsule_protocol {
         fields.push(("capsule-protocol".to_owned(), "?1".to_owned()));
@@ -155,9 +176,13 @@ mod tests {
         }
     }
 
+    fn field(name: &str, value: &str) -> (String, Zeroizing<String>) {
+        (name.to_owned(), Zeroizing::new(value.to_owned()))
+    }
+
     #[test]
     fn user_agent_presets_are_xrays() {
-        let with = |value: &str| vec![("User-Agent".to_owned(), value.to_owned())];
+        let with = |value: &str| vec![field("User-Agent", value)];
         assert!(matches!(user_agent(&[]), UserAgent::Value(ua) if ua.contains("Chrome/")));
         assert_eq!(user_agent(&with("")), UserAgent::Omitted);
         assert!(
@@ -181,9 +206,9 @@ mod tests {
     fn fields_are_lowercase_sorted_and_carry_the_capsule_protocol() {
         let request = MasqueRequest {
             headers: vec![
-                ("X-Custom".to_owned(), "1".to_owned()),
-                ("Authorization".to_owned(), "Basic dTpw".to_owned()),
-                ("User-Agent".to_owned(), "golang".to_owned()),
+                field("X-Custom", "1"),
+                field("Authorization", "Basic dTpw"),
+                field("User-Agent", "golang"),
             ],
             ..MasqueRequest::default()
         };
@@ -195,6 +220,26 @@ mod tests {
                 ("user-agent".to_owned(), QUIC_GO_USER_AGENT.to_owned()),
                 ("x-custom".to_owned(), "1".to_owned()),
             ]
+        );
+    }
+
+    #[test]
+    fn debug_leaves_header_values_out() {
+        let request = MasqueRequest {
+            headers: vec![
+                field("Authorization", "Basic c2VjcmV0"),
+                field("X-Token", "t0k3n"),
+            ],
+            ..MasqueRequest::default()
+        };
+        let debug = format!("{request:?}");
+        assert!(
+            debug.contains("Authorization") && debug.contains("X-Token"),
+            "{debug}"
+        );
+        assert!(
+            !debug.contains("c2VjcmV0") && !debug.contains("t0k3n"),
+            "{debug}"
         );
     }
 
