@@ -20,9 +20,8 @@ use rustls::client::{
     ClientHelloAdvertisedSupportedGroups, ClientHelloAdvertisedSupportedVersions,
     ClientHelloCertificateCompressionAlgorithms, ClientHelloCipherSuites, ClientHelloContext,
     ClientHelloCustomizer, ClientHelloExactExtension, ClientHelloExactExtensions,
-    ClientHelloExtensionOrder, ClientHelloExtensionPlan, ClientHelloKeySharePlan,
-    ClientHelloPlan, ClientHelloRawExtensions, ClientHelloSupportedGroups,
-    ClientHelloSupportedVersions,
+    ClientHelloExtensionOrder, ClientHelloExtensionPlan, ClientHelloKeySharePlan, ClientHelloPlan,
+    ClientHelloRawExtensions, ClientHelloSupportedGroups, ClientHelloSupportedVersions,
 };
 use rustls::{CertificateCompressionAlgorithm, CipherSuite, Error as RustlsError, NamedGroup};
 
@@ -445,7 +444,10 @@ mod tests {
             lengths.insert(u16::from_be_bytes([ech[40], ech[41]]));
             orders.insert(extensions.iter().map(|(t, _)| *t).collect::<Vec<_>>());
         }
-        assert_eq!(lengths.into_iter().collect::<Vec<_>>(), [144, 176, 208, 240]);
+        assert_eq!(
+            lengths.into_iter().collect::<Vec<_>>(),
+            [144, 176, 208, 240]
+        );
         assert!(orders.len() > 60);
     }
 

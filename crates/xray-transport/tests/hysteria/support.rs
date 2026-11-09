@@ -69,9 +69,9 @@ pub fn identity() -> Identity {
         server,
         cert_pem: pem("CERTIFICATE", cert.cert.der()),
         key_pem: pem("PRIVATE KEY", &cert.signing_key.serialize_der()),
-        certificate_sha256: sha2::Digest::finalize(<sha2::Sha256 as sha2::Digest>::new_with_prefix(
-            cert.cert.der(),
-        ))
+        certificate_sha256: sha2::Digest::finalize(
+            <sha2::Sha256 as sha2::Digest>::new_with_prefix(cert.cert.der()),
+        )
         .into(),
     }
 }

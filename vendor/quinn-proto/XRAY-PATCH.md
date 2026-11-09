@@ -201,5 +201,6 @@ same four encrypted Initial datagrams, first flight and probes, byte for byte.
 `chrome_parrot_handshake_packs_one_packet_per_datagram` checks the handshake
 datagrams against a stock server, `chrome_parrot_numbers_initial_packets_from_one`
 the packet numbers, and the module's own tests Go's PCG values, the split,
-the chaos sizes and the packet number lengths. The complete 309-test library
-suite passes in the reconstruction.
+the chaos sizes, the ACK in front, a cut paid by a budget of exactly one frame
+header and the packet number lengths. The complete 311-test library suite
+passes in the reconstruction.

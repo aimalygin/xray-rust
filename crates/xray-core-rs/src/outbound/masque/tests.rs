@@ -275,7 +275,10 @@ fn quic_never_parrots_chrome() {
         json!({"disableChromeParrot": false}),
         json!({"disableChromeParrot": true}),
     ] {
-        assert!(!quic_for(quic_params.clone()).chrome_parrot, "{quic_params}");
+        assert!(
+            !quic_for(quic_params.clone()).chrome_parrot,
+            "{quic_params}"
+        );
     }
 }
 

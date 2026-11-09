@@ -18,8 +18,8 @@ use quinn_proto::crypto::rustls::QuicClientConfig;
 use quinn_proto::crypto::{self, ExportKeyingMaterialError, HeaderKey, KeyPair, Keys, PacketKey};
 use quinn_proto::transport_parameters::TransportParameters;
 use quinn_proto::{
-    congestion::NewRenoConfig, ClientConfig, ConnectError, ConnectionId, Endpoint,
-    EndpointConfig, RandomConnectionIdGenerator, Side, TransportConfig, TransportError, VarInt,
+    congestion::NewRenoConfig, ClientConfig, ConnectError, ConnectionId, Endpoint, EndpointConfig,
+    RandomConnectionIdGenerator, Side, TransportConfig, TransportError, VarInt,
 };
 use serde_json::Value;
 
@@ -315,5 +315,9 @@ fn probes_carry_whole_packets_at_the_full_size() {
     assert_eq!(first.len(), 2, "head and tail: {first:?}");
     assert!(first[1].1 - first[1].0 + first[0].1 > 1150, "{first:?}");
     assert_eq!(ranges(&datagrams[2]), first, "the first probe");
-    assert_eq!(ranges(&datagrams[3]), ranges(&datagrams[1]), "the second probe");
+    assert_eq!(
+        ranges(&datagrams[3]),
+        ranges(&datagrams[1]),
+        "the second probe"
+    );
 }

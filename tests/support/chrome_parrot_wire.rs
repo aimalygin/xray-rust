@@ -285,7 +285,8 @@ fn reassemble(pieces: &BTreeMap<u64, Vec<u8>>) -> Option<Vec<u8>> {
     if hello.len() < 4 || hello[0] != 1 {
         return None;
     }
-    let total = 4 + (usize::from(hello[1]) << 16 | usize::from(hello[2]) << 8 | usize::from(hello[3]));
+    let total =
+        4 + (usize::from(hello[1]) << 16 | usize::from(hello[2]) << 8 | usize::from(hello[3]));
     (hello.len() == total).then_some(hello)
 }
 
@@ -370,7 +371,11 @@ pub fn assert_chrome_first_flight(datagrams: &[Vec<u8>], alpn: &[u8]) {
         assert_eq!(initial.token_len, 0);
         assert_eq!(initial.packet_number, index as u64 + 1, "numbered from 1");
         let pings = initial.frames.iter().filter(|f| **f == Frame::Ping).count();
-        assert!(pings >= 2, "chaos protection mixes in PINGs: {:?}", initial.frames);
+        assert!(
+            pings >= 2,
+            "chaos protection mixes in PINGs: {:?}",
+            initial.frames
+        );
         assert_eq!(initial.dcid, initials[0].dcid);
     }
     assert_eq!(initials[0].packet_number_len, 1);
@@ -398,7 +403,11 @@ pub fn assert_chrome_first_flight(datagrams: &[Vec<u8>], alpn: &[u8]) {
         assert_eq!(merged.len(), 2, "head and tail: {merged:?}");
         assert_eq!(merged[0].0, 0);
         assert!((55..=86).contains(&merged[0].1), "head length {merged:?}");
-        assert_eq!(merged[1].1, hello.len() as u64, "the tail ends the ClientHello");
+        assert_eq!(
+            merged[1].1,
+            hello.len() as u64,
+            "the tail ends the ClientHello"
+        );
     }
 
     let hello = parse_client_hello(&hello);
@@ -418,10 +427,16 @@ pub fn assert_chrome_first_flight(datagrams: &[Vec<u8>], alpn: &[u8]) {
             .map(|(_, data)| data.clone())
             .unwrap()
     };
-    assert_eq!(extension(0x000a), [0x00, 0x08, 0x11, 0xec, 0x00, 0x1d, 0x00, 0x17, 0x00, 0x18]);
+    assert_eq!(
+        extension(0x000a),
+        [0x00, 0x08, 0x11, 0xec, 0x00, 0x1d, 0x00, 0x17, 0x00, 0x18]
+    );
     assert_eq!(
         extension(0x000d),
-        [0x00, 0x12, 0x04, 0x03, 0x08, 0x04, 0x04, 0x01, 0x05, 0x03, 0x08, 0x05, 0x05, 0x01, 0x08, 0x06, 0x06, 0x01, 0x02, 0x01]
+        [
+            0x00, 0x12, 0x04, 0x03, 0x08, 0x04, 0x04, 0x01, 0x05, 0x03, 0x08, 0x05, 0x05, 0x01,
+            0x08, 0x06, 0x06, 0x01, 0x02, 0x01
+        ]
     );
     let mut protocols = vec![0, alpn.len() as u8 + 1, alpn.len() as u8];
     protocols.extend_from_slice(alpn);
@@ -431,10 +446,18 @@ pub fn assert_chrome_first_flight(datagrams: &[Vec<u8>], alpn: &[u8]) {
     assert_eq!(extension(0x002b), [0x02, 0x03, 0x04]);
     assert_eq!(extension(0x002d), [0x01, 0x01]);
     let shares = extension(0x0033);
-    assert_eq!(&shares[2..6], [0x11, 0xec, 0x04, 0xc0], "X25519MLKEM768, 1216 bytes");
+    assert_eq!(
+        &shares[2..6],
+        [0x11, 0xec, 0x04, 0xc0],
+        "X25519MLKEM768, 1216 bytes"
+    );
     assert_eq!(&shares[6 + 1216..6 + 1216 + 4], [0x00, 0x1d, 0x00, 0x20]);
     let ech = extension(0xfe0d);
-    assert_eq!(&ech[..5], [0x00, 0x00, 0x01, 0x00, 0x01], "outer, HKDF-SHA256, AES-128-GCM");
+    assert_eq!(
+        &ech[..5],
+        [0x00, 0x00, 0x01, 0x00, 0x01],
+        "outer, HKDF-SHA256, AES-128-GCM"
+    );
     assert_eq!(&ech[6..8], [0x00, 0x20]);
     let payload = usize::from(u16::from_be_bytes([ech[40], ech[41]]));
     assert!([144, 176, 208, 240].contains(&payload), "{payload}");
@@ -458,7 +481,10 @@ pub fn assert_chrome_first_flight(datagrams: &[Vec<u8>], alpn: &[u8]) {
                 let mut versions = [value[4..8].to_vec(), value[8..].to_vec()];
                 versions.sort();
                 assert_eq!(versions[0], [0, 0, 0, 1]);
-                assert!(versions[1].iter().all(|b| b & 0x0f == 0x0a), "GREASE version");
+                assert!(
+                    versions[1].iter().all(|b| b & 0x0f == 0x0a),
+                    "GREASE version"
+                );
             }
             0x20 => assert_eq!(varint_value(value), 65_536),
             0x3128 => assert_eq!(value, b"ORIG"),
@@ -480,11 +506,7 @@ pub fn assert_stock_first_flight(datagrams: &[Vec<u8>]) {
     assert_eq!(initials[0].packet_number, 0);
     let hello = parse_client_hello(&hello);
     assert!(hello.extensions.iter().all(|(t, _)| *t != 0x44cd));
-    let (_, params) = hello
-        .extensions
-        .iter()
-        .find(|(t, _)| *t == 0x39)
-        .unwrap();
+    let (_, params) = hello.extensions.iter().find(|(t, _)| *t == 0x39).unwrap();
     assert!(transport_parameters(params)
         .iter()
         .all(|(id, _)| *id != 0x3128));

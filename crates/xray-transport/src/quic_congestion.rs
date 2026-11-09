@@ -933,7 +933,11 @@ mod tests {
         let switch = Arc::new(ControllerSwitch::default());
         let mut controller = switched(&switch);
         let reno = startup_controller(Instant::now(), 1200);
-        assert_eq!(reno.window(), 32 * 1200, "quic-go starts Reno at 32 packets");
+        assert_eq!(
+            reno.window(),
+            32 * 1200,
+            "quic-go starts Reno at 32 packets"
+        );
         assert_eq!(controller.window(), reno.window());
         assert_eq!(controller.pacing_rate(), None, "Reno paces from its window");
         let now = Instant::now();

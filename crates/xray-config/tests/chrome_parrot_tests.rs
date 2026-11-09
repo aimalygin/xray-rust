@@ -53,7 +53,10 @@ fn every_xray_verdict_is_ours() {
                 }
             }
             Err(error) => {
-                assert!(!xray_accepts, "{name}: Xray takes it, we refused: {error:?}");
+                assert!(
+                    !xray_accepts,
+                    "{name}: Xray takes it, we refused: {error:?}"
+                );
                 assert!(
                     error.diagnostics.iter().any(|d| d
                         .path

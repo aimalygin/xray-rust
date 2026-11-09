@@ -1673,9 +1673,9 @@ fn build_quinn_config(
     // quic-go's `Transport.DisableGSO`.
     transport.enable_segmentation_offload(!config.quic.disable_gso);
     if config.quic.chrome_parrot {
-        transport.chrome_parrot(true).max_concurrent_uni_streams(varint(
-            crate::chrome_parrot::MAX_INCOMING_UNI_STREAMS,
-        ));
+        transport
+            .chrome_parrot(true)
+            .max_concurrent_uni_streams(varint(crate::chrome_parrot::MAX_INCOMING_UNI_STREAMS));
     }
     match config.quic.congestion {
         H3Congestion::BbrStandard if !STANDARD_RUNS_XRAY_BBR => {

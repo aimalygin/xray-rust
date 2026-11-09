@@ -120,7 +120,9 @@ async fn pinned_reference_chrome_parrot_under_salamander() {
     let connector = TlsConnector::system().unwrap();
     let client = HysteriaClient::connect(config, &connector).await.unwrap();
     let mut tcp = client.open_tcp(&target).await.unwrap();
-    tcp.write_all(b"chrome parrot under salamander").await.unwrap();
+    tcp.write_all(b"chrome parrot under salamander")
+        .await
+        .unwrap();
     let mut echo = [0; 30];
     timeout(DEADLINE, tcp.read_exact(&mut echo))
         .await

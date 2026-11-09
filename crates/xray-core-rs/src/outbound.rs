@@ -8494,7 +8494,8 @@ mod tests {
                 continue;
             };
             let raw = serde_json::json!({"outbounds":[case["outbound"]]}).to_string();
-            let parsed = xray_config::parse_xray_json(&raw).unwrap_or_else(|e| panic!("{name}: {e:?}"));
+            let parsed =
+                xray_config::parse_xray_json(&raw).unwrap_or_else(|e| panic!("{name}: {e:?}"));
             let outbound = &parsed.config.outbounds[0];
             let chrome_parrot = match &outbound.stream.transport {
                 xray_config::StreamTransport::Hysteria(_) => {
@@ -8504,7 +8505,9 @@ mod tests {
                         .chrome_parrot
                 }
                 xray_config::StreamTransport::Xhttp(_) => {
-                    built_xhttp_transport(outbound).h3_quic_config().chrome_parrot
+                    built_xhttp_transport(outbound)
+                        .h3_quic_config()
+                        .chrome_parrot
                 }
                 // outbound::masque's own tests check MASQUE.
                 xray_config::StreamTransport::Masque(_) => continue,
