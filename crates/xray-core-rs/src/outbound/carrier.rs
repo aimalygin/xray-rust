@@ -115,19 +115,17 @@ impl StreamCarrier {
         }
     }
     /// The server's candidates, after its `addressPortStrategy`.
-    pub(super) fn resolve_server<'a>(
-        &'a self,
-        resolver: &'a dyn DnsResolver,
-        dialer: &'a TransportDialer,
-    ) -> impl Future<Output = Result<Vec<SocketAddr>, CoreError>> + 'a {
-        async move {
-            // An XDRIVE session meets its server in the storage: Xray-core's
-            // dial never looks the server address up.
-            if matches!(self.transport_layer, TransportLayer::Xdrive(_)) {
-                return Ok(Vec::new());
-            }
-            address_port::resolve_server(&self.server, self.address_port, resolver, dialer).await
+    pub(super) async fn resolve_server(
+        &self,
+        resolver: &dyn DnsResolver,
+        dialer: &TransportDialer,
+    ) -> Result<Vec<SocketAddr>, CoreError> {
+        // An XDRIVE session meets its server in the storage: Xray-core's dial
+        // never looks the server address up.
+        if matches!(self.transport_layer, TransportLayer::Xdrive(_)) {
+            return Ok(Vec::new());
         }
+        address_port::resolve_server(&self.server, self.address_port, resolver, dialer).await
     }
 
     /// The XHTTP download server's candidates, after its leg's

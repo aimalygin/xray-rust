@@ -142,7 +142,7 @@ impl Parser<'_> {
             None
         };
         if let Some(s3) = &s3 {
-            if let Err(error) = validate_s3(s3, &remote_folder, &secrets) {
+            if let Err(error) = validate_s3(s3, remote_folder, &secrets) {
                 self.error(&path, error);
                 valid = false;
             }
