@@ -178,8 +178,9 @@ async fn keep_alive(
         }
         if let Some(at) = ping_at {
             if last_frame.at() < at {
+                // Xray's `errHTTP2IdleTimeout`: stopping the driver closes
+                // the connection, and the tunnel with the reader's error.
                 if last_frame.since(at) >= PING_TIMEOUT {
-                    tracing::debug!("MASQUE: http2: no frame received within the idle timeout");
                     connection.abort();
                     return;
                 }
