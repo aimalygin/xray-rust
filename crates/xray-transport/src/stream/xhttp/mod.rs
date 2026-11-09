@@ -4,6 +4,9 @@ mod config;
 pub(crate) mod h1;
 mod h2;
 mod h3;
+// XDRIVE's storages over HTTP/3 take XHTTP's connections and send their own
+// requests on them.
+pub(crate) use h3::{connect_h3_candidates, H3Client};
 mod padding;
 mod request;
 mod session;

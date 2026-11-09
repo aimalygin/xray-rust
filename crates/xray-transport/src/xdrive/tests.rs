@@ -20,6 +20,10 @@ use super::*;
 
 const PATIENCE: Duration = Duration::from_secs(30);
 
+fn dialer() -> TransportDialer {
+    TransportDialer::system().expect("a system dialer")
+}
+
 fn tuning() -> XdriveTuning {
     XdriveTuning {
         flush_interval_ms: 5,
@@ -60,7 +64,7 @@ async fn pair(
         },
         tuning,
     });
-    let client = transport.open_stream().await.unwrap();
+    let client = transport.open_stream(&dialer()).await.unwrap();
     let server = test_only::accept_local(folder.path(), tuning)
         .await
         .unwrap()
@@ -206,7 +210,7 @@ async fn sessions_leave_xrays_layout() {
             ..tuning()
         },
     });
-    let mut client = transport.open_stream().await.unwrap();
+    let mut client = transport.open_stream(&dialer()).await.unwrap();
     let sessions: Vec<_> = std::fs::read_dir(folder.0.join("sessions"))
         .unwrap()
         .map(|entry| entry.unwrap().file_name().into_string().unwrap())
@@ -518,4 +522,11 @@ async fn a_slow_storage_holds_the_writer_back() {
     assert_eq!(accepted, 5 * 16);
     assert_eq!(storage.started.load(Ordering::SeqCst), 2);
     cancel.cancel();
+}
+
+#[test]
+fn storages_keep_alive_as_xmux_says() {
+    assert_eq!(keep_alive_for(0), Some(Duration::from_secs(45)));
+    assert_eq!(keep_alive_for(20), Some(Duration::from_secs(20)));
+    assert_eq!(keep_alive_for(-1), None);
 }

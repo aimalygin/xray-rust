@@ -24,6 +24,10 @@ pub struct Encoder {
     /// xray-rust: whether representations are picked as Go's `hpack`
     /// encoder picks them.
     go_choices: bool,
+    /// xray-rust: whether request pseudo-headers take the order of Go's
+    /// `net/http` HTTP/2 client: `:authority`, `:method`, `:path`,
+    /// `:scheme`.
+    go_pseudo_order: bool,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -43,6 +47,7 @@ impl Encoder {
             scratch: BytesMut::new(),
             authority_first: false,
             go_choices: false,
+            go_pseudo_order: false,
         }
     }
 
@@ -68,11 +73,25 @@ impl Encoder {
         self.authority_first
     }
 
+    /// xray-rust: writes request pseudo-headers in the order of Go's
+    /// `net/http` HTTP/2 client, `:authority`, `:method`, `:path`,
+    /// `:scheme`; it takes precedence over `set_authority_first`.
+    pub(crate) fn set_go_pseudo_order(&mut self, enabled: bool) {
+        self.go_pseudo_order = enabled;
+    }
+
+    /// xray-rust: whether request pseudo-headers take Go's order.
+    pub(crate) fn go_pseudo_order(&self) -> bool {
+        self.go_pseudo_order
+    }
+
     /// xray-rust: picks representations as Go's `hpack.Encoder` does: a
-    /// string in Huffman code only when that is shorter, and a name's last
-    /// static table entry, where upstream takes its first.
+    /// string in Huffman code only when that is shorter, a name's last
+    /// static table entry, where upstream takes its first, and a field
+    /// indexed whenever it fits the table.
     pub(crate) fn set_go_choices(&mut self, enabled: bool) {
         self.go_choices = enabled;
+        self.table.set_go_indexing(enabled);
     }
 
     /// The static index a name is referenced by: Go's `byName` keeps a
@@ -867,6 +886,36 @@ mod test {
         upstream.set_max_allowed_size(0);
         let res = encode(&mut upstream, vec![method("CONNECT")]);
         assert_eq!([0x20, 0x02, 0x80 | 7], res[..3]);
+    }
+
+    #[test]
+    fn go_choices_index_every_field_that_fits() {
+        use crate::hpack::BytesStr;
+
+        let mut encoder = Encoder::default();
+        encoder.set_go_choices(true);
+        let first = encode(
+            &mut encoder,
+            vec![
+                Header::Path(BytesStr::from_static("/v1/object")),
+                header("authorization", "Bearer t"),
+                header("content-length", "4"),
+            ],
+        );
+        // `:path` with incremental indexing by its last static entry, then
+        // `authorization` (23) and `content-length` (28), as Go writes them.
+        assert_eq!(0x45, first[0]);
+        let auth = 1 + 1 + usize::from(first[1] & 0x7f);
+        assert_eq!(0x40 | 23, first[auth]);
+        let length = auth + 1 + 1 + usize::from(first[auth + 1] & 0x7f);
+        assert_eq!(0x40 | 28, first[length]);
+        // The same `:path` again is the oldest dynamic entry: 62 + 2.
+        let again = encode(&mut encoder, vec![Header::Path(BytesStr::from_static("/v1/object"))]);
+        assert_eq!([0x80 | 64], again[..]);
+        // Upstream never indexes `:path`.
+        let mut upstream = Encoder::default();
+        let path = encode(&mut upstream, vec![Header::Path(BytesStr::from_static("/v1/object"))]);
+        assert_eq!(0x04, path[0]);
     }
 
     fn encode(e: &mut Encoder, hdrs: Vec<Header<Option<HeaderName>>>) -> BytesMut {

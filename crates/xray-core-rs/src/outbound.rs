@@ -5067,6 +5067,13 @@ pub async fn open_vless_tcp_stream(
 /// UDP masks, noise, `header-custom`, `sudoku`, `xdns`, `realm` and
 /// `xicmp`, need a UDP carrier: Hysteria, mKCP or XHTTP with exact `h3`
 /// ALPN.
+/// The fragment mask the stream sets, as its carriers apply it.
+pub(crate) fn tcp_fragment_config(
+    stream: &StreamSettings,
+) -> Result<Option<Arc<xray_transport::TcpFragmentConfig>>, CoreError> {
+    carrier::fragment_config(stream)
+}
+
 pub(crate) fn validate_udp_noise(stream: &StreamSettings) -> Result<(), CoreError> {
     let udp_carrier = matches!(
         stream.transport,
@@ -5081,7 +5088,8 @@ pub(crate) fn validate_udp_noise(stream: &StreamSettings) -> Result<(), CoreErro
         || stream.udp_sudoku.is_some()
         || stream.udp_xdns.is_some()
         || stream.udp_realm.is_some()
-        || stream.udp_xicmp.is_some())
+        || stream.udp_xicmp.is_some()
+        || stream.udp_salamander.is_some())
         && !udp_carrier
     {
         return Err(CoreError::UnsupportedOutboundNetwork);
@@ -5186,6 +5194,7 @@ mod tests {
                 udp_xdns: None,
                 udp_realm: None,
                 udp_xicmp: None,
+                udp_salamander: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5212,6 +5221,7 @@ mod tests {
                 udp_xdns: None,
                 udp_realm: None,
                 udp_xicmp: None,
+                udp_salamander: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5250,6 +5260,7 @@ mod tests {
                 udp_xdns: None,
                 udp_realm: None,
                 udp_xicmp: None,
+                udp_salamander: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5578,6 +5589,7 @@ mod tests {
                 udp_xdns: None,
                 udp_realm: None,
                 udp_xicmp: None,
+                udp_salamander: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5628,6 +5640,7 @@ mod tests {
                     udp_xdns: None,
                     udp_realm: None,
                     udp_xicmp: None,
+                    udp_salamander: None,
                     udp_sudoku: None,
                     udp_noise: None,
                     socket_options: None,
@@ -5673,6 +5686,7 @@ mod tests {
             udp_xdns: None,
             udp_realm: None,
             udp_xicmp: None,
+            udp_salamander: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -5715,6 +5729,7 @@ mod tests {
                 udp_xdns: None,
                 udp_realm: None,
                 udp_xicmp: None,
+                udp_salamander: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5798,6 +5813,7 @@ mod tests {
                 udp_xdns: None,
                 udp_realm: None,
                 udp_xicmp: None,
+                udp_salamander: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5844,6 +5860,7 @@ mod tests {
                 udp_xdns: None,
                 udp_realm: None,
                 udp_xicmp: None,
+                udp_salamander: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: Some(SocketOptions {
@@ -5896,6 +5913,7 @@ mod tests {
                 udp_xdns: None,
                 udp_realm: None,
                 udp_xicmp: None,
+                udp_salamander: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5923,6 +5941,7 @@ mod tests {
                 udp_xdns: None,
                 udp_realm: None,
                 udp_xicmp: None,
+                udp_salamander: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: Some(SocketOptions {
@@ -5956,6 +5975,7 @@ mod tests {
                 udp_xdns: None,
                 udp_realm: None,
                 udp_xicmp: None,
+                udp_salamander: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5986,6 +6006,7 @@ mod tests {
                 udp_xdns: None,
                 udp_realm: None,
                 udp_xicmp: None,
+                udp_salamander: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -11657,10 +11678,33 @@ mod kcp_tests {
     /// as on XHTTP's HTTP/3.
     #[test]
     fn tcp_masks_are_refused_on_mkcp() {
-        let outbound = vless(json!({"network": "kcp", "security": "tls",
-            "tlsSettings": {"serverName": "kcp.example"},
-            "finalmask": {"tcp": [{"type": "fragment", "settings": {"packets": "tlshello",
-                "length": "100-200", "delay": "10-20"}}]}}));
+        let tls = json!({"security": "tls", "tlsSettings": {"serverName": "kcp.example"}});
+        let mask = json!({"tcp": [{"type": "fragment", "settings": {"packets": "tlshello",
+            "length": "100-200", "delay": "10-20"}}]});
+        // The parser refuses the mask on mKCP...
+        let mut stream = tls.clone();
+        stream["network"] = json!("kcp");
+        stream["finalmask"] = mask.clone();
+        let refused = xray_config::parse_xray_json(
+            &json!({"outbounds": [{"protocol": "vless", "settings": {"vnext": [{
+                "address": "10.0.0.1", "port": 443, "users": [{"id": ID, "encryption": "none"}]}]},
+                "streamSettings": stream}]})
+            .to_string(),
+        )
+        .unwrap_err();
+        assert!(refused
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("fragmentation requires")));
+        // ...and so does the carrier, should one reach it.
+        let mut over_raw = tls.clone();
+        over_raw["finalmask"] = mask;
+        let fragment = vless(over_raw).stream.tcp_fragment;
+        assert!(fragment.is_some());
+        let mut kcp = tls;
+        kcp["network"] = json!("kcp");
+        let mut outbound = vless(kcp);
+        outbound.stream.tcp_fragment = fragment;
         assert!(matches!(
             build_vless_tcp_outbound(&outbound),
             Err(CoreError::UnsupportedOutboundNetwork)

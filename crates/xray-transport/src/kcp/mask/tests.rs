@@ -34,6 +34,7 @@ fn noise() -> UdpNoiseConfig {
             random_length: none(),
             random_bytes: none(),
             delay_ms: none(),
+            segments: Vec::new(),
         }],
         reset_secs: none(),
         before_salamander: false,
@@ -52,6 +53,9 @@ fn masks(names: &Value) -> Masks {
             }
             if let Some(domain) = name.strip_prefix("dns:") {
                 return KcpMask::Header(KcpHeader::Dns(domain.to_owned()));
+            }
+            if let Some(password) = name.strip_prefix("salamander:") {
+                return KcpMask::Salamander(password.to_owned().into());
             }
             match name {
                 "original" => KcpMask::Original,
@@ -228,6 +232,43 @@ fn noise_comes_back_after_the_connection_idles_past_its_reset() {
     assert_eq!(send(&mut once, Duration::from_secs(3600)), 0);
 }
 
+/// `exp` noise is built only when its turn comes: its counter runs in the
+/// items' order and across resets, as Xray-core's per-connection counter.
+#[test]
+fn exp_noise_counts_in_item_order_and_across_resets() {
+    use crate::udp_noise::NoiseSegment;
+    let item = |tag: u8| UdpNoiseItem {
+        packet: Vec::new(),
+        random_length: none(),
+        random_bytes: none(),
+        delay_ms: NoiseRange { from: 1, to: 1 },
+        segments: vec![NoiseSegment::Bytes(vec![tag]), NoiseSegment::Counter],
+    };
+    let config = UdpNoiseConfig {
+        items: vec![item(0xa), item(0xb)],
+        reset_secs: NoiseRange { from: 5, to: 5 },
+        before_salamander: false,
+    };
+    let mut masks = Masks::new(&[KcpMask::Noise], Some(&config)).unwrap();
+    let start = Instant::now();
+    let first = wire_at(&mut masks, b"d".to_vec(), start);
+    assert_eq!(
+        first
+            .iter()
+            .map(|packet| to_hex(packet))
+            .collect::<Vec<_>>(),
+        ["0a00000001", "0b00000002", "64"]
+    );
+    let again = wire_at(&mut masks, b"d".to_vec(), start + Duration::from_secs(6));
+    assert_eq!(
+        again
+            .iter()
+            .map(|packet| to_hex(packet))
+            .collect::<Vec<_>>(),
+        ["0a00000003", "0b00000004", "64"]
+    );
+}
+
 fn custom(standalone: bool) -> KcpMask {
     use crate::header_custom::{CustomItem, HeaderCustomUdpConfig};
     let item = CustomItem {
@@ -359,4 +400,25 @@ fn sudoku_encodes_each_datagram_and_drops_what_does_not_decode() {
     assert_eq!(&whole[range], b"segment");
     let mut garbage = vec![0x41; 8];
     assert!(alone.open(&mut garbage, peer(), Instant::now()).is_none());
+}
+
+/// What Salamander puts on the wire opens again: a random salt each time and
+/// the payload behind it, XORed with the key the password and salt derive.
+#[test]
+fn salamander_salts_every_datagram_and_opens_its_own() {
+    let mut masks =
+        Masks::new(&[KcpMask::Salamander("synthetic".to_owned().into())], None).unwrap();
+    let first = wire(&mut masks, b"datagram".to_vec());
+    let second = wire(&mut masks, b"datagram".to_vec());
+    assert_eq!(first[0].len(), 8 + 8);
+    assert_ne!(
+        first[0][..8],
+        second[0][..8],
+        "a fresh salt for each datagram"
+    );
+    for mut datagram in [first[0].clone(), second[0].clone()] {
+        let range = masks.open(&mut datagram, peer(), Instant::now()).unwrap();
+        assert_eq!(&datagram[range], b"datagram");
+    }
+    assert!(Masks::new(&[KcpMask::Salamander("abc".to_owned().into())], None).is_err());
 }

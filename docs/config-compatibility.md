@@ -92,6 +92,18 @@ past the path MTU is lost and the handshake stalls. A range above 1,452 bytes
 therefore pads to at most 1,452 bytes. Gecko and plain Salamander cannot talk
 to each other, so the server must use the same mode; its sizes need not match.
 
+Salamander is not Hysteria's alone: Xray-core applies it to any UDP dial.
+XHTTP with exact `h3` ALPN and MASQUE over HTTP/3 take it, Gecko included,
+exactly as Hysteria does, at its place among their noise, `header-custom` and
+`sudoku` masks; MTU discovery reserves its salt there too. On
+[mKCP](#mkcp) it is a header mask, as Xray-core groups it: it joins the
+`mkcp-legacy` masks next to it under one 4096-byte limit. Gecko is refused
+on mKCP for now. A TCP carrier refuses Salamander, which has no datagrams to
+mask. `scripts/check-hysteria-interop.sh`, `check-kcp-interop.sh` and
+`check-masque-interop.sh` run each carrier under it against Xray-core's own
+servers, and the mKCP vectors record what Xray-core reads out of salted
+datagrams.
+
 Each hop binds and protects a fresh socket while retaining the authenticated
 QUIC session and its TCP/UDP leases. Quinn retains at most one previous socket
 until an authenticated packet arrives on the new path. A scheduled hop whose
@@ -268,11 +280,43 @@ and `maxSplit` 0..4096 (zero means no explicit split limit). Before sending,
 each actual randomized plan must fit 4096 records and ten seconds of total
 delay; exceeding either limit fails the connection. `maxSplit` makes the last
 record contain the remainder, even when it exceeds the configured length.
-Arbitrary/all-write packet selectors, zero lengths, other mask types and
-unknown fields are rejected. FinalMask spells the delay `delay`, not `interval`.
+Zero lengths, other mask types and unknown fields are rejected. FinalMask
+spells the delay `delay`, not `interval`.
+
+`packets` can also select whole writes, which then go out as raw pieces, as
+Xray-core cuts them: empty or absent selects every write, one number or a
+`from-to` range the writes so numbered, counting from 1. A `tlshello` in any
+case keeps the record split above. Each piece of a selected write is its own
+socket write, followed by its delay, even the last; `maxSplit` makes the
+piece so numbered take the rest of the write. The pieces need no TLS, so raw
+pieces go on any TCP carrier of a proxy, encrypted or not, and on a raw
+freedom outbound:
+
+```json
+"finalmask": {
+  "tcp": [{"type": "fragment", "settings": {
+    "packets": "1-3", "length": "30-50", "delay": "2-3"
+  }}]
+}
+```
+
+A write is what the layer above hands the carrier in one call, as one `Write`
+is in Go; a call that leaves part of its input for the next one continues the
+same write. A selected write stages at most 64 KiB, 4096 pieces or ten
+seconds of delays at once, and its next call continues it where it stopped,
+so a long write is cut whole without unbounded buffering. Once no later write
+can be selected, the mask steps aside. Reads never wait for staged pieces, as
+Go's reads never wait on its writer's sleeps. A zero, a negative or a
+reversed range, which Xray-core either refuses or accepts and never applies,
+is refused. Every write cut with delays slows the whole connection; Xray-core
+does the same. With freedom's `proxyProtocol`, the PROXY header goes beneath
+the mask and is not counted, where Xray-core's FinalMask counts it as the
+first write. `scripts/check-v08-carrier-interop.sh` runs a TLS carrier with
+`"1-3"` and a plaintext one with every write cut against Xray-core's server.
 
 Existing mobile profiles may instead put
-`{"fragment":{"packets":"tlshello","length":"100-200","interval":"1-2","maxSplit":32}}`
+`{"fragment":{"packets":"tlshello","length":"100-200","interval":"1-2","maxSplit":32}}`,
+or the same with a write selector such as `"packets": "1-3"`,
 in a dedicated `freedom` outbound's `settings`, then reference its tag with
 `streamSettings.sockopt.dialerProxy`. That handler must use raw TCP with no
 security, socket overrides, mux or proxy chain. The parser normalizes its sole
@@ -295,8 +339,8 @@ existing profiles. Configured delays intentionally increase handshake latency.
 
 ## v0.8 UDP noise
 
-Hysteria2, [mKCP](#mkcp) and XHTTP with exact TLS `alpn: ["h3"]` accept one
-FinalMask UDP noise mask, using Xray-core v26.7.28's format:
+Hysteria2, [mKCP](#mkcp), XHTTP with exact TLS `alpn: ["h3"]` and MASQUE over
+HTTP/3 accept one FinalMask UDP noise mask, in Xray-core's format:
 
 ```json
 "finalmask": {"udp": [{"type": "noise", "settings": {
@@ -317,6 +361,29 @@ Literal encodings are `str` (UTF-8 without trimming), `hex`, standard padded
 cannot be combined. These are FinalMask spellings; the legacy `type: "rand"`
 with `packet: "16-32"` is read only in freedom's `settings.noises` (see
 [Freedom outbound](#freedom-outbound)).
+
+`type: "exp"`, in any case, reads `packet` as a string of segments, as
+Xray-core v26.10.31 does, built anew for every send:
+
+```json
+{"type": "exp", "packet": "<b 16 fe ff> <t> <c> <rc 3-5> <rd 2> <n> <r 4-8>", "delay": 1}
+```
+
+- `<b hex>` is these bytes; whitespace inside and a leading `0x` are dropped.
+- `<r n>`, `<rc n>` and `<rd n>` are that many random bytes, ASCII letters or
+  decimal digits; `n` is a size or a `from-to` range, both ends included, up
+  to 65535.
+- `<t>` is the Unix time in seconds and `<c>` the connection's count of `<c>`
+  segments, from 1, each four big-endian bytes; `<n>` is eight random bytes.
+
+Only whitespace may stand between segments. The packet's largest size must
+fit 4096 bytes here; Xray-core lets a segment take up to 65535. The counter
+runs across items, resets and socket rebinds of one connection, as Xray-core's
+does on its masked socket. `tools/noise-exp-oracle` records how Xray-core's own
+configuration reads a corpus of expressions and what its mask sends for them,
+which `scripts/check-hysteria-interop.sh` regenerates and compares. A
+nonempty `script`, which Xray-core runs in Lua instead of the items, is
+refused until Lua is supported.
 
 Each delay follows its noise packet, including the last packet before the
 first QUIC datagram. No wrapper is installed when absent. With `reset: 0`,
@@ -1835,8 +1902,9 @@ connection to a fresh protected socket, aimed with `intervalRemote` at
 another address, while QUIC migrates the path. The timer starts once the
 connection exists and stops with it; a failed hop keeps the current path until
 the next interval, as in Xray. Each pooled QUIC connection hops independently.
-H3 rejects TCP masks and UDP masks other than UDP-hop and the bounded noise mask; the opt-in TCP fragment
-and Hysteria Salamander support described above does not apply to H3. H3 has hermetic mode, wire, pool, lifecycle, TLS, and protected
+H3 takes every UDP mask: noise, `header-custom`, Salamander with Gecko,
+`sudoku`, `xdns`, `realm` and `xicmp`, each in its own section. It rejects TCP
+masks, and the TCP fragment mask does not apply to it. H3 has hermetic mode, wire, pool, lifecycle, TLS, and protected
 UDP tests, and the ignored live Xray-core `packet-up`, `stream-up`, and
 `stream-one` interoperability cases pass. The current pool conservatively
 allows one active HTTP request per QUIC connection and opens another
@@ -2153,8 +2221,12 @@ Masks apply in array order, so the last one is outermost on the wire: the old
 header with a seed is the seed mask first, then the header. Consecutive
 `mkcp-legacy` masks drop a datagram that grows past 4096 bytes, as Xray's do.
 One `noise` mask may stand anywhere among them, and its packets go out through
-the masks after it. Salamander, `udphop` and the other UDP masks, TCP masks
-and chaining through another outbound are refused on mKCP.
+the masks after it. One `salamander` mask is a header mask like them, as in
+Xray-core: it joins the `mkcp-legacy` masks next to it under the same limit,
+an eight-byte salt ahead of what it XORs. Gecko, its `packetSize`, is refused
+on mKCP for now. `header-custom`, `sudoku`, `xdns`, `realm` and `xicmp` have
+their own sections below; `udphop`, TCP masks and chaining through another
+outbound are refused on mKCP.
 
 The connection runs as Xray's does. It resends a segment once its
 retransmission timeout passes, estimated as RFC 6298 does, and sooner when a
@@ -2571,8 +2643,10 @@ It never connects to Cloudflare.
 The `xdrive` transport carries a VLESS connection as objects in a storage
 both ends reach, as Xray-core v26.10.31's client does. Nothing connects to
 the VLESS server address: the client and Xray-core's server meet in the
-storage, and the address is never looked up. This release reaches the
-`local` service, a folder:
+storage, and the address is never looked up. This release reaches all four
+services: `local`, a folder; `google-drive`, a Google Drive folder, its
+sessions in rings of slots; `s3`, a bucket; and `template`, an HTTP storage a
+JSON template describes.
 
 ```json
 {"protocol": "vless",
@@ -2597,8 +2671,7 @@ as on every VLESS outbound.
   spelling, with a warning), `template` or `s3`, case-sensitive; any other
   value, an empty one included, fails. `google-drive` needs exactly three
   `secrets`, `template` a `template` value (any JSON, `null` included) and
-  `s3` an `s3` object. These three are read and checked but refused when the
-  core starts for now. Without `xdriveSettings` the core refuses to start,
+  `s3` an `s3` object. Without `xdriveSettings` the core refuses to start,
   where Xray-core's registered default fails every dial.
 - `remoteFolder`: the folder of `local`, made with its parents, readable by
   this user only, when a session opens. An empty one fails when the core
@@ -2614,6 +2687,9 @@ as on every VLESS outbound.
   1800 to 3000 seconds, four for `google-drive` unless `tlsSettings.alpn` is
   exactly `["h3"]`. It shapes the HTTP storages' connections; `local` has
   none.
+- `template` is kept as the JSON written and read only when a connection
+  dials, as Xray-core reads it: a template it cannot use fails each dial,
+  not the configuration.
 - `s3` is checked as Xray-core's `ValidateS3Config` checks it when the
   service is `s3`: `endpoint` an `http` or `https` URL without user
   information, query (a bare `?` included) or fragment; `region` a header
@@ -2626,10 +2702,132 @@ as on every VLESS outbound.
 
 Over `tlsSettings.alpn` exactly `["h3"]`, `google-drive` takes only the
 `noise` UDP mask and no service takes `brutal` or `force-brutal`
-congestion, as in Xray-core. The UDP masks follow the rules of the other
-QUIC carriers (XDRIVE over HTTP/3 counts as one); `security`, `sockopt` and
-the masks shape the HTTP storages' connections and play no part with
-`local`.
+congestion, as in Xray-core. The UDP masks, Salamander among them, follow
+the rules of the other QUIC carriers (XDRIVE over HTTP/3 counts as one);
+`security`, `sockopt` and the masks shape the HTTP storages' connections
+and play no part with `local`.
+
+Over `alpn` exactly `["h3"]`, an `https` storage is reached over HTTP/3:
+one QUIC connection a host, set up as XHTTP's HTTP/3 connections are, with
+the stream's `quicParams`, its UDP masks, BBR (or Reno), udphop and the
+storage's server name and certificate rules, and a keepalive only when
+`quicParams.keepAlivePeriod` or a positive `xmux.hKeepAlivePeriod` asks
+for one, as Xray-core configures quic-go for it. Xray-core shapes that
+connection as Chrome unless `disableChromeParrot` is set; this client's
+QUIC is Quinn's own, as on the other QUIC carriers, which the configuration
+warns about. A storage over HTTP/3 cannot go through another outbound
+(`dialerProxy`).
+
+`streamSettings.address` and `port`, which Xray-core reads for every stream
+and only XDRIVE uses, name where every connection to an HTTP storage goes:
+the URL's host still names the TLS server and the `Host`, and its port is
+kept when `port` is zero. `address` is an IP or a name, brackets and
+surrounding spaces trimmed, `port` an integer from 0 to 65535, `null`
+leaving either unset; a `port` without an `address` changes nothing. An
+`env:` address, which Xray-core reads from the environment, is refused,
+and so are both fields under any other transport, which Xray-core ignores.
+
+The HTTP storages are reached as Xray-core's Go client reaches them. With
+`security: "tls"` each connection takes the stream's TLS settings, the
+server name the URL's host unless `serverName` names one; without them, a
+Chrome hello offering `h2` and `http/1.1`. The server's ALPN picks HTTP/2
+or HTTP/1.1; a host keeps one connection until it answers over HTTP/1.1,
+then takes up to the storage's concurrency. HTTP/2 opens with Go's
+SETTINGS (no push, 4 MiB stream window, 1 MiB frames, 10 MiB header
+lists), a 1 GiB connection window, Go's HPACK choices and its
+pseudo-header order (`:authority`, `:method`, `:path`, `:scheme`), and
+PINGs a quiet connection every 45 seconds, or every `hKeepAlivePeriod`
+seconds of `xmux`, never when that is negative. Requests carry Chrome's
+`fetch` headers unless they name a user agent of their own, Go's
+`Accept-Encoding: gzip` (decoded on the way back) unless they ask for
+another encoding or a range, and Go's `Content-Length` rules. A request
+that makes no progress for 60 seconds fails. Each session takes its
+connections from XMUX until it ends, and the sessions of one outbound share
+them; a connection closes once XMUX drops it and its requests are done.
+Connections go through the outbound's `sockopt`, chain and TCP masks.
+
+`s3` signs every request with SigV4 (`X-Amz-Date`,
+`X-Amz-Content-Sha256`, `Content-Type` on a put, `X-Amz-Security-Token`
+with a third secret), path-style `https://endpoint/bucket/key` or
+virtual-hosted `https://bucket.endpoint/key`, keys under `remoteFolder`.
+A listing asks for up to 1000 keys a page with `/` as delimiter and goes on
+with continuation tokens, refusing keys outside its prefix or a token that
+does not advance. Deleting an object deletes what lies under it too. A
+request is tried up to eight times, after a network failure, a stall, 429,
+500, 502, 503 or 504, waiting 200 ms doubled each time up to 8 seconds,
+jittered, or as long as `Retry-After` asks, up to 8 seconds. A redirect is
+an answer, as in Xray-core, so a signature never goes to another host.
+
+`google-drive` keeps each object as a file in the folder `remoteFolder`
+names by id, reached with Google Drive's v3 API and the client id, client
+secret and refresh token of `secrets`: an access token from
+`oauth2.googleapis.com/token`, kept for its lifetime less a minute and
+fetched again after a 401; names flat, their `/` written as `~`; an object
+of up to 12000 bytes as base64 in the file's description and a larger one
+uploaded as its body; files found by a query on their name, page after
+page, their ids remembered for every session of the outbound; and every
+request tried up to eight times as with `s3`, also after a 403 that names
+one of Drive's rate limits. A session announces a ring of slots: two to
+eight files a direction (`concurrency`, at most eight) and a watermark, made
+when the session opens. Segment `n` goes into slot `n` modulo the depth,
+its frame (`XDRVSL01`, the number, a mode, the size and CRC-32, and up to 14
+KiB of segment inline) in the description and a larger segment in the body
+of the same request. The writer cuts 14 KiB segments, doubling the size up
+to `segmentBytes` after eight full ones in a row and sending a burst of more
+than 56 KiB at once, and writes a slot only once the reader's watermark
+says it took what the slot held a lap before. The reader asks for the head
+often, from 50 ms up to 200 ms (or `maxPollIntervalMs` once idle), and for
+up to six segments behind it at the pace they come, writes its watermark as
+the head moves, takes a body only once it matches its frame, and fails when
+the writer marks a segment it could not store or a slot stays gone for a
+minute. When the ring cannot be made, the session goes in segments, as in
+Xray-core.
+
+`template` sends the requests its operations describe:
+
+```json
+"template": {
+  "flatten": true,
+  "auth": {"type": "oauth2", "tokenUrl": "https://oauth.example/token",
+    "form": {"grant_type": "refresh_token", "refresh_token": "{secret0}",
+      "client_id": "{secret1}"},
+    "header": {"Authorization": "Bearer {token}"}},
+  "put": {"method": "PUT", "url": "https://store.example/v1/{folder}/{name}"},
+  "get": {"url": "https://store.example/v1/{folder}/{name}?link",
+    "hrefPath": "href"},
+  "delete": {"method": "DELETE", "url": "https://store.example/v1/{folder}/{name}"},
+  "list": {"url": "https://store.example/v1/{folder}/",
+    "namesRegex": "\"name\":\"([^\"]+)\""},
+  "retry": {"status": [429], "rateReason": "error.reason"}
+}
+```
+
+The template is read as Go's `encoding/json` reads it into Xray-core's
+types: field names in any case, `null` as nothing, whole numbers only.
+`put`, `get`, `delete` and `list` need a `url` and `list` a `namesRegex`
+with a group; `concurrency` caps requests in flight a session, 32 when not
+positive and at most 256. In URLs, headers and bodies `{folder}` is
+`remoteFolder`, `{secretN}` the Nth secret, `{name}` and `{prefix}` the
+object's name (with `flatten`, its `/` written as `~`), `{data}` the
+object in base64 when `put` has a `body`, which then replaces the raw
+object, and `{token}` the OAuth 2 token. `auth` is `none`, `static` (its
+`header`), `basic` (`username` and `password`) or `oauth2`: a `POST` of
+`form` to `tokenUrl`, written unescaped as Xray-core writes it, the token
+at `tokenPath` (`access_token`) kept for the seconds at `expiryPath` (an
+hour) less a minute, fetched again after a 401. With `hrefPath` an
+operation takes two steps: the first answer's JSON names a URL at that
+path, then called with `hrefMethod` (`GET`), without auth or headers,
+carrying the object. A listing's names are the first group of every match
+of `namesRegex` (Go's RE2 syntax) in the answer; with `flatten` only the
+names under the prefix count, cut at the next `~`. A 404 is a missing
+object, an empty listing, or a done delete. A request is tried up to eight
+times, with the pauses of `s3` but no `Retry-After`, after any request that
+failed, a 401 with `oauth2`, a status in `retry.status` or a 403 whose JSON
+has a value at `rateReason`; no status is retried unless listed. Redirects
+are followed as Go's `http.Client` follows them: up to ten requests, `GET` after 301, 302 or
+303 for any method but `HEAD`, the method and body kept after 307 and 308,
+auth and cookie headers left behind on another domain, a `Referer`, and
+Basic auth from a URL's user information.
 
 A session works as Xray-core's does. The client announces it with an empty
 object `sessions/<Unix nanoseconds>-<32 hex digits>`, then writes its
@@ -2655,9 +2853,13 @@ reader never sees half an object.
 
 `scripts/check-xdrive-interop.sh` compares the tuning, names, the local
 folder's name resolution and step-by-step replays of the segment writer and
-reader with Xray-core's own code, rechecks the configuration verdicts with
-`xray run -test`, and runs VLESS over XDRIVE against Xray-core's server
-through a shared folder.
+reader with Xray-core's own code; S3 URLs and signatures, S3 answers,
+templates, substitution, JSON paths, `namesRegex` matches, URL resolution,
+redirects, slot frames, rings and Drive requests with what Xray-core and Go
+make of them, and Go's HTTP/2 request frames; rechecks the configuration
+verdicts with `xray run -test`; and runs VLESS over XDRIVE against
+Xray-core's server through a shared folder, an S3 bucket, a template's REST
+store and Xray-core's own fake Drive, in slots, over HTTP/2 and over HTTP/3.
 
 ### realm mask
 

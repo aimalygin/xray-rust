@@ -2,6 +2,8 @@ mod aead;
 mod erase;
 mod record_buffer;
 
+pub mod go_url;
+
 pub mod hysteria;
 pub mod inbound;
 pub mod mux;

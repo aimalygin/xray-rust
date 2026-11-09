@@ -74,6 +74,9 @@ pub enum KcpMask {
     HeaderCustom(Arc<crate::header_custom::HeaderCustomUdpConfig>),
     /// The sudoku transform of every datagram.
     Sudoku(Arc<crate::sudoku::SudokuConfig>),
+    /// Salamander: a random salt and the datagram XORed with a key the
+    /// password and salt derive; a header mask, as `mkcp-legacy`'s are.
+    Salamander(zeroize::Zeroizing<String>),
 }
 
 impl std::fmt::Debug for KcpMask {
@@ -85,6 +88,7 @@ impl std::fmt::Debug for KcpMask {
             Self::Noise => f.write_str("Noise"),
             Self::HeaderCustom(config) => f.debug_tuple("HeaderCustom").field(config).finish(),
             Self::Sudoku(config) => f.debug_tuple("Sudoku").field(config).finish(),
+            Self::Salamander(_) => f.write_str("Salamander(<redacted>)"),
         }
     }
 }

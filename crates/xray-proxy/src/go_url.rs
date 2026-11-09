@@ -1,13 +1,15 @@
-//! Go 1.27's `net/url` as `url.Parse` reads a URL, for settings Xray-core
-//! reads with it. The functions follow `net/url/url.go` line by line: the
-//! escaping table of `gen_encoding_table.go`, `parse`, `parseAuthority`,
-//! `parseHost` and the accessors `Hostname`, `Port`, `EscapedPath` and
-//! `Userinfo.String`. Go strings are bytes; an unescaped value that is not
-//! UTF-8 is replaced lossily, and callers that need its bytes refuse it.
+//! Go 1.27's `net/url` as `url.Parse` reads a URL, for the settings
+//! Xray-core reads with it and the requests its transports build. The
+//! functions follow `net/url/url.go` line by line: the escaping table of
+//! `gen_encoding_table.go`, `parse`, `parseAuthority`, `parseHost`, the
+//! accessors `Hostname`, `Port`, `EscapedPath`, `RequestURI` and
+//! `Userinfo.String`, and `Values.Encode`. Go strings are bytes; an
+//! unescaped value that is not UTF-8 is replaced lossily, and callers that
+//! need its bytes refuse it.
 
 /// One of `net/url`'s encoding modes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Encoding {
+pub enum Encoding {
     Path,
     PathSegment,
     Host,
@@ -18,7 +20,7 @@ pub(crate) enum Encoding {
 }
 
 /// Go's `shouldEscape`, the reference implementation its table encodes.
-pub(crate) fn should_escape(c: u8, mode: Encoding) -> bool {
+pub fn should_escape(c: u8, mode: Encoding) -> bool {
     if c.is_ascii_alphanumeric() {
         return false;
     }
@@ -69,19 +71,46 @@ fn unhex(c: u8) -> u8 {
 
 /// Go's `EscapeError` text.
 fn escape_error(s: &[u8]) -> String {
-    format!(
-        "invalid URL escape {}",
-        go_quote(&String::from_utf8_lossy(s))
-    )
+    format!("invalid URL escape {}", go_quote(s))
 }
 
-/// What `strconv.Quote` prints for the short strings errors quote.
-fn go_quote(s: &str) -> String {
-    format!("{s:?}")
+/// `strconv.Quote`: Go's escapes for control bytes, quotes and backslashes,
+/// `\xHH` for a byte that is not UTF-8, and `\u` or `\U` for a character
+/// that is not printable. Printable here is what is neither a control nor
+/// a space other than U+0020, nearly Go's `IsPrint`.
+fn go_quote(s: impl AsRef<[u8]>) -> String {
+    let mut out = String::from("\"");
+    for chunk in s.as_ref().utf8_chunks() {
+        for c in chunk.valid().chars() {
+            match c {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                '\u{7}' => out.push_str("\\a"),
+                '\u{8}' => out.push_str("\\b"),
+                '\u{c}' => out.push_str("\\f"),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                '\u{b}' => out.push_str("\\v"),
+                ' ' => out.push(' '),
+                c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                    out.push_str(&format!("\\x{:02x}", c as u32));
+                }
+                c if !c.is_control() && !c.is_whitespace() => out.push(c),
+                c if (c as u32) < 0x10000 => out.push_str(&format!("\\u{:04x}", c as u32)),
+                c => out.push_str(&format!("\\U{:08x}", c as u32)),
+            }
+        }
+        for byte in chunk.invalid() {
+            out.push_str(&format!("\\x{byte:02x}"));
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// Go's `unescape`, on bytes.
-pub(crate) fn unescape_bytes(s: &[u8], mode: Encoding) -> Result<Vec<u8>, String> {
+pub fn unescape_bytes(s: &[u8], mode: Encoding) -> Result<Vec<u8>, String> {
     let mut n = 0;
     let mut has_plus = false;
     let mut i = 0;
@@ -119,7 +148,7 @@ pub(crate) fn unescape_bytes(s: &[u8], mode: Encoding) -> Result<Vec<u8>, String
                 {
                     return Err(format!(
                         "invalid character {} in host name",
-                        go_quote(&String::from_utf8_lossy(&s[i..i + 1]))
+                        go_quote(&s[i..i + 1])
                     ));
                 }
                 i += 1;
@@ -151,7 +180,7 @@ pub(crate) fn unescape_bytes(s: &[u8], mode: Encoding) -> Result<Vec<u8>, String
 }
 
 /// Go's `escape`.
-pub(crate) fn escape(s: &[u8], mode: Encoding) -> String {
+pub fn escape(s: &[u8], mode: Encoding) -> String {
     let mut out = String::with_capacity(s.len());
     for &c in s {
         if c == b' ' && mode == Encoding::QueryComponent {
@@ -165,16 +194,35 @@ pub(crate) fn escape(s: &[u8], mode: Encoding) -> String {
     out
 }
 
+/// `url.Values.Encode`: every pair as `key=value`, both query-escaped,
+/// sorted by key and joined by `&`, the values of one key in their order.
+pub fn encode_values(values: &[(&str, &str)]) -> String {
+    let mut sorted: Vec<&(&str, &str)> = values.iter().collect();
+    // A stable sort keeps the values of one key in the order given.
+    sorted.sort_by(|a, b| a.0.cmp(b.0));
+    sorted
+        .iter()
+        .map(|(key, value)| {
+            format!(
+                "{}={}",
+                escape(key.as_bytes(), Encoding::QueryComponent),
+                escape(value.as_bytes(), Encoding::QueryComponent)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
 /// A URL's user information, unescaped.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Userinfo {
+pub struct Userinfo {
     pub username: Vec<u8>,
     pub password: Option<Vec<u8>>,
 }
 
 impl Userinfo {
     /// `Userinfo.String`: both parts escaped again, joined by a colon.
-    pub(crate) fn to_go_string(&self) -> String {
+    pub fn to_go_string(&self) -> String {
         let mut s = escape(&self.username, Encoding::UserPassword);
         if let Some(password) = &self.password {
             s.push(':');
@@ -186,7 +234,7 @@ impl Userinfo {
 
 /// The fields of Go's `url.URL` that `url.Parse` fills.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct Url {
+pub struct Url {
     pub scheme: String,
     pub opaque: String,
     pub user: Option<Userinfo>,
@@ -197,21 +245,27 @@ pub(crate) struct Url {
     pub force_query: bool,
     pub raw_query: String,
     pub fragment: Vec<u8>,
+    /// The fragment as written, when escaping `fragment` again would not
+    /// give it back.
+    pub raw_fragment: String,
+    /// `scheme:/path`: a scheme and a path with no authority at all, which
+    /// `String` writes back without `//`.
+    pub omit_host: bool,
 }
 
 impl Url {
     /// `URL.Hostname`: the host without its port and brackets.
-    pub(crate) fn hostname(&self) -> &str {
+    pub fn hostname(&self) -> &str {
         split_host_port(&self.host).0
     }
 
     /// `URL.Port`: the port's digits, empty when there are none.
-    pub(crate) fn port(&self) -> &str {
+    pub fn port(&self) -> &str {
         split_host_port(&self.host).1
     }
 
     /// `URL.EscapedPath`.
-    pub(crate) fn escaped_path(&self) -> String {
+    pub fn escaped_path(&self) -> String {
         if !self.raw_path.is_empty() && valid_encoded(self.raw_path.as_bytes(), Encoding::Path) {
             if let Ok(path) = unescape_bytes(self.raw_path.as_bytes(), Encoding::Path) {
                 if path == self.path {
@@ -225,13 +279,207 @@ impl Url {
         escape(&self.path, Encoding::Path)
     }
 
+    /// `URL.RequestURI`: the escaped path, `/` when empty, with the query.
+    pub fn request_uri(&self) -> String {
+        let mut result = self.opaque.clone();
+        if result.is_empty() {
+            result = self.escaped_path();
+            if result.is_empty() {
+                result = "/".to_owned();
+            }
+        } else if result.starts_with("//") {
+            result = format!("{}:{result}", self.scheme);
+        }
+        if self.force_query || !self.raw_query.is_empty() {
+            result.push('?');
+            result.push_str(&self.raw_query);
+        }
+        result
+    }
+
+    /// `URL.EscapedFragment`.
+    pub fn escaped_fragment(&self) -> String {
+        if !self.raw_fragment.is_empty()
+            && valid_encoded(self.raw_fragment.as_bytes(), Encoding::Fragment)
+        {
+            if let Ok(fragment) = unescape_bytes(self.raw_fragment.as_bytes(), Encoding::Fragment) {
+                if fragment == self.fragment {
+                    return self.raw_fragment.clone();
+                }
+            }
+        }
+        escape(&self.fragment, Encoding::Fragment)
+    }
+
+    /// `URL.String`.
+    pub fn to_go_string(&self) -> String {
+        let mut buf = String::new();
+        if !self.scheme.is_empty() {
+            buf.push_str(&self.scheme);
+            buf.push(':');
+        }
+        if !self.opaque.is_empty() {
+            buf.push_str(&self.opaque);
+        } else {
+            let no_authority = self.omit_host && self.host.is_empty() && self.user.is_none();
+            if (!self.scheme.is_empty() || !self.host.is_empty() || self.user.is_some())
+                && !no_authority
+            {
+                if !self.host.is_empty() || !self.path.is_empty() || self.user.is_some() {
+                    buf.push_str("//");
+                }
+                if let Some(user) = &self.user {
+                    buf.push_str(&user.to_go_string());
+                    buf.push('@');
+                }
+                if !self.host.is_empty() {
+                    buf.push_str(&escape(self.host.as_bytes(), Encoding::Host));
+                }
+            }
+            let mut path = self.escaped_path();
+            if no_authority && path.starts_with("//") {
+                // Read again, the path would turn into an authority.
+                buf.push_str("%2F");
+                path.remove(0);
+            }
+            if !path.is_empty() && !path.starts_with('/') && !self.host.is_empty() {
+                buf.push('/');
+            }
+            if buf.is_empty() && path.split('/').next().unwrap_or_default().contains(':') {
+                buf.push_str("./");
+            }
+            buf.push_str(&path);
+        }
+        if self.force_query || !self.raw_query.is_empty() {
+            buf.push('?');
+            buf.push_str(&self.raw_query);
+        }
+        if !self.fragment.is_empty() {
+            buf.push('#');
+            buf.push_str(&self.escaped_fragment());
+        }
+        buf
+    }
+
+    /// `URL.setPath`: the path from its escaped form, kept as written when
+    /// escaping it again would not give it back.
+    fn set_path(&mut self, escaped: &str) -> Result<(), String> {
+        let path = unescape_bytes(escaped.as_bytes(), Encoding::Path)?;
+        self.raw_path = if escape(&path, Encoding::Path) == escaped {
+            String::new()
+        } else {
+            escaped.to_owned()
+        };
+        self.path = path;
+        Ok(())
+    }
+
+    /// `URL.ResolveReference`: `reference` read against this URL, as RFC
+    /// 3986 section 5.2 says.
+    pub fn resolve_reference(&self, reference: &Url) -> Url {
+        let mut url = reference.clone();
+        if reference.scheme.is_empty() {
+            url.scheme = self.scheme.clone();
+        }
+        if !reference.scheme.is_empty() || !reference.host.is_empty() || reference.user.is_some() {
+            // Go ignores the error: the path was validly escaped.
+            let _ = url.set_path(&resolve_path(&reference.escaped_path(), ""));
+            return url;
+        }
+        if !reference.opaque.is_empty() {
+            url.user = None;
+            url.host.clear();
+            url.path.clear();
+            return url;
+        }
+        if reference.path.is_empty() && !reference.force_query && reference.raw_query.is_empty() {
+            url.raw_query = self.raw_query.clone();
+            if reference.fragment.is_empty() {
+                url.fragment = self.fragment.clone();
+                url.raw_fragment = self.raw_fragment.clone();
+            }
+        }
+        if reference.path.is_empty() && !self.opaque.is_empty() {
+            url.opaque = self.opaque.clone();
+            url.user = None;
+            url.host.clear();
+            url.path.clear();
+            return url;
+        }
+        url.host = self.host.clone();
+        url.user = self.user.clone();
+        let _ = url.set_path(&resolve_path(
+            &self.escaped_path(),
+            &reference.escaped_path(),
+        ));
+        url
+    }
+
+    /// `URL.Parse`: `reference` parsed, then resolved against this URL.
+    pub fn parse_reference(&self, reference: &str) -> Result<Url, String> {
+        Ok(self.resolve_reference(&parse(reference)?))
+    }
+
     /// `URL.User.String()`, empty without user information.
-    pub(crate) fn user_string(&self) -> String {
+    pub fn user_string(&self) -> String {
         self.user
             .as_ref()
             .map(Userinfo::to_go_string)
             .unwrap_or_default()
     }
+}
+
+/// Go's unexported `resolvePath`: `reference` against `base`, both escaped,
+/// with dot segments removed.
+fn resolve_path(base: &str, reference: &str) -> String {
+    let full = if reference.is_empty() {
+        base.to_owned()
+    } else if !reference.starts_with('/') {
+        let cut = base.rfind('/').map_or(0, |i| i + 1);
+        format!("{}{reference}", &base[..cut])
+    } else {
+        reference.to_owned()
+    };
+    if full.is_empty() {
+        return String::new();
+    }
+    let mut dst = String::from("/");
+    let mut first = true;
+    let mut elem = "";
+    let mut remaining = full.as_str();
+    let mut found = true;
+    while found {
+        (elem, remaining, found) = match remaining.split_once('/') {
+            Some((elem, rest)) => (elem, rest, true),
+            None => (remaining, "", false),
+        };
+        if elem == "." {
+            first = false;
+            continue;
+        }
+        if elem == ".." {
+            let written = dst[1..].to_owned();
+            dst.clear();
+            dst.push('/');
+            match written.rfind('/') {
+                None => first = true,
+                Some(index) => dst.push_str(&written[..index]),
+            }
+        } else {
+            if !first {
+                dst.push('/');
+            }
+            dst.push_str(elem);
+            first = false;
+        }
+    }
+    if elem == "." || elem == ".." {
+        dst.push('/');
+    }
+    if dst.len() > 1 && dst.as_bytes()[1] == b'/' {
+        dst.remove(0);
+    }
+    dst
 }
 
 /// Go's unexported `splitHostPort`: a numeric port after the last colon,
@@ -332,7 +580,7 @@ fn get_scheme(raw: &str) -> Result<(&str, &str), String> {
 }
 
 /// Go's `url.Parse`.
-pub(crate) fn parse(raw: &str) -> Result<Url, String> {
+pub fn parse(raw: &str) -> Result<Url, String> {
     let (u, fragment) = match raw.split_once('#') {
         Some((u, fragment)) => (u, Some(fragment)),
         None => (raw, None),
@@ -341,6 +589,9 @@ pub(crate) fn parse(raw: &str) -> Result<Url, String> {
     if let Some(fragment) = fragment.filter(|f| !f.is_empty()) {
         url.fragment = unescape_bytes(fragment.as_bytes(), Encoding::Fragment)
             .map_err(|e| format!("parse {}: {e}", go_quote(raw)))?;
+        if escape(&url.fragment, Encoding::Fragment) != fragment {
+            url.raw_fragment = fragment.to_owned();
+        }
     }
     Ok(url)
 }
@@ -385,6 +636,7 @@ fn parse_without_fragment(raw: &str) -> Result<Url, String> {
         url.host = host;
         rest_owned = path.to_owned();
     } else {
+        url.omit_host = !url.scheme.is_empty() && rest.starts_with('/');
         rest_owned = rest.to_owned();
     }
     let path = unescape_bytes(rest_owned.as_bytes(), Encoding::Path)?;
@@ -508,6 +760,27 @@ mod tests {
         assert_eq!(
             unescape_bytes(b"%C3%A9", Encoding::Host).unwrap(),
             "é".as_bytes()
+        );
+    }
+
+    #[test]
+    fn request_uris_and_values_encode_as_go_does() {
+        let url = parse("https://s3.example:9000/bucket/a%20b?list-type=2&prefix=x").unwrap();
+        assert_eq!(url.request_uri(), "/bucket/a%20b?list-type=2&prefix=x");
+        assert_eq!(parse("https://host").unwrap().request_uri(), "/");
+        assert_eq!(parse("https://host/?").unwrap().request_uri(), "/?");
+        assert_eq!(parse("https://host/a%2Fb").unwrap().request_uri(), "/a%2Fb");
+        assert_eq!(
+            encode_values(&[
+                ("prefix", "a b+c/"),
+                ("list-type", "2"),
+                ("max-keys", "1000")
+            ]),
+            "list-type=2&max-keys=1000&prefix=a+b%2Bc%2F"
+        );
+        assert_eq!(
+            encode_values(&[("b", "2"), ("a", "1"), ("b", "1")]),
+            "a=1&b=2&b=1"
         );
     }
 

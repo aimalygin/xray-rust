@@ -46,6 +46,17 @@ regexTarget = "line"
 paths = ['''^tests/fixtures/xmc/vectors\.json$''']
 regexes = ['''^\s*"password": "0123456789abcdef0123456789abcdef",?\s*$''']
 
+# The XDRIVE oracle signs S3 requests with AWS's documented example key pair
+# (AKIDEXAMPLE); the generic rule reads the signature after
+# "x-amz-security-token" in the signed-header list as a token.
+[[allowlists]]
+description = "Synthetic XDRIVE S3 oracle signatures from AWS's example key"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^tests/fixtures/xdrive/http-vectors\.json$''']
+regexes = ['''^\s*"AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/[0-9]{8}/[a-z0-9-]+/s3/aws4_request, SignedHeaders=[a-z0-9;-]+, Signature=[0-9a-f]{64}",?\s*$''']
+
 # The generic rule reads the case id after "socks-password" as its value.
 [[allowlists]]
 description = "0.9.0 UDP cancellation collector case-id filter"
