@@ -802,36 +802,39 @@ TCP with a 128 KiB echo and UDP to IPv4 and IPv6 through Mux, eight parallel
 TCP flows on at most four sessions, the server deleting every segment the
 client stored, X25519 and ML-KEM-768 authentication, and 4 KiB segments two
 at a time. Then in the stand-in of `tools/xdrive-oracle/standin`, written
-from the AWS documentation apart from Xray-core's signer: an S3 bucket
-checking every signature, Xray-core path-style over HTTP/1.1, this client
-virtual-hosted over HTTPS and HTTP/2 through `streamSettings.address` and
-then path-style over HTTP/1.1, with a session token and one-key pages that
-make every listing continue; and a template's REST store, Xray-core with a
-static token over HTTP/1.1, this client with OAuth 2 over HTTPS and HTTP/2
-through the stream's address, tokens fetched again each second and forgotten
-by the store, objects as base64 in JSON, two-step reads through a link that
-redirects, and retries after a 403 naming a rate limit, a 429 and a 401; the
-stand-in's log shows each of these crossed the wire. A flow through the core
-announces its session and stores its request with a resolver that fails
-every lookup. Mutating 54 branches of the sessions and the folder fails the
-tests each time: 26 of the configuration (services, secrets, the template
-and `s3` presence, each `ValidateS3Config` rule, the xmux defaults and
-conflict, the HTTP/3 rules, every `validateXDrive` rule), 23 of the
-transport (names and their parsing, the tuning's defaults, caps and floor,
-the writer's coalescing, cuts, end and failure marks, the reader's holes,
-end marks, missing objects, discards and wake-up, the local folder's names
-and temporary files, the end a shutdown or a drop stores) and 5 of the core
-(both refusals, the skipped lookup, XDRIVE over HTTP/3 among the UDP
-carriers, the build at start). So does mutating 77 branches of the HTTP
-storages: redirects (9), URL resolution (3), S3 addressing, signing,
-listings, deletes, missing objects and retries (13), templates' decoding,
-limits, 404s, flat listings, retries, tokens, lifetimes and two-step reads
-(13), the client's headers, fronting and SNI (4), the HTTP/2 settings,
-windows, framing, pseudo-header order and HPACK choices (9, two in the
-vendored `h2`), S3 answers (2), JSON numbers (2), `namesRegex` (3), XMUX
-draws (1), the keepalive (1), Go's wrapping of token lifetimes (1),
-`Retry-After` dates (12), the fronting fields (2) and the core's TLS for a
-storage and HTTP/3 refusal (2); five of them only the live tests catch.
+from the AWS documentation apart from Xray-core's signer, which Xray-core's
+own client crosses first with this client's configuration, so that a
+stand-in Xray-core cannot use fails the test before this client is held to
+it: an S3 bucket checking every signature, Xray-core path-style over
+HTTP/1.1, this client virtual-hosted over HTTPS and HTTP/2 through
+`streamSettings.address` and then path-style over HTTP/1.1, with a session
+token and one-key pages that make every listing continue; and a template's
+REST store, Xray-core with a static token over HTTP/1.1, this client with
+OAuth 2 over HTTPS and HTTP/2 through the stream's address, tokens fetched
+again each second and forgotten by the store, objects as base64 in JSON,
+two-step reads through a link that redirects, and retries after a 403 naming
+a rate limit, a 429 and a 401; the stand-in's log shows each of these
+crossed the wire. A flow through the core announces its session and stores
+its request with a resolver that fails every lookup. Mutating 54 branches of
+the sessions and the folder fails the tests each time: 26 of the
+configuration (services, secrets, the template and `s3` presence, each
+`ValidateS3Config` rule, the xmux defaults and conflict, the HTTP/3 rules,
+every `validateXDrive` rule), 23 of the transport (names and their parsing,
+the tuning's defaults, caps and floor, the writer's coalescing, cuts, end
+and failure marks, the reader's holes, end marks, missing objects, discards
+and wake-up, the local folder's names and temporary files, the end a
+shutdown or a drop stores) and 5 of the core (both refusals, the skipped
+lookup, XDRIVE over HTTP/3 among the UDP carriers, the build at start). So
+does mutating 77 branches of the HTTP storages: redirects (9), URL
+resolution (3), S3 addressing, signing, listings, deletes, missing objects
+and retries (13), templates' decoding, limits, 404s, flat listings, retries,
+tokens, lifetimes and two-step reads (13), the client's headers, fronting
+and SNI (4), the HTTP/2 settings, windows, framing, pseudo-header order and
+HPACK choices (9, two in the vendored `h2`), S3 answers (2), JSON numbers
+(2), `namesRegex` (3), XMUX draws (1), the keepalive (1), Go's wrapping of
+token lifetimes (1), `Retry-After` dates (12), the fronting fields (2) and
+the core's TLS for a storage and HTTP/3 refusal (2); five of them only the
+live tests catch.
 
 ## realm
 
