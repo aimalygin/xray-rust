@@ -495,6 +495,8 @@ pub enum CoreError {
     /// the selected HTTP engine without silently changing its behavior.
     #[error("invalid or unsupported XHTTP configuration: {0:?}")]
     InvalidXhttpConfiguration(String),
+    #[error("invalid or unsupported XDRIVE configuration: {0}")]
+    InvalidXdriveConfiguration(String),
     #[error("XTLS rejected UDP/443 traffic")]
     VisionUdp443Rejected,
     #[error("transport error: {0}")]
@@ -856,6 +858,10 @@ impl Core {
             // start, as Hysteria's and WireGuard's.
             if matches!(outbound.settings, xray_config::OutboundSettings::Masque(_)) {
                 outbound::MasqueOutbound::new(outbound)?;
+            }
+            // So is an XDRIVE storage.
+            if let xray_config::StreamTransport::Xdrive(xdrive) = &outbound.stream.transport {
+                outbound::xdrive::build_xdrive_transport(xdrive)?;
             }
         }
         let config = Arc::new(config);

@@ -5678,6 +5678,89 @@
         "/outbounds/0/streamSettings/finalmask/udp/1/settings/seed": 1
       },
       "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.seed"
+    },
+    {
+      "name": "xdrive",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {
+              "address": "127.0.0.1",
+              "port": 443,
+              "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+              "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+            },
+            "streamSettings": {
+              "network": "xdrive",
+              "xdriveSettings": {
+                "service": "s3",
+                "remoteFolder": "xdrive",
+                "secrets": [
+                  "AKIDEXAMPLE",
+                  "synthetic-secret-key"
+                ],
+                "segmentBytes": 65536,
+                "flushIntervalMs": 20,
+                "pollIntervalMs": 50,
+                "maxPollIntervalMs": 500,
+                "sessionTtlSeconds": 300,
+                "concurrency": 8,
+                "eagerWindowMs": 2000,
+                "holeTimeoutMs": 30000,
+                "s3": {
+                  "endpoint": "https://s3.example",
+                  "region": "us-west-2",
+                  "bucket": "xdrive-bucket",
+                  "pathStyle": true
+                },
+                "xmux": {
+                  "maxConnections": 2
+                }
+              }
+            },
+            "mux": {
+              "enabled": true
+            }
+          }
+        ]
+      },
+      "objects": {
+        "XDRIVE": "/outbounds/0/streamSettings/xdriveSettings",
+        "XDRIVE_S3": "/outbounds/0/streamSettings/xdriveSettings/s3"
+      }
+    },
+    {
+      "name": "xdrive-s3-endpoint",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.xdriveSettings",
+      "base": "xdrive",
+      "set": {
+        "/outbounds/0/streamSettings/xdriveSettings/s3/endpoint": "ftp://s3.example"
+      }
+    },
+    {
+      "name": "xdrive-without-mux",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].mux",
+      "base": "xdrive",
+      "set": {
+        "/outbounds/0/mux/enabled": false
+      }
     }
   ]
 }

@@ -100,6 +100,9 @@ pub enum TransportLayer {
     Xhttp(XhttpTransport),
     /// mKCP: its own UDP socket per stream, with TLS on top when configured.
     Kcp(std::sync::Arc<crate::kcp::KcpConfig>),
+    /// XDRIVE: each stream a session in a storage; neither the security
+    /// layer nor the server address applies to the stream itself.
+    Xdrive(crate::xdrive::XdriveTransport),
 }
 
 pub use websocket_frame::{encode_client_frames, FrameDecoder, FrameEvent, MAX_FRAME_PAYLOAD};
