@@ -412,6 +412,43 @@ mod tests {
         assert!(orders.len() > 390);
     }
 
+    fn extensions(hello: &[u8]) -> Vec<(u16, Vec<u8>)> {
+        let mut p = 4 + 2 + 32;
+        p += 1 + usize::from(hello[p]);
+        p += 2 + usize::from(u16::from_be_bytes([hello[p], hello[p + 1]]));
+        p += 1 + usize::from(hello[p]);
+        let end = p + 2 + usize::from(u16::from_be_bytes([hello[p], hello[p + 1]]));
+        p += 2;
+        let mut out = Vec::new();
+        while p < end {
+            let typ = u16::from_be_bytes([hello[p], hello[p + 1]]);
+            let len = usize::from(u16::from_be_bytes([hello[p + 2], hello[p + 3]]));
+            out.push((typ, hello[p + 4..p + 4 + len].to_vec()));
+            p += 4 + len;
+        }
+        out
+    }
+
+    /// The GREASE ECH payload takes each of BoringSSL's four lengths, drawn
+    /// per connection as uTLS draws it, and a fresh order of extensions.
+    #[test]
+    fn each_hello_draws_its_ech_length_and_extension_order() {
+        let mut lengths = std::collections::BTreeSet::new();
+        let mut orders = std::collections::HashSet::new();
+        for _ in 0..64 {
+            let hello = client_hello(ChromeQuicHello::default(), vec![0x01, 0x02, 0x80, 0x00]);
+            let extensions = extensions(&hello);
+            let (_, ech) = extensions
+                .iter()
+                .find(|(t, _)| *t == EXT_ENCRYPTED_CLIENT_HELLO)
+                .unwrap();
+            lengths.insert(u16::from_be_bytes([ech[40], ech[41]]));
+            orders.insert(extensions.iter().map(|(t, _)| *t).collect::<Vec<_>>());
+        }
+        assert_eq!(lengths.into_iter().collect::<Vec<_>>(), [144, 176, 208, 240]);
+        assert!(orders.len() > 60);
+    }
+
     #[test]
     fn int63_is_go_crypto_rand_int() {
         assert_eq!(int63([0xff; 8]), None);

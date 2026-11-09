@@ -584,6 +584,20 @@ mod tests {
         assert_eq!(crypto_split(900, 0, 1_215, &mut rng), None);
     }
 
+    /// The ACK stays out of the shuffle, in front.
+    #[test]
+    fn chaos_writes_the_ack_first() {
+        let ack = [0x02, 0x05, 0x00, 0x00, 0x03];
+        for seed in 0..32u8 {
+            let mut rng = GoPcg::new([seed; 16]);
+            let mut out = Vec::new();
+            let data = Bytes::from(vec![0x16; 400]);
+            chaos_payload(&mut out, Some(&ack), vec![(0, data)], Vec::new(), 200, &mut rng);
+            assert_eq!(out[..ack.len()], ack);
+            assert_eq!(out.len(), ack.len() + 1 + 1 + 2 + 400 + 200);
+        }
+    }
+
     #[test]
     fn chaos_keeps_the_payload_size_and_the_crypto_bytes() {
         let data: Vec<u8> = (0..900u32).map(|i| i as u8).collect();
