@@ -50,6 +50,8 @@ type xrayRustH2Case struct {
 	Host       string            `json:"host"`
 	Path       string            `json:"path"`
 	Headers    map[string]string `json:"headers"`
+	// Warp: Cloudflare's tunnel, with these addresses.
+	Warp []string `json:"warp,omitempty"`
 	// Canonical: the headers as http.Header.Set keeps them, sorted.
 	Canonical [][2]string       `json:"canonical"`
 	Frames    []xrayRustH2Frame `json:"frames"`
@@ -112,6 +114,15 @@ func TestXrayRustHTTP2Oracle(t *testing.T) {
 		{
 			Name: "a long header", ServerName: "masque.example", Port: 443, Path: DefaultPath,
 			Headers: map[string]string{"X-Padding": xrayRustH2Padding(300)},
+		},
+		{
+			Name: "warp", ServerName: "consumer-masque.cloudflareclient.com", Port: 443,
+			Host: WarpHost, Path: WarpPath, Warp: []string{"172.16.0.2/32", "fd00::2/128"},
+		},
+		{
+			Name: "warp with a host of its own and a header", ServerName: "warp.example", Port: 8443,
+			Host: "warp.example:2408", Path: WarpPath, Warp: []string{"172.16.0.2/32"},
+			Headers: map[string]string{"User-Agent": "golang", "X-Device": "1"},
 		},
 	}
 	for i := range cases {
@@ -189,9 +200,14 @@ func xrayRustH2Frames(t *testing.T, c *xrayRustH2Case) []xrayRustH2Frame {
 	}
 	defer cc.Close()
 	config := &Config{Path: c.Path, Host: c.Host, Headers: c.Headers}
+	var tunnels tunnelClient = connectip.NewHTTP2ClientConn(cc)
+	if c.Warp != nil {
+		config.Warp = &Warp{Address: c.Warp}
+		tunnels = connectip.NewCloudflareHTTP2ClientConn(cc)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	go establish(ctx, connectip.NewHTTP2ClientConn(cc), cc, func() { cc.Close() }, config,
+	go establish(ctx, tunnels, cc, func() { cc.Close() }, config,
 		authority(config, c.ServerName, xnet.Port(c.Port)))
 	select {
 	case got := <-frames:
