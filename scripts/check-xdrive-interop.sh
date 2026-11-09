@@ -29,7 +29,7 @@ PY
 # the overlay adds to the package without touching the checkout; their runs
 # are deterministic, so fresh ones match the fixtures byte for byte.
 cat >"$TEST_ROOT/overlay.json" <<JSON
-{"Replace": {"$CHECKOUT/transport/internet/xdrive/xray_rust_oracle_test.go": "$WORKSPACE_ROOT/tools/xdrive-oracle/wal_oracle_test.go", "$CHECKOUT/transport/internet/xdrive/xray_rust_http_oracle_test.go": "$WORKSPACE_ROOT/tools/xdrive-oracle/http_oracle_test.go"}}
+{"Replace": {"$CHECKOUT/transport/internet/xdrive/xray_rust_oracle_test.go": "$WORKSPACE_ROOT/tools/xdrive-oracle/wal_oracle_test.go", "$CHECKOUT/transport/internet/xdrive/xray_rust_http_oracle_test.go": "$WORKSPACE_ROOT/tools/xdrive-oracle/http_oracle_test.go", "$CHECKOUT/transport/internet/xdrive/xray_rust_drive_server_test.go": "$WORKSPACE_ROOT/tools/xdrive-oracle/drive_server_test.go"}}
 JSON
 XDRIVE_ORACLE_OUT="$TEST_ROOT/wal-vectors.json" \
   XDRIVE_HTTP_ORACLE_OUT="$TEST_ROOT/http-vectors.json" \
@@ -61,17 +61,25 @@ env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
 python3 scripts/check-config-verdicts.py \
   "$TEST_ROOT/xray" tests/fixtures/xdrive/config-verdicts.json
 
-# The storage stand-in: an S3 bucket that checks every SigV4 signature and a
-# REST store for a template, each over HTTP and HTTPS. Standard library only.
+# The storage stand-ins: an S3 bucket that checks every SigV4 signature and a
+# REST store for a template, each over HTTP and HTTPS, standard library only;
+# and Xray-core's own fakeDrive on Google Drive's real paths, over TLS and
+# HTTP/3, built from the overlay in the checkout.
 env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
   go -C tools/xdrive-oracle/standin build -mod=readonly -o "$TEST_ROOT/xdrive-standin" .
+env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
+  go -C "$CHECKOUT" test -c -mod=readonly -overlay "$TEST_ROOT/overlay.json" \
+  -o "$TEST_ROOT/xdrive-drive-server" ./transport/internet/xdrive
 
 # VLESS with encryption and Mux over XDRIVE against Xray-core's own XDRIVE
 # server: in a local folder, TCP and UDP of both families, parallel flows,
 # X25519 and ML-KEM-768 authentication, small segments; then in the
 # stand-in's bucket and REST store, Xray-core over HTTP/1.1 and this client
-# over HTTPS and HTTP/2 through the stream's address and port.
+# over HTTPS and HTTP/2 through the stream's address and port; then in the
+# Drive stand-in, both in rings of slots, this client over HTTP/2 and over
+# HTTP/3 through a noise mask.
 XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT" \
   XDRIVE_STANDIN_BINARY="$TEST_ROOT/xdrive-standin" \
+  XDRIVE_DRIVE_SERVER="$TEST_ROOT/xdrive-drive-server" \
   cargo test --locked -p xray-core-rs --test local_xray_interop_tests xdrive:: \
     -- --ignored --nocapture --test-threads=1

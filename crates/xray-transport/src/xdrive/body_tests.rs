@@ -1,6 +1,6 @@
 //! Answers under their limit, as Go's transport reads them for Xray-core:
 //! a gzip body decoded as it arrives and never read past the limit, over
-//! HTTP/1.1 and HTTP/2 from servers that would send far more. The bodies
+//! HTTP/1.1, HTTP/2 and HTTP/3 from servers that would send far more. The bodies
 //! end somewhere, 32 or 64 MiB on, so that a client reading on shows as
 //! bytes counted rather than as memory that only grows.
 
@@ -249,6 +249,7 @@ async fn http1_stops_a_long_gzip_body_at_the_limit_and_drops_the_connection() {
         },
         fronting: None,
         keep_alive: None,
+        h3: None,
     };
     let client = ServiceClient::new(
         Arc::new(dialer),
@@ -345,6 +346,126 @@ async fn http2_stops_a_long_gzip_body_at_the_limit_and_resets_the_stream() {
     let next = request("https://storage.test/ok");
     let next = connection
         .send(&Prepared::new(&next), &Progress::new())
+        .await
+        .unwrap();
+    assert_eq!(next.body, "ok");
+}
+
+/// An HTTP/3 server on the loopback: its first request answered with a
+/// gzip body of [`SERVED`] bytes, `member` again and again, later ones
+/// with `ok`. The task gives the bytes of the long body it sent and the
+/// code the client stopped it with, if it did.
+async fn long_http3(
+    member: Bytes,
+) -> (
+    SocketAddr,
+    [u8; 32],
+    tokio::task::JoinHandle<(usize, Option<h3::error::Code>)>,
+) {
+    use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+    use sha2::{Digest, Sha256};
+    let certified = rcgen::generate_simple_self_signed(vec!["storage.test".to_owned()]).unwrap();
+    let der = certified.cert.der().clone();
+    let pin: [u8; 32] = Sha256::digest(&der).into();
+    let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+        certified.signing_key.serialize_der(),
+    ));
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let mut tls = rustls::ServerConfig::builder_with_provider(provider)
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(vec![der], key)
+        .unwrap();
+    tls.alpn_protocols = vec![b"h3".to_vec()];
+    let crypto = quinn::crypto::rustls::QuicServerConfig::try_from(tls).unwrap();
+    let endpoint = quinn::Endpoint::server(
+        quinn::ServerConfig::with_crypto(Arc::new(crypto)),
+        SocketAddr::from(([127, 0, 0, 1], 0)),
+    )
+    .unwrap();
+    let addr = endpoint.local_addr().unwrap();
+    let task = tokio::spawn(async move {
+        let connection = endpoint.accept().await.unwrap().await.unwrap();
+        let mut h3 = h3::server::builder()
+            .build::<_, Bytes>(h3_quinn::Connection::new(connection))
+            .await
+            .unwrap();
+        let resolver = h3.accept().await.unwrap().unwrap();
+        let (_, mut stream) = resolver.resolve_request().await.unwrap();
+        // Later requests get `ok`, on the same connection.
+        tokio::spawn(async move {
+            let _endpoint = endpoint;
+            while let Ok(Some(resolver)) = h3.accept().await {
+                if let Ok((_, mut stream)) = resolver.resolve_request().await {
+                    let ok = http::Response::builder().status(200).body(()).unwrap();
+                    let _ = stream.send_response(ok).await;
+                    let _ = stream.send_data(Bytes::from_static(b"ok")).await;
+                    let _ = stream.finish().await;
+                }
+            }
+        });
+        let long = http::Response::builder()
+            .status(200)
+            .header("content-encoding", "gzip")
+            .body(())
+            .unwrap();
+        stream.send_response(long).await.unwrap();
+        let mut sent = 0usize;
+        while sent < SERVED {
+            if let Err(error) = stream.send_data(member.clone()).await {
+                let code = match error {
+                    h3::error::StreamError::RemoteTerminate { code, .. } => Some(code),
+                    _ => None,
+                };
+                return (sent, code);
+            }
+            sent += member.len();
+        }
+        let _ = stream.finish().await;
+        (sent, None)
+    });
+    (addr, pin, task)
+}
+
+#[tokio::test]
+async fn http3_stops_a_long_gzip_body_at_the_limit_and_stops_the_stream() {
+    let (addr, pin, server) = long_http3(member(&noise()).await).await;
+    let dialer = ServiceDialer {
+        dialer: TransportDialer::system().unwrap(),
+        tls: TlsClientConfig {
+            server_name: "storage.test".to_owned(),
+            allow_insecure: false,
+            pinned_peer_cert_sha256: vec![pin],
+            verify_peer_cert_by_name: Vec::new(),
+            alpn: vec!["h3".to_owned()],
+            fingerprint: None,
+        },
+        fronting: None,
+        keep_alive: None,
+        h3: Some(crate::stream::H3QuicConfig::default()),
+    };
+    let client = ServiceClient::new(
+        Arc::new(dialer),
+        Arc::new(Mutex::new(Default::default())),
+        1,
+    );
+    let long = request(&format!("https://{addr}/long"));
+    let answer = tokio::time::timeout(Duration::from_secs(20), client.send(&long))
+        .await
+        .expect("the long answer ends at the limit")
+        .unwrap();
+    assert_eq!(answer.body.len(), LIMIT);
+    let (sent, stopped) = tokio::time::timeout(Duration::from_secs(10), server)
+        .await
+        .expect("the server learns the stream is stopped")
+        .unwrap();
+    // Cancelled as quic-go's client cancels a body closed early.
+    assert_eq!(stopped, Some(h3::error::Code::H3_REQUEST_CANCELLED));
+    assert!(sent < SERVED / 2, "{sent} bytes sent before the stop");
+    // The connection lives on, as quic-go's after it cancels a stream.
+    let next = client
+        .send(&request(&format!("https://{addr}/ok")))
         .await
         .unwrap();
     assert_eq!(next.body, "ok");

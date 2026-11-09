@@ -1,4 +1,5 @@
-//! One XDRIVE session as a byte stream: Xray-core v26.10.31's `Conn`.
+//! One XDRIVE session as a byte stream: Xray-core v26.10.31's `Conn`, in
+//! segments or in slots.
 
 use std::future::Future;
 use std::io;
@@ -12,6 +13,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::mpsc;
 
 use super::params::Params;
+use super::slots::{SlotReader, SlotReaderShared, SlotStore, SlotTable, SlotWriter};
 use super::storage::Storage;
 use super::wal::{Cancel, ReaderShared, WalReader, WalWriter};
 use crate::TransportStream;
@@ -24,13 +26,59 @@ const BACKGROUND_CLOSE: Duration = Duration::from_secs(120);
 
 type CloseFuture = Pin<Box<dyn Future<Output = io::Result<()>> + Send>>;
 
-/// A session: what is written goes to the storage under one prefix, what is
-/// read comes from under the other.
+/// The written direction: `walWriter` or `slotWriter`.
+#[derive(Clone, Debug)]
+enum SessionWriter {
+    Segments(WalWriter),
+    Slots(SlotWriter),
+}
+
+impl SessionWriter {
+    fn poll_write(&self, cx: &mut Context<'_>, data: &[u8]) -> Poll<io::Result<usize>> {
+        match self {
+            Self::Segments(writer) => writer.poll_write(cx, data),
+            Self::Slots(writer) => writer.poll_write(cx, data),
+        }
+    }
+
+    async fn close(&self) -> io::Result<()> {
+        match self {
+            Self::Segments(writer) => writer.close().await,
+            Self::Slots(writer) => writer.close().await,
+        }
+    }
+}
+
+/// The read direction's error and wake: `walReader`'s or `slotReader`'s.
+#[derive(Debug)]
+enum SessionReader {
+    Segments(Arc<ReaderShared>),
+    Slots(Arc<SlotReaderShared>),
+}
+
+impl SessionReader {
+    fn error(&self) -> Option<io::Error> {
+        match self {
+            Self::Segments(reader) => reader.error(),
+            Self::Slots(reader) => reader.error(),
+        }
+    }
+
+    fn wake(&self) {
+        match self {
+            Self::Segments(reader) => reader.wake(),
+            Self::Slots(reader) => reader.wake(),
+        }
+    }
+}
+
+/// A session: what is written goes to the storage under one prefix or into
+/// one ring, what is read comes from the other.
 pub(crate) struct XdriveStream {
-    writer: WalWriter,
+    writer: SessionWriter,
     writer_cancel: Cancel,
     chunks: mpsc::Receiver<Bytes>,
-    reader: Arc<ReaderShared>,
+    reader: SessionReader,
     reader_cancel: Cancel,
     read_buf: Bytes,
     /// The shutdown under way, until it is done.
@@ -57,10 +105,33 @@ impl XdriveStream {
         let (chunks, reader) =
             WalReader::spawn(storage, read_prefix, params, reader_cancel.clone());
         Self {
-            writer,
+            writer: SessionWriter::Segments(writer),
             writer_cancel,
             chunks,
-            reader,
+            reader: SessionReader::Segments(reader),
+            reader_cancel,
+            read_buf: Bytes::new(),
+            closing: None,
+            shut: false,
+        }
+    }
+
+    /// `newSlotConn`: a session that writes the ring `write` and reads `read`.
+    pub(crate) fn slots(
+        store: Arc<dyn SlotStore>,
+        write: SlotTable,
+        read: SlotTable,
+        params: Params,
+    ) -> Self {
+        let writer_cancel = Cancel::default();
+        let reader_cancel = Cancel::default();
+        let writer = SlotWriter::new(Arc::clone(&store), write, params, writer_cancel.clone());
+        let (chunks, reader) = SlotReader::spawn(store, read, params, reader_cancel.clone());
+        Self {
+            writer: SessionWriter::Slots(writer),
+            writer_cancel,
+            chunks,
+            reader: SessionReader::Slots(reader),
             reader_cancel,
             read_buf: Bytes::new(),
             closing: None,

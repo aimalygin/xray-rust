@@ -706,8 +706,9 @@ Cloudflare protocol and request) fail the tests when mutated.
 
 ## XDRIVE
 
-The `xdrive` transport runs Xray-core v26.10.31's XDRIVE client with the
-`local`, `s3` and `template` services: its configuration checks and
+The `xdrive` transport runs Xray-core v26.10.31's XDRIVE client with all
+four services, `local`, `google-drive`, `s3` and `template`: its
+configuration checks and
 defaults, `validateXDrive`'s rules for the outbound it carries, the session
 announcement, the segment names and marks, the writer's cuts and eight-tick
 coalescing, the reader's polling, batches, hole timeout, failure marks and
@@ -716,19 +717,30 @@ as its Go client reaches them: TLS, ALPN, Go's HTTP/2 settings, windows,
 pseudo-header order and HPACK choices, its HTTP/1.1 framing, Chrome's
 `fetch` headers, gzip, stalls, XMUX, fronting through
 `streamSettings.address` and `port`, SigV4, S3 listings, template
-operations, auth, retries and redirects. The server address is never looked
-up, as in Xray-core. Deliberate differences:
+operations, Drive's files, tokens and queries, sessions in rings of slots,
+HTTP/3 storages, auth, retries and redirects. The server address is never
+looked up, as in Xray-core. Deliberate differences:
 
-- `google-drive` is read and checked as Xray-core reads it and refused when
-  the core starts, and so is any storage over HTTP/3 (`alpn` exactly
-  `["h3"]`): their clients are not here yet.
+- A storage over HTTP/3 runs on Quinn's QUIC, as the other QUIC carriers
+  here do: Xray-core shapes it as Chrome (ChromeParrot, zero-length
+  connection IDs) unless `disableChromeParrot` is set, and the configuration
+  warns. Its request headers come in the vendored `h3`'s order (`:method`,
+  `:scheme`, `:authority`, `:path`), where quic-go writes `:authority`,
+  `:method`, `:path`, `:scheme`, as for XHTTP over HTTP/3. A storage over
+  HTTP/3 cannot go through another outbound; Xray-core dials its UDP with
+  the stream's socket options.
 - A storage is shared by the sessions of its outbound only. Xray-core shares
   one process-wide by the service, folder, S3 addressing, secrets, security
   type and fronting address, a key without the template, TLS settings or
   `xmux`, so a second outbound differing only there runs on the first one's
   storage; here each outbound has its own.
-- A template's answer is read up to 64 MiB; Xray-core reads it whole. S3
-  answers keep Xray-core's limits.
+- A template's or Drive's answer is read up to 64 MiB; Xray-core reads it
+  whole. S3 answers keep Xray-core's limits.
+- A Drive listing and the children a delete removes are taken in name
+  order; Xray-core takes them in Go's random map order.
+- A slot writer that finds a full segment no slot is free for waits before
+  it adds a write to its buffer, where Xray-core's `Write` adds it and then
+  waits for the slot; the backpressure is the same.
 - `{folder}`, `{name}` and the other placeholders are replaced in one fixed
   order; Xray-core replaces them in Go's random map order, which differs
   only when a value holds another placeholder. HTTP/2 regular headers are
@@ -793,11 +805,16 @@ through Go's `regexp` (matches and error texts), 46 `net/url` resolutions,
 16 redirect chains through Go's `http.Client` and a scripted RoundTripper,
 and the frames Go's HTTP/2 client writes for 7 requests over TLS on a pipe
 (SETTINGS, the connection WINDOW_UPDATE, the pseudo-header bytes, the
-fields, the DATA frames). The tests replay them all, and
+fields, the DATA frames); then the slot frames `newSlotFrame` encodes for 7
+segments and what `decodeSlot` makes of 14 descriptions, 9 rings through
+`json.Marshal` and `decodeRing`, Drive's query quoting, multipart bodies and
+rate limits, and a scenario of eleven `driveStorage` calls against canned
+answers, whose 19 requests the tests compare one by one (method, path and
+query, content type, token, body). The tests replay them all, and
 `scripts/check-xdrive-interop.sh` regenerates them each run, byte for byte.
 228 configuration cases carry `xray run -test` verdicts, rechecked with the
 binary each run: 217 match and 11 differ as listed above; every case both
-accept also builds a core, but the 18 the core refuses as listed above. Live
+accept also builds a core, but the 4 the core refuses as listed above. Live
 against Xray-core's XDRIVE server, the two meeting in a temporary folder:
 TCP with a 128 KiB echo and UDP to IPv4 and IPv6 through Mux, eight parallel
 TCP flows on at most four sessions, the server deleting every segment the
@@ -815,28 +832,42 @@ OAuth 2 over HTTPS and HTTP/2 through the stream's address, tokens fetched
 again each second and forgotten by the store, objects as base64 in JSON,
 two-step reads through a link that redirects, and retries after a 403 naming
 a rate limit, a 429 and a 401; the stand-in's log shows each of these
-crossed the wire. A flow through the core announces its session and stores
-its request with a resolver that fails every lookup. Mutating 54 branches of
-the sessions and the folder fails the tests each time: 26 of the
-configuration (services, secrets, the template and `s3` presence, each
-`ValidateS3Config` rule, the xmux defaults and conflict, the HTTP/3 rules,
-every `validateXDrive` rule), 23 of the transport (names and their parsing,
-the tuning's defaults, caps and floor, the writer's coalescing, cuts, end
-and failure marks, the reader's holes, end marks, missing objects, discards
-and wake-up, the local folder's names and temporary files, the end a
-shutdown or a drop stores) and 5 of the core (both refusals, the skipped
-lookup, XDRIVE over HTTP/3 among the UDP carriers, the build at start). So
-does mutating 82 branches of the HTTP storages: redirects (9), URL
-resolution (3), S3 addressing, signing, listings, deletes, missing objects
-and retries (13), templates' decoding, limits, 404s, flat listings, retries,
-tokens, lifetimes and two-step reads (13), the client's headers, fronting
-and SNI (4), the HTTP/2 settings, windows, framing, pseudo-header order and
-HPACK choices (9, two in the vendored `h2`), S3 answers (2), JSON numbers
-(2), `namesRegex` (3), XMUX draws (1), the keepalive (1), Go's wrapping of
-token lifetimes (1), `Retry-After` dates (12), answers read under their
-limit, gzip decoded as it arrives over HTTP/1.1 and HTTP/2 (5, a sixth
-equivalent), the fronting fields (2) and the core's TLS for a storage and
-HTTP/3 refusal (2); five of them only the live tests catch.
+crossed the wire. Then in Xray-core's own fakeDrive, served on Google
+Drive's real paths over TLS and HTTP/3 by a third overlay: both in rings of
+eight slots over HTTP/2, the server taking this client's sessions in slots,
+and this client over HTTP/3 through a noise mask while Xray-core stays on
+HTTP/2; there too Xray-core's own client goes first, in slots and over
+HTTP/3. A flow through the core announces its session and stores its request
+with a resolver that fails every lookup. Mutating 54 branches of the
+sessions and the folder fails the tests each time: 26 of the configuration
+(services, secrets, the template and `s3` presence, each `ValidateS3Config`
+rule, the xmux defaults and conflict, the HTTP/3 rules, every
+`validateXDrive` rule), 23 of the transport (names and their parsing, the
+tuning's defaults, caps and floor, the writer's coalescing, cuts, end and
+failure marks, the reader's holes, end marks, missing objects, discards and
+wake-up, the local folder's names and temporary files, the end a shutdown or
+a drop stores) and 5 of the core (both refusals, the skipped lookup, XDRIVE
+over HTTP/3 among the UDP carriers, the build at start). So does mutating 82
+branches of the HTTP storages: redirects (9), URL resolution (3), S3
+addressing, signing, listings, deletes, missing objects and retries (13),
+templates' decoding, limits, 404s, flat listings, retries, tokens, lifetimes
+and two-step reads (13), the client's headers, fronting and SNI (4), the
+HTTP/2 settings, windows, framing, pseudo-header order and HPACK choices (9,
+two in the vendored `h2`), S3 answers (2), JSON numbers (2), `namesRegex`
+(3), XMUX draws (1), the keepalive (1), Go's wrapping of token lifetimes
+(1), `Retry-After` dates (12), answers read under their limit, gzip decoded
+as it arrives over HTTP/1.1 and HTTP/2 (5, a sixth equivalent), the fronting
+fields (2) and the core's TLS for a storage and its refusal of HTTP/3
+storages, until they were built (2); five of them only the live tests catch.
+Mutating 33 branches of Drive, the slots and HTTP/3 fails them as well: the
+slots' depth, inline limit, ramp, bursts, magic, checksum, ring keys, laps
+and watermark, end and failure marks and stale bodies (13), Drive's inline
+limit, multipart boundary, query quoting, rate limits, rejected and expired
+tokens, description fallback, children, listings, upload URL and token form
+(12), Go's JSON escapes and case folding (2), the client's HTTP/3 (1, which
+only the live test catches), its answers read under their limit and stopped
+with H3_REQUEST_CANCELLED when cut short (2), Drive's secrets kept out of
+`Debug` (1) and the core's masks over HTTP/3 and its Drive build (2).
 
 ## realm
 

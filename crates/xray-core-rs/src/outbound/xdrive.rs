@@ -1,24 +1,26 @@
 //! XDRIVE outbound transports: `xdriveSettings` turned into the storage its
 //! sessions live in.
+use std::time::Duration;
 use xray_config::{StreamSecurity, StreamSettings, StreamTransport, XdriveService, XdriveSettings};
-use xray_transport::stream::XhttpXmuxPolicy;
+
+use xray_transport::stream::{H3QuicConfig, XhttpXmuxPolicy};
 use xray_transport::xdrive::{
     keep_alive_for, XdriveConfig, XdriveHttpConfig, XdriveS3, XdriveStorageConfig, XdriveTemplate,
     XdriveTransport, XdriveTuning,
 };
 use xray_transport::TlsClientConfig;
 
-use super::xhttp::xhttp_range;
+use super::xhttp::{udp_noise_config, xhttp_h3_quic_config, xhttp_range};
 use crate::CoreError;
 
-/// The transport of a stream carrying `settings` with `security`. The
-/// services this client cannot reach yet refuse to start, as does what
-/// Xray-core accepts in its configuration and then fails every dial with:
-/// no service, or a `local` folder that is not named. A bad template or S3
-/// endpoint fails each dial instead, as in Xray-core.
+/// The transport of a stream carrying `settings` with `security`. What
+/// Xray-core accepts in its configuration and then fails every dial with
+/// refuses to start here: no service, or a `local` folder that is not
+/// named. A bad template, S3 endpoint or Drive folder fails each dial
+/// instead, as in Xray-core.
 pub(crate) fn build_xdrive_transport(
     settings: &XdriveSettings,
-    security: &StreamSecurity,
+    stream: &StreamSettings,
 ) -> Result<XdriveTransport, CoreError> {
     let refuse = |reason: String| Err(CoreError::InvalidXdriveConfiguration(reason));
     let storage = match settings.service {
@@ -31,9 +33,11 @@ pub(crate) fn build_xdrive_transport(
                 folder: settings.remote_folder.clone(),
             }
         }
-        XdriveService::GoogleDrive => {
-            return refuse("service google-drive is not supported yet".to_owned())
-        }
+        XdriveService::GoogleDrive => XdriveStorageConfig::GoogleDrive {
+            folder: settings.remote_folder.clone(),
+            secrets: settings.secrets.clone(),
+            http: http_config(settings, stream)?,
+        },
         XdriveService::S3 => {
             let Some(s3) = &settings.s3 else {
                 return refuse(r#"service "s3" needs an "s3" object"#.to_owned());
@@ -50,7 +54,7 @@ pub(crate) fn build_xdrive_transport(
                     secret_key: secret(1),
                     session_token: settings.secrets.get(2).cloned(),
                 },
-                http: http_config(settings, security)?,
+                http: http_config(settings, stream)?,
             }
         }
         XdriveService::Template => {
@@ -63,7 +67,7 @@ pub(crate) fn build_xdrive_transport(
                     folder: settings.remote_folder.clone(),
                     secrets: settings.secrets.clone(),
                 },
-                http: http_config(settings, security)?,
+                http: http_config(settings, stream)?,
             }
         }
     };
@@ -85,25 +89,27 @@ pub(crate) fn build_xdrive_transport(
 /// How an HTTP storage is reached, as Xray-core's `newServiceClient` reads
 /// the stream: its TLS with each URL's host as the server name unless one
 /// is given, or without TLS settings Xray-core's default config, a Chrome
-/// hello offering `h2` and `http/1.1`.
+/// hello offering `h2` and `http/1.1`; and over `alpn` exactly `["h3"]`,
+/// HTTP/3 with the stream's QUIC parameters and UDP masks.
 fn http_config(
     settings: &XdriveSettings,
-    security: &StreamSecurity,
+    stream: &StreamSettings,
 ) -> Result<XdriveHttpConfig, CoreError> {
-    let tls = match security {
-        StreamSecurity::Tls(tls) if tls.alpn == ["h3"] => {
-            return Err(CoreError::InvalidXdriveConfiguration(
-                r#"a storage over HTTP/3 (alpn ["h3"]) is not supported yet"#.to_owned(),
-            ))
+    let mut h3 = None;
+    let tls = match &stream.security {
+        StreamSecurity::Tls(tls) => {
+            if tls.alpn == ["h3"] {
+                h3 = Some(h3_quic(settings, stream)?);
+            }
+            TlsClientConfig {
+                server_name: tls.server_name.clone().unwrap_or_default(),
+                allow_insecure: tls.allow_insecure,
+                pinned_peer_cert_sha256: tls.pinned_peer_cert_sha256.clone(),
+                verify_peer_cert_by_name: tls.verify_peer_cert_by_name.clone(),
+                alpn: tls.alpn.clone(),
+                fingerprint: tls.fingerprint.clone(),
+            }
         }
-        StreamSecurity::Tls(tls) => TlsClientConfig {
-            server_name: tls.server_name.clone().unwrap_or_default(),
-            allow_insecure: tls.allow_insecure,
-            pinned_peer_cert_sha256: tls.pinned_peer_cert_sha256.clone(),
-            verify_peer_cert_by_name: tls.verify_peer_cert_by_name.clone(),
-            alpn: tls.alpn.clone(),
-            fingerprint: tls.fingerprint.clone(),
-        },
         // The parser refuses REALITY under XDRIVE, as Xray-core does.
         StreamSecurity::None | StreamSecurity::Reality(_) => TlsClientConfig {
             server_name: String::new(),
@@ -136,7 +142,43 @@ fn http_config(
             h_keep_alive_period_secs: xmux.h_keep_alive_period_secs,
         },
         keep_alive: keep_alive_for(xmux.h_keep_alive_period_secs),
+        h3,
     })
+}
+
+/// The QUIC connections of a storage over HTTP/3, as Xray-core configures
+/// quic-go for them: `quicParams` as XHTTP takes them, a keepalive only
+/// when asked for, there or by a positive `xmux.hKeepAlivePeriod`, and the
+/// stream's UDP masks.
+fn h3_quic(settings: &XdriveSettings, stream: &StreamSettings) -> Result<H3QuicConfig, CoreError> {
+    let invalid = |error: CoreError| CoreError::InvalidXdriveConfiguration(error.to_string());
+    let params = stream.quic_params.as_ref();
+    let mut config = xhttp_h3_quic_config(params).map_err(invalid)?;
+    if params.is_none_or(|params| params.keep_alive_period_secs == 0) {
+        let period = settings.xmux.h_keep_alive_period_secs;
+        config.keep_alive_interval = (period > 0).then(|| Duration::from_secs(period as u64));
+    }
+    config.udp_noise = stream
+        .udp_noise
+        .as_ref()
+        .map(udp_noise_config)
+        .transpose()
+        .map_err(invalid)?;
+    config.udp_header_custom = stream
+        .udp_header_custom
+        .as_ref()
+        .map(super::carrier::quic_header_custom);
+    config.udp_sudoku = stream.udp_sudoku.as_ref().map(super::carrier::quic_sudoku);
+    config.udp_xdns = stream.udp_xdns.as_ref().map(super::carrier::xdns_config);
+    config.udp_realm = stream.udp_realm.as_ref().map(super::carrier::realm_config);
+    config.udp_xicmp = stream.udp_xicmp.as_ref().map(super::carrier::xicmp_config);
+    // Salamander as on XHTTP over HTTP/3, at its place among the masks.
+    config.udp_salamander = stream
+        .udp_salamander
+        .as_ref()
+        .map(super::carrier::quic_salamander)
+        .transpose()?;
+    Ok(config)
 }
 
 /// Whether `stream` is XDRIVE reaching its storage over HTTP/3, which
@@ -171,13 +213,37 @@ mod tests {
         }
     }
 
+    /// A stream of `settings` with `security` and nothing else.
+    fn stream(settings: &XdriveSettings, security: StreamSecurity) -> StreamSettings {
+        StreamSettings {
+            network: xray_config::Network::Tcp,
+            transport: StreamTransport::Xdrive(Box::new(settings.clone())),
+            security,
+            quic_params: None,
+            tcp_fragment: None,
+            tcp_header_custom: None,
+            udp_header_custom: None,
+            tcp_sudoku: None,
+            udp_sudoku: None,
+            tcp_xmc: None,
+            udp_xdns: None,
+            udp_realm: None,
+            udp_xicmp: None,
+            udp_noise: None,
+            udp_salamander: None,
+            socket_options: None,
+        }
+    }
+
     fn build(settings: &XdriveSettings) -> Result<XdriveTransport, CoreError> {
-        build_xdrive_transport(settings, &StreamSecurity::None)
+        build_xdrive_transport(settings, &stream(settings, StreamSecurity::None))
     }
 
     #[test]
-    fn local_s3_and_template_build_and_the_rest_refuse_with_a_reason() {
+    fn every_service_builds_and_what_xray_fails_at_each_dial_refuses() {
         assert!(build(&settings(XdriveService::Local, "/tmp/x")).is_ok());
+        // Xray-core checks the folder and secrets at the first dial.
+        assert!(build(&settings(XdriveService::GoogleDrive, "")).is_ok());
         let mut s3 = settings(XdriveService::S3, "prefix");
         s3.s3 = Some(xray_config::XdriveS3Settings {
             endpoint: "https://s3.example".to_owned(),
@@ -198,11 +264,6 @@ mod tests {
         for (service, folder, reason) in [
             (XdriveService::Unset, "/tmp/x", "unsupported service: "),
             (XdriveService::Local, "", r#"empty "remoteFolder""#),
-            (
-                XdriveService::GoogleDrive,
-                "id",
-                "google-drive is not supported yet",
-            ),
             (XdriveService::Template, "f", r#"needs a "template" object"#),
             (XdriveService::S3, "f", r#"needs an "s3" object"#),
         ] {
@@ -219,7 +280,7 @@ mod tests {
             8443,
         ));
         template.xmux.h_keep_alive_period_secs = -1;
-        let plain = http_config(&template, &StreamSecurity::None).unwrap();
+        let plain = http_config(&template, &stream(&template, StreamSecurity::None)).unwrap();
         assert_eq!(plain.tls.fingerprint.as_deref(), Some("chrome"));
         assert!(plain.tls.server_name.is_empty() && plain.tls.alpn.is_empty());
         assert_eq!(
@@ -239,7 +300,8 @@ mod tests {
             allow_insecure: false,
             alpn: vec!["h2".to_owned()],
         });
-        let shaped = http_config(&template, &tls).unwrap();
+        let shaped = http_config(&template, &stream(&template, tls)).unwrap();
+        assert!(shaped.h3.is_none());
         assert_eq!(shaped.tls.server_name, "storage.example");
         assert_eq!(shaped.tls.fingerprint.as_deref(), Some("firefox"));
         assert_eq!(shaped.tls.pinned_peer_cert_sha256, vec![[7; 32]]);
@@ -248,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn storages_over_http3_wait_for_a_later_change() {
+    fn storages_over_http3_take_quic_with_xrays_keepalive() {
         let mut template = settings(XdriveService::Template, "folder");
         template.template = Some(zeroize::Zeroizing::new("{}".to_owned()));
         let tls = |alpn: &[&str]| {
@@ -261,11 +323,73 @@ mod tests {
                 alpn: alpn.iter().map(|p| (*p).to_owned()).collect(),
             })
         };
-        let error = build_xdrive_transport(&template, &tls(&["h3"])).unwrap_err();
-        assert!(error.to_string().contains("HTTP/3"), "{error}");
-        assert!(build_xdrive_transport(&template, &tls(&["h3", "h2"])).is_ok());
-        // A local folder takes no connection at all.
-        let local = settings(XdriveService::Local, "/tmp/x");
-        assert!(build_xdrive_transport(&local, &tls(&["h3"])).is_ok());
+        let h3 = http_config(&template, &stream(&template, tls(&["h3"]))).unwrap();
+        let quic = h3.h3.expect("HTTP/3 over exactly h3");
+        // No keepalive unless asked for, as quic-go in Xray-core.
+        assert_eq!(quic.keep_alive_interval, None);
+        template.xmux.h_keep_alive_period_secs = 20;
+        let quic = http_config(&template, &stream(&template, tls(&["h3"])))
+            .unwrap()
+            .h3
+            .unwrap();
+        assert_eq!(quic.keep_alive_interval, Some(Duration::from_secs(20)));
+        assert!(
+            http_config(&template, &stream(&template, tls(&["h3", "h2"])))
+                .unwrap()
+                .h3
+                .is_none()
+        );
+        assert!(build_xdrive_transport(&template, &stream(&template, tls(&["h3"]))).is_ok());
+    }
+
+    #[test]
+    fn storages_over_http3_carry_the_streams_udp_masks() {
+        let raw = serde_json::json!({"outbounds": [{"protocol": "vless",
+            "settings": {"address": "127.0.0.1", "port": 443,
+                "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+                "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"},
+            "streamSettings": {"network": "xdrive", "security": "tls",
+                "tlsSettings": {"alpn": ["h3"]},
+                "finalmask": {"udp": [{"type": "noise", "settings": {"noise": [{"rand": "30-60"}]}}],
+                    "quicParams": {"disableChromeParrot": true, "maxIdleTimeout": 12}},
+                "xdriveSettings": {"service": "google-drive", "remoteFolder": "id",
+                    "secrets": ["a", "b", "c"]}},
+            "mux": {"enabled": true}}]})
+        .to_string();
+        let parsed = xray_config::parse_xray_json(&raw).unwrap();
+        let stream = &parsed.config.outbounds[0].stream;
+        let StreamTransport::Xdrive(xdrive) = &stream.transport else {
+            panic!("not XDRIVE")
+        };
+        let quic = http_config(xdrive, stream).unwrap().h3.unwrap();
+        assert!(quic.udp_noise.is_some());
+        assert_eq!(quic.max_idle_timeout, Duration::from_secs(12));
+    }
+
+    #[test]
+    fn storages_over_http3_take_salamander_as_xhttp_h3_does() {
+        // Xray-core's XDRIVE dial wraps its UDP socket in every FinalMask UDP
+        // mask, Salamander among them; Google Drive over h3 takes only noise.
+        let raw = serde_json::json!({"outbounds": [{"protocol": "vless",
+            "settings": {"address": "127.0.0.1", "port": 443,
+                "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+                "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"},
+            "streamSettings": {"network": "xdrive", "security": "tls",
+                "tlsSettings": {"alpn": ["h3"]},
+                "finalmask": {"udp": [{"type": "salamander", "settings": {"password": "salamander-password"}}],
+                    "quicParams": {"disableChromeParrot": true}},
+                "xdriveSettings": {"service": "s3", "remoteFolder": "prefix",
+                    "secrets": ["AKID", "secret"],
+                    "s3": {"endpoint": "https://s3.example", "bucket": "bucket"}}},
+            "mux": {"enabled": true}}]})
+        .to_string();
+        let parsed = xray_config::parse_xray_json(&raw).unwrap();
+        let stream = &parsed.config.outbounds[0].stream;
+        let StreamTransport::Xdrive(xdrive) = &stream.transport else {
+            panic!("not XDRIVE")
+        };
+        let quic = http_config(xdrive, stream).unwrap().h3.unwrap();
+        assert!(quic.udp_salamander.is_some());
+        assert!(build_xdrive_transport(xdrive, stream).is_ok());
     }
 }

@@ -144,6 +144,7 @@ fn http() -> HttpShared {
         tls,
         fronting: None,
         keep_alive: None,
+        h3: None,
     };
     let zero = XhttpRange { from: 0, to: 0 };
     let xmux = XhttpXmuxPolicy {
@@ -158,6 +159,46 @@ fn http() -> HttpShared {
         h_keep_alive_period_secs: 0,
     };
     HttpShared::new(dialer, xmux, 4)
+}
+
+#[test]
+fn storage_configs_keep_drive_secrets_out_of_debug() {
+    let zero = XhttpRange { from: 0, to: 0 };
+    let config = super::XdriveStorageConfig::GoogleDrive {
+        folder: "folder-id".to_owned(),
+        secrets: ["client-id-1", "client-secret-2", "refresh-token-3"]
+            .map(|s| Zeroizing::new(s.to_owned()))
+            .to_vec(),
+        http: super::XdriveHttpConfig {
+            tls: TlsClientConfig {
+                server_name: String::new(),
+                allow_insecure: false,
+                pinned_peer_cert_sha256: Vec::new(),
+                verify_peer_cert_by_name: Vec::new(),
+                alpn: Vec::new(),
+                fingerprint: None,
+            },
+            fronting: None,
+            xmux: XhttpXmuxPolicy {
+                max_concurrency: zero,
+                max_connections: zero,
+                c_max_reuse_times: zero,
+                h_max_request_times: zero,
+                h_max_reusable_secs: zero,
+                h_keep_alive_period_secs: 0,
+            },
+            keep_alive: None,
+            h3: None,
+        },
+    };
+    let text = format!("{config:?}");
+    assert!(
+        text.contains("folder-id") && text.contains("secrets: 3"),
+        "{text}"
+    );
+    for secret in ["client-id-1", "client-secret-2", "refresh-token-3"] {
+        assert!(!text.contains(secret), "{text}");
+    }
 }
 
 fn s3(server: &Server) -> S3Storage {
@@ -521,4 +562,574 @@ async fn template_tokens_past_gos_durations_run_out_as_on_arm64() {
         .filter(|s| s.target == "/token")
         .count();
     assert_eq!(token_requests, 2);
+}
+
+/// A Drive folder in memory, answering the requests `drive.rs` sends.
+#[derive(Default)]
+struct FakeDrive {
+    files: std::collections::BTreeMap<String, (String, String, Vec<u8>)>,
+    next: u64,
+    tokens: usize,
+    /// The `expires_in` of the tokens it hands out, an hour when unset.
+    lifetime: Option<i64>,
+    /// Answers the next request to a path holding this with this status
+    /// and body, once.
+    fail: Option<(&'static str, u16, &'static str)>,
+    page: usize,
+}
+
+fn query_value(target: &str, key: &str) -> Option<String> {
+    let query = target.split_once('?')?.1;
+    query.split('&').find_map(|pair| {
+        let (k, v) = pair.split_once('=')?;
+        (k == key).then(|| {
+            let v = v.replace('+', " ");
+            String::from_utf8(
+                xray_proxy::go_url::unescape_bytes(
+                    v.as_bytes(),
+                    xray_proxy::go_url::Encoding::QueryComponent,
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        })
+    })
+}
+
+fn quoted_after(q: &str, marker: &str) -> Option<String> {
+    let start = q.find(marker)? + marker.len();
+    let rest = &q[start..];
+    Some(rest[..rest.find('\'')?].to_owned())
+}
+
+fn multipart_parts(body: &[u8]) -> (serde_json::Value, Vec<u8>) {
+    let text = body.to_vec();
+    let marker = b"\r\n\r\n";
+    let first = text.windows(4).position(|w| w == marker).unwrap() + 4;
+    let meta_end = first
+        + text[first..]
+            .windows(4)
+            .position(|w| w == b"\r\n--")
+            .unwrap();
+    let metadata = serde_json::from_slice(&text[first..meta_end]).unwrap();
+    let second = meta_end
+        + text[meta_end..]
+            .windows(4)
+            .position(|w| w == marker)
+            .unwrap()
+        + 4;
+    let end = text.len() - b"\r\n--xdrive-boundary--\r\n".len();
+    (metadata, text[second..end].to_vec())
+}
+
+impl FakeDrive {
+    fn answer(&mut self, request: &Seen) -> Answer {
+        if let Some((path, status, body)) = self.fail {
+            if request.target.contains(path) {
+                self.fail = None;
+                return (status, vec![], body.as_bytes().to_vec());
+            }
+        }
+        let path = request.target.split('?').next().unwrap().to_owned();
+        let json = |value: serde_json::Value| (200, vec![], value.to_string().into_bytes());
+        if path == "/token" {
+            self.tokens += 1;
+            return json(
+                serde_json::json!({"access_token": format!("tok{}", self.tokens), "expires_in": self.lifetime.unwrap_or(3600)}),
+            );
+        }
+        if request.header("authorization") != Some(&format!("Bearer tok{}", self.tokens)) {
+            return (401, vec![], vec![]);
+        }
+        match (request.method.as_str(), path.as_str()) {
+            ("GET", "/drive/v3/files") => {
+                let q = query_value(&request.target, "q").unwrap();
+                assert!(
+                    q.starts_with("'folder-id' in parents and trashed = false and "),
+                    "{q}"
+                );
+                let exact = quoted_after(&q, "name = '");
+                let prefix = quoted_after(&q, "name contains '");
+                let mut files: Vec<serde_json::Value> = self
+                    .files
+                    .iter()
+                    .filter(|(_, (name, _, _))| {
+                        exact.as_ref().is_some_and(|e| name == e)
+                            || prefix.as_ref().is_some_and(|p| name.contains(p.as_str()))
+                    })
+                    .map(|(id, (name, description, _))| {
+                        serde_json::json!({"id": id, "name": name, "description": description})
+                    })
+                    .collect();
+                // Pages of `page` files, when set.
+                let token: usize =
+                    query_value(&request.target, "pageToken").map_or(0, |t| t.parse().unwrap());
+                let mut answer = serde_json::json!({});
+                if self.page > 0 && files.len() > token + self.page {
+                    answer["nextPageToken"] = (token + self.page).to_string().into();
+                }
+                let end = if self.page > 0 {
+                    (token + self.page).min(files.len())
+                } else {
+                    files.len()
+                };
+                files = files.drain(token.min(end)..end).collect();
+                answer["files"] = files.into();
+                json(answer)
+            }
+            ("POST", "/drive/v3/files") => {
+                let meta: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                assert_eq!(meta["parents"], serde_json::json!(["folder-id"]));
+                self.next += 1;
+                let id = format!("f{}", self.next);
+                self.files.insert(
+                    id.clone(),
+                    (
+                        meta["name"].as_str().unwrap().to_owned(),
+                        meta["description"].as_str().unwrap_or_default().to_owned(),
+                        Vec::new(),
+                    ),
+                );
+                json(serde_json::json!({"id": id}))
+            }
+            ("POST", "/upload/drive/v3/files") => {
+                let (meta, data) = multipart_parts(&request.body);
+                self.next += 1;
+                let id = format!("f{}", self.next);
+                self.files.insert(
+                    id.clone(),
+                    (
+                        meta["name"].as_str().unwrap().to_owned(),
+                        String::new(),
+                        data,
+                    ),
+                );
+                json(serde_json::json!({"id": id, "name": meta["name"]}))
+            }
+            (method, path) => {
+                let (kind, id) = if let Some(id) = path.strip_prefix("/upload/drive/v3/files/") {
+                    ("upload", id.to_owned())
+                } else if let Some(id) = path.strip_prefix("/drive/v3/files/") {
+                    ("files", id.to_owned())
+                } else {
+                    return (404, vec![], vec![]);
+                };
+                let Some(file) = self.files.get_mut(&id) else {
+                    return (404, vec![], vec![]);
+                };
+                match (method, kind) {
+                    ("DELETE", "files") => {
+                        self.files.remove(&id);
+                        (204, vec![], vec![])
+                    }
+                    ("PATCH", "files") => {
+                        let meta: serde_json::Value =
+                            serde_json::from_slice(&request.body).unwrap();
+                        file.1 = meta["description"].as_str().unwrap().to_owned();
+                        json(serde_json::json!({"id": id}))
+                    }
+                    ("PATCH", "upload") => {
+                        let (meta, data) = multipart_parts(&request.body);
+                        file.1 = meta["description"].as_str().unwrap().to_owned();
+                        file.2 = data;
+                        json(serde_json::json!({"id": id}))
+                    }
+                    ("GET", "files") if request.target.contains("fields=description") => {
+                        json(serde_json::json!({"description": file.1}))
+                    }
+                    ("GET", "files") if request.target.contains("alt=media") => {
+                        (200, vec![], file.2.clone())
+                    }
+                    _ => (400, vec![], vec![]),
+                }
+            }
+        }
+    }
+}
+
+async fn drive_server() -> (Server, Arc<Mutex<FakeDrive>>) {
+    let fake = Arc::new(Mutex::new(FakeDrive::default()));
+    let state = Arc::clone(&fake);
+    let server = serve(move |request, _| state.lock().unwrap().answer(request)).await;
+    (server, fake)
+}
+
+fn drive(server: &Server) -> super::drive::DriveStorage {
+    use super::drive::{DriveShared, DriveStorage, DriveUrls};
+    let secrets = ["client id", "secret/+", "refresh"].map(|s| Zeroizing::new(s.to_owned()));
+    let mut shared = DriveShared::new("folder-id", &secrets, Arc::new(http())).unwrap();
+    let base = format!("http://{}", server.addr);
+    shared.urls = DriveUrls {
+        token: format!("{base}/token"),
+        files: format!("{base}/drive/v3/files"),
+        upload: format!("{base}/upload/drive/v3/files?uploadType=multipart&fields=id,name"),
+    };
+    shared.backoff = Duration::from_millis(2);
+    let shared = Arc::new(shared);
+    let session = shared.http.session();
+    DriveStorage::new(shared, session)
+}
+
+#[tokio::test]
+async fn drive_keeps_small_objects_in_descriptions_and_large_ones_as_media() {
+    let (server, fake) = drive_server().await;
+    let storage = drive(&server);
+    storage
+        .put("sessions/1-a", Bytes::from_static(b"data"))
+        .await
+        .unwrap();
+    let large = vec![9u8; 12001];
+    storage
+        .put("streams/s/c2s/000000001.seg", Bytes::from(large.clone()))
+        .await
+        .unwrap();
+    let seen = server.seen();
+    let token = seen.iter().find(|s| s.target == "/token").unwrap();
+    // url.Values.Encode: sorted and escaped.
+    assert_eq!(
+        String::from_utf8_lossy(&token.body),
+        "client_id=client+id&client_secret=secret%2F%2B&grant_type=refresh_token&refresh_token=refresh"
+    );
+    let create = seen
+        .iter()
+        .find(|s| s.method == "POST" && s.target == "/drive/v3/files?fields=id")
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&create.body),
+        r#"{"description":"ZGF0YQ==","name":"sessions~1-a","parents":["folder-id"]}"#
+    );
+    assert_eq!(
+        create.header("content-type"),
+        Some("application/json; charset=UTF-8")
+    );
+    let upload = seen
+        .iter()
+        .find(|s| s.target.starts_with("/upload/"))
+        .unwrap();
+    assert_eq!(
+        upload.target,
+        "/upload/drive/v3/files?uploadType=multipart&fields=id,name"
+    );
+    assert_eq!(
+        upload.header("content-type"),
+        Some("multipart/related; boundary=xdrive-boundary")
+    );
+    assert!(upload.body.starts_with(b"--xdrive-boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{\"name\":\"streams~s~c2s~000000001.seg\",\"parents\":[\"folder-id\"]}"));
+    // Both read back: the inline one through its description.
+    assert_eq!(
+        storage.get("sessions/1-a").await.unwrap(),
+        Bytes::from_static(b"data")
+    );
+    assert_eq!(
+        storage.get("streams/s/c2s/000000001.seg").await.unwrap(),
+        Bytes::from(large)
+    );
+    assert_eq!(storage.get("missing").await, Err(StorageError::NotFound));
+    assert_eq!(fake.lock().unwrap().tokens, 1, "one token for all");
+}
+
+#[tokio::test]
+async fn drive_lists_with_inline_data_across_pages_and_deletes_children() {
+    let (server, fake) = drive_server().await;
+    let storage = drive(&server);
+    for (name, data) in [
+        ("streams/s/s2c/000000001.seg", &b"one"[..]),
+        ("streams/s/s2c/000000002.end", b""),
+        ("streams/s/c2s/000000001.seg", b"up"),
+        ("streams/t/s2c/000000001.seg", b"other"),
+    ] {
+        storage
+            .put(name, Bytes::copy_from_slice(data))
+            .await
+            .unwrap();
+    }
+    fake.lock().unwrap().page = 1;
+    let mut entries = storage.list("streams/s/s2c").await.unwrap();
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, ["000000001.seg", "000000002.end"]);
+    assert_eq!(entries[0].inline, Some(Bytes::from_static(b"one")));
+    assert_eq!(
+        entries[1].inline, None,
+        "an empty description carries nothing"
+    );
+    assert!(
+        server
+            .seen()
+            .iter()
+            .any(|s| s.target.contains("pageToken=1")),
+        "pages go on"
+    );
+    let streams: Vec<String> = storage
+        .list("streams")
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|e| e.name)
+        .collect();
+    assert_eq!(streams.len(), 2, "{streams:?}");
+    storage.delete("streams/s").await.unwrap();
+    let left: Vec<String> = fake
+        .lock()
+        .unwrap()
+        .files
+        .values()
+        .map(|f| f.0.clone())
+        .collect();
+    assert_eq!(left, ["streams~t~s2c~000000001.seg"]);
+}
+
+#[tokio::test]
+async fn drive_refreshes_tokens_and_retries_rate_limits() {
+    let (server, fake) = drive_server().await;
+    let storage = drive(&server);
+    storage.put("a", Bytes::from_static(b"x")).await.unwrap();
+    // The token goes stale: a 401 fetches another.
+    fake.lock().unwrap().tokens += 1;
+    storage.put("b", Bytes::from_static(b"y")).await.unwrap();
+    assert_eq!(
+        server
+            .seen()
+            .iter()
+            .filter(|s| s.target == "/token")
+            .count(),
+        2
+    );
+    fake.lock().unwrap().fail = Some((
+        "/drive/v3/files",
+        403,
+        r#"{"error":{"errors":[{"reason":"rateLimitExceeded"}]}}"#,
+    ));
+    storage.put("c", Bytes::from_static(b"z")).await.unwrap();
+    fake.lock().unwrap().fail = Some((
+        "/drive/v3/files",
+        403,
+        r#"{"error":{"errors":[{"reason":"forbidden"}]}}"#,
+    ));
+    assert!(storage.put("d", Bytes::from_static(b"w")).await.is_err());
+    fake.lock().unwrap().fail = Some(("/drive/v3/files", 503, "busy"));
+    storage.put("e", Bytes::from_static(b"v")).await.unwrap();
+}
+
+#[tokio::test]
+async fn drive_tokens_past_gos_durations_run_out_at_once() {
+    // An hour serves every request; int64's maximum, less the minute and
+    // times a second, wraps to a minute ago, and a negative lifetime has
+    // passed, so each request then asks for a token first.
+    for (lifetime, every_request) in [(3600, false), (i64::MAX, true), (-5, true)] {
+        let (server, fake) = drive_server().await;
+        fake.lock().unwrap().lifetime = Some(lifetime);
+        let storage = drive(&server);
+        storage
+            .put("sessions/1-a", Bytes::from_static(b"data"))
+            .await
+            .unwrap();
+        assert_eq!(
+            storage.get("sessions/1-a").await.unwrap(),
+            Bytes::from_static(b"data")
+        );
+        let seen = server.seen();
+        let tokens = seen.iter().filter(|s| s.target == "/token").count();
+        let others = seen.len() - tokens;
+        assert!(others >= 2, "{lifetime}");
+        let want = if every_request { others } else { 1 };
+        assert_eq!(tokens, want, "{lifetime}");
+    }
+}
+
+#[tokio::test]
+async fn drive_slots_take_descriptions_and_bodies_by_id() {
+    use super::slots::SlotStore;
+    let (server, fake) = drive_server().await;
+    let storage = drive(&server);
+    let id = storage.make_slot("streams/s/c2s/s0").await.unwrap();
+    assert_eq!(fake.lock().unwrap().files[&id].0, "streams~s~c2s~s0");
+    storage.set_slot(&id, "frame", None).await.unwrap();
+    assert_eq!(storage.read_description(&id).await.unwrap(), "frame");
+    storage
+        .set_slot(&id, "frame2", Some(Bytes::from_static(b"body")))
+        .await
+        .unwrap();
+    assert_eq!(storage.read_description(&id).await.unwrap(), "frame2");
+    assert_eq!(
+        storage.read_body(&id).await.unwrap(),
+        Bytes::from_static(b"body")
+    );
+    let seen = server.seen();
+    let json = seen
+        .iter()
+        .find(|s| s.method == "PATCH" && !s.target.starts_with("/upload/"))
+        .unwrap();
+    assert_eq!(
+        json.target,
+        format!("/drive/v3/files/{id}?fields=id&supportsAllDrives=true")
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&json.body),
+        r#"{"description":"frame"}"#
+    );
+    let media = seen
+        .iter()
+        .find(|s| s.method == "PATCH" && s.target.starts_with("/upload/"))
+        .unwrap();
+    assert_eq!(
+        media.target,
+        format!(
+            "/upload/drive/v3/files/{id}?uploadType=multipart&fields=id&supportsAllDrives=true"
+        )
+    );
+    assert!(seen
+        .iter()
+        .any(|s| s.target == format!("/drive/v3/files/{id}?alt=media&supportsAllDrives=true")));
+    assert_eq!(
+        storage.read_description("nope").await,
+        Err(StorageError::NotFound)
+    );
+    assert_eq!(
+        storage.set_slot("nope", "x", None).await,
+        Err(StorageError::NotFound)
+    );
+}
+
+/// Replays the Drive scenario of `tools/xdrive-oracle/http_oracle_test.go`:
+/// Xray-core's `driveStorage` calls one after another against canned
+/// answers, each request compared with the one Xray-core sent.
+#[tokio::test]
+async fn drive_requests_match_xray_core() {
+    use super::drive::{DriveShared, DriveStorage, DriveUrls};
+    use super::slots::SlotStore;
+    use base64::Engine as _;
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/xdrive/http-vectors.json"
+    );
+    let vectors: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let decode = |value: &serde_json::Value| match value.as_str() {
+        Some(text) => base64::engine::general_purpose::STANDARD
+            .decode(text)
+            .unwrap(),
+        None => Vec::new(),
+    };
+    let want = vectors["drive"]["requests"].as_array().unwrap().clone();
+    let answers: Vec<(u16, Vec<u8>)> = want
+        .iter()
+        .map(|r| {
+            (
+                r["status"].as_u64().unwrap() as u16,
+                r["answer"].as_str().unwrap().as_bytes().to_vec(),
+            )
+        })
+        .collect();
+    let server = serve(move |_, index| {
+        let (status, body) = answers
+            .get(index)
+            .cloned()
+            .unwrap_or((500, b"no answer".to_vec()));
+        (status, vec![], body)
+    })
+    .await;
+    let secrets = ["client id", "secret/+", "refresh&"].map(|s| Zeroizing::new(s.to_owned()));
+    let mut shared = DriveShared::new("folder'id\\", &secrets, Arc::new(http())).unwrap();
+    let base = format!("http://{}", server.addr);
+    shared.urls = DriveUrls {
+        token: format!("{base}/token"),
+        files: format!("{base}/drive/v3/files"),
+        upload: format!("{base}/upload/drive/v3/files?uploadType=multipart&fields=id,name"),
+    };
+    shared.backoff = Duration::from_millis(1);
+    let shared = Arc::new(shared);
+    let storage = DriveStorage::new(Arc::clone(&shared), shared.http.session());
+    for step in vectors["drive"]["steps"].as_array().unwrap() {
+        let op = step["op"].as_str().unwrap();
+        let name = step["name"].as_str().unwrap();
+        let data = Bytes::from(decode(&step["data"]));
+        let (result, names, error): (Vec<u8>, Vec<String>, bool) = match op {
+            "put" => (
+                Vec::new(),
+                Vec::new(),
+                storage.put(name, data).await.is_err(),
+            ),
+            "get" => match storage.get(name).await {
+                Ok(bytes) => (bytes.to_vec(), Vec::new(), false),
+                Err(_) => (Vec::new(), Vec::new(), true),
+            },
+            "list" => match storage.list(name).await {
+                Ok(entries) => {
+                    let mut names: Vec<String> = entries
+                        .iter()
+                        .map(|e| {
+                            format!(
+                                "{}={}",
+                                e.name,
+                                String::from_utf8_lossy(e.inline.as_deref().unwrap_or_default())
+                            )
+                        })
+                        .collect();
+                    names.sort();
+                    (Vec::new(), names, false)
+                }
+                Err(_) => (Vec::new(), Vec::new(), true),
+            },
+            "delete" => (Vec::new(), Vec::new(), storage.delete(name).await.is_err()),
+            "makeSlot" => match storage.make_slot(name).await {
+                Ok(id) => (id.into_bytes(), Vec::new(), false),
+                Err(_) => (Vec::new(), Vec::new(), true),
+            },
+            "setSlot" => (
+                Vec::new(),
+                Vec::new(),
+                storage.set_slot(name, "frame", None).await.is_err(),
+            ),
+            "setSlotBody" => (
+                Vec::new(),
+                Vec::new(),
+                storage.set_slot(name, "frame", Some(data)).await.is_err(),
+            ),
+            "readDescription" => match storage.read_description(name).await {
+                Ok(d) => (d.into_bytes(), Vec::new(), false),
+                Err(_) => (Vec::new(), Vec::new(), true),
+            },
+            "readBody" => match storage.read_body(name).await {
+                Ok(b) => (b.to_vec(), Vec::new(), false),
+                Err(_) => (Vec::new(), Vec::new(), true),
+            },
+            other => panic!("unknown op {other}"),
+        };
+        assert_eq!(result, decode(&step["result"]), "{op} {name}");
+        let want_names: Vec<String> = step["names"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n.as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(names, want_names, "{op} {name}");
+        assert_eq!(
+            error,
+            !step["error"].as_str().unwrap().is_empty(),
+            "{op} {name}"
+        );
+    }
+    let seen = server.seen();
+    assert_eq!(seen.len(), want.len());
+    for (got, want) in seen.iter().zip(&want) {
+        let label = format!(
+            "{} {}",
+            want["op"].as_str().unwrap(),
+            want["target"].as_str().unwrap()
+        );
+        assert_eq!(got.method, want["method"].as_str().unwrap(), "{label}");
+        assert_eq!(got.target, want["target"].as_str().unwrap(), "{label}");
+        assert_eq!(
+            got.header("content-type").unwrap_or_default(),
+            want["contentType"].as_str().unwrap(),
+            "{label}"
+        );
+        assert_eq!(
+            got.header("authorization").unwrap_or_default(),
+            want["auth"].as_str().unwrap(),
+            "{label}"
+        );
+        assert_eq!(got.body, decode(&want["body"]), "{label}");
+    }
 }

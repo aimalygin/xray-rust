@@ -27,6 +27,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
@@ -183,6 +184,64 @@ type xrayRustH2Case struct {
 	Data         []xrayRustData `json:"data"`
 }
 
+type xrayRustSlotCase struct {
+	Seq     int64  `json:"seq"`
+	Mode    int    `json:"mode"`
+	Data    []byte `json:"data"`
+	Encoded string `json:"encoded"`
+}
+
+type xrayRustSlotDecode struct {
+	Description string `json:"description"`
+	OK          bool   `json:"ok"`
+	Seq         int64  `json:"seq"`
+	Mode        int    `json:"mode"`
+	Size        int    `json:"size"`
+	CRC         uint32 `json:"crc"`
+	Data        []byte `json:"data"`
+}
+
+type xrayRustRingCase struct {
+	Payload string     `json:"payload"`
+	OK      bool       `json:"ok"`
+	Up      [][]string `json:"up"`
+	Down    [][]string `json:"down"`
+	Marshal string     `json:"marshal"`
+}
+
+type xrayRustDriveRequest struct {
+	Op          string `json:"op"`
+	Method      string `json:"method"`
+	Target      string `json:"target"`
+	ContentType string `json:"contentType"`
+	Auth        string `json:"auth"`
+	Body        []byte `json:"body"`
+	Status      int    `json:"status"`
+	Answer      string `json:"answer"`
+}
+
+type xrayRustDriveStep struct {
+	Op     string   `json:"op"`
+	Name   string   `json:"name"`
+	Data   []byte   `json:"data"`
+	Result []byte   `json:"result"`
+	Names  []string `json:"names"`
+	Error  string   `json:"error"`
+}
+
+type xrayRustDrive struct {
+	Quotes      [][2]string            `json:"quotes"`
+	Multipart   []byte                 `json:"multipart"`
+	RateLimited []xrayRustRateCase     `json:"rateLimited"`
+	Steps       []xrayRustDriveStep    `json:"steps"`
+	Requests    []xrayRustDriveRequest `json:"requests"`
+}
+
+type xrayRustRateCase struct {
+	Payload string `json:"payload"`
+	Limited bool   `json:"limited"`
+}
+
 type xrayRustHTTPVectors struct {
 	S3        []xrayRustS3Case       `json:"s3"`
 	Lists     []xrayRustListCase     `json:"lists"`
@@ -194,6 +253,10 @@ type xrayRustHTTPVectors struct {
 	URLs      []xrayRustURLCase      `json:"urls"`
 	Redirects []xrayRustRedirectCase `json:"redirects"`
 	H2        []xrayRustH2Case       `json:"h2"`
+	Slots     []xrayRustSlotCase     `json:"slots"`
+	Decodes   []xrayRustSlotDecode   `json:"slotDecodes"`
+	Rings     []xrayRustRingCase     `json:"rings"`
+	Drive     xrayRustDrive          `json:"drive"`
 }
 
 func xrayRustPairs(m map[string]string) [][2]string {
@@ -425,7 +488,7 @@ func xrayRustJSONPaths() []xrayRustJSONPathCase {
 	for _, path := range paths {
 		cases = append(cases, xrayRustJSONPathCase{Payload: payload, Path: path})
 	}
-	for _, payload := range []string{"not json", `["x"]`, `"str"`, `{"x":"é😀"}`, "{\"x\":\"a\xffb\"}"} {
+	for _, payload := range []string{"not json", `["x"]`, `"str"`, `{"x":"\u00e9\ud83d\ude00"}`, "{\"x\":\"a\xffb\"}"} {
 		cases = append(cases, xrayRustJSONPathCase{Payload: payload, Path: "x"})
 	}
 	for i := range cases {
@@ -871,6 +934,189 @@ func xrayRustH2(t *testing.T) []xrayRustH2Case {
 	return cases
 }
 
+func xrayRustSlotVectors() ([]xrayRustSlotCase, []xrayRustSlotDecode) {
+	cases := []xrayRustSlotCase{
+		{Seq: 0, Mode: slotInline, Data: []byte("hello")},
+		{Seq: 1, Mode: slotInline, Data: []byte{}},
+		{Seq: 7, Mode: slotMedia, Data: bytes.Repeat([]byte{0xa5}, 15000)},
+		{Seq: 8, Mode: slotEnd},
+		{Seq: 9, Mode: slotErr},
+		{Seq: -1, Mode: slotEnd},
+		{Seq: 1 << 40, Mode: slotInline, Data: []byte{0, 1, 2, 255}},
+	}
+	descriptions := []string{"", "not base64!", "WERSVlNMMDE=",
+		base64.StdEncoding.EncodeToString(append([]byte("XDRVSL02"), make([]byte, 17)...))}
+	for i := range cases {
+		c := &cases[i]
+		c.Encoded = newSlotFrame(c.Seq, byte(c.Mode), c.Data).encode()
+		descriptions = append(descriptions, c.Encoded)
+	}
+	// An inline frame whose segment is not what it says, a media frame with
+	// bytes after its header, and a mode nobody knows.
+	bad := newSlotFrame(3, slotInline, []byte("abc"))
+	bad.crc ^= 1
+	descriptions = append(descriptions, bad.encode())
+	media := newSlotFrame(4, slotMedia, []byte("abc"))
+	media.data = []byte("tail")
+	descriptions = append(descriptions, media.encode())
+	descriptions = append(descriptions, newSlotFrame(5, 9, []byte("x")).encode())
+	decodes := []xrayRustSlotDecode{}
+	for _, d := range descriptions {
+		f, ok := decodeSlot(d)
+		decodes = append(decodes, xrayRustSlotDecode{Description: d, OK: ok, Seq: f.seq, Mode: int(f.mode),
+			Size: f.size, CRC: f.crc, Data: f.data})
+	}
+	return cases, decodes
+}
+
+func xrayRustRings() []xrayRustRingCase {
+	r := ring{Up: slotTable{Slots: []string{"a", "b<&>"}, Watermark: "w1"}, Down: slotTable{Slots: []string{"c"}, Watermark: "w2"}}
+	marshal, _ := json.Marshal(r)
+	payloads := []string{string(marshal), `{"U":{"S":["a"],"W":"w"},"D":{"s":["c"],"w":"x"}}`,
+		`{"u":{"s":[],"w":"w"},"d":{"s":["c"],"w":"x"}}`, `{"u":{"s":["a"],"w":""},"d":{"s":["c"],"w":"x"}}`,
+		`{"u":{"s":["a",null],"w":"w"},"d":{"s":["c"],"w":"x"}}`, `{"u":{"s":"a","w":"w"},"d":{"s":["c"],"w":"x"}}`,
+		`null`, ``, `{"u":null,"d":{"s":["c"],"w":"x"}}`}
+	cases := []xrayRustRingCase{}
+	for _, p := range payloads {
+		c := xrayRustRingCase{Payload: p}
+		if got, ok := decodeRing([]byte(p)); ok {
+			c.OK = true
+			c.Up = [][]string{got.Up.Slots, {got.Up.Watermark}}
+			c.Down = [][]string{got.Down.Slots, {got.Down.Watermark}}
+		}
+		cases = append(cases, c)
+	}
+	cases[0].Marshal = string(marshal)
+	return cases
+}
+
+// xrayRustDriveScript answers each request with the next canned answer and
+// keeps what reached it, the op being the storage call under way.
+type xrayRustDriveScript struct {
+	op       *string
+	answers  []xrayRustDriveRequest
+	requests []xrayRustDriveRequest
+}
+
+func (s *xrayRustDriveScript) RoundTrip(r *http.Request) (*http.Response, error) {
+	body := []byte{}
+	if r.Body != nil {
+		body, _ = io.ReadAll(r.Body)
+	}
+	i := len(s.requests)
+	answer := s.answers[i]
+	s.requests = append(s.requests, xrayRustDriveRequest{Op: *s.op, Method: r.Method, Target: r.URL.RequestURI(),
+		ContentType: r.Header.Get("Content-Type"), Auth: r.Header.Get("Authorization"), Body: body,
+		Status: answer.Status, Answer: answer.Answer})
+	return &http.Response{StatusCode: answer.Status, Header: http.Header{},
+		Body: io.NopCloser(strings.NewReader(answer.Answer)), Request: r}, nil
+}
+
+// xrayRustDriveScenario runs driveStorage's own calls one after another
+// against canned answers, so that the order of the requests is fixed.
+func xrayRustDriveScenario(t *testing.T) ([]xrayRustDriveStep, []xrayRustDriveRequest) {
+	answers := []xrayRustDriveRequest{
+		{Status: 200, Answer: `{"access_token":"tok-1","expires_in":3600}`},
+		{Status: 200, Answer: `{"id":"f1"}`},
+		{Status: 200, Answer: `{"id":"f2","name":"streams~s~c2s~000000001.seg"}`},
+		{Status: 200, Answer: ``},
+		{Status: 200, Answer: `{"description":"ZGF0YQ=="}`},
+		{Status: 200, Answer: `{"files":[{"id":"f3","name":"streams~s~s2c~000000001.seg","description":"b25l"},{"id":"f4","name":"streams~s~s2c~sub~x","description":""}],"nextPageToken":"p2"}`},
+		{Status: 200, Answer: `{"files":[{"id":"f5","name":"streams~s~s2c~000000002.end"}]}`},
+		{Status: 403, Answer: `{"error":{"errors":[{"reason":"rateLimitExceeded"}]}}`},
+		{Status: 200, Answer: `{"files":[]}`},
+		{Status: 200, Answer: `{"files":[{"id":"f6","name":"streams~t~a"}]}`},
+		{Status: 204, Answer: ``},
+		{Status: 401, Answer: ``},
+		{Status: 200, Answer: `{"access_token":"tok-2","expires_in":30}`},
+		{Status: 200, Answer: `{"id":"s0"}`},
+		{Status: 200, Answer: `{"id":"s0"}`},
+		{Status: 200, Answer: `{"id":"s0"}`},
+		{Status: 200, Answer: `{"description":"frame"}`},
+		{Status: 200, Answer: `body`},
+		{Status: 404, Answer: ``},
+	}
+	op := ""
+	script := &xrayRustDriveScript{op: &op, answers: answers}
+	config := &Config{Service: "google-drive", RemoteFolder: "folder'id\\", Secrets: []string{"client id", "secret/+", "refresh&"}}
+	storage, err := newDriveStorage(nil, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Transport: script}
+	storage.client, storage.tokenClient = client, client
+	storage.tokenURL = "https://drive.test/token"
+	storage.filesURL = "https://drive.test/drive/v3/files"
+	storage.uploadURL = "https://drive.test/upload/drive/v3/files?uploadType=multipart&fields=id,name"
+	storage.backoff = time.Millisecond
+	ctx := context.Background()
+	steps := []xrayRustDriveStep{}
+	errText := func(err error) string {
+		if err == nil {
+			return ""
+		}
+		return "error"
+	}
+	run := func(step xrayRustDriveStep, call func() ([]byte, []string, error)) {
+		op = step.Op
+		result, names, err := call()
+		step.Result, step.Names, step.Error = result, names, errText(err)
+		if step.Names == nil {
+			step.Names = []string{}
+		}
+		steps = append(steps, step)
+	}
+	run(xrayRustDriveStep{Op: "put", Name: "sessions/1-abc", Data: []byte("data")}, func() ([]byte, []string, error) {
+		return nil, nil, storage.Put(ctx, "sessions/1-abc", []byte("data"))
+	})
+	large := bytes.Repeat([]byte{7}, 12001)
+	run(xrayRustDriveStep{Op: "put", Name: "streams/s/c2s/000000001.seg", Data: large}, func() ([]byte, []string, error) {
+		return nil, nil, storage.Put(ctx, "streams/s/c2s/000000001.seg", large)
+	})
+	run(xrayRustDriveStep{Op: "get", Name: "sessions/1-abc"}, func() ([]byte, []string, error) {
+		data, err := storage.Get(ctx, "sessions/1-abc")
+		return data, nil, err
+	})
+	run(xrayRustDriveStep{Op: "list", Name: "streams/s/s2c"}, func() ([]byte, []string, error) {
+		entries, err := storage.List(ctx, "streams/s/s2c")
+		names := []string{}
+		for _, e := range entries {
+			names = append(names, e.Name+"="+string(e.Inline))
+		}
+		sort.Strings(names)
+		return nil, names, err
+	})
+	run(xrayRustDriveStep{Op: "delete", Name: "streams/t"}, func() ([]byte, []string, error) {
+		return nil, nil, storage.Delete(ctx, "streams/t")
+	})
+	run(xrayRustDriveStep{Op: "makeSlot", Name: "streams/s/c2s/s0"}, func() ([]byte, []string, error) {
+		id, err := storage.makeSlot(ctx, "streams/s/c2s/s0")
+		return []byte(id), nil, err
+	})
+	run(xrayRustDriveStep{Op: "setSlot", Name: "s0"}, func() ([]byte, []string, error) {
+		return nil, nil, storage.setSlot(ctx, "s0", "frame", nil)
+	})
+	run(xrayRustDriveStep{Op: "setSlotBody", Name: "s0", Data: []byte("body")}, func() ([]byte, []string, error) {
+		return nil, nil, storage.setSlot(ctx, "s0", "frame", []byte("body"))
+	})
+	run(xrayRustDriveStep{Op: "readDescription", Name: "s0"}, func() ([]byte, []string, error) {
+		d, err := storage.readDescription(ctx, "s0")
+		return []byte(d), nil, err
+	})
+	run(xrayRustDriveStep{Op: "readBody", Name: "s0"}, func() ([]byte, []string, error) {
+		data, err := storage.readBody(ctx, "s0")
+		return data, nil, err
+	})
+	run(xrayRustDriveStep{Op: "readBody", Name: "gone"}, func() ([]byte, []string, error) {
+		data, err := storage.readBody(ctx, "gone")
+		return data, nil, err
+	})
+	if len(script.requests) != len(answers) {
+		t.Fatalf("%d requests for %d answers", len(script.requests), len(answers))
+	}
+	return steps, script.requests
+}
+
 func TestXrayRustHTTPOracle(t *testing.T) {
 	out := os.Getenv("XDRIVE_HTTP_ORACLE_OUT")
 	if out == "" {
@@ -887,6 +1133,19 @@ func TestXrayRustHTTPOracle(t *testing.T) {
 		URLs:      xrayRustURLs(),
 		Redirects: xrayRustRedirects(),
 		H2:        xrayRustH2(t),
+		Rings:     xrayRustRings(),
+	}
+	vectors.Slots, vectors.Decodes = xrayRustSlotVectors()
+	vectors.Drive.Steps, vectors.Drive.Requests = xrayRustDriveScenario(t)
+	for _, v := range []string{`it's`, `a\\b`, `''`, `x`} {
+		vectors.Drive.Quotes = append(vectors.Drive.Quotes, [2]string{v, quoteDriveValue(v)})
+	}
+	vectors.Drive.Multipart = multipartBody([]byte(`{"name":"n"}`), []byte{0, 1, 2})
+	for _, p := range []string{`{"error":{"errors":[{"reason":"userRateLimitExceeded"}]}}`,
+		`{"error":{"status":"RESOURCE_EXHAUSTED"}}`, `{"error":{"errors":[{"reason":"forbidden"}]}}`,
+		`{"error":{"status":5,"errors":[{"reason":"rateLimitExceeded"}]}}`, `not json`, `{"ERROR":{"ERRORS":[{"REASON":"sharingRateLimitExceeded"}]}}`,
+		`{"error":null}`, `{"error":{"errors":[null,{"reason":"rateLimitExceeded"}]}}`} {
+		vectors.Drive.RateLimited = append(vectors.Drive.RateLimited, xrayRustRateCase{Payload: p, Limited: rateLimited([]byte(p))})
 	}
 	data, err := json.MarshalIndent(vectors, "", "  ")
 	if err != nil {

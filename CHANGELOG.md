@@ -62,18 +62,30 @@ long-term supported release series.
     or `basic`, two-step operations through `hrefPath`, flat names,
     listings read with Go's `regexp`, retries by status or by a 403's
     reason, and redirects followed as Go's `http.Client` follows them.
-  - `google-drive` and storages over HTTP/3 (`alpn` exactly `["h3"]`) are
-    read and checked as Xray-core does but refused when the core starts for
-    now.
+  - `google-drive`: files in a Drive folder by id over Drive's v3 API, an
+    access token from the refresh token, small objects in descriptions and
+    larger ones as media, ids remembered by name for every session, and
+    retries after Drive's rate limits; a session goes in rings of two to
+    eight slots each way with a watermark, frames of `XDRVSL01` with the
+    segment inline up to 14 KiB or in the body, segments growing from 14 KiB
+    after eight full ones, a burst at once, and slots reused only once the
+    reader took what they held.
+  - Over `alpn` exactly `["h3"]` a storage is reached over HTTP/3, its QUIC
+    connections set up as XHTTP's are, with the stream's `quicParams` and
+    UDP masks, Salamander among them; Xray-core's ChromeParrot is not there
+    yet.
   - Deliberate differences: a writer waits once twice `concurrency`
     segments are not yet stored, where Xray-core keeps cutting; no
     `xdriveSettings` and an empty `local` folder fail when the core starts,
     where Xray-core fails every dial; a stream dropped without shutdown
     stores its end mark in the background for up to two minutes; one
     outbound's storage is shared by its sessions only, not with other
-    outbounds that name the same one; a template answer is read up to 64
-    MiB; `{name}` and the like are replaced in a fixed order and HTTP/2
-    headers written in one, where Go's map order varies.
+    outbounds that name the same one; a template's or Drive's answer is
+    read up to 64 MiB; `{name}` and the like are replaced in a fixed order,
+    HTTP/2 headers written in one and Drive listings taken in name order,
+    where Go's map order varies; HTTP/3 request headers come in the vendored
+    `h3`'s order and a storage over HTTP/3 cannot go through another
+    outbound.
   - The vendored `h2` gains `go_request_pseudo_order`, the request
     pseudo-header order of Go's `net/http`.
 - The `masque` outbound and `masque` transport connect to a MASQUE proxy as

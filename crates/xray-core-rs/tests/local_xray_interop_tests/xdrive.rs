@@ -5,10 +5,14 @@
 //! storages of a stand-in (`tools/xdrive-oracle/standin`): an S3 bucket that
 //! checks every SigV4 signature, and a REST store a `template` describes,
 //! Xray-core's server over plain HTTP and this client over HTTPS and HTTP/2
-//! through `streamSettings.address`. The stand-in is written from the
-//! services' documentation, not from Xray-core, so Xray-core's own client
-//! crosses it first with this client's configuration: a stand-in Xray-core
-//! cannot use is wrong, whatever this client makes of it.
+//! through `streamSettings.address`. Last they meet in Xray-core's own
+//! fakeDrive, which `tools/xdrive-oracle/drive_server_test.go` serves on
+//! Google's paths over TLS and HTTP/3: in slots, and this client over
+//! HTTP/3 through a noise mask. The S3 bucket and the REST store are written
+//! from the services' documentation, not from Xray-core, and the Drive
+//! stand-in picks its own paths and protocols, so Xray-core's own client
+//! crosses each first with this client's configuration: a stand-in
+//! Xray-core cannot use is wrong, whatever this client makes of it.
 //!
 //! Targets are documentation addresses: Xray's server hands each flow to a
 //! freedom outbound whose redirect sends it to the loopback echo servers,
@@ -481,12 +485,12 @@ async fn patient_udp_echo(proxy: SocketAddr, target: &str, port: u16) -> std::io
 /// TCP and UDP of both families, then parallel flows, through `proxy`.
 async fn carry(
     server: &XrayServer,
-    storage: &Standin,
+    complaints: impl Fn() -> String,
     proxy: SocketAddr,
     tcp_port: u16,
     udp_port: u16,
 ) {
-    let checked = |case: &str| format!("{case}; stand-in: {}", storage.complaints());
+    let checked = |case: &str| format!("{case}; stand-in: {}", complaints());
     check(
         server,
         &checked("TCP over IPv4"),
@@ -570,7 +574,14 @@ async fn xdrive_s3_meets_xray_in_a_bucket_over_both_http_versions() {
     let stored = ["HTTP/2.0 PUT", host, "/sessions/xray/streams/"];
     // Xray-core's own client first, with this client's configuration.
     let xray = xray_client(client_config_with(&session, stream.clone())).await;
-    carry(server, &storage, xray.addr, tcp_port, udp_port).await;
+    carry(
+        server,
+        || storage.complaints(),
+        xray.addr,
+        tcp_port,
+        udp_port,
+    )
+    .await;
     drop(xray);
     assert!(
         storage.served(&stored) > 0,
@@ -582,7 +593,7 @@ async fn xdrive_s3_meets_xray_in_a_bucket_over_both_http_versions() {
     let sessions = accepted_sessions(server);
     let mut client = core(client_config_with(&session, stream)).await;
     let proxy = client.inbound_addr(Some("socks-in")).unwrap();
-    carry(server, &storage, proxy, tcp_port, udp_port).await;
+    carry(server, || storage.complaints(), proxy, tcp_port, udp_port).await;
     client.stop().await.unwrap();
     let virtual_hosted = storage.served_after(mark, &stored);
     assert!(
@@ -606,7 +617,7 @@ async fn xdrive_s3_meets_xray_in_a_bucket_over_both_http_versions() {
     let stream = json!({"network": "xdrive", "xdriveSettings": xdrive});
     let mut client = core(client_config_with(&session, stream)).await;
     let proxy = client.inbound_addr(Some("socks-in")).unwrap();
-    carry(server, &storage, proxy, tcp_port, udp_port).await;
+    carry(server, || storage.complaints(), proxy, tcp_port, udp_port).await;
     client.stop().await.unwrap();
     assert!(accepted_sessions(server) > sessions, "{}", server.logs());
     // Listings of three keys a page went on with continuation tokens.
@@ -689,7 +700,14 @@ async fn xdrive_template_meets_xray_in_a_rest_store() {
     // Xray-core's own client first, with this client's configuration, then
     // this client; each must have crossed every path of the store.
     let xray = xray_client(client_config_with(&session, stream.clone())).await;
-    carry(server, &storage, xray.addr, tcp_port, udp_port).await;
+    carry(
+        server,
+        || storage.complaints(),
+        xray.addr,
+        tcp_port,
+        udp_port,
+    )
+    .await;
     drop(xray);
     template_paths_crossed(&storage, 0, "Xray-core's client");
     assert_eq!(storage.complaints(), "", "the stand-in failed Xray-core");
@@ -697,7 +715,7 @@ async fn xdrive_template_meets_xray_in_a_rest_store() {
     let sessions = accepted_sessions(server);
     let mut client = core(client_config_with(&session, stream)).await;
     let proxy = client.inbound_addr(Some("socks-in")).unwrap();
-    carry(server, &storage, proxy, tcp_port, udp_port).await;
+    carry(server, || storage.complaints(), proxy, tcp_port, udp_port).await;
     client.stop().await.unwrap();
     assert!(accepted_sessions(server) > sessions, "{}", server.logs());
     template_paths_crossed(&storage, mark, "this client");
@@ -741,4 +759,262 @@ fn template_paths_crossed(storage: &Standin, mark: usize, who: &str) {
         let enough = if what == "tokens fetched again" { 2 } else { 1 };
         assert!(count >= enough, "{who}, {what}: {count}; {}", storage.log());
     }
+}
+
+/// Xray-core's own fakeDrive on Google's paths, over TLS and HTTP/3 on one
+/// port (`tools/xdrive-oracle/drive_server_test.go`).
+struct DriveStandin {
+    child: Child,
+    dir: TempDir,
+    port: u16,
+    /// The certificate's SHA-256, for `pinnedPeerCertSha256`.
+    pin: String,
+}
+
+impl Drop for DriveStandin {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl DriveStandin {
+    fn requests(&self) -> String {
+        fs::read_to_string(self.dir.path.join("requests")).unwrap_or_default()
+    }
+
+    fn served(&self, parts: &[&str]) -> usize {
+        self.served_after(0, parts)
+    }
+
+    /// The complete lines logged so far, to count what comes after.
+    fn mark(&self) -> usize {
+        self.requests().matches('\n').count()
+    }
+
+    /// Requests served after the first `mark` lines that hold every one of
+    /// `parts`.
+    fn served_after(&self, mark: usize, parts: &[&str]) -> usize {
+        self.requests()
+            .lines()
+            .skip(mark)
+            .filter(|line| parts.iter().all(|part| line.contains(part)))
+            .count()
+    }
+}
+
+/// The stand-in binary: the one the check script built, or a fresh build
+/// of the overlay test in the pinned checkout.
+fn drive_server_binary(dir: &TempDir) -> PathBuf {
+    env::var_os("XDRIVE_DRIVE_SERVER")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let checkout = resolve_xray_checkout();
+            let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tools/xdrive-oracle/drive_server_test.go");
+            let overlay = dir.path.join("overlay.json");
+            let target = checkout.join("transport/internet/xdrive/xray_rust_drive_server_test.go");
+            fs::write(
+                &overlay,
+                json!({"Replace": {target.to_str().unwrap(): source.to_str().unwrap()}})
+                    .to_string(),
+            )
+            .unwrap();
+            let binary = dir.path.join("drive-server");
+            let output = Command::new("go")
+                .args(["test", "-c", "-mod=readonly", "-overlay"])
+                .arg(&overlay)
+                .arg("-o")
+                .arg(&binary)
+                .arg("./transport/internet/xdrive")
+                .current_dir(&checkout)
+                .output()
+                .expect("start go test -c for the Drive stand-in");
+            assert!(
+                output.status.success(),
+                "building the Drive stand-in failed: {output:?}"
+            );
+            binary
+        })
+}
+
+async fn start_drive() -> DriveStandin {
+    let dir = create_temp_dir("xray-rust-xdrive-drive");
+    let mut child = Command::new(drive_server_binary(&dir))
+        .args(["-test.run", "^TestXrayRustDriveServer$"])
+        .env("XDRIVE_DRIVE_SERVER_DIR", &dir.path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::from(
+            fs::File::create(dir.path.join("stderr")).unwrap(),
+        ))
+        .spawn()
+        .expect("start the Drive stand-in");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let (port, pin) = loop {
+        let port = fs::read_to_string(dir.path.join("port")).unwrap_or_default();
+        let pin = fs::read_to_string(dir.path.join("pin")).unwrap_or_default();
+        if let (Ok(port), false) = (port.trim().parse::<u16>(), pin.is_empty()) {
+            break (port, pin);
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("the Drive stand-in did not start");
+        }
+        sleep(Duration::from_millis(50)).await;
+    };
+    DriveStandin {
+        child,
+        dir,
+        port,
+        pin,
+    }
+}
+
+/// A Google Drive stream, its connections sent to the stand-in through the
+/// stream's address and port and its certificate pinned; `extra` merges
+/// into the stream.
+fn drive_stream(drive: &DriveStandin, extra: Value) -> Value {
+    let mut xdrive = tuning();
+    xdrive["service"] = "google-drive".into();
+    xdrive["remoteFolder"] = "folder-id".into();
+    xdrive["secrets"] = json!(["client-id", "client-secret", "refresh-token"]);
+    let mut stream = json!({"network": "xdrive", "address": "127.0.0.1", "port": drive.port,
+        "security": "tls", "tlsSettings": {"pinnedPeerCertSha256": drive.pin},
+        "xdriveSettings": xdrive});
+    for (key, value) in extra.as_object().unwrap() {
+        match (key.as_str(), value) {
+            ("tlsSettings", Value::Object(fields)) => {
+                for (field, value) in fields {
+                    stream["tlsSettings"][field] = value.clone();
+                }
+            }
+            _ => stream[key] = value.clone(),
+        }
+    }
+    stream
+}
+
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-xdrive-interop.sh"]
+async fn xdrive_google_drive_meets_xray_in_slots() {
+    let drive = start_drive().await;
+    let stream = drive_stream(&drive, json!({}));
+    let server_stream = stream.clone();
+    let session = start_server_with(false, move |_| server_stream).await;
+    let server = &session.server;
+    let (tcp_port, udp_port, _tcp, _udp) = echo_servers().await;
+    // Xray-core's own client first, with this client's configuration: the
+    // stand-in serves Xray-core's fakeDrive on paths and protocols of its
+    // own choosing, which Xray-core's client must cross as well.
+    let xray = xray_client(client_config_with(&session, stream.clone())).await;
+    carry(server, || drive.requests(), xray.addr, tcp_port, udp_port).await;
+    drop(xray);
+    let by_xray = server.logs().matches(" slots").count();
+    assert!(
+        by_xray > 0,
+        "Xray-core's client: no session in slots: {}",
+        server.logs()
+    );
+    let mut client = core(client_config_with(&session, stream)).await;
+    let proxy = client.inbound_addr(Some("socks-in")).unwrap();
+    carry(server, || drive.requests(), proxy, tcp_port, udp_port).await;
+    client.stop().await.unwrap();
+    // Xray-core's server took the sessions this client announced in rings
+    // of eight slots each way.
+    let slotted = server.logs().matches(" slots").count();
+    assert!(slotted > by_xray, "no session in slots: {}", server.logs());
+    for (what, parts) in [
+        (
+            "tokens",
+            vec!["HTTP/2.0 POST oauth2.googleapis.com /token 200"],
+        ),
+        (
+            "slots made",
+            vec!["HTTP/2.0 POST www.googleapis.com /drive/v3/files?fields=id 200"],
+        ),
+        (
+            "slots written",
+            vec![
+                "HTTP/2.0 PATCH www.googleapis.com /drive/v3/files/",
+                "fields=id&supportsAllDrives=true 200",
+            ],
+        ),
+        (
+            "slots read",
+            vec![
+                "HTTP/2.0 GET www.googleapis.com /drive/v3/files/",
+                "fields=description&supportsAllDrives=true 200",
+            ],
+        ),
+        (
+            "announcements",
+            vec![
+                "HTTP/2.0 GET www.googleapis.com /drive/v3/files?",
+                "name+contains",
+            ],
+        ),
+    ] {
+        assert!(drive.served(&parts) > 0, "{what}: {}", drive.requests());
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-xdrive-interop.sh"]
+async fn xdrive_google_drive_over_http3_through_a_noise_mask() {
+    let drive = start_drive().await;
+    // Xray-core's server over HTTP/2, this client over HTTP/3 alone.
+    let server_stream = drive_stream(&drive, json!({}));
+    let session = start_server_with(false, move |_| server_stream).await;
+    let server = &session.server;
+    let (tcp_port, udp_port, _tcp, _udp) = echo_servers().await;
+    let stream = drive_stream(
+        &drive,
+        json!({"tlsSettings": {"alpn": ["h3"]},
+            "finalmask": {"udp": [{"type": "noise", "settings": {"noise": [{"rand": "30-60"}]}}],
+                "quicParams": {"disableChromeParrot": true}}}),
+    );
+    // Xray-core's own client over HTTP/3 first, then this client; only
+    // clients go over HTTP/3.
+    let over_http3 = [
+        (
+            "tokens over HTTP/3",
+            ["HTTP/3.0 POST oauth2.googleapis.com /token 200"].as_slice(),
+        ),
+        (
+            "slots written over HTTP/3",
+            ["HTTP/3.0 PATCH www.googleapis.com /drive/v3/files/"].as_slice(),
+        ),
+        (
+            "slots read over HTTP/3",
+            ["HTTP/3.0 GET www.googleapis.com /drive/v3/files/"].as_slice(),
+        ),
+    ];
+    let xray = xray_client(client_config_with(&session, stream.clone())).await;
+    carry(server, || drive.requests(), xray.addr, tcp_port, udp_port).await;
+    drop(xray);
+    for (what, parts) in over_http3 {
+        let count = drive.served(parts);
+        assert!(
+            count > 0,
+            "Xray-core's client, {what}: {}",
+            drive.requests()
+        );
+    }
+    let mark = drive.mark();
+    let mut client = core(client_config_with(&session, stream)).await;
+    let proxy = client.inbound_addr(Some("socks-in")).unwrap();
+    carry(server, || drive.requests(), proxy, tcp_port, udp_port).await;
+    client.stop().await.unwrap();
+    for (what, parts) in over_http3 {
+        let count = drive.served_after(mark, parts);
+        assert!(count > 0, "{what}: {}", drive.requests());
+    }
+    let server_http2 = drive.served(&["HTTP/2.0 GET www.googleapis.com"]);
+    assert!(
+        server_http2 > 0,
+        "Xray-core over HTTP/2: {}",
+        drive.requests()
+    );
+    assert!(server.logs().contains(" slots"), "{}", server.logs());
 }

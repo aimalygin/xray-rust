@@ -279,9 +279,9 @@ fn build_transport_layer(
         StreamTransport::Hysteria(_) | StreamTransport::Masque(_) => {
             return Err(CoreError::UnsupportedOutboundNetwork)
         }
-        StreamTransport::Xdrive(xdrive) => TransportLayer::Xdrive(
-            super::xdrive::build_xdrive_transport(xdrive, &stream.security)?,
-        ),
+        StreamTransport::Xdrive(xdrive) => {
+            TransportLayer::Xdrive(super::xdrive::build_xdrive_transport(xdrive, stream)?)
+        }
         StreamTransport::WebSocket(websocket) => TransportLayer::WebSocket(WebSocketConfig {
             path: websocket.path.clone(),
             host: websocket.host.clone().unwrap_or_else(host_fallback),

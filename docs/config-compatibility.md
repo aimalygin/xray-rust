@@ -2525,10 +2525,10 @@ It never connects to Cloudflare.
 The `xdrive` transport carries a VLESS connection as objects in a storage
 both ends reach, as Xray-core v26.10.31's client does. Nothing connects to
 the VLESS server address: the client and Xray-core's server meet in the
-storage, and the address is never looked up. This release reaches three of
-the four services: `local`, a folder; `s3`, a bucket; and `template`, an
-HTTP storage a JSON template describes. `google-drive` waits for a later
-release.
+storage, and the address is never looked up. This release reaches all four
+services: `local`, a folder; `google-drive`, a Google Drive folder, its
+sessions in rings of slots; `s3`, a bucket; and `template`, an HTTP storage a
+JSON template describes.
 
 ```json
 {"protocol": "vless",
@@ -2553,9 +2553,8 @@ as on every VLESS outbound.
   spelling, with a warning), `template` or `s3`, case-sensitive; any other
   value, an empty one included, fails. `google-drive` needs exactly three
   `secrets`, `template` a `template` value (any JSON, `null` included) and
-  `s3` an `s3` object. `google-drive` is read and checked but refused when
-  the core starts for now. Without `xdriveSettings` the core refuses to
-  start, where Xray-core's registered default fails every dial.
+  `s3` an `s3` object. Without `xdriveSettings` the core refuses to start,
+  where Xray-core's registered default fails every dial.
 - `remoteFolder`: the folder of `local`, made with its parents, readable by
   this user only, when a session opens. An empty one fails when the core
   starts, where Xray-core fails every dial.
@@ -2585,10 +2584,21 @@ as on every VLESS outbound.
 
 Over `tlsSettings.alpn` exactly `["h3"]`, `google-drive` takes only the
 `noise` UDP mask and no service takes `brutal` or `force-brutal`
-congestion, as in Xray-core. The UDP masks follow the rules of the other
-QUIC carriers (XDRIVE over HTTP/3 counts as one); `security`, `sockopt` and
-the masks shape the HTTP storages' connections and play no part with
-`local`. A storage over HTTP/3 is refused when the core starts for now.
+congestion, as in Xray-core. The UDP masks, Salamander among them, follow
+the rules of the other QUIC carriers (XDRIVE over HTTP/3 counts as one);
+`security`, `sockopt` and the masks shape the HTTP storages' connections
+and play no part with `local`.
+
+Over `alpn` exactly `["h3"]`, an `https` storage is reached over HTTP/3:
+one QUIC connection a host, set up as XHTTP's HTTP/3 connections are, with
+the stream's `quicParams`, its UDP masks, BBR (or Reno), udphop and the
+storage's server name and certificate rules, and a keepalive only when
+`quicParams.keepAlivePeriod` or a positive `xmux.hKeepAlivePeriod` asks
+for one, as Xray-core configures quic-go for it. Xray-core shapes that
+connection as Chrome unless `disableChromeParrot` is set; this client's
+QUIC is Quinn's own, as on the other QUIC carriers, which the configuration
+warns about. A storage over HTTP/3 cannot go through another outbound
+(`dialerProxy`).
 
 `streamSettings.address` and `port`, which Xray-core reads for every stream
 and only XDRIVE uses, name where every connection to an HTTP storage goes:
@@ -2629,6 +2639,31 @@ request is tried up to eight times, after a network failure, a stall, 429,
 500, 502, 503 or 504, waiting 200 ms doubled each time up to 8 seconds,
 jittered, or as long as `Retry-After` asks, up to 8 seconds. A redirect is
 an answer, as in Xray-core, so a signature never goes to another host.
+
+`google-drive` keeps each object as a file in the folder `remoteFolder`
+names by id, reached with Google Drive's v3 API and the client id, client
+secret and refresh token of `secrets`: an access token from
+`oauth2.googleapis.com/token`, kept for its lifetime less a minute and
+fetched again after a 401; names flat, their `/` written as `~`; an object
+of up to 12000 bytes as base64 in the file's description and a larger one
+uploaded as its body; files found by a query on their name, page after
+page, their ids remembered for every session of the outbound; and every
+request tried up to eight times as with `s3`, also after a 403 that names
+one of Drive's rate limits. A session announces a ring of slots: two to
+eight files a direction (`concurrency`, at most eight) and a watermark, made
+when the session opens. Segment `n` goes into slot `n` modulo the depth,
+its frame (`XDRVSL01`, the number, a mode, the size and CRC-32, and up to 14
+KiB of segment inline) in the description and a larger segment in the body
+of the same request. The writer cuts 14 KiB segments, doubling the size up
+to `segmentBytes` after eight full ones in a row and sending a burst of more
+than 56 KiB at once, and writes a slot only once the reader's watermark
+says it took what the slot held a lap before. The reader asks for the head
+often, from 50 ms up to 200 ms (or `maxPollIntervalMs` once idle), and for
+up to six segments behind it at the pace they come, writes its watermark as
+the head moves, takes a body only once it matches its frame, and fails when
+the writer marks a segment it could not store or a slot stays gone for a
+minute. When the ring cannot be made, the session goes in segments, as in
+Xray-core.
 
 `template` sends the requests its operations describe:
 
@@ -2701,11 +2736,12 @@ reader never sees half an object.
 `scripts/check-xdrive-interop.sh` compares the tuning, names, the local
 folder's name resolution and step-by-step replays of the segment writer and
 reader with Xray-core's own code; S3 URLs and signatures, S3 answers,
-templates, substitution, JSON paths, `namesRegex` matches, URL resolution
-and redirects with what Xray-core and Go make of them; rechecks the
-configuration verdicts with `xray run -test`; and runs VLESS over XDRIVE
-against Xray-core's server through a shared folder, an S3 bucket and a
-template's REST store.
+templates, substitution, JSON paths, `namesRegex` matches, URL resolution,
+redirects, slot frames, rings and Drive requests with what Xray-core and Go
+make of them, and Go's HTTP/2 request frames; rechecks the configuration
+verdicts with `xray run -test`; and runs VLESS over XDRIVE against
+Xray-core's server through a shared folder, an S3 bucket, a template's REST
+store and Xray-core's own fake Drive, in slots, over HTTP/2 and over HTTP/3.
 
 ### realm mask
 
