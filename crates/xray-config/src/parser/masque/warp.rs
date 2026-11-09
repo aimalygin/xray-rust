@@ -249,27 +249,21 @@ fn header(bytes: &[u8], offset: usize) -> Result<(Header, usize), ()> {
 
 /// `parseBase128Int`.
 fn base128(bytes: &[u8], offset: usize) -> Result<(u32, usize), ()> {
-    let mut offset = offset;
     let mut value: u64 = 0;
-    for shifted in 0.. {
-        if shifted == 5 {
+    for (shifted, &b) in bytes.get(offset..).ok_or(())?.iter().enumerate() {
+        if shifted == 5 || shifted == 0 && b == 0x80 {
             return Err(());
         }
-        let b = *bytes.get(offset).ok_or(())?;
-        if shifted == 0 && b == 0x80 {
-            return Err(());
-        }
-        offset += 1;
         value = value << 7 | u64::from(b & 0x7f);
         if b & 0x80 == 0 {
             return u32::try_from(value)
                 .ok()
                 .filter(|&v| v <= i32::MAX as u32)
-                .map(|v| (v, offset))
+                .map(|v| (v, offset + shifted + 1))
                 .ok_or(());
         }
     }
-    unreachable!()
+    Err(())
 }
 
 /// One field of a Go struct, as `parseField` reads it.
@@ -539,7 +533,10 @@ fn hex_uint(hex: &str) -> BigUint {
 /// Go's PKCS #8 structure: `None` for a key of another algorithm, the EC
 /// key's curve parameters and SEC 1 bytes otherwise; `Err` when the
 /// structure itself does not parse.
-fn pkcs8(der: &[u8]) -> Result<Option<(Option<Vec<u32>>, &[u8])>, ()> {
+/// An EC key in PKCS #8: the curve its parameters name, and its SEC 1 bytes.
+type Pkcs8Ec<'a> = (Option<Vec<u32>>, &'a [u8]);
+
+fn pkcs8(der: &[u8]) -> Result<Option<Pkcs8Ec<'_>>, ()> {
     let (contents, _) = sequence(der)?;
     let (Field::Present(version), offset) = field(contents, 0, TAG_INTEGER, false, false)? else {
         return Err(());

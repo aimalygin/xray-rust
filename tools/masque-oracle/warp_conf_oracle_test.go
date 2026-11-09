@@ -204,8 +204,9 @@ func (g xrayRustWarpGen) private(v *xrayRustWarpVectors) {
 			add(strings.NewReplacer("+", "-", "/", "_").Replace(s))
 			add(base64.RawStdEncoding.EncodeToString(sec1))
 		case 4:
-			// A lenient final symbol: Go ignores the unused bits.
-			s := b64(pkcs8)
+			// A lenient final symbol: Go ignores the unused bits. SEC 1 keys
+			// of P-256 are padded; PKCS #8 ones are not.
+			s := b64(sec1)
 			if i := strings.IndexByte(s, '='); i > 0 {
 				c := s[i-1]
 				const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
