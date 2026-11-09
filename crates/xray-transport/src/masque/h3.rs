@@ -42,6 +42,8 @@ pub struct MasqueH3Config {
     pub request: MasqueRequest,
     /// Cloudflare WARP instead of a CONNECT-IP proxy.
     pub warp: Option<MasqueWarp>,
+    /// What a `realm` mask in `quic` takes from the dial, as XHTTP H3's.
+    pub realm: Option<crate::realm::RealmEnv>,
 }
 
 impl std::fmt::Debug for MasqueH3Config {
@@ -52,6 +54,7 @@ impl std::fmt::Debug for MasqueH3Config {
             .field("authority", &self.authority)
             .field("path", &self.request.path)
             .field("quic", &self.quic)
+            .field("realm", &self.realm.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -76,6 +79,7 @@ pub async fn dial_h3(
         tls_config,
         socket_protector: config.socket_protector.clone(),
         quic: config.quic.clone(),
+        realm: config.realm.clone(),
     };
     let carrier = connect.quic.hop_carrier();
     let protector = connect.socket_protector.clone();

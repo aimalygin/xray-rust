@@ -96,9 +96,16 @@ enum Endpoint {
     Tcp(Vec<SocketAddr>),
 }
 
-/// Xray's `usesHTTP2`.
-fn uses_http2(alpn: &[String]) -> bool {
+/// Xray's `usesHTTP2`: HTTP/2 when the ALPN names `h2` and not `h3`.
+pub(super) fn uses_http2(alpn: &[String]) -> bool {
     alpn.iter().any(|p| p == "h2") && !alpn.iter().any(|p| p == "h3")
+}
+
+/// Whether `outbound` is MASQUE over HTTP/2, whose TCP carrier takes the
+/// TCP masks as a raw TCP transport does.
+pub(crate) fn over_http2(outbound: &OutboundConfig) -> bool {
+    matches!(outbound.settings, OutboundSettings::Masque(_))
+        && matches!(&outbound.stream.security, StreamSecurity::Tls(tls) if uses_http2(&tls.alpn))
 }
 
 /// The HTTP/2 keepalive for `xmux.hKeepAlivePeriod`: Chrome's 45 seconds
@@ -224,6 +231,7 @@ impl MasqueOutbound {
                 .map(|&(addr, len)| IpPrefix::new(addr, len))
                 .collect(),
         });
+        super::carrier::check_xicmp_server(&outbound.stream, &settings.server)?;
         let server_name = tls
             .server_name
             .clone()
@@ -471,6 +479,9 @@ impl MasqueOutbound {
                         authority: self.0.authority.clone(),
                         request: self.0.request.clone(),
                         warp: warp.clone(),
+                        // A realm introduction counts toward the ten seconds,
+                        // as it runs under the context of Xray's dial.
+                        realm: quic.udp_realm.as_ref().map(|_| dialer.realm_env()),
                     },
                     dialer.tls_connector(),
                 )
@@ -908,6 +919,8 @@ fn masque_quic_config(
         .map(super::carrier::quic_header_custom);
     config.udp_sudoku = stream.udp_sudoku.as_ref().map(super::carrier::quic_sudoku);
     config.udp_xdns = stream.udp_xdns.as_ref().map(super::carrier::xdns_config);
+    config.udp_realm = stream.udp_realm.as_ref().map(super::carrier::realm_config);
+    config.udp_xicmp = stream.udp_xicmp.as_ref().map(super::carrier::xicmp_config);
     Ok(config)
 }
 

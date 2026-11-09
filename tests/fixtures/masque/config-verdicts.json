@@ -1,5 +1,5 @@
 {
- "comment": "MASQUE config cases with Xray-core v26.10.31's `xray run -test` verdicts. `xray` is \"ok\" or a substring of its error; `ours` overrides the verdict xray-rust gives, for the reason in `why`. scripts/check-masque-interop.sh rechecks every Xray verdict.",
+ "comment": "MASQUE config cases with Xray-core v26.10.31's `xray run -test` verdicts. `xray` is \"ok\" or a substring of its error; `ours` overrides the verdict xray-rust gives, for the reason in `why`; `core` is the error a configuration xray-rust takes still meets when the core starts, for the reason in `why`. scripts/check-masque-interop.sh rechecks every Xray verdict.",
  "cases": [
   {
    "name": "minimal",
@@ -2138,6 +2138,358 @@
    "xray": "ok"
   },
   {
+   "name": "udp header-custom",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "header-custom",
+        "settings": {
+         "client": [
+          {
+           "type": "str",
+           "packet": "hi"
+          }
+         ],
+         "server": [
+          {
+           "type": "str",
+           "packet": "ok"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp sudoku",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "sudoku",
+        "settings": {
+         "password": "synthetic-sudoku"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp xdns",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "xdns",
+        "settings": {
+         "domains": [
+          {
+           "names": [
+            "t.example"
+           ],
+           "types": [
+            1,
+            5,
+            16,
+            28
+           ],
+           "edns0": 4096
+          }
+         ],
+         "resolvers": [
+          {
+           "addrs": [
+            "192.0.2.53:53"
+           ]
+          }
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp realm",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "realm",
+        "settings": {
+         "url": "realm+http://synthetic-token@192.0.2.80:8080/masque",
+         "stunServers": [
+          "192.0.2.3:3478"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp noise inside realm",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "noise",
+        "settings": {
+         "noise": [
+          {
+           "rand": "10-20"
+          }
+         ]
+        }
+       },
+       {
+        "type": "realm",
+        "settings": {
+         "url": "realm+http://synthetic-token@192.0.2.80:8080/masque",
+         "stunServers": [
+          "192.0.2.3:3478"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp realm with udphop",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "realm",
+        "settings": {
+         "url": "realm+http://synthetic-token@192.0.2.80:8080/masque",
+         "stunServers": [
+          "192.0.2.3:3478"
+         ]
+        }
+       },
+       {
+        "type": "udphop",
+        "settings": {
+         "remotePorts": "443-445",
+         "mode": "intervalRemote"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "ours": "error",
+   "why": "realm must be the last UDP mask and udphop sends to the server's ports, as on every carrier",
+   "xray": "ok"
+  },
+  {
+   "name": "udp xicmp",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "xicmp"
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp xicmp with ips",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "xicmp",
+        "settings": {
+         "ips": [
+          "192.0.2.1"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp xicmp to a name",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "xicmp"
+       }
+      ]
+     }
+    }
+   },
+   "core": "outbound network is not supported",
+   "why": "Xray-core never resolves the address for xicmp and fails every dial; the core refuses it at start, as on every carrier",
+   "xray": "ok"
+  },
+  {
+   "name": "udp sudoku inside xicmp",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "sudoku",
+        "settings": {
+         "password": "synthetic-sudoku"
+        }
+       },
+       {
+        "type": "xicmp"
+       }
+      ]
+     }
+    }
+   },
+   "ours": "error",
+   "why": "sudoku's datagrams on QUIC exceed what an echo carries, as on every QUIC carrier",
+   "xray": "ok"
+  },
+  {
    "name": "tlshello fragment on h3",
    "outbound": {
     "tag": "proxy",
@@ -2168,6 +2520,83 @@
    },
    "ours": "error",
    "why": "TCP masks cannot apply to QUIC, as on XHTTP over HTTP/3",
+   "xray": "ok"
+  },
+  {
+   "name": "sudoku tcp mask on h3",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "sudoku",
+        "settings": {
+         "password": "synthetic-sudoku"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "core": "outbound network is not supported",
+   "why": "the QUIC dial takes no TCP mask, which Xray-core's ignores; the core refuses them at start, as XHTTP over HTTP/3 refuses them",
+   "xray": "ok"
+  },
+  {
+   "name": "header-custom tcp mask on h3",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "header-custom",
+        "settings": {
+         "clients": [
+          [
+           {
+            "type": "str",
+            "packet": "hello"
+           }
+          ]
+         ],
+         "servers": [
+          [
+           {
+            "type": "str",
+            "packet": "ok"
+           }
+          ]
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "core": "outbound network is not supported",
+   "why": "the QUIC dial takes no TCP mask, which Xray-core's ignores; the core refuses them at start, as XHTTP over HTTP/3 refuses them",
    "xray": "ok"
   },
   {

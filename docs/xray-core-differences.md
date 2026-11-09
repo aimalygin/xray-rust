@@ -630,10 +630,18 @@ keepalive. Deliberate differences:
   address; Xray-core takes any.
 - Chaining (`proxySettings`, `dialerProxy`) and Mux fail the configuration,
   as for Hysteria and WireGuard, and so does the TCP fragment mask, which
-  Xray-core's HTTP/3 dial ignores. Unknown fields fail, as everywhere.
+  Xray-core's HTTP/3 dial ignores; over HTTP/3 the other TCP masks fail
+  when the core starts. Unknown fields fail, as everywhere.
 - The HTTP/3 request lists its pseudo-fields in h3's order and its fields
   sorted; quic-go starts with `:authority` and sends fields in map order.
   Neither is visible outside the TLS session.
+- Over HTTP/3 the UDP masks follow the rules of every QUIC carrier, with
+  [realm's](#realm) and [xicmp's](#xicmp) differences: an xicmp outbound
+  whose address is a name, with no `ips`, fails when the core starts. A
+  realm introduction counts toward the ten-second tunnel dial, as in
+  Xray-core, whose introduction runs under the dial's context; one that
+  overruns is cancelled here, where Xray-core's finishes before its QUIC dial
+  fails.
 - Over HTTP/2, UDP masks and a `TE` header other than `trailers` fail the
   configuration: Xray-core ignores the masks on its TCP dial and sends the
   header, which this HTTP/2 client refuses to.
@@ -658,22 +666,32 @@ ICMP messages and which packets it admits; the tests replay them and
 `scripts/check-masque-interop.sh` regenerates a corpus ten times larger each
 run. A second oracle in the `masque` package records the frames Xray-core's
 HTTP/2 client writes up to its request for eight requests; ours match them
-byte for byte. 120 configuration cases
-carry `xray run -test` verdicts, rechecked with the binary each run: 109
-match and 11 differ as listed above. Live against
+byte for byte. 137 configuration cases
+carry `xray run -test` verdicts, rechecked with the binary each run: 124
+match and 13 differ as listed above and in the mask rules; every case the
+configuration takes also builds a core, but the xicmp one to a name without
+`ips` and the TCP masks over HTTP/3. Live against
 Xray-core's MASQUE server over HTTP/3: TCP with a 128 KiB echo to IPv4, IPv6
 and a name resolved through the tunnel, UDP to the same three, TCP through
 the HTTP inbound, TCP and UDP through the TUN, eight parallel flows sharing
 one tunnel, the default path with a preset User-Agent, the `conservative` and
-`aggressive` BBR profiles, and a wrong password refused. Over HTTP/2 the same flows run live, through a uTLS fingerprint as
-well, plus the default path with Go's User-Agent and no keepalive.
+`aggressive` BBR profiles, and a wrong password refused; under the
+header-custom and sudoku UDP masks, noise inside sudoku, with another sudoku
+password carrying nothing; introduced by realm through a local rendezvous;
+and, as root on Linux (`scripts/check-xicmp-interop.sh`), inside xicmp.
+Over HTTP/2 the same flows run live, through a uTLS fingerprint as well,
+plus the default path with Go's User-Agent and no keepalive, and under the
+sudoku and header-custom TCP masks, another sudoku password carrying
+nothing.
 Mutating 22 key branches (TTL, checksum, admission, capsule
 checks, address choice, authority, User-Agent, the pool's limits and retry,
 the host and path checks) fails the tests each time, and so does mutating
 27 of the HTTP/2 path (capsule framing, the bare read rule, the
 write buffer and windows, the keepalive, the extended CONNECT check, the
 header block options and field order, ALPN, keepalive defaults and the TE
-check). For `warp`, a third oracle runs inside Xray-core's `infra/conf`
+check), or dropping each mask's wiring, the xicmp address check,
+MASQUE's place among the UDP carriers or HTTP/2's among the TCP-mask
+carriers. For `warp`, a third oracle runs inside Xray-core's `infra/conf`
 and records its verdict on 156 private keys, 108 public keys and 22 address
 lists, well-formed and damaged, and ours match all of them; the HTTP/2
 oracle's WARP requests match byte for byte; and UDP of both families runs
@@ -684,6 +702,93 @@ key is refused. 16 of its branches (key, curve and range
 checks, PEM and base64 rules, point validation, address rules, the
 certificate's validity and serial, the draft datagram setting, the
 Cloudflare protocol and request) fail the tests when mutated.
+
+## realm
+
+The `realm` UDP mask introduces the carrier's socket as Xray-core
+v26.10.31's client does: its URL read with Go's `url.Parse`, STUN answers
+read as pion/stun reads them, the rendezvous request written as Go's HTTP
+client writes it over HTTP/1.1 and its answer read as `encoding/json` reads
+it, the candidates and predictable symmetric-NAT ports it punches, and punch
+packets with their salt, padding and SHA-256 mask. Deliberate differences:
+
+- `portMapping` is not acted on yet: no UPnP or NAT-PMP mapping is made and
+  the gateway's external address is never offered, as when Xray-core finds
+  no gateway. Xray-core spends up to twice the timeout looking for one at
+  every dial.
+- It must be the last UDP mask, and runs neither with udphop, xdns nor
+  header-custom: Xray-core sends STUN and punch packets through the masks
+  after it, udphop and xdns send elsewhere, and header-custom keys its state
+  by the server's address while replies come from the peer's.
+- A URL port of 0 or above 65535, a host with a colon that is no IPv6
+  address, a token with control characters, a token or name that does not
+  unescape to UTF-8, and a STUN server whose port does not read as 1 to
+  65535 fail the configuration. Xray-core accepts them, then fails every
+  dial or skips the server.
+- The rendezvous is spoken over HTTP/1.1, where Go's client may negotiate
+  HTTP/2 over TLS, and over rustls's TLS, unshaped, where Xray-core uses
+  Go's own. `tlsConfig.alpn` is read and not used.
+- Names are resolved like the outbound's server address; Xray-core asks
+  Go's resolver.
+- The rendezvous call gives up after 20 seconds; Go's client waits for good.
+- The socket closes with the connection; Xray-core leaves it open until the
+  garbage collector finds it.
+- With `ipMode` `dual` on a system without IPv6 sockets, STUN servers
+  resolve to IPv4 only.
+- A Hysteria connection whose network changes closes, and the next dial is
+  introduced again: a new socket needs a new hole.
+- A peer address with a named IPv6 zone does not parse, which loses the
+  whole list, as any address Go cannot parse does there.
+
+Evidence: `tools/realm-oracle` records `Realm.Build`'s verdicts on 77 URLs,
+23 STUN servers and 29 settings, 720 STUN answers read by
+`parseSTUNBindingResponse`, 138 punch packets read by `DecodePunchPacket`,
+18 candidate sets and 31 rendezvous exchanges with Go's `realm.Client`; the
+tests replay them all, the requests byte for byte. Live against Xray-core's
+server through a local rendezvous speaking Hysteria's realm API, mKCP
+carries a TCP echo and UDP over a dual-stack and an IPv4 socket, with AES
+and noise inside realm; XHTTP over HTTP/3 and Hysteria, alone and with
+Salamander inside, and MASQUE over HTTP/3 carry the same; an unknown realm
+name gets no introduction.
+
+## xicmp
+
+The `xicmp` UDP mask writes and reads echo messages as Xray-core
+v26.10.31's client does: its identifier, sequence, client id and checksum,
+x/net/icmp's reading of replies, the drop of the system's own echo and of a
+raw socket's foreign identifiers, and Go's stripping of a raw IPv4 header.
+Deliberate differences:
+
+- Each server address gets its own socket, never bound and connected to it.
+  Xray-core binds one unconnected socket per family to the wildcard, which a
+  Network Extension refuses; replies here come only from the address each
+  packet went to, as Xray-core's Linux server sends them. A family the
+  addresses do not use needs no socket, where Xray-core fails every dial
+  unless sockets of both families open.
+- It must be the last UDP mask, and runs neither with udphop, xdns, realm
+  nor header-custom, nor on QUIC with sudoku: Xray-core fails every dial
+  with it anywhere else, the others send elsewhere, header-custom keys its
+  state by the server's port while replies come without one, and sudoku's
+  datagrams exceed what an echo carries.
+- An outbound address that is a name, with no `ips`, is refused when the
+  core starts; Xray-core never resolves it and fails every dial. With `ips`,
+  a name there must still resolve.
+- An Apple datagram socket keeps the client's identifier and receives every
+  reply from its address, so replies are told apart by identifier, as on a
+  raw socket. Xray-core's datagram sockets there also read the replies meant
+  for other connections to the same server.
+- An echo the socket has no room for is dropped, as a datagram would be;
+  Xray-core's writer waits.
+
+Evidence: `tools/xicmp-oracle` records `Xicmp.Build`'s verdicts on 36
+addresses and 13 settings, 44 echoes from Xray-core's `marshal`, 32
+checksums and 160 messages read by x/net/icmp's `ParseMessage`; the tests
+replay them all. Live against Xray-core's server on Linux, which reads ICMP
+on raw sockets, mKCP carries a TCP echo and UDP over datagram sockets, to
+the outbound's address and to two listed ones, and over raw sockets, with
+AES and noise inside xicmp; XHTTP over HTTP/3 and Hysteria, alone and with
+Salamander inside, before and after a rebind, and MASQUE over HTTP/3 carry
+the same.
 
 ## QUIC BBR profiles
 

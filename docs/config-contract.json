@@ -655,7 +655,7 @@
         "quicParams"
       ],
       "id": "FINALMASK",
-      "notes": "TCP supports one tlshello fragment mask and one header-custom mask. Hysteria, mKCP and XHTTP H3 support one UDP noise mask and one header-custom mask; Hysteria also supports one Salamander mask and mKCP any number of mkcp-legacy masks, preserving array order."
+      "notes": "TCP supports one tlshello fragment mask and one header-custom mask. Hysteria, mKCP, XHTTP H3 and MASQUE over HTTP/3 support one UDP noise mask and one header-custom mask; Hysteria also supports one Salamander mask and mKCP any number of mkcp-legacy masks, preserving array order."
     },
     {
       "context": "streamSettings.finalmask.udp[]",
@@ -794,7 +794,7 @@
         "padding_max"
       ],
       "id": "SUDOKU_MASK",
-      "notes": "TCP: the last mask, outermost on the wire; UDP: mKCP, Hysteria and XHTTP with exact h3 ALPN, where the carrier lets the system fragment its datagrams. ascii is entropy (default) or ascii; customTable(s) are 8 characters of 2 x, 2 p and 4 v, ignored in ASCII mode; padding is a percentage range, each end at most 100. A snake_case name applies when its camelCase field is empty or zero. Unknown modes and malformed tables are refused here, where Xray-core fails every dial."
+      "notes": "TCP: the last mask, outermost on the wire; UDP: mKCP, Hysteria, XHTTP with exact h3 ALPN and MASQUE over HTTP/3, where the carrier lets the system fragment its datagrams. ascii is entropy (default) or ascii; customTable(s) are 8 characters of 2 x, 2 p and 4 v, ignored in ASCII mode; padding is a percentage range, each end at most 100. A snake_case name applies when its camelCase field is empty or zero. Unknown modes and malformed tables are refused here, where Xray-core fails every dial."
     },
     {
       "context": "streamSettings.finalmask.udp[].settings (xdns)",
@@ -804,7 +804,7 @@
         "extraPoll"
       ],
       "id": "XDNS_MASK",
-      "notes": "mKCP, Hysteria and XHTTP with exact h3 ALPN; the last UDP mask, never with udphop, nor with sudoku on QUIC. Every datagram rides in the names of DNS queries to the resolvers, which reach the server's domain; polls keep queries waiting there for what it sends back. extraPoll is 0 to 3 polls after each packet and poll. At least one domain name and one resolver address are required."
+      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN and MASQUE over HTTP/3; the last UDP mask, never with udphop, nor with sudoku on QUIC. Every datagram rides in the names of DNS queries to the resolvers, which reach the server's domain; polls keep queries waiting there for what it sends back. extraPoll is 0 to 3 polls after each packet and poll. At least one domain name and one resolver address are required."
     },
     {
       "context": "streamSettings.finalmask.udp[].settings.domains[] (xdns)",
@@ -828,6 +828,37 @@
       ],
       "id": "XDNS_RESOLVER",
       "notes": "addrs are udp:// (the default) or tcp:// with an IP address and an optional port, 53 by default. DNS over TCP sends each message after its two-byte length, which Xray-core's client fails to write. Names, https:// resolvers and their tlsConfig and quicConfig are not supported yet. worker is read and, as in Xray-core, only DNS over HTTPS would use it."
+    },
+    {
+      "context": "streamSettings.finalmask.udp[].settings (realm)",
+      "fields": [
+        "url",
+        "stunServers",
+        "tlsConfig",
+        "ipMode",
+        "portMapping"
+      ],
+      "id": "REALM_MASK",
+      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN and MASQUE over HTTP/3; the last UDP mask, never with udphop, xdns or header-custom. The client finds its public addresses with STUN over the carrier's socket, asks the rendezvous at url to introduce it to the server registered under the realm name, punches a hole to the addresses the server reports and sends the carrier's datagrams to the one that answers. url is realm://token@host[:port]/name over HTTPS (port 443) or realm+http:// over HTTP (port 80), read with Go's url.Parse; its query and fragment are ignored. stunServers are one or more host:port entries, each port 1 to 65535. tlsConfig takes tlsSettings' fields for an HTTPS rendezvous; its fingerprint is checked and not used, as in Xray-core's HTTP client. ipMode is dual, v4 or v6, any other value reading as dual. Names are resolved like the outbound's server address."
+    },
+    {
+      "context": "streamSettings.finalmask.udp[].settings.portMapping (realm)",
+      "fields": [
+        "enabled",
+        "timeout",
+        "lifetime"
+      ],
+      "id": "REALM_PORT_MAPPING",
+      "notes": "Read as Xray-core reads it, enabled a boolean and timeout and lifetime 64-bit integers of seconds, but not acted on yet: no UPnP or NAT-PMP mapping is made, as when Xray-core finds no gateway."
+    },
+    {
+      "context": "streamSettings.finalmask.udp[].settings (xicmp)",
+      "fields": [
+        "dgram",
+        "ips"
+      ],
+      "id": "XICMP_MASK",
+      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN and MASQUE over HTTP/3; the last UDP mask, never with udphop, xdns, realm or header-custom, nor with sudoku on QUIC. Every datagram rides in an ICMP echo request to the server, after an 8-byte client id, and comes back in its echo reply. dgram opens unprivileged datagram ICMP sockets; without it they are raw sockets, which need root or CAP_NET_RAW. ips are the server addresses, one drawn per packet; empty sends to the outbound's address, which must then be an IP address, else the core refuses to start. A zoned IPv6 address is refused, where Xray-core drops the zone and reaches nothing."
     },
     {
       "context": "streamSettings.finalmask.tcp[].settings (xmc)",
@@ -858,7 +889,7 @@
         "server"
       ],
       "id": "HEADER_CUSTOM_UDP",
-      "notes": "mKCP, Hysteria and XHTTP with exact h3 ALPN, never with udphop. mode is prefix (or empty), every datagram carrying the client's items in front and the server's checked and taken off, or standalone, the client's items sent alone and the server's answer awaited before the first datagram to a peer and five seconds after each answer; an unanswered request goes out again after a second on QUIC carriers. Case-sensitive, as in Xray-core."
+      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN and MASQUE over HTTP/3, never with udphop. mode is prefix (or empty), every datagram carrying the client's items in front and the server's checked and taken off, or standalone, the client's items sent alone and the server's answer awaited before the first datagram to a peer and five seconds after each answer; an unanswered request goes out again after a second on QUIC carriers. Case-sensitive, as in Xray-core."
     },
     {
       "context": "streamSettings.finalmask.udp[].settings.{client,server}[] (header-custom)",

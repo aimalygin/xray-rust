@@ -1621,6 +1621,18 @@ async fn start_xray_vless_server_customized(
     server_config: XrayVlessServerConfig,
     customize: impl FnOnce(&mut serde_json::Value),
 ) -> XrayServer {
+    start_xray_vless_server_listening(xray_checkout, server_config, customize, true).await
+}
+
+/// [`start_xray_vless_server_customized`], waiting for the UDP listener of
+/// an mKCP or HTTP/3 inbound only when `udp_listener`: under the `xicmp`
+/// mask the inbound reads ICMP and binds no UDP port.
+async fn start_xray_vless_server_listening(
+    xray_checkout: &Path,
+    server_config: XrayVlessServerConfig,
+    customize: impl FnOnce(&mut serde_json::Value),
+    udp_listener: bool,
+) -> XrayServer {
     let temp_dir = create_temp_dir("xray-rust-local-interop");
     let binary = temp_dir
         .path
@@ -1694,8 +1706,10 @@ async fn start_xray_vless_server_customized(
         .expect("start xray process");
 
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-    if uses_udp_listener {
+    if uses_udp_listener && udp_listener {
         wait_for_udp_listener(&mut child, addr, &stdout_path, &stderr_path).await;
+    } else if uses_udp_listener {
+        wait_for_xray_startup(&mut child, &stdout_path, &stderr_path).await;
     } else {
         wait_for_tcp_listener(&mut child, addr, &stdout_path, &stderr_path).await;
     }
@@ -1997,6 +2011,8 @@ fn rust_vless_outbound(
             tcp_sudoku: None,
             tcp_xmc: None,
             udp_xdns: None,
+            udp_realm: None,
+            udp_xicmp: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -3670,6 +3686,15 @@ mod xdns;
 
 #[path = "local_xray_interop_tests/masque.rs"]
 mod masque;
+
+#[path = "../../../tests/support/realm_rendezvous.rs"]
+mod realm_rendezvous;
+
+#[path = "local_xray_interop_tests/realm.rs"]
+mod realm;
+
+#[path = "local_xray_interop_tests/xicmp.rs"]
+mod xicmp;
 
 /// Record-level observer: it forwards the finalized ClientHello unchanged and
 /// then becomes a byte relay, including Vision's later direct-mode payload.

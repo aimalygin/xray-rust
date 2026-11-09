@@ -251,6 +251,7 @@ fn build_transport_layer(
     connector: &ConnectorConfig,
     paths: ServerConfigPaths,
 ) -> Result<TransportLayer, CoreError> {
+    check_xicmp_server(stream, server)?;
     let host_fallback = || match connector {
         ConnectorConfig::Tls(tls) if !tls.server_name.is_empty() => tls.server_name.clone(),
         ConnectorConfig::Reality(reality) if !reality.server_name.is_empty() => {
@@ -356,6 +357,8 @@ fn kcp_config(
             .map(super::xhttp::udp_noise_config)
             .transpose()?,
         xdns: stream.udp_xdns.as_ref().map(xdns_config),
+        realm: stream.udp_realm.as_ref().map(realm_config),
+        xicmp: stream.udp_xicmp.as_ref().map(xicmp_config),
     })
 }
 
@@ -652,6 +655,84 @@ pub(super) fn xdns_config(xdns: &xray_config::XdnsMask) -> Arc<xray_transport::x
             .collect(),
         extra_poll: xdns.extra_poll,
     })
+}
+
+/// The `realm` mask's client settings. Its rendezvous's TLS names the
+/// rendezvous host unless `tlsConfig` names a server, as Go's HTTP client
+/// does, and never shapes its hello: Xray-core's client uses Go's own TLS.
+pub(super) fn realm_config(
+    realm: &xray_config::RealmMask,
+) -> Arc<xray_transport::realm::RealmConfig> {
+    use xray_transport::realm::{RealmConfig, RealmFamily, RealmScheme, RealmStunServer};
+    let scheme = match realm.scheme {
+        xray_config::RealmScheme::Https => RealmScheme::Https,
+        xray_config::RealmScheme::Http => RealmScheme::Http,
+    };
+    let tls = (scheme == RealmScheme::Https).then(|| {
+        let settings = realm.tls.as_ref();
+        TlsClientConfig {
+            server_name: settings
+                .and_then(|tls| tls.server_name.clone())
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| realm.host.clone()),
+            allow_insecure: false,
+            pinned_peer_cert_sha256: settings
+                .map(|tls| tls.pinned_peer_cert_sha256.clone())
+                .unwrap_or_default(),
+            verify_peer_cert_by_name: settings
+                .map(|tls| tls.verify_peer_cert_by_name.clone())
+                .unwrap_or_default(),
+            alpn: Vec::new(),
+            fingerprint: None,
+        }
+    });
+    Arc::new(RealmConfig {
+        scheme,
+        host: realm.host.clone(),
+        port_text: realm.port_text.clone(),
+        port: realm.port,
+        token: Arc::new(realm.token.clone()),
+        id: realm.id.clone(),
+        stun_servers: realm
+            .stun_servers
+            .iter()
+            .map(|server| RealmStunServer {
+                host: server.host.clone(),
+                port_text: server.port_text.clone(),
+                port: server.port,
+            })
+            .collect(),
+        tls,
+        family: match realm.ip_mode {
+            xray_config::RealmIpMode::Dual => RealmFamily::Dual,
+            xray_config::RealmIpMode::V4 => RealmFamily::V4,
+            xray_config::RealmIpMode::V6 => RealmFamily::V6,
+        },
+    })
+}
+
+/// The `xicmp` mask's client settings.
+pub(super) fn xicmp_config(
+    xicmp: &xray_config::XicmpMask,
+) -> Arc<xray_transport::xicmp::XicmpConfig> {
+    Arc::new(xray_transport::xicmp::XicmpConfig {
+        dgram: xicmp.dgram,
+        ips: xicmp.ips.clone(),
+    })
+}
+
+/// Xray-core's xicmp client sends to its `ips`, else to the outbound's
+/// address, which it never resolves: a name there fails every dial.
+pub(super) fn check_xicmp_server(
+    stream: &StreamSettings,
+    server: &TargetAddr,
+) -> Result<(), CoreError> {
+    match (&stream.udp_xicmp, server) {
+        (Some(xicmp), TargetAddr::Domain(_)) if xicmp.ips.is_empty() => {
+            Err(CoreError::UnsupportedOutboundNetwork)
+        }
+        _ => Ok(()),
+    }
 }
 
 /// A QUIC carrier's `sudoku` UDP mask, at its place among the carrier's

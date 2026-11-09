@@ -741,6 +741,15 @@ impl Core {
                     .with_socket_options(Arc::new(xray_transport::SocketOptions::default())),
             )
         };
+        // A realm mask's STUN servers and rendezvous are resolved like an
+        // outbound's server.
+        let transport_dialer = Arc::new(
+            transport_dialer.as_ref().clone().with_realm_resolver(
+                dns.bootstrap
+                    .clone()
+                    .unwrap_or_else(|| Arc::clone(&dns.destination)),
+            ),
+        );
         dns.rules
             .route_probe
             .get_or_insert_with(|| transport_dialer.route_probe());
@@ -766,7 +775,9 @@ impl Core {
             if (outbound.stream.udp_noise.is_some()
                 || outbound.stream.udp_header_custom.is_some()
                 || outbound.stream.udp_sudoku.is_some()
-                || outbound.stream.udp_xdns.is_some())
+                || outbound.stream.udp_xdns.is_some()
+                || outbound.stream.udp_realm.is_some()
+                || outbound.stream.udp_xicmp.is_some())
                 && matches!(
                     outbound.settings,
                     xray_config::OutboundSettings::Freedom(_)
@@ -807,8 +818,8 @@ impl Core {
                 .map_err(|_| CoreError::UnsupportedOutboundNetwork)?;
             }
             // `header-custom`, `sudoku` and `xmc` run on the TCP carriers of
-            // the outbounds that proxy over a stream transport, not on direct
-            // or DNS dials.
+            // the outbounds that proxy over a stream transport, MASQUE's over
+            // HTTP/2 among them, not on direct or DNS dials.
             if (outbound.stream.tcp_header_custom.is_some()
                 || outbound.stream.tcp_sudoku.is_some()
                 || outbound.stream.tcp_xmc.is_some())
@@ -821,6 +832,7 @@ impl Core {
                         | xray_config::OutboundSettings::Socks(_)
                         | xray_config::OutboundSettings::Http(_)
                 )
+                && !outbound::masque::over_http2(outbound)
             {
                 return Err(CoreError::UnsupportedOutboundNetwork);
             }
@@ -838,6 +850,11 @@ impl Core {
                 xray_config::StreamTransport::Hysteria(_)
             ) {
                 outbound::HysteriaOutbound::new(outbound)?;
+            }
+            // Built for each flow's first use; its refusals belong to the
+            // start, as Hysteria's and WireGuard's.
+            if matches!(outbound.settings, xray_config::OutboundSettings::Masque(_)) {
+                outbound::MasqueOutbound::new(outbound)?;
             }
         }
         let config = Arc::new(config);
