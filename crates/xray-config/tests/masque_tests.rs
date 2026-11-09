@@ -140,12 +140,21 @@ fn path_variables_become_wildcards() {
     );
 }
 
+/// The header fields as plain pairs.
+fn header_pairs(settings: &MasqueSettings) -> Vec<(String, String)> {
+    settings
+        .headers
+        .iter()
+        .map(|(name, value)| (name.clone(), value.to_string()))
+        .collect()
+}
+
 #[test]
 fn credentials_become_basic_authorization_and_headers_are_canonical() {
     let settings = transport(Some(json!({"user": "alice", "pass": "secret",
         "headers": {"x-custom-header": "1", "user-agent": "firefox"}})));
     assert_eq!(
-        settings.headers,
+        header_pairs(&settings),
         [
             (
                 "Authorization".to_owned(),
@@ -158,8 +167,35 @@ fn credentials_become_basic_authorization_and_headers_are_canonical() {
     // A pass alone still authorizes, with an empty user.
     let settings = transport(Some(json!({"pass": "p"})));
     assert_eq!(
-        settings.headers,
+        header_pairs(&settings),
         [("Authorization".to_owned(), "Basic OnA=".to_owned())]
+    );
+}
+
+#[test]
+fn credentials_stay_out_of_debug_output() {
+    use base64::Engine as _;
+    let settings = transport(Some(
+        json!({"user": "masque-user", "pass": "masque-pass-7f3a",
+        "headers": {"X-Token": "token-value-9c1e"}}),
+    ));
+    let encoded = base64::engine::general_purpose::STANDARD.encode("masque-user:masque-pass-7f3a");
+    let debug = format!("{settings:?}");
+    assert!(
+        debug.contains("Authorization") && debug.contains("X-Token"),
+        "{debug}"
+    );
+    for secret in ["masque-pass-7f3a", encoded.as_str(), "token-value-9c1e"] {
+        assert!(!debug.contains(secret), "{debug}");
+    }
+    // Nor through the outbound around it.
+    let parsed = parse_xray_json(&config(base(Some(json!({"user": "masque-user",
+        "pass": "masque-pass-7f3a"})))))
+    .unwrap();
+    let debug = format!("{:?}", parsed.config.outbounds[0]);
+    assert!(
+        !debug.contains("masque-pass-7f3a") && !debug.contains(&encoded),
+        "{debug}"
     );
 }
 

@@ -4,6 +4,7 @@
 use super::*;
 use crate::{MasqueOutboundSettings, MasqueSettings, XhttpXmuxSettings, MASQUE_DEFAULT_XMUX};
 use base64::Engine as _;
+use zeroize::Zeroizing;
 
 /// Xray's `masque.DefaultPath`.
 pub(crate) const MASQUE_DEFAULT_PATH: &str = "/.well-known/masque/ip/*/*/";
@@ -216,7 +217,7 @@ impl Parser<'_> {
             valid = false;
         }
         let credentials = !user.is_empty() || !pass.is_empty();
-        let mut fields: Vec<(String, String)> = Vec::with_capacity(headers.len() + 1);
+        let mut fields: Vec<(String, Zeroizing<String>)> = Vec::with_capacity(headers.len() + 1);
         for (name, value) in headers {
             if !is_http_token(name) || !valid_header_field_value(value) {
                 self.error(
@@ -242,25 +243,26 @@ impl Parser<'_> {
                 valid = false;
                 continue;
             }
-            fields.push((canonical_header_name(name), value.to_owned()));
+            fields.push((
+                canonical_header_name(name),
+                Zeroizing::new(value.to_owned()),
+            ));
         }
         if credentials {
             if user.contains(':') {
                 self.error(format!("{path}.user"), format!(r#"invalid "user": {user}"#));
                 valid = false;
             }
-            fields.push((
-                "Authorization".to_owned(),
-                format!(
-                    "Basic {}",
-                    base64::engine::general_purpose::STANDARD.encode(format!("{user}:{pass}"))
-                ),
-            ));
+            // Built in place, so no copy of the credential outlives it.
+            let pair = Zeroizing::new(format!("{user}:{pass}"));
+            let mut value = Zeroizing::new(String::from("Basic "));
+            base64::engine::general_purpose::STANDARD.encode_string(pair.as_bytes(), &mut value);
+            fields.push(("Authorization".to_owned(), value));
         }
         // `http.Header.Set` keeps the last value of a name: sort, then let a
         // later duplicate replace an earlier one.
         fields.sort_by(|a, b| a.0.cmp(&b.0));
-        let mut deduped: Vec<(String, String)> = Vec::with_capacity(fields.len());
+        let mut deduped: Vec<(String, Zeroizing<String>)> = Vec::with_capacity(fields.len());
         for (name, value) in fields {
             match deduped.last_mut() {
                 Some((last, last_value)) if *last == name => *last_value = value,
