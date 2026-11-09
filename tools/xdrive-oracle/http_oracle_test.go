@@ -3,7 +3,8 @@
 // request (s3Storage.target and sign at a fixed time, with
 // ValidateS3Config and objectKey), the S3 answers it reads (s3ListPage and
 // s3ErrorCode), template decoding and checking (newTemplateStorage), subst,
-// jsonString and jsonNumber, Go's regexp as a template's namesRegex runs,
+// jsonString and jsonNumber, http.ParseTime on the dates a Retry-After
+// header may carry, Go's regexp as a template's namesRegex runs,
 // net/url's Parse, ResolveReference and String, http.Client's redirect
 // policy, driven through a RoundTripper that answers from a script, and the
 // frames Go's HTTP/2 client writes for a request, read over a pipe. Nothing
@@ -117,6 +118,13 @@ type xrayRustJSONPathCase struct {
 	Number  int64  `json:"number"`
 }
 
+type xrayRustHTTPDateCase struct {
+	Raw   string `json:"raw"`
+	OK    bool   `json:"ok"`
+	Unix  int64  `json:"unix"`
+	Nanos int    `json:"nanos"`
+}
+
 type xrayRustRegexpCase struct {
 	Pattern   string       `json:"pattern"`
 	Error     string       `json:"error"`
@@ -181,6 +189,7 @@ type xrayRustHTTPVectors struct {
 	Templates []xrayRustTemplateCase `json:"templates"`
 	Subst     []xrayRustSubstCase    `json:"subst"`
 	JSONPaths []xrayRustJSONPathCase `json:"jsonPaths"`
+	HTTPDates []xrayRustHTTPDateCase `json:"httpDates"`
 	Regexps   []xrayRustRegexpCase   `json:"regexps"`
 	URLs      []xrayRustURLCase      `json:"urls"`
 	Redirects []xrayRustRedirectCase `json:"redirects"`
@@ -405,7 +414,10 @@ func xrayRustSubst() []xrayRustSubstCase {
 }
 
 func xrayRustJSONPaths() []xrayRustJSONPathCase {
-	payload := `{"access_token":"tok","expires_in":3599.9,"neg":-2.7,"big":1e300,"a":{"b":{"c":"deep","n":7}},` +
+	// Numbers stay inside int64: past it, int64(float64) is the machine's
+	// answer (arm64 saturates, amd64 gives the minimum), and the fixture
+	// must come out the same on both.
+	payload := `{"access_token":"tok","expires_in":3599.9,"neg":-2.7,"big":1e18,"a":{"b":{"c":"deep","n":7}},` +
 		`"arr":[1],"s":"7","null":null,"t":true,"dup":"a","dup":"b"}`
 	paths := []string{"access_token", "expires_in", "neg", "big", "a.b.c", "a.b.n", "a.b", "arr.0", "s", "null",
 		"t", "dup", "missing", "a..b", ""}
@@ -419,6 +431,103 @@ func xrayRustJSONPaths() []xrayRustJSONPathCase {
 	for i := range cases {
 		cases[i].String = jsonString([]byte(cases[i].Payload), cases[i].Path)
 		cases[i].Number = jsonNumber([]byte(cases[i].Payload), cases[i].Path)
+	}
+	return cases
+}
+
+// The dates a Retry-After header may carry, read by http.ParseTime as the
+// S3 storage reads them. A zone abbreviation that names the local zone
+// takes its offset, so the run reads them as if the machine were on UTC.
+func xrayRustHTTPDates() []xrayRustHTTPDateCase {
+	local := time.Local
+	time.Local = time.UTC
+	defer func() { time.Local = local }()
+	raws := []string{
+		"", "0", "3", "-5", "garbage",
+		// http.TimeFormat
+		"Mon, 02 Jan 2026 15:04:05 GMT",
+		"mon, 02 JAN 2026 15:04:05 GMT",
+		"Mon, 02 Jan 2026 15:04:05 gmt",
+		"Mon,   02 Jan 2026 15:04:05   GMT",
+		"Mon,02 Jan 2026 15:04:05 GMT",
+		"Xyz, 02 Jan 2026 15:04:05 GMT",
+		"Fri, 02 Jan 2026 15:04:05 GMT",
+		"Monday, 02 Jan 2026 15:04:05 GMT",
+		"Mon, 2 Jan 2026 15:04:05 GMT",
+		"Mon, 00 Jan 2026 15:04:05 GMT",
+		"Mon, 31 Apr 2026 15:04:05 GMT",
+		"Mon, 30 Feb 2026 15:04:05 GMT",
+		"Mon, 29 Feb 2024 15:04:05 GMT",
+		"Mon, 29 Feb 2100 15:04:05 GMT",
+		"Mon, 29 Feb 2000 15:04:05 GMT",
+		"Mon, 02 Jan 99999 15:04:05 GMT",
+		"Mon, 02 Jan 999999999999999999999 15:04:05 GMT",
+		"Mon, 02 Jan 206 15:04:05 GMT",
+		"Mon, 02 Jan +2026 15:04:05 GMT",
+		"Mon, 02 Jan 20a6 15:04:05 GMT",
+		"Mon, 02 Jan 0000 15:04:05 GMT",
+		"Mon, 02 Jan 9999 23:59:59 GMT",
+		"Mon, 02 Jan 2026 5:04:05 GMT",
+		"Mon, 02 Jan 2026 24:00:00 GMT",
+		"Mon, 02 Jan 2026 15:4:05 GMT",
+		"Mon, 02 Jan 2026 15:04:60 GMT",
+		"Mon, 02 Jan 2026 15:04:05.123456789123 GMT",
+		"Mon, 02 Jan 2026 15:04:05,5 GMT",
+		"Mon, 02 Jan 2026 15:04:05. GMT",
+		"Mon, 02 Jan 2026 15:04:05 GMT ",
+		"Mon, 02 Jän 2026 15:04:05 GMT",
+		"Mön, 02 Jan 2026 15:04:05 GMT",
+		// time.RFC850
+		"Monday, 02-Jan-26 15:04:05 GMT",
+		"monday, 02-jan-26 15:04:05 GMT",
+		"Sunday, 02-Jan-70 00:00:00 GMT",
+		"Monday, 02-Jan-68 15:04:05 GMT",
+		"Monday, 02-Jan-69 15:04:05 GMT",
+		"Monday, 02-Jan-2026 15:04:05 GMT",
+		"Monday, 02-Jan--5 15:04:05 GMT",
+		"Monday, 02-Jan-+5 15:04:05 GMT",
+		"Monday, 02-Jan-26 15:04:05 UTC",
+		"Monday, 02-Jan-26 15:04:05 UTCX",
+		"Monday, 02-Jan-26 15:04:05 PST",
+		"Monday, 02-Jan-26 15:04:05 GMT+3",
+		"Monday, 02-Jan-26 15:04:05 GMT-0",
+		"Monday, 02-Jan-26 15:04:05 GMT+30",
+		"Monday, 02-Jan-26 15:04:05 GMT+",
+		"Monday, 02-Jan-26 15:04:05 +03",
+		"Monday, 02-Jan-26 15:04:05 -0330",
+		"Monday, 02-Jan-26 15:04:05 +033",
+		"Monday, 02-Jan-26 15:04:05 +",
+		"Monday, 02-Jan-26 15:04:05 ABCDT",
+		"Monday, 02-Jan-26 15:04:05 ABCDE",
+		"Monday, 02-Jan-26 15:04:05 ABCT",
+		"Monday, 02-Jan-26 15:04:05 ABCD",
+		"Monday, 02-Jan-26 15:04:05 WITA",
+		"Monday, 02-Jan-26 15:04:05 ChST",
+		"Monday, 02-Jan-26 15:04:05 MeST",
+		"Monday, 02-Jan-26 15:04:05 ABCDEF",
+		"Monday, 02-Jan-26 15:04:05 AB",
+		"Monday, 02-Jan-26 15:04:05 abc",
+		"Monday, 02-Jan-26 15:04:05",
+		"Mon, 02-Jan-26 15:04:05 GMT",
+		// time.ANSIC
+		"Mon Jan  2 15:04:05 2026",
+		"Mon Jan 2 15:04:05 2026",
+		"Mon Jan 02 15:04:05 2026",
+		"Mon Jan 123 15:04:05 2026",
+		"Mon Jan  2 15:04:05.5 2026",
+		"Mon Jan  2 15:04:05 99999",
+		"Mon Jan  2 15:04:05 2026 ",
+		"Mon Jan  2 15:04:05 2026 GMT",
+		"Mon Feb 29 15:04:05 2023",
+		" Mon Jan  2 15:04:05 2026",
+	}
+	cases := []xrayRustHTTPDateCase{}
+	for _, raw := range raws {
+		c := xrayRustHTTPDateCase{Raw: raw}
+		if at, err := http.ParseTime(raw); err == nil {
+			c.OK, c.Unix, c.Nanos = true, at.Unix(), at.Nanosecond()
+		}
+		cases = append(cases, c)
 	}
 	return cases
 }
@@ -773,6 +882,7 @@ func TestXrayRustHTTPOracle(t *testing.T) {
 		Templates: xrayRustTemplates(),
 		Subst:     xrayRustSubst(),
 		JSONPaths: xrayRustJSONPaths(),
+		HTTPDates: xrayRustHTTPDates(),
 		Regexps:   xrayRustRegexps(),
 		URLs:      xrayRustURLs(),
 		Redirects: xrayRustRedirects(),

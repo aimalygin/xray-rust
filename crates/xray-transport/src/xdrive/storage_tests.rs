@@ -484,3 +484,41 @@ async fn template_two_steps_and_tokens_work_as_xray_core_does() {
         .count();
     assert_eq!(token_requests, 2);
 }
+
+#[tokio::test]
+async fn template_tokens_past_gos_durations_run_out_as_on_arm64() {
+    let server = serve(|request, _| match request.target.as_str() {
+        "/token" => (
+            200,
+            vec![],
+            br#"{"access_token":"tok","expires_in":1e300}"#.to_vec(),
+        ),
+        "/files/f/x" if request.header("authorization") == Some("Bearer tok") => {
+            (200, vec![], b"payload".to_vec())
+        }
+        _ => (404, vec![], vec![]),
+    })
+    .await;
+    let base = format!("http://{}", server.addr);
+    let auth = format!(
+        r#""auth": {{"type": "oauth2", "tokenUrl": "{base}/token", "expiryPath": "expires_in",
+            "form": {{"grant_type": "refresh_token"}},
+            "header": {{"Authorization": "Bearer {{token}}"}}}},"#
+    );
+    let storage = template(&server, &auth, "");
+    for _ in 0..2 {
+        assert_eq!(
+            storage.get("x").await.unwrap(),
+            Bytes::from_static(b"payload")
+        );
+    }
+    // 1e300 saturates to int64's maximum; less the minute's margin and
+    // times a second, it wraps to a minute ago, so each request asks for
+    // a token again.
+    let token_requests = server
+        .seen()
+        .into_iter()
+        .filter(|s| s.target == "/token")
+        .count();
+    assert_eq!(token_requests, 2);
+}

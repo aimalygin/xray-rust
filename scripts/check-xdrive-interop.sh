@@ -24,10 +24,10 @@ PY
 # object names, the local storage's name resolution, and its segment writer
 # and reader driven step by step; then what it and the Go library under it
 # make of the HTTP storages: S3 URLs and SigV4 headers at a fixed time, S3
-# answers, templates, subst and JSON paths, regexp, net/url resolution and
-# http.Client's redirects. The oracles are test files the overlay adds to
-# the package without touching the checkout; their runs are deterministic,
-# so fresh ones match the fixtures byte for byte.
+# answers, templates, subst and JSON paths, Retry-After dates, regexp,
+# net/url resolution and http.Client's redirects. The oracles are test files
+# the overlay adds to the package without touching the checkout; their runs
+# are deterministic, so fresh ones match the fixtures byte for byte.
 cat >"$TEST_ROOT/overlay.json" <<JSON
 {"Replace": {"$CHECKOUT/transport/internet/xdrive/xray_rust_oracle_test.go": "$WORKSPACE_ROOT/tools/xdrive-oracle/wal_oracle_test.go", "$CHECKOUT/transport/internet/xdrive/xray_rust_http_oracle_test.go": "$WORKSPACE_ROOT/tools/xdrive-oracle/http_oracle_test.go"}}
 JSON
@@ -36,8 +36,16 @@ XDRIVE_ORACLE_OUT="$TEST_ROOT/wal-vectors.json" \
   env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
   go -C "$CHECKOUT" test -mod=readonly -overlay "$TEST_ROOT/overlay.json" \
   ./transport/internet/xdrive -run '^TestXrayRust(HTTP)?Oracle$' -count=1 >/dev/null
-cmp "$WORKSPACE_ROOT/tests/fixtures/xdrive/wal-vectors.json" "$TEST_ROOT/wal-vectors.json"
-cmp "$WORKSPACE_ROOT/tests/fixtures/xdrive/http-vectors.json" "$TEST_ROOT/http-vectors.json"
+# A fixture that drifts shows how, not only the first byte where.
+same_as_fixture() {
+  if ! cmp -s "$WORKSPACE_ROOT/tests/fixtures/xdrive/$1" "$TEST_ROOT/$1"; then
+    echo "tests/fixtures/xdrive/$1 differs from what the pinned Xray-core derives:" >&2
+    diff -u "$WORKSPACE_ROOT/tests/fixtures/xdrive/$1" "$TEST_ROOT/$1" | head -n 80 >&2 || true
+    return 1
+  fi
+}
+same_as_fixture wal-vectors.json
+same_as_fixture http-vectors.json
 
 cd "$WORKSPACE_ROOT"
 cargo test --locked -p xray-proxy --lib go_url

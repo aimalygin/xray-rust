@@ -19,7 +19,7 @@ use super::goregex::GoRegex;
 use super::h2::{build_request, H2Connection};
 use super::jsonpath::{json_number, json_string};
 use super::redirect::{follow, new_request_url, Followed};
-use super::s3::{S3Shared, XdriveS3};
+use super::s3::{parse_http_date, S3Shared, XdriveS3};
 use super::template::{subst, OpTemplate, StorageTemplate};
 use super::xml::{error_code, parse_list_page};
 
@@ -263,6 +263,23 @@ fn substitution_and_json_paths_match_xray_core() {
             case["number"].as_i64().unwrap(),
             "{payload} {path}"
         );
+    }
+}
+
+#[test]
+fn http_dates_match_go() {
+    let vectors = vectors();
+    let cases = vectors["httpDates"].as_array().unwrap();
+    assert!(cases.len() > 70);
+    for case in cases {
+        let raw = case["raw"].as_str().unwrap();
+        let want = case["ok"].as_bool().unwrap().then(|| {
+            (
+                case["unix"].as_i64().unwrap(),
+                case["nanos"].as_u64().unwrap() as u32,
+            )
+        });
+        assert_eq!(parse_http_date(raw), want, "{raw:?}");
     }
 }
 

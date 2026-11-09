@@ -6,6 +6,9 @@
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use tokio::time::Instant;
 
 use super::client::{
     Http1Hosts, ServiceClient, ServiceDialer, ServiceError, ServiceRequest, ServiceResponse,
@@ -131,5 +134,46 @@ impl SessionHttp {
         request: Followed,
     ) -> Result<ServiceResponse, ServiceError> {
         follow(request, |hop| async move { self.send(&hop).await }).await
+    }
+}
+
+/// When a token handed out at `now` for `lifetime` seconds runs out, as
+/// `time.Now().Add(time.Duration(lifetime) * time.Second)` in `drive.go` and
+/// `template.go` puts it: the product wraps as Go's `int64` does, so a
+/// lifetime past 292 years lands somewhere else, perhaps in the past,
+/// where `Instant + Duration` would panic. An expiry `Instant` can't hold
+/// (none within 292 years on the platforms here) counts as now: the token
+/// is fetched again on its next use.
+pub(crate) fn token_expiry(now: Instant, lifetime: i64) -> Instant {
+    let nanos = lifetime.wrapping_mul(1_000_000_000);
+    let span = Duration::from_nanos(nanos.unsigned_abs());
+    if nanos >= 0 {
+        now.checked_add(span)
+    } else {
+        now.checked_sub(span)
+    }
+    .unwrap_or(now)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_lifetimes_wrap_as_go_multiplies_them() {
+        let now = Instant::now();
+        let before = |seconds| now.checked_sub(Duration::from_secs(seconds)).unwrap_or(now);
+        assert_eq!(token_expiry(now, 3540), now + Duration::from_secs(3540));
+        assert_eq!(token_expiry(now, 0), now);
+        assert_eq!(token_expiry(now, -5), before(5));
+        // (2^63 - 61) × 10^9 is -61 × 10^9 in int64: a lifetime of 1e300,
+        // saturated as arm64 converts it and less the minute's margin, ran
+        // out a minute ago.
+        assert_eq!(token_expiry(now, i64::MAX - 60), before(61));
+        assert_eq!(token_expiry(now, i64::MAX), before(1));
+        assert_eq!(token_expiry(now, i64::MIN), now);
+        // 9223372037 seconds is past the int64 nanoseconds Go holds and
+        // wraps to 292 years ago.
+        assert!(token_expiry(now, 9_223_372_037) <= now);
     }
 }

@@ -34,8 +34,10 @@ pub(crate) fn json_number(payload: &[u8], path: &str) -> i64 {
     }
 }
 
-/// Go's conversion of a finite float to `int64`: toward zero, saturating
-/// beyond the range as arm64 and amd64 both do for the values JSON gives.
+/// Go's conversion of a finite float to `int64`: toward zero, and beyond
+/// the range whatever the machine gives, which the Go spec leaves to the
+/// implementation. arm64, where phones and Apple's computers run Xray-core,
+/// saturates, and so does this; amd64 gives the minimum on either side.
 fn go_int64(value: f64) -> i64 {
     if value >= 9_223_372_036_854_775_807.0 {
         i64::MAX
@@ -63,6 +65,15 @@ mod tests {
         assert_eq!(json_number(payload, "n"), 3599);
         assert_eq!(json_number(payload, "s"), 0);
         assert_eq!(json_number(br#"{"n":-2.7}"#, "n"), -2);
+        // Beyond int64, arm64's answer; the oracle vectors stay inside it,
+        // where Go's is the same everywhere.
+        assert_eq!(json_number(br#"{"n":1e300}"#, "n"), i64::MAX);
+        assert_eq!(json_number(br#"{"n":-1e300}"#, "n"), i64::MIN);
+        assert_eq!(json_number(br#"{"n":9223372036854775807}"#, "n"), i64::MAX);
+        assert_eq!(
+            json_number(br#"{"n":1e18}"#, "n"),
+            1_000_000_000_000_000_000
+        );
         // The last of a repeated key wins, as in Go.
         assert_eq!(json_string(br#"{"k":"a","k":"b"}"#, "k"), "b");
         assert_eq!(json_string(b"{\"k\":\"a\xffb\"}", "k"), "a\u{fffd}b");

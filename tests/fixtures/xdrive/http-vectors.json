@@ -1950,91 +1950,91 @@
   ],
   "jsonPaths": [
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "access_token",
       "string": "tok",
       "number": 0
     },
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "expires_in",
       "string": "",
       "number": 3599
     },
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "neg",
       "string": "",
       "number": -2
     },
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "big",
       "string": "",
-      "number": 9223372036854775807
+      "number": 1000000000000000000
     },
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "a.b.c",
       "string": "deep",
       "number": 0
     },
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "a.b.n",
       "string": "",
       "number": 7
     },
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "a.b",
       "string": "",
       "number": 0
     },
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "arr.0",
       "string": "",
       "number": 0
     },
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "s",
       "string": "7",
       "number": 0
     },
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "null",
       "string": "",
       "number": 0
     },
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "t",
       "string": "",
       "number": 0
     },
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "dup",
       "string": "b",
       "number": 0
     },
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "missing",
       "string": "",
       "number": 0
     },
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "a..b",
       "string": "",
       "number": 0
     },
     {
-      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e18,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
       "path": "",
       "string": "",
       "number": 0
@@ -2068,6 +2068,476 @@
       "path": "x",
       "string": "a�b",
       "number": 0
+    }
+  ],
+  "httpDates": [
+    {
+      "raw": "",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "0",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "3",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "-5",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "garbage",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan 2026 15:04:05 GMT",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "mon, 02 JAN 2026 15:04:05 GMT",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan 2026 15:04:05 gmt",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon,   02 Jan 2026 15:04:05   GMT",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon,02 Jan 2026 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Xyz, 02 Jan 2026 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Fri, 02 Jan 2026 15:04:05 GMT",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02 Jan 2026 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 2 Jan 2026 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 00 Jan 2026 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 31 Apr 2026 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 30 Feb 2026 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 29 Feb 2024 15:04:05 GMT",
+      "ok": true,
+      "unix": 1709219045,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 29 Feb 2100 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 29 Feb 2000 15:04:05 GMT",
+      "ok": true,
+      "unix": 951836645,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan 99999 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan 999999999999999999999 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan 206 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan +2026 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan 20a6 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan 0000 15:04:05 GMT",
+      "ok": true,
+      "unix": -62167078555,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan 9999 23:59:59 GMT",
+      "ok": true,
+      "unix": 253370937599,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan 2026 5:04:05 GMT",
+      "ok": true,
+      "unix": 1767330245,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan 2026 24:00:00 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan 2026 15:4:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan 2026 15:04:60 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan 2026 15:04:05.123456789123 GMT",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 123456789
+    },
+    {
+      "raw": "Mon, 02 Jan 2026 15:04:05,5 GMT",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 500000000
+    },
+    {
+      "raw": "Mon, 02 Jan 2026 15:04:05. GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jan 2026 15:04:05 GMT ",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02 Jän 2026 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mön, 02 Jan 2026 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 GMT",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "monday, 02-jan-26 15:04:05 GMT",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Sunday, 02-Jan-70 00:00:00 GMT",
+      "ok": true,
+      "unix": 86400,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-68 15:04:05 GMT",
+      "ok": true,
+      "unix": 3092742245,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-69 15:04:05 GMT",
+      "ok": true,
+      "unix": -31395355,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-2026 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan--5 15:04:05 GMT",
+      "ok": true,
+      "unix": 789059045,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-+5 15:04:05 GMT",
+      "ok": true,
+      "unix": 1104678245,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 UTC",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 UTCX",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 PST",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 GMT+3",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 GMT-0",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 GMT+30",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 GMT+",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 +03",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 -0330",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 +033",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 +",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 ABCDT",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 ABCDE",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 ABCT",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 ABCD",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 WITA",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 ChST",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 MeST",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 ABCDEF",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 AB",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05 abc",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Monday, 02-Jan-26 15:04:05",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon, 02-Jan-26 15:04:05 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon Jan  2 15:04:05 2026",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon Jan 2 15:04:05 2026",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon Jan 02 15:04:05 2026",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon Jan 123 15:04:05 2026",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon Jan  2 15:04:05.5 2026",
+      "ok": true,
+      "unix": 1767366245,
+      "nanos": 500000000
+    },
+    {
+      "raw": "Mon Jan  2 15:04:05 99999",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon Jan  2 15:04:05 2026 ",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon Jan  2 15:04:05 2026 GMT",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": "Mon Feb 29 15:04:05 2023",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
+    },
+    {
+      "raw": " Mon Jan  2 15:04:05 2026",
+      "ok": false,
+      "unix": 0,
+      "nanos": 0
     }
   ],
   "regexps": [

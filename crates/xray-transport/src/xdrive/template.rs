@@ -20,7 +20,7 @@ use zeroize::Zeroizing;
 
 use super::client::ServiceResponse;
 use super::goregex::GoRegex;
-use super::http_storage::{HttpShared, SessionHttp};
+use super::http_storage::{token_expiry, HttpShared, SessionHttp};
 use super::jsonpath::{json_number, json_string};
 use super::redirect::{new_request_url, Followed};
 use super::s3::{jitter, INITIAL_BACKOFF, MAX_ATTEMPTS, MAX_BACKOFF};
@@ -413,10 +413,7 @@ impl TemplateShared {
             lifetime -= 60;
         }
         let token = Zeroizing::new(token);
-        *self.token.lock().unwrap() = Some((
-            token.clone(),
-            Instant::now() + Duration::from_secs(lifetime as u64),
-        ));
+        *self.token.lock().unwrap() = Some((token.clone(), token_expiry(Instant::now(), lifetime)));
         Ok(token)
     }
 

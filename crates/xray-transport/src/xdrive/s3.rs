@@ -371,70 +371,324 @@ pub(crate) fn retry_after(raw: &str, now: SystemTime) -> Duration {
             return Duration::from_secs(seconds as u64).min(MAX_BACKOFF);
         }
     }
-    if let Some(at) = parse_http_date(raw) {
-        let until = at.duration_since(now).unwrap_or(Duration::ZERO);
+    if let Some((secs, nanos)) = parse_http_date(raw) {
+        // A date before 1970 has passed, as has any before now.
+        let at = u64::try_from(secs)
+            .ok()
+            .and_then(|secs| std::time::UNIX_EPOCH.checked_add(Duration::new(secs, nanos)));
+        let until = at
+            .and_then(|at| at.duration_since(now).ok())
+            .unwrap_or(Duration::ZERO);
         return until.min(MAX_BACKOFF);
     }
     Duration::ZERO
 }
 
-/// Go's `http.ParseTime`: RFC 1123 with `GMT`, RFC 850, or ANSI C asctime.
-fn parse_http_date(raw: &str) -> Option<SystemTime> {
-    const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
-    let month_of = |name: &str| MONTHS.iter().position(|m| *m == name).map(|i| i as u32 + 1);
-    let clock = |text: &str| -> Option<(i64, i64, i64)> {
-        let mut parts = text.split(':');
-        let (h, m, s) = (parts.next()?, parts.next()?, parts.next()?);
-        if parts.next().is_some() || h.len() != 2 || m.len() != 2 || s.len() != 2 {
-            return None;
-        }
-        Some((h.parse().ok()?, m.parse().ok()?, s.parse().ok()?))
-    };
-    let fields: Vec<&str> = raw.split(' ').collect();
-    let (year, month, day, time) = match fields.as_slice() {
-        // "Mon, 02 Jan 2006 15:04:05 GMT"
-        [weekday, day, month, year, time, "GMT"] if weekday.ends_with(',') && day.len() == 2 => (
-            year.parse::<i64>().ok()?,
-            month_of(month)?,
-            day.parse::<u32>().ok()?,
-            *time,
-        ),
-        // "Monday, 02-Jan-06 15:04:05 GMT"
-        [weekday, date, time, "GMT"] if weekday.ends_with(',') => {
-            let mut parts = date.split('-');
-            let (day, month, year) = (parts.next()?, parts.next()?, parts.next()?);
-            if day.len() != 2 || year.len() != 2 {
-                return None;
+/// One piece of a `time.Parse` layout, as far as `http.ParseTime`'s three
+/// need them.
+#[derive(Clone, Copy)]
+enum DatePart {
+    /// Text to match as is, where a space takes any run of spaces.
+    Text(&'static [u8]),
+    /// `Mon` or `Monday`: a day's name, not held against the date.
+    Weekday(&'static [&'static str]),
+    /// `Jan`.
+    Month,
+    /// `02`, or with `_2` one digit or two.
+    Day { fixed: bool },
+    /// `2006`: four digits.
+    Year,
+    /// `06`: two characters as `atoi` reads them, 69 to 99 in the 1900s.
+    ShortYear,
+    /// `15`: one digit or two, below 24.
+    Hour,
+    /// `04`: two digits below 60.
+    Minute,
+    /// `05`: two digits below 60, and a fraction the layout does not name.
+    Second,
+    /// `MST`: a zone's abbreviation.
+    Zone,
+}
+
+const SHORT_DAYS: &[&str] = &["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const LONG_DAYS: &[&str] = &[
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+];
+const MONTHS: &[&str] = &[
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/// `http.TimeFormat`, `time.RFC850` and `time.ANSIC`, in the order
+/// `http.ParseTime` tries them.
+const HTTP_DATE_LAYOUTS: [&[DatePart]; 3] = {
+    use DatePart::*;
+    [
+        // Mon, 02 Jan 2006 15:04:05 GMT
+        &[
+            Weekday(SHORT_DAYS),
+            Text(b", "),
+            Day { fixed: true },
+            Text(b" "),
+            Month,
+            Text(b" "),
+            Year,
+            Text(b" "),
+            Hour,
+            Text(b":"),
+            Minute,
+            Text(b":"),
+            Second,
+            Text(b" GMT"),
+        ],
+        // Monday, 02-Jan-06 15:04:05 MST
+        &[
+            Weekday(LONG_DAYS),
+            Text(b", "),
+            Day { fixed: true },
+            Text(b"-"),
+            Month,
+            Text(b"-"),
+            ShortYear,
+            Text(b" "),
+            Hour,
+            Text(b":"),
+            Minute,
+            Text(b":"),
+            Second,
+            Text(b" "),
+            Zone,
+        ],
+        // Mon Jan _2 15:04:05 2006
+        &[
+            Weekday(SHORT_DAYS),
+            Text(b" "),
+            Month,
+            Text(b" "),
+            Day { fixed: false },
+            Text(b" "),
+            Hour,
+            Text(b":"),
+            Minute,
+            Text(b":"),
+            Second,
+            Text(b" "),
+            Year,
+        ],
+    ]
+};
+
+/// Go's `http.ParseTime`: the Unix seconds and nanoseconds of the first of
+/// its layouts the text fits, each read as `time.Parse` reads it. A zone's
+/// abbreviation leaves the time as UTC's, as Go leaves it for any zone but
+/// the machine's own.
+pub(super) fn parse_http_date(raw: &str) -> Option<(i64, u32)> {
+    HTTP_DATE_LAYOUTS
+        .iter()
+        .find_map(|layout| parse_date_layout(raw.as_bytes(), layout))
+}
+
+fn parse_date_layout(mut value: &[u8], layout: &[DatePart]) -> Option<(i64, u32)> {
+    let (mut year, mut month, mut day) = (0, 0, 0);
+    let (mut hour, mut minute, mut second, mut nanos) = (0, 0, 0, 0);
+    for part in layout {
+        match *part {
+            DatePart::Text(text) => value = skip_layout_text(value, text)?,
+            DatePart::Weekday(names) => value = lookup_name(names, value)?.1,
+            DatePart::Month => {
+                let (index, rest) = lookup_name(MONTHS, value)?;
+                (month, value) = (index as u32 + 1, rest);
             }
-            // Go's two-digit years: 69..99 are 1900s, the rest 2000s.
-            let year: i64 = year.parse().ok()?;
-            let year = if year >= 69 { 1900 + year } else { 2000 + year };
-            (year, month_of(month)?, day.parse::<u32>().ok()?, *time)
+            DatePart::Day { fixed } => {
+                let digits = match value {
+                    [b' ', rest @ ..] if !fixed => rest,
+                    _ => value,
+                };
+                (day, value) = take_number(digits, fixed)?;
+            }
+            DatePart::Year => {
+                if value.len() < 4 || !value[0].is_ascii_digit() {
+                    return None;
+                }
+                (year, value) = (go_atoi(&value[..4])?, &value[4..]);
+            }
+            DatePart::ShortYear => {
+                let short = go_atoi(value.get(..2)?)?;
+                year = if short >= 69 {
+                    short + 1900
+                } else {
+                    short + 2000
+                };
+                value = &value[2..];
+            }
+            DatePart::Hour => {
+                (hour, value) = take_number(value, false)?;
+                if hour >= 24 {
+                    return None;
+                }
+            }
+            DatePart::Minute => {
+                (minute, value) = take_number(value, true)?;
+                if minute >= 60 {
+                    return None;
+                }
+            }
+            DatePart::Second => {
+                (second, value) = take_number(value, true)?;
+                if second >= 60 {
+                    return None;
+                }
+                if let [b'.' | b',', first, ..] = value {
+                    if first.is_ascii_digit() {
+                        let digits = value[1..].iter().take_while(|b| b.is_ascii_digit()).count();
+                        // The first nine digits count; the rest are read past.
+                        let kept = &value[1..1 + digits.min(9)];
+                        let read = kept
+                            .iter()
+                            .fold(0u32, |n, digit| n * 10 + u32::from(digit - b'0'));
+                        nanos = read * 10u32.pow(9 - kept.len() as u32);
+                        value = &value[1 + digits..];
+                    }
+                }
+            }
+            DatePart::Zone => value = &value[zone_length(value)?..],
         }
-        // "Mon Jan _2 15:04:05 2006"
-        [_, month, rest @ ..] => {
-            let rest: Vec<&str> = rest.iter().copied().filter(|f| !f.is_empty()).collect();
-            let [day, time, year] = rest.as_slice() else {
-                return None;
-            };
-            (
-                year.parse::<i64>().ok()?,
-                month_of(month)?,
-                day.parse::<u32>().ok()?,
-                *time,
-            )
-        }
-        _ => return None,
-    };
-    let (hour, minute, second) = clock(time)?;
-    if !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 59 {
+    }
+    if !value.is_empty() || day < 1 || day > days_in_month(month, year) {
         return None;
     }
-    let secs = days_from_civil(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second;
-    let secs = u64::try_from(secs).ok()?;
-    Some(std::time::UNIX_EPOCH + Duration::from_secs(secs))
+    let secs =
+        days_from_civil(year, month, day as u32) * 86_400 + hour * 3600 + minute * 60 + second;
+    Some((secs, nanos))
+}
+
+/// The `time` package's `skip`: the layout's own text, where a space takes
+/// any run of spaces, or none at the end of the value.
+fn skip_layout_text<'a>(mut value: &'a [u8], mut text: &[u8]) -> Option<&'a [u8]> {
+    let spaces = |s: &[u8]| s.iter().take_while(|&&b| b == b' ').count();
+    while let Some(&want) = text.first() {
+        if want == b' ' {
+            if value.first().is_some_and(|&b| b != b' ') {
+                return None;
+            }
+            text = &text[spaces(text)..];
+            value = &value[spaces(value)..];
+            continue;
+        }
+        if value.first() != Some(&want) {
+            return None;
+        }
+        (text, value) = (&text[1..], &value[1..]);
+    }
+    Some(value)
+}
+
+/// The `time` package's `lookup`: the first of `names` the value starts
+/// with, its letters in any case.
+fn lookup_name<'a>(names: &[&str], value: &'a [u8]) -> Option<(usize, &'a [u8])> {
+    let same = |a: u8, b: u8| a == b || (a | 0x20 == b | 0x20 && (a | 0x20).is_ascii_lowercase());
+    let index = names.iter().position(|name| {
+        value.len() >= name.len() && value.iter().zip(name.bytes()).all(|(&a, b)| same(a, b))
+    })?;
+    Some((index, &value[names[index].len()..]))
+}
+
+/// The `time` package's `getnum`: one digit or two, exactly two when
+/// `fixed`.
+fn take_number(value: &[u8], fixed: bool) -> Option<(i64, &[u8])> {
+    let digit = |i: usize| {
+        value
+            .get(i)
+            .filter(|b| b.is_ascii_digit())
+            .map(|b| i64::from(b - b'0'))
+    };
+    let first = digit(0)?;
+    match digit(1) {
+        Some(second) => Some((first * 10 + second, &value[2..])),
+        None if fixed => None,
+        None => Some((first, &value[1..])),
+    }
+}
+
+/// The `time` package's `atoi`: a sign or none, then digits to the end, as
+/// few as none.
+fn go_atoi(text: &[u8]) -> Option<i64> {
+    let (negative, digits) = match text {
+        [b'-', rest @ ..] => (true, rest),
+        [b'+', rest @ ..] => (false, rest),
+        _ => (false, text),
+    };
+    let mut number: i64 = 0;
+    for &digit in digits {
+        if !digit.is_ascii_digit() {
+            return None;
+        }
+        number = number
+            .checked_mul(10)?
+            .checked_add(i64::from(digit - b'0'))?;
+    }
+    Some(if negative { -number } else { number })
+}
+
+/// How much of the value a zone takes, as `time.Parse` reads `MST`: `UTC`,
+/// or `parseTimeZone`'s abbreviations, `GMT` with hours, and signed hours.
+fn zone_length(value: &[u8]) -> Option<usize> {
+    if value.starts_with(b"UTC") {
+        return Some(3);
+    }
+    if value.len() < 3 {
+        return None;
+    }
+    if value.starts_with(b"ChST") || value.starts_with(b"MeST") {
+        return Some(4);
+    }
+    if value.starts_with(b"GMT") {
+        return Some(3 + signed_hours_length(&value[3..]));
+    }
+    if matches!(value[0], b'+' | b'-') {
+        return Some(signed_hours_length(value)).filter(|&n| n > 0);
+    }
+    let upper = value
+        .iter()
+        .take(6)
+        .take_while(|b| b.is_ascii_uppercase())
+        .count();
+    match upper {
+        5 if value[4] == b'T' => Some(5),
+        4 if value[3] == b'T' || value.starts_with(b"WITA") => Some(4),
+        3 => Some(3),
+        _ => None,
+    }
+}
+
+/// `parseSignedOffset`: the length of a sign and hours up to 23, or zero.
+fn signed_hours_length(value: &[u8]) -> usize {
+    let [b'+' | b'-', rest @ ..] = value else {
+        return 0;
+    };
+    let digits = rest.iter().take_while(|b| b.is_ascii_digit()).count();
+    let hours = rest[..digits].iter().try_fold(0u64, |n, digit| {
+        n.checked_mul(10)?.checked_add(u64::from(digit - b'0'))
+    });
+    match hours {
+        Some(hours) if digits > 0 && hours <= 23 => 1 + digits,
+        _ => 0,
+    }
+}
+
+/// `daysIn`.
+fn days_in_month(month: u32, year: i64) -> i64 {
+    match month {
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    }
 }
 
 /// `s3Missing`.
