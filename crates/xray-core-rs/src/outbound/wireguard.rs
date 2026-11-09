@@ -1,5 +1,5 @@
 //! Lazy shared WireGuard device with separate bootstrap and destination DNS.
-mod dns;
+pub(super) mod dns;
 use super::*;
 use xray_config::{AddressFamilies, WireguardOutboundSettings};
 use xray_wireguard::{Client, Config, Error, PeerConfig};
@@ -181,7 +181,10 @@ impl WireguardOutbound {
         if self.0.network_generation.load(Ordering::Acquire) != generation {
             client.rebind();
         }
-        let dns = dns::resolver(client.clone(), &self.0.settings.remote_dns);
+        let dns = dns::resolver(
+            dns::TunnelFlows::Wireguard(client.clone()),
+            &self.0.settings.remote_dns,
+        );
         *slot = Some(Cached {
             client: client.clone(),
             dns: dns.clone(),
@@ -327,7 +330,10 @@ fn engine_config(settings: &WireguardOutboundSettings) -> Config {
 /// The address a domain endpoint dials, as Xray-core's `MakeResolveLocal`
 /// picks it: one of the families `strategy` prefers, else of its fallback
 /// family. Xray-core picks one of them at random; the first is taken here.
-fn endpoint_address(candidates: &[SocketAddr], strategy: DomainStrategy) -> Option<SocketAddr> {
+pub(super) fn endpoint_address(
+    candidates: &[SocketAddr],
+    strategy: DomainStrategy,
+) -> Option<SocketAddr> {
     let of = |families: AddressFamilies| {
         candidates.iter().copied().find(|candidate| match families {
             AddressFamilies::Both => true,

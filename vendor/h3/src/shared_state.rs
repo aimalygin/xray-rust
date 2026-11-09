@@ -20,6 +20,8 @@ pub struct SharedState {
     closing: AtomicBool,
     /// Waker for the connection
     waker: AtomicWaker,
+    /// xray-rust: woken when the peer's settings or a connection error arrive
+    settings_waker: AtomicWaker,
 }
 
 impl Default for SharedState {
@@ -29,6 +31,7 @@ impl Default for SharedState {
             connection_error: OnceLock::new(),
             closing: AtomicBool::new(false),
             waker: AtomicWaker::new(),
+            settings_waker: AtomicWaker::new(),
         }
     }
 }
@@ -56,6 +59,7 @@ pub trait ConnectionState {
             .shared_state()
             .connection_error
             .get_or_init(move || error);
+        self.shared_state().settings_waker.wake();
         err.clone()
     }
 
@@ -94,6 +98,20 @@ pub trait ConnectionState {
     /// Set the settings
     fn set_settings(&self, settings: Settings) {
         let _ = self.shared_state().settings.set(settings);
+        self.shared_state().settings_waker.wake();
+    }
+
+    /// xray-rust: the peer's settings once they arrive, or `None` once the
+    /// connection failed first. One task at a time may wait.
+    fn poll_peer_settings(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Settings>> {
+        self.shared_state().settings_waker.register(cx.waker());
+        if let Some(settings) = self.shared_state().settings.get() {
+            return std::task::Poll::Ready(Some(*settings));
+        }
+        if self.shared_state().connection_error.get().is_some() {
+            return std::task::Poll::Ready(None);
+        }
+        std::task::Poll::Pending
     }
 
     /// Returns the waker for the connection

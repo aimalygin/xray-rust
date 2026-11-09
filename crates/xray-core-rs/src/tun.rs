@@ -2925,7 +2925,8 @@ async fn open_tcp_bridge_stream(
             | TcpOutbound::Shadowsocks2022(_)
             | TcpOutbound::Vless(_)
             | TcpOutbound::Hysteria(_)
-            | TcpOutbound::Wireguard(_) => {}
+            | TcpOutbound::Wireguard(_)
+            | TcpOutbound::Masque(_) => {}
             TcpOutbound::Chained { .. } => {
                 if matches!(
                     outbound.primary(),
@@ -2956,7 +2957,9 @@ async fn open_tcp_bridge_stream(
         | TcpOutbound::Vmess(_)
         | TcpOutbound::Shadowsocks2022(_)
         | TcpOutbound::Vless(_)
-        | TcpOutbound::Hysteria(_) => context.bootstrap_dns_resolver(),
+        | TcpOutbound::Hysteria(_)
+        // MASQUE resolves destinations through its tunnel.
+        | TcpOutbound::Masque(_) => context.bootstrap_dns_resolver(),
         TcpOutbound::Wireguard(_) => context.dns_resolver.as_ref(),
         TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     };
@@ -3412,6 +3415,9 @@ async fn bridge_tcp_flow_inner(
             TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
                 effective_policy_for_level(&context.config, Some(0)).handshake
             }
+            TcpOutbound::Masque(_) => crate::outbound::masque::open_timeout(
+                effective_policy_for_level(&context.config, Some(0)).handshake,
+            ),
             TcpOutbound::Freedom(_) => context.inbound_policy.handshake,
             TcpOutbound::Trojan(outbound) => {
                 effective_policy_for_level(&context.config, Some(outbound.level())).handshake

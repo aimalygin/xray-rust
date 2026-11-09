@@ -105,6 +105,12 @@ impl Builder {
         self
     }
 
+    /// xray-rust: announce the draft-00 HTTP Datagram setting (0x276)
+    pub fn enable_datagram_draft00(&mut self, value: bool) -> &mut Self {
+        self.config.settings.enable_datagram_draft00 = value;
+        self
+    }
+
     /// Enables the extended CONNECT protocol required for various HTTP/3 extensions.
     pub fn enable_extended_connect(&mut self, value: bool) -> &mut Self {
         self.config.settings.enable_extended_connect = value;

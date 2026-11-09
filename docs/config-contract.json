@@ -655,7 +655,7 @@
         "quicParams"
       ],
       "id": "FINALMASK",
-      "notes": "TCP supports one tlshello fragment mask and one header-custom mask. Hysteria, mKCP and XHTTP H3 support one UDP noise mask and one header-custom mask; Hysteria also supports one Salamander mask and mKCP any number of mkcp-legacy masks, preserving array order."
+      "notes": "TCP supports one tlshello fragment mask and one header-custom mask. Hysteria, mKCP, XHTTP H3 and MASQUE over HTTP/3 support one UDP noise mask and one header-custom mask; Hysteria also supports one Salamander mask and mKCP any number of mkcp-legacy masks, preserving array order."
     },
     {
       "context": "streamSettings.finalmask.udp[]",
@@ -794,7 +794,7 @@
         "padding_max"
       ],
       "id": "SUDOKU_MASK",
-      "notes": "TCP: the last mask, outermost on the wire; UDP: mKCP, Hysteria and XHTTP with exact h3 ALPN, where the carrier lets the system fragment its datagrams. ascii is entropy (default) or ascii; customTable(s) are 8 characters of 2 x, 2 p and 4 v, ignored in ASCII mode; padding is a percentage range, each end at most 100. A snake_case name applies when its camelCase field is empty or zero. Unknown modes and malformed tables are refused here, where Xray-core fails every dial."
+      "notes": "TCP: the last mask, outermost on the wire; UDP: mKCP, Hysteria, XHTTP with exact h3 ALPN and MASQUE over HTTP/3, where the carrier lets the system fragment its datagrams. ascii is entropy (default) or ascii; customTable(s) are 8 characters of 2 x, 2 p and 4 v, ignored in ASCII mode; padding is a percentage range, each end at most 100. A snake_case name applies when its camelCase field is empty or zero. Unknown modes and malformed tables are refused here, where Xray-core fails every dial."
     },
     {
       "context": "streamSettings.finalmask.udp[].settings (xdns)",
@@ -804,7 +804,7 @@
         "extraPoll"
       ],
       "id": "XDNS_MASK",
-      "notes": "mKCP, Hysteria and XHTTP with exact h3 ALPN; the last UDP mask, never with udphop, nor with sudoku on QUIC. Every datagram rides in the names of DNS queries to the resolvers, which reach the server's domain; polls keep queries waiting there for what it sends back. extraPoll is 0 to 3 polls after each packet and poll. At least one domain name and one resolver address are required."
+      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN and MASQUE over HTTP/3; the last UDP mask, never with udphop, nor with sudoku on QUIC. Every datagram rides in the names of DNS queries to the resolvers, which reach the server's domain; polls keep queries waiting there for what it sends back. extraPoll is 0 to 3 polls after each packet and poll. At least one domain name and one resolver address are required."
     },
     {
       "context": "streamSettings.finalmask.udp[].settings.domains[] (xdns)",
@@ -839,7 +839,7 @@
         "portMapping"
       ],
       "id": "REALM_MASK",
-      "notes": "mKCP, Hysteria and XHTTP with exact h3 ALPN; the last UDP mask, never with udphop, xdns or header-custom. The client finds its public addresses with STUN over the carrier's socket, asks the rendezvous at url to introduce it to the server registered under the realm name, punches a hole to the addresses the server reports and sends the carrier's datagrams to the one that answers. url is realm://token@host[:port]/name over HTTPS (port 443) or realm+http:// over HTTP (port 80), read with Go's url.Parse; its query and fragment are ignored. stunServers are one or more host:port entries, each port 1 to 65535. tlsConfig takes tlsSettings' fields for an HTTPS rendezvous; its fingerprint is checked and not used, as in Xray-core's HTTP client. ipMode is dual, v4 or v6, any other value reading as dual. Names are resolved like the outbound's server address."
+      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN and MASQUE over HTTP/3; the last UDP mask, never with udphop, xdns or header-custom. The client finds its public addresses with STUN over the carrier's socket, asks the rendezvous at url to introduce it to the server registered under the realm name, punches a hole to the addresses the server reports and sends the carrier's datagrams to the one that answers. url is realm://token@host[:port]/name over HTTPS (port 443) or realm+http:// over HTTP (port 80), read with Go's url.Parse; its query and fragment are ignored. stunServers are one or more host:port entries, each port 1 to 65535. tlsConfig takes tlsSettings' fields for an HTTPS rendezvous; its fingerprint is checked and not used, as in Xray-core's HTTP client. ipMode is dual, v4 or v6, any other value reading as dual. Names are resolved like the outbound's server address."
     },
     {
       "context": "streamSettings.finalmask.udp[].settings.portMapping (realm)",
@@ -858,7 +858,7 @@
         "ips"
       ],
       "id": "XICMP_MASK",
-      "notes": "mKCP, Hysteria and XHTTP with exact h3 ALPN; the last UDP mask, never with udphop, xdns, realm or header-custom, nor with sudoku on QUIC. Every datagram rides in an ICMP echo request to the server, after an 8-byte client id, and comes back in its echo reply. dgram opens unprivileged datagram ICMP sockets; without it they are raw sockets, which need root or CAP_NET_RAW. ips are the server addresses, one drawn per packet; empty sends to the outbound's address, which must then be an IP address, else the core refuses to start. A zoned IPv6 address is refused, where Xray-core drops the zone and reaches nothing."
+      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN and MASQUE over HTTP/3; the last UDP mask, never with udphop, xdns, realm or header-custom, nor with sudoku on QUIC. Every datagram rides in an ICMP echo request to the server, after an 8-byte client id, and comes back in its echo reply. dgram opens unprivileged datagram ICMP sockets; without it they are raw sockets, which need root or CAP_NET_RAW. ips are the server addresses, one drawn per packet; empty sends to the outbound's address, which must then be an IP address, else the core refuses to start. A zoned IPv6 address is refused, where Xray-core drops the zone and reaches nothing."
     },
     {
       "context": "streamSettings.finalmask.tcp[].settings (xmc)",
@@ -889,7 +889,7 @@
         "server"
       ],
       "id": "HEADER_CUSTOM_UDP",
-      "notes": "mKCP, Hysteria and XHTTP with exact h3 ALPN, never with udphop. mode is prefix (or empty), every datagram carrying the client's items in front and the server's checked and taken off, or standalone, the client's items sent alone and the server's answer awaited before the first datagram to a peer and five seconds after each answer; an unanswered request goes out again after a second on QUIC carriers. Case-sensitive, as in Xray-core."
+      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN and MASQUE over HTTP/3, never with udphop. mode is prefix (or empty), every datagram carrying the client's items in front and the server's checked and taken off, or standalone, the client's items sent alone and the server's answer awaited before the first datagram to a peer and five seconds after each answer; an unanswered request goes out again after a second on QUIC carriers. Case-sensitive, as in Xray-core."
     },
     {
       "context": "streamSettings.finalmask.udp[].settings.{client,server}[] (header-custom)",
@@ -1340,7 +1340,7 @@
         "trustedXForwardedFor"
       ],
       "id": "SOCKOPT",
-      "notes": "Read and applied as Xray-core v26.10.31 does, to every socket the outbound opens, on Linux and Android or on Apple platforms. Every outbound TCP socket keeps alive after 45 seconds idle and every 45 seconds, unless tcpKeepAliveIdle or tcpKeepAliveInterval sets another number of seconds or a negative value turns keepalive off; a positive value with a negative one fails each TCP dial. On Linux and Android: mark, interface, tcpFastOpen, tcpCongestion, tcpWindowClamp, tcpUserTimeout, tcpMaxSeg, customSockopt and tproxy, in that order; tcpMptcp asks for Multipath TCP and falls back to TCP. On Apple platforms: tcpFastOpen, which their kernels refuse on a client socket, the keepalive settings, interface and customSockopt. The first option that fails stops the rest and is only logged, except interface, whose failure fails the dial. penetrate gives an XHTTP downloadSettings these options instead of its own. acceptProxyProtocol, v6only and trustedXForwardedFor are inbound options, type-checked and ignored. addressPortStrategy takes Xray-core's names, ignoring case: before a domain server is dialed, the first usable SRV or TXT record of its name, looked up as Go's resolver does from /etc/resolv.conf, replaces its address, its port or both; freedom and chained outbounds refuse it, and WireGuard's endpoint does not read it, as in Xray-core. dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser. domainStrategy takes Xray-core's eleven names, ignoring case; freedom and WireGuard read it, and other outbounds accept only AsIs."
+      "notes": "Read and applied as Xray-core v26.10.31 does, to every socket the outbound opens, on Linux and Android or on Apple platforms. Every outbound TCP socket keeps alive after 45 seconds idle and every 45 seconds, unless tcpKeepAliveIdle or tcpKeepAliveInterval sets another number of seconds or a negative value turns keepalive off; a positive value with a negative one fails each TCP dial. On Linux and Android: mark, interface, tcpFastOpen, tcpCongestion, tcpWindowClamp, tcpUserTimeout, tcpMaxSeg, customSockopt and tproxy, in that order; tcpMptcp asks for Multipath TCP and falls back to TCP. On Apple platforms: tcpFastOpen, which their kernels refuse on a client socket, the keepalive settings, interface and customSockopt. The first option that fails stops the rest and is only logged, except interface, whose failure fails the dial. penetrate gives an XHTTP downloadSettings these options instead of its own. acceptProxyProtocol, v6only and trustedXForwardedFor are inbound options, type-checked and ignored. addressPortStrategy takes Xray-core's names, ignoring case: before a domain server is dialed, the first usable SRV or TXT record of its name, looked up as Go's resolver does from /etc/resolv.conf, replaces its address, its port or both; freedom and chained outbounds refuse it, and WireGuard's endpoint does not read it, as in Xray-core. dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser. domainStrategy takes Xray-core's eleven names, ignoring case; freedom, WireGuard and MASQUE read it, and other outbounds accept only AsIs."
     },
     {
       "context": "streamSettings.sockopt.customSockopt[]",
@@ -1430,11 +1430,12 @@
         "splithttpSettings",
         "kcpSettings",
         "hysteriaSettings",
+        "masqueSettings",
         "finalmask",
         "sockopt"
       ],
       "id": "STREAM",
-      "notes": "method takes priority over network. raw/tcp, ws/websocket, httpupgrade, grpc, xhttp/splithttp, kcp/mkcp, hysteria; security none/tls/reality. Carrier/security combinations and inactive block handling require the validator."
+      "notes": "method takes priority over network. raw/tcp, ws/websocket, httpupgrade, grpc, xhttp/splithttp, kcp/mkcp, hysteria, masque; security none/tls/reality. Carrier/security combinations and inactive block handling require the validator."
     },
     {
       "context": "streamSettings.tlsSettings",
@@ -1476,6 +1477,30 @@
       ],
       "id": "WIREGUARD_PEER",
       "notes": "A nonzero IP/domain endpoint is required. Nonempty allowedIPs; at most 256 prefixes across all peers. Default allows both families. Longest prefix wins; identical normalized prefixes belong to the last configured peer. PSK accepts key encodings; absent, empty or all-zero means unset. Inbound user settings are unsupported."
+    },
+    {
+      "context": "$.outbounds[].settings (masque)",
+      "fields": [
+        "address",
+        "port",
+        "remoteDNS"
+      ],
+      "id": "MASQUE",
+      "notes": "A nonempty address and a nonzero port, as Xray-core requires. remoteDNS takes up to 8 IP addresses, scoped IPv6 ones refused; absent, null or empty means Cloudflare's 1.1.1.1, 1.0.0.1, 2606:4700:4700::1111 and 2606:4700:4700::1001. Destination domains resolve through the tunnel with the servers of the families the tunnel has an address of, IPv6 first when it has one. Requires network masque, security tls and no chaining or Mux; every TCP and UDP flow rides a CONNECT-IP tunnel through a userspace TCP/IP stack of MTU 1280, 16 TCP and 512 UDP flows a tunnel."
+    },
+    {
+      "context": "streamSettings.masqueSettings",
+      "fields": [
+        "host",
+        "path",
+        "user",
+        "pass",
+        "headers",
+        "warp",
+        "xmux"
+      ],
+      "id": "MASQUE_TRANSPORT",
+      "notes": "For the masque outbound only; Xray-core builds it under any network. host is the request authority, checked as Go's url.Parse reads it; empty takes the TLS server name with its port unless 443. path defaults to /.well-known/masque/ip/*/*/; {target} and {ipproto} and their query forms become *, and other braces fail. user and pass send Basic authorization; user takes no colon. headers are Go header fields, at most 64 values of at most 8 KiB, without Host or Capsule-Protocol, nor Authorization beside user or pass; User-Agent defaults to Chrome's, takes chrome, firefox, safari, edge, curl or golang as presets and empty to send none. HTTP/3 unless tlsSettings.alpn names h2 and not h3; HTTP/2 and warp are not supported yet. finalmask.quicParams and the UDP masks apply to HTTP/3: congestion brutal runs BBR, as in Xray-core; maxIdleTimeout defaults to 30 seconds and the keepalive to 10, or xmux.hKeepAlivePeriod when set, negative turning it off."
     },
     {
       "context": "$.outbounds[].settings (hysteria)",
@@ -1726,7 +1751,7 @@
       "notes": "extra replaces rather than merges outer values except host/path/mode. Nested extra is inert. downloadSettings supports an independent XHTTP stack for packet-up/stream-up only; no recursive download. scMaxConcurrentPosts is ignored with a warning; h2Params (any JSON, Xray inbound only) is ignored. Rust-only h2StreamReceiveWindow: optional integer 65535..16777216 bytes, absent/null defaults to 4194304; H2 only, connection credit unchanged."
     },
     {
-      "context": "xhttpSettings.xmux; splithttpSettings.xmux; effective extra.xmux",
+      "context": "xhttpSettings.xmux; splithttpSettings.xmux; effective extra.xmux; masqueSettings.xmux",
       "fields": [
         "maxConcurrency",
         "maxConnections",
@@ -1736,7 +1761,7 @@
         "hKeepAlivePeriod"
       ],
       "id": "XMUX",
-      "notes": "Positive maxConnections and maxConcurrency are mutually exclusive. Ranges and default/zero semantics require parser validation."
+      "notes": "Positive maxConnections and maxConcurrency are mutually exclusive. Ranges and default/zero semantics require parser validation. Under masqueSettings an all-zero xmux means one tunnel reused for 1800 to 3000 seconds, a tunnel takes maxConcurrency flows, cMaxReuseTimes counts flows and hMaxRequestTimes changes nothing, as in Xray-core."
     }
   ],
   "schemaVersion": 1,

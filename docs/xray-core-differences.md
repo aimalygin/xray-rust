@@ -598,6 +598,67 @@ AES and noise inside xdns; XHTTP over HTTP/3 and Hysteria, alone and with
 Salamander inside, before and after a rebind, carry the same. A client with
 another domain never gets through.
 
+## MASQUE
+
+The `masque` outbound runs Xray-core v26.10.31's MASQUE client over HTTP/3:
+its configuration checks and defaults, the CONNECT-IP request with its
+authority, path, User-Agent presets and Basic authorization, the server
+settings it waits for, the address request and assignment rules, the
+datagram format and packet admission, ICMP Packet Too Big, the tunnel pool
+of its `xmux` with the one-second retry rule, and the stack over each tunnel
+with `remoteDNS`. Deliberate differences:
+
+- HTTP/2 and `warp` are not supported yet and fail the configuration.
+- The stack is the WireGuard outbound's smoltcp stack, not gVisor: 16 TCP
+  and 512 UDP flows a tunnel, its buffers and its TCP. smoltcp does not act
+  on ICMP Packet Too Big; the QUIC connection never goes below its 1350-byte
+  first packets, so the stack's 1280-byte packets always fit.
+- A name tries up to eight addresses, three seconds each and ten for the
+  last, as the WireGuard outbound does; Xray's stack divides the handshake
+  timeout between them. A flow's open deadline is the handshake timeout plus
+  the ten-second tunnel dial.
+- An empty `address` fails the configuration; Xray-core accepts it and fails
+  every dial. `remoteDNS` takes at most 8 servers and no scoped IPv6
+  address; Xray-core takes any.
+- Chaining (`proxySettings`, `dialerProxy`) and Mux fail the configuration,
+  as for Hysteria and WireGuard, and so does the TCP fragment mask, which
+  Xray-core's HTTP/3 dial ignores; the other TCP masks fail when the core
+  starts. Unknown fields fail, as everywhere.
+- The HTTP/3 request lists its pseudo-fields in h3's order and its fields
+  sorted; quic-go starts with `:authority` and sends fields in map order.
+  Neither is visible outside the TLS session.
+- The UDP masks follow the rules of every QUIC carrier, with
+  [realm's](#realm) and [xicmp's](#xicmp) differences: an xicmp outbound
+  whose address is a name, with no `ips`, fails when the core starts. A
+  realm introduction counts toward the ten-second tunnel dial, as in
+  Xray-core, whose introduction runs under the dial's context; one that
+  overruns is cancelled here, where Xray-core's finishes before its QUIC dial
+  fails.
+
+Evidence: `tools/masque-oracle` runs inside Xray-core's `connectip` package
+through a `go test -overlay` and records its capsule encodings, its reading
+of valid and mutated capsules, the datagrams `composeDatagram` builds, its
+ICMP messages and which packets it admits; the tests replay them and
+`scripts/check-masque-interop.sh` regenerates a corpus ten times larger each
+run. 119 configuration cases carry `xray run -test` verdicts, rechecked with
+the binary each run: 107 match and 12 differ as listed above and in the mask
+rules; every case the configuration takes also builds a core, but the
+xicmp one to a name without `ips` and the TCP masks over HTTP/3. Live
+against
+Xray-core's MASQUE server over HTTP/3: TCP with a 128 KiB echo to IPv4, IPv6
+and a name resolved through the tunnel, UDP to the same three, TCP through
+the HTTP inbound, TCP and UDP through the TUN, eight parallel flows sharing
+one tunnel, the default path with a preset User-Agent, the `conservative` and
+`aggressive` BBR profiles, and a wrong password refused; under the
+header-custom and sudoku UDP masks, noise inside sudoku, with another sudoku
+password carrying nothing; introduced by realm through a local rendezvous;
+and, as root on Linux (`scripts/check-xicmp-interop.sh`), inside xicmp.
+Mutating 22 key branches (TTL, checksum, admission, capsule
+checks, address choice, authority, User-Agent, the pool's limits and retry,
+the host and path checks) fails the tests each time, and so does dropping
+each mask's wiring, the xicmp address check or MASQUE's place among the UDP
+carriers.
+
 ## realm
 
 The `realm` UDP mask introduces the carrier's socket as Xray-core
@@ -643,8 +704,8 @@ tests replay them all, the requests byte for byte. Live against Xray-core's
 server through a local rendezvous speaking Hysteria's realm API, mKCP
 carries a TCP echo and UDP over a dual-stack and an IPv4 socket, with AES
 and noise inside realm; XHTTP over HTTP/3 and Hysteria, alone and with
-Salamander inside, carry the same; an unknown realm name gets no
-introduction.
+Salamander inside, and MASQUE over HTTP/3 carry the same; an unknown realm
+name gets no introduction.
 
 ## xicmp
 
@@ -682,7 +743,8 @@ replay them all. Live against Xray-core's server on Linux, which reads ICMP
 on raw sockets, mKCP carries a TCP echo and UDP over datagram sockets, to
 the outbound's address and to two listed ones, and over raw sockets, with
 AES and noise inside xicmp; XHTTP over HTTP/3 and Hysteria, alone and with
-Salamander inside, before and after a rebind, carry the same.
+Salamander inside, before and after a rebind, and MASQUE over HTTP/3 carry
+the same.
 
 ## QUIC BBR profiles
 

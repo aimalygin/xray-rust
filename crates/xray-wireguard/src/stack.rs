@@ -1,5 +1,4 @@
 use crate::client::{Command, Error, Flow, Stop, IP_PACKET_QUEUE, OPEN_TIMEOUT, PACKET_QUEUE};
-use crate::Config;
 use bytes::{Bytes, BytesMut};
 use gotatun::packet::{Ip, Packet};
 use smoltcp::{
@@ -53,6 +52,31 @@ fn tcp_socket() -> tcp::Socket<'static> {
     socket.set_tsval_generator(Some(tcp_timestamp));
     socket
 }
+/// An IP packet crossing the stack's channels: WireGuard's engine passes its
+/// own packet type, a CONNECT-IP tunnel plain bytes.
+pub(crate) trait IpPacket: Send + Sized + 'static {
+    /// Wraps a packet smoltcp wrote; `None` drops it.
+    fn from_ip_bytes(bytes: BytesMut) -> Option<Self>;
+    /// Hands the packet's bytes to smoltcp.
+    fn with_bytes<R>(self, f: impl FnOnce(&[u8]) -> R) -> R;
+}
+impl IpPacket for Packet<Ip> {
+    fn from_ip_bytes(bytes: BytesMut) -> Option<Self> {
+        Packet::from_bytes(bytes).try_into_ip().ok()
+    }
+    fn with_bytes<R>(self, f: impl FnOnce(&[u8]) -> R) -> R {
+        f(&self.into_bytes())
+    }
+}
+impl IpPacket for Bytes {
+    fn from_ip_bytes(bytes: BytesMut) -> Option<Self> {
+        Some(bytes.freeze())
+    }
+    fn with_bytes<R>(self, f: impl FnOnce(&[u8]) -> R) -> R {
+        f(&self)
+    }
+}
+
 struct TcpFlow {
     handle: SocketHandle,
     flow: Arc<Flow>,
@@ -103,30 +127,31 @@ impl Entry {
     }
 }
 
-pub(crate) struct Stack {
+pub(crate) struct Stack<P: IpPacket = Packet<Ip>> {
     interface: Interface,
-    device: Packets,
+    device: Packets<P>,
     sockets: SocketSet<'static>,
     flows: HashMap<u64, Entry>,
     commands: mpsc::Receiver<Command>,
-    incoming: mpsc::Receiver<Packet<Ip>>,
+    incoming: mpsc::Receiver<P>,
     wake: Arc<Notify>,
     start: Clock,
     port: u16,
     mtu: usize,
 }
-impl Stack {
+impl<P: IpPacket> Stack<P> {
     pub(crate) fn new(
-        config: &Config,
-        tx: mpsc::Sender<Packet<Ip>>,
-        incoming: mpsc::Receiver<Packet<Ip>>,
+        addresses: &[IpAddr],
+        mtu: u16,
+        tx: mpsc::Sender<P>,
+        incoming: mpsc::Receiver<P>,
         commands: mpsc::Receiver<Command>,
         wake: Arc<Notify>,
     ) -> Self {
         let mut device = Packets {
             tx,
             rx: None,
-            mtu: usize::from(config.mtu),
+            mtu: usize::from(mtu),
         };
         let mut options = InterfaceConfig::new(HardwareAddress::Ip);
         options.random_seed = rand::random();
@@ -134,7 +159,7 @@ impl Stack {
         interface.set_round_robin_egress(true);
         interface.set_tcp_egress_burst(32);
         interface.update_ip_addrs(|ips| {
-            for address in &config.addresses {
+            for address in addresses {
                 ips.push(IpCidr::new(
                     (*address).into(),
                     if address.is_ipv4() { 32 } else { 128 },
@@ -144,7 +169,7 @@ impl Stack {
         });
         // Medium::Ip has no link-layer next-hop resolution; these routes send all
         // destinations to the injected point-to-point device, then cryptokey routing.
-        for address in &config.addresses {
+        for address in addresses {
             match address {
                 IpAddr::V4(ip) => {
                     interface
@@ -170,7 +195,7 @@ impl Stack {
             wake,
             start: Clock::now(),
             port: rand::random::<u16>() | 0xc000,
-            mtu: usize::from(config.mtu),
+            mtu: usize::from(mtu),
         }
     }
     fn now(&self) -> Instant {
@@ -536,25 +561,25 @@ fn endpoint(addr: SocketAddr) -> IpEndpoint {
     IpEndpoint::new(addr.ip().into(), addr.port())
 }
 
-struct Packets {
-    tx: mpsc::Sender<Packet<Ip>>,
-    rx: Option<Packet<Ip>>,
+struct Packets<P: IpPacket = Packet<Ip>> {
+    tx: mpsc::Sender<P>,
+    rx: Option<P>,
     mtu: usize,
 }
-struct Receive(Packet<Ip>);
-struct Transmit {
-    permit: mpsc::OwnedPermit<Packet<Ip>>,
+struct Receive<P>(P);
+struct Transmit<P: IpPacket> {
+    permit: mpsc::OwnedPermit<P>,
     mtu: usize,
 }
-impl Device for Packets {
-    type RxToken<'a> = Receive;
-    type TxToken<'a> = Transmit;
-    fn receive(&mut self, _: Instant) -> Option<(Receive, Transmit)> {
+impl<P: IpPacket> Device for Packets<P> {
+    type RxToken<'a> = Receive<P>;
+    type TxToken<'a> = Transmit<P>;
+    fn receive(&mut self, _: Instant) -> Option<(Receive<P>, Transmit<P>)> {
         self.rx.as_ref()?;
         let transmit = self.transmit(Instant::ZERO)?;
         Some((Receive(self.rx.take().unwrap()), transmit))
     }
-    fn transmit(&mut self, _: Instant) -> Option<Transmit> {
+    fn transmit(&mut self, _: Instant) -> Option<Transmit<P>> {
         Some(Transmit {
             permit: self.tx.clone().try_reserve_owned().ok()?,
             mtu: self.mtu,
@@ -573,17 +598,17 @@ impl Device for Packets {
         caps
     }
 }
-impl RxToken for Receive {
+impl<P: IpPacket> RxToken for Receive<P> {
     fn consume<R, F: FnOnce(&[u8]) -> R>(self, f: F) -> R {
-        f(&self.0.into_bytes())
+        self.0.with_bytes(f)
     }
 }
-impl TxToken for Transmit {
+impl<P: IpPacket> TxToken for Transmit<P> {
     fn consume<R, F: FnOnce(&mut [u8]) -> R>(self, len: usize, f: F) -> R {
         assert!(len <= self.mtu, "smoltcp must respect the configured MTU");
         let mut bytes = BytesMut::zeroed(len);
         let result = f(&mut bytes);
-        if let Ok(packet) = Packet::from_bytes(bytes).try_into_ip() {
+        if let Some(packet) = P::from_ip_bytes(bytes) {
             self.permit.send(packet);
         }
         result
@@ -610,7 +635,7 @@ mod tests {
             (32, 1),
         ] {
             let (tx, mut outgoing) = mpsc::channel(capacity);
-            let mut device = Packets {
+            let mut device = Packets::<Packet<Ip>> {
                 tx,
                 rx: None,
                 mtu: 1420,
@@ -734,7 +759,7 @@ mod tests {
             (true, [40000, 40001, 40000, 40001]),
         ] {
             let (tx, mut outgoing) = mpsc::channel(1);
-            let mut device = Packets {
+            let mut device = Packets::<Packet<Ip>> {
                 tx,
                 rx: None,
                 mtu: 1420,
@@ -789,7 +814,7 @@ mod tests {
     #[test]
     fn tcp_advertises_receive_window_instead_of_packet_queue_depth() {
         let (tx, mut outgoing) = mpsc::channel(PACKET_QUEUE);
-        let mut device = Packets {
+        let mut device = Packets::<Packet<Ip>> {
             tx,
             rx: None,
             mtu: 1420,
@@ -843,7 +868,7 @@ mod tests {
         let local = Ipv4Address::new(10, 44, 0, 2);
         let remote = Ipv4Address::new(10, 44, 0, 1);
         let (tx, mut outgoing) = mpsc::channel(PACKET_QUEUE);
-        let mut device = Packets {
+        let mut device = Packets::<Packet<Ip>> {
             tx,
             rx: None,
             mtu: 1420,
@@ -966,7 +991,7 @@ mod tests {
         let local = Ipv4Address::new(10, 44, 0, 2);
         let remote = Ipv4Address::new(10, 44, 0, 1);
         let (tx, mut outgoing) = mpsc::channel(PACKET_QUEUE);
-        let mut device = Packets {
+        let mut device = Packets::<Packet<Ip>> {
             tx,
             rx: None,
             mtu: 1420,

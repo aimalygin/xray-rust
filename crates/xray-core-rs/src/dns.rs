@@ -447,7 +447,8 @@ impl RoutedDnsQueryTransport {
             | TcpOutbound::Shadowsocks2022(_)
             | TcpOutbound::Vless(_)
             | TcpOutbound::Hysteria(_)
-            | TcpOutbound::Wireguard(_)) => {
+            | TcpOutbound::Wireguard(_)
+            | TcpOutbound::Masque(_)) => {
                 if server_socket_has_nonzero_scope(server) {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,

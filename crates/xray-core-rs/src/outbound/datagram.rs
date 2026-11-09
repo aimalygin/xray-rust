@@ -14,6 +14,10 @@ pub(crate) enum Session {
         session: xray_wireguard::UdpSession,
         requested: Target,
     },
+    Masque {
+        session: super::masque::MasqueUdpSession,
+        requested: Target,
+    },
 }
 pub(crate) struct Datagram {
     pub(crate) source: Target,
@@ -60,6 +64,10 @@ pub(crate) async fn open(
                 .await?,
             requested: target.clone(),
         }),
+        UdpOutbound::Masque(outbound) => Ok(Session::Masque {
+            session: outbound.open_udp(target, bootstrap, dialer).await?,
+            requested: target.clone(),
+        }),
         _ => Err(CoreError::UnsupportedOutboundNetwork),
     }
 }
@@ -82,11 +90,15 @@ pub(crate) async fn open_within_handshake(
         UdpOutbound::Socks(outbound) => outbound.level(),
         UdpOutbound::Vmess(outbound) => outbound.level(),
         UdpOutbound::Shadowsocks2022(outbound) => outbound.level(),
-        UdpOutbound::Hysteria(_) | UdpOutbound::Wireguard(_) => 0,
+        UdpOutbound::Hysteria(_) | UdpOutbound::Wireguard(_) | UdpOutbound::Masque(_) => 0,
         UdpOutbound::Freedom(_) => return Err(CoreError::UnsupportedOutboundNetwork),
     };
+    let mut handshake = effective_policy_for_level(config, Some(level)).handshake;
+    if matches!(outbound, UdpOutbound::Masque(_)) {
+        handshake = super::masque::open_timeout(handshake);
+    }
     within_handshake(
-        effective_policy_for_level(config, Some(level)).handshake,
+        handshake,
         open(outbound, target, destination, bootstrap, dialer, global_id),
     )
     .await
@@ -118,6 +130,7 @@ impl Session {
             Self::Trojan(_) => xray_proxy::trojan::MAX_UDP_PAYLOAD_LENGTH,
             Self::Vmess(session) => session.max_payload(),
             Self::Wireguard { session, .. } => session.max_payload(),
+            Self::Masque { session, .. } => session.max_payload(),
             // Shadowsocks of either family: what fits Xray's 8192-byte UDP
             // buffer after this method's framing for `target`, or one Mux frame.
             Self::Shadowsocks2022(session) => session.max_payload(target),
@@ -140,6 +153,13 @@ impl Session {
                 }
                 Ok(session.send(payload).await?)
             }
+            // A connected socket in the stack, as Xray's `tnet.Dial("udp")`.
+            Self::Masque { session, requested } => {
+                if target != requested {
+                    return Err(xray_wireguard::Error::NoRoute.into());
+                }
+                session.send(payload).await
+            }
         }
     }
     pub(crate) async fn recv(&self) -> Result<Datagram, CoreError> {
@@ -157,6 +177,17 @@ impl Session {
                 })
             }
             Self::Wireguard { session, .. } => {
+                let peer = session.peer_addr();
+                Ok(Datagram {
+                    source: Target::new(
+                        RoutingTargetAddr::Ip(peer.ip()),
+                        peer.port(),
+                        RoutingNetwork::Udp,
+                    ),
+                    payload: session.recv().await?.to_vec(),
+                })
+            }
+            Self::Masque { session, .. } => {
                 let peer = session.peer_addr();
                 Ok(Datagram {
                     source: Target::new(

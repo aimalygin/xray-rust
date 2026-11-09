@@ -1121,6 +1121,7 @@ pub enum OutboundProtocol {
     Loopback,
     Socks,
     Http,
+    Masque,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1137,6 +1138,7 @@ pub enum OutboundSettings {
     Loopback(LoopbackOutboundSettings),
     Socks(SocksOutboundSettings),
     Http(HttpOutboundSettings),
+    Masque(MasqueOutboundSettings),
 }
 
 impl OutboundSettings {
@@ -1154,9 +1156,96 @@ impl OutboundSettings {
             Self::Loopback(_) => OutboundProtocol::Loopback,
             Self::Socks(_) => OutboundProtocol::Socks,
             Self::Http(_) => OutboundProtocol::Http,
+            Self::Masque(_) => OutboundProtocol::Masque,
         }
     }
 }
+
+/// Xray `masque` outbound settings, as Xray-core v26.10.31's
+/// `MasqueClientConfig.Build` reads them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MasqueOutboundSettings {
+    pub server: TargetAddr,
+    pub port: u16,
+    /// `remoteDNS`: literal servers asked through the tunnel. Empty takes
+    /// Xray's Cloudflare defaults when the client starts.
+    pub remote_dns: Vec<std::net::IpAddr>,
+}
+
+/// `masqueSettings`, as Xray-core v26.10.31's `MasqueConfig.Build` leaves
+/// them: the path's template variables replaced, `user` and `pass` turned
+/// into an Authorization header and the WARP defaults applied. Its `Debug`
+/// shows header names only: a value can be a credential.
+#[derive(Clone, PartialEq, Eq)]
+pub struct MasqueSettings {
+    /// The request authority. Empty takes the TLS server name, with the
+    /// port unless it is 443.
+    pub host: String,
+    /// The CONNECT-IP request path, starting with `/`.
+    pub path: String,
+    /// Request header fields by name, sorted, Authorization included. The
+    /// values are wiped when dropped.
+    pub headers: Vec<(String, zeroize::Zeroizing<String>)>,
+    pub warp: Option<MasqueWarpSettings>,
+    /// Tunnel reuse, read as XHTTP's `xmux`; an all-zero object takes
+    /// MASQUE's defaults, one tunnel reused for 1800 to 3000 seconds.
+    pub xmux: XhttpXmuxSettings,
+}
+
+impl fmt::Debug for MasqueSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MasqueSettings")
+            .field("host", &self.host)
+            .field("path", &self.path)
+            .field(
+                "headers",
+                &self
+                    .headers
+                    .iter()
+                    .map(|(name, _)| name)
+                    .collect::<Vec<_>>(),
+            )
+            .field("warp", &self.warp)
+            .field("xmux", &self.xmux)
+            .finish()
+    }
+}
+
+/// `masqueSettings.warp`: Cloudflare WARP's MASQUE flavour.
+#[derive(Clone, PartialEq, Eq)]
+pub struct MasqueWarpSettings {
+    /// The device's ECDSA P-256 key as PKCS #8 DER, re-encoded as Go's
+    /// `x509.MarshalPKCS8PrivateKey` writes it.
+    pub private_key: zeroize::Zeroizing<Vec<u8>>,
+    /// The endpoint's public key, a DER SubjectPublicKeyInfo.
+    pub public_key: Vec<u8>,
+    /// The tunnel addresses with their prefix lengths, as written: at most
+    /// one per family.
+    pub addresses: Vec<(std::net::IpAddr, u8)>,
+}
+
+impl fmt::Debug for MasqueWarpSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MasqueWarpSettings")
+            .field("private_key", &"<redacted>")
+            .field("public_key", &self.public_key.len())
+            .field("addresses", &self.addresses)
+            .finish()
+    }
+}
+
+/// MASQUE's `xmux` defaults: one tunnel, reusable for 1800 to 3000 seconds.
+pub const MASQUE_DEFAULT_XMUX: XhttpXmuxSettings = XhttpXmuxSettings {
+    max_concurrency: XhttpRange { from: 0, to: 0 },
+    max_connections: XhttpRange { from: 1, to: 1 },
+    c_max_reuse_times: XhttpRange { from: 0, to: 0 },
+    h_max_request_times: XhttpRange { from: 0, to: 0 },
+    h_max_reusable_secs: XhttpRange {
+        from: 1_800,
+        to: 3_000,
+    },
+    h_keep_alive_period_secs: 0,
+};
 
 /// Xray `loopback` outbound settings. The handler never dials: it routes the
 /// connection again, as if it came from an inbound tagged `inbound_tag`.
@@ -1992,6 +2081,8 @@ pub enum StreamTransport {
     Xhttp(Box<XhttpSettings>),
     /// `kcp` / `mkcp`.
     Kcp(KcpSettings),
+    /// `masque`, for the `masque` outbound only.
+    Masque(Box<MasqueSettings>),
 }
 
 /// An ordered XHTTP integer range. Xray accepts either a JSON integer or a

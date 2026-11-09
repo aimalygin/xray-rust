@@ -82,11 +82,10 @@
          };
          let data = self.stream.buf_mut().take_chunk(self.remaining_data);
  
-@@ -578,6 +590,64 @@
-             |cx| to_bytes(stream.poll_data(cx)),
+@@ -579,7 +591,65 @@
              Ok(Some(b)) if &*b == b"dy"
          );
-+    }
+     }
 +
 +    #[tokio::test]
 +    async fn poll_next_decodes_buffered_frames_before_reading() {
@@ -100,7 +99,7 @@
 +        }
 +        let chunk_len = recv.chunks[0].len();
 +        let mut stream: FrameStream<_, ()> = FrameStream::new(BufRecvStream::new(recv));
-+
+ 
 +        for _ in 0..64 {
 +            assert_poll_matches!(|cx| stream.poll_next(cx), Ok(Some(Frame::Headers(_))));
 +            assert!(stream.stream.buf().remaining() < chunk_len);
@@ -144,12 +143,14 @@
 +            }
 +        }
 +        assert_eq!(received, body);
-     }
- 
++    }
++
      // Helpers
+ 
+     #[derive(Default)]
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -1,6 +1,9 @@
+@@ -1,10 +1,15 @@
  //! HTTP/3 client and server
  #![deny(missing_docs, clippy::self_named_module_files)]
  #![allow(clippy::derive_partial_eq_without_eq)]
@@ -159,9 +160,41 @@
  
  pub mod client;
  
+ mod config;
++// xray-rust: the peer settings `client::SendRequest::peer_settings` returns.
++pub use config::Settings;
+ //pub mod error;
+ pub mod ext;
+ pub mod quic;
 --- a/src/config.rs
 +++ b/src/config.rs
-@@ -116,19 +116,27 @@
+@@ -41,6 +41,8 @@
+     pub(crate) enable_datagram: bool,
+     /// The maximum number of concurrent streams that can be opened by the peer.
+     pub(crate) max_webtransport_sessions: u64,
++    /// xray-rust: the draft-00 HTTP Datagram setting (0x276) set to 1
++    pub(crate) enable_datagram_draft00: bool,
+ }
+ 
+ impl From<&frame::Settings> for Settings {
+@@ -65,6 +67,8 @@
+                 .get(frame::SettingId::ENABLE_CONNECT_PROTOCOL)
+                 .map(|value| value != 0)
+                 .unwrap_or(defaults.enable_extended_connect),
++            // quic-go's MASQUE clients take only the value 1.
++            enable_datagram_draft00: settings.get(frame::SettingId::H3_DATAGRAM_DRAFT00) == Some(1),
+         }
+     }
+ }
+@@ -85,6 +89,7 @@
+                     enable_extended_connect,
+                     enable_datagram,
+                     max_webtransport_sessions,
++                    enable_datagram_draft00,
+                 },
+         } = value;
+ 
+@@ -116,19 +121,31 @@
              frame::SettingId::MAX_HEADER_LIST_SIZE,
              max_field_section_size,
          )?;
@@ -194,6 +227,10 @@
 +                frame::SettingId::WEBTRANSPORT_MAX_SESSIONS,
 +                max_webtransport_sessions,
 +            ),
++            (
++                frame::SettingId::H3_DATAGRAM_DRAFT00,
++                enable_datagram_draft00 as u64,
++            ),
 +        ] {
 +            if value != 0 {
 +                settings.insert(id, value)?;
@@ -202,7 +239,27 @@
  
          Ok(settings)
      }
-@@ -177,3 +185,37 @@
+@@ -142,6 +159,7 @@
+             enable_extended_connect: false,
+             enable_datagram: false,
+             max_webtransport_sessions: 0,
++            enable_datagram_draft00: false,
+         }
+     }
+ }
+@@ -165,6 +183,11 @@
+     pub fn enable_extended_connect(&self) -> bool {
+         self.enable_extended_connect
+     }
++
++    /// xray-rust: whether the draft-00 HTTP Datagram setting (0x276) is 1
++    pub fn enable_datagram_draft00(&self) -> bool {
++        self.enable_datagram_draft00
++    }
+ }
+ 
+ impl Default for Config {
+@@ -177,3 +200,62 @@
          }
      }
  }
@@ -225,6 +282,31 @@
 +        assert_eq!(encoded, [0x04, 0x05, 0x06, 0x80, 0xa0, 0x00, 0x00]);
 +    }
 +
++    /// Xray's WARP dial announces 0x276 = 1 after quic-go's two settings,
++    /// and its check of the server takes only the value 1.
++    #[test]
++    fn draft_datagram_setting_goes_last_and_reads_back_only_as_one() {
++        let mut config = Config::default();
++        config.send_grease = false;
++        config.settings.max_field_section_size = 10 << 20;
++        config.settings.enable_datagram = true;
++        config.settings.enable_datagram_draft00 = true;
++        let settings = frame::Settings::try_from(config).unwrap();
++        let mut encoded = Vec::new();
++        settings.encode(&mut encoded);
++        assert_eq!(
++            encoded,
++            [0x04, 0x0a, 0x06, 0x80, 0xa0, 0x00, 0x00, 0x33, 0x01, 0x42, 0x76, 0x01]
++        );
++        assert!(Settings::from(&settings).enable_datagram_draft00());
++        let mut other = frame::Settings::default();
++        other
++            .insert(frame::SettingId::H3_DATAGRAM_DRAFT00, 2)
++            .unwrap();
++        assert!(!Settings::from(&other).enable_datagram_draft00());
++        assert!(!Settings::from(&frame::Settings::default()).enable_datagram_draft00());
++    }
++
 +    #[test]
 +    fn enabled_extension_settings_are_still_sent() {
 +        let mut config = Config::default();
@@ -240,3 +322,144 @@
 +        assert_eq!(settings.get(frame::SettingId::ENABLE_WEBTRANSPORT), None);
 +    }
 +}
+--- a/src/client/builder.rs
++++ b/src/client/builder.rs
+@@ -105,6 +105,12 @@
+         self
+     }
+ 
++    /// xray-rust: announce the draft-00 HTTP Datagram setting (0x276)
++    pub fn enable_datagram_draft00(&mut self, value: bool) -> &mut Self {
++        self.config.settings.enable_datagram_draft00 = value;
++        self
++    }
++
+     /// Enables the extended CONNECT protocol required for various HTTP/3 extensions.
+     pub fn enable_extended_connect(&mut self, value: bool) -> &mut Self {
+         self.config.settings.enable_extended_connect = value;
+--- a/src/client/connection.rs
++++ b/src/client/connection.rs
+@@ -142,6 +142,12 @@
+     T: quic::OpenStreams<B>,
+     B: Buf,
+ {
++    /// xray-rust: waits for the server's SETTINGS frame. `None` means the
++    /// connection failed before it came. One task at a time may wait.
++    pub async fn peer_settings(&self) -> Option<crate::config::Settings> {
++        future::poll_fn(|cx| self.poll_peer_settings(cx)).await
++    }
++
+     /// Send an HTTP/3 request to the server
+     #[cfg_attr(feature = "tracing", instrument(skip_all, level = "trace"))]
+     pub async fn send_request(
+--- a/src/ext.rs
++++ b/src/ext.rs
+@@ -13,6 +13,10 @@
+     pub const WEB_TRANSPORT: Protocol = Protocol(ProtocolInner::WebTransport);
+     /// RFC 9298 protocol
+     pub const CONNECT_UDP: Protocol = Protocol(ProtocolInner::ConnectUdp);
++    /// RFC 9484 protocol (xray-rust)
++    pub const CONNECT_IP: Protocol = Protocol(ProtocolInner::ConnectIp);
++    /// Cloudflare WARP's CONNECT-IP flavour (xray-rust)
++    pub const CF_CONNECT_IP: Protocol = Protocol(ProtocolInner::CfConnectIp);
+ 
+     /// Return a &str representation of the `:protocol` pseudo-header value
+     #[inline]
+@@ -20,6 +24,8 @@
+         match self.0 {
+             ProtocolInner::WebTransport => "webtransport",
+             ProtocolInner::ConnectUdp => "connect-udp",
++            ProtocolInner::ConnectIp => "connect-ip",
++            ProtocolInner::CfConnectIp => "cf-connect-ip",
+         }
+     }
+ }
+@@ -28,6 +34,8 @@
+ enum ProtocolInner {
+     WebTransport,
+     ConnectUdp,
++    ConnectIp,
++    CfConnectIp,
+ }
+ 
+ /// Error when parsing the protocol
+@@ -40,6 +48,8 @@
+         match s {
+             "webtransport" => Ok(Self(ProtocolInner::WebTransport)),
+             "connect-udp" => Ok(Self(ProtocolInner::ConnectUdp)),
++            "connect-ip" => Ok(Self(ProtocolInner::ConnectIp)),
++            "cf-connect-ip" => Ok(Self(ProtocolInner::CfConnectIp)),
+             _ => Err(InvalidProtocol),
+         }
+     }
+--- a/src/proto/frame.rs
++++ b/src/proto/frame.rs
+@@ -406,7 +406,8 @@
+                 | SettingId::ENABLE_CONNECT_PROTOCOL
+                 | SettingId::ENABLE_WEBTRANSPORT
+                 | SettingId::WEBTRANSPORT_MAX_SESSIONS
+-                | SettingId::H3_DATAGRAM,
++                | SettingId::H3_DATAGRAM
++                | SettingId::H3_DATAGRAM_DRAFT00,
+         )
+     }
+ 
+@@ -455,6 +456,8 @@
+     H3_SETTING_ENABLE_DATAGRAM_CHROME_SPECIFIC= 0xFFD277,
+ 
+     WEBTRANSPORT_MAX_SESSIONS = 0x2b603743,
++    // xray-rust: draft-ietf-masque-h3-datagram-00, which Cloudflare WARP uses
++    H3_DATAGRAM_DRAFT00 = 0x276,
+ }
+ 
+ const SETTINGS_LEN: usize = 8;
+--- a/src/shared_state.rs
++++ b/src/shared_state.rs
+@@ -20,6 +20,8 @@
+     closing: AtomicBool,
+     /// Waker for the connection
+     waker: AtomicWaker,
++    /// xray-rust: woken when the peer's settings or a connection error arrive
++    settings_waker: AtomicWaker,
+ }
+ 
+ impl Default for SharedState {
+@@ -29,6 +31,7 @@
+             connection_error: OnceLock::new(),
+             closing: AtomicBool::new(false),
+             waker: AtomicWaker::new(),
++            settings_waker: AtomicWaker::new(),
+         }
+     }
+ }
+@@ -56,6 +59,7 @@
+             .shared_state()
+             .connection_error
+             .get_or_init(move || error);
++        self.shared_state().settings_waker.wake();
+         err.clone()
+     }
+ 
+@@ -94,8 +98,22 @@
+     /// Set the settings
+     fn set_settings(&self, settings: Settings) {
+         let _ = self.shared_state().settings.set(settings);
++        self.shared_state().settings_waker.wake();
+     }
+ 
++    /// xray-rust: the peer's settings once they arrive, or `None` once the
++    /// connection failed first. One task at a time may wait.
++    fn poll_peer_settings(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Settings>> {
++        self.shared_state().settings_waker.register(cx.waker());
++        if let Some(settings) = self.shared_state().settings.get() {
++            return std::task::Poll::Ready(Some(*settings));
++        }
++        if self.shared_state().connection_error.get().is_some() {
++            return std::task::Poll::Ready(None);
++        }
++        std::task::Poll::Pending
++    }
++
+     /// Returns the waker for the connection
+     fn waker(&self) -> &AtomicWaker {
+         &self.shared_state().waker

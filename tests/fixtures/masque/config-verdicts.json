@@ -1,0 +1,2840 @@
+{
+ "comment": "MASQUE config cases with Xray-core v26.10.31's `xray run -test` verdicts. `xray` is \"ok\" or a substring of its error; `ours` overrides the verdict xray-rust gives, for the reason in `why`; `core` is the error a configuration xray-rust takes still meets when the core starts, for the reason in `why`. scripts/check-masque-interop.sh rechecks every Xray verdict.",
+ "cases": [
+  {
+   "name": "minimal",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "ipv4 address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "ipv6 address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "2001:db8::1",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "bracketed ipv6 address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "[2001:db8::1]",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "no address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "infra/conf: MASQUE: \"address\" is not set"
+  },
+  {
+   "name": "null address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": null,
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "infra/conf: MASQUE: \"address\" is not set"
+  },
+  {
+   "name": "numeric address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": 1,
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal number into Go value of type string"
+  },
+  {
+   "name": "empty address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "ours": "error",
+   "why": "an empty server address can never be dialed",
+   "xray": "ok"
+  },
+  {
+   "name": "no port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example"
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "infra/conf: MASQUE: \"port\" is not set"
+  },
+  {
+   "name": "zero port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 0
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "infra/conf: MASQUE: \"port\" is not set"
+  },
+  {
+   "name": "port above 65535",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 65536
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal number 65536 into Go struct field MasqueClientConfig.port of type uint16"
+  },
+  {
+   "name": "string port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": "443"
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field MasqueClientConfig.port of type uint16"
+  },
+  {
+   "name": "fractional port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443.5
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal number 443.5 into Go struct field MasqueClientConfig.port of type uint16"
+  },
+  {
+   "name": "negative port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": -1
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal number -1 into Go struct field MasqueClientConfig.port of type uint16"
+  },
+  {
+   "name": "no settings",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "infra/conf: MASQUE: \"address\" is not set"
+  },
+  {
+   "name": "null settings",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": null,
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "infra/conf: MASQUE: \"address\" is not set"
+  },
+  {
+   "name": "unknown settings field",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443,
+     "mtu": 1280
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "ours": "error",
+   "why": "unknown fields are refused",
+   "xray": "ok"
+  },
+  {
+   "name": "remoteDNS of both families",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443,
+     "remoteDNS": [
+      "192.0.2.53",
+      "2001:db8::53"
+     ]
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "empty remoteDNS",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443,
+     "remoteDNS": []
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "null remoteDNS",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443,
+     "remoteDNS": null
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "remoteDNS domain",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443,
+     "remoteDNS": [
+      "dns.google"
+     ]
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "ParseAddr(\"dns.google\"): unexpected character (at \"dns.google\")"
+  },
+  {
+   "name": "remoteDNS prefix",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443,
+     "remoteDNS": [
+      "192.0.2.53/32"
+     ]
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "ParseAddr(\"192.0.2.53/32\"): unexpected character (at \"/32\")"
+  },
+  {
+   "name": "remoteDNS not an array",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443,
+     "remoteDNS": "192.0.2.53"
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field MasqueClientConfig.remoteDNS of type []string"
+  },
+  {
+   "name": "remoteDNS number",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443,
+     "remoteDNS": [
+      1
+     ]
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal number into MasqueClientConfig.remoteDNS.0 of type string"
+  },
+  {
+   "name": "remoteDNS with leading zero",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443,
+     "remoteDNS": [
+      "192.0.02.53"
+     ]
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "ParseAddr(\"192.0.02.53\"): IPv4 field has octet with leading zero"
+  },
+  {
+   "name": "remoteDNS IPv4-mapped",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443,
+     "remoteDNS": [
+      "::ffff:a00:35"
+     ]
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "scoped remoteDNS",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443,
+     "remoteDNS": [
+      "fe80::1%en0"
+     ]
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "ours": "error",
+   "why": "a scoped address cannot be reached through the tunnel",
+   "xray": "ok"
+  },
+  {
+   "name": "nine remoteDNS",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443,
+     "remoteDNS": [
+      "192.0.2.1",
+      "192.0.2.2",
+      "192.0.2.3",
+      "192.0.2.4",
+      "192.0.2.5",
+      "192.0.2.6",
+      "192.0.2.7",
+      "192.0.2.8",
+      "192.0.2.9"
+     ]
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "ours": "error",
+   "why": "at most 8 servers, as for WireGuard",
+   "xray": "ok"
+  },
+  {
+   "name": "no streamSettings",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    }
+   },
+   "xray": "proxy/masque: not masque transport"
+  },
+  {
+   "name": "raw network",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "proxy/masque: not masque transport"
+  },
+  {
+   "name": "no security",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "proxy/masque: MASQUE requires \"security\": \"tls\""
+  },
+  {
+   "name": "security none",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "none",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "proxy/masque: MASQUE requires \"security\": \"tls\""
+  },
+  {
+   "name": "reality",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "reality",
+     "realitySettings": {
+      "serverName": "a.example",
+      "publicKey": "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM",
+      "shortId": ""
+     }
+    }
+   },
+   "xray": "infra/conf: REALITY only supports RAW, XHTTP and gRPC for now."
+  },
+  {
+   "name": "method selects masque",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "method": "masque"
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "uppercase network",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "MASQUE",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "absent masqueSettings",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "null masqueSettings",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": null
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "empty masqueSettings",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {}
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "masqueSettings not an object",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": "x"
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field Config.outbounds.0.streamSettings.masqueSettings of type conf.MasqueConfig"
+  },
+  {
+   "name": "custom path",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "path": "/custom"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "path without slash",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "path": "custom"
+     }
+    }
+   },
+   "xray": "infra/conf: invalid \"path\": custom, only the variables {target} and {ipproto} are supported"
+  },
+  {
+   "name": "path template variables",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "path": "/{target}/{ipproto}/"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "path query template",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "path": "/m{?target,ipproto}"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "path ampersand template",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "path": "/m?a=1{&ipproto,target}"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "unknown path variable",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "path": "/m/{x}"
+     }
+    }
+   },
+   "xray": "infra/conf: invalid \"path\": /m/{x}, only the variables {target} and {ipproto} are supported"
+  },
+  {
+   "name": "unbalanced brace",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "path": "/m/{"
+     }
+    }
+   },
+   "xray": "infra/conf: invalid \"path\": /m/{, only the variables {target} and {ipproto} are supported"
+  },
+  {
+   "name": "null path",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "path": null
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "numeric path",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "path": 1
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal number into Go struct field Config.outbounds.0.streamSettings.masqueSettings.path of type string"
+  },
+  {
+   "name": "host with port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "host": "proxy.example:8443"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "host with path",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "host": "proxy.example/x"
+     }
+    }
+   },
+   "xray": "infra/conf: invalid \"host\": proxy.example/x"
+  },
+  {
+   "name": "host with space",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "host": "a b"
+     }
+    }
+   },
+   "xray": "infra/conf: invalid \"host\": a b"
+  },
+  {
+   "name": "host with user",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "host": "u@proxy.example"
+     }
+    }
+   },
+   "xray": "infra/conf: invalid \"host\": u@proxy.example"
+  },
+  {
+   "name": "bracketed ipv6 host",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "host": "[2001:db8::1]:443"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "host with two colons",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "host": "a:1:2"
+     }
+    }
+   },
+   "xray": "infra/conf: invalid \"host\": a:1:2"
+  },
+  {
+   "name": "bracketed ipv4 host",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "host": "[192.0.2.1]"
+     }
+    }
+   },
+   "xray": "infra/conf: invalid \"host\": [192.0.2.1]"
+  },
+  {
+   "name": "host with letters in port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "host": "a:b"
+     }
+    }
+   },
+   "xray": "infra/conf: invalid \"host\": a:b"
+  },
+  {
+   "name": "host with percent",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "host": "ex%41mple.com"
+     }
+    }
+   },
+   "xray": "infra/conf: invalid \"host\": ex%41mple.com"
+  },
+  {
+   "name": "unicode host",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "host": "пример.испытание"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "user and pass",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "user": "u",
+      "pass": "p"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "user with colon",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "user": "a:b",
+      "pass": "p"
+     }
+    }
+   },
+   "xray": "infra/conf: invalid \"user\": a:b"
+  },
+  {
+   "name": "pass alone",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "pass": "p"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "custom header",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "headers": {
+       "X-Test": "1"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "Host header",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "headers": {
+       "Host": "x"
+      }
+     }
+    }
+   },
+   "xray": "infra/conf: \"headers\" can't contain \"Host\""
+  },
+  {
+   "name": "lowercase host header",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "headers": {
+       "host": "x"
+      }
+     }
+    }
+   },
+   "xray": "infra/conf: \"headers\" can't contain \"host\""
+  },
+  {
+   "name": "capsule-protocol header",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "headers": {
+       "Capsule-Protocol": "?1"
+      }
+     }
+    }
+   },
+   "xray": "infra/conf: \"headers\" can't contain \"Capsule-Protocol\""
+  },
+  {
+   "name": "authorization header",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "headers": {
+       "Authorization": "Bearer x"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "authorization header with user",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "user": "u",
+      "headers": {
+       "authorization": "x"
+      }
+     }
+    }
+   },
+   "xray": "infra/conf: \"headers\" can't contain \"authorization\" when \"user\" or \"pass\" is set"
+  },
+  {
+   "name": "header name with space",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "headers": {
+       "bad name": "x"
+      }
+     }
+    }
+   },
+   "xray": "infra/conf: invalid header in \"headers\": \"bad name\""
+  },
+  {
+   "name": "header value with newline",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "headers": {
+       "X": "a\nb"
+      }
+     }
+    }
+   },
+   "xray": "infra/conf: invalid header in \"headers\": \"X\""
+  },
+  {
+   "name": "header value with tab",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "headers": {
+       "X": "a\tb"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "numeric header value",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "headers": {
+       "X": 1
+      }
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal number into Go struct field Config.outbounds.0.streamSettings.masqueSettings.headers.X of type string"
+  },
+  {
+   "name": "null header value",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "headers": {
+       "X": null
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "headers not an object",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "headers": [
+       "X"
+      ]
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal array into Go struct field Config.outbounds.0.streamSettings.masqueSettings.headers of type map[string]string"
+  },
+  {
+   "name": "user agent preset",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "headers": {
+       "User-Agent": "firefox"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "empty user agent",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "headers": {
+       "user-agent": ""
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "connections with concurrency",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "xmux": {
+       "maxConnections": 2,
+       "maxConcurrency": 2
+      }
+     }
+    }
+   },
+   "xray": "infra/conf: maxConnections cannot be specified together with maxConcurrency"
+  },
+  {
+   "name": "concurrency range",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "xmux": {
+       "maxConcurrency": "2-4"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "negative keepalive",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "xmux": {
+       "hKeepAlivePeriod": -1
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "reuse times",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "xmux": {
+       "cMaxReuseTimes": 8,
+       "hMaxReusableSecs": "60-120"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "xmux not an object",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "xmux": "x"
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field Config.outbounds.0.streamSettings.masqueSettings.xmux of type conf.XmuxConfig"
+  },
+  {
+   "name": "bad xmux range",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "xmux": {
+       "maxConnections": "a-b"
+      }
+     }
+    }
+   },
+   "xray": "infra/conf: Invalid integer range, expected either string of form \"1-2\" or plain integer."
+  },
+  {
+   "name": "unknown masqueSettings field",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "mtu": 1280
+     }
+    }
+   },
+   "ours": "error",
+   "why": "unknown fields are refused",
+   "xray": "ok"
+  },
+  {
+   "name": "empty warp",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "warp": {}
+     }
+    }
+   },
+   "xray": "infra/conf: empty key"
+  },
+  {
+   "name": "null warp",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "warp": null
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "warp not an object",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "warp": "x"
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field Config.outbounds.0.streamSettings.masqueSettings.warp of type conf.MasqueWarpConfig"
+  },
+  {
+   "name": "h2 alpn",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ]
+     }
+    }
+   },
+   "ours": "error",
+   "why": "MASQUE over HTTP/2 comes in the next change",
+   "xray": "ok"
+  },
+  {
+   "name": "h2 and http/1.1 alpn",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2",
+       "http/1.1"
+      ]
+     }
+    }
+   },
+   "ours": "error",
+   "why": "MASQUE over HTTP/2 comes in the next change",
+   "xray": "ok"
+  },
+  {
+   "name": "h3 and h2 alpn",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h3",
+       "h2"
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "http/1.1 alpn",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "http/1.1"
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "h3 alpn",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h3"
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "brutal congestion",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "congestion": "brutal",
+       "brutalUp": "100 mbps"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "force-brutal congestion",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "congestion": "force-brutal",
+       "brutalUp": "100 mbps"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "reno congestion",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "congestion": "reno"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "unknown congestion",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "congestion": "cubic"
+      }
+     }
+    }
+   },
+   "xray": "infra/conf: unknown congestion control: cubic, valid values: reno, bbr, brutal, force-brutal"
+  },
+  {
+   "name": "quic windows",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "initStreamReceiveWindow": 1048576,
+       "maxIdleTimeout": 60,
+       "keepAlivePeriod": 15
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp noise",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "noise",
+        "settings": {
+         "noise": [
+          {
+           "rand": "10-20"
+          },
+          {
+           "type": "str",
+           "packet": "hello",
+           "delay": "5-10"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udphop",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "udphop",
+        "settings": {
+         "remotePorts": "443-445",
+         "mode": "intervalRemote"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp header-custom",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "header-custom",
+        "settings": {
+         "client": [
+          {
+           "type": "str",
+           "packet": "hi"
+          }
+         ],
+         "server": [
+          {
+           "type": "str",
+           "packet": "ok"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp sudoku",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "sudoku",
+        "settings": {
+         "password": "synthetic-sudoku"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp xdns",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "xdns",
+        "settings": {
+         "domains": [
+          {
+           "names": [
+            "t.example"
+           ],
+           "types": [
+            1,
+            5,
+            16,
+            28
+           ],
+           "edns0": 4096
+          }
+         ],
+         "resolvers": [
+          {
+           "addrs": [
+            "192.0.2.53:53"
+           ]
+          }
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp realm",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "realm",
+        "settings": {
+         "url": "realm+http://synthetic-token@192.0.2.80:8080/masque",
+         "stunServers": [
+          "192.0.2.3:3478"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp noise inside realm",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "noise",
+        "settings": {
+         "noise": [
+          {
+           "rand": "10-20"
+          }
+         ]
+        }
+       },
+       {
+        "type": "realm",
+        "settings": {
+         "url": "realm+http://synthetic-token@192.0.2.80:8080/masque",
+         "stunServers": [
+          "192.0.2.3:3478"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp realm with udphop",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "realm",
+        "settings": {
+         "url": "realm+http://synthetic-token@192.0.2.80:8080/masque",
+         "stunServers": [
+          "192.0.2.3:3478"
+         ]
+        }
+       },
+       {
+        "type": "udphop",
+        "settings": {
+         "remotePorts": "443-445",
+         "mode": "intervalRemote"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "ours": "error",
+   "why": "realm must be the last UDP mask and udphop sends to the server's ports, as on every carrier",
+   "xray": "ok"
+  },
+  {
+   "name": "udp xicmp",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "xicmp"
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp xicmp with ips",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "xicmp",
+        "settings": {
+         "ips": [
+          "192.0.2.1"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp xicmp to a name",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "xicmp"
+       }
+      ]
+     }
+    }
+   },
+   "core": "outbound network is not supported",
+   "why": "Xray-core never resolves the address for xicmp and fails every dial; the core refuses it at start, as on every carrier",
+   "xray": "ok"
+  },
+  {
+   "name": "udp sudoku inside xicmp",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "sudoku",
+        "settings": {
+         "password": "synthetic-sudoku"
+        }
+       },
+       {
+        "type": "xicmp"
+       }
+      ]
+     }
+    }
+   },
+   "ours": "error",
+   "why": "sudoku's datagrams on QUIC exceed what an echo carries, as on every QUIC carrier",
+   "xray": "ok"
+  },
+  {
+   "name": "tlshello fragment on h3",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "fragment",
+        "settings": {
+         "packets": "tlshello",
+         "length": "100-200",
+         "delay": "10-20"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "ours": "error",
+   "why": "TCP masks cannot apply to QUIC, as on XHTTP over HTTP/3",
+   "xray": "ok"
+  },
+  {
+   "name": "sudoku tcp mask on h3",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "sudoku",
+        "settings": {
+         "password": "synthetic-sudoku"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "core": "outbound network is not supported",
+   "why": "the QUIC dial takes no TCP mask, which Xray-core's ignores; the core refuses them at start, as XHTTP over HTTP/3 refuses them",
+   "xray": "ok"
+  },
+  {
+   "name": "header-custom tcp mask on h3",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "header-custom",
+        "settings": {
+         "clients": [
+          [
+           {
+            "type": "str",
+            "packet": "hello"
+           }
+          ]
+         ],
+         "servers": [
+          [
+           {
+            "type": "str",
+            "packet": "ok"
+           }
+          ]
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "core": "outbound network is not supported",
+   "why": "the QUIC dial takes no TCP mask, which Xray-core's ignores; the core refuses them at start, as XHTTP over HTTP/3 refuses them",
+   "xray": "ok"
+  },
+  {
+   "name": "masqueSettings on raw network",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "path": "x"
+     }
+    }
+   },
+   "xray": "infra/conf: invalid \"path\": x, only the variables {target} and {ipproto} are supported"
+  },
+  {
+   "name": "vless with masque network",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "masque.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    }
+   },
+   "xray": "infra/conf: the masque transport can only be used by the masque outbound"
+  },
+  {
+   "name": "vless with inert masqueSettings",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "masque.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "path": "/x"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "mux",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "ours": "error",
+   "why": "Mux is for VLESS, Trojan, Shadowsocks and VMess, as everywhere in xray-rust",
+   "xray": "ok"
+  },
+  {
+   "name": "dialerProxy",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "sockopt": {
+      "dialerProxy": "direct"
+     }
+    }
+   },
+   "extraOutbounds": [
+    {
+     "tag": "direct",
+     "protocol": "freedom"
+    }
+   ],
+   "ours": "error",
+   "why": "chaining is refused, as for Hysteria and WireGuard",
+   "xray": "ok"
+  },
+  {
+   "name": "sockopt domainStrategy",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "sockopt": {
+      "domainStrategy": "UseIPv4"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "bbr conservative profile",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "bbrProfile": "conservative"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "bbr aggressive profile under brutal",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "congestion": "brutal",
+       "brutalUp": "100 mbps",
+       "bbrProfile": "aggressive"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "unknown bbr profile",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "bbrProfile": "fast"
+      }
+     }
+    }
+   },
+   "xray": "infra/conf: unknown bbr profile"
+  }
+ ]
+}

@@ -910,6 +910,14 @@ pub(crate) fn tcp_relay_policy(
                 outbound_policy.relay_buffer_size(),
             )
         }
+        TcpOutbound::Masque(_) => {
+            let outbound_policy = effective_policy_for_level(config, Some(0));
+            (
+                crate::outbound::masque::open_timeout(outbound_policy.handshake),
+                policy.relay_timeouts(outbound_policy),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
         TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     }
 }

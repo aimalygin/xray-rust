@@ -53,3 +53,28 @@ announced four settings Xray never sends. Each of them now goes out only when
 nonzero; 0 is the protocol default for all four, so peers read the same
 configuration. `MAX_FIELD_SECTION_SIZE` and GREASE are unchanged.
 `xray_tests` in `src/config.rs` covers both cases.
+
+## CONNECT-IP for the MASQUE client
+
+Xray-core's MASQUE client opens a CONNECT-IP tunnel (RFC 9484) as an HTTP/3
+extended CONNECT with quic-go's `http3`. Four additions let this crate do the
+same; each is used only by `crates/xray-transport/src/masque` and changes
+nothing for other callers:
+
+- `ext::Protocol::CONNECT_IP` and `CF_CONNECT_IP` send the `:protocol`
+  values `connect-ip` and Cloudflare WARP's `cf-connect-ip`; `FromStr`
+  reads them too. Upstream knows only `webtransport` and `connect-udp`.
+- `client::Builder::enable_datagram_draft00` announces setting `0x276`
+  (draft-ietf-masque-h3-datagram-00) with value 1, after the other settings,
+  where Xray's WARP dial puts it. The setting is now kept when a peer sends
+  it, and `Settings::enable_datagram_draft00` reports whether its value is
+  exactly 1, which is all Xray's client accepts.
+- `client::SendRequest::peer_settings` waits for the server's SETTINGS
+  frame, or for the connection to fail first. Xray's client checks extended
+  CONNECT and datagram support before it sends the request; upstream gives no
+  way to wait for them. A waker in `SharedState` is woken when the settings
+  or a connection error arrive; one task waits at a time.
+- `Settings` is exported, as the type `peer_settings` returns.
+
+`draft_datagram_setting_goes_last_and_reads_back_only_as_one` in
+`src/config.rs` covers the setting's encoding and reading.

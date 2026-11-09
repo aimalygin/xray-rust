@@ -385,6 +385,7 @@ fn stream_settings_accept_every_transport_and_its_security() {
             StreamTransport::Xhttp(_) => "xhttp",
             StreamTransport::Hysteria(_) => "hysteria",
             StreamTransport::Kcp(_) => "kcp",
+            StreamTransport::Masque(_) => "masque",
         };
         let parsed_security = match parsed.security {
             StreamSecurity::None => "none",

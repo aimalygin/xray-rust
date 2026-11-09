@@ -45,6 +45,7 @@ pub use model::{
     SocksOutboundSettings, TproxySettings, UdpNoiseItem, UdpNoiseSettings, UdpSudoku, XdnsDomain,
     XdnsMask, XdnsProtocol, XdnsResolver, XicmpMask, XmcMask, XmcProfile,
 };
+pub use model::{MasqueOutboundSettings, MasqueSettings, MasqueWarpSettings, MASQUE_DEFAULT_XMUX};
 pub use parser::{
     parse_xray_json, parse_xray_json_with_exclusive_geodata_dirs, parse_xray_json_with_geodata_dir,
     parse_xray_json_with_geodata_dirs, ConfigParseError, ParsedConfig, MAX_CONFIG_DOMAIN_MATCHERS,

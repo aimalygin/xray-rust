@@ -351,6 +351,8 @@ pub enum CoreError {
     Hysteria(#[from] xray_transport::hysteria::HysteriaError),
     #[error(transparent)]
     Wireguard(#[from] xray_wireguard::Error),
+    #[error(transparent)]
+    Masque(#[from] xray_transport::masque::MasqueError),
     #[error("TUN MTU {0} is outside {min}..={max}", min = TunMtu::MIN, max = TunMtu::MAX)]
     InvalidTunMtu(u32),
     #[error("core is already running")]
@@ -847,6 +849,11 @@ impl Core {
                 xray_config::StreamTransport::Hysteria(_)
             ) {
                 outbound::HysteriaOutbound::new(outbound)?;
+            }
+            // Built for each flow's first use; its refusals belong to the
+            // start, as Hysteria's and WireGuard's.
+            if matches!(outbound.settings, xray_config::OutboundSettings::Masque(_)) {
+                outbound::MasqueOutbound::new(outbound)?;
             }
         }
         let config = Arc::new(config);

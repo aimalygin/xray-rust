@@ -34,15 +34,15 @@ mod h2_bdp;
 mod http2_connect;
 pub(crate) mod http_headers;
 mod httpupgrade;
-mod masquerade;
+pub(crate) mod masquerade;
 mod websocket;
 mod websocket_frame;
 pub(crate) mod xhttp;
 
 pub(crate) use xhttp::{
     configure_quic_datagram_socket, connect_h2, connect_quic_transport,
-    connect_quic_transport_with_datagrams, H3ConnectConfig, H3Error, QuicSendWindow,
-    QUIC_INITIAL_SEND_WINDOW, QUIC_SEND_WINDOW_SAMPLE_BYTES,
+    connect_quic_transport_with_datagrams, hop_udp_carrier, H3ConnectConfig, H3Error,
+    QuicSendWindow, QUIC_INITIAL_SEND_WINDOW, QUIC_SEND_WINDOW_SAMPLE_BYTES,
 };
 
 /// Test scaffolding, not API: `tests/stream_grpc_tests.rs` imports from here

@@ -45,7 +45,11 @@ impl Parser<'_> {
                 "REALITY only supports RAW, XHTTP and gRPC for now",
             );
         }
+        // MASQUE runs over HTTP/3 unless its ALPN asks for HTTP/2 alone.
+        let masque_h3 = stream_network == StreamNetwork::Masque
+            && matches!(&security, StreamSecurity::Tls(tls) if !super::masque::masque_uses_http2(&tls.alpn));
         let is_quic = stream_network == StreamNetwork::Hysteria
+            || masque_h3
             || stream_network == StreamNetwork::Xhttp
                 && matches!(&security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]);
         let mut quic_params = self.parse_quic_params(stream, stream_network, is_quic, index);
@@ -85,7 +89,8 @@ impl Parser<'_> {
         let transport = self.parse_stream_transport(stream, stream_network, index)?;
         let chrome_parrot =
             stream.and_then(|s| s.pointer("/finalmask/quicParams/disableChromeParrot"));
-        if is_quic && chrome_parrot != Some(&Value::Bool(true)) {
+        // Xray-core's MASQUE dial does not parrot Chrome either.
+        if is_quic && !masque_h3 && chrome_parrot != Some(&Value::Bool(true)) {
             self.warning(format!("$.outbounds[{index}].streamSettings.finalmask.quicParams.disableChromeParrot"),
                 "QUIC uses native Quinn TLS, without Xray ChromeParrot fingerprint shaping; set disableChromeParrot=true to acknowledge this compatibility limit");
         }
@@ -111,6 +116,7 @@ impl Parser<'_> {
         }
 
         let udp_carrier = matches!(stream_network, StreamNetwork::Hysteria | StreamNetwork::Kcp)
+            || masque_h3
             || stream_network == StreamNetwork::Xhttp
                 && matches!(&security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]);
         if udp_noise.is_some() && !udp_carrier {
@@ -345,6 +351,10 @@ impl Parser<'_> {
                 self.parse_kcp_settings(stream, index)
                     .map(|kcp| StreamTransport::Kcp(KcpSettings { masks, ..kcp }))
             }
+            StreamNetwork::Masque => self
+                .parse_masque_transport(stream, index)
+                .map(Box::new)
+                .map(StreamTransport::Masque),
         }
     }
 
@@ -377,6 +387,7 @@ impl Parser<'_> {
             StreamNetwork::Grpc => &["grpcSettings"],
             StreamNetwork::Xhttp => &["xhttpSettings", "splithttpSettings"],
             StreamNetwork::Kcp => &["kcpSettings"],
+            StreamNetwork::Masque => &["masqueSettings"],
         };
 
         for key in [
@@ -389,6 +400,7 @@ impl Parser<'_> {
             "xhttpSettings",
             "splithttpSettings",
             "kcpSettings",
+            "masqueSettings",
         ] {
             let value = stream.get(key);
             let null_xhttp_pointer = matches!(key, "xhttpSettings" | "splithttpSettings")
@@ -427,6 +439,10 @@ impl Parser<'_> {
                 }
                 "kcpSettings" => {
                     let _ = self.parse_kcp_settings(Some(stream), index);
+                }
+                // Xray-core builds it under any network.
+                "masqueSettings" => {
+                    let _ = self.parse_masque_transport(Some(stream), index);
                 }
                 // `xhttpSettings` has priority over the legacy spelling, so
                 // the lower-priority block is inert when both are present.
@@ -1449,7 +1465,8 @@ impl Parser<'_> {
                 None
             }
             "kcp" | "mkcp" => Some(StreamNetwork::Kcp),
-            network @ ("masque" | "xdrive") => {
+            "masque" => Some(StreamNetwork::Masque),
+            network @ "xdrive" => {
                 self.error(
                     network_path,
                     format!("stream network `{network}` is not supported by xray-rust"),

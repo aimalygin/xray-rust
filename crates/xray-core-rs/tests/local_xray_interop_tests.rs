@@ -3684,6 +3684,9 @@ mod xmc;
 #[path = "local_xray_interop_tests/xdns.rs"]
 mod xdns;
 
+#[path = "local_xray_interop_tests/masque.rs"]
+mod masque;
+
 #[path = "../../../tests/support/realm_rendezvous.rs"]
 mod realm_rendezvous;
 

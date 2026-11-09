@@ -358,6 +358,16 @@ pub(crate) fn anchored_firefox_user_agent() -> String {
     firefox_user_agent(BrowserVersions::anchored().firefox)
 }
 
+/// `utils.SafariUA` (`browser.go:153`), which MASQUE's `safari` preset sends.
+pub(crate) fn anchored_safari_user_agent() -> String {
+    safari_user_agent(&BrowserVersions::anchored().safari)
+}
+
+/// `utils.CurlUA` (`browser.go:150`), which MASQUE's `curl` preset sends.
+pub(crate) fn anchored_curl_user_agent() -> String {
+    format!("curl/{}", BrowserVersions::anchored().curl)
+}
+
 fn chromium_user_agent(profile: Profile, chrome: u32) -> String {
     let chrome_ua = format!(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) \

@@ -26,7 +26,14 @@ async fn tcp_reset_is_an_error_after_buffered_bytes_and_releases_flow() {
         let (incoming, input) = mpsc::channel(PACKET_QUEUE);
         let (commands, requests) = mpsc::channel(COMMAND_QUEUE);
         let stop = Stop::new();
-        let stack = stack::Stack::new(&config, out, input, requests, wake.clone());
+        let stack = stack::Stack::<Packet<gotatun::packet::Ip>>::new(
+            &config.addresses,
+            config.mtu,
+            out,
+            input,
+            requests,
+            wake.clone(),
+        );
         let task = tokio::spawn(stack.run(stop.clone()));
         let slots = Arc::new(Semaphore::new(1));
         let flow = Arc::new(Flow {
@@ -220,26 +227,19 @@ async fn idle_carrier_receive_follows_rebind_and_releases_old_sockets() {
 
 fn queue_test_client(commands: mpsc::Sender<Command>, udp_limit: usize) -> Client {
     Client(Arc::new(Owner {
-        config: Config {
-            secret_key: KeyMaterial::parse(&"42".repeat(32)).unwrap(),
-            peers: vec![crate::PeerConfig {
-                public_key: KeyMaterial::parse(&"53".repeat(32)).unwrap(),
-                preshared_key: None,
-                endpoint: "127.0.0.1:51820".parse().unwrap(),
-                allowed_ips: vec!["0.0.0.0/0".parse().unwrap()],
-                keepalive: 0,
-            }],
+        flows: Flows {
             addresses: vec!["10.44.0.2".parse().unwrap()],
             mtu: 1420,
+            routes: Routes::AllowedIps(vec!["0.0.0.0/0".parse().unwrap()]),
+            commands,
+            stop: Stop::new(),
+            wake: Arc::new(Notify::new()),
+            tcp: Arc::new(Semaphore::new(TCP_LIMIT)),
+            udp: Arc::new(Semaphore::new(udp_limit)),
+            next: AtomicU64::new(1),
         },
-        commands,
-        stop: Stop::new(),
         finished: watch::channel(false).1,
-        wake: Arc::new(Notify::new()),
         rebind: Arc::default(),
-        tcp: Arc::new(Semaphore::new(TCP_LIMIT)),
-        udp: Arc::new(Semaphore::new(udp_limit)),
-        next: AtomicU64::new(1),
     }))
 }
 

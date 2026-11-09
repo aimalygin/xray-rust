@@ -26,6 +26,7 @@ mod happy_eyeballs;
 pub mod header_custom;
 pub mod hysteria;
 pub mod kcp;
+pub mod masque;
 mod memory_class;
 pub mod realm;
 pub mod sudoku;

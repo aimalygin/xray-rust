@@ -265,7 +265,9 @@ fn build_transport_layer(
 
     Ok(match &stream.transport {
         StreamTransport::Raw => TransportLayer::Raw,
-        StreamTransport::Hysteria(_) => return Err(CoreError::UnsupportedOutboundNetwork),
+        StreamTransport::Hysteria(_) | StreamTransport::Masque(_) => {
+            return Err(CoreError::UnsupportedOutboundNetwork)
+        }
         StreamTransport::WebSocket(websocket) => TransportLayer::WebSocket(WebSocketConfig {
             path: websocket.path.clone(),
             host: websocket.host.clone().unwrap_or_else(host_fallback),

@@ -16,7 +16,30 @@ impl DnsResolver for NoLocalFallback {
     }
 }
 
-struct TunnelDns(Client);
+/// The stack a tunnel's resolver opens its queries on.
+pub(crate) enum TunnelFlows {
+    Wireguard(Client),
+    /// MASQUE's stack over a CONNECT-IP tunnel.
+    Netstack(xray_wireguard::Netstack),
+}
+
+impl TunnelFlows {
+    async fn open_udp(&self, server: SocketAddr) -> Result<xray_wireguard::UdpSession, Error> {
+        match self {
+            Self::Wireguard(client) => client.open_udp(server).await,
+            Self::Netstack(stack) => stack.open_udp(server).await,
+        }
+    }
+
+    async fn connect(&self, server: SocketAddr) -> Result<xray_wireguard::TcpStream, Error> {
+        match self {
+            Self::Wireguard(client) => client.connect(server).await,
+            Self::Netstack(stack) => stack.connect(server).await,
+        }
+    }
+}
+
+struct TunnelDns(TunnelFlows);
 
 #[async_trait]
 impl DnsQueryTransport for TunnelDns {
@@ -28,9 +51,7 @@ impl DnsQueryTransport for TunnelDns {
         query: &[u8],
     ) -> io::Result<Vec<u8>> {
         let NameServer::Socket(server) = server else {
-            return Err(io::Error::other(
-                "WireGuard remoteDNS must be an IP literal",
-            ));
+            return Err(io::Error::other("remoteDNS must be an IP literal"));
         };
         match transport {
             DnsQueryTransportKind::Udp => {
@@ -43,7 +64,7 @@ impl DnsQueryTransport for TunnelDns {
                         return Ok(reply.to_vec());
                     }
                 }
-                Err(io::Error::other("too many unrelated WireGuard DNS replies"))
+                Err(io::Error::other("too many unrelated tunnel DNS replies"))
             }
             DnsQueryTransportKind::Tcp => {
                 let length = u16::try_from(query.len())
@@ -57,12 +78,12 @@ impl DnsQueryTransport for TunnelDns {
                 stream.read_exact(&mut reply).await?;
                 Ok(reply)
             }
-            _ => Err(io::Error::other("unsupported WireGuard DNS transport")),
+            _ => Err(io::Error::other("unsupported tunnel DNS transport")),
         }
     }
 }
 
-pub(super) fn resolver(client: Client, servers: &[IpAddr]) -> Arc<dyn DnsResolver> {
+pub(crate) fn resolver(flows: TunnelFlows, servers: &[IpAddr]) -> Arc<dyn DnsResolver> {
     let resolver = ConfiguredDnsResolver::new(
         DomainHostIndex::default(),
         servers
@@ -71,7 +92,7 @@ pub(super) fn resolver(client: Client, servers: &[IpAddr]) -> Arc<dyn DnsResolve
             .collect(),
         Arc::new(NoLocalFallback),
     )
-    .with_query_transport(Arc::new(TunnelDns(client)))
+    .with_query_transport(Arc::new(TunnelDns(flows)))
     .with_resolution_timeout(Duration::from_secs(8));
     // Shared bounded cache: 256 entries, single-flight, authoritative TTL capped
     // at 300 seconds, no stale answers. It belongs to this device, not the host.
