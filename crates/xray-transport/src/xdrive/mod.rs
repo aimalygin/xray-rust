@@ -13,6 +13,8 @@
 //! outbound share their connections as XMUX hands them out, each session
 //! leasing its own until it ends.
 
+#[cfg(test)]
+mod body_tests;
 mod client;
 mod goregex;
 mod h2;
