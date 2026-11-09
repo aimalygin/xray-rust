@@ -463,6 +463,81 @@ async fn masque_profiles_xray_accepts_build_a_core() {
     assert!(built > 50, "only {built} cases built a core");
 }
 
+/// An XDRIVE outbound never looks its server address up, as Xray-core's
+/// dial never does: its sessions meet the server in the storage. A flow
+/// through the SOCKS inbound announces a session and stores the VLESS
+/// request in its uplink, with no server there to answer.
+#[tokio::test(flavor = "multi_thread")]
+async fn xdrive_flows_announce_sessions_without_resolving_the_server() {
+    use serde_json::json;
+    use xray_transport::{DnsResolver, TransportError};
+
+    struct Refuses;
+    #[async_trait::async_trait]
+    impl DnsResolver for Refuses {
+        async fn resolve(
+            &self,
+            domain: &str,
+            _port: u16,
+        ) -> Result<std::net::SocketAddr, TransportError> {
+            panic!("an XDRIVE outbound looked up {domain}");
+        }
+    }
+
+    let folder = std::env::temp_dir().join(format!("xray-rust-xdrive-core-{}", Uuid::new_v4()));
+    let config = json!({
+        "inbounds": [{"protocol": "socks", "tag": "socks-in", "listen": "127.0.0.1", "port": 0}],
+        "outbounds": [{"protocol": "vless",
+            "settings": {"address": "xdrive.invalid", "port": 443,
+                "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+                "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"},
+            "streamSettings": {"network": "xdrive", "xdriveSettings": {"service": "local",
+                "remoteFolder": folder.to_str().unwrap(), "flushIntervalMs": 5}},
+            "mux": {"enabled": true}}]
+    });
+    let parsed = xray_config::parse_xray_json(&config.to_string()).unwrap();
+    let mut core = Core::with_runtime_dependencies(
+        parsed.config,
+        Arc::new(Refuses),
+        Arc::new(TransportDialer::system().unwrap()),
+    )
+    .unwrap();
+    core.start().await.unwrap();
+    let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+    let mut client = TcpStream::connect(proxy).await.unwrap();
+    client.write_all(&[5, 1, 0]).await.unwrap();
+    let mut greeting = [0; 2];
+    client.read_exact(&mut greeting).await.unwrap();
+    client
+        .write_all(&[5, 1, 0, 1, 192, 0, 2, 1, 0, 80])
+        .await
+        .unwrap();
+    let _ = client.write_all(b"GET / HTTP/1.1\r\n\r\n").await;
+    let uplink_segments = || -> usize {
+        let Ok(sessions) = std::fs::read_dir(folder.join("streams")) else {
+            return 0;
+        };
+        sessions
+            .filter_map(Result::ok)
+            .filter_map(|session| std::fs::read_dir(session.path().join("c2s")).ok())
+            .flat_map(|entries| entries.filter_map(Result::ok))
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".seg"))
+            .count()
+    };
+    timeout(Duration::from_secs(10), async {
+        while uplink_segments() == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the flow stored its request");
+    let announced = std::fs::read_dir(folder.join("sessions")).unwrap().count();
+    assert_eq!(announced, 1);
+    drop(client);
+    core.stop().await.unwrap();
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
 /// Every XDRIVE profile Xray-core accepts builds a core, except the
 /// refusals the corpus records: the services not reached yet, and what
 /// Xray-core accepts only to fail every dial.
