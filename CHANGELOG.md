@@ -10,6 +10,23 @@ long-term supported release series.
 
 ## Unreleased
 
+- The `realm` UDP mask reaches a server behind NAT, as Xray-core's client
+  does: mKCP, Hysteria and XHTTP over HTTP/3 learn their public addresses
+  from STUN servers over the carrier's own socket, a Hysteria realm
+  rendezvous introduces them to the server registered under the realm's
+  name, both sides punch, and the carrier's datagrams go to the address that
+  answered. See [realm mask](docs/config-compatibility.md#realm-mask).
+  - `portMapping` is read but not acted on yet: no UPnP or NAT-PMP mapping
+    is made, as when Xray-core finds no gateway.
+  - It must be the last UDP mask and runs neither with udphop, xdns nor
+    header-custom. A URL port of 0 or above 65535, a host with a colon that
+    is no IPv6 address, a token with control characters and a STUN server
+    whose port Xray-core cannot use fail the configuration, where Xray-core
+    fails every dial or skips the server.
+  - The rendezvous is spoken over HTTP/1.1 and its name and the STUN
+    servers' are resolved like the outbound's server address. A Hysteria
+    connection whose network changes closes, and the next dial is introduced
+    again.
 - `quicParams.bbrProfile` `conservative` and `aggressive` work on Hysteria and
   XHTTP over HTTP/3: they run a port of Xray-core's own BBR sender with the
   profile's gains, startup rounds and options, where they failed to parse

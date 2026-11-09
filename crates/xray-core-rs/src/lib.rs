@@ -739,6 +739,15 @@ impl Core {
                     .with_socket_options(Arc::new(xray_transport::SocketOptions::default())),
             )
         };
+        // A realm mask's STUN servers and rendezvous are resolved like an
+        // outbound's server.
+        let transport_dialer = Arc::new(
+            transport_dialer.as_ref().clone().with_realm_resolver(
+                dns.bootstrap
+                    .clone()
+                    .unwrap_or_else(|| Arc::clone(&dns.destination)),
+            ),
+        );
         dns.rules
             .route_probe
             .get_or_insert_with(|| transport_dialer.route_probe());
@@ -764,7 +773,8 @@ impl Core {
             if (outbound.stream.udp_noise.is_some()
                 || outbound.stream.udp_header_custom.is_some()
                 || outbound.stream.udp_sudoku.is_some()
-                || outbound.stream.udp_xdns.is_some())
+                || outbound.stream.udp_xdns.is_some()
+                || outbound.stream.udp_realm.is_some())
                 && matches!(
                     outbound.settings,
                     xray_config::OutboundSettings::Freedom(_)

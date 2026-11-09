@@ -88,6 +88,8 @@ pub struct HysteriaConfig {
     /// `Hysteria-CC-RX`. A server with its own Brutal rate sends at the lower
     /// of the two; zero leaves it on BBR.
     pub receive_bytes_per_second: u64,
+    /// What a `realm` mask in `carrier` takes from the dial.
+    pub realm: Option<crate::realm::RealmEnv>,
 }
 
 impl HysteriaConfig {
@@ -103,6 +105,7 @@ impl HysteriaConfig {
                 ..H3QuicConfig::default()
             },
             receive_bytes_per_second: 0,
+            realm: None,
         }
     }
 }
@@ -278,6 +281,11 @@ impl Shared {
         if !self.is_live() {
             return Err(HysteriaError::Closed);
         }
+        // The server's NAT opened for the realm socket alone; a new socket
+        // needs a new introduction, so the next dial makes one.
+        if self.carrier.realm.is_some() {
+            return Err(HysteriaError::Connect);
+        }
         let socket = UdpSocket::bind(self.bind_addr).map_err(|_| HysteriaError::Connect)?;
         configure_quic_datagram_socket(&socket);
         crate::protect_std_udp_socket(&socket, self.protector.as_deref())
@@ -376,7 +384,13 @@ impl HysteriaClient {
         let mut auth = HeaderValue::from_bytes(config.auth.as_bytes())
             .map_err(|_| HysteriaError::Configuration)?;
         auth.set_sensitive(true);
-        let deadline = config.limits.operation_timeout;
+        // A realm introduction comes before the QUIC handshake.
+        let deadline = config.limits.operation_timeout
+            + if config.carrier.realm.is_some() {
+                crate::realm::ESTABLISH_BUDGET
+            } else {
+                Duration::ZERO
+            };
         timeout(deadline, Self::connect_inner(config, tls, auth))
             .await
             .map_err(|_| HysteriaError::Timeout)?
@@ -407,6 +421,7 @@ impl HysteriaClient {
                 tls_config,
                 socket_protector: tls.socket_protector_arc(),
                 quic: config.quic.clone(),
+                realm: config.realm.clone(),
             },
             b"h3",
             Some((

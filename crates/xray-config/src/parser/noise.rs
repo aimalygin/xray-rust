@@ -114,16 +114,17 @@ impl Parser<'_> {
         let mut header = None;
         let mut sudoku = None;
         let mut xdns = None;
+        let mut realm = None;
         // mKCP takes any number of `mkcp-legacy` masks besides these.
         let legacy = |mask: &Value| {
             mask.get("type")
                 .and_then(Value::as_str)
                 .is_some_and(|kind| go_lowercase(kind) == "mkcp-legacy")
         };
-        if masks.iter().filter(|mask| !legacy(mask)).count() > 6 {
+        if masks.iter().filter(|mask| !legacy(mask)).count() > 7 {
             self.error(
                 &path,
-                "at most one udphop, one noise, one Salamander, one header-custom, one sudoku and one xdns mask are supported",
+                "at most one udphop, one noise, one Salamander, one header-custom, one sudoku, one xdns and one realm mask are supported",
             );
             return None;
         }
@@ -157,12 +158,16 @@ impl Parser<'_> {
                 Some("xdns") if xdns.is_none() => {
                     xdns = Some(i);
                 }
+                // Read by `parse_udp_realm`.
+                Some("realm") if realm.is_none() => {
+                    realm = Some(i);
+                }
                 // Read by `parse_kcp_masks`.
                 Some("mkcp-legacy") if network == StreamNetwork::Kcp => {}
                 Some("mkcp-legacy") => self.error(&p, "mkcp-legacy requires mKCP"),
                 _ => self.error(
                     &p,
-                    "only one udphop, one noise, one Salamander, one header-custom, one sudoku and one xdns UDP mask are supported",
+                    "only one udphop, one noise, one Salamander, one header-custom, one sudoku, one xdns and one realm UDP mask are supported",
                 ),
             }
         }

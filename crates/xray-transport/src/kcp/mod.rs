@@ -7,7 +7,9 @@
 //! a write, a read or an arriving segment wakes it.
 //!
 //! With the `xdns` mask there is no socket to the server: the datagrams go
-//! out in DNS queries to the resolvers and come back in their answers.
+//! out in DNS queries to the resolvers and come back in their answers. With
+//! the `realm` mask the socket is introduced to the server first, and the
+//! datagrams go to the address that answered its punch.
 mod engine;
 mod mask;
 mod segment;
@@ -50,6 +52,8 @@ pub struct KcpConfig {
     pub noise: Option<UdpNoiseConfig>,
     /// The `xdns` mask, which carries the datagrams instead of a socket.
     pub xdns: Option<Arc<crate::xdns::XdnsConfig>>,
+    /// The `realm` mask, which introduces the socket to the server.
+    pub realm: Option<Arc<crate::realm::RealmConfig>>,
 }
 
 /// A `finalmask.udp` mask on an mKCP stream.
@@ -132,14 +136,36 @@ fn count_up(counter: &AtomicU32) -> u16 {
 }
 
 /// Opens an mKCP connection to the first of `candidates` a socket opens
-/// for. Nothing is sent until the stream is written to.
+/// for. Nothing is sent until the stream is written to, unless a `realm`
+/// mask introduces the socket first, with what `realm` lends.
 pub async fn connect(
     candidates: &[SocketAddr],
     protector: Option<Arc<dyn SocketProtector>>,
     config: &KcpConfig,
+    realm: Option<&crate::realm::RealmEnv>,
 ) -> Result<KcpStream, TransportError> {
     let engine_config = config.engine_config().map_err(TransportError::Kcp)?;
     let masks = Masks::new(&config.masks, config.noise.as_ref()).map_err(TransportError::Kcp)?;
+    if let (Some(realm), Some(env)) = (&config.realm, realm) {
+        if candidates.is_empty() {
+            return Err(TransportError::Kcp(io::Error::new(
+                io::ErrorKind::AddrNotAvailable,
+                "no mKCP server address",
+            )));
+        }
+        let udp = crate::realm::RealmUdp::open(realm.family, protector.as_deref())?;
+        // Boxed: the introduction would otherwise grow every dial's future.
+        let peer = Box::pin(crate::realm::establish(&udp, realm, env))
+            .await
+            .map_err(|error| TransportError::Kcp(io::Error::other(error)))?;
+        return Ok(KcpStream::start(
+            KcpSocket::Realm(udp),
+            peer,
+            masks,
+            next_conversation(),
+            engine_config,
+        ));
+    }
     if let Some(xdns) = &config.xdns {
         let peer = candidates.first().copied().ok_or_else(|| {
             TransportError::Kcp(io::Error::new(
@@ -202,6 +228,8 @@ fn open_socket(
 enum KcpSocket {
     Udp(UdpSocket),
     Xdns(Box<crate::xdns::XdnsClient>),
+    /// A socket the realm mask introduced, which may be dual-stack.
+    Realm(crate::realm::RealmUdp),
 }
 
 impl KcpSocket {
@@ -217,6 +245,7 @@ impl KcpSocket {
                 buf[..length].copy_from_slice(&packet.data[..length]);
                 Ok((length, packet.from))
             }
+            Self::Realm(socket) => socket.recv_from(buf).await,
         }
     }
 
@@ -224,6 +253,7 @@ impl KcpSocket {
         match self {
             Self::Udp(socket) => socket.send_to(datagram, peer).await.map(drop),
             Self::Xdns(client) => client.send(datagram),
+            Self::Realm(socket) => socket.send_to(datagram, peer).await.map(drop),
         }
     }
 
@@ -232,6 +262,7 @@ impl KcpSocket {
         match self {
             Self::Udp(socket) => socket.local_addr(),
             Self::Xdns(_) => Ok((std::net::Ipv4Addr::UNSPECIFIED, 0).into()),
+            Self::Realm(socket) => socket.local_addr(),
         }
     }
 }

@@ -32,12 +32,12 @@
 mod grpc;
 mod h2_bdp;
 mod http2_connect;
-mod http_headers;
+pub(crate) mod http_headers;
 mod httpupgrade;
 mod masquerade;
 mod websocket;
 mod websocket_frame;
-mod xhttp;
+pub(crate) mod xhttp;
 
 pub(crate) use xhttp::{
     configure_quic_datagram_socket, connect_h2, connect_quic_transport,

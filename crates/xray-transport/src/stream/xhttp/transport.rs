@@ -593,10 +593,12 @@ impl XhttpTransport {
             let candidates = candidates.to_vec();
             let happy_eyeballs = happy_eyeballs.copied();
             let quic = self.h3_quic.clone();
+            let realm = quic.udp_realm.as_ref().map(|_| dialer.realm_env());
             let dial: XhttpH3Dial = Arc::new(move || {
                 let candidates = candidates.clone();
                 let material = material.clone();
                 let quic = H3QuicConfig::clone(&quic);
+                let realm = realm.clone();
                 Box::pin(async move {
                     let remote_addr = candidates
                         .first()
@@ -609,6 +611,7 @@ impl XhttpTransport {
                             tls_config: material.tls_config,
                             socket_protector: material.socket_protector,
                             quic,
+                            realm,
                         },
                         &candidates,
                         happy_eyeballs.as_ref(),

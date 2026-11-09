@@ -75,6 +75,7 @@ impl Parser<'_> {
         let udp_header_custom = self.parse_udp_header_custom(stream, index);
         let udp_sudoku = self.parse_udp_sudoku(stream, index);
         let udp_xdns = self.parse_udp_xdns(stream, index);
+        let udp_realm = self.parse_udp_realm(stream, index);
         let socket_options = self.parse_socket_options(stream, index);
         if let Some(stream) = stream {
             self.validate_stream_settings_compatibility(stream, index);
@@ -163,6 +164,47 @@ impl Parser<'_> {
                 );
             }
         }
+        if udp_realm.is_some() {
+            let has = |kind: &str| {
+                stream
+                    .and_then(|s| s.pointer("/finalmask/udp"))
+                    .and_then(Value::as_array)
+                    .is_some_and(|masks| {
+                        masks.iter().any(|mask| {
+                            mask.get("type")
+                                .and_then(Value::as_str)
+                                .is_some_and(|t| crate::go_lowercase(t) == kind)
+                        })
+                    })
+            };
+            let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp");
+            if !udp_carrier {
+                self.error(
+                    &path,
+                    "a realm UDP mask requires mKCP, Hysteria or XHTTP with exact h3 ALPN",
+                );
+            }
+            // Each must be the last mask, and each sends somewhere else than
+            // the other expects: udphop to the server's ports, xdns to its
+            // resolvers.
+            for other in ["udphop", "xdns"] {
+                if has(other) {
+                    self.error(
+                        &path,
+                        format!("a realm UDP mask cannot be combined with {other}"),
+                    );
+                }
+            }
+            // Xray-core writes to the server's address under realm but reads
+            // from the punched peer's, so a header-custom mask's state never
+            // matches, as under udphop.
+            if udp_header_custom.is_some() {
+                self.error(
+                    &path,
+                    "a header-custom UDP mask cannot be combined with realm",
+                );
+            }
+        }
         // Xray-core writes to 0.0.0.0:0 under udphop but reads from the hop's
         // address, so its standalone reply never completes and prefix
         // captures never match.
@@ -218,6 +260,7 @@ impl Parser<'_> {
             udp_sudoku,
             tcp_xmc: tcp_masks.xmc,
             udp_xdns,
+            udp_realm,
             udp_noise,
             socket_options,
         })
@@ -1101,7 +1144,7 @@ impl Parser<'_> {
     }
 
     /// A Go `bool` field: absent and null are false.
-    fn go_bool_at(&mut self, value: &Value, key: &str, path: String) -> Option<bool> {
+    pub(super) fn go_bool_at(&mut self, value: &Value, key: &str, path: String) -> Option<bool> {
         match value.get(key) {
             None | Some(Value::Null) => Some(false),
             Some(Value::Bool(value)) => Some(*value),
@@ -1397,71 +1440,10 @@ impl Parser<'_> {
             "" | "none" => Some(StreamSecurity::None),
             "tls" => {
                 let tls_settings = stream.and_then(|stream| stream.get("tlsSettings"));
-                self.validate_tls_settings(tls_settings, index);
-                let allow_insecure_path =
-                    format!("$.outbounds[{index}].streamSettings.tlsSettings.allowInsecure");
-                let allow_insecure = match tls_settings
-                    .and_then(|settings| settings.get("allowInsecure"))
-                {
-                    None | Some(Value::Null) | Some(Value::Bool(false)) => false,
-                    Some(Value::Bool(true)) => {
-                        self.error(
-                            allow_insecure_path,
-                            "allowInsecure=true was removed by Xray; use pinnedPeerCertSha256 instead",
-                        );
-                        // Never let a rejected canonical config carry an
-                        // insecure verifier into a partially built model.
-                        false
-                    }
-                    Some(_) => {
-                        self.error(
-                            allow_insecure_path,
-                            "field `allowInsecure` must be a boolean or null",
-                        );
-                        false
-                    }
-                };
-                let pinned_peer_cert_sha256 =
-                    self.parse_tls_pinned_peer_cert_sha256(tls_settings, index);
-                let verify_peer_cert_by_name =
-                    self.parse_tls_verify_peer_cert_by_name(tls_settings, index);
-                // An absent fingerprint normalizes to chrome, matching Xray's
-                // GetFingerprint(""): shaping is the default, not an opt-in.
-                let raw_fingerprint = tls_settings
-                    .and_then(|settings| self.string_at(settings, "fingerprint"))
-                    .unwrap_or_default();
-                let fingerprint = match xray_utls::normalize_tls_fingerprint(raw_fingerprint) {
-                    Some(fingerprint) => Some(fingerprint.to_owned()),
-                    None => {
-                        self.error(
-                            format!("$.outbounds[{index}].streamSettings.tlsSettings.fingerprint"),
-                            format!("unsupported tls fingerprint `{raw_fingerprint}`"),
-                        );
-                        None
-                    }
-                };
-                let alpn = tls_settings
-                    .and_then(|settings| settings.get("alpn"))
-                    .and_then(Value::as_array)
-                    .map(|values| {
-                        values
-                            .iter()
-                            .filter_map(Value::as_str)
-                            .map(ToOwned::to_owned)
-                            .collect()
-                    })
-                    .unwrap_or_default();
-
-                Some(StreamSecurity::Tls(TlsSettings {
-                    server_name: tls_settings
-                        .and_then(|settings| self.string_at(settings, "serverName"))
-                        .map(ToOwned::to_owned),
-                    fingerprint,
-                    pinned_peer_cert_sha256,
-                    verify_peer_cert_by_name,
-                    allow_insecure,
-                    alpn,
-                }))
+                let path = format!("$.outbounds[{index}].streamSettings.tlsSettings");
+                Some(StreamSecurity::Tls(
+                    self.parse_tls_object(tls_settings, &path),
+                ))
             }
             "reality" => self
                 .parse_reality_settings(stream, index)
@@ -1485,6 +1467,75 @@ impl Parser<'_> {
         }
     }
 
+    /// A TLS settings object at `path`, as Xray-core's `TLSConfig` reads it:
+    /// `streamSettings.tlsSettings`, or a mask's `tlsConfig`.
+    pub(super) fn parse_tls_object(
+        &mut self,
+        tls_settings: Option<&Value>,
+        path: &str,
+    ) -> TlsSettings {
+        self.validate_tls_settings(tls_settings, path);
+        let allow_insecure_path = format!("{path}.allowInsecure");
+        let allow_insecure = match tls_settings.and_then(|settings| settings.get("allowInsecure")) {
+            None | Some(Value::Null) | Some(Value::Bool(false)) => false,
+            Some(Value::Bool(true)) => {
+                self.error(
+                    allow_insecure_path,
+                    "allowInsecure=true was removed by Xray; use pinnedPeerCertSha256 instead",
+                );
+                // Never let a rejected canonical config carry an
+                // insecure verifier into a partially built model.
+                false
+            }
+            Some(_) => {
+                self.error(
+                    allow_insecure_path,
+                    "field `allowInsecure` must be a boolean or null",
+                );
+                false
+            }
+        };
+        let pinned_peer_cert_sha256 = self.parse_tls_pinned_peer_cert_sha256(tls_settings, path);
+        let verify_peer_cert_by_name = self.parse_tls_verify_peer_cert_by_name(tls_settings, path);
+        // An absent fingerprint normalizes to chrome, matching Xray's
+        // GetFingerprint(""): shaping is the default, not an opt-in.
+        let raw_fingerprint = tls_settings
+            .and_then(|settings| self.string_at(settings, "fingerprint"))
+            .unwrap_or_default();
+        let fingerprint = match xray_utls::normalize_tls_fingerprint(raw_fingerprint) {
+            Some(fingerprint) => Some(fingerprint.to_owned()),
+            None => {
+                self.error(
+                    format!("{path}.fingerprint"),
+                    format!("unsupported tls fingerprint `{raw_fingerprint}`"),
+                );
+                None
+            }
+        };
+        let alpn = tls_settings
+            .and_then(|settings| settings.get("alpn"))
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        TlsSettings {
+            server_name: tls_settings
+                .and_then(|settings| self.string_at(settings, "serverName"))
+                .map(ToOwned::to_owned),
+            fingerprint,
+            pinned_peer_cert_sha256,
+            verify_peer_cert_by_name,
+            allow_insecure,
+            alpn,
+        }
+    }
+
     pub(super) fn validate_stream_settings_compatibility(&mut self, stream: &Value, index: usize) {
         let stream_path = format!("$.outbounds[{index}].streamSettings");
         if !stream.is_object() {
@@ -1497,11 +1548,11 @@ impl Parser<'_> {
         self.validate_tcp_settings(stream, "rawSettings", index);
     }
 
-    pub(super) fn validate_tls_settings(&mut self, settings: Option<&Value>, index: usize) {
+    pub(super) fn validate_tls_settings(&mut self, settings: Option<&Value>, path: &str) {
         let Some(settings) = settings else {
             return;
         };
-        let settings_path = format!("$.outbounds[{index}].streamSettings.tlsSettings");
+        let settings_path = path.to_owned();
         if !settings.is_object() {
             self.error(settings_path, "tlsSettings must be an object");
             return;
@@ -1589,9 +1640,9 @@ impl Parser<'_> {
     pub(super) fn parse_tls_pinned_peer_cert_sha256(
         &mut self,
         settings: Option<&Value>,
-        index: usize,
+        path: &str,
     ) -> Vec<[u8; 32]> {
-        let path = format!("$.outbounds[{index}].streamSettings.tlsSettings.pinnedPeerCertSha256");
+        let path = format!("{path}.pinnedPeerCertSha256");
         let Some(value) = settings.and_then(|settings| settings.get("pinnedPeerCertSha256")) else {
             return Vec::new();
         };
@@ -1639,9 +1690,9 @@ impl Parser<'_> {
     pub(super) fn parse_tls_verify_peer_cert_by_name(
         &mut self,
         settings: Option<&Value>,
-        index: usize,
+        path: &str,
     ) -> Vec<String> {
-        let path = format!("$.outbounds[{index}].streamSettings.tlsSettings.verifyPeerCertByName");
+        let path = format!("{path}.verifyPeerCertByName");
         let Some(value) = settings.and_then(|settings| settings.get("verifyPeerCertByName")) else {
             return Vec::new();
         };

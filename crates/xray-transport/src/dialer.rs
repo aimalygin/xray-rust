@@ -46,6 +46,7 @@ struct Replaced {
     tcp_header_custom: Option<Arc<crate::header_custom::HeaderCustomTcpConfig>>,
     tcp_sudoku: Option<Arc<crate::sudoku::SudokuConfig>>,
     tcp_xmc: Option<Arc<crate::xmc::XmcConfig>>,
+    realm_resolver: Option<Arc<dyn crate::DnsResolver>>,
 }
 
 #[derive(Clone)]
@@ -150,6 +151,30 @@ impl TransportDialer {
         {
             Some(resolver) => Arc::clone(resolver),
             None => Arc::new(SystemRecordResolver::new(self.platform_protector.clone())),
+        }
+    }
+
+    /// Resolves the STUN servers' and rendezvous's names of a `realm`
+    /// mask, as the outbound's server name is resolved.
+    pub fn with_realm_resolver(mut self, resolver: Arc<dyn crate::DnsResolver>) -> Self {
+        Arc::make_mut(self.replaced.get_or_insert_with(Default::default)).realm_resolver =
+            Some(resolver);
+        self
+    }
+
+    /// What a `realm` mask's introduction takes from this dialer: the
+    /// resolver set with [`Self::with_realm_resolver`], else the platform's,
+    /// and the platform's socket protection, which its connection to the
+    /// rendezvous goes through.
+    pub fn realm_env(&self) -> crate::realm::RealmEnv {
+        crate::realm::RealmEnv {
+            resolver: self
+                .replaced
+                .as_ref()
+                .and_then(|replaced| replaced.realm_resolver.clone())
+                .unwrap_or_else(|| Arc::new(crate::SystemDnsResolver)),
+            tls: self.tls.clone(),
+            protector: self.platform_protector.clone(),
         }
     }
 
@@ -475,8 +500,16 @@ impl TransportDialer {
         if candidates.is_empty() {
             return Err(no_resolved_candidates_error(original_target));
         }
-        let stream: BoxedTransportStream =
-            Box::new(crate::kcp::connect(candidates, self.socket_protector.clone(), kcp).await?);
+        let realm = kcp.realm.as_ref().map(|_| self.realm_env());
+        let stream: BoxedTransportStream = Box::new(
+            crate::kcp::connect(
+                candidates,
+                self.socket_protector.clone(),
+                kcp,
+                realm.as_ref(),
+            )
+            .await?,
+        );
         match prepared {
             None => Ok(stream),
             Some(prepared) => {

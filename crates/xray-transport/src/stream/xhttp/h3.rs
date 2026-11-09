@@ -261,6 +261,9 @@ pub struct H3QuicConfig {
     pub udp_sudoku: Option<crate::hysteria::SudokuCarrier>,
     /// The `xdns` UDP mask, outside the others, carrying every datagram.
     pub udp_xdns: Option<Arc<crate::xdns::XdnsConfig>>,
+    /// The `realm` UDP mask, outside the others: each connection's socket is
+    /// introduced to the server first.
+    pub udp_realm: Option<Arc<crate::realm::RealmConfig>>,
     pub debug: bool,
 }
 
@@ -288,6 +291,7 @@ impl Default for H3QuicConfig {
             udp_header_custom: None,
             udp_sudoku: None,
             udp_xdns: None,
+            udp_realm: None,
             debug: false,
         }
     }
@@ -337,6 +341,14 @@ impl H3QuicConfig {
                 H3Error::UdpSocket(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "an invalid xdns UDP mask, or one with udphop or sudoku",
+                ))
+            })?;
+        }
+        if self.udp_realm.is_some() {
+            self.hop_carrier().validate().map_err(|_| {
+                H3Error::UdpSocket(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "an invalid realm UDP mask, or one with udphop, xdns or header-custom",
                 ))
             })?;
         }
@@ -415,6 +427,7 @@ impl H3QuicConfig {
             header_custom: self.udp_header_custom.clone(),
             sudoku: self.udp_sudoku.clone(),
             xdns: self.udp_xdns.clone(),
+            realm: self.udp_realm.clone(),
             ..Default::default()
         }
     }
@@ -453,6 +466,8 @@ pub struct H3ConnectConfig {
     pub tls_config: Arc<rustls::ClientConfig>,
     pub socket_protector: Option<Arc<dyn SocketProtector>>,
     pub quic: H3QuicConfig,
+    /// What a `realm` mask's introduction takes from the dial.
+    pub realm: Option<crate::realm::RealmEnv>,
 }
 
 impl fmt::Debug for H3ConnectConfig {
@@ -464,6 +479,7 @@ impl fmt::Debug for H3ConnectConfig {
             .field("alpn_protocols", &self.tls_config.alpn_protocols)
             .field("socket_protector", &self.socket_protector.is_some())
             .field("quic", &self.quic)
+            .field("realm", &self.realm.is_some())
             .finish()
     }
 }
@@ -1299,16 +1315,43 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
         switch.or(own_switch.as_ref()),
     )?;
     let remote_addr = canonicalize_socket_addr(config.remote_addr);
-    let bind_addr = unspecified_bind_addr(remote_addr);
-    let socket = StdUdpSocket::bind(bind_addr).map_err(|source| H3Error::UdpBind {
-        addr: bind_addr,
-        source,
-    })?;
-    if datagram_buffers.is_some() {
-        configure_quic_datagram_socket(&socket);
-    }
-    protect_quic_socket(&socket, config.socket_protector.as_deref())?;
-    socket.set_nonblocking(true).map_err(H3Error::UdpSocket)?;
+    let realm = carrier.and_then(|carrier| carrier.realm.as_ref());
+    let (socket, realm_peer) = match realm {
+        // The realm mask introduces its own socket to the server first.
+        Some(realm) => {
+            let env = config.realm.as_ref().ok_or_else(|| {
+                H3Error::UdpSocket(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "a realm UDP mask needs the dial's resolver",
+                ))
+            })?;
+            let udp =
+                crate::realm::RealmUdp::open(realm.family, config.socket_protector.as_deref())?;
+            // Boxed: the introduction would otherwise grow every dial's
+            // future.
+            let peer = Box::pin(crate::realm::establish(&udp, realm, env))
+                .await
+                .map_err(|error| H3Error::UdpSocket(io::Error::other(error)))?;
+            let socket = udp.into_std().map_err(H3Error::UdpSocket)?;
+            if datagram_buffers.is_some() {
+                configure_quic_datagram_socket(&socket);
+            }
+            (socket, Some(peer))
+        }
+        None => {
+            let bind_addr = unspecified_bind_addr(remote_addr);
+            let socket = StdUdpSocket::bind(bind_addr).map_err(|source| H3Error::UdpBind {
+                addr: bind_addr,
+                source,
+            })?;
+            if datagram_buffers.is_some() {
+                configure_quic_datagram_socket(&socket);
+            }
+            protect_quic_socket(&socket, config.socket_protector.as_deref())?;
+            socket.set_nonblocking(true).map_err(H3Error::UdpSocket)?;
+            (socket, None)
+        }
+    };
 
     let mut wire_peer = remote_addr;
     let mut session = session;
@@ -1319,7 +1362,7 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
             .open_xdns(carrier, config.socket_protector.clone())
             .await
             .map_err(H3Error::UdpSocket)?;
-        wire_peer = carrier.next_peer(remote_addr);
+        wire_peer = realm_peer.unwrap_or_else(|| carrier.next_peer(remote_addr));
         crate::hysteria::carrier::wrap(socket, remote_addr, wire_peer, carrier, &session)
             .map_err(H3Error::UdpSocket)?
     } else {
@@ -1381,9 +1424,11 @@ pub async fn connect_h3_candidates(
         .first()
         .copied()
         .ok_or(H3Error::NoResolvedCandidate)?;
-    let Some(happy_eyeballs) =
-        happy_eyeballs.filter(|policy| !policy.try_delay.is_zero() && candidates.len() >= 2)
-    else {
+    // A realm socket goes to the punched peer whatever the address: racing
+    // candidates would introduce several sockets for one connection.
+    let Some(happy_eyeballs) = happy_eyeballs.filter(|policy| {
+        !policy.try_delay.is_zero() && candidates.len() >= 2 && config.quic.udp_realm.is_none()
+    }) else {
         let mut config = config;
         config.remote_addr = first;
         return connect_h3(config).await;
