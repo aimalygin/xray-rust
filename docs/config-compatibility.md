@@ -2525,8 +2525,10 @@ It never connects to Cloudflare.
 The `xdrive` transport carries a VLESS connection as objects in a storage
 both ends reach, as Xray-core v26.10.31's client does. Nothing connects to
 the VLESS server address: the client and Xray-core's server meet in the
-storage, and the address is never looked up. This release reaches the
-`local` service, a folder:
+storage, and the address is never looked up. This release reaches three of
+the four services: `local`, a folder; `s3`, a bucket; and `template`, an
+HTTP storage a JSON template describes. `google-drive` waits for a later
+release.
 
 ```json
 {"protocol": "vless",
@@ -2551,9 +2553,9 @@ as on every VLESS outbound.
   spelling, with a warning), `template` or `s3`, case-sensitive; any other
   value, an empty one included, fails. `google-drive` needs exactly three
   `secrets`, `template` a `template` value (any JSON, `null` included) and
-  `s3` an `s3` object. These three are read and checked but refused when the
-  core starts for now. Without `xdriveSettings` the core refuses to start,
-  where Xray-core's registered default fails every dial.
+  `s3` an `s3` object. `google-drive` is read and checked but refused when
+  the core starts for now. Without `xdriveSettings` the core refuses to
+  start, where Xray-core's registered default fails every dial.
 - `remoteFolder`: the folder of `local`, made with its parents, readable by
   this user only, when a session opens. An empty one fails when the core
   starts, where Xray-core fails every dial.
@@ -2568,6 +2570,9 @@ as on every VLESS outbound.
   1800 to 3000 seconds, four for `google-drive` unless `tlsSettings.alpn` is
   exactly `["h3"]`. It shapes the HTTP storages' connections; `local` has
   none.
+- `template` is kept as the JSON written and read only when a connection
+  dials, as Xray-core reads it: a template it cannot use fails each dial,
+  not the configuration.
 - `s3` is checked as Xray-core's `ValidateS3Config` checks it when the
   service is `s3`: `endpoint` an `http` or `https` URL without user
   information, query (a bare `?` included) or fragment; `region` a header
@@ -2583,7 +2588,93 @@ Over `tlsSettings.alpn` exactly `["h3"]`, `google-drive` takes only the
 congestion, as in Xray-core. The UDP masks follow the rules of the other
 QUIC carriers (XDRIVE over HTTP/3 counts as one); `security`, `sockopt` and
 the masks shape the HTTP storages' connections and play no part with
-`local`.
+`local`. A storage over HTTP/3 is refused when the core starts for now.
+
+`streamSettings.address` and `port`, which Xray-core reads for every stream
+and only XDRIVE uses, name where every connection to an HTTP storage goes:
+the URL's host still names the TLS server and the `Host`, and its port is
+kept when `port` is zero. `address` is an IP or a name, brackets and
+surrounding spaces trimmed, `port` an integer from 0 to 65535, `null`
+leaving either unset; a `port` without an `address` changes nothing. An
+`env:` address, which Xray-core reads from the environment, is refused,
+and so are both fields under any other transport, which Xray-core ignores.
+
+The HTTP storages are reached as Xray-core's Go client reaches them. With
+`security: "tls"` each connection takes the stream's TLS settings, the
+server name the URL's host unless `serverName` names one; without them, a
+Chrome hello offering `h2` and `http/1.1`. The server's ALPN picks HTTP/2
+or HTTP/1.1; a host keeps one connection until it answers over HTTP/1.1,
+then takes up to the storage's concurrency. HTTP/2 opens with Go's
+SETTINGS (no push, 4 MiB stream window, 1 MiB frames, 10 MiB header
+lists), a 1 GiB connection window, Go's HPACK choices and its
+pseudo-header order (`:authority`, `:method`, `:path`, `:scheme`), and
+PINGs a quiet connection every 45 seconds, or every `hKeepAlivePeriod`
+seconds of `xmux`, never when that is negative. Requests carry Chrome's
+`fetch` headers unless they name a user agent of their own, Go's
+`Accept-Encoding: gzip` (decoded on the way back) unless they ask for
+another encoding or a range, and Go's `Content-Length` rules. A request
+that makes no progress for 60 seconds fails. Each session takes its
+connections from XMUX until it ends, and the sessions of one outbound share
+them; a connection closes once XMUX drops it and its requests are done.
+Connections go through the outbound's `sockopt`, chain and TCP masks.
+
+`s3` signs every request with SigV4 (`X-Amz-Date`,
+`X-Amz-Content-Sha256`, `Content-Type` on a put, `X-Amz-Security-Token`
+with a third secret), path-style `https://endpoint/bucket/key` or
+virtual-hosted `https://bucket.endpoint/key`, keys under `remoteFolder`.
+A listing asks for up to 1000 keys a page with `/` as delimiter and goes on
+with continuation tokens, refusing keys outside its prefix or a token that
+does not advance. Deleting an object deletes what lies under it too. A
+request is tried up to eight times, after a network failure, a stall, 429,
+500, 502, 503 or 504, waiting 200 ms doubled each time up to 8 seconds,
+jittered, or as long as `Retry-After` asks, up to 8 seconds. A redirect is
+an answer, as in Xray-core, so a signature never goes to another host.
+
+`template` sends the requests its operations describe:
+
+```json
+"template": {
+  "flatten": true,
+  "auth": {"type": "oauth2", "tokenUrl": "https://oauth.example/token",
+    "form": {"grant_type": "refresh_token", "refresh_token": "{secret0}",
+      "client_id": "{secret1}"},
+    "header": {"Authorization": "Bearer {token}"}},
+  "put": {"method": "PUT", "url": "https://store.example/v1/{folder}/{name}"},
+  "get": {"url": "https://store.example/v1/{folder}/{name}?link",
+    "hrefPath": "href"},
+  "delete": {"method": "DELETE", "url": "https://store.example/v1/{folder}/{name}"},
+  "list": {"url": "https://store.example/v1/{folder}/",
+    "namesRegex": "\"name\":\"([^\"]+)\""},
+  "retry": {"status": [429], "rateReason": "error.reason"}
+}
+```
+
+The template is read as Go's `encoding/json` reads it into Xray-core's
+types: field names in any case, `null` as nothing, whole numbers only.
+`put`, `get`, `delete` and `list` need a `url` and `list` a `namesRegex`
+with a group; `concurrency` caps requests in flight a session, 32 when not
+positive and at most 256. In URLs, headers and bodies `{folder}` is
+`remoteFolder`, `{secretN}` the Nth secret, `{name}` and `{prefix}` the
+object's name (with `flatten`, its `/` written as `~`), `{data}` the
+object in base64 when `put` has a `body`, which then replaces the raw
+object, and `{token}` the OAuth 2 token. `auth` is `none`, `static` (its
+`header`), `basic` (`username` and `password`) or `oauth2`: a `POST` of
+`form` to `tokenUrl`, written unescaped as Xray-core writes it, the token
+at `tokenPath` (`access_token`) kept for the seconds at `expiryPath` (an
+hour) less a minute, fetched again after a 401. With `hrefPath` an
+operation takes two steps: the first answer's JSON names a URL at that
+path, then called with `hrefMethod` (`GET`), without auth or headers,
+carrying the object. A listing's names are the first group of every match
+of `namesRegex` (Go's RE2 syntax) in the answer; with `flatten` only the
+names under the prefix count, cut at the next `~`. A 404 is a missing
+object, an empty listing, or a done delete. A request is tried up to eight
+times, with the pauses of `s3` but no `Retry-After`, after any request that
+failed, a 401 with `oauth2`, a status in `retry.status` or a 403 whose JSON
+has a value at `rateReason`; no status is retried unless listed. Redirects
+are followed as Go's `http.Client` follows them: up to ten requests, `GET` after 301, 302 or
+303 for any method but `HEAD`, the method and body kept after 307 and 308,
+auth and cookie headers left behind on another domain, a `Referer`, and
+Basic auth from a URL's user information.
 
 A session works as Xray-core's does. The client announces it with an empty
 object `sessions/<Unix nanoseconds>-<32 hex digits>`, then writes its
@@ -2609,9 +2700,12 @@ reader never sees half an object.
 
 `scripts/check-xdrive-interop.sh` compares the tuning, names, the local
 folder's name resolution and step-by-step replays of the segment writer and
-reader with Xray-core's own code, rechecks the configuration verdicts with
-`xray run -test`, and runs VLESS over XDRIVE against Xray-core's server
-through a shared folder.
+reader with Xray-core's own code; S3 URLs and signatures, S3 answers,
+templates, substitution, JSON paths, `namesRegex` matches, URL resolution
+and redirects with what Xray-core and Go make of them; rechecks the
+configuration verdicts with `xray run -test`; and runs VLESS over XDRIVE
+against Xray-core's server through a shared folder, an S3 bucket and a
+template's REST store.
 
 ### realm mask
 

@@ -1284,6 +1284,11 @@ pub struct XdriveSettings {
     /// Connection reuse, read as XHTTP's `xmux`; an all-zero object takes
     /// [`xdrive_default_xmux`].
     pub xmux: XhttpXmuxSettings,
+    /// `streamSettings.address` and `port`: where every connection to an
+    /// HTTP storage goes instead of the host its URL names, which still
+    /// names the TLS server and the `Host`; the port only when nonzero.
+    /// `None` without an address, whatever the port.
+    pub fronting: Option<(TargetAddr, u16)>,
 }
 
 impl fmt::Debug for XdriveSettings {
@@ -1306,6 +1311,7 @@ impl fmt::Debug for XdriveSettings {
             )
             .field("s3", &self.s3)
             .field("xmux", &self.xmux)
+            .field("fronting", &self.fronting)
             .finish()
     }
 }

@@ -307,6 +307,22 @@ impl TlsConnector {
         Ok(Box::new(stream))
     }
 
+    /// [`connect_prepared_stream`](Self::connect_prepared_stream), with the
+    /// application protocol the server picked, as an HTTP client that
+    /// speaks what the server chose needs it.
+    pub(crate) async fn connect_prepared_stream_with_alpn(
+        &self,
+        stream: BoxedTransportStream,
+        prepared: PreparedTlsStream,
+    ) -> Result<(BoxedTransportStream, Option<Vec<u8>>), TransportError> {
+        let stream = TokioTlsConnector::from(prepared.client_config)
+            .connect(prepared.server_name, stream)
+            .await
+            .map_err(TransportError::Tls)?;
+        let alpn = stream.get_ref().1.alpn_protocol().map(<[u8]>::to_vec);
+        Ok((Box::new(stream), alpn))
+    }
+
     /// The QUIC TLS configuration for a WARP dial: the connector's own for
     /// `config` and `alpn`, with the device's certificate and the endpoint
     /// check of [`WarpTls`].

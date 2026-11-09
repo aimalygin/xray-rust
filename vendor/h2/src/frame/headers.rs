@@ -85,6 +85,10 @@ pub struct Iter {
     /// xray-rust: `:authority` right after `:method`.
     authority_first: bool,
 
+    /// xray-rust: `:authority`, `:method`, `:path`, `:scheme`, as Go's
+    /// client writes a request.
+    go_order: bool,
+
     /// Header fields
     fields: header::IntoIter<HeaderValue>,
 }
@@ -720,6 +724,18 @@ impl Iterator for Iter {
         use crate::hpack::Header::*;
 
         if let Some(ref mut pseudo) = self.pseudo {
+            if self.go_order {
+                if let Some(authority) = pseudo.authority.take() {
+                    return Some(Authority(authority));
+                }
+                if let Some(method) = pseudo.method.take() {
+                    return Some(Method(method));
+                }
+                if let Some(path) = pseudo.path.take() {
+                    return Some(Path(path));
+                }
+            }
+
             if let Some(method) = pseudo.method.take() {
                 return Some(Method(method));
             }
@@ -1004,6 +1020,7 @@ impl HeaderBlock {
         let headers = Iter {
             pseudo: Some(self.pseudo),
             authority_first: encoder.authority_first(),
+            go_order: encoder.go_pseudo_order(),
             fields: self.fields.into_iter(),
         };
 
@@ -1146,6 +1163,30 @@ mod test {
             pseudo_names(false),
             [":method", ":scheme", ":authority", ":path", ":protocol"]
         );
+    }
+
+    #[test]
+    fn go_pseudo_order_is_authority_method_path_scheme() {
+        let mut encoder = Encoder::default();
+        encoder.set_authority_first(true);
+        encoder.set_go_pseudo_order(true);
+        let pseudo = Pseudo::request(
+            Method::PUT,
+            Uri::from_static("https://bucket.example/key?x=1"),
+            None,
+        );
+        let mut dst = BytesMut::new();
+        Headers::new(StreamId::from(1), pseudo, HeaderMap::new())
+            .encode(&mut encoder, &mut (&mut dst).limit(1024));
+        let mut decoder = crate::hpack::Decoder::new(4096);
+        let mut names = Vec::new();
+        decoder
+            .decode(&mut Cursor::new(&mut dst.split_off(frame::HEADER_LEN)), |header| {
+                names.push(String::from_utf8_lossy(header.name().as_slice()).into_owned());
+                ControlFlow::Continue(())
+            })
+            .unwrap();
+        assert_eq!(names, [":authority", ":method", ":path", ":scheme"]);
     }
 
     #[test]

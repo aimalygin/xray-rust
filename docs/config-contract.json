@@ -1417,6 +1417,8 @@
     {
       "context": "$.outbounds[].streamSettings; XHTTP downloadSettings after removing address/port",
       "fields": [
+        "address",
+        "port",
         "method",
         "network",
         "security",
@@ -1437,7 +1439,7 @@
         "sockopt"
       ],
       "id": "STREAM",
-      "notes": "method takes priority over network. raw/tcp, ws/websocket, httpupgrade, grpc, xhttp/splithttp, kcp/mkcp, hysteria, masque, xdrive; security none/tls/reality. Carrier/security combinations and inactive block handling require the validator."
+      "notes": "method takes priority over network. raw/tcp, ws/websocket, httpupgrade, grpc, xhttp/splithttp, kcp/mkcp, hysteria, masque, xdrive; security none/tls/reality. address and port are XDRIVE's: where its storage connections go instead of the URL's host, the port only when nonzero; other transports refuse them. Carrier/security combinations and inactive block handling require the validator."
     },
     {
       "context": "streamSettings.tlsSettings",
@@ -1794,7 +1796,7 @@
         "xmux"
       ],
       "id": "XDRIVE",
-      "notes": "Read as Xray-core v26.10.31 reads it; for VLESS with encryption only, without flow or testpre and with Mux on for every TCP and UDP connection (concurrency and xudpConcurrency not negative, xudpProxyUDP443 not skip). service is local, google-drive (Google Drive deprecated, with a warning), template or s3, case-sensitive. local carries each connection as files in remoteFolder, which both ends reach: an announcement in sessions/, then numbered segments of up to segmentBytes in streams/<session>/c2s and s2c, read back as Xray-core's server writes them. google-drive takes three secrets, template a template value and s3 an s3 object; they are read and checked as Xray-core does but refused when the core starts for now. The numbers are unsigned; zero takes Xray-core's defaults (512 KiB segments, 20 ms flush, 50 ms polls doubling to 500 ms after a 2 s eager window, 300 s session TTL, concurrency 8, 30 s hole timeout); segmentBytes is capped at 16 MiB and concurrency at 64. Over tlsSettings.alpn exactly h3, google-drive takes only the noise UDP mask and no service takes brutal congestion control."
+      "notes": "Read as Xray-core v26.10.31 reads it; for VLESS with encryption only, without flow or testpre and with Mux on for every TCP and UDP connection (concurrency and xudpConcurrency not negative, xudpProxyUDP443 not skip). service is local, google-drive (Google Drive deprecated, with a warning), template or s3, case-sensitive. local carries each connection as files in remoteFolder, which both ends reach: an announcement in sessions/, then numbered segments of up to segmentBytes in streams/<session>/c2s and s2c, read back as Xray-core's server writes them. s3 keeps them in the bucket of its s3 object and template through the REST operations of its template value, over HTTP as Xray-core's Go client reaches them (the stream's TLS, xmux, address and port). google-drive takes three secrets, read and checked as Xray-core does but refused when the core starts for now, as is any storage over tlsSettings.alpn exactly h3. The numbers are unsigned; zero takes Xray-core's defaults (512 KiB segments, 20 ms flush, 50 ms polls doubling to 500 ms after a 2 s eager window, 300 s session TTL, concurrency 8, 30 s hole timeout); segmentBytes is capped at 16 MiB and concurrency at 64. Over tlsSettings.alpn exactly h3, google-drive takes only the noise UDP mask and no service takes brutal congestion control."
     },
     {
       "context": "streamSettings.xdriveSettings.s3",

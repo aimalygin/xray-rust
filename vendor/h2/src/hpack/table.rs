@@ -18,6 +18,9 @@ pub struct Table {
     // Size is in bytes
     size: usize,
     max_size: usize,
+    /// xray-rust: index as Go's `hpack.Encoder` does, every field that fits
+    /// the table.
+    go_indexing: bool,
 }
 
 #[derive(Debug)]
@@ -81,6 +84,7 @@ impl Table {
                 inserted: 0,
                 size: 0,
                 max_size,
+                go_indexing: false,
             }
         } else {
             let capacity = cmp::max(to_raw_capacity(capacity).next_power_of_two(), 8);
@@ -92,8 +96,17 @@ impl Table {
                 inserted: 0,
                 size: 0,
                 max_size,
+                go_indexing: false,
             }
         }
+    }
+
+    /// xray-rust: indexes as Go's `hpack.Encoder` does: a field goes into the
+    /// table whenever it fits, `:path`, `authorization` and the other names
+    /// upstream never indexes included, where upstream also skips one larger
+    /// than three quarters of the table.
+    pub(crate) fn set_go_indexing(&mut self, enabled: bool) {
+        self.go_indexing = enabled;
     }
 
     #[inline]
@@ -136,7 +149,7 @@ impl Table {
         let statik = index_static(&header);
 
         // Don't index certain headers. This logic is borrowed from nghttp2.
-        if header.skip_value_index() {
+        if header.skip_value_index() && !self.go_indexing {
             // Right now, if this is true, the header name is always in the
             // static table. At some point in the future, this might not be true
             // and this logic will need to be updated.
@@ -150,7 +163,12 @@ impl Table {
         }
 
         // Don't index large headers
-        if header.len() * 4 > self.max_size * 3 {
+        let large = if self.go_indexing {
+            header.len() > self.max_size
+        } else {
+            header.len() * 4 > self.max_size * 3
+        };
+        if large {
             return Index::new(statik, header);
         }
 

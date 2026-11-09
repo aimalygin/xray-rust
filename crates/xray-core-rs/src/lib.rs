@@ -861,7 +861,7 @@ impl Core {
             }
             // So is an XDRIVE storage.
             if let xray_config::StreamTransport::Xdrive(xdrive) = &outbound.stream.transport {
-                outbound::xdrive::build_xdrive_transport(xdrive)?;
+                outbound::xdrive::build_xdrive_transport(xdrive, &outbound.stream.security)?;
             }
         }
         let config = Arc::new(config);
