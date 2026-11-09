@@ -384,7 +384,7 @@ impl WalReader {
         params: Params,
     ) -> (Self, mpsc::Receiver<Bytes>, mpsc::Receiver<String>) {
         let (chunks, received) = mpsc::channel(1024);
-        let (discards, discarded) = mpsc::channel(4 * params.concurrency);
+        let (discards, discarded) = mpsc::channel(discard_queue(&params));
         let reader = Self {
             storage,
             prefix,
@@ -415,7 +415,7 @@ impl WalReader {
         cancel: Cancel,
     ) -> (mpsc::Receiver<Bytes>, Arc<ReaderShared>) {
         let (chunks, received) = mpsc::channel(params.concurrency);
-        let (discards, discarded) = mpsc::channel(4 * params.concurrency);
+        let (discards, discarded) = mpsc::channel(discard_queue(&params));
         let shared = Arc::new(ReaderShared::default());
         tokio::spawn(discard_loop(
             Arc::clone(&storage),
@@ -620,6 +620,12 @@ impl Polled {
 enum Batch {
     Segments(Vec<Entry>),
     Done,
+}
+
+/// How many reads may wait to be deleted: four times `concurrency`, as in
+/// Xray-core; past that a read object is left to the server's collection.
+fn discard_queue(params: &Params) -> usize {
+    4 * params.concurrency
 }
 
 /// `discardLoop`: deletes what the reader read, `concurrency` at a time,

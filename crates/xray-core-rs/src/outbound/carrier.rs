@@ -58,21 +58,16 @@ impl StreamCarrier {
         let xmc = stream.tcp_xmc.as_ref().map(xmc_config).transpose()?;
         let transport = build_connector(&stream.security, server);
         let transport_layer = build_transport_layer(stream, server, port, &transport, paths)?;
-        // XDRIVE dials no carrier of its own: its security and masks shape
-        // the storage's connections, which a `local` folder has none of.
-        let xdrive = matches!(transport_layer, TransportLayer::Xdrive(_));
         // Only TCP carriers take TCP masks; a split XHTTP download keeps its
         // own dialer, which does not run the handshake.
-        if !xdrive
-            && (header_custom.is_some() || sudoku.is_some() || xmc.is_some())
+        if (header_custom.is_some() || sudoku.is_some() || xmc.is_some())
             && (matches!(&transport_layer, TransportLayer::Xhttp(xhttp) if xhttp.http_version() == XhttpHttpVersion::Http3)
                 || matches!(transport_layer, TransportLayer::Kcp(_))
                 || matches!(&stream.transport, StreamTransport::Xhttp(xhttp) if xhttp.download.is_some()))
         {
             return Err(CoreError::UnsupportedOutboundNetwork);
         }
-        if !xdrive
-            && fragment.is_some()
+        if fragment.is_some()
             && (matches!(transport, ConnectorConfig::Tcp)
                 || matches!(&transport_layer, TransportLayer::Xhttp(xhttp) if xhttp.http_version() == XhttpHttpVersion::Http3)
                 || matches!(transport_layer, TransportLayer::Kcp(_))
