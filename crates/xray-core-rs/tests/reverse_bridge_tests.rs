@@ -168,8 +168,11 @@ impl Portal {
     /// address, then the response header.
     async fn accept(&self, wait: Duration) -> Option<Tunnel> {
         let (mut stream, _) = timeout(wait, self.listener.accept()).await.ok()?.ok()?;
+        let accepted = Instant::now();
         let mut head = [0; 18];
         stream.read_exact(&mut head).await.ok()?;
+        // The header waits 500 ms for a payload that never comes first.
+        assert!(accepted.elapsed() >= Duration::from_millis(450));
         assert_eq!(head[0], 0, "VLESS version");
         assert_eq!(&head[1..17], uuid::Uuid::parse_str(ID).unwrap().as_bytes());
         let mut addons = vec![0; usize::from(head[17])];
@@ -355,6 +358,19 @@ async fn freedom_refuses_reverse_sessions_its_final_rules_do_not_allow() {
     assert!(tunnel.next(Duration::from_secs(1)).await.is_none());
     assert_eq!(other_accepted.load(Ordering::SeqCst), 0);
     assert_eq!(plain_accepted.load(Ordering::SeqCst), 0);
+    // UDP too: the datagram is dropped, not sent.
+    let refused = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let refused_addr = refused.local_addr().unwrap();
+    tunnel
+        .open(5, &udp(refused_addr), "198.51.100.7:40003", b"knock")
+        .await;
+    let mut buffer = [0; 64];
+    assert!(
+        timeout(Duration::from_secs(1), refused.recv_from(&mut buffer))
+            .await
+            .is_err()
+    );
+    assert!(tunnel.next(Duration::from_millis(200)).await.is_none());
     core.stop().await.unwrap();
 }
 

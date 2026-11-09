@@ -486,3 +486,21 @@ async fn closing_fails_every_session() {
     assert!(session.read(&mut read).await.is_err());
     assert!(session.write_all(b"x").await.is_err());
 }
+
+#[tokio::test]
+async fn reads_and_writes_count_as_activity() {
+    let mut harness = Harness::new();
+    let start = *lock(&harness.shared.activity);
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    harness
+        .send(&new_frame(1, tcp("127.0.0.1", 22), None))
+        .await;
+    let session = harness.opened().await.session;
+    let read = *lock(&harness.shared.activity);
+    assert!(read > start, "a read counts");
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    session.finish(false);
+    let _ = harness.frame().await;
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert!(*lock(&harness.shared.activity) > read, "a write counts");
+}
