@@ -19,7 +19,17 @@ PY
 
 env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
   go -C "$CHECKOUT" build -mod=readonly -o "$TEST_ROOT/xray" ./main
+
+# How Xray-core's own configuration reads FinalMask noise `exp` packets, and
+# what its noise mask sends for them, counters included.
+env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
+  go -C "$CHECKOUT" run -mod=readonly "$WORKSPACE_ROOT/tools/noise-exp-oracle/main.go" \
+  "$TEST_ROOT/exp-vectors.json"
+cmp "$WORKSPACE_ROOT/tests/fixtures/noise/exp-vectors.json" "$TEST_ROOT/exp-vectors.json"
+
 cd "$WORKSPACE_ROOT"
+cargo test --locked -p xray-config --test noise_tests exp_
+cargo test --locked -p xray-transport --lib udp_noise::exp_tests
 env -u NATIVE_HYSTERIA_BINARY XRAY_HYSTERIA_BINARY="$TEST_ROOT/xray" \
   cargo test --locked -p xray-transport --test hysteria_interop_tests -- --ignored --nocapture
 
@@ -35,3 +45,9 @@ env -u NATIVE_HYSTERIA_BINARY XRAY_HYSTERIA_BINARY="$TEST_ROOT/xray" \
   XRAY_CORE_CHECKOUT="$CHECKOUT" XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" \
   cargo test --locked -p xray-core-rs --test hysteria_runtime_tests \
   --test local_xray_interop_tests udp_noise_ -- --ignored --nocapture
+
+# Salamander and Gecko outside Hysteria: XHTTP over HTTP/3 against Xray's
+# own server under the same mask.
+XRAY_CORE_CHECKOUT="$CHECKOUT" XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" \
+  cargo test --locked -p xray-core-rs --test local_xray_interop_tests salamander:: \
+    -- --ignored --nocapture --test-threads=1

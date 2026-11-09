@@ -172,6 +172,12 @@ fn h3_quic(settings: &XdriveSettings, stream: &StreamSettings) -> Result<H3QuicC
     config.udp_xdns = stream.udp_xdns.as_ref().map(super::carrier::xdns_config);
     config.udp_realm = stream.udp_realm.as_ref().map(super::carrier::realm_config);
     config.udp_xicmp = stream.udp_xicmp.as_ref().map(super::carrier::xicmp_config);
+    // Salamander as on XHTTP over HTTP/3, at its place among the masks.
+    config.udp_salamander = stream
+        .udp_salamander
+        .as_ref()
+        .map(super::carrier::quic_salamander)
+        .transpose()?;
     Ok(config)
 }
 
@@ -224,6 +230,7 @@ mod tests {
             udp_realm: None,
             udp_xicmp: None,
             udp_noise: None,
+            udp_salamander: None,
             socket_options: None,
         }
     }
@@ -357,5 +364,32 @@ mod tests {
         let quic = http_config(xdrive, stream).unwrap().h3.unwrap();
         assert!(quic.udp_noise.is_some());
         assert_eq!(quic.max_idle_timeout, Duration::from_secs(12));
+    }
+
+    #[test]
+    fn storages_over_http3_take_salamander_as_xhttp_h3_does() {
+        // Xray-core's XDRIVE dial wraps its UDP socket in every FinalMask UDP
+        // mask, Salamander among them; Google Drive over h3 takes only noise.
+        let raw = serde_json::json!({"outbounds": [{"protocol": "vless",
+            "settings": {"address": "127.0.0.1", "port": 443,
+                "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+                "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"},
+            "streamSettings": {"network": "xdrive", "security": "tls",
+                "tlsSettings": {"alpn": ["h3"]},
+                "finalmask": {"udp": [{"type": "salamander", "settings": {"password": "salamander-password"}}],
+                    "quicParams": {"disableChromeParrot": true}},
+                "xdriveSettings": {"service": "s3", "remoteFolder": "prefix",
+                    "secrets": ["AKID", "secret"],
+                    "s3": {"endpoint": "https://s3.example", "bucket": "bucket"}}},
+            "mux": {"enabled": true}}]})
+        .to_string();
+        let parsed = xray_config::parse_xray_json(&raw).unwrap();
+        let stream = &parsed.config.outbounds[0].stream;
+        let StreamTransport::Xdrive(xdrive) = &stream.transport else {
+            panic!("not XDRIVE")
+        };
+        let quic = http_config(xdrive, stream).unwrap().h3.unwrap();
+        assert!(quic.udp_salamander.is_some());
+        assert!(build_xdrive_transport(xdrive, stream).is_ok());
     }
 }

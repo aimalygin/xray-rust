@@ -5921,7 +5921,7 @@
        {
         "type": "salamander",
         "settings": {
-         "password": "p"
+         "password": "salamander-password"
         }
        }
       ]
@@ -5931,8 +5931,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "ours": "error"
+   "xray": "ok"
   },
   {
    "name": "template h3 header-custom",

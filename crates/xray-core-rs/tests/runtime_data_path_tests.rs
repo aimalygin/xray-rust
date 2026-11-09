@@ -163,6 +163,7 @@ fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> Ou
             udp_xdns: None,
             udp_realm: None,
             udp_xicmp: None,
+            udp_salamander: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -200,6 +201,7 @@ fn freedom_outbound() -> OutboundConfig {
             udp_xdns: None,
             udp_realm: None,
             udp_xicmp: None,
+            udp_salamander: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -226,6 +228,7 @@ fn dns_outbound(settings: DnsOutboundSettings) -> OutboundConfig {
             udp_xdns: None,
             udp_realm: None,
             udp_xicmp: None,
+            udp_salamander: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -13302,4 +13305,54 @@ async fn socks_freedom_fragment_flushes_first_record_and_leaves_later_writes_unc
         assert_eq!(later, record);
         drop(client);core.stop().await.unwrap();echo_task.await.unwrap();
     }).await.unwrap();
+}
+
+/// Freedom cuts the writes `packets` selects into raw pieces, each its own
+/// write spaced by the delay, and sends the others whole.
+#[tokio::test]
+async fn socks_freedom_fragment_cuts_selected_writes_into_raw_pieces() {
+    timeout(Duration::from_secs(5), async {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target = listener.local_addr().unwrap();
+        let reads = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&reads);
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buffer = [0; 64];
+            loop {
+                let read = stream.read(&mut buffer).await.unwrap();
+                if read == 0 {
+                    break;
+                }
+                recorded.lock().unwrap().push(buffer[..read].to_vec());
+                stream.write_all(&buffer[..read]).await.unwrap();
+            }
+        });
+        let mut config = runtime_config_with_freedom_outbound();
+        let parsed = xray_config::parse_xray_json(
+            r#"{"outbounds":[{"protocol":"freedom","settings":{"fragment":{"packets":"1-2","length":3,"interval":5}}}]}"#,
+        )
+        .unwrap();
+        config.outbounds[0].stream.tcp_fragment =
+            parsed.config.outbounds[0].stream.tcp_fragment.clone();
+        let mut core = Core::new(config).unwrap();
+        core.start().await.unwrap();
+        let mut client = TcpStream::connect(core.inbound_addr(Some("socks-in")).unwrap())
+            .await
+            .unwrap();
+        socks5_connect(&mut client, target).await;
+        for write in [&b"abcdefgh"[..], b"ijkl", b"mnopqrst"] {
+            client.write_all(write).await.unwrap();
+            let mut echoed = vec![0; write.len()];
+            client.read_exact(&mut echoed).await.unwrap();
+            assert_eq!(echoed, write);
+        }
+        let expected = [&b"abc"[..], b"def", b"gh", b"ijk", b"l", b"mnopqrst"];
+        assert_eq!(*reads.lock().unwrap(), expected.map(<[u8]>::to_vec));
+        drop(client);
+        core.stop().await.unwrap();
+        server.await.unwrap();
+    })
+    .await
+    .unwrap();
 }

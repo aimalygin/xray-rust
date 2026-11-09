@@ -67,8 +67,14 @@ impl StreamCarrier {
         {
             return Err(CoreError::UnsupportedOutboundNetwork);
         }
+        // `tlshello` needs a TLS record to split; raw pieces go on any TCP
+        // carrier.
+        let tls_hello = stream
+            .tcp_fragment
+            .as_ref()
+            .is_some_and(|fragment| fragment.packets == xray_config::FragmentPackets::TlsHello);
         if fragment.is_some()
-            && (matches!(transport, ConnectorConfig::Tcp)
+            && (tls_hello && matches!(transport, ConnectorConfig::Tcp)
                 || matches!(&transport_layer, TransportLayer::Xhttp(xhttp) if xhttp.http_version() == XhttpHttpVersion::Http3)
                 || matches!(transport_layer, TransportLayer::Kcp(_))
                 || matches!(&stream.transport, StreamTransport::Xhttp(xhttp) if xhttp.download.is_some()))
@@ -339,6 +345,16 @@ fn kcp_config(
                         .as_ref()
                         .ok_or(CoreError::UnsupportedOutboundNetwork)?;
                     Mask::Sudoku(Arc::new(sudoku_config(&sudoku.mask)))
+                }
+                // A header mask beside mkcp-legacy's; Gecko's fragments are
+                // not built for mKCP.
+                KcpMask::Salamander => {
+                    let salamander = stream
+                        .udp_salamander
+                        .as_ref()
+                        .filter(|salamander| salamander.gecko_packet_size.is_none())
+                        .ok_or(CoreError::UnsupportedOutboundNetwork)?;
+                    Mask::Salamander(salamander.password.clone())
                 }
                 KcpMask::Header(header) => Mask::Header(match header {
                     KcpHeader::Dns(domain) => Header::Dns(domain.clone()),
@@ -806,6 +822,30 @@ fn custom_items(
         .collect()
 }
 
+/// The Salamander mask of a QUIC carrier other than Hysteria, with Gecko's
+/// fragment sizes when its `packetSize` selects Gecko.
+pub(super) fn quic_salamander(
+    mask: &xray_config::SalamanderMask,
+) -> Result<xray_transport::hysteria::SalamanderCarrier, CoreError> {
+    if !(4..=4096).contains(&mask.password.len()) {
+        return Err(CoreError::UnsupportedOutboundNetwork);
+    }
+    let gecko = mask
+        .gecko_packet_size
+        .map(|size| {
+            let bound = |value: u32| u16::try_from(value).ok();
+            bound(size.from)
+                .zip(bound(size.to))
+                .and_then(|(min, max)| xray_transport::hysteria::GeckoPacketSize::new(min, max))
+                .ok_or(CoreError::UnsupportedOutboundNetwork)
+        })
+        .transpose()?;
+    Ok(xray_transport::hysteria::SalamanderCarrier {
+        password: Arc::new(mask.password.clone()),
+        gecko,
+    })
+}
+
 pub(super) fn fragment_config(
     stream: &StreamSettings,
 ) -> Result<Option<Arc<xray_transport::TcpFragmentConfig>>, CoreError> {
@@ -813,11 +853,21 @@ pub(super) fn fragment_config(
         .tcp_fragment
         .as_ref()
         .map(|settings| {
+            let packets = match settings.packets {
+                xray_config::FragmentPackets::TlsHello => xray_transport::FragmentPackets::TlsHello,
+                xray_config::FragmentPackets::AllWrites => {
+                    xray_transport::FragmentPackets::AllWrites
+                }
+                xray_config::FragmentPackets::Writes { from, to } => {
+                    xray_transport::FragmentPackets::Writes(u64::from(from)..=u64::from(to))
+                }
+            };
             xray_transport::TcpFragmentConfig::new(
                 settings.lengths.iter().map(|r| r.from..=r.to).collect(),
                 settings.delays_ms.iter().map(|r| r.from..=r.to).collect(),
                 settings.max_split.from..=settings.max_split.to,
             )
+            .and_then(|config| config.with_packets(packets))
             .map(Arc::new)
             .map_err(|_| CoreError::UnsupportedOutboundNetwork)
         })

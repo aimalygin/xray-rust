@@ -92,6 +92,18 @@ past the path MTU is lost and the handshake stalls. A range above 1,452 bytes
 therefore pads to at most 1,452 bytes. Gecko and plain Salamander cannot talk
 to each other, so the server must use the same mode; its sizes need not match.
 
+Salamander is not Hysteria's alone: Xray-core applies it to any UDP dial.
+XHTTP with exact `h3` ALPN and MASQUE over HTTP/3 take it, Gecko included,
+exactly as Hysteria does, at its place among their noise, `header-custom` and
+`sudoku` masks; MTU discovery reserves its salt there too. On
+[mKCP](#mkcp) it is a header mask, as Xray-core groups it: it joins the
+`mkcp-legacy` masks next to it under one 4096-byte limit. Gecko is refused
+on mKCP for now. A TCP carrier refuses Salamander, which has no datagrams to
+mask. `scripts/check-hysteria-interop.sh`, `check-kcp-interop.sh` and
+`check-masque-interop.sh` run each carrier under it against Xray-core's own
+servers, and the mKCP vectors record what Xray-core reads out of salted
+datagrams.
+
 Each hop binds and protects a fresh socket while retaining the authenticated
 QUIC session and its TCP/UDP leases. Quinn retains at most one previous socket
 until an authenticated packet arrives on the new path. A scheduled hop whose
@@ -268,11 +280,43 @@ and `maxSplit` 0..4096 (zero means no explicit split limit). Before sending,
 each actual randomized plan must fit 4096 records and ten seconds of total
 delay; exceeding either limit fails the connection. `maxSplit` makes the last
 record contain the remainder, even when it exceeds the configured length.
-Arbitrary/all-write packet selectors, zero lengths, other mask types and
-unknown fields are rejected. FinalMask spells the delay `delay`, not `interval`.
+Zero lengths, other mask types and unknown fields are rejected. FinalMask
+spells the delay `delay`, not `interval`.
+
+`packets` can also select whole writes, which then go out as raw pieces, as
+Xray-core cuts them: empty or absent selects every write, one number or a
+`from-to` range the writes so numbered, counting from 1. A `tlshello` in any
+case keeps the record split above. Each piece of a selected write is its own
+socket write, followed by its delay, even the last; `maxSplit` makes the
+piece so numbered take the rest of the write. The pieces need no TLS, so raw
+pieces go on any TCP carrier of a proxy, encrypted or not, and on a raw
+freedom outbound:
+
+```json
+"finalmask": {
+  "tcp": [{"type": "fragment", "settings": {
+    "packets": "1-3", "length": "30-50", "delay": "2-3"
+  }}]
+}
+```
+
+A write is what the layer above hands the carrier in one call, as one `Write`
+is in Go; a call that leaves part of its input for the next one continues the
+same write. A selected write stages at most 64 KiB, 4096 pieces or ten
+seconds of delays at once, and its next call continues it where it stopped,
+so a long write is cut whole without unbounded buffering. Once no later write
+can be selected, the mask steps aside. Reads never wait for staged pieces, as
+Go's reads never wait on its writer's sleeps. A zero, a negative or a
+reversed range, which Xray-core either refuses or accepts and never applies,
+is refused. Every write cut with delays slows the whole connection; Xray-core
+does the same. With freedom's `proxyProtocol`, the PROXY header goes beneath
+the mask and is not counted, where Xray-core's FinalMask counts it as the
+first write. `scripts/check-v08-carrier-interop.sh` runs a TLS carrier with
+`"1-3"` and a plaintext one with every write cut against Xray-core's server.
 
 Existing mobile profiles may instead put
-`{"fragment":{"packets":"tlshello","length":"100-200","interval":"1-2","maxSplit":32}}`
+`{"fragment":{"packets":"tlshello","length":"100-200","interval":"1-2","maxSplit":32}}`,
+or the same with a write selector such as `"packets": "1-3"`,
 in a dedicated `freedom` outbound's `settings`, then reference its tag with
 `streamSettings.sockopt.dialerProxy`. That handler must use raw TCP with no
 security, socket overrides, mux or proxy chain. The parser normalizes its sole
@@ -295,8 +339,8 @@ existing profiles. Configured delays intentionally increase handshake latency.
 
 ## v0.8 UDP noise
 
-Hysteria2, [mKCP](#mkcp) and XHTTP with exact TLS `alpn: ["h3"]` accept one
-FinalMask UDP noise mask, using Xray-core v26.7.28's format:
+Hysteria2, [mKCP](#mkcp), XHTTP with exact TLS `alpn: ["h3"]` and MASQUE over
+HTTP/3 accept one FinalMask UDP noise mask, in Xray-core's format:
 
 ```json
 "finalmask": {"udp": [{"type": "noise", "settings": {
@@ -317,6 +361,29 @@ Literal encodings are `str` (UTF-8 without trimming), `hex`, standard padded
 cannot be combined. These are FinalMask spellings; the legacy `type: "rand"`
 with `packet: "16-32"` is read only in freedom's `settings.noises` (see
 [Freedom outbound](#freedom-outbound)).
+
+`type: "exp"`, in any case, reads `packet` as a string of segments, as
+Xray-core v26.10.31 does, built anew for every send:
+
+```json
+{"type": "exp", "packet": "<b 16 fe ff> <t> <c> <rc 3-5> <rd 2> <n> <r 4-8>", "delay": 1}
+```
+
+- `<b hex>` is these bytes; whitespace inside and a leading `0x` are dropped.
+- `<r n>`, `<rc n>` and `<rd n>` are that many random bytes, ASCII letters or
+  decimal digits; `n` is a size or a `from-to` range, both ends included, up
+  to 65535.
+- `<t>` is the Unix time in seconds and `<c>` the connection's count of `<c>`
+  segments, from 1, each four big-endian bytes; `<n>` is eight random bytes.
+
+Only whitespace may stand between segments. The packet's largest size must
+fit 4096 bytes here; Xray-core lets a segment take up to 65535. The counter
+runs across items, resets and socket rebinds of one connection, as Xray-core's
+does on its masked socket. `tools/noise-exp-oracle` records how Xray-core's own
+configuration reads a corpus of expressions and what its mask sends for them,
+which `scripts/check-hysteria-interop.sh` regenerates and compares. A
+nonempty `script`, which Xray-core runs in Lua instead of the items, is
+refused until Lua is supported.
 
 Each delay follows its noise packet, including the last packet before the
 first QUIC datagram. No wrapper is installed when absent. With `reset: 0`,
@@ -1717,8 +1784,9 @@ connection to a fresh protected socket, aimed with `intervalRemote` at
 another address, while QUIC migrates the path. The timer starts once the
 connection exists and stops with it; a failed hop keeps the current path until
 the next interval, as in Xray. Each pooled QUIC connection hops independently.
-H3 rejects TCP masks and UDP masks other than UDP-hop and the bounded noise mask; the opt-in TCP fragment
-and Hysteria Salamander support described above does not apply to H3. H3 has hermetic mode, wire, pool, lifecycle, TLS, and protected
+H3 takes every UDP mask: noise, `header-custom`, Salamander with Gecko,
+`sudoku`, `xdns`, `realm` and `xicmp`, each in its own section. It rejects TCP
+masks, and the TCP fragment mask does not apply to it. H3 has hermetic mode, wire, pool, lifecycle, TLS, and protected
 UDP tests, and the ignored live Xray-core `packet-up`, `stream-up`, and
 `stream-one` interoperability cases pass. The current pool conservatively
 allows one active HTTP request per QUIC connection and opens another
@@ -2035,8 +2103,12 @@ Masks apply in array order, so the last one is outermost on the wire: the old
 header with a seed is the seed mask first, then the header. Consecutive
 `mkcp-legacy` masks drop a datagram that grows past 4096 bytes, as Xray's do.
 One `noise` mask may stand anywhere among them, and its packets go out through
-the masks after it. Salamander, `udphop` and the other UDP masks, TCP masks
-and chaining through another outbound are refused on mKCP.
+the masks after it. One `salamander` mask is a header mask like them, as in
+Xray-core: it joins the `mkcp-legacy` masks next to it under the same limit,
+an eight-byte salt ahead of what it XORs. Gecko, its `packetSize`, is refused
+on mKCP for now. `header-custom`, `sudoku`, `xdns`, `realm` and `xicmp` have
+their own sections below; `udphop`, TCP masks and chaining through another
+outbound are refused on mKCP.
 
 The connection runs as Xray's does. It resends a segment once its
 retransmission timeout passes, estimated as RFC 6298 does, and sooner when a
@@ -2512,10 +2584,10 @@ as on every VLESS outbound.
 
 Over `tlsSettings.alpn` exactly `["h3"]`, `google-drive` takes only the
 `noise` UDP mask and no service takes `brutal` or `force-brutal`
-congestion, as in Xray-core. The UDP masks follow the rules of the other
-QUIC carriers (XDRIVE over HTTP/3 counts as one); `security`, `sockopt` and
-the masks shape the HTTP storages' connections and play no part with
-`local`.
+congestion, as in Xray-core. The UDP masks, Salamander among them, follow
+the rules of the other QUIC carriers (XDRIVE over HTTP/3 counts as one);
+`security`, `sockopt` and the masks shape the HTTP storages' connections
+and play no part with `local`.
 
 Over `alpn` exactly `["h3"]`, an `https` storage is reached over HTTP/3:
 one QUIC connection a host, set up as XHTTP's HTTP/3 connections are, with

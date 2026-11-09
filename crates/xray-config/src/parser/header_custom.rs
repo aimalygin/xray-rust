@@ -69,7 +69,7 @@ impl Parser<'_> {
                 }
                 Some("fragment") if fragment.is_none() => self.error(
                     &mask_path,
-                    "a fragment mask after header-custom fragments the handshake, not the TLS ClientHello; put it first",
+                    "a fragment mask after header-custom would cut the header-custom handshake, which is not supported here; put it first",
                 ),
                 Some("header-custom") if header.is_none() => {
                     header = Some(self.parse_header_custom_tcp(settings, &settings_path));

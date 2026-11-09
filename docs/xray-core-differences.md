@@ -391,10 +391,11 @@ mKCP and its `mkcp-legacy` masks are read and run as Xray-core v26.10.31's
   segment that does not fit its 8192-byte buffer.
 - A `dns` header whose labels fill all 256 bytes of the name fails the dial.
   Xray-core panics there.
-- Only `mkcp-legacy` and `noise` masks apply to mKCP; Salamander, `udphop`
-  and TCP masks are refused on it, and `mkcp-legacy` on any other transport.
-  Xray-core applies every UDP mask to mKCP's socket, ignores TCP masks on it,
-  and ignores UDP masks on TCP transports.
+- Gecko, Salamander's `packetSize`, `udphop` and TCP masks are refused on
+  mKCP, and `mkcp-legacy` on any other transport. Xray-core applies every UDP
+  mask to mKCP's socket, ignores TCP masks on it, and ignores UDP masks on
+  TCP transports. Plain Salamander applies, a header mask grouped with
+  `mkcp-legacy`'s as in Xray-core.
 - mKCP over another outbound, through `dialerProxy` or `proxySettings`, is
   refused. Xray-core dials its datagrams through the chain.
 - A datagram the system refuses to send counts as lost, and goes again when
@@ -782,10 +783,10 @@ looked up, as in Xray-core. Deliberate differences:
   as on every VLESS outbound here.
 - Unknown fields in `xdriveSettings`, `s3` and `xmux` fail, as everywhere;
   Go's JSON ignores them and matches field names in any case. Over
-  `tlsSettings.alpn` other than exactly `["h3"]` the UDP masks and
-  `disableChromeParrot` fail, `salamander` needs Hysteria, and the TCP
-  fragment mask needs TLS, as on the other carriers; Xray-core accepts them
-  and the masks do nothing there.
+  `tlsSettings.alpn` other than exactly `["h3"]` the UDP masks, Salamander
+  among them, and `disableChromeParrot` fail, and the TCP fragment mask
+  needs TLS, as on the other carriers; Xray-core accepts them and the masks
+  do nothing there.
 
 Evidence: `tools/xdrive-oracle` runs inside Xray-core's `xdrive` package
 through a `go test -overlay` and records `paramsFromConfig` on 11 inputs,
@@ -812,7 +813,7 @@ answers, whose 19 requests the tests compare one by one (method, path and
 query, content type, token, body). The tests replay them all, and
 `scripts/check-xdrive-interop.sh` regenerates them each run, byte for byte.
 228 configuration cases carry `xray run -test` verdicts, rechecked with the
-binary each run: 216 match and 12 differ as listed above; every case both
+binary each run: 217 match and 11 differ as listed above; every case both
 accept also builds a core, but the 4 the core refuses as listed above. Live
 against Xray-core's XDRIVE server, the two meeting in a temporary folder:
 TCP with a 128 KiB echo and UDP to IPv4 and IPv6 through Mux, eight parallel

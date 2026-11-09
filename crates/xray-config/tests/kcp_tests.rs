@@ -373,13 +373,13 @@ fn mkcp_legacy_needs_mkcp_and_mkcp_takes_no_quic_masks() {
             .any(|error| error.contains("mkcp-legacy requires mKCP")),
         "{raw:?}"
     );
-    let salamander = errors(json!({"network": "kcp", "finalmask": {"udp": [
-        {"type": "salamander", "settings": {"password": "synthetic"}}]}}));
+    let gecko = errors(json!({"network": "kcp", "finalmask": {"udp": [
+        {"type": "salamander", "settings": {"password": "synthetic", "packetSize": "512-1200"}}]}}));
     assert!(
-        salamander
+        gecko
             .iter()
-            .any(|error| error.contains("Salamander requires Hysteria")),
-        "{salamander:?}"
+            .any(|error| error.contains("Gecko, Salamander's packetSize, is not supported on mKCP")),
+        "{gecko:?}"
     );
     let hop = errors(json!({"network": "kcp", "finalmask": {"udp": [
         {"type": "udphop", "settings": {"remotePorts": "1000-2000"}}]}}));
@@ -393,4 +393,40 @@ fn mkcp_legacy_needs_mkcp_and_mkcp_takes_no_quic_masks() {
 fn mask_debug_hides_the_seed() {
     let debug = format!("{:?}", KcpMask::Aes128Gcm("hunter2".to_owned().into()));
     assert!(!debug.contains("hunter2"), "{debug}");
+}
+
+/// Salamander is a header mask on mKCP, as Xray-core groups it with
+/// mkcp-legacy's, and keeps its place in the array.
+#[test]
+fn salamander_takes_its_place_among_mkcp_masks() {
+    let stream = json!({"network": "kcp", "finalmask": {"udp": [
+        {"type": "mkcp-legacy", "settings": {"header": "wechat"}},
+        {"type": "Salamander", "settings": {"password": "synthetic"}},
+        {"type": "noise", "settings": {"noise": [{"rand": 4}]}},
+    ]}});
+    assert_eq!(
+        kcp(stream.clone()).masks,
+        [
+            KcpMask::Header(KcpHeader::Wechat),
+            KcpMask::Salamander,
+            KcpMask::Noise
+        ]
+    );
+    let parsed = parse_xray_json(&outbound(stream).to_string()).unwrap();
+    let salamander = parsed.config.outbounds[0]
+        .stream
+        .udp_salamander
+        .clone()
+        .unwrap();
+    assert_eq!(salamander.password.as_str(), "synthetic");
+    assert_eq!(salamander.gecko_packet_size, None);
+    assert!(!format!("{salamander:?}").contains("synthetic"));
+    for password in ["abc", &"p".repeat(4097)] {
+        let short = errors(json!({"network": "kcp", "finalmask": {"udp": [
+            {"type": "salamander", "settings": {"password": password}}]}}));
+        assert!(
+            short.iter().any(|error| error.contains("4..=4096")),
+            "{short:?}"
+        );
+    }
 }

@@ -921,6 +921,11 @@ fn masque_quic_config(
     config.udp_xdns = stream.udp_xdns.as_ref().map(super::carrier::xdns_config);
     config.udp_realm = stream.udp_realm.as_ref().map(super::carrier::realm_config);
     config.udp_xicmp = stream.udp_xicmp.as_ref().map(super::carrier::xicmp_config);
+    config.udp_salamander = stream
+        .udp_salamander
+        .as_ref()
+        .map(super::carrier::quic_salamander)
+        .transpose()?;
     Ok(config)
 }
 

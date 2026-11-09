@@ -334,6 +334,11 @@ fn trojan_uri_maps_fm_to_finalmask_through_the_shared_validator() {
             "texturesValue":"dGV4dHVyZXM=","texturesSignature":"c2lnbmF0dXJl"}]}}]});
     let tls = stream(&format!("security=tls&sni=example.test&fm={}", fm(&xmc)));
     assert_eq!(tls["finalmask"], xmc);
+    // So does a fragment mask that cuts writes into raw pieces.
+    let pieces = serde_json::json!({"tcp":[{"type":"fragment","settings":{
+        "packets":"1-3","length":"100-200","delay":"10-20"}}]});
+    let tls = stream(&format!("security=tls&sni=example.test&fm={}", fm(&pieces)));
+    assert_eq!(tls["finalmask"], pieces);
     // An empty `fm` is no mask.
     assert!(stream("fm=").get("finalmask").is_none());
 
@@ -348,7 +353,7 @@ fn trojan_uri_maps_fm_to_finalmask_through_the_shared_validator() {
     // What the core does not implement names `fm` instead of being dropped.
     for mask in [
         serde_json::json!({"udp":[{"type":"noise","settings":{"noise":[{"rand":"10-20"}]}}]}),
-        serde_json::json!({"tcp":[{"type":"fragment","settings":{"packets":"1-3","length":"100-200"}}]}),
+        serde_json::json!({"tcp":[{"type":"fragment","settings":{"packets":"0-3","length":"100-200"}}]}),
         serde_json::json!({"tcp":[{"type":"filter","settings":{}}]}),
         serde_json::json!({"tcp":[{"type":"xmc","settings":{}}]}),
         serde_json::json!({"unknown":[]}),

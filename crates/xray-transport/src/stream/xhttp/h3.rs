@@ -267,6 +267,9 @@ pub struct H3QuicConfig {
     /// The `xicmp` UDP mask, outside the others, carrying every datagram in
     /// ICMP echoes.
     pub udp_xicmp: Option<Arc<crate::xicmp::XicmpConfig>>,
+    /// The `salamander` UDP mask, Gecko's fragments with it, at its place
+    /// among the noise, `header-custom` and `sudoku` masks.
+    pub udp_salamander: Option<crate::hysteria::SalamanderCarrier>,
     pub debug: bool,
     /// quic-go's `InitialPacketSize`: the first packets' size, never
     /// lowered by black-hole detection. `None` keeps Quinn's 1200.
@@ -302,6 +305,7 @@ impl Default for H3QuicConfig {
             udp_xdns: None,
             udp_realm: None,
             udp_xicmp: None,
+            udp_salamander: None,
             debug: false,
             initial_packet_size: None,
             connection_id_len: None,
@@ -438,10 +442,18 @@ impl H3QuicConfig {
     }
 
     /// The carrier transforms this XHTTP connection applies itself: UDP hop,
-    /// noise, a custom header and sudoku. Hysteria passes its own carrier
-    /// instead.
+    /// Salamander, noise, a custom header and sudoku. Hysteria passes its own
+    /// carrier instead.
     pub(crate) fn hop_carrier(&self) -> crate::hysteria::HysteriaCarrierConfig {
         crate::hysteria::HysteriaCarrierConfig {
+            salamander_password: self
+                .udp_salamander
+                .as_ref()
+                .map(|salamander| salamander.password.clone()),
+            gecko: self
+                .udp_salamander
+                .as_ref()
+                .and_then(|salamander| salamander.gecko),
             udp_hop: self.udp_hop.clone(),
             noise: self.udp_noise.clone(),
             header_custom: self.udp_header_custom.clone(),
@@ -449,7 +461,6 @@ impl H3QuicConfig {
             xdns: self.udp_xdns.clone(),
             realm: self.udp_realm.clone(),
             xicmp: self.udp_xicmp.clone(),
-            ..Default::default()
         }
     }
 
