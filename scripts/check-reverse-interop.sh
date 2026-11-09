@@ -45,7 +45,10 @@ python3 scripts/check-reverse-config-verdicts.py \
 # The bridge against Xray-core's own portal: TCP and UDP services behind it
 # over raw, VLESS encryption, TLS with Vision, WebSocket, gRPC and XHTTP;
 # freedom refusing what its final rules do not allow; a wrong UUID opening
-# nothing; and a second tunnel once the portal drains the first.
+# nothing; a second tunnel once the portal drains the first; and dialerProxy
+# chains whose last freedom refuses sessions, and a tunnel, until it allows
+# the next hop, while Mux and gRPC links are left alone as Xray-core leaves
+# them.
 XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT" \
   cargo test --locked -p xray-core-rs --test local_xray_interop_tests reverse:: \
     -- --ignored --nocapture --test-threads=1
