@@ -16,6 +16,7 @@ use std::os::fd::AsRawFd;
 use std::os::windows::io::AsRawSocket;
 
 #[cfg(target_os = "macos")]
+mod chrome_parrot;
 mod connected_quic;
 
 mod dialer;

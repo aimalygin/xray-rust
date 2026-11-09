@@ -274,6 +274,20 @@ pub struct H3QuicConfig {
     /// The length of the connection IDs this end issues, as quic-go's
     /// `Transport.ConnectionIDLength`. `None` keeps the carrier's default.
     pub connection_id_len: Option<u8>,
+    /// Xray-core's ChromeParrot: shape the handshake like Chrome's, as Xray's
+    /// Hysteria, XHTTP H3 and XDRIVE H3 dialers do unless
+    /// `quicParams.disableChromeParrot` is true.
+    ///
+    /// It pins quic-go's values: a 30 s idle timeout, 6 MiB stream and 15 MiB
+    /// connection windows (ceilings never below them), 100 bidirectional and
+    /// 103 unidirectional streams and 1250-byte Initial datagrams. It sends
+    /// from zero-length connection IDs to an 8-byte first destination ID,
+    /// turns on quinn-proto's `TransportConfig::chrome_parrot` packet shape,
+    /// and wants the TLS configuration from
+    /// `TlsConnector::h3_client_config_for` with the same flag, which carries
+    /// uTLS's Chrome QUIC ClientHello. Off by default here: the core sets it
+    /// from `disableChromeParrot`.
+    pub chrome_parrot: bool,
 }
 
 impl Default for H3QuicConfig {
@@ -305,6 +319,7 @@ impl Default for H3QuicConfig {
             debug: false,
             initial_packet_size: None,
             connection_id_len: None,
+            chrome_parrot: false,
         }
     }
 }
@@ -440,6 +455,33 @@ impl H3QuicConfig {
     /// The carrier transforms this XHTTP connection applies itself: UDP hop,
     /// noise, a custom header and sudoku. Hysteria passes its own carrier
     /// instead.
+    /// The configuration a connection runs: with ChromeParrot, quic-go's
+    /// `populateConfig` replaces the idle timeout, the starting windows, the
+    /// incoming stream limit and the initial packet size with Chrome's, and
+    /// raises configured window ceilings to at least the starting windows.
+    pub(crate) fn populated(&self) -> std::borrow::Cow<'_, Self> {
+        use crate::chrome_parrot::{
+            INITIAL_CONNECTION_RECEIVE_WINDOW, INITIAL_PACKET_SIZE, INITIAL_STREAM_RECEIVE_WINDOW,
+            MAX_IDLE_TIMEOUT, MAX_INCOMING_STREAMS,
+        };
+        if !self.chrome_parrot {
+            return std::borrow::Cow::Borrowed(self);
+        }
+        let mut config = self.clone();
+        config.max_idle_timeout = MAX_IDLE_TIMEOUT;
+        config.initial_stream_receive_window = INITIAL_STREAM_RECEIVE_WINDOW;
+        config.initial_connection_receive_window = INITIAL_CONNECTION_RECEIVE_WINDOW;
+        config.max_stream_receive_window = config
+            .max_stream_receive_window
+            .map(|maximum| maximum.max(INITIAL_STREAM_RECEIVE_WINDOW));
+        config.max_connection_receive_window = config
+            .max_connection_receive_window
+            .map(|maximum| maximum.max(INITIAL_CONNECTION_RECEIVE_WINDOW));
+        config.max_incoming_bidirectional_streams = MAX_INCOMING_STREAMS;
+        config.initial_packet_size = Some(INITIAL_PACKET_SIZE);
+        std::borrow::Cow::Owned(config)
+    }
+
     pub(crate) fn hop_carrier(&self) -> crate::hysteria::HysteriaCarrierConfig {
         crate::hysteria::HysteriaCarrierConfig {
             udp_hop: self.udp_hop.clone(),
@@ -1168,7 +1210,7 @@ impl H3Client {
 /// Connects one protected UDP destination and starts its HTTP/3 driver.
 pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
     let class = memory_class();
-    let receive_window = config.quic.receive_window(class);
+    let receive_window = config.quic.populated().receive_window(class);
     let carrier = config.quic.hop_carrier();
     let protector = config.socket_protector.clone();
     let (endpoint, connection, diagnostics, wire_peer) =
@@ -1312,6 +1354,10 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
     switch: Option<&Arc<ControllerSwitch>>,
 ) -> Result<(Endpoint, quinn::Connection, H3Diagnostics, SocketAddr), H3Error> {
     drop(crate::tls::parse_tls_server_name(&config.server_name)?);
+    let mut config = config;
+    if config.quic.chrome_parrot {
+        config.quic = config.quic.populated().into_owned();
+    }
     let diagnostics = config.quic.diagnostics()?;
     if config.tls_config.alpn_protocols.len() != 1
         || config.tls_config.alpn_protocols[0].as_slice() != expected_alpn
@@ -1562,7 +1608,11 @@ fn build_quinn_config(
 ) -> Result<(EndpointConfig, ClientConfig), H3Error> {
     let mut endpoint = EndpointConfig::default();
     endpoint.supported_versions(vec![QUIC_V1]);
-    if let Some(len) = config.quic.connection_id_len {
+    if config.quic.chrome_parrot {
+        // Xray gives a ChromeParrot dial's Transport quic-go's
+        // ZeroLengthConnectionIDGenerator.
+        endpoint.cid_generator(|| Box::new(EmptyConnectionId));
+    } else if let Some(len) = config.quic.connection_id_len {
         let len = usize::from(len);
         endpoint
             .cid_generator(move || Box::new(quinn_proto::RandomConnectionIdGenerator::new(len)));
@@ -1622,6 +1672,11 @@ fn build_quinn_config(
     }
     // quic-go's `Transport.DisableGSO`.
     transport.enable_segmentation_offload(!config.quic.disable_gso);
+    if config.quic.chrome_parrot {
+        transport.chrome_parrot(true).max_concurrent_uni_streams(varint(
+            crate::chrome_parrot::MAX_INCOMING_UNI_STREAMS,
+        ));
+    }
     match config.quic.congestion {
         H3Congestion::BbrStandard if !STANDARD_RUNS_XRAY_BBR => {
             transport.congestion_controller_factory(quinn_bbr());
@@ -1659,6 +1714,15 @@ fn build_quinn_config(
     client
         .version(QUIC_V1)
         .transport_config(Arc::new(transport));
+    if config.quic.chrome_parrot {
+        client.initial_dst_cid_provider(Arc::new(|| {
+            quinn::ConnectionIdGenerator::generate_cid(
+                &mut quinn_proto::RandomConnectionIdGenerator::new(
+                    crate::chrome_parrot::INITIAL_CONNECTION_ID_LEN,
+                ),
+            )
+        }));
+    }
     Ok((endpoint, client))
 }
 

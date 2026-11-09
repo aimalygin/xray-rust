@@ -60,6 +60,13 @@ enum QuicClientConfigKey {
     Pinned {
         alpn: Vec<u8>,
     },
+    /// Xray's ChromeParrot ClientHello, on the same trust policy as `System`
+    Chrome {
+        allow_insecure: bool,
+        pinned_peer_cert_sha256: Vec<[u8; 32]>,
+        verify_peer_cert_by_name: Vec<String>,
+        alpn: Vec<u8>,
+    },
 }
 
 /// Where a connector's rustls configs come from. The two kinds are mutually
@@ -161,12 +168,14 @@ impl TlsConnector {
         self.client_config_for_policy(config, TlsAlpnPolicy::Raw)
     }
 
-    /// Builds the stock TLS configuration used by XHTTP HTTP/3.
+    /// Builds the stock TLS configuration XHTTP HTTP/3 uses with
+    /// `disableChromeParrot`.
     ///
     /// Xray's H3 path hands its ordinary Go TLS config directly to QUIC; its
     /// uTLS TCP dial callback is not used. Accordingly this path ignores both
     /// the fingerprint and configured ALPN, always advertises exactly `h3`,
     /// and never installs a ClientHello customizer.
+    #[cfg(test)]
     pub(crate) fn http3_client_config_for(
         &self,
         config: &TlsClientConfig,
@@ -218,6 +227,65 @@ impl TlsConnector {
         };
         client_config.alpn_protocols = vec![alpn.to_vec()];
         client_config.client_hello_customizer = None;
+        validate_quic_client_config(&client_config)?;
+        let client_config = Arc::new(client_config);
+        configs.insert(key, Arc::clone(&client_config));
+        Ok(client_config)
+    }
+
+    /// The QUIC TLS configuration of a Hysteria or HTTP/3 dial: Xray's
+    /// ChromeParrot ClientHello when `chrome_parrot` is set, as Xray sends it
+    /// unless `quicParams.disableChromeParrot`, else the unshaped one.
+    pub(crate) fn h3_client_config_for(
+        &self,
+        config: &TlsClientConfig,
+        alpn: &[u8],
+        chrome_parrot: bool,
+    ) -> Result<Arc<rustls::ClientConfig>, TransportError> {
+        if chrome_parrot {
+            self.chrome_quic_client_config_for(config, alpn)
+        } else {
+            self.quic_client_config_for(config, alpn)
+        }
+    }
+
+    /// Builds the TLS 1.3 configuration of a ChromeParrot QUIC client for one
+    /// application protocol: uTLS's Chrome QUIC ClientHello
+    /// ([`crate::chrome_parrot::ChromeQuicHello`]) on the connector's trust
+    /// policy, without resumption or 0-RTT.
+    ///
+    /// Xray turns the shape on for every Hysteria, XHTTP H3 and XDRIVE H3
+    /// dial unless `disableChromeParrot` is set; its fingerprint setting and
+    /// configured ALPN do not reach QUIC either way. A prebuilt config keeps
+    /// its own ClientHello, as it does under a fingerprint.
+    pub(crate) fn chrome_quic_client_config_for(
+        &self,
+        config: &TlsClientConfig,
+        alpn: &[u8],
+    ) -> Result<Arc<rustls::ClientConfig>, TransportError> {
+        if matches!(&*self.source, ConfigSource::Pinned(_)) {
+            return self.quic_client_config_for(config, alpn);
+        }
+        let key = QuicClientConfigKey::Chrome {
+            allow_insecure: config.allow_insecure,
+            pinned_peer_cert_sha256: config.pinned_peer_cert_sha256.clone(),
+            verify_peer_cert_by_name: config.verify_peer_cert_by_name.clone(),
+            alpn: alpn.to_vec(),
+        };
+        let mut configs = self
+            .quic_configs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(cached) = configs.get(&key) {
+            return Ok(Arc::clone(cached));
+        }
+        let client_config = chrome_quic_rustls_config(
+            config.allow_insecure,
+            &config.pinned_peer_cert_sha256,
+            &config.verify_peer_cert_by_name,
+            alpn,
+            crate::chrome_parrot::ChromeQuicHello::default(),
+        )?;
         validate_quic_client_config(&client_config)?;
         let client_config = Arc::new(client_config);
         configs.insert(key, Arc::clone(&client_config));
@@ -1076,6 +1144,32 @@ fn custom_verification_rustls_client_config(
                 .with_custom_certificate_verifier(verifier)
                 .with_no_client_auth()
         })
+}
+
+/// The rustls configuration of a ChromeParrot QUIC client: TLS 1.3 alone on
+/// the shaping provider, which has the X25519MLKEM768 key share the hello
+/// plans, brotli as the only certificate compression it offers, no
+/// resumption and no early data, and `hello` shaping the ClientHello.
+pub(crate) fn chrome_quic_rustls_config(
+    allow_insecure: bool,
+    pinned_peer_cert_sha256: &[[u8; 32]],
+    verify_peer_cert_by_name: &[String],
+    alpn: &[u8],
+    hello: crate::chrome_parrot::ChromeQuicHello,
+) -> Result<rustls::ClientConfig, TransportError> {
+    let mut client_config = client_config_with_provider(
+        Arc::new(shaping_crypto_provider()),
+        allow_insecure,
+        pinned_peer_cert_sha256,
+        verify_peer_cert_by_name,
+        &[&rustls::version::TLS13],
+    )?;
+    client_config.alpn_protocols = vec![alpn.to_vec()];
+    client_config.resumption = rustls::client::Resumption::disabled();
+    client_config.enable_early_data = false;
+    crate::chrome_parrot::retain_brotli(&mut client_config.cert_decompressors);
+    client_config.client_hello_customizer = Some(Arc::new(hello));
+    Ok(client_config)
 }
 
 /// The provider every uTLS-shaped handshake runs on.
