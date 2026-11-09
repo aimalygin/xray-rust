@@ -92,3 +92,46 @@ async fn pinned_reference_with_and_without_chrome_parrot() {
         }
     }
 }
+
+/// ChromeParrot under a Salamander mask, as an Xray client dials it by
+/// default: the server takes it, and the first flight leaves as 1250-byte
+/// Initial datagrams each with Salamander's 8-byte salt in front.
+#[tokio::test]
+#[ignore = "requires pinned reference; use check-chrome-parrot-interop.sh or check-hysteria-interop.sh"]
+async fn pinned_reference_chrome_parrot_under_salamander() {
+    let server = ReferenceServer::start_with_carrier(true, true).await;
+    let relay = RecordingRelay::start(server.address).await;
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let target = Target::new(TargetAddr::Ip(address.ip()), address.port(), Network::Tcp);
+    let _echo = Task(tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (mut reader, mut writer) = socket.into_split();
+        let _ = tokio::io::copy(&mut reader, &mut writer).await;
+    }));
+    let mut config = server.config();
+    config.remote_addr = relay.address;
+    config.tls = tls_settings();
+    config.tls.pinned_peer_cert_sha256 = vec![server.certificate_sha256];
+    config.quic.chrome_parrot = true;
+    config.carrier.salamander_password = Some(std::sync::Arc::new(zeroize::Zeroizing::new(
+        super::support::SALAMANDER_PASSWORD.into(),
+    )));
+    let connector = TlsConnector::system().unwrap();
+    let client = HysteriaClient::connect(config, &connector).await.unwrap();
+    let mut tcp = client.open_tcp(&target).await.unwrap();
+    tcp.write_all(b"chrome parrot under salamander").await.unwrap();
+    let mut echo = [0; 30];
+    timeout(DEADLINE, tcp.read_exact(&mut echo))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(&echo, b"chrome parrot under salamander");
+    client.close();
+    let datagrams = relay.take();
+    assert!(
+        datagrams[..2].iter().all(|d| d.len() == 1250 + 8),
+        "{:?}",
+        datagrams.iter().map(Vec::len).collect::<Vec<_>>()
+    );
+}

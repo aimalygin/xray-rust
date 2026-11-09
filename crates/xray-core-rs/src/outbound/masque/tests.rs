@@ -265,6 +265,20 @@ fn quic_for(quic_params: serde_json::Value) -> H3QuicConfig {
     masque_quic_config(&outbound.stream, transport).unwrap()
 }
 
+/// Xray's MASQUE dial never parrots Chrome, whatever `disableChromeParrot`
+/// says.
+#[test]
+fn quic_never_parrots_chrome() {
+    use serde_json::json;
+    for quic_params in [
+        json!({}),
+        json!({"disableChromeParrot": false}),
+        json!({"disableChromeParrot": true}),
+    ] {
+        assert!(!quic_for(quic_params.clone()).chrome_parrot, "{quic_params}");
+    }
+}
+
 #[test]
 fn quic_runs_xrays_congestion_choices_and_bbr_profiles() {
     use serde_json::json;
