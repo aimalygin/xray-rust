@@ -584,6 +584,24 @@ mod tests {
         assert_eq!(crypto_split(900, 0, 1_215, &mut rng), None);
     }
 
+    /// quic-go cuts while the padding left covers a frame header: a budget of
+    /// exactly one header still pays for a cut.
+    #[test]
+    fn a_budget_of_exactly_one_header_still_cuts() {
+        let data = Bytes::from(vec![0x16; 900]);
+        let header = crypto_frame_header_len(900, 900);
+        for seed in 0..16u8 {
+            let mut rng = GoPcg::new([seed; 16]);
+            let (crypto, budget) = shred_crypto(vec![(0, data.clone())], 0, header, &mut rng);
+            assert!(crypto.len() >= 2, "seed {seed}");
+            let written: u64 = crypto
+                .iter()
+                .map(|(o, d)| crypto_frame_header_len(*o, d.len() as u64) + d.len() as u64)
+                .sum();
+            assert_eq!(written + budget, crypto_frame_header_len(0, 900) + 900 + header, "seed {seed}");
+        }
+    }
+
     /// The ACK stays out of the shuffle, in front.
     #[test]
     fn chaos_writes_the_ack_first() {

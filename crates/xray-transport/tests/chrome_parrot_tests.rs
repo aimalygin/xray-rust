@@ -23,6 +23,9 @@ use quinn_proto::{
 };
 use serde_json::Value;
 
+#[path = "../../../tests/support/chrome_parrot_wire.rs"]
+mod chrome_parrot_wire;
+
 const QUIC_GO_PACKER: &str = "github.com/apernet/quic-go.newPacketPacker";
 const QUIC_GO_WIRE: &str = "github.com/apernet/quic-go/internal/wire.";
 /// quic-go's initial congestion window, 32 packets of the 1250-byte
@@ -202,6 +205,23 @@ fn first_flight(case: &Value) -> Vec<Vec<u8>> {
         .expect("the packer seed")
         .try_into()
         .unwrap();
+    first_flight_with(
+        dcid,
+        seed,
+        unhex(case["client_hello"].as_str().unwrap()),
+        case["datagrams"].as_array().unwrap().len(),
+    )
+}
+
+/// The first `wanted` datagrams of a ChromeParrot client connection to
+/// `dcid` whose packet layout is seeded with `seed` and whose TLS stack sends
+/// `client_hello`.
+fn first_flight_with(
+    dcid: Vec<u8>,
+    seed: [u8; 16],
+    client_hello: Vec<u8>,
+    wanted: usize,
+) -> Vec<Vec<u8>> {
     let mut transport = chrome_transport();
     let mut reno = NewRenoConfig::default();
     reno.initial_window(QUIC_GO_INITIAL_WINDOW);
@@ -213,7 +233,7 @@ fn first_flight(case: &Value) -> Vec<Vec<u8>> {
     let mut endpoint = Endpoint::new(Arc::new(endpoint_config), None, true, None);
     let mut client = ClientConfig::new(Arc::new(ReplayClientConfig {
         inner: quic_rustls(),
-        client_hello: unhex(case["client_hello"].as_str().unwrap()),
+        client_hello,
     }));
     client
         .transport_config(Arc::new(transport))
@@ -223,7 +243,6 @@ fn first_flight(case: &Value) -> Vec<Vec<u8>> {
     let (_, mut connection) = endpoint
         .connect(now, client, remote, "chrome-parrot.example")
         .unwrap();
-    let wanted = case["datagrams"].as_array().unwrap().len();
     let mut datagrams = Vec::new();
     let deadline = now + Duration::from_secs(60);
     while datagrams.len() < wanted && now < deadline {
@@ -259,4 +278,42 @@ fn first_flight_and_probes_match_xray() {
             );
         }
     }
+}
+
+/// A probe carries one lost packet's frames whole, in a datagram of the full
+/// 1250 bytes as quic-go's probes are: with a 2400-byte ClientHello the first
+/// packet's head and tail take more room than a 1200-byte datagram has.
+#[test]
+fn probes_carry_whole_packets_at_the_full_size() {
+    let mut hello = vec![0x01, 0x00, 0x09, 0x5c];
+    hello.extend((0..2396u32).map(|i| (i % 251) as u8));
+    let datagrams = first_flight_with(vec![0x5a; 8], [0x42; 16], hello, 4);
+    let ranges = |datagram: &[u8]| {
+        let initial = chrome_parrot_wire::decrypt_initial(datagram).unwrap();
+        assert_eq!(initial.datagram_len, 1250);
+        let mut ranges: Vec<(u64, u64)> = initial
+            .frames
+            .iter()
+            .filter_map(|frame| match frame {
+                chrome_parrot_wire::Frame::Crypto { offset, data } => {
+                    Some((*offset, *offset + data.len() as u64))
+                }
+                _ => None,
+            })
+            .collect();
+        ranges.sort();
+        let mut merged: Vec<(u64, u64)> = Vec::new();
+        for (start, end) in ranges {
+            match merged.last_mut() {
+                Some(last) if last.1 == start => last.1 = end,
+                _ => merged.push((start, end)),
+            }
+        }
+        merged
+    };
+    let first = ranges(&datagrams[0]);
+    assert_eq!(first.len(), 2, "head and tail: {first:?}");
+    assert!(first[1].1 - first[1].0 + first[0].1 > 1150, "{first:?}");
+    assert_eq!(ranges(&datagrams[2]), first, "the first probe");
+    assert_eq!(ranges(&datagrams[3]), ranges(&datagrams[1]), "the second probe");
 }
