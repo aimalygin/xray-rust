@@ -3,6 +3,8 @@
 //! them.
 use std::net::Ipv6Addr;
 
+use zeroize::Zeroizing;
+
 use crate::stream::masquerade::{
     anchored_chrome_user_agent, anchored_curl_user_agent, anchored_edge_user_agent,
     anchored_firefox_user_agent, anchored_safari_user_agent,
@@ -23,8 +25,9 @@ pub struct MasqueRequest {
     pub host: String,
     /// The path, its template variables already replaced.
     pub path: String,
-    /// Header fields with canonical names, Authorization included.
-    pub headers: Vec<(String, String)>,
+    /// Header fields with canonical names, Authorization included; the
+    /// values are wiped when dropped.
+    pub headers: Vec<(String, Zeroizing<String>)>,
 }
 
 impl std::fmt::Debug for MasqueRequest {
@@ -89,7 +92,7 @@ pub(crate) enum UserAgent {
 /// Xray's `setUserAgent`: absent means `chrome`; `chrome`, `firefox`,
 /// `safari`, `edge` and `curl` are presets; `golang` leaves the library's
 /// default and empty sends none.
-pub(crate) fn user_agent(headers: &[(String, String)]) -> UserAgent {
+pub(crate) fn user_agent(headers: &[(String, Zeroizing<String>)]) -> UserAgent {
     let configured = headers
         .iter()
         .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
@@ -135,7 +138,7 @@ pub(crate) fn request_fields(
         .headers
         .iter()
         .filter(|(name, _)| !name.eq_ignore_ascii_case("user-agent") && is_sent(name))
-        .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
+        .map(|(name, value)| (name.to_ascii_lowercase(), value.to_string()))
         .collect();
     if capsule_protocol {
         fields.push(("capsule-protocol".to_owned(), "?1".to_owned()));
@@ -166,7 +169,7 @@ pub(crate) fn h2_request_fields(
         .headers
         .iter()
         .filter(|(name, _)| !name.eq_ignore_ascii_case("user-agent"))
-        .cloned()
+        .map(|(name, value)| (name.clone(), value.to_string()))
         .chain(
             extra
                 .iter()
@@ -229,9 +232,13 @@ mod tests {
         }
     }
 
+    fn field(name: &str, value: &str) -> (String, Zeroizing<String>) {
+        (name.to_owned(), Zeroizing::new(value.to_owned()))
+    }
+
     #[test]
     fn user_agent_presets_are_xrays() {
-        let with = |value: &str| vec![("User-Agent".to_owned(), value.to_owned())];
+        let with = |value: &str| vec![field("User-Agent", value)];
         assert!(matches!(user_agent(&[]), UserAgent::Value(ua) if ua.contains("Chrome/")));
         assert_eq!(user_agent(&with("")), UserAgent::Omitted);
         assert!(
@@ -255,9 +262,9 @@ mod tests {
     fn fields_are_lowercase_sorted_and_carry_the_capsule_protocol() {
         let request = MasqueRequest {
             headers: vec![
-                ("X-Custom".to_owned(), "1".to_owned()),
-                ("Authorization".to_owned(), "Basic dTpw".to_owned()),
-                ("User-Agent".to_owned(), "golang".to_owned()),
+                field("X-Custom", "1"),
+                field("Authorization", "Basic dTpw"),
+                field("User-Agent", "golang"),
             ],
             ..MasqueRequest::default()
         };
@@ -276,14 +283,14 @@ mod tests {
     fn connection_fields_stay_out_as_quic_go_and_xray_leave_them() {
         let request = MasqueRequest {
             headers: vec![
-                ("Connection".to_owned(), "close".to_owned()),
-                ("Content-Length".to_owned(), "0".to_owned()),
-                ("Keep-Alive".to_owned(), "1".to_owned()),
-                ("Proxy-Connection".to_owned(), "1".to_owned()),
-                ("Transfer-Encoding".to_owned(), "chunked".to_owned()),
-                ("Upgrade".to_owned(), "h2c".to_owned()),
-                ("User-Agent".to_owned(), String::new()),
-                ("X-Kept".to_owned(), "1".to_owned()),
+                field("Connection", "close"),
+                field("Content-Length", "0"),
+                field("Keep-Alive", "1"),
+                field("Proxy-Connection", "1"),
+                field("Transfer-Encoding", "chunked"),
+                field("Upgrade", "h2c"),
+                field("User-Agent", ""),
+                field("X-Kept", "1"),
             ],
             ..MasqueRequest::default()
         };
@@ -296,15 +303,15 @@ mod tests {
     fn http2_fields_follow_xrays_client() {
         let mut request = MasqueRequest {
             headers: vec![
-                ("Authorization".to_owned(), "Basic dTpw".to_owned()),
-                ("User-Agent".to_owned(), "golang".to_owned()),
-                ("X-A".to_owned(), "1".to_owned()),
+                field("Authorization", "Basic dTpw"),
+                field("User-Agent", "golang"),
+                field("X-A", "1"),
             ],
             ..MasqueRequest::default()
         };
         // The default User-Agent leads; Go sorts the canonical names, and
         // `X-A` sorts before `X-_`, which lowercase names would reverse.
-        request.headers.push(("X-_".to_owned(), "2".to_owned()));
+        request.headers.push(field("X-_", "2"));
         assert_eq!(
             h2_request_fields(&request, &[("Capsule-Protocol", "?1")]),
             [
@@ -316,7 +323,7 @@ mod tests {
             ]
             .map(|(name, value)| (name.to_owned(), value.to_owned()))
         );
-        request.headers[1].1 = "custom/1.0".to_owned();
+        request.headers[1].1 = Zeroizing::new("custom/1.0".to_owned());
         assert_eq!(
             h2_request_fields(&request, &[("Capsule-Protocol", "?1")])
                 .iter()
@@ -335,12 +342,19 @@ mod tests {
     #[test]
     fn debug_leaves_header_values_out() {
         let request = MasqueRequest {
-            headers: vec![("Authorization".to_owned(), "Basic c2VjcmV0".to_owned())],
+            headers: vec![
+                field("Authorization", "Basic c2VjcmV0"),
+                field("X-Token", "t0k3n"),
+            ],
             ..MasqueRequest::default()
         };
         let debug = format!("{request:?}");
         assert!(
-            debug.contains("Authorization") && !debug.contains("c2VjcmV0"),
+            debug.contains("Authorization") && debug.contains("X-Token"),
+            "{debug}"
+        );
+        assert!(
+            !debug.contains("c2VjcmV0") && !debug.contains("t0k3n"),
             "{debug}"
         );
     }

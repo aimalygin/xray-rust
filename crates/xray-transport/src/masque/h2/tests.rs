@@ -20,7 +20,10 @@ fn config() -> MasqueH2Config {
     MasqueH2Config {
         authority: "proxy.example:8443".to_owned(),
         request: MasqueRequest {
-            headers: vec![("X-Custom".to_owned(), "1".to_owned())],
+            headers: vec![(
+                "X-Custom".to_owned(),
+                zeroize::Zeroizing::new("1".to_owned()),
+            )],
             ..MasqueRequest::default()
         },
         keep_alive: Some(H2_KEEP_ALIVE),
@@ -427,7 +430,10 @@ async fn the_request_is_xrays_frame_for_frame() {
             request: MasqueRequest {
                 host,
                 path: case["path"].as_str().unwrap().to_owned(),
-                headers,
+                headers: headers
+                    .into_iter()
+                    .map(|(name, value)| (name, zeroize::Zeroizing::new(value)))
+                    .collect(),
             },
             keep_alive: None,
             warp: case["warp"].as_array().map(|addresses| {

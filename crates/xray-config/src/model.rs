@@ -1174,20 +1174,41 @@ pub struct MasqueOutboundSettings {
 
 /// `masqueSettings`, as Xray-core v26.10.31's `MasqueConfig.Build` leaves
 /// them: the path's template variables replaced, `user` and `pass` turned
-/// into an Authorization header and the WARP defaults applied.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// into an Authorization header and the WARP defaults applied. Its `Debug`
+/// shows header names only: a value can be a credential.
+#[derive(Clone, PartialEq, Eq)]
 pub struct MasqueSettings {
     /// The request authority. Empty takes the TLS server name, with the
     /// port unless it is 443.
     pub host: String,
     /// The CONNECT-IP request path, starting with `/`.
     pub path: String,
-    /// Request header fields by name, sorted, Authorization included.
-    pub headers: Vec<(String, String)>,
+    /// Request header fields by name, sorted, Authorization included. The
+    /// values are wiped when dropped.
+    pub headers: Vec<(String, zeroize::Zeroizing<String>)>,
     pub warp: Option<MasqueWarpSettings>,
     /// Tunnel reuse, read as XHTTP's `xmux`; an all-zero object takes
     /// MASQUE's defaults, one tunnel reused for 1800 to 3000 seconds.
     pub xmux: XhttpXmuxSettings,
+}
+
+impl fmt::Debug for MasqueSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MasqueSettings")
+            .field("host", &self.host)
+            .field("path", &self.path)
+            .field(
+                "headers",
+                &self
+                    .headers
+                    .iter()
+                    .map(|(name, _)| name)
+                    .collect::<Vec<_>>(),
+            )
+            .field("warp", &self.warp)
+            .field("xmux", &self.xmux)
+            .finish()
+    }
 }
 
 /// `masqueSettings.warp`: Cloudflare WARP's MASQUE flavour.
