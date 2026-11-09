@@ -2527,6 +2527,83 @@
    "xray": "ok"
   },
   {
+   "name": "sudoku tcp mask on h3",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "sudoku",
+        "settings": {
+         "password": "synthetic-sudoku"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "core": "outbound network is not supported",
+   "why": "the QUIC dial takes no TCP mask, which Xray-core's ignores; the core refuses them at start, as XHTTP over HTTP/3 refuses them",
+   "xray": "ok"
+  },
+  {
+   "name": "header-custom tcp mask on h3",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "header-custom",
+        "settings": {
+         "clients": [
+          [
+           {
+            "type": "str",
+            "packet": "hello"
+           }
+          ]
+         ],
+         "servers": [
+          [
+           {
+            "type": "str",
+            "packet": "ok"
+           }
+          ]
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "core": "outbound network is not supported",
+   "why": "the QUIC dial takes no TCP mask, which Xray-core's ignores; the core refuses them at start, as XHTTP over HTTP/3 refuses them",
+   "xray": "ok"
+  },
+  {
    "name": "masqueSettings on raw network",
    "outbound": {
     "tag": "proxy",

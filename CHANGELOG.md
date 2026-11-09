@@ -30,7 +30,8 @@ long-term supported release series.
   - Deliberate differences: a tunnel takes 16 TCP and 512 UDP flows, the
     bounds of the WireGuard outbound's stack, which it shares; `remoteDNS`
     takes at most 8 servers and no scoped address; an empty `address`,
-    chaining, Mux and the TCP fragment mask fail the configuration.
+    chaining, Mux and the TCP fragment mask fail the configuration, and the
+    other TCP masks fail when the core starts.
 - The WireGuard outbound's userspace TCP/IP stack now takes IP packets from
   any source, as MASQUE needs; WireGuard itself is unchanged.
 - The `xicmp` UDP mask carries mKCP, Hysteria, XHTTP over HTTP/3 and

@@ -2366,8 +2366,9 @@ HTTP/3, [realm](#realm-mask) and [xicmp](#xicmp-mask) included, since
 Xray-core's dial opens the QUIC socket through the same `finalmask` path: a
 realm introduction counts toward the ten seconds a tunnel dial may take, as
 it runs under Xray-core's dial context, and an xicmp outbound whose address
-is a name needs `ips`. The TCP fragment mask fails on
-MASQUE over HTTP/3, which other TCP masks do not reach. `sockopt` applies
+is a name needs `ips`. TCP masks fail on MASQUE over HTTP/3, the fragment
+mask in the configuration and the others when the core starts, as XHTTP
+over HTTP/3 refuses them; Xray-core's HTTP/3 dial ignores them. `sockopt` applies
 to the QUIC socket, and `addressPortStrategy` and `domainStrategy` choose
 the server's address, as Xray-core's system dialer does.
 

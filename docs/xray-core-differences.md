@@ -622,7 +622,8 @@ with `remoteDNS`. Deliberate differences:
   address; Xray-core takes any.
 - Chaining (`proxySettings`, `dialerProxy`) and Mux fail the configuration,
   as for Hysteria and WireGuard, and so does the TCP fragment mask, which
-  Xray-core's HTTP/3 dial ignores. Unknown fields fail, as everywhere.
+  Xray-core's HTTP/3 dial ignores; the other TCP masks fail when the core
+  starts. Unknown fields fail, as everywhere.
 - The HTTP/3 request lists its pseudo-fields in h3's order and its fields
   sorted; quic-go starts with `:authority` and sends fields in map order.
   Neither is visible outside the TLS session.
@@ -639,10 +640,11 @@ through a `go test -overlay` and records its capsule encodings, its reading
 of valid and mutated capsules, the datagrams `composeDatagram` builds, its
 ICMP messages and which packets it admits; the tests replay them and
 `scripts/check-masque-interop.sh` regenerates a corpus ten times larger each
-run. 117 configuration cases carry `xray run -test` verdicts, rechecked with
-the binary each run: 105 match and 12 differ as listed above and in the mask
+run. 119 configuration cases carry `xray run -test` verdicts, rechecked with
+the binary each run: 107 match and 12 differ as listed above and in the mask
 rules; every case the configuration takes also builds a core, but the
-xicmp one to a name without `ips`. Live against
+xicmp one to a name without `ips` and the TCP masks over HTTP/3. Live
+against
 Xray-core's MASQUE server over HTTP/3: TCP with a 128 KiB echo to IPv4, IPv6
 and a name resolved through the tunnel, UDP to the same three, TCP through
 the HTTP inbound, TCP and UDP through the TUN, eight parallel flows sharing
