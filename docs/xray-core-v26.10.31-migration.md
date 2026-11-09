@@ -68,7 +68,10 @@ XDRIVE, Lua for DNS/routing/noise, the newer FinalMask type filter, DNS
 over HTTPS resolvers for xdns and realm's UPnP/NAT-PMP `portMapping`.
 `localOS` and custom Blackhole responses arrived in 0.10.0, and so did the
 mKCP transport with its `mkcp-legacy` masks and the `header-custom`,
-`sudoku`, `xmc`, `xdns`, `realm` and `xicmp` masks.
+`sudoku`, `xmc`, `xdns`, `realm` and `xicmp` masks, and the bridge side of the
+VLESS reverse proxy (an outbound's `reverse`). Its portal side stays out of
+scope; the legacy root `reverse`, which upstream removed in v26.4.25, fails
+parsing with upstream's message.
 
 ## Evidence
 

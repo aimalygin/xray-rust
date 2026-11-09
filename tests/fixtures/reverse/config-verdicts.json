@@ -1109,7 +1109,9 @@
      ]
     }
    },
-   "xray": "ok"
+   "xray": "ok",
+   "core": "outbound flow is not supported",
+   "why": "a bridge's outbound is built when the core starts, and Vision needs TLS or REALITY; Xray-core starts and fails every dial of the tunnel instead"
   },
   {
    "name": "vision udp443 flow",
@@ -1156,7 +1158,9 @@
      ]
     }
    },
-   "xray": "ok"
+   "xray": "ok",
+   "core": "outbound flow is not supported",
+   "why": "a bridge's outbound is built when the core starts, and Vision needs TLS or REALITY; Xray-core starts and fails every dial of the tunnel instead"
   },
   {
    "name": "testpre",

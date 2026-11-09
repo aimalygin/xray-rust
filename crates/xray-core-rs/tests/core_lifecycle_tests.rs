@@ -428,6 +428,36 @@ async fn core_stop_closes_idle_accepted_socks_connections() {
     assert_eq!(read, 0);
 }
 
+/// Every VLESS reverse proxy configuration the parser takes builds a core,
+/// except where a case records the core's refusal.
+#[tokio::test]
+async fn reverse_profiles_xray_accepts_build_a_core() {
+    use serde_json::Value;
+    let corpus: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/reverse/config-verdicts.json"
+    ))
+    .unwrap();
+    let mut mismatches = Vec::new();
+    let mut built = 0;
+    for case in corpus["cases"].as_array().unwrap() {
+        let Ok(parsed) = xray_config::parse_xray_json(&case["config"].to_string()) else {
+            continue;
+        };
+        let refusal = case.get("core").and_then(Value::as_str);
+        match (Core::new(parsed.config), refusal) {
+            (Ok(_), None) => built += 1,
+            (Err(error), Some(expected)) if error.to_string().contains(expected) => {}
+            (Ok(_), Some(expected)) => mismatches.push(format!(
+                "{}: built, expected the core to refuse with {expected:?}",
+                case["name"]
+            )),
+            (Err(error), _) => mismatches.push(format!("{}: {error}", case["name"])),
+        }
+    }
+    assert!(mismatches.is_empty(), "{mismatches:#?}");
+    assert!(built >= 20, "only {built} cases built a core");
+}
+
 /// Every MASQUE profile the configuration takes, as `xray run -test` does,
 /// also builds a core, except where a case records the core's refusal:
 /// the verdicts below the configuration are Xray-core's too.
