@@ -49,6 +49,17 @@ MASQUE_HTTP2_ORACLE_OUT="$TEST_ROOT/http2-vectors.json" \
   ./transport/internet/masque -run '^TestXrayRustHTTP2Oracle$' -count=1 >/dev/null
 cmp "$WORKSPACE_ROOT/tests/fixtures/masque/http2-request-vectors.json" "$TEST_ROOT/http2-vectors.json"
 
+# How Xray-core's infra/conf reads masqueSettings.warp: its keys in every
+# form, damaged ones, and its addresses.
+cat >"$TEST_ROOT/overlay-warp.json" <<JSON
+{"Replace": {"$CHECKOUT/infra/conf/xray_rust_warp_oracle_test.go": "$WORKSPACE_ROOT/tools/masque-oracle/warp_conf_oracle_test.go"}}
+JSON
+MASQUE_WARP_ORACLE_OUT="$TEST_ROOT/warp-vectors.json" \
+  env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
+  go -C "$CHECKOUT" test -mod=readonly -overlay "$TEST_ROOT/overlay-warp.json" \
+  ./infra/conf -run '^TestXrayRustWarpOracle$' -count=1 >/dev/null
+cmp "$WORKSPACE_ROOT/tests/fixtures/masque/warp-config-vectors.json" "$TEST_ROOT/warp-vectors.json"
+
 cd "$WORKSPACE_ROOT"
 XRAY_MASQUE_VECTORS="$TEST_ROOT/vectors-full.json" \
   cargo test --locked -p xray-transport --lib masque::
@@ -63,11 +74,21 @@ env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
 python3 scripts/check-masque-config-verdicts.py \
   "$TEST_ROOT/xray" tests/fixtures/masque/config-verdicts.json
 
+# A stand-in for Cloudflare's WARP endpoint, from Xray-core's own warp
+# tests: the client never reaches Cloudflare here.
+cat >"$TEST_ROOT/overlay-warp-server.json" <<JSON
+{"Replace": {"$CHECKOUT/transport/internet/masque/xray_rust_warp_server_test.go": "$WORKSPACE_ROOT/tools/masque-oracle/warp_server_test.go"}}
+JSON
+env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
+  go -C "$CHECKOUT" test -c -mod=readonly -overlay "$TEST_ROOT/overlay-warp-server.json" \
+  -o "$TEST_ROOT/warp-server" ./transport/internet/masque
+
 # The client against Xray-core's own MASQUE server, over HTTP/3 and HTTP/2:
 # TCP and UDP of both families from the SOCKS inbound, TCP from the HTTP
 # inbound, names resolved through the tunnel, a uTLS fingerprint, a refused
-# password, and TCP and UDP from the TUN.
+# password, and TCP and UDP from the TUN; and WARP against the stand-in.
 XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT" \
+  XRAY_MASQUE_WARP_SERVER="$TEST_ROOT/warp-server" \
   cargo test --locked -p xray-core-rs --test local_xray_interop_tests masque:: \
     -- --ignored --nocapture --test-threads=1
 XRAY_CLIENT_PROTOCOL_BINARY="$TEST_ROOT/xray" \

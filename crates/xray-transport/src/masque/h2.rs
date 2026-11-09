@@ -16,6 +16,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::task::AbortHandle;
 use tokio::time::Instant;
 
+use super::capsule::IpPrefix;
 use super::request::{ascii_authority, h2_request_fields, MasqueRequest};
 use super::session::{
     self, Addressing, Datagrams, HttpConnection, MasqueError, MasqueTunnel, RequestRecv,
@@ -49,6 +50,9 @@ pub struct MasqueH2Config {
     /// How long the connection may stay silent before a PING; `None` sends
     /// none, as a negative `hKeepAlivePeriod` asks.
     pub keep_alive: Option<Duration>,
+    /// Cloudflare WARP's addresses: its plain CONNECT and bare capsules
+    /// instead of extended CONNECT. The caller authenticated the TLS.
+    pub warp: Option<Vec<IpPrefix>>,
 }
 
 /// Opens a tunnel over `io`, a TLS stream that negotiated `h2`. The caller
@@ -94,12 +98,17 @@ where
             session::start(
                 RequestSend::H2(send),
                 RequestRecv::H2(recv),
-                Datagrams::Capsules { bare: false },
+                Datagrams::Capsules {
+                    bare: config.warp.is_some(),
+                },
                 HttpConnection::Http2 {
                     _send_request: send_request,
                     tasks,
                 },
-                Addressing::Request,
+                match &config.warp {
+                    Some(addresses) => Addressing::Fixed(addresses.clone()),
+                    None => Addressing::Request,
+                },
             )
             .await
         }
@@ -125,17 +134,32 @@ async fn open(
     poll_fn(|cx| send_request.poll_remote_settings(cx))
         .await
         .map_err(|error| failed(&error))?;
-    if !send_request.is_extended_connect_protocol_enabled() {
+    let warp = config.warp.is_some();
+    if !warp && !send_request.is_extended_connect_protocol_enabled() {
         return Err(failed(&"http2: the server did not enable extended CONNECT"));
     }
     // A non-ASCII host goes out in punycode, as over HTTP/3.
     let authority = ascii_authority(&config.authority)
         .ok_or_else(|| MasqueError::Request("connect-ip: invalid request authority".to_owned()))?;
-    let mut builder = Request::builder()
-        .method(Method::CONNECT)
-        .uri(format!("https://{authority}{}", config.request.path))
-        .extension(h2::ext::Protocol::from_static(CONNECT_IP));
-    for (name, value) in h2_request_fields(&config.request, &[("Capsule-Protocol", "?1")]) {
+    let mut builder = Request::builder().method(Method::CONNECT);
+    // Cloudflare's tunnel is a plain CONNECT to the authority with a port,
+    // named by its header instead of `:protocol`, without Capsule-Protocol.
+    let fields = if warp {
+        builder = builder.uri(warp_authority(&authority));
+        h2_request_fields(
+            &config.request,
+            &[
+                ("Cf-Connect-Proto", "cf-connect-ip"),
+                ("Pq-Enabled", "false"),
+            ],
+        )
+    } else {
+        builder = builder
+            .uri(format!("https://{authority}{}", config.request.path))
+            .extension(h2::ext::Protocol::from_static(CONNECT_IP));
+        h2_request_fields(&config.request, &[("Capsule-Protocol", "?1")])
+    };
+    for (name, value) in fields {
         builder = builder.header(name, value);
     }
     let request = builder.body(()).map_err(|error| {
@@ -150,6 +174,26 @@ async fn open(
         return Err(MasqueError::Status(status));
     }
     Ok((send, response.into_body()))
+}
+
+/// Xray's Cloudflare `Host`: the authority, with port 443 when Go's
+/// `net.SplitHostPort` finds none.
+fn warp_authority(authority: &str) -> String {
+    let has_port = match authority.strip_prefix('[') {
+        Some(rest) => rest
+            .split_once(']')
+            .is_some_and(|(_, after)| after.starts_with(':')),
+        None => authority.matches(':').count() == 1,
+    };
+    if has_port {
+        return authority.to_owned();
+    }
+    let host = authority.trim_matches(|c| c == '[' || c == ']');
+    if host.contains(':') {
+        format!("[{host}]:443")
+    } else {
+        format!("{host}:443")
+    }
 }
 
 /// Xray's `keepAlive`: a PING once the connection has been silent for

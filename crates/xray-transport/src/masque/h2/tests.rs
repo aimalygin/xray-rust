@@ -27,6 +27,7 @@ fn config() -> MasqueH2Config {
             ..MasqueRequest::default()
         },
         keep_alive: Some(H2_KEEP_ALIVE),
+        warp: None,
     }
 }
 
@@ -435,6 +436,15 @@ async fn the_request_is_xrays_frame_for_frame() {
                     .collect(),
             },
             keep_alive: None,
+            warp: case["warp"].as_array().map(|addresses| {
+                addresses
+                    .iter()
+                    .map(|prefix| {
+                        let (addr, len) = prefix.as_str().unwrap().split_once('/').unwrap();
+                        crate::masque::IpPrefix::new(addr.parse().unwrap(), len.parse().unwrap())
+                    })
+                    .collect()
+            }),
         };
         let expected: Vec<Frame> = case["frames"]
             .as_array()
@@ -451,5 +461,19 @@ async fn the_request_is_xrays_frame_for_frame() {
             .await
             .unwrap();
         assert_eq!(without_acks(got), without_acks(expected), "{name}");
+    }
+}
+
+#[test]
+fn warp_authorities_take_port_443_as_xray_adds_it() {
+    for (authority, want) in [
+        ("cloudflareaccess.com", "cloudflareaccess.com:443"),
+        ("cloudflareaccess.com:8443", "cloudflareaccess.com:8443"),
+        ("[2001:db8::1]", "[2001:db8::1]:443"),
+        ("[2001:db8::1]:8443", "[2001:db8::1]:8443"),
+        ("2001:db8::1", "[2001:db8::1]:443"),
+        ("192.0.2.1", "192.0.2.1:443"),
+    ] {
+        assert_eq!(warp_authority(authority), want, "{authority}");
     }
 }

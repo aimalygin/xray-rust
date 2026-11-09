@@ -12,10 +12,12 @@ use tokio::sync::{watch, Mutex as AsyncMutex};
 use tokio::task::JoinHandle;
 use xray_config::{MasqueOutboundSettings, MasqueSettings, XhttpXmuxSettings};
 use xray_transport::masque::{
-    dial_h2, dial_h3, MasqueError, MasqueH2Config, MasqueH3Config, MasqueRequest, MasqueTunnel,
-    WriteOutcome, ESTABLISH_TIMEOUT, H2_KEEP_ALIVE, INITIAL_PACKET_SIZE, MIN_PACKET_SIZE,
-    QUIC_CONNECTION_ID_LEN, QUIC_IDLE_TIMEOUT, QUIC_KEEP_ALIVE,
+    dial_h2, dial_h3, IpPrefix, MasqueError, MasqueH2Config, MasqueH3Config, MasqueRequest,
+    MasqueTunnel, MasqueWarp, WriteOutcome, ESTABLISH_TIMEOUT, H2_KEEP_ALIVE, INITIAL_PACKET_SIZE,
+    MIN_PACKET_SIZE, QUIC_CONNECTION_ID_LEN, QUIC_IDLE_TIMEOUT, QUIC_KEEP_ALIVE,
 };
+/// Xray's WARP dial: `quic.Transport.ConnectionIDLength = 20`.
+const WARP_CONNECTION_ID_LEN: u8 = 20;
 use xray_wireguard::Netstack;
 
 /// Xray's `retryInterval`: after a failed tunnel, flows take an existing one
@@ -76,11 +78,15 @@ enum Dial {
     H3 {
         tls: TlsClientConfig,
         quic: Box<H3QuicConfig>,
+        warp: Option<MasqueWarp>,
     },
     /// TCP and TLS as the stream settings ask, then Xray's HTTP/2 client.
+    /// For WARP the carrier stops at TCP: the TLS that authenticates the
+    /// device runs over it with these settings.
     H2 {
         carrier: Box<super::carrier::StreamCarrier>,
         keep_alive: Option<Duration>,
+        warp: Option<(MasqueWarp, TlsClientConfig)>,
     },
 }
 
@@ -213,9 +219,18 @@ impl MasqueOutbound {
         let StreamSecurity::Tls(tls) = &outbound.stream.security else {
             return Err(CoreError::UnsupportedOutboundSecurity);
         };
-        if outbound.proxy_settings.is_some() || transport.warp.is_some() {
+        if outbound.proxy_settings.is_some() {
             return Err(CoreError::UnsupportedOutboundNetwork);
         }
+        let warp = transport.warp.as_ref().map(|warp| MasqueWarp {
+            private_key: warp.private_key.clone(),
+            public_key: warp.public_key.clone(),
+            addresses: warp
+                .addresses
+                .iter()
+                .map(|&(addr, len)| IpPrefix::new(addr, len))
+                .collect(),
+        });
         super::carrier::check_xicmp_server(&outbound.stream, &settings.server)?;
         let server_name = tls
             .server_name
@@ -231,18 +246,34 @@ impl MasqueOutbound {
             let mut stream = outbound.stream.clone();
             stream.network = Network::Tcp;
             stream.transport = StreamTransport::Raw;
+            let mut carrier = super::carrier::StreamCarrier::new(
+                &stream,
+                &settings.server,
+                settings.port,
+                false,
+                MASQUE_PATHS,
+            )?;
+            let warp = match warp {
+                Some(warp) => {
+                    let ConnectorConfig::Tls(tls) =
+                        std::mem::replace(&mut carrier.transport, ConnectorConfig::Tcp)
+                    else {
+                        return Err(CoreError::UnsupportedOutboundSecurity);
+                    };
+                    Some((warp, tls))
+                }
+                None => None,
+            };
             Dial::H2 {
-                carrier: Box::new(super::carrier::StreamCarrier::new(
-                    &stream,
-                    &settings.server,
-                    settings.port,
-                    false,
-                    MASQUE_PATHS,
-                )?),
+                carrier: Box::new(carrier),
                 keep_alive: h2_keep_alive(transport.xmux.h_keep_alive_period_secs),
+                warp,
             }
         } else {
-            let quic = masque_quic_config(&outbound.stream, transport)?;
+            let mut quic = masque_quic_config(&outbound.stream, transport)?;
+            if warp.is_some() {
+                quic.connection_id_len = Some(WARP_CONNECTION_ID_LEN);
+            }
             quic.diagnostics()
                 .map_err(|error| CoreError::InvalidXhttpConfiguration(error.to_string()))?;
             Dial::H3 {
@@ -255,6 +286,7 @@ impl MasqueOutbound {
                     fingerprint: None,
                 },
                 quic: Box::new(quic),
+                warp,
             }
         };
         let remote_dns = if settings.remote_dns.is_empty() {
@@ -438,7 +470,7 @@ impl MasqueOutbound {
         let mut shutdown = self.0.shutdown.subscribe();
         let dial = async {
             match (&self.0.dial, endpoint) {
-                (Dial::H3 { tls, quic }, Endpoint::Quic(remote_addr)) => Ok(dial_h3(
+                (Dial::H3 { tls, quic, warp }, Endpoint::Quic(remote_addr)) => Ok(dial_h3(
                     MasqueH3Config {
                         remote_addr,
                         tls: tls.clone(),
@@ -446,6 +478,7 @@ impl MasqueOutbound {
                         quic: (**quic).clone(),
                         authority: self.0.authority.clone(),
                         request: self.0.request.clone(),
+                        warp: warp.clone(),
                         // A realm introduction counts toward the ten seconds,
                         // as it runs under the context of Xray's dial.
                         realm: quic.udp_realm.as_ref().map(|_| dialer.realm_env()),
@@ -457,11 +490,29 @@ impl MasqueOutbound {
                     Dial::H2 {
                         carrier,
                         keep_alive,
+                        warp,
                     },
                     Endpoint::Tcp(candidates),
                 ) => {
-                    let mut stream = carrier.open(&candidates, &[], base).await?;
-                    negotiated_h2(stream.negotiated_alpn())?;
+                    let stream = carrier.open(&candidates, &[], base).await?;
+                    let (mut stream, addresses) = match warp {
+                        None => {
+                            negotiated_h2(stream.negotiated_alpn())?;
+                            (stream, None)
+                        }
+                        Some((warp, tls)) => {
+                            let warp_tls = warp.tls()?;
+                            let (stream, alpn) = base
+                                .tls_connector()
+                                .connect_warp_stream(stream, tls, &warp_tls)
+                                .await?;
+                            // Xray takes `h2`, or for WARP no protocol at all.
+                            if alpn.is_some() {
+                                negotiated_h2(alpn.as_deref())?;
+                            }
+                            (stream, Some(warp.addresses.clone()))
+                        }
+                    };
                     stream.release_record_alignment();
                     Ok(dial_h2(
                         stream,
@@ -469,6 +520,7 @@ impl MasqueOutbound {
                             authority: self.0.authority.clone(),
                             request: self.0.request.clone(),
                             keep_alive: *keep_alive,
+                            warp: addresses,
                         },
                     )
                     .await?)

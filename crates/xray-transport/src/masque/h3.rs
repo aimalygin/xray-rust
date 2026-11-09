@@ -10,6 +10,7 @@ use super::session::{
     self, quic_max_packet, Addressing, Datagrams, HttpConnection, MasqueError, MasqueTunnel,
     RequestRecv, RequestSend,
 };
+use super::warp::MasqueWarp;
 use super::MIN_PACKET_SIZE;
 use crate::stream::H3QuicConfig;
 use crate::stream::{
@@ -39,6 +40,8 @@ pub struct MasqueH3Config {
     /// The request authority, from [`super::authority`].
     pub authority: String,
     pub request: MasqueRequest,
+    /// Cloudflare WARP instead of a CONNECT-IP proxy.
+    pub warp: Option<MasqueWarp>,
     /// What a `realm` mask in `quic` takes from the dial, as XHTTP H3's.
     pub realm: Option<crate::realm::RealmEnv>,
 }
@@ -62,9 +65,14 @@ pub async fn dial_h3(
     config: MasqueH3Config,
     tls: &TlsConnector,
 ) -> Result<MasqueTunnel, MasqueError> {
-    let tls_config = tls
-        .quic_client_config_for(&config.tls, b"h3")
-        .map_err(|error| MasqueError::Dial(error.to_string()))?;
+    let warp = config.warp.as_ref();
+    let tls_config = match warp {
+        Some(warp) => warp
+            .tls()
+            .and_then(|warp| tls.warp_quic_client_config(&config.tls, b"h3", &warp)),
+        None => tls.quic_client_config_for(&config.tls, b"h3"),
+    }
+    .map_err(|error| MasqueError::Dial(error.to_string()))?;
     let connect = H3ConnectConfig {
         remote_addr: config.remote_addr,
         server_name: config.tls.server_name.clone(),
@@ -106,6 +114,8 @@ pub async fn dial_h3(
         .max_field_section_size(QUIC_GO_MAX_FIELD_SECTION_SIZE)
         .send_grease(false)
         .enable_datagram(true)
+        // Xray's WARP dial announces the draft-00 datagram setting too.
+        .enable_datagram_draft00(warp.is_some())
         .build::<_, _, Bytes>(h3_quinn::Connection::new(connection.clone()))
         .await
     {
@@ -134,10 +144,13 @@ pub async fn dial_h3(
             MasqueError::Request("the connection closed before the server's SETTINGS".into()),
         );
     };
-    if !settings.enable_extended_connect() {
+    // Cloudflare needs neither extended CONNECT nor RFC 9297 datagrams:
+    // its draft-00 datagrams carry the same frames.
+    if !settings.enable_extended_connect() && warp.is_none() {
         return fail(&tasks, MasqueError::NoExtendedConnect);
     }
-    if !settings.enable_datagram() {
+    let draft = warp.is_some() && settings.enable_datagram_draft00();
+    if !settings.enable_datagram() && !draft {
         return fail(&tasks, MasqueError::NoDatagrams);
     }
 
@@ -150,7 +163,10 @@ pub async fn dial_h3(
     let mut builder = Request::builder()
         .method(Method::CONNECT)
         .uri(format!("https://{authority}{}", config.request.path))
-        .extension(h3::ext::Protocol::CONNECT_IP);
+        .extension(match warp {
+            Some(_) => h3::ext::Protocol::CF_CONNECT_IP,
+            None => h3::ext::Protocol::CONNECT_IP,
+        });
     for (name, value) in request_fields(&config.request, true, Some(QUIC_GO_USER_AGENT)) {
         builder = builder.header(name, value);
     }
@@ -204,7 +220,10 @@ pub async fn dial_h3(
             _send_request: send_request,
             tasks,
         },
-        Addressing::Request,
+        match warp {
+            Some(warp) => Addressing::Fixed(warp.addresses.clone()),
+            None => Addressing::Request,
+        },
     )
     .await
 }

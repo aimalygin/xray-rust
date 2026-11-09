@@ -9,6 +9,7 @@ mod h3;
 mod packet;
 mod request;
 mod session;
+mod warp;
 
 #[cfg(test)]
 mod oracle_tests;
@@ -18,6 +19,7 @@ pub use h2::{dial_h2, MasqueH2Config, H2_KEEP_ALIVE};
 pub use h3::{dial_h3, MasqueH3Config};
 pub use request::{authority, MasqueRequest, DEFAULT_PATH};
 pub use session::{MasqueError, MasqueTunnel, WriteOutcome, MAX_TUNNEL_PACKET};
+pub use warp::MasqueWarp;
 
 use std::time::Duration;
 

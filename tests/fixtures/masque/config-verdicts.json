@@ -3222,6 +3222,133 @@
     }
    },
    "xray": "infra/conf: unknown bbr profile"
+  },
+  {
+   "name": "warp with user",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "user": "u",
+      "warp": {
+       "address": [
+        "172.16.0.2/32"
+       ]
+      }
+     }
+    }
+   },
+   "xray": "infra/conf: \"user\" and \"pass\" can't be used with \"warp\""
+  },
+  {
+   "name": "warp with pass",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "pass": "p",
+      "warp": {}
+     }
+    }
+   },
+   "xray": "infra/conf: \"user\" and \"pass\" can't be used with \"warp\""
+  },
+  {
+   "name": "warp without keys",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "warp": {
+       "address": [
+        "172.16.0.2/32"
+       ]
+      }
+     }
+    }
+   },
+   "xray": "infra/conf: empty key"
+  },
+  {
+   "name": "warp with a garbage private key",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "warp": {
+       "privateKey": "not a key",
+       "address": [
+        "172.16.0.2/32"
+       ]
+      }
+     }
+    }
+   },
+   "xray": "illegal base64 data at input byte 3"
+  },
+  {
+   "name": "unknown warp field",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "masqueSettings": {
+      "warp": {
+       "license": "x"
+      }
+     }
+    }
+   },
+   "xray": "infra/conf: empty key"
   }
  ]
 }

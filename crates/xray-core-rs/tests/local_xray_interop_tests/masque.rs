@@ -578,6 +578,141 @@ async fn masque_h3_runs_xrays_bbr_profiles() {
     }
 }
 
+/// A stand-in for Cloudflare's WARP endpoint, built from Xray-core's own
+/// warp tests (`tools/masque-oracle/warp_server_test.go`).
+struct WarpServer {
+    child: std::process::Child,
+    dir: TempDir,
+    port: u16,
+    /// Its key, in base64, for `publicKey`.
+    spki: String,
+}
+
+impl Drop for WarpServer {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl WarpServer {
+    fn file(&self, name: &str) -> String {
+        fs::read_to_string(self.dir.path.join(name)).unwrap_or_default()
+    }
+}
+
+/// A device key: `privateKey` in base64 and its SubjectPublicKeyInfo.
+fn warp_device_key() -> (String, Vec<u8>) {
+    use base64::Engine as _;
+    use rcgen::PublicKeyData as _;
+    let key = rcgen::KeyPair::generate().unwrap();
+    (
+        base64::engine::general_purpose::STANDARD.encode(key.serialize_der()),
+        key.subject_public_key_info(),
+    )
+}
+
+async fn warp_server(mode: &str, device: &[u8]) -> WarpServer {
+    let binary = env::var_os("XRAY_MASQUE_WARP_SERVER").expect("run check-masque-interop.sh");
+    let dir = create_temp_dir("xray-rust-warp-server");
+    fs::write(dir.path.join("client.spki"), device).unwrap();
+    let child = Command::new(binary)
+        .args(["-test.run", "^TestXrayRustWarpServer$"])
+        .env("MASQUE_WARP_SERVER_DIR", &dir.path)
+        .env("MASQUE_WARP_SERVER_MODE", mode)
+        .stdout(Stdio::null())
+        .stderr(Stdio::from(
+            fs::File::create(dir.path.join("stderr")).unwrap(),
+        ))
+        .spawn()
+        .expect("start the WARP stand-in");
+    let mut server = WarpServer {
+        child,
+        dir,
+        port: 0,
+        spki: String::new(),
+    };
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while server.file("port").is_empty() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the WARP stand-in did not start: {}",
+            server.file("stderr")
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    server.port = server.file("port").trim().parse().unwrap();
+    server.spki = server.file("spki");
+    server
+}
+
+fn warp_client(server: &WarpServer, alpn: &str, private_key: &str, public_key: &str) -> Value {
+    json!({
+        "inbounds": [{"protocol": "socks", "tag": "socks-in", "listen": "127.0.0.1", "port": 0,
+            "settings": {"udp": true}}],
+        "outbounds": [{"tag": "masque", "protocol": "masque",
+            "settings": {"address": "127.0.0.1", "port": server.port},
+            "streamSettings": {"network": "masque", "security": "tls",
+                "tlsSettings": {"serverName": "consumer-masque.cloudflareclient.com", "alpn": [alpn]},
+                "masqueSettings": {"warp": {"privateKey": private_key, "publicKey": public_key,
+                    "address": ["172.16.0.2/32", "fd00::2/128"]}}}}]
+    })
+}
+
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-masque-interop.sh"]
+async fn masque_warp_carries_udp_through_cloudflares_handshake() {
+    let (private_key, device) = warp_device_key();
+    for (mode, alpn) in [
+        ("h3-draft", "h3"),
+        ("h3-rfc", "h3"),
+        ("h2", "h2"),
+        ("h2-noalpn", "h2"),
+    ] {
+        let server = warp_server(mode, &device).await;
+        let mut core = core(warp_client(&server, alpn, &private_key, &server.spki)).await;
+        let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+        for target in [ECHO_V4, ECHO_V6] {
+            eprintln!("MASQUE WARP {mode} UDP to {target}");
+            let result = timeout(Duration::from_secs(60), udp_echo(proxy, target, 9)).await;
+            assert!(
+                matches!(result, Ok(Ok(()))),
+                "WARP {mode} to {target}: {result:?}; {}{}",
+                server.file("errors"),
+                server.file("stderr")
+            );
+        }
+        core.stop().await.unwrap();
+        assert_eq!(server.file("errors"), "", "WARP {mode}");
+        assert_eq!(
+            server.file("tunnels").lines().count(),
+            1,
+            "WARP {mode}: one tunnel"
+        );
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-masque-interop.sh"]
+async fn masque_warp_refuses_an_endpoint_with_another_key() {
+    use base64::Engine as _;
+    let (private_key, device) = warp_device_key();
+    let (_, other) = warp_device_key();
+    let other = base64::engine::general_purpose::STANDARD.encode(other);
+    for (mode, alpn) in [("h3-draft", "h3"), ("h2", "h2")] {
+        let server = warp_server(mode, &device).await;
+        let mut core = core(warp_client(&server, alpn, &private_key, &other)).await;
+        let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+        let result = timeout(Duration::from_secs(30), udp_echo(proxy, ECHO_V4, 9)).await;
+        assert!(
+            !matches!(result, Ok(Ok(()))),
+            "WARP {mode} took an endpoint with another key"
+        );
+        assert_eq!(server.file("tunnels"), "", "WARP {mode}");
+        core.stop().await.unwrap();
+    }
+}
+
 #[tokio::test]
 #[ignore = "requires a pinned Xray-core; run check-masque-interop.sh"]
 async fn masque_h3_runs_under_udp_masks() {
