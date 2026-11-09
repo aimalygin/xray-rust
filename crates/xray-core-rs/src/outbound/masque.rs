@@ -95,6 +95,13 @@ pub(super) fn uses_http2(alpn: &[String]) -> bool {
     alpn.iter().any(|p| p == "h2") && !alpn.iter().any(|p| p == "h3")
 }
 
+/// Whether `outbound` is MASQUE over HTTP/2, whose TCP carrier takes the
+/// TCP masks as a raw TCP transport does.
+pub(crate) fn over_http2(outbound: &OutboundConfig) -> bool {
+    matches!(outbound.settings, OutboundSettings::Masque(_))
+        && matches!(&outbound.stream.security, StreamSecurity::Tls(tls) if uses_http2(&tls.alpn))
+}
+
 /// The HTTP/2 keepalive for `xmux.hKeepAlivePeriod`: Chrome's 45 seconds
 /// for zero, none when negative.
 fn h2_keep_alive(secs: i64) -> Option<Duration> {

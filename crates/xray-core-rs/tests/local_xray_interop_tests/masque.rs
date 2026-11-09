@@ -681,3 +681,60 @@ async fn masque_h3_is_introduced_by_realm() {
     );
     core.stop().await.unwrap();
 }
+
+/// The TCP masks over HTTP/2: Xray's server takes them on its TCP listener,
+/// the client on its TCP carrier, under TLS.
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-masque-interop.sh"]
+async fn masque_h2_runs_under_tcp_masks() {
+    let checkout = resolve_xray_checkout();
+    let (tcp_port, udp_port, _tcp, _udp) = echo_servers().await;
+    let sudoku = |password: &str| json!({"type": "sudoku", "settings": {"password": password}});
+    let header = json!({"type": "header-custom", "settings": {
+        "clients": [[{"type": "str", "packet": "synthetic-hello"}]],
+        "servers": [[{"type": "str", "packet": "synthetic-ok"}]]}});
+    for (case, masks) in [
+        ("sudoku", json!([sudoku("synthetic-sudoku")])),
+        ("header-custom", json!([header])),
+    ] {
+        let server = start_server(&checkout, "h2", |config| {
+            config["inbounds"][0]["streamSettings"]["finalmask"] = json!({"tcp": masks});
+        })
+        .await;
+        let mut config = client_config(&server, "h2", credentials());
+        config["outbounds"][0]["streamSettings"]["finalmask"] = json!({"tcp": masks});
+        let mut core = core(config).await;
+        let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+        check(
+            &server,
+            &format!("H2 TCP under {case}"),
+            tcp_echo(proxy, ECHO_V4, tcp_port),
+        )
+        .await;
+        check(
+            &server,
+            &format!("H2 UDP over IPv6 under {case}"),
+            udp_echo(proxy, ECHO_V6, udp_port),
+        )
+        .await;
+        core.stop().await.unwrap();
+    }
+
+    // The mask is applied: another password carries nothing.
+    let server = start_server(&checkout, "h2", |config| {
+        config["inbounds"][0]["streamSettings"]["finalmask"] =
+            json!({"tcp": [sudoku("synthetic-sudoku")]});
+    })
+    .await;
+    let mut config = client_config(&server, "h2", credentials());
+    config["outbounds"][0]["streamSettings"]["finalmask"] =
+        json!({"tcp": [sudoku("another-password")]});
+    let mut core = core(config).await;
+    let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+    let result = timeout(Duration::from_secs(30), tcp_echo(proxy, ECHO_V4, tcp_port)).await;
+    assert!(
+        !matches!(result, Ok(Ok(()))),
+        "another sudoku password must carry nothing"
+    );
+    core.stop().await.unwrap();
+}

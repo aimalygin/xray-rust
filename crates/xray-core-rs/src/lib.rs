@@ -818,8 +818,8 @@ impl Core {
                 .map_err(|_| CoreError::UnsupportedOutboundNetwork)?;
             }
             // `header-custom`, `sudoku` and `xmc` run on the TCP carriers of
-            // the outbounds that proxy over a stream transport, not on direct
-            // or DNS dials.
+            // the outbounds that proxy over a stream transport, MASQUE's over
+            // HTTP/2 among them, not on direct or DNS dials.
             if (outbound.stream.tcp_header_custom.is_some()
                 || outbound.stream.tcp_sudoku.is_some()
                 || outbound.stream.tcp_xmc.is_some())
@@ -832,6 +832,7 @@ impl Core {
                         | xray_config::OutboundSettings::Socks(_)
                         | xray_config::OutboundSettings::Http(_)
                 )
+                && !outbound::masque::over_http2(outbound)
             {
                 return Err(CoreError::UnsupportedOutboundNetwork);
             }

@@ -675,15 +675,18 @@ header-custom and sudoku UDP masks, noise inside sudoku, with another sudoku
 password carrying nothing; introduced by realm through a local rendezvous;
 and, as root on Linux (`scripts/check-xicmp-interop.sh`), inside xicmp.
 Over HTTP/2 the same flows run live, through a uTLS fingerprint as well,
-plus the default path with Go's User-Agent and no keepalive.
+plus the default path with Go's User-Agent and no keepalive, and under the
+sudoku and header-custom TCP masks, another sudoku password carrying
+nothing.
 Mutating 22 key branches (TTL, checksum, admission, capsule
 checks, address choice, authority, User-Agent, the pool's limits and retry,
 the host and path checks) fails the tests each time, and so does mutating
 27 of the HTTP/2 path (capsule framing, the bare read rule, the
 write buffer and windows, the keepalive, the extended CONNECT check, the
 header block options and field order, ALPN, keepalive defaults and the TE
-check), or dropping each mask's wiring, the xicmp address check or
-MASQUE's place among the UDP carriers.
+check), or dropping each mask's wiring, the xicmp address check,
+MASQUE's place among the UDP carriers or HTTP/2's among the TCP-mask
+carriers.
 
 ## realm
 
