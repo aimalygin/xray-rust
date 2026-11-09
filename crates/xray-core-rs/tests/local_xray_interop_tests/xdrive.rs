@@ -386,6 +386,51 @@ async fn start_standin(mode: &str, args: &[&str]) -> Standin {
     }
 }
 
+/// UDP through a storage whose answers can come seconds late, after the
+/// retries the stand-in provokes: each datagram is resent every two seconds
+/// until its own echo comes back, and a late echo of an earlier one is
+/// skipped.
+async fn patient_udp_echo(proxy: SocketAddr, target: &str, port: u16) -> std::io::Result<()> {
+    let (_control, relay) = super::masque::socks(proxy, 3, "0.0.0.0", 0).await?;
+    let socket = tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+    for size in [1usize, 512, 1200] {
+        let payload: Vec<u8> = (0..size).map(|n| (n * 13 + size) as u8).collect();
+        let mut datagram = vec![0, 0, 0];
+        match target.parse::<std::net::IpAddr>() {
+            Ok(std::net::IpAddr::V4(ip)) => {
+                datagram.push(1);
+                datagram.extend(ip.octets());
+            }
+            Ok(std::net::IpAddr::V6(ip)) => {
+                datagram.push(4);
+                datagram.extend(ip.octets());
+            }
+            Err(_) => panic!("{target} is no address"),
+        }
+        datagram.extend(port.to_be_bytes());
+        datagram.extend(&payload);
+        let deadline = Instant::now() + Duration::from_secs(40);
+        let mut reply = vec![0; 4096];
+        'resend: loop {
+            if Instant::now() > deadline {
+                return Err(std::io::Error::other(format!(
+                    "no UDP echo of {size} bytes"
+                )));
+            }
+            socket.send_to(&datagram, relay).await?;
+            let resend_at = Instant::now() + Duration::from_secs(2);
+            while let Ok(received) =
+                tokio::time::timeout_at(resend_at, socket.recv_from(&mut reply)).await
+            {
+                if reply[..received?.0].ends_with(&payload) {
+                    break 'resend;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// TCP and UDP of both families, then parallel flows, through `proxy`.
 async fn carry(
     server: &XrayServer,
@@ -404,7 +449,7 @@ async fn carry(
     check(
         server,
         &checked("UDP over IPv6"),
-        udp_echo(proxy, ECHO_V6, udp_port),
+        patient_udp_echo(proxy, ECHO_V6, udp_port),
     )
     .await;
     check(server, &checked("four parallel TCP flows"), async {

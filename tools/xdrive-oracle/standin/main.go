@@ -273,14 +273,16 @@ func (s *store) list(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, item{k, false})
 	}
+	// A token is a cursor, as S3's are: the listing goes on after the key
+	// it names, whatever was deleted or added since.
 	start := 0
 	if token := q.Get("continuation-token"); token != "" {
-		n, err := strconv.Atoi(token)
-		if err != nil || n < 0 || n > len(items) {
+		after, err := base64.RawURLEncoding.DecodeString(token)
+		if err != nil {
 			s3Error(w, http.StatusBadRequest, "InvalidArgument")
 			return
 		}
-		start = n
+		start = sort.Search(len(items), func(i int) bool { return items[i].key > string(after) })
 	}
 	end := start + limit
 	if end > len(items) {
@@ -303,7 +305,7 @@ func (s *store) list(w http.ResponseWriter, r *http.Request) {
 	result.KeyCount = end - start
 	if end < len(items) {
 		result.IsTruncated = true
-		result.NextContinuationToken = strconv.Itoa(end)
+		result.NextContinuationToken = base64.RawURLEncoding.EncodeToString([]byte(items[end-1].key))
 	}
 	w.Header().Set("Content-Type", "application/xml")
 	io.WriteString(w, xml.Header)

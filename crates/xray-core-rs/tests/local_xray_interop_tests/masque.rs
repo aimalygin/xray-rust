@@ -166,7 +166,7 @@ pub(super) fn credentials() -> Value {
 }
 
 /// SOCKS5 CONNECT or UDP ASSOCIATE to an address or a name.
-async fn socks(
+pub(super) async fn socks(
     proxy: SocketAddr,
     command: u8,
     target: &str,
