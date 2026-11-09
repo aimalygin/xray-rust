@@ -343,6 +343,21 @@ impl<T, B> FramedWrite<T, B> {
         self.encoder.hpack.update_max_size(val);
     }
 
+    /// xray-rust: caps the HPACK encoder's dynamic table at `val` bytes.
+    pub fn set_header_table_size_limit(&mut self, val: usize) {
+        self.encoder.hpack.set_max_allowed_size(val);
+    }
+
+    /// xray-rust: puts `:authority` right after `:method`.
+    pub fn set_authority_first(&mut self, enabled: bool) {
+        self.encoder.hpack.set_authority_first(enabled);
+    }
+
+    /// xray-rust: picks HPACK representations as Go's encoder does.
+    pub fn set_go_hpack_choices(&mut self, enabled: bool) {
+        self.encoder.hpack.set_go_choices(enabled);
+    }
+
     /// Retrieve the last data frame that has been sent
     pub fn take_last_data_frame(&mut self) -> Option<frame::Data<B>> {
         self.encoder.last_data_frame.take()

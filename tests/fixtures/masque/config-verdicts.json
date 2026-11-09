@@ -1853,8 +1853,6 @@
      }
     }
    },
-   "ours": "error",
-   "why": "MASQUE over HTTP/2 comes in the next change",
    "xray": "ok"
   },
   {
@@ -1878,8 +1876,6 @@
      }
     }
    },
-   "ours": "error",
-   "why": "MASQUE over HTTP/2 comes in the next change",
    "xray": "ok"
   },
   {
@@ -2760,6 +2756,397 @@
      }
     }
    },
+   "xray": "ok"
+  },
+  {
+   "name": "h2 fingerprint",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ],
+      "fingerprint": "chrome"
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "h2 tlshello fragment",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "fragment",
+        "settings": {
+         "packets": "tlshello",
+         "length": "100-200",
+         "delay": "10-20"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "h2 sudoku tcp mask",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "sudoku",
+        "settings": {
+         "password": "synthetic"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "h2 header-custom tcp mask",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "header-custom",
+        "settings": {
+         "clients": [
+          [
+           {
+            "type": "str",
+            "packet": "GET"
+           }
+          ]
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "h2 quicParams",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "finalmask": {
+      "quicParams": {
+       "congestion": "reno"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "h2 udp noise",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "noise",
+        "settings": {
+         "noise": [
+          {
+           "rand": "10-20"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "ours": "error",
+   "why": "UDP masks have no UDP carrier to apply to over HTTP/2, as on XHTTP over HTTP/2",
+   "xray": "ok"
+  },
+  {
+   "name": "h2 udphop",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "udphop",
+        "settings": {
+         "remotePorts": "443-445",
+         "mode": "intervalRemote"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "ours": "error",
+   "why": "UDP masks have no UDP carrier to apply to over HTTP/2, as on XHTTP over HTTP/2",
+   "xray": "ok"
+  },
+  {
+   "name": "h2 keepalive off",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "masqueSettings": {
+      "xmux": {
+       "hKeepAlivePeriod": -1
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "h2 keepalive period",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "masqueSettings": {
+      "xmux": {
+       "hKeepAlivePeriod": 20
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "h2 sockopt",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "sockopt": {
+      "mark": 255,
+      "tcpFastOpen": true
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "h2 connection header",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "masqueSettings": {
+      "headers": {
+       "Connection": "close"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "h2 te trailers header",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "masqueSettings": {
+      "headers": {
+       "TE": "trailers"
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "h2 te header",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "masqueSettings": {
+      "headers": {
+       "TE": "gzip"
+      }
+     }
+    }
+   },
+   "ours": "error",
+   "why": "this HTTP/2 client refuses a TE header other than \"trailers\", which Xray's sends",
    "xray": "ok"
   },
   {

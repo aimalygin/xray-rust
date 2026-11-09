@@ -1,20 +1,29 @@
 //! One CONNECT-IP tunnel after its request was accepted, as Xray-core
 //! v26.10.31's `connectip.Conn` and `masque.Conn` run it on a client: the
 //! capsule stream, address assignment and the packets in datagrams.
+use std::future::poll_fn;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use bytes::{Buf, Bytes, BytesMut};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::task::JoinHandle;
 
-use super::capsule::{self, varint_len, AssignedAddress, Capsule, CapsuleParser, IpPrefix, Parsed};
+use super::capsule::{
+    self, varint_len, AssignedAddress, Capsule, CapsuleParser, IpPrefix, Parsed, CAPSULE_DATAGRAM,
+    MAX_CAPSULE_PACKET,
+};
 use super::packet::{self, Destinations, IcmpError};
 use super::MIN_PACKET_SIZE;
 
 /// Xray's `maxQueuedCapsules`: control capsules waiting to be written, and
 /// address updates waiting to be read.
 const MAX_QUEUED_CAPSULES: usize = 128;
+/// Xray's `maxQueuedDatagrams`: DATAGRAM capsules read and not yet taken.
+const MAX_QUEUED_DATAGRAMS: usize = 128;
+/// Xray's `maxStreamBuffer`: DATAGRAM capsule bytes an HTTP/2 tunnel holds
+/// for the request body; a packet waits while that much is queued.
+const MAX_STREAM_BUFFER: usize = 32 << 10;
 /// Xray's client reads into a `buf.Size` buffer and skips longer packets.
 pub const MAX_TUNNEL_PACKET: usize = 8192;
 /// HTTP/3 error codes the tunnel closes with.
@@ -61,13 +70,15 @@ pub enum WriteOutcome {
 
 /// The request stream's sending half.
 pub(crate) enum RequestSend {
-    H3(h3::client::RequestStream<h3_quinn::SendStream<Bytes>, Bytes>),
+    H3(Box<h3::client::RequestStream<h3_quinn::SendStream<Bytes>, Bytes>>),
+    H2(h2::SendStream<Bytes>),
 }
 
 impl RequestSend {
     async fn send(&mut self, data: Bytes) -> Result<(), String> {
         match self {
             Self::H3(stream) => stream.send_data(data).await.map_err(|e| e.to_string()),
+            Self::H2(stream) => send_h2(stream, data).await,
         }
     }
 
@@ -76,13 +87,38 @@ impl RequestSend {
             Self::H3(stream) => {
                 let _ = stream.finish().await;
             }
+            Self::H2(stream) => {
+                let _ = stream.send_data(Bytes::new(), true);
+            }
         }
     }
+}
+
+/// Hands `data` to HTTP/2 within the server's flow-control windows, so a
+/// spent window holds the writer back, as Xray's `awaitSendWindow` does.
+async fn send_h2(stream: &mut h2::SendStream<Bytes>, mut data: Bytes) -> Result<(), String> {
+    while !data.is_empty() {
+        stream.reserve_capacity(data.len());
+        let capacity = match poll_fn(|cx| stream.poll_capacity(cx)).await {
+            Some(Ok(capacity)) => capacity,
+            Some(Err(error)) => return Err(error.to_string()),
+            None => return Err("the request stream is closed".to_owned()),
+        };
+        if capacity == 0 {
+            continue;
+        }
+        let chunk = data.split_to(capacity.min(data.len()));
+        stream
+            .send_data(chunk, false)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 /// The request stream's receiving half.
 pub(crate) enum RequestRecv {
     H3(h3::client::RequestStream<h3_quinn::RecvStream, Bytes>),
+    H2(h2::RecvStream),
 }
 
 impl RequestRecv {
@@ -93,34 +129,85 @@ impl RequestRecv {
                 Ok(None) => Ok(None),
                 Err(error) => Err(error.to_string()),
             },
+            // The window opens as the reader takes the data, as Xray's
+            // response body does.
+            Self::H2(stream) => match stream.data().await {
+                Some(Ok(data)) => {
+                    let _ = stream.flow_control().release_capacity(data.len());
+                    Ok(Some(data))
+                }
+                Some(Err(error)) => Err(error.to_string()),
+                None => Ok(None),
+            },
         }
     }
 }
 
-/// How packets travel: in QUIC DATAGRAM frames after the quarter stream ID.
-pub(crate) enum DatagramPath {
+/// How the tunnel's packets travel, as [`start`] is told.
+pub(crate) enum Datagrams {
+    /// QUIC DATAGRAM frames after the request stream's quarter ID.
     Quic {
         connection: quinn::Connection,
         quarter_stream_id: u64,
     },
+    /// DATAGRAM capsules on the request stream, as over HTTP/2. `bare`
+    /// leaves the context ID out, as Cloudflare's HTTP/2 tunnel does.
+    Capsules { bare: bool },
+}
+
+/// How packets travel once the tunnel runs.
+enum DatagramPath {
+    Quic {
+        connection: quinn::Connection,
+        quarter_stream_id: u64,
+    },
+    Capsules {
+        outgoing: mpsc::UnboundedSender<Bytes>,
+        /// Room left of [`MAX_STREAM_BUFFER`] for outgoing capsules.
+        room: Arc<Semaphore>,
+        incoming: tokio::sync::Mutex<mpsc::Receiver<Bytes>>,
+        bare: bool,
+    },
 }
 
 /// What keeps the HTTP connection up, closed with the tunnel.
-pub(crate) struct HttpConnection {
-    pub(crate) endpoint: quinn::Endpoint,
-    pub(crate) connection: quinn::Connection,
-    /// h3 closes the connection once its last request handle is gone.
-    pub(crate) send_request: Option<h3::client::SendRequest<h3_quinn::OpenStreams, Bytes>>,
-    pub(crate) tasks: Vec<JoinHandle<()>>,
+pub(crate) enum HttpConnection {
+    Quic {
+        endpoint: quinn::Endpoint,
+        connection: quinn::Connection,
+        /// h3 closes the connection once its last request handle is gone.
+        _send_request: h3::client::SendRequest<h3_quinn::OpenStreams, Bytes>,
+        tasks: Vec<JoinHandle<()>>,
+    },
+    /// One HTTP/2 connection for the tunnel alone; its tasks drive it, and
+    /// stopping them closes it.
+    Http2 {
+        _send_request: h2::client::SendRequest<Bytes>,
+        tasks: Vec<JoinHandle<()>>,
+    },
 }
 
 impl HttpConnection {
     fn close(&self, code: u32) {
-        self.connection.close(quinn::VarInt::from_u32(code), b"");
-        for task in &self.tasks {
-            task.abort();
+        match self {
+            Self::Quic {
+                endpoint,
+                connection,
+                tasks,
+                ..
+            } => {
+                connection.close(quinn::VarInt::from_u32(code), b"");
+                for task in tasks {
+                    task.abort();
+                }
+                let _ = endpoint;
+            }
+            Self::Http2 { tasks, .. } => {
+                for task in tasks {
+                    task.abort();
+                }
+            }
         }
-        let _ = &self.endpoint;
     }
 }
 
@@ -147,6 +234,9 @@ impl Shared {
             }
         });
         if first {
+            if let DatagramPath::Capsules { room, .. } = &self.path {
+                room.close();
+            }
             self.http.close(code);
             for task in self
                 .tasks
@@ -209,16 +299,50 @@ pub(crate) enum Addressing {
     Request,
 }
 
+/// The writer's share of the DATAGRAM capsules, over HTTP/2.
+struct OutgoingCapsules {
+    capsules: mpsc::UnboundedReceiver<Bytes>,
+    room: Arc<Semaphore>,
+}
+
 /// Runs the tunnel on an accepted request and waits for its addresses.
 pub(crate) async fn start(
     send: RequestSend,
     recv: RequestRecv,
-    path: DatagramPath,
+    datagrams: Datagrams,
     http: HttpConnection,
     addressing: Addressing,
 ) -> Result<MasqueTunnel, MasqueError> {
     let (control, control_rx) = mpsc::channel(MAX_QUEUED_CAPSULES);
     let (assignments, mut assignments_rx) = mpsc::channel(MAX_QUEUED_CAPSULES);
+    let (path, outgoing, incoming) = match datagrams {
+        Datagrams::Quic {
+            connection,
+            quarter_stream_id,
+        } => (
+            DatagramPath::Quic {
+                connection,
+                quarter_stream_id,
+            },
+            None,
+            None,
+        ),
+        Datagrams::Capsules { bare } => {
+            let (outgoing, capsules) = mpsc::unbounded_channel();
+            let (incoming_tx, incoming) = mpsc::channel(MAX_QUEUED_DATAGRAMS);
+            let room = Arc::new(Semaphore::new(MAX_STREAM_BUFFER));
+            (
+                DatagramPath::Capsules {
+                    outgoing,
+                    room: Arc::clone(&room),
+                    incoming: tokio::sync::Mutex::new(incoming),
+                    bare,
+                },
+                Some(OutgoingCapsules { capsules, room }),
+                Some(incoming_tx),
+            )
+        }
+    };
     let shared = Arc::new(Shared {
         local: OnceLock::new(),
         destinations: Mutex::new(Destinations::default()),
@@ -232,8 +356,18 @@ pub(crate) async fn start(
         shared: Arc::clone(&shared),
     };
     {
-        let writer = tokio::spawn(write_capsules(send, control_rx, Arc::downgrade(&shared)));
-        let reader = tokio::spawn(read_capsules(recv, assignments, Arc::downgrade(&shared)));
+        let writer = tokio::spawn(write_capsules(
+            send,
+            control_rx,
+            outgoing,
+            Arc::downgrade(&shared),
+        ));
+        let reader = tokio::spawn(read_capsules(
+            recv,
+            assignments,
+            incoming,
+            Arc::downgrade(&shared),
+        ));
         shared
             .tasks
             .lock()
@@ -321,12 +455,31 @@ fn next_addr(addr: IpAddr) -> IpAddr {
     }
 }
 
+/// The permits an outgoing capsule takes of [`MAX_STREAM_BUFFER`].
+fn room_for(len: usize) -> u32 {
+    len.min(MAX_STREAM_BUFFER) as u32
+}
+
+/// Writes control capsules and, over HTTP/2, DATAGRAM capsules, each whole,
+/// as Xray's `writeMu` keeps them.
 async fn write_capsules(
     mut send: RequestSend,
     mut control: mpsc::Receiver<Bytes>,
+    mut datagrams: Option<OutgoingCapsules>,
     shared: std::sync::Weak<Shared>,
 ) {
-    while let Some(capsule) = control.recv().await {
+    loop {
+        let (capsule, counted) = match &mut datagrams {
+            Some(datagrams) => tokio::select! { biased;
+                capsule = control.recv() => (capsule, false),
+                capsule = datagrams.capsules.recv() => (capsule, true),
+            },
+            None => (control.recv().await, false),
+        };
+        let Some(capsule) = capsule else {
+            break;
+        };
+        let len = capsule.len();
         if let Err(error) = send.send(capsule).await {
             if let Some(shared) = shared.upgrade() {
                 shared.close(
@@ -336,6 +489,11 @@ async fn write_capsules(
             }
             return;
         }
+        if counted {
+            if let Some(datagrams) = &datagrams {
+                datagrams.room.add_permits(room_for(len) as usize);
+            }
+        }
     }
     send.finish().await;
 }
@@ -343,6 +501,7 @@ async fn write_capsules(
 async fn read_capsules(
     mut recv: RequestRecv,
     assignments: mpsc::Sender<Vec<AssignedAddress>>,
+    datagrams: Option<mpsc::Sender<Bytes>>,
     shared: std::sync::Weak<Shared>,
 ) {
     let mut parser = CapsuleParser::default();
@@ -359,6 +518,17 @@ async fn read_capsules(
         let mut failed = None;
         loop {
             match parser.next() {
+                // Over HTTP/2 a packet waits for the reader, holding the
+                // stream back, as Xray's `queueDatagram` does. Over HTTP/3
+                // packets ride QUIC DATAGRAM frames only; Xray drops those
+                // sent in capsules.
+                Ok(Some(Parsed::Capsule(Capsule::Datagram(value)))) => {
+                    if let Some(datagrams) = &datagrams {
+                        if datagrams.send(value).await.is_err() {
+                            return;
+                        }
+                    }
+                }
                 Ok(Some(Parsed::Capsule(capsule))) => {
                     let Some(shared) = shared.upgrade() else {
                         return;
@@ -395,8 +565,8 @@ async fn read_capsules(
     }
 }
 
-/// One capsule from the proxy; an error is the reason and whether it was a
-/// limit.
+/// One control capsule from the proxy; an error is the reason and whether
+/// it was a limit.
 fn handle_capsule(
     shared: &Shared,
     capsule: Capsule,
@@ -436,11 +606,8 @@ fn handle_capsule(
         }
         // Routes only restrict a proxy's own sending; a client keeps none.
         Capsule::RouteAdvertisement(_) => {}
-        // Over HTTP/3 packets ride QUIC DATAGRAM frames only; Xray drops
-        // those sent in capsules.
-        Capsule::Datagram(_) => match shared.path {
-            DatagramPath::Quic { .. } => {}
-        },
+        // The reader takes DATAGRAM capsules before they get here.
+        Capsule::Datagram(_) => {}
     }
     Ok(())
 }
@@ -505,6 +672,7 @@ impl MasqueTunnel {
                 connection,
                 quarter_stream_id,
             } => quic_max_packet(connection, *quarter_stream_id),
+            DatagramPath::Capsules { .. } => MAX_CAPSULE_PACKET,
         }
     }
 
@@ -516,7 +684,7 @@ impl MasqueTunnel {
             if closed.borrow().is_some() {
                 return Err(self.shared.closed_error());
             }
-            let datagram = match &self.shared.path {
+            let (datagram, bare) = match &self.shared.path {
                 DatagramPath::Quic {
                     connection,
                     quarter_stream_id,
@@ -534,18 +702,27 @@ impl MasqueTunnel {
                         }
                     };
                     match capsule::parse_varint(&datagram) {
-                        Some((quarter, n)) if quarter == *quarter_stream_id => datagram.slice(n..),
+                        Some((quarter, n)) if quarter == *quarter_stream_id => {
+                            (datagram.slice(n..), false)
+                        }
                         _ => continue,
                     }
                 }
+                DatagramPath::Capsules { incoming, bare, .. } => {
+                    let mut incoming = incoming.lock().await;
+                    let value = tokio::select! {
+                        value = incoming.recv() => value,
+                        _ = closed.wait_for(Option::is_some) => return Err(self.shared.closed_error()),
+                    };
+                    match value {
+                        Some(value) => (value, *bare),
+                        None => return Err(self.shared.closed_error()),
+                    }
+                }
             };
-            let Some((context, n)) = capsule::parse_varint(&datagram) else {
+            let Some(packet) = datagram_packet(datagram, bare) else {
                 continue;
             };
-            if context != 0 {
-                continue;
-            }
-            let packet = datagram.slice(n..);
             let allowed = packet::check_incoming(
                 &packet,
                 &self
@@ -605,8 +782,62 @@ impl MasqueTunnel {
                     }
                 }
             }
+            DatagramPath::Capsules {
+                outgoing,
+                room,
+                bare,
+                ..
+            } => {
+                let Some(capsule) = datagram_capsule(packet, *bare) else {
+                    return Ok(WriteOutcome::Dropped);
+                };
+                let mut closed = self.shared.closed.subscribe();
+                let permit = tokio::select! {
+                    permit = room.acquire_many(room_for(capsule.len())) => permit,
+                    _ = closed.wait_for(Option::is_some) => return Err(self.shared.closed_error()),
+                };
+                match permit {
+                    Ok(permit) => permit.forget(),
+                    Err(_) => return Err(self.shared.closed_error()),
+                }
+                if outgoing.send(capsule).is_err() {
+                    return Err(self.shared.closed_error());
+                }
+                Ok(WriteOutcome::Sent)
+            }
         }
     }
+}
+
+/// The packet in a datagram after its quarter stream ID, as Xray's
+/// `ReadPacket` takes it: after context ID 0, or the datagram itself when
+/// `bare` and it does not start with a zero byte, which reads as context
+/// ID 0. `None` for another context or a malformed one.
+pub(crate) fn datagram_packet(datagram: Bytes, bare: bool) -> Option<Bytes> {
+    if bare && datagram.first().is_some_and(|&first| first != 0) {
+        return Some(datagram);
+    }
+    match capsule::parse_varint(&datagram) {
+        Some((0, n)) => Some(datagram.slice(n..)),
+        _ => None,
+    }
+}
+
+/// Xray's `composeDatagram` for a capsule stream: the DATAGRAM capsule of
+/// `packet` after its TTL step, or `None` for a packet Xray drops.
+pub(crate) fn datagram_capsule(packet: &[u8], bare: bool) -> Option<Bytes> {
+    let size = usize::from(!bare) + packet.len();
+    let mut capsule =
+        BytesMut::with_capacity(varint_len(CAPSULE_DATAGRAM) + varint_len(size as u64) + size);
+    capsule::put_varint(&mut capsule, CAPSULE_DATAGRAM);
+    capsule::put_varint(&mut capsule, size as u64);
+    if !bare {
+        capsule::put_varint(&mut capsule, 0);
+    }
+    let start = capsule.len();
+    capsule.extend_from_slice(packet);
+    packet::prepare_outgoing(&mut capsule[start..]).ok()?;
+    Some(capsule.freeze())
 }
 
 /// The largest packet a QUIC DATAGRAM frame carries after the quarter stream
@@ -658,5 +889,11 @@ mod tests {
             addrs(&["2001:db8::2"])
         );
         assert!(local_addrs(&assigned(&["0.0.0.0/32", "::/128"])).is_empty());
+    }
+
+    #[test]
+    fn outgoing_capsules_wait_for_room_as_xrays_stream_buffer() {
+        assert_eq!(room_for(1300), 1300);
+        assert_eq!(room_for(MAX_STREAM_BUFFER + 1), MAX_STREAM_BUFFER as u32);
     }
 }

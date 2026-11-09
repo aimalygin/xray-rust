@@ -7,7 +7,7 @@ use http::{Method, Request};
 
 use super::request::{ascii_authority, request_fields, MasqueRequest, QUIC_GO_USER_AGENT};
 use super::session::{
-    self, quic_max_packet, Addressing, DatagramPath, HttpConnection, MasqueError, MasqueTunnel,
+    self, quic_max_packet, Addressing, Datagrams, HttpConnection, MasqueError, MasqueTunnel,
     RequestRecv, RequestSend,
 };
 use super::MIN_PACKET_SIZE;
@@ -118,15 +118,9 @@ pub async fn dial_h3(
     tasks.push(tokio::spawn(async move {
         let _ = poll_fn(|cx| driver.poll_close(cx)).await;
     }));
-    let mut http = HttpConnection {
-        endpoint,
-        connection: connection.clone(),
-        send_request: None,
-        tasks,
-    };
-    let fail = |http: &HttpConnection, error: MasqueError| {
-        close(&http.connection);
-        for task in &http.tasks {
+    let fail = |tasks: &[tokio::task::JoinHandle<()>], error: MasqueError| {
+        close(&connection);
+        for task in tasks {
             task.abort();
         }
         Err(error)
@@ -136,20 +130,20 @@ pub async fn dial_h3(
     // CONNECT and datagrams before the request goes out.
     let Some(settings) = send_request.peer_settings().await else {
         return fail(
-            &http,
+            &tasks,
             MasqueError::Request("the connection closed before the server's SETTINGS".into()),
         );
     };
     if !settings.enable_extended_connect() {
-        return fail(&http, MasqueError::NoExtendedConnect);
+        return fail(&tasks, MasqueError::NoExtendedConnect);
     }
     if !settings.enable_datagram() {
-        return fail(&http, MasqueError::NoDatagrams);
+        return fail(&tasks, MasqueError::NoDatagrams);
     }
 
     let Some(authority) = ascii_authority(&config.authority) else {
         return fail(
-            &http,
+            &tasks,
             MasqueError::Request("connect-ip: invalid request authority".into()),
         );
     };
@@ -164,7 +158,7 @@ pub async fn dial_h3(
         Ok(request) => request,
         Err(error) => {
             return fail(
-                &http,
+                &tasks,
                 MasqueError::Request(format!("connect-ip: failed to create request: {error}")),
             )
         }
@@ -173,7 +167,7 @@ pub async fn dial_h3(
         Ok(stream) => stream,
         Err(error) => {
             return fail(
-                &http,
+                &tasks,
                 MasqueError::Request(format!("connect-ip: failed to send request: {error}")),
             )
         }
@@ -182,30 +176,34 @@ pub async fn dial_h3(
         Ok(response) => response,
         Err(error) => {
             return fail(
-                &http,
+                &tasks,
                 MasqueError::Request(format!("connect-ip: failed to read response: {error}")),
             )
         }
     };
     let status = response.status().as_u16();
     if !(200..=299).contains(&status) {
-        return fail(&http, MasqueError::Status(status));
+        return fail(&tasks, MasqueError::Status(status));
     }
     let quarter_stream_id = stream.id().index();
     let max = quic_max_packet(&connection, quarter_stream_id);
     if max < MIN_PACKET_SIZE {
-        return fail(&http, MasqueError::PacketSize(max));
+        return fail(&tasks, MasqueError::PacketSize(max));
     }
     let (send, recv) = stream.split();
-    http.send_request = Some(send_request);
     session::start(
-        RequestSend::H3(send),
+        RequestSend::H3(Box::new(send)),
         RequestRecv::H3(recv),
-        DatagramPath::Quic {
-            connection,
+        Datagrams::Quic {
+            connection: connection.clone(),
             quarter_stream_id,
         },
-        http,
+        HttpConnection::Quic {
+            endpoint,
+            connection,
+            _send_request: send_request,
+            tasks,
+        },
         Addressing::Request,
     )
     .await

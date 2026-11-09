@@ -2338,8 +2338,10 @@ and no chaining; the `masque` network takes no other outbound.
   `headers` are Go header fields: at most 64, values of at most 8 KiB, no
   `Host` or `Capsule-Protocol`, and no `Authorization` beside `user` or
   `pass`. `User-Agent` defaults to Chrome's; `chrome`, `firefox`, `safari`,
-  `edge` and `curl` are presets, `golang` leaves quic-go's own and empty
-  sends none.
+  `edge` and `curl` are presets, `golang` leaves the HTTP library's own
+  (`quic-go HTTP/3`, or `Go-http-client/2.0` over HTTP/2) and empty sends
+  none. `Connection`, `Keep-Alive`, `Proxy-Connection`, `Transfer-Encoding`,
+  `Upgrade` and `Content-Length` are accepted and not sent, as in Xray-core.
 - `xmux` reuses tunnels as Xray-core's `XmuxManager` does. An all-zero
   `xmux` means one tunnel, retired after 1800 to 3000 seconds; an absent
   `masqueSettings` keeps the one tunnel for good. `maxConcurrency` bounds a
@@ -2348,8 +2350,8 @@ and no chaining; the `masque` network takes no other outbound.
   flow. After a failed dial, flows take a working tunnel or the same error
   for a second before the next dial.
 
-The client uses HTTP/3 unless `tlsSettings.alpn` names `h2` and not `h3`;
-that HTTP/2 form and `warp` are not supported yet and fail the
+The client uses HTTP/3 unless `tlsSettings.alpn` names `h2` and not `h3`,
+which selects HTTP/2, below; `warp` is not supported yet and fails the
 configuration. Over HTTP/3 the TLS ALPN is `h3` alone and the fingerprint is
 not used: Xray-core's MASQUE dial shapes neither its TLS nor its QUIC
 handshake. The QUIC connection starts with 1350-byte packets and never goes
@@ -2372,15 +2374,36 @@ over HTTP/3 refuses them; Xray-core's HTTP/3 dial ignores them. `sockopt` applie
 to the QUIC socket, and `addressPortStrategy` and `domainStrategy` choose
 the server's address, as Xray-core's system dialer does.
 
-A tunnel is one QUIC connection with one extended CONNECT whose
+Over HTTP/2 the client dials TCP and TLS as the stream settings ask, as for
+a raw TCP transport: the configured ALPN, the uTLS `fingerprint`, `sockopt`
+and the TCP masks, the server's candidates after `addressPortStrategy`. The
+server must negotiate `h2`. The connection then runs Xray-core's own HTTP/2
+client: SETTINGS with a 65536-byte header table, no push, a 6 MiB stream
+window and a 256 KiB header list, the connection window raised to 15 MiB,
+and the stream's window opened again in 1 MiB steps as the tunnel reads.
+The request goes out after the server's first SETTINGS, which must enable
+extended CONNECT (RFC 8441), with Xray-core's header block byte for byte:
+`:method`, `:authority`, `:scheme`, `:path`, `:protocol`, then the default
+User-Agent if any, then the fields by their canonical names, without an HPACK
+dynamic table. A PING goes out after 45 seconds without a frame from the
+server, or `xmux.hKeepAlivePeriod` seconds when it is positive (negative
+sends none), and the connection closes when nothing arrives within 15
+seconds of it. UDP masks fail the configuration over HTTP/2, as on XHTTP
+over HTTP/2, and so does a `TE` header other than `trailers`, which this
+HTTP/2 client refuses to send; Xray-core sends it and ignores the masks.
+
+A tunnel is one QUIC or TCP connection with one extended CONNECT whose
 `:protocol` is `connect-ip`, sent once the server's SETTINGS allow extended
-CONNECT and HTTP datagrams. The client asks for one address of each family
+CONNECT, and over HTTP/3 HTTP datagrams. The client asks for one address of each family
 and waits up to ten seconds, with the dial, for an assignment; it closes the
 tunnel when the proxy withdraws an address, and refuses the proxy's own
 address requests. Packets travel in QUIC DATAGRAM frames with context ID 0,
-their TTL or hop limit lowered by one; a packet too big for the path comes
-back to its sender as an ICMP Packet Too Big, and the tunnel must carry at
-least 1280-byte packets.
+or over HTTP/2 in DATAGRAM capsules on the request stream, up to 65535
+bytes, their TTL or hop limit lowered by one; a packet too big for the path
+comes back to its sender as an ICMP Packet Too Big, and the tunnel must carry
+at least 1280-byte packets. Over HTTP/2 a packet waits while 32 KiB of
+capsules are queued for the stream, and the stream is read no further while
+128 packets wait for the stack, as in Xray-core.
 
 Each tunnel runs the WireGuard outbound's userspace TCP/IP stack, MTU 1280,
 on the assigned addresses: 16 TCP and 512 UDP flows at once, the stack's
@@ -2392,9 +2415,9 @@ up to eight of its addresses, three seconds each and ten for the last; a UDP
 flow goes to the first. A flow's open deadline is the handshake timeout plus
 the ten seconds a tunnel dial may take, which goes on for the next flows if
 the one that started it gives up. `scripts/check-masque-interop.sh` compares
-the capsules and packets with Xray-core's own code, rechecks the
-configuration verdicts with `xray run -test` and runs the client against
-Xray-core's server.
+the capsules, packets and the HTTP/2 client's frames with Xray-core's own
+code, rechecks the configuration verdicts with `xray run -test` and runs the
+client against Xray-core's server over HTTP/3 and HTTP/2.
 
 ### realm mask
 

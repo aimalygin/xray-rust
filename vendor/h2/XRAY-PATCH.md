@@ -1,4 +1,4 @@
-# h2 0.4.20: Go's stream WINDOW_UPDATE policy
+# h2 0.4.20: Go's stream WINDOW_UPDATE policy and Xray's MASQUE client
 
 Source: the complete unchanged-version crates.io `h2` **0.4.20** archive,
 SHA256 `7d29020232d6aa3fb1daca64c1127cf662cf97f254ae16c18c05b8ab635fc118`.
@@ -26,6 +26,30 @@ Connection-level updates, the server, and every caller that leaves the option
 unset keep upstream behavior. Unit tests in
 `proto/streams/flow_control.rs` cover the threshold, the doubling rule and the
 unchanged default.
+
+## Waiting for the server's SETTINGS
+
+`client::SendRequest::poll_remote_settings` is ready once the server's first
+SETTINGS frame has been applied, or fails once the connection did first.
+Xray-core's MASQUE HTTP/2 client sends its extended CONNECT only after that
+frame and refuses a server that did not enable the protocol in it; before
+it, `is_extended_connect_protocol_enabled` reports `false` for any server.
+A waiting task is woken by that frame, a connection error, GOAWAY or EOF.
+
+## Xray-core's MASQUE request header block
+
+Two `client::Builder` options let the MASQUE client write the header block
+Xray-core v26.10.31's own HTTP/2 client writes:
+
+- `send_header_table_size_limit(size)` caps the HPACK encoder's dynamic table
+  below what the server allows, announcing the smaller table in the first
+  header block, as Go's `hpack.Encoder.SetMaxDynamicTableSizeLimit`. Xray
+  sets zero: a size update, then every field without indexing.
+- `authority_after_method(true)` writes `:authority` right after `:method`,
+  before `:scheme` and `:path`, the order of Chrome and of Go's writers.
+
+Callers that leave them unset keep upstream behavior. Unit tests in
+`hpack/encoder.rs` and `frame/headers.rs` cover both.
 
 ## Fuzzing build
 

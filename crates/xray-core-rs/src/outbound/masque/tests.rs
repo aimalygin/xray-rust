@@ -220,6 +220,36 @@ fn open_timeout_adds_the_tunnel_dial() {
 
 const MASQUE_DEFAULT_XMUX_FOR_TESTS: XhttpXmuxSettings = xray_config::MASQUE_DEFAULT_XMUX;
 
+#[test]
+fn http2_takes_only_h2_without_h3() {
+    let alpn = |list: &[&str]| list.iter().map(|p| (*p).to_owned()).collect::<Vec<_>>();
+    assert!(uses_http2(&alpn(&["h2"])));
+    assert!(uses_http2(&alpn(&["http/1.1", "h2"])));
+    assert!(!uses_http2(&alpn(&["h3", "h2"])));
+    assert!(!uses_http2(&alpn(&[])));
+    assert!(!uses_http2(&alpn(&["http/1.1"])));
+}
+
+#[test]
+fn the_http2_carrier_must_negotiate_h2() {
+    assert!(negotiated_h2(Some(b"h2")).is_ok());
+    assert_eq!(
+        negotiated_h2(Some(b"http/1.1")).unwrap_err().to_string(),
+        r#"MASQUE dial failed: the server negotiated "http/1.1" instead of h2"#
+    );
+    assert_eq!(
+        negotiated_h2(None).unwrap_err().to_string(),
+        r#"MASQUE dial failed: the server negotiated "" instead of h2"#
+    );
+}
+
+#[test]
+fn http2_keepalive_follows_xmux() {
+    assert_eq!(h2_keep_alive(0), Some(Duration::from_secs(45)));
+    assert_eq!(h2_keep_alive(20), Some(Duration::from_secs(20)));
+    assert_eq!(h2_keep_alive(-1), None);
+}
+
 /// The QUIC configuration a MASQUE outbound with `quic_params` dials with.
 fn quic_for(quic_params: serde_json::Value) -> H3QuicConfig {
     let config = serde_json::json!({"outbounds": [{"protocol": "masque",
@@ -316,7 +346,9 @@ fn every_udp_mask_rides_masque_over_http3() {
             .unwrap_or_else(|error| panic!("{name}: {error}"));
         let masque =
             MasqueOutbound::new(&outbound).unwrap_or_else(|error| panic!("{name}: {error}"));
-        let quic = &masque.0.quic;
+        let Dial::H3 { quic, .. } = &masque.0.dial else {
+            panic!("{name}: not HTTP/3");
+        };
         let set = match name {
             "noise" => quic.udp_noise.is_some(),
             "header-custom" => quic.udp_header_custom.is_some(),

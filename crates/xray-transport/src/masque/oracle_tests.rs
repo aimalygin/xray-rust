@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use super::capsule::{self, AssignedAddress, Capsule, CapsuleParser, IpPrefix, IpRoute, Parsed};
 use super::packet::{self, Destinations, IcmpError};
+use super::session;
 
 fn vectors() -> Value {
     let text = match std::env::var("XRAY_MASQUE_VECTORS") {
@@ -116,24 +117,60 @@ fn capsules_are_read_as_xray_reads_them() {
 #[test]
 fn datagrams_are_composed_as_xray_composes_them() {
     let vectors = vectors();
-    let mut checked = 0;
+    let (mut quic, mut capsules, mut bare) = (0, 0, 0);
     for case in vectors["compose"].as_array().unwrap() {
-        // HTTP/3 datagrams: the context ID, then the packet.
-        if case["capsule"].as_bool().unwrap() {
-            continue;
-        }
-        let mut packet = hex(case["packet"].as_str().unwrap());
-        match packet::prepare_outgoing(&mut packet) {
-            Ok(()) => {
+        let packet = hex(case["packet"].as_str().unwrap());
+        let out = if case["capsule"].as_bool().unwrap() {
+            // HTTP/2: a whole DATAGRAM capsule, bare without the context ID.
+            let is_bare = case["bare"].as_bool().unwrap();
+            if is_bare {
+                bare += 1;
+            } else {
+                capsules += 1;
+            }
+            session::datagram_capsule(&packet, is_bare).map(|capsule| capsule.to_vec())
+        } else {
+            // HTTP/3 datagrams: the context ID, then the packet.
+            quic += 1;
+            let mut packet = packet;
+            packet::prepare_outgoing(&mut packet).ok().map(|()| {
                 let mut out = vec![0];
                 out.extend_from_slice(&packet);
-                assert_eq!(to_hex(&out), case["out"].as_str().unwrap(), "{case}");
-            }
-            Err(_) => assert!(case["dropped"].as_bool().unwrap_or(false), "{case}"),
+                out
+            })
+        };
+        match out {
+            Some(out) => assert_eq!(to_hex(&out), case["out"].as_str().unwrap(), "{case}"),
+            None => assert!(case["dropped"].as_bool().unwrap_or(false), "{case}"),
         }
-        checked += 1;
     }
-    assert!(checked > 0);
+    assert!(quic > 0 && capsules > 0 && bare > 0);
+}
+
+#[test]
+fn capsule_datagrams_are_read_as_xray_reads_them() {
+    let vectors = vectors();
+    let everything = Destinations {
+        assigned: vec![prefix("0.0.0.0/0"), prefix("::/0")],
+        ..Destinations::default()
+    };
+    let (mut read, mut dropped) = (0, 0);
+    for case in vectors["read"].as_array().unwrap() {
+        let datagram = bytes::Bytes::from(hex(case["datagram"].as_str().unwrap()));
+        let packet = session::datagram_packet(datagram, case["bare"].as_bool().unwrap())
+            .filter(|packet| packet::check_incoming(packet, &everything).is_ok());
+        match packet {
+            Some(packet) => {
+                read += 1;
+                assert_eq!(to_hex(&packet), case["packet"].as_str().unwrap(), "{case}")
+            }
+            None => {
+                dropped += 1;
+                assert!(case["dropped"].as_bool().unwrap_or(false), "{case}")
+            }
+        }
+    }
+    assert!(read > 0 && dropped > 0);
 }
 
 #[test]

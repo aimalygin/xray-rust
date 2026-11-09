@@ -352,6 +352,16 @@ pub struct Builder {
     /// Released stream capacity that triggers a WINDOW_UPDATE, or `None` to
     /// wait for half of the remaining window.
     stream_window_update_threshold: Option<u32>,
+
+    /// xray-rust: the largest dynamic table the encoder keeps, whatever the
+    /// server allows.
+    send_header_table_size_limit: Option<u32>,
+
+    /// xray-rust: `:authority` right after `:method` in requests.
+    authority_after_method: bool,
+
+    /// xray-rust: HPACK representations as Go's encoder picks them.
+    go_hpack_choices: bool,
 }
 
 #[derive(Debug)]
@@ -377,6 +387,14 @@ where
         ready!(self.inner.poll_pending_open(cx, self.pending.as_ref()))?;
         self.pending = None;
         Poll::Ready(Ok(()))
+    }
+
+    /// xray-rust: ready once the server's first `SETTINGS` frame has been
+    /// applied, so that [`Self::is_extended_connect_protocol_enabled`]
+    /// reports the server's choice; an error if the connection failed first.
+    /// One task at a time may wait. The [`Connection`] must be polled.
+    pub fn poll_remote_settings(&mut self, cx: &mut Context) -> Poll<Result<(), crate::Error>> {
+        self.inner.poll_remote_settings(cx).map_err(Into::into)
     }
 
     /// Consumes `self`, returning a future that returns `self` back once it is
@@ -674,6 +692,9 @@ impl Builder {
             local_max_error_reset_streams: Some(proto::DEFAULT_LOCAL_RESET_COUNT_MAX),
             data_frame_budget: proto::DataFrameBudget::Auto,
             stream_window_update_threshold: None,
+            send_header_table_size_limit: None,
+            authority_after_method: false,
+            go_hpack_choices: false,
         }
     }
 
@@ -1193,6 +1214,32 @@ impl Builder {
         self
     }
 
+    /// Caps the dynamic table the HPACK encoder keeps at `size` bytes, below
+    /// what the server's `SETTINGS_HEADER_TABLE_SIZE` allows; a smaller
+    /// table is announced at the start of the first header block.
+    ///
+    /// This is Go's `hpack.Encoder.SetMaxDynamicTableSizeLimit`. Zero sends
+    /// every field without indexing it.
+    pub fn send_header_table_size_limit(&mut self, size: u32) -> &mut Self {
+        self.send_header_table_size_limit = Some(size);
+        self
+    }
+
+    /// Writes `:authority` right after `:method` in request header blocks,
+    /// before `:scheme` and `:path`, as Chrome and Go's HTTP/2 writers do.
+    pub fn authority_after_method(&mut self, enabled: bool) -> &mut Self {
+        self.authority_after_method = enabled;
+        self
+    }
+
+    /// Picks HPACK representations as Go's `hpack.Encoder` does: a string
+    /// in Huffman code only when that is shorter, and a name in the static
+    /// table by its last entry (`:method` 3, `:path` 5) instead of its first.
+    pub fn go_hpack_choices(&mut self, enabled: bool) -> &mut Self {
+        self.go_hpack_choices = enabled;
+        self
+    }
+
     /// Sets the first stream ID to something other than 1.
     #[cfg(feature = "unstable")]
     pub fn initial_stream_id(&mut self, stream_id: u32) -> &mut Self {
@@ -1366,6 +1413,12 @@ where
         if let Some(max) = builder.settings.max_header_list_size() {
             codec.set_max_recv_header_list_size(max as usize);
         }
+
+        if let Some(limit) = builder.send_header_table_size_limit {
+            codec.set_send_header_table_size_limit(limit as usize);
+        }
+        codec.set_authority_first(builder.authority_after_method);
+        codec.set_go_hpack_choices(builder.go_hpack_choices);
 
         // Send initial settings frame
         codec

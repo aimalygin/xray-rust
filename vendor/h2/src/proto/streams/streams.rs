@@ -103,6 +103,12 @@ struct Actions {
 
     /// If the connection errors, a copy is kept for any StreamRefs.
     conn_error: Option<proto::Error>,
+
+    /// xray-rust: whether the peer's first SETTINGS frame was applied.
+    remote_settings: bool,
+
+    /// xray-rust: the task waiting for the peer's first SETTINGS frame.
+    remote_settings_waker: Option<Waker>,
 }
 
 /// Contains the buffer of frames to be written to the wire.
@@ -246,13 +252,30 @@ where
 
         me.counts.apply_remote_settings(frame, is_initial);
 
-        me.actions.send.apply_remote_settings(
+        let result = me.actions.send.apply_remote_settings(
             frame,
             send_buffer,
             &mut me.store,
             &mut me.counts,
             &mut me.actions.task,
-        )
+        );
+        if is_initial {
+            me.actions.remote_settings = true;
+            me.actions.wake_remote_settings();
+        }
+        result
+    }
+
+    /// xray-rust: ready once the peer's first SETTINGS frame was applied, or
+    /// with the connection's error once it failed first.
+    pub fn poll_remote_settings(&self, cx: &Context) -> Poll<Result<(), proto::Error>> {
+        let mut me = self.inner.lock().unwrap();
+        if me.actions.remote_settings {
+            return Poll::Ready(Ok(()));
+        }
+        me.actions.ensure_no_conn_error()?;
+        me.actions.remote_settings_waker = Some(cx.waker().clone());
+        Poll::Pending
     }
 
     pub fn apply_local_settings(&mut self, frame: &frame::Settings) -> Result<(), Error> {
@@ -461,6 +484,8 @@ impl Inner {
                 send: Send::new(&config),
                 task: None,
                 conn_error: None,
+                remote_settings: false,
+                remote_settings_waker: None,
             },
             store: Store::new(),
             refs: 1,
@@ -795,6 +820,7 @@ impl Inner {
         });
 
         actions.conn_error = Some(err);
+        actions.wake_remote_settings();
 
         last_processed_id
     }
@@ -826,6 +852,7 @@ impl Inner {
         });
 
         actions.conn_error = Some(err);
+        actions.wake_remote_settings();
 
         Ok(())
     }
@@ -953,6 +980,7 @@ impl Inner {
                 .into(),
             );
         }
+        actions.wake_remote_settings();
 
         tracing::trace!("Streams::recv_eof");
 
@@ -1830,6 +1858,13 @@ impl Actions {
             self.send.ensure_not_idle(id)
         } else {
             self.recv.ensure_not_idle(id)
+        }
+    }
+
+    /// xray-rust: wakes the task waiting for the peer's first SETTINGS.
+    fn wake_remote_settings(&mut self) {
+        if let Some(waker) = self.remote_settings_waker.take() {
+            waker.wake();
         }
     }
 

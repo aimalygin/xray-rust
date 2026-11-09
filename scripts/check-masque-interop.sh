@@ -38,6 +38,17 @@ oracle "$TEST_ROOT/vectors.json" 0
 cmp "$WORKSPACE_ROOT/tests/fixtures/masque/connectip-vectors.json" "$TEST_ROOT/vectors.json"
 oracle "$TEST_ROOT/vectors-full.json" 1
 
+# What Xray-core's own HTTP/2 client writes for a tunnel up to its request:
+# its SETTINGS, the connection window and the header block, byte for byte.
+cat >"$TEST_ROOT/overlay-http2.json" <<JSON
+{"Replace": {"$CHECKOUT/transport/internet/masque/xray_rust_http2_oracle_test.go": "$WORKSPACE_ROOT/tools/masque-oracle/http2_oracle_test.go"}}
+JSON
+MASQUE_HTTP2_ORACLE_OUT="$TEST_ROOT/http2-vectors.json" \
+  env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
+  go -C "$CHECKOUT" test -mod=readonly -overlay "$TEST_ROOT/overlay-http2.json" \
+  ./transport/internet/masque -run '^TestXrayRustHTTP2Oracle$' -count=1 >/dev/null
+cmp "$WORKSPACE_ROOT/tests/fixtures/masque/http2-request-vectors.json" "$TEST_ROOT/http2-vectors.json"
+
 cd "$WORKSPACE_ROOT"
 XRAY_MASQUE_VECTORS="$TEST_ROOT/vectors-full.json" \
   cargo test --locked -p xray-transport --lib masque::
@@ -52,9 +63,10 @@ env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
 python3 scripts/check-masque-config-verdicts.py \
   "$TEST_ROOT/xray" tests/fixtures/masque/config-verdicts.json
 
-# The client against Xray-core's own MASQUE server: TCP and UDP of both
-# families from the SOCKS inbound, TCP from the HTTP inbound, names resolved
-# through the tunnel, a refused password, and TCP and UDP from the TUN.
+# The client against Xray-core's own MASQUE server, over HTTP/3 and HTTP/2:
+# TCP and UDP of both families from the SOCKS inbound, TCP from the HTTP
+# inbound, names resolved through the tunnel, a uTLS fingerprint, a refused
+# password, and TCP and UDP from the TUN.
 XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT" \
   cargo test --locked -p xray-core-rs --test local_xray_interop_tests masque:: \
     -- --ignored --nocapture --test-threads=1

@@ -18,6 +18,12 @@ pub struct Encoder {
     /// across frames instead of being allocated and freed per frame. See
     /// `take_scratch` / `return_scratch`.
     scratch: BytesMut,
+    /// xray-rust: whether `:authority` follows `:method` in request header
+    /// blocks, the order Chrome and Go's HTTP/2 writers use.
+    authority_first: bool,
+    /// xray-rust: whether representations are picked as Go's `hpack`
+    /// encoder picks them.
+    go_choices: bool,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -35,15 +41,47 @@ impl Encoder {
             max_allowed_size: DEFAULT_MAX_ALLOWED_SIZE,
             size_update: None,
             scratch: BytesMut::new(),
+            authority_first: false,
+            go_choices: false,
         }
     }
 
-    #[cfg(test)]
-    fn set_max_allowed_size(&mut self, max: usize) {
+    /// Caps the dynamic table at `max` bytes whatever the peer allows; a
+    /// smaller table is announced at the start of the next header block.
+    /// xray-rust: also Go's `Encoder.SetMaxDynamicTableSizeLimit`.
+    pub(crate) fn set_max_allowed_size(&mut self, max: usize) {
         self.max_allowed_size = max;
 
         if self.table.max_size() > max {
             self.update_max_size(max);
+        }
+    }
+
+    /// xray-rust: puts `:authority` right after `:method` in request header
+    /// blocks, instead of after `:scheme`.
+    pub(crate) fn set_authority_first(&mut self, enabled: bool) {
+        self.authority_first = enabled;
+    }
+
+    /// xray-rust: whether `:authority` follows `:method`.
+    pub(crate) fn authority_first(&self) -> bool {
+        self.authority_first
+    }
+
+    /// xray-rust: picks representations as Go's `hpack.Encoder` does: a
+    /// string in Huffman code only when that is shorter, and a name's last
+    /// static table entry, where upstream takes its first.
+    pub(crate) fn set_go_choices(&mut self, enabled: bool) {
+        self.go_choices = enabled;
+    }
+
+    /// The static index a name is referenced by: Go's `byName` keeps a
+    /// name's last entry.
+    fn name_index(&self, idx: usize) -> usize {
+        match idx {
+            2 | 4 | 6 if self.go_choices => idx + 1,
+            8 if self.go_choices => 14,
+            _ => idx,
         }
     }
 
@@ -160,7 +198,13 @@ impl Encoder {
             Index::Name(idx, _) => {
                 let header = self.table.resolve(index);
 
-                encode_not_indexed(idx, header.value_slice(), header.is_sensitive(), dst);
+                encode_not_indexed(
+                    self.name_index(idx),
+                    header.value_slice(),
+                    header.is_sensitive(),
+                    self.go_choices,
+                    dst,
+                );
             }
             Index::Inserted(_) => {
                 let header = self.table.resolve(index);
@@ -169,16 +213,16 @@ impl Encoder {
 
                 dst.put_u8(0b0100_0000);
 
-                encode_str(header.name().as_slice(), dst);
-                encode_str(header.value_slice(), dst);
+                encode_str(header.name().as_slice(), self.go_choices, dst);
+                encode_str(header.value_slice(), self.go_choices, dst);
             }
             Index::InsertedValue(idx, _) => {
                 let header = self.table.resolve(index);
 
                 assert!(!header.is_sensitive());
 
-                encode_int(idx, 6, 0b0100_0000, dst);
-                encode_str(header.value_slice(), dst);
+                encode_int(self.name_index(idx), 6, 0b0100_0000, dst);
+                encode_str(header.value_slice(), self.go_choices, dst);
             }
             Index::NotIndexed(_) => {
                 let header = self.table.resolve(index);
@@ -187,6 +231,7 @@ impl Encoder {
                     header.name().as_slice(),
                     header.value_slice(),
                     header.is_sensitive(),
+                    self.go_choices,
                     dst,
                 );
             }
@@ -206,7 +251,13 @@ impl Encoder {
             | Index::InsertedValue(..) => {
                 let idx = self.table.resolve_idx(last);
 
-                encode_not_indexed(idx, value.as_ref(), value.is_sensitive(), dst);
+                encode_not_indexed(
+                    self.name_index(idx),
+                    value.as_ref(),
+                    value.is_sensitive(),
+                    self.go_choices,
+                    dst,
+                );
             }
             Index::NotIndexed(_) => {
                 let last = self.table.resolve(last);
@@ -215,6 +266,7 @@ impl Encoder {
                     last.name().as_slice(),
                     value.as_ref(),
                     value.is_sensitive(),
+                    self.go_choices,
                     dst,
                 );
             }
@@ -232,28 +284,36 @@ fn encode_size_update(val: usize, dst: &mut BytesMut) {
     encode_int(val, 5, 0b0010_0000, dst)
 }
 
-fn encode_not_indexed(name: usize, value: &[u8], sensitive: bool, dst: &mut BytesMut) {
+fn encode_not_indexed(name: usize, value: &[u8], sensitive: bool, go: bool, dst: &mut BytesMut) {
     if sensitive {
         encode_int(name, 4, 0b10000, dst);
     } else {
         encode_int(name, 4, 0, dst);
     }
 
-    encode_str(value, dst);
+    encode_str(value, go, dst);
 }
 
-fn encode_not_indexed2(name: &[u8], value: &[u8], sensitive: bool, dst: &mut BytesMut) {
+fn encode_not_indexed2(
+    name: &[u8],
+    value: &[u8],
+    sensitive: bool,
+    go: bool,
+    dst: &mut BytesMut,
+) {
     if sensitive {
         dst.put_u8(0b10000);
     } else {
         dst.put_u8(0);
     }
 
-    encode_str(name, dst);
-    encode_str(value, dst);
+    encode_str(name, go, dst);
+    encode_str(value, go, dst);
 }
 
-fn encode_str(val: &[u8], dst: &mut BytesMut) {
+/// Encodes a string literal; `go` keeps it raw unless Huffman code is
+/// shorter, as Go's `appendHpackString` does.
+fn encode_str(val: &[u8], go: bool, dst: &mut BytesMut) {
     if !val.is_empty() {
         let idx = position(dst);
 
@@ -264,6 +324,13 @@ fn encode_str(val: &[u8], dst: &mut BytesMut) {
         huffman::encode(val, dst);
 
         let huff_len = position(dst) - (idx + 1);
+
+        if go && huff_len >= val.len() {
+            dst.truncate(idx);
+            encode_int(val.len(), 7, 0, dst);
+            dst.put_slice(val);
+            return;
+        }
 
         if encode_int_one_byte(huff_len, 7) {
             // Write the string head
@@ -749,6 +816,57 @@ mod test {
     #[ignore]
     fn test_evicted_overflow() {
         // Not sure what the best way to do this is.
+    }
+
+    #[test]
+    fn a_zero_table_limit_announces_itself_and_indexes_nothing() {
+        let mut encoder = Encoder::default();
+        encoder.set_max_allowed_size(0);
+        // The server allowing a table changes nothing.
+        encoder.update_max_size(4096);
+        // A size update to zero, then a literal without indexing.
+        let first = encode(&mut encoder, vec![header("x-custom", "1")]);
+        assert_eq!([0x20, 0x00], first[..2]);
+        // A static name is referenced, its value still not indexed.
+        let method = encode(&mut encoder, vec![method("CONNECT")]);
+        assert_eq!(0x02, method[0]);
+        // Nothing was added to the table: the same literal again.
+        let again = encode(&mut encoder, vec![header("x-custom", "1")]);
+        assert_eq!(first[1..], again[..]);
+        assert_eq!(0, encoder.table.size());
+    }
+
+    #[test]
+    fn go_choices_pick_raw_strings_and_last_static_names() {
+        use crate::hpack::BytesStr;
+
+        let mut encoder = Encoder::default();
+        encoder.set_max_allowed_size(0);
+        encoder.set_go_choices(true);
+        let res = encode(
+            &mut encoder,
+            vec![method("CONNECT"), header("capsule-protocol", "?1")],
+        );
+        // `:method` by its last static entry, POST, and CONNECT raw: its
+        // Huffman code is no shorter.
+        assert_eq!([0x20, 0x03, 0x07], res[..3]);
+        assert_eq!(b"CONNECT", &res[3..10]);
+        // A Huffman name, then `?1` raw.
+        assert_eq!(0x00, res[10]);
+        assert_eq!(0x80, res[11] & 0x80);
+        assert_eq!([0x02, b'?', b'1'], res[res.len() - 3..]);
+        // `:path` by its last entry, a long value in Huffman code.
+        let path = encode(
+            &mut encoder,
+            vec![Header::Path(BytesStr::from_static("/masque/ip/"))],
+        );
+        assert_eq!(0x05, path[0]);
+        assert_eq!(0x80, path[1] & 0x80);
+        // Upstream keeps the first entry and Huffman code throughout.
+        let mut upstream = Encoder::default();
+        upstream.set_max_allowed_size(0);
+        let res = encode(&mut upstream, vec![method("CONNECT")]);
+        assert_eq!([0x20, 0x02, 0x80 | 7], res[..3]);
     }
 
     fn encode(e: &mut Encoder, hdrs: Vec<Header<Option<HeaderName>>>) -> BytesMut {

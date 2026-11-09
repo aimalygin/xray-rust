@@ -12,7 +12,7 @@ long-term supported release series.
 
 - The `masque` outbound and `masque` transport connect to a MASQUE proxy as
   Xray-core v26.10.31's client does: one CONNECT-IP tunnel (RFC 9484) over
-  HTTP/3, with Basic authorization from `user` and `pass`, the addresses the
+  HTTP/3 or HTTP/2, with Basic authorization from `user` and `pass`, the addresses the
   proxy assigns, and every TCP and UDP flow from SOCKS, HTTP and TUN carried
   through a userspace TCP/IP stack over the tunnel. Destination names
   resolve through the tunnel with `remoteDNS`. See
@@ -21,17 +21,22 @@ long-term supported release series.
     retired after 1800 to 3000 seconds. `finalmask.quicParams` and the UDP
     masks apply; congestion `brutal` runs BBR, as in Xray-core, and the BBR
     profiles take over after the handshake, as on XHTTP over HTTP/3.
-  - Every UDP mask rides the tunnel's QUIC socket as on XHTTP over HTTP/3,
-    `realm` and `xicmp` included, since Xray-core's dial opens it through the
-    same `finalmask` path. A realm introduction counts toward the tunnel's
-    ten seconds, as it runs under Xray-core's dial context.
-  - MASQUE over HTTP/2 (`tlsSettings.alpn` naming `h2` and not `h3`) and
-    `warp` are not supported yet and fail the configuration.
+  - Over HTTP/3 every UDP mask rides the tunnel's QUIC socket as on XHTTP
+    over HTTP/3, `realm` and `xicmp` included, since Xray-core's dial opens it
+    through the same `finalmask` path. A realm introduction counts toward the
+    tunnel's ten seconds, as it runs under Xray-core's dial context.
+  - Over HTTP/2 (`tlsSettings.alpn` naming `h2` and not `h3`) the client
+    dials TCP and TLS as the stream settings ask, uTLS fingerprint, `sockopt`
+    and TCP masks included, and runs Xray-core's own HTTP/2 client: its
+    SETTINGS, windows and keepalive, and its request header block byte for
+    byte. Packets travel in DATAGRAM capsules on the request stream.
+  - `warp` is not supported yet and fails the configuration.
   - Deliberate differences: a tunnel takes 16 TCP and 512 UDP flows, the
     bounds of the WireGuard outbound's stack, which it shares; `remoteDNS`
     takes at most 8 servers and no scoped address; an empty `address`,
-    chaining, Mux and the TCP fragment mask fail the configuration, and the
-    other TCP masks fail when the core starts.
+    chaining and Mux fail the configuration, and so do the TCP fragment
+    mask over HTTP/3, and UDP masks and a `TE` header other than `trailers`
+    over HTTP/2; the other TCP masks fail over HTTP/3 when the core starts.
 - The WireGuard outbound's userspace TCP/IP stack now takes IP packets from
   any source, as MASQUE needs; WireGuard itself is unchanged.
 - The `xicmp` UDP mask carries mKCP, Hysteria, XHTTP over HTTP/3 and
