@@ -447,6 +447,8 @@ jobs:
         run: bash scripts/check-xdns-interop.sh
       - name: Verify the realm mask against pinned Xray-core
         run: bash scripts/check-realm-interop.sh
+      - name: Verify the xicmp mask against pinned Xray-core
+        run: bash scripts/check-xicmp-interop.sh
 
       - name: Check out independent native Hysteria reference
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

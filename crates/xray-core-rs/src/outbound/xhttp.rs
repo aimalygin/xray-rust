@@ -179,6 +179,12 @@ pub(super) fn build_xhttp_transport(
         ));
     }
     h3_quic.udp_realm = stream.udp_realm.as_ref().map(super::carrier::realm_config);
+    if stream.udp_xicmp.is_some() && http_version != XhttpHttpVersion::Http3 {
+        return Err(invalid_xhttp_configuration(
+            "an xicmp UDP mask requires XHTTP H3",
+        ));
+    }
+    h3_quic.udp_xicmp = stream.udp_xicmp.as_ref().map(super::carrier::xicmp_config);
     XhttpTransport::new_with_h3_quic(config, endpoint, http_version, xmux, h3_quic)
         .map_err(invalid_xhttp_configuration)
 }

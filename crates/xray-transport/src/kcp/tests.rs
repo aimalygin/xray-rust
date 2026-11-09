@@ -17,6 +17,7 @@ fn config(masks: Vec<KcpMask>) -> KcpConfig {
         noise: None,
         xdns: None,
         realm: None,
+        xicmp: None,
     }
 }
 

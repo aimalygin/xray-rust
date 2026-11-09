@@ -410,6 +410,16 @@ impl HysteriaClient {
             .open_xdns(&config.carrier, tls.socket_protector_arc())
             .await
             .map_err(|_| HysteriaError::Connect)?;
+        // Opened with the session, so a rebind keeps the id the server
+        // knows.
+        session
+            .open_xicmp(
+                &config.carrier,
+                crate::canonicalize_socket_addr(config.remote_addr).ip(),
+                tls.socket_protector_arc(),
+            )
+            .await
+            .map_err(|_| HysteriaError::Connect)?;
         // Xray's Hysteria dialer installs its controller after
         // authentication: Brutal or BBR, in its default mode by the server's
         // reply.

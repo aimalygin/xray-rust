@@ -10,6 +10,20 @@ long-term supported release series.
 
 ## Unreleased
 
+- The `xicmp` UDP mask carries mKCP, Hysteria and XHTTP over HTTP/3 in
+  ICMP, as Xray-core's client does: every datagram rides in an echo request
+  to the server after the client's 8-byte id, and the server's come back in
+  its echo replies. See [xicmp mask](docs/config-compatibility.md#xicmp-mask).
+  - `dgram` takes datagram ICMP sockets, which macOS, iOS, Android and Linux
+    within `net.ipv4.ping_group_range` grant without privilege; raw sockets
+    need root or `CAP_NET_RAW`.
+  - Each server address gets its own socket, never bound and connected to
+    it, which a Network Extension needs; the families the addresses do not
+    use need no socket.
+  - It must be the last UDP mask and runs neither with udphop, xdns, realm
+    nor header-custom, nor with sudoku on QUIC. An outbound address that is
+    a name, with no `ips`, is refused when the core starts, where Xray-core
+    fails every dial.
 - The `realm` UDP mask reaches a server behind NAT, as Xray-core's client
   does: mKCP, Hysteria and XHTTP over HTTP/3 learn their public addresses
   from STUN servers over the carrier's own socket, a Hysteria realm

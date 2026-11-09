@@ -122,6 +122,11 @@ impl HysteriaOutbound {
                 .udp_realm
                 .as_ref()
                 .map(super::carrier::realm_config),
+            xicmp: config
+                .stream
+                .udp_xicmp
+                .as_ref()
+                .map(super::carrier::xicmp_config),
             ..Default::default()
         };
         let (quic, receive_bytes_per_second) =
@@ -156,6 +161,7 @@ impl HysteriaOutbound {
         {
             return Err(CoreError::UnsupportedOutboundNetwork);
         }
+        super::carrier::check_xicmp_server(&config.stream, &server.server)?;
         let server_name = tls
             .server_name
             .clone()
@@ -319,7 +325,13 @@ impl HysteriaOutbound {
             .realm
             .as_ref()
             .map(|_| dialer.realm_env());
-        let attempts = if realm.is_some() { 1 } else { 8 };
+        // Nor does an xicmp client, which sends to its own addresses or to
+        // the one literal address it needs.
+        let attempts = if realm.is_some() || self.inner.carrier.xicmp.is_some() {
+            1
+        } else {
+            8
+        };
         for candidate in candidates.into_iter().take(attempts) {
             let mut config = HysteriaConfig::new(candidate, self.inner.tls.clone(), String::new());
             config.auth = self.inner.auth.auth.clone();

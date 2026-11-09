@@ -51,6 +51,9 @@ pub struct HysteriaCarrierConfig {
     /// server through a rendezvous, and the datagrams go to the address that
     /// answered its punch.
     pub realm: Option<Arc<crate::realm::RealmConfig>>,
+    /// The `xicmp` mask, the outermost: the datagrams go out in ICMP echo
+    /// requests, never in UDP.
+    pub xicmp: Option<Arc<crate::xicmp::XicmpConfig>>,
 }
 
 /// A `sudoku` UDP mask and its place among the carrier's masks.
@@ -85,6 +88,7 @@ impl fmt::Debug for HysteriaCarrierConfig {
             .field("sudoku", &self.sudoku.is_some())
             .field("xdns", &self.xdns.is_some())
             .field("realm", &self.realm.is_some())
+            .field("xicmp", &self.xicmp.is_some())
             .finish()
     }
 }
@@ -107,6 +111,9 @@ pub(crate) struct CarrierSession {
     /// The xdns client, whose id the server knows the connection by, so
     /// every rebound socket goes through it.
     pub(crate) xdns: Option<Arc<crate::xdns::XdnsClient>>,
+    /// The xicmp client, whose id the server knows the connection by, as
+    /// the xdns client's.
+    pub(crate) xicmp: Option<Arc<crate::xicmp::XicmpClient>>,
 }
 
 impl fmt::Debug for CarrierSession {
@@ -115,6 +122,7 @@ impl fmt::Debug for CarrierSession {
             .field("noise", &self.noise.is_some())
             .field("header", &self.header.is_some())
             .field("xdns", &self.xdns.is_some())
+            .field("xicmp", &self.xicmp.is_some())
             .finish()
     }
 }
@@ -134,6 +142,7 @@ impl CarrierSession {
                 .map(|header| HeaderCustomState::new(header.config.clone()))
                 .transpose()?,
             xdns: None,
+            xicmp: None,
         })
     }
 
@@ -149,6 +158,23 @@ impl CarrierSession {
                 .await
                 .map_err(io::Error::other)?;
             self.xdns = Some(Arc::new(client));
+        }
+        Ok(())
+    }
+
+    /// Opens the xicmp client `config` asks for, to `server` when its
+    /// addresses are empty, unless there is one.
+    pub(crate) async fn open_xicmp(
+        &mut self,
+        config: &HysteriaCarrierConfig,
+        server: IpAddr,
+        protector: Option<Arc<dyn crate::SocketProtector>>,
+    ) -> io::Result<()> {
+        if let (Some(xicmp), None) = (&config.xicmp, &self.xicmp) {
+            let client = crate::xicmp::XicmpClient::connect(xicmp, server, protector)
+                .await
+                .map_err(io::Error::other)?;
+            self.xicmp = Some(Arc::new(client));
         }
         Ok(())
     }
@@ -182,12 +208,25 @@ impl HysteriaCarrierConfig {
                 return Err(HysteriaError::Configuration);
             }
         }
+        if self.xicmp.is_some()
+            && (self.udp_hop.is_active()
+                || self.xdns.is_some()
+                || self.header_custom.is_some()
+                || self.sudoku.is_some())
+        {
+            // Each of udphop and xdns sends elsewhere, as realm does, which
+            // refuses xicmp below; header-custom would key the server's port
+            // while replies come without one; sudoku's datagrams exceed what
+            // an echo carries.
+            return Err(HysteriaError::Configuration);
+        }
         if let Some(realm) = &self.realm {
             // Its socket goes to the punched peer, never hops, and is no
             // resolver's; header-custom's state would key the server's
             // address while replies come from the peer's.
             if self.udp_hop.is_active()
                 || self.xdns.is_some()
+                || self.xicmp.is_some()
                 || self.header_custom.is_some()
                 || realm.stun_servers.is_empty()
                 || (realm.scheme == crate::realm::RealmScheme::Https && realm.tls.is_none())
@@ -246,6 +285,7 @@ impl HysteriaCarrierConfig {
             || self.sudoku.is_some()
             || self.xdns.is_some()
             || self.realm.is_some()
+            || self.xicmp.is_some()
     }
 
     /// What the masks add to every QUIC datagram: Salamander's salt and a
@@ -412,6 +452,21 @@ pub(crate) fn wrap(
     config: &HysteriaCarrierConfig,
     session: &CarrierSession,
 ) -> io::Result<Arc<dyn AsyncUdpSocket>> {
+    // The xicmp client carries every datagram; the socket goes unused,
+    // where Xray-core dials none.
+    if config.xicmp.is_some() {
+        let client = session.xicmp.clone().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotConnected, "the xicmp client is not open")
+        })?;
+        drop(socket);
+        return wrap_masks(
+            crate::xicmp::quic::socket(client, wire_peer),
+            logical_peer,
+            wire_peer,
+            config,
+            session,
+        );
+    }
     // The xdns client carries every datagram; the socket goes unused, as
     // the one Xray-core dials under xdns does.
     if config.xdns.is_some() {
@@ -1202,6 +1257,69 @@ mod tests {
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         let peer: SocketAddr = "127.0.0.1:443".parse().unwrap();
         config.xdns = Some(xdns);
+        let session = CarrierSession::new(&config).unwrap();
+        assert!(wrap(socket, peer, peer, &config, &session).is_err());
+    }
+
+    #[test]
+    fn xicmp_runs_without_udphop_xdns_realm_header_custom_and_sudoku() {
+        let xicmp = Arc::new(crate::xicmp::XicmpConfig {
+            dgram: true,
+            ips: vec![],
+        });
+        let mut config = HysteriaCarrierConfig {
+            xicmp: Some(xicmp),
+            ..Default::default()
+        };
+        assert!(config.enabled());
+        config.validate().unwrap();
+        config.udp_hop.ports = vec![443, 8443];
+        config.udp_hop.local = true;
+        assert!(config.validate().is_err(), "udphop");
+        config.udp_hop = Default::default();
+        config.xdns = Some(Arc::new(crate::xdns::XdnsConfig::default()));
+        assert!(config.validate().is_err(), "xdns");
+        config.xdns = None;
+        config.realm = Some(Arc::new(crate::realm::RealmConfig {
+            scheme: crate::realm::RealmScheme::Http,
+            host: "127.0.0.1".into(),
+            port_text: "80".into(),
+            port: 80,
+            token: Arc::new(Zeroizing::new("t".into())),
+            id: "x".into(),
+            stun_servers: vec![crate::realm::RealmStunServer {
+                host: "127.0.0.1".into(),
+                port_text: "3478".into(),
+                port: 3478,
+            }],
+            tls: None,
+            family: crate::realm::RealmFamily::Dual,
+        }));
+        assert!(config.validate().is_err(), "realm");
+        config.realm = None;
+        config.header_custom = Some(HeaderCustomCarrier {
+            config: Arc::new(HeaderCustomUdpConfig::default()),
+            before_salamander: false,
+            before_noise: false,
+        });
+        assert!(config.validate().is_err(), "header-custom");
+        config.header_custom = None;
+        config.sudoku = Some(SudokuCarrier {
+            config: Arc::new(crate::sudoku::SudokuConfig {
+                password: "synthetic".into(),
+                ..Default::default()
+            }),
+            before_salamander: false,
+            before_noise: false,
+            before_header_custom: false,
+        });
+        assert!(config.validate().is_err(), "sudoku");
+        config.sudoku = None;
+        config.salamander_password = Some(Arc::new(Zeroizing::new("synthetic".into())));
+        config.validate().unwrap();
+        // The session opens the client; without it the socket is refused.
+        let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let peer: SocketAddr = "127.0.0.1:443".parse().unwrap();
         let session = CarrierSession::new(&config).unwrap();
         assert!(wrap(socket, peer, peer, &config, &session).is_err());
     }

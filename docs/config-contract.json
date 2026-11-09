@@ -852,6 +852,15 @@
       "notes": "Read as Xray-core reads it, enabled a boolean and timeout and lifetime 64-bit integers of seconds, but not acted on yet: no UPnP or NAT-PMP mapping is made, as when Xray-core finds no gateway."
     },
     {
+      "context": "streamSettings.finalmask.udp[].settings (xicmp)",
+      "fields": [
+        "dgram",
+        "ips"
+      ],
+      "id": "XICMP_MASK",
+      "notes": "mKCP, Hysteria and XHTTP with exact h3 ALPN; the last UDP mask, never with udphop, xdns, realm or header-custom, nor with sudoku on QUIC. Every datagram rides in an ICMP echo request to the server, after an 8-byte client id, and comes back in its echo reply. dgram opens unprivileged datagram ICMP sockets; without it they are raw sockets, which need root or CAP_NET_RAW. ips are the server addresses, one drawn per packet; empty sends to the outbound's address, which must then be an IP address, else the core refuses to start. A zoned IPv6 address is refused, where Xray-core drops the zone and reaches nothing."
+    },
+    {
       "context": "streamSettings.finalmask.tcp[].settings (xmc)",
       "fields": [
         "hostname",

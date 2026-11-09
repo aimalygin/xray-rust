@@ -54,6 +54,9 @@ pub struct KcpConfig {
     pub xdns: Option<Arc<crate::xdns::XdnsConfig>>,
     /// The `realm` mask, which introduces the socket to the server.
     pub realm: Option<Arc<crate::realm::RealmConfig>>,
+    /// The `xicmp` mask, which carries the datagrams in ICMP echoes instead
+    /// of a socket.
+    pub xicmp: Option<Arc<crate::xicmp::XicmpConfig>>,
 }
 
 /// A `finalmask.udp` mask on an mKCP stream.
@@ -166,6 +169,24 @@ pub async fn connect(
             engine_config,
         ));
     }
+    if let Some(xicmp) = &config.xicmp {
+        let peer = candidates.first().copied().ok_or_else(|| {
+            TransportError::Kcp(io::Error::new(
+                io::ErrorKind::AddrNotAvailable,
+                "no mKCP server address",
+            ))
+        })?;
+        let client = crate::xicmp::XicmpClient::connect(xicmp, peer.ip(), protector)
+            .await
+            .map_err(|error| TransportError::Kcp(io::Error::other(error)))?;
+        return Ok(KcpStream::start(
+            KcpSocket::Xicmp(Box::new(client)),
+            crate::canonicalize_socket_addr(peer),
+            masks,
+            next_conversation(),
+            engine_config,
+        ));
+    }
     if let Some(xdns) = &config.xdns {
         let peer = candidates.first().copied().ok_or_else(|| {
             TransportError::Kcp(io::Error::new(
@@ -230,6 +251,7 @@ enum KcpSocket {
     Xdns(Box<crate::xdns::XdnsClient>),
     /// A socket the realm mask introduced, which may be dual-stack.
     Realm(crate::realm::RealmUdp),
+    Xicmp(Box<crate::xicmp::XicmpClient>),
 }
 
 impl KcpSocket {
@@ -246,6 +268,14 @@ impl KcpSocket {
                 Ok((length, packet.from))
             }
             Self::Realm(socket) => socket.recv_from(buf).await,
+            Self::Xicmp(client) => {
+                let packet = client.recv().await.ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::ConnectionAborted, "the xicmp client stopped")
+                })?;
+                let length = packet.data.len().min(buf.len());
+                buf[..length].copy_from_slice(&packet.data[..length]);
+                Ok((length, packet.from))
+            }
         }
     }
 
@@ -254,6 +284,7 @@ impl KcpSocket {
             Self::Udp(socket) => socket.send_to(datagram, peer).await.map(drop),
             Self::Xdns(client) => client.send(datagram),
             Self::Realm(socket) => socket.send_to(datagram, peer).await.map(drop),
+            Self::Xicmp(client) => client.send(datagram),
         }
     }
 
@@ -263,6 +294,8 @@ impl KcpSocket {
             Self::Udp(socket) => socket.local_addr(),
             Self::Xdns(_) => Ok((std::net::Ipv4Addr::UNSPECIFIED, 0).into()),
             Self::Realm(socket) => socket.local_addr(),
+            // Xray's xicmp client reports the IPv4 wildcard.
+            Self::Xicmp(_) => Ok((std::net::Ipv4Addr::UNSPECIFIED, 0).into()),
         }
     }
 }

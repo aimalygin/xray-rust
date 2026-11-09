@@ -5361,6 +5361,97 @@
         "/outbounds/0/streamSettings/finalmask/udp/1/settings/seed": 1
       },
       "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.seed"
+    },
+    {
+      "name": "xicmp-udp-kcp",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "kcp",
+              "finalmask": {
+                "udp": [
+                  {
+                    "type": "mkcp-legacy",
+                    "settings": {
+                      "value": "synthetic-seed"
+                    }
+                  },
+                  {
+                    "type": "xicmp",
+                    "settings": {
+                      "dgram": true,
+                      "ips": [
+                        "192.0.2.10",
+                        "2001:db8::10"
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "XICMP_MASK": "/outbounds/0/streamSettings/finalmask/udp/1/settings"
+      }
+    },
+    {
+      "name": "xicmp-bad-ip",
+      "accepted": false,
+      "base": "xicmp-udp-kcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/ips/0": "192.0.2.010"
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.ips[0]"
+    },
+    {
+      "name": "xicmp-dgram-type",
+      "accepted": false,
+      "base": "xicmp-udp-kcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/dgram": "true"
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.dgram"
+    },
+    {
+      "name": "xicmp-unknown-field",
+      "accepted": false,
+      "base": "xicmp-udp-kcp",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/udp/1/settings/seed": 1
+      },
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[1].settings.seed"
     }
   ]
 }

@@ -30,6 +30,7 @@ mod memory_class;
 pub mod realm;
 pub mod sudoku;
 pub mod xdns;
+pub mod xicmp;
 pub mod xmc;
 
 /// Validate a TLS DNS/IP verification name without performing network I/O.

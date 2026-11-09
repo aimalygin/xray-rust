@@ -251,6 +251,7 @@ fn build_transport_layer(
     connector: &ConnectorConfig,
     paths: ServerConfigPaths,
 ) -> Result<TransportLayer, CoreError> {
+    check_xicmp_server(stream, server)?;
     let host_fallback = || match connector {
         ConnectorConfig::Tls(tls) if !tls.server_name.is_empty() => tls.server_name.clone(),
         ConnectorConfig::Reality(reality) if !reality.server_name.is_empty() => {
@@ -355,6 +356,7 @@ fn kcp_config(
             .transpose()?,
         xdns: stream.udp_xdns.as_ref().map(xdns_config),
         realm: stream.udp_realm.as_ref().map(realm_config),
+        xicmp: stream.udp_xicmp.as_ref().map(xicmp_config),
     })
 }
 
@@ -705,6 +707,30 @@ pub(super) fn realm_config(
             xray_config::RealmIpMode::V6 => RealmFamily::V6,
         },
     })
+}
+
+/// The `xicmp` mask's client settings.
+pub(super) fn xicmp_config(
+    xicmp: &xray_config::XicmpMask,
+) -> Arc<xray_transport::xicmp::XicmpConfig> {
+    Arc::new(xray_transport::xicmp::XicmpConfig {
+        dgram: xicmp.dgram,
+        ips: xicmp.ips.clone(),
+    })
+}
+
+/// Xray-core's xicmp client sends to its `ips`, else to the outbound's
+/// address, which it never resolves: a name there fails every dial.
+pub(super) fn check_xicmp_server(
+    stream: &StreamSettings,
+    server: &TargetAddr,
+) -> Result<(), CoreError> {
+    match (&stream.udp_xicmp, server) {
+        (Some(xicmp), TargetAddr::Domain(_)) if xicmp.ips.is_empty() => {
+            Err(CoreError::UnsupportedOutboundNetwork)
+        }
+        _ => Ok(()),
+    }
 }
 
 /// A QUIC carrier's `sudoku` UDP mask, at its place among the carrier's
