@@ -362,6 +362,9 @@ pub struct Builder {
 
     /// xray-rust: HPACK representations as Go's encoder picks them.
     go_hpack_choices: bool,
+
+    /// xray-rust: request pseudo-headers in the order of Go's client.
+    go_request_pseudo_order: bool,
 }
 
 #[derive(Debug)]
@@ -695,6 +698,7 @@ impl Builder {
             send_header_table_size_limit: None,
             authority_after_method: false,
             go_hpack_choices: false,
+            go_request_pseudo_order: false,
         }
     }
 
@@ -1240,6 +1244,14 @@ impl Builder {
         self
     }
 
+    /// Writes request pseudo-headers in the order of Go's `net/http`
+    /// HTTP/2 client: `:authority`, `:method`, `:path`, `:scheme`. It takes
+    /// precedence over `authority_after_method`.
+    pub fn go_request_pseudo_order(&mut self, enabled: bool) -> &mut Self {
+        self.go_request_pseudo_order = enabled;
+        self
+    }
+
     /// Sets the first stream ID to something other than 1.
     #[cfg(feature = "unstable")]
     pub fn initial_stream_id(&mut self, stream_id: u32) -> &mut Self {
@@ -1419,6 +1431,7 @@ where
         }
         codec.set_authority_first(builder.authority_after_method);
         codec.set_go_hpack_choices(builder.go_hpack_choices);
+        codec.set_go_pseudo_order(builder.go_request_pseudo_order);
 
         // Send initial settings frame
         codec

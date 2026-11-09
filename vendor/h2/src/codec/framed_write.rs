@@ -358,6 +358,11 @@ impl<T, B> FramedWrite<T, B> {
         self.encoder.hpack.set_go_choices(enabled);
     }
 
+    /// xray-rust: request pseudo-headers in the order of Go's client.
+    pub fn set_go_pseudo_order(&mut self, enabled: bool) {
+        self.encoder.hpack.set_go_pseudo_order(enabled);
+    }
+
     /// Retrieve the last data frame that has been sent
     pub fn take_last_data_frame(&mut self) -> Option<frame::Data<B>> {
         self.encoder.last_data_frame.take()
