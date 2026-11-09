@@ -842,6 +842,25 @@ impl FreedomOutbound {
         self.final_rules.as_deref().unwrap_or_default()
     }
 
+    /// This freedom as the sessions the portal of a VLESS reverse proxy
+    /// opens meet it: after its own final rules, one that blocks every
+    /// destination, as Xray-core's freedom treats connections from
+    /// `vless-reverse` (`getDefaultFinalRule`).
+    pub(crate) fn for_reverse(&self) -> Self {
+        let mut rules = self.final_rules().to_vec();
+        rules.push(FreedomFinalRule {
+            action: xray_config::FreedomRuleAction::Block,
+            networks: None,
+            port_ranges: None,
+            ip_matchers: None,
+            block_delay: None,
+        });
+        Self {
+            final_rules: Some(rules.into()),
+            ..self.clone()
+        }
+    }
+
     /// `proxyProtocol`, the header freedom writes before the payload.
     pub(crate) fn proxy_protocol(&self) -> Option<ProxyProtocolVersion> {
         self.proxy_protocol
@@ -993,6 +1012,17 @@ impl TcpOutbound {
     pub(crate) fn primary(&self) -> &Self {
         match self {
             Self::Chained { outbound, .. } => outbound.primary(),
+            outbound => outbound,
+        }
+    }
+
+    /// The outbound a session from the portal of a VLESS reverse proxy
+    /// meets: a freedom that dials for itself refuses whatever its final
+    /// rules do not allow. Through `dialerProxy` freedom is not the final
+    /// outbound and applies none, as in Xray-core.
+    pub(crate) fn for_reverse(self) -> Self {
+        match self {
+            Self::Freedom(freedom) => Self::Freedom(freedom.for_reverse()),
             outbound => outbound,
         }
     }
@@ -4647,9 +4677,21 @@ async fn open_vless_tcp_stream_with_resolved_server_and_dialer(
         .open_carrier(resolved_server, resolved_download, transport_dialer)
         .await?;
     let stream = encryption::wrap(stream, outbound.encryption(), flow.uses_vision()).await?;
+    held_request_stream(outbound, flow, stream, VlessCommand::Tcp, target)
+}
+
+/// The request on `stream`, its header held until the first payload, as
+/// Xray-core's VLESS outbound sends a TCP or reverse request.
+fn held_request_stream(
+    outbound: &VlessTcpOutbound,
+    flow: VisionFlow,
+    stream: BoxedTransportStream,
+    command: VlessCommand,
+    target: &Target,
+) -> Result<BoxedTransportStream, CoreError> {
     let request = VlessRequest {
         user_id: outbound.user().id,
-        command: VlessCommand::Tcp,
+        command,
         target: target.clone(),
         flow: flow.request_flow(),
     };
@@ -4805,6 +4847,105 @@ async fn open_vless_mux_parent(
         transport_dialer,
     )
     .await
+}
+
+/// The attempts Xray-core makes to dial a VLESS server, waiting 0, 200,
+/// 400, 600 and then 800 ms after each failure (`retry.ExponentialBackoff`).
+const REVERSE_DIAL_ATTEMPTS: u32 = 5;
+const REVERSE_DIAL_BACKOFF: Duration = Duration::from_millis(200);
+
+/// Opens a tunnel of a VLESS reverse proxy's bridge, as Xray-core's
+/// `Reverse.monitor` hands `v1.rvs.cool` to its outbound: the reverse
+/// command, which names no address, over the outbound's whole carrier, a
+/// `dialerProxy` chain included, and Mux.Cool after it. The header waits for
+/// a first payload, as any VLESS request's does; none comes before the
+/// portal speaks, so it goes alone after 500 ms, Vision padding an empty
+/// frame. The carrier is dialed as often as Xray-core dials it.
+pub(crate) async fn open_vless_reverse_tunnel(
+    outbound: &TcpOutbound,
+    bootstrap_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+) -> Result<BoxedTransportStream, CoreError> {
+    let (vless, proxy) = match outbound {
+        TcpOutbound::Vless(vless) => (vless.as_ref(), None),
+        TcpOutbound::Chained { outbound, proxy } => match outbound.as_ref() {
+            TcpOutbound::Vless(vless) => (vless.as_ref(), Some(proxy.as_ref())),
+            _ => return Err(CoreError::UnsupportedOutboundNetwork),
+        },
+        _ => return Err(CoreError::UnsupportedOutboundNetwork),
+    };
+    let flow = validate_outbound_flow(vless)?;
+    let mut failures = 0;
+    let stream = loop {
+        match open_reverse_carrier(vless, proxy, bootstrap_resolver, transport_dialer).await {
+            Ok(stream) => break stream,
+            Err(error) => {
+                tokio::time::sleep(REVERSE_DIAL_BACKOFF * failures).await;
+                failures += 1;
+                if failures == REVERSE_DIAL_ATTEMPTS {
+                    return Err(error);
+                }
+            }
+        }
+    };
+    let stream = encryption::wrap(stream, vless.encryption(), flow.uses_vision()).await?;
+    held_request_stream(
+        vless,
+        flow,
+        stream,
+        VlessCommand::Reverse,
+        &Target::new(
+            RoutingTargetAddr::Domain("v1.rvs.cool".into()),
+            0,
+            RoutingNetwork::Tcp,
+        ),
+    )
+}
+
+/// One dial of a reverse tunnel's carrier, through `proxy` when the outbound
+/// dials through `dialerProxy`.
+async fn open_reverse_carrier(
+    vless: &VlessTcpOutbound,
+    proxy: Option<&TcpOutbound>,
+    bootstrap_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+) -> Result<BoxedTransportStream, CoreError> {
+    let Some(proxy) = proxy else {
+        let server = vless
+            .carrier()
+            .resolve_server(bootstrap_resolver, transport_dialer)
+            .await?;
+        let download = vless
+            .carrier()
+            .resolve_download(bootstrap_resolver, transport_dialer)
+            .await?;
+        return vless
+            .open_carrier(&server, &download, transport_dialer)
+            .await;
+    };
+    let proxy_dialer =
+        prepare_outbound_proxy_dialer(proxy, bootstrap_resolver, transport_dialer, None).await?;
+    // A freedom hop resolves the server with its own domain strategy.
+    let strategy = match proxy.primary() {
+        TcpOutbound::Freedom(freedom) => freedom.domain_strategy(),
+        _ => DomainStrategy::AsIs,
+    };
+    let bootstrap = DomainStrategyResolver::new(bootstrap_resolver, strategy);
+    let (server, download) = if proxy_chain_requires_local_resolution(proxy) {
+        (
+            vless
+                .carrier()
+                .resolve_server(&bootstrap, &proxy_dialer)
+                .await?,
+            vless
+                .carrier()
+                .resolve_download(&bootstrap, &proxy_dialer)
+                .await?,
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    vless.open_carrier(&server, &download, &proxy_dialer).await
 }
 
 /// Writes the request header for a UDP or Mux command. Unlike a TCP request,
