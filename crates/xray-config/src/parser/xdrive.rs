@@ -49,6 +49,7 @@ impl Parser<'_> {
                     template: None,
                     s3: None,
                     xmux: zero_xhttp_xmux_settings(),
+                    fronting: None,
                 })
             }
             Some(settings @ Value::Object(_)) => settings,
@@ -165,7 +166,60 @@ impl Parser<'_> {
             template,
             s3,
             xmux,
+            fronting: None,
         })
+    }
+
+    /// `streamSettings.address` and `port`, which Xray-core reads into every
+    /// stream and only XDRIVE dials: an `Address` and a Go `uint16`. Any
+    /// other transport still refuses them.
+    pub(super) fn parse_stream_fronting(
+        &mut self,
+        stream: Option<&Value>,
+        network: StreamNetwork,
+        index: usize,
+    ) -> Option<Option<(TargetAddr, u16)>> {
+        let Some(stream) = stream else {
+            return Some(None);
+        };
+        let path = format!("$.outbounds[{index}].streamSettings");
+        if network != StreamNetwork::Xdrive {
+            for key in ["address", "port"] {
+                if stream.get(key).is_some() {
+                    self.error(child_path(&path, key), format!("unsupported field `{key}`"));
+                }
+            }
+            return Some(None);
+        }
+        let port = self.nullable_u16_at(stream, "port", format!("{path}.port"));
+        let address = match stream.get("address") {
+            None | Some(Value::Null) => None,
+            // Xray-core looks for the prefix before it trims the address.
+            Some(Value::String(text)) if text.starts_with("env:") => {
+                self.error(
+                    format!("{path}.address"),
+                    "streamSettings address environment references are not supported",
+                );
+                return None;
+            }
+            Some(Value::String(text)) => {
+                let text = normalize_xray_address_text(text);
+                Some(
+                    parse_xray_ip_address(text)
+                        .map(TargetAddr::Ip)
+                        .unwrap_or_else(|| TargetAddr::Domain(text.to_owned())),
+                )
+            }
+            Some(_) => {
+                self.error(
+                    format!("{path}.address"),
+                    "invalid address: field `address` must be a string or null",
+                );
+                return None;
+            }
+        };
+        let port = port?;
+        Some(address.map(|address| (address, port)))
     }
 
     /// `secrets`, a Go `[]string`: null reads as none and a null entry as

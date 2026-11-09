@@ -1,0 +1,5053 @@
+{
+  "s3": [
+    {
+      "name": "put path-style",
+      "endpoint": "https://s3.example.com",
+      "region": "",
+      "bucket": "my-bucket",
+      "pathStyle": true,
+      "folder": "xdrive",
+      "secrets": [
+        "AKIDEXAMPLE",
+        "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
+      ],
+      "method": "PUT",
+      "object": "sessions/1-abc",
+      "query": null,
+      "body": "data",
+      "now": 1794200000,
+      "error": "",
+      "url": "https://s3.example.com/my-bucket/xdrive/sessions/1-abc",
+      "headers": [
+        [
+          "Authorization",
+          "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261109/us-east-1/s3/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date, Signature=09017da84b4e4cef8f1df8fc9322ad94fc682ae9d3d327b2df11b704eadf8f5c"
+        ],
+        [
+          "Content-Type",
+          "application/octet-stream"
+        ],
+        [
+          "X-Amz-Content-Sha256",
+          "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7"
+        ],
+        [
+          "X-Amz-Date",
+          "20261109T045320Z"
+        ]
+      ]
+    },
+    {
+      "name": "get virtual-hosted with port",
+      "endpoint": "http://minio.local:9000/",
+      "region": "eu-central-1",
+      "bucket": "bucket.with.dots",
+      "pathStyle": false,
+      "folder": "a/b/",
+      "secrets": [
+        "AKIDEXAMPLE",
+        "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
+      ],
+      "method": "GET",
+      "object": "streams/s/c2s/000000001.seg",
+      "query": null,
+      "body": "",
+      "now": 1794200000,
+      "error": "",
+      "url": "http://bucket.with.dots.minio.local:9000/a/b/streams/s/c2s/000000001.seg",
+      "headers": [
+        [
+          "Authorization",
+          "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261109/eu-central-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=1031d7cad2e48191dd0f3f77d694b5ad68298153d8978c8f451f5a704dc73ce0"
+        ],
+        [
+          "X-Amz-Content-Sha256",
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        [
+          "X-Amz-Date",
+          "20261109T045320Z"
+        ]
+      ]
+    },
+    {
+      "name": "list with token",
+      "endpoint": "https://s3.example.com/base%2Fpath/x y",
+      "region": "us-west-2",
+      "bucket": "b1",
+      "pathStyle": true,
+      "folder": "root",
+      "secrets": [
+        "AKIDEXAMPLE",
+        "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+        "Fwo//token  with   spaces="
+      ],
+      "method": "GET",
+      "object": "",
+      "query": [
+        [
+          "list-type",
+          "2"
+        ],
+        [
+          "prefix",
+          "root/streams/a b+c/"
+        ],
+        [
+          "max-keys",
+          "1000"
+        ],
+        [
+          "delimiter",
+          "/"
+        ],
+        [
+          "continuation-token",
+          "1/ab+cd=="
+        ]
+      ],
+      "body": "",
+      "now": 1794200000,
+      "error": "",
+      "url": "https://s3.example.com/base/path/x%20y/b1/?continuation-token=1%2Fab%2Bcd%3D%3D\u0026delimiter=%2F\u0026list-type=2\u0026max-keys=1000\u0026prefix=root%2Fstreams%2Fa%20b%2Bc%2F",
+      "headers": [
+        [
+          "Authorization",
+          "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261109/us-west-2/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token, Signature=259a871516f906f6994cd202646077f1bb8f2a278786bd9c5afa819236cf193f"
+        ],
+        [
+          "X-Amz-Content-Sha256",
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        [
+          "X-Amz-Date",
+          "20261109T045320Z"
+        ],
+        [
+          "X-Amz-Security-Token",
+          "Fwo//token  with   spaces="
+        ]
+      ]
+    },
+    {
+      "name": "delete in an escaped folder",
+      "endpoint": "https://s3.example.com",
+      "region": "",
+      "bucket": "b2",
+      "pathStyle": true,
+      "folder": "dir with space/ü",
+      "secrets": [
+        "AKIDEXAMPLE",
+        "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
+      ],
+      "method": "DELETE",
+      "object": "sessions/x",
+      "query": null,
+      "body": "",
+      "now": 1794200000,
+      "error": "",
+      "url": "https://s3.example.com/b2/dir%20with%20space/%C3%BC/sessions/x",
+      "headers": [
+        [
+          "Authorization",
+          "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261109/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=4b566198ca72aa53a80109fe019aedb7cbe0f1f4e6c14299ea9686ac4d1bc820"
+        ],
+        [
+          "X-Amz-Content-Sha256",
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        [
+          "X-Amz-Date",
+          "20261109T045320Z"
+        ]
+      ]
+    },
+    {
+      "name": "region auto",
+      "endpoint": "https://r2.example.com",
+      "region": "auto",
+      "bucket": "b3",
+      "pathStyle": true,
+      "folder": "f",
+      "secrets": [
+        "AKIDEXAMPLE",
+        "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
+      ],
+      "method": "PUT",
+      "object": "streams/a/s2c/000000002.end",
+      "query": null,
+      "body": "",
+      "now": 1794200000,
+      "error": "",
+      "url": "https://r2.example.com/b3/f/streams/a/s2c/000000002.end",
+      "headers": [
+        [
+          "Authorization",
+          "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261109/auto/s3/aws4_request, SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date, Signature=06ed53c5631788cf7d8691dce547ecf3adc1aadc44dd2ab1cebddc035ae25264"
+        ],
+        [
+          "Content-Type",
+          "application/octet-stream"
+        ],
+        [
+          "X-Amz-Content-Sha256",
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        [
+          "X-Amz-Date",
+          "20261109T045320Z"
+        ]
+      ]
+    },
+    {
+      "name": "invalid object name",
+      "endpoint": "https://s3.example.com",
+      "region": "",
+      "bucket": "b4",
+      "pathStyle": true,
+      "folder": "f",
+      "secrets": [
+        "AKIDEXAMPLE",
+        "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
+      ],
+      "method": "GET",
+      "object": "../escape",
+      "query": null,
+      "body": "",
+      "now": 1794200000,
+      "error": "transport/internet/xdrive: invalid relative S3 object name",
+      "url": "",
+      "headers": null
+    },
+    {
+      "name": "object key too long",
+      "endpoint": "https://s3.example.com",
+      "region": "",
+      "bucket": "b5",
+      "pathStyle": true,
+      "folder": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+      "secrets": [
+        "AKIDEXAMPLE",
+        "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
+      ],
+      "method": "GET",
+      "object": "sessions/x",
+      "query": null,
+      "body": "",
+      "now": 1794200000,
+      "error": "transport/internet/xdrive: S3 object key exceeds 1024 bytes",
+      "url": "",
+      "headers": null
+    },
+    {
+      "name": "missing secret",
+      "endpoint": "https://s3.example.com",
+      "region": "",
+      "bucket": "b6",
+      "pathStyle": true,
+      "folder": "f",
+      "secrets": [
+        "AKIDEXAMPLE"
+      ],
+      "method": "GET",
+      "object": "x",
+      "query": null,
+      "body": "",
+      "now": 1794200000,
+      "error": "transport/internet/xdrive: S3 needs AccessKeyID, SecretAccessKey and optionally SessionToken in secrets",
+      "url": "",
+      "headers": null
+    },
+    {
+      "name": "bad bucket",
+      "endpoint": "https://s3.example.com",
+      "region": "",
+      "bucket": "Bad_Bucket",
+      "pathStyle": false,
+      "folder": "f",
+      "secrets": [
+        "AKIDEXAMPLE",
+        "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
+      ],
+      "method": "GET",
+      "object": "x",
+      "query": null,
+      "body": "",
+      "now": 1794200000,
+      "error": "transport/internet/xdrive: S3 virtual-hosted addressing requires a DNS-compatible bucket name",
+      "url": "",
+      "headers": null
+    }
+  ],
+  "lists": [
+    {
+      "payload": "\u003c?xml version=\"1.0\" encoding=\"UTF-8\"?\u003e\u003cListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"\u003e\u003cName\u003eb\u003c/Name\u003e\u003cIsTruncated\u003etrue\u003c/IsTruncated\u003e\u003cNextContinuationToken\u003etok\u0026amp;1\u003c/NextContinuationToken\u003e\u003cContents\u003e\u003cKey\u003eroot/a\u003c/Key\u003e\u003cSize\u003e1\u003c/Size\u003e\u003c/Contents\u003e\u003cContents\u003e\u003cKey\u003eroot/b\u003c/Key\u003e\u003c/Contents\u003e\u003cCommonPrefixes\u003e\u003cPrefix\u003eroot/streams/\u003c/Prefix\u003e\u003c/CommonPrefixes\u003e\u003c/ListBucketResult\u003e",
+      "ok": true,
+      "truncated": true,
+      "next": "tok\u00261",
+      "keys": [
+        "root/a",
+        "root/b"
+      ],
+      "prefixes": [
+        "root/streams/"
+      ],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cListBucketResult\u003e\u003cIsTruncated\u003efalse\u003c/IsTruncated\u003e\u003c/ListBucketResult\u003e",
+      "ok": true,
+      "truncated": false,
+      "next": "",
+      "keys": [],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cListBucketResult\u003e\u003cIsTruncated\u003e1\u003c/IsTruncated\u003e\u003cNextContinuationToken\u003e spaced \u003c/NextContinuationToken\u003e\u003c/ListBucketResult\u003e",
+      "ok": true,
+      "truncated": true,
+      "next": " spaced ",
+      "keys": [],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cListBucketResult\u003e\u003cIsTruncated\u003eyes\u003c/IsTruncated\u003e\u003c/ListBucketResult\u003e",
+      "ok": false,
+      "truncated": false,
+      "next": "",
+      "keys": [],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cListBucketResult\u003e\u003cIsTruncated\u003e true \u003c/IsTruncated\u003e\u003c/ListBucketResult\u003e",
+      "ok": true,
+      "truncated": true,
+      "next": "",
+      "keys": [],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cListBucketResult\u003e\u003cContents\u003e\u003cKey\u003ea\u003c!-- c --\u003eb\u003c![CDATA[\u003cc\u003e]]\u003e\u003c/Key\u003e\u003c/Contents\u003e\u003c/ListBucketResult\u003e",
+      "ok": true,
+      "truncated": false,
+      "next": "",
+      "keys": [
+        "ab\u003cc\u003e"
+      ],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cListBucketResult\u003e\u003cContents\u003e\u003cKey\u003ex\u003c/Key\u003e\u003cKey\u003ey\u003c/Key\u003e\u003c/Contents\u003e\u003c/ListBucketResult\u003e",
+      "ok": true,
+      "truncated": false,
+      "next": "",
+      "keys": [
+        "y"
+      ],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cListBucketResult\u003e\u003cContents\u003e\u003cOther\u003e\u003cKey\u003enested\u003c/Key\u003e\u003c/Other\u003e\u003cKey\u003ek\u003c/Key\u003e\u003c/Contents\u003e\u003c/ListBucketResult\u003e",
+      "ok": true,
+      "truncated": false,
+      "next": "",
+      "keys": [
+        "k"
+      ],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cs3:ListBucketResult xmlns:s3=\"x\"\u003e\u003cs3:Contents\u003e\u003cs3:Key\u003ens\u003c/s3:Key\u003e\u003c/s3:Contents\u003e\u003c/s3:ListBucketResult\u003e",
+      "ok": true,
+      "truncated": false,
+      "next": "",
+      "keys": [
+        "ns"
+      ],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cListBucketResultX\u003e\u003cContents\u003e\u003cKey\u003ek\u003c/Key\u003e\u003c/Contents\u003e\u003c/ListBucketResultX\u003e",
+      "ok": false,
+      "truncated": false,
+      "next": "",
+      "keys": [],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cListBucketResult\u003e\u003cContents\u003e\u003cKey\u003ek\u003c/Key\u003e\u003c/Contents\u003e",
+      "ok": false,
+      "truncated": false,
+      "next": "",
+      "keys": [],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cListBucketResult\u003e\u003cContents\u003e\u003cKey\u003ea\u0026bogus;\u003c/Key\u003e\u003c/Contents\u003e\u003c/ListBucketResult\u003e",
+      "ok": false,
+      "truncated": false,
+      "next": "",
+      "keys": [],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cListBucketResult\u003e\u003cContents\u003e\u003cKey\u003e\u0026#x41;\u0026#66;\u0026lt;\u0026gt;\u0026quot;\u0026apos;\u003c/Key\u003e\u003c/Contents\u003e\u003c/ListBucketResult\u003e",
+      "ok": true,
+      "truncated": false,
+      "next": "",
+      "keys": [
+        "AB\u003c\u003e\"'"
+      ],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003c?xml version=\"1.0\"?\u003e\u003c!DOCTYPE x\u003e\u003cListBucketResult\u003e\u003cContents\u003e\u003cKey\u003ed\u003c/Key\u003e\u003c/Contents\u003e\u003c/ListBucketResult\u003e",
+      "ok": true,
+      "truncated": false,
+      "next": "",
+      "keys": [
+        "d"
+      ],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "  \u003cListBucketResult/\u003e",
+      "ok": true,
+      "truncated": false,
+      "next": "",
+      "keys": [],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "",
+      "ok": false,
+      "truncated": false,
+      "next": "",
+      "keys": [],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "not xml",
+      "ok": false,
+      "truncated": false,
+      "next": "",
+      "keys": [],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cListBucketResult\u003e\u003cContents\u003e\u003cKey\u003ea\u003c/Key\u003e\u003c/Contents\u003e\u003c/ListBucketResult\u003e\u003cextra/\u003e",
+      "ok": true,
+      "truncated": false,
+      "next": "",
+      "keys": [
+        "a"
+      ],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cError\u003e\u003cCode\u003eNoSuchKey\u003c/Code\u003e\u003cMessage\u003em\u003c/Message\u003e\u003c/Error\u003e",
+      "ok": false,
+      "truncated": false,
+      "next": "",
+      "keys": [],
+      "prefixes": [],
+      "errorCode": "NoSuchKey"
+    },
+    {
+      "payload": "\u003cError\u003e\u003cCode\u003e SlowDown \u003c/Code\u003e\u003c/Error\u003e",
+      "ok": false,
+      "truncated": false,
+      "next": "",
+      "keys": [],
+      "prefixes": [],
+      "errorCode": " SlowDown "
+    },
+    {
+      "payload": "\u003cError\u003e\u003cMessage\u003eno code\u003c/Message\u003e\u003c/Error\u003e",
+      "ok": false,
+      "truncated": false,
+      "next": "",
+      "keys": [],
+      "prefixes": [],
+      "errorCode": ""
+    },
+    {
+      "payload": "\u003cOther\u003e\u003cCode\u003eX\u003c/Code\u003e\u003c/Other\u003e",
+      "ok": false,
+      "truncated": false,
+      "next": "",
+      "keys": [],
+      "prefixes": [],
+      "errorCode": ""
+    }
+  ],
+  "templates": [
+    {
+      "template": "{\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"}}",
+      "error": "",
+      "flatten": false,
+      "concurrency": 32,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "PUT",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "DELETE",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "https://h/{folder}/",
+        "headers": [],
+        "body": "",
+        "namesRegex": "\u003cn\u003e([^\u003c]+)\u003c/n\u003e",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"flatten\":true,\"concurrency\":12,\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"},\"retry\":{\"status\":[429,503,null],\"rateReason\":\"error.errors.0.reason\"}}",
+      "error": "",
+      "flatten": true,
+      "concurrency": 12,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "PUT",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "DELETE",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "https://h/{folder}/",
+        "headers": [],
+        "body": "",
+        "namesRegex": "\u003cn\u003e([^\u003c]+)\u003c/n\u003e",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [
+        429,
+        503,
+        0
+      ],
+      "rateReason": "error.errors.0.reason"
+    },
+    {
+      "template": "{\"auth\":{\"type\":\"oauth2\",\"tokenUrl\":\"https://t/token\",\"form\":{\"grant_type\":\"refresh_token\",\"refresh_token\":\"{secret0}\",\"x\":null},\"header\":{\"Authorization\":\"Bearer {token}\"},\"tokenPath\":\"a.b\",\"expiryPath\":\"exp\"},\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"}}",
+      "error": "",
+      "flatten": false,
+      "concurrency": 32,
+      "authType": "oauth2",
+      "authHeader": [
+        [
+          "Authorization",
+          "Bearer {token}"
+        ]
+      ],
+      "username": "",
+      "password": "",
+      "tokenUrl": "https://t/token",
+      "form": [
+        [
+          "grant_type",
+          "refresh_token"
+        ],
+        [
+          "refresh_token",
+          "{secret0}"
+        ],
+        [
+          "x",
+          ""
+        ]
+      ],
+      "tokenPath": "a.b",
+      "expiryPath": "exp",
+      "put": {
+        "method": "PUT",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "DELETE",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "https://h/{folder}/",
+        "headers": [],
+        "body": "",
+        "namesRegex": "\u003cn\u003e([^\u003c]+)\u003c/n\u003e",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"auth\":{\"type\":\"basic\",\"username\":\"{secret0}\",\"password\":\"{secret1}\"},\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"}}",
+      "error": "",
+      "flatten": false,
+      "concurrency": 32,
+      "authType": "basic",
+      "authHeader": [],
+      "username": "{secret0}",
+      "password": "{secret1}",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "PUT",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "DELETE",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "https://h/{folder}/",
+        "headers": [],
+        "body": "",
+        "namesRegex": "\u003cn\u003e([^\u003c]+)\u003c/n\u003e",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"PUT\":{\"METHOD\":\"PUT\",\"Url\":\"https://h/upper\"},\"Get\":{\"URL\":\"https://h/g\"},\"DELETE\":{\"url\":\"https://h/d\"},\"List\":{\"URL\":\"https://h/l\",\"NamesRegex\":\"(x)\"},\"FLATTEN\":true}",
+      "error": "",
+      "flatten": true,
+      "concurrency": 32,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "PUT",
+        "url": "https://h/upper",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "https://h/g",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "https://h/d",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "https://h/l",
+        "headers": [],
+        "body": "",
+        "namesRegex": "(x)",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"url\":\"https://h/p\"},\"get\":{\"url\":\"https://h/g\",\"hrefPath\":\"href\",\"hrefMethod\":\"PUT\"},\"delete\":{\"url\":\"https://h/d\"},\"list\":{\"url\":\"https://h/l\",\"namesRegex\":\"(x)\"},\"unknown\":{\"a\":1},\"concurrency\":-3}",
+      "error": "",
+      "flatten": false,
+      "concurrency": 32,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "https://h/p",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "https://h/g",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "href",
+        "hrefMethod": "PUT"
+      },
+      "delete": {
+        "method": "",
+        "url": "https://h/d",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "https://h/l",
+        "headers": [],
+        "body": "",
+        "namesRegex": "(x)",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"},\"concurrency\":1000}",
+      "error": "",
+      "flatten": false,
+      "concurrency": 256,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "PUT",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "DELETE",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "https://h/{folder}/",
+        "headers": [],
+        "body": "",
+        "namesRegex": "\u003cn\u003e([^\u003c]+)\u003c/n\u003e",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"},\"concurrency\":1.5}",
+      "error": "transport/internet/xdrive: invalid template \u003e json: cannot unmarshal number 1.5 into Go struct field storageTemplate.concurrency of type int",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"},\"concurrency\":\"8\"}",
+      "error": "transport/internet/xdrive: invalid template \u003e json: cannot unmarshal string into Go struct field storageTemplate.concurrency of type int",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"},\"concurrency\":1e2}",
+      "error": "transport/internet/xdrive: invalid template \u003e json: cannot unmarshal number 1e2 into Go struct field storageTemplate.concurrency of type int",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"},\"flatten\":\"true\"}",
+      "error": "transport/internet/xdrive: invalid template \u003e json: cannot unmarshal string into Go struct field storageTemplate.flatten of type bool",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"},\"auth\":null,\"retry\":null}",
+      "error": "",
+      "flatten": false,
+      "concurrency": 32,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "PUT",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "DELETE",
+        "url": "https://h/{folder}/{name}",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "https://h/{folder}/",
+        "headers": [],
+        "body": "",
+        "namesRegex": "\u003cn\u003e([^\u003c]+)\u003c/n\u003e",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"},\"auth\":[]}",
+      "error": "transport/internet/xdrive: invalid template \u003e json: cannot unmarshal array into Go struct field storageTemplate.auth of type xdrive.authTemplate",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"url\":\"https://h/p\",\"headers\":{\"A\":1}},\"get\":{\"url\":\"g\"},\"delete\":{\"url\":\"d\"},\"list\":{\"url\":\"l\",\"namesRegex\":\"(x)\"}}",
+      "error": "transport/internet/xdrive: invalid template \u003e json: cannot unmarshal number into Go struct field storageTemplate.put.headers.A of type string",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"url\":\"p\"},\"get\":{\"url\":\"g\"},\"delete\":{\"url\":\"d\"},\"list\":{\"url\":\"l\"}}",
+      "error": "transport/internet/xdrive: template list needs a namesRegex",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"url\":\"p\"},\"get\":{\"url\":\"g\"},\"delete\":{\"url\":\"d\"},\"list\":{\"url\":\"l\",\"namesRegex\":\"x\"}}",
+      "error": "transport/internet/xdrive: namesRegex needs one capture group",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"url\":\"p\"},\"get\":{\"url\":\"g\"},\"delete\":{\"url\":\"d\"},\"list\":{\"url\":\"l\",\"namesRegex\":\"(x\"}}",
+      "error": "transport/internet/xdrive: bad namesRegex \u003e error parsing regexp: missing closing ): `(x`",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"url\":\"p\"},\"get\":{\"url\":\"g\"},\"list\":{\"url\":\"l\",\"namesRegex\":\"(x)\"}}",
+      "error": "transport/internet/xdrive: template needs put, get, list and delete operations",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"url\":\"p\"},\"get\":{\"url\":\"\"},\"delete\":{\"url\":\"d\"},\"list\":{\"url\":\"l\",\"namesRegex\":\"(x)\"}}",
+      "error": "transport/internet/xdrive: template needs put, get, list and delete operations",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"url\":\"p\",\"url\":\"p2\"},\"get\":{\"url\":\"g\"},\"delete\":{\"url\":\"d\"},\"list\":{\"url\":\"l\",\"namesRegex\":\"(x)\"},\"put\":{\"url\":\"p3\"}}",
+      "error": "",
+      "flatten": false,
+      "concurrency": 32,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "p3",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "g",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "d",
+        "headers": [],
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "l",
+        "headers": [],
+        "body": "",
+        "namesRegex": "(x)",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "null",
+      "error": "transport/internet/xdrive: template needs put, get, list and delete operations",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "[]",
+      "error": "transport/internet/xdrive: invalid template \u003e json: cannot unmarshal array into Go value of type xdrive.storageTemplate",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "\"text\"",
+      "error": "transport/internet/xdrive: invalid template \u003e json: cannot unmarshal string into Go value of type xdrive.storageTemplate",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"}} trailing",
+      "error": "transport/internet/xdrive: invalid template \u003e invalid character 't' after top-level value",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"},\"retry\":{\"status\":[1.5]}}",
+      "error": "transport/internet/xdrive: invalid template \u003e json: cannot unmarshal number 1.5 into storageTemplate.retry.status.0 of type int",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    },
+    {
+      "template": "{\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"},\"retry\":{\"status\":\"429\"}}",
+      "error": "transport/internet/xdrive: invalid template \u003e json: cannot unmarshal string into Go struct field storageTemplate.retry.status of type []int",
+      "flatten": false,
+      "concurrency": 0,
+      "authType": "",
+      "authHeader": [],
+      "username": "",
+      "password": "",
+      "tokenUrl": "",
+      "form": [],
+      "tokenPath": "",
+      "expiryPath": "",
+      "put": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "get": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "delete": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "list": {
+        "method": "",
+        "url": "",
+        "headers": null,
+        "body": "",
+        "namesRegex": "",
+        "hrefPath": "",
+        "hrefMethod": ""
+      },
+      "retryStatus": [],
+      "rateReason": ""
+    }
+  ],
+  "subst": [
+    {
+      "template": "https://h/{folder}/{name}?a={secret0}\u0026b={secret1}",
+      "vars": [
+        [
+          "folder",
+          "root dir"
+        ],
+        [
+          "name",
+          "streams~s~c2s~000000001.seg"
+        ],
+        [
+          "secret0",
+          "s/0"
+        ],
+        [
+          "secret1",
+          "x\u0026y"
+        ]
+      ],
+      "out": "https://h/root dir/streams~s~c2s~000000001.seg?a=s/0\u0026b=x\u0026y"
+    },
+    {
+      "template": "{unknown}/{name}/{name}",
+      "vars": [
+        [
+          "name",
+          "n"
+        ]
+      ],
+      "out": "{unknown}/n/n"
+    },
+    {
+      "template": "no braces",
+      "vars": [
+        [
+          "name",
+          "n"
+        ]
+      ],
+      "out": "no braces"
+    },
+    {
+      "template": "",
+      "vars": [
+        [
+          "name",
+          "n"
+        ]
+      ],
+      "out": ""
+    },
+    {
+      "template": "{data}",
+      "vars": [
+        [
+          "data",
+          "AAEC/w=="
+        ]
+      ],
+      "out": "AAEC/w=="
+    },
+    {
+      "template": "{ name }{name",
+      "vars": [
+        [
+          "name",
+          "n"
+        ]
+      ],
+      "out": "{ name }{name"
+    }
+  ],
+  "jsonPaths": [
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "access_token",
+      "string": "tok",
+      "number": 0
+    },
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "expires_in",
+      "string": "",
+      "number": 3599
+    },
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "neg",
+      "string": "",
+      "number": -2
+    },
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "big",
+      "string": "",
+      "number": 9223372036854775807
+    },
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "a.b.c",
+      "string": "deep",
+      "number": 0
+    },
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "a.b.n",
+      "string": "",
+      "number": 7
+    },
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "a.b",
+      "string": "",
+      "number": 0
+    },
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "arr.0",
+      "string": "",
+      "number": 0
+    },
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "s",
+      "string": "7",
+      "number": 0
+    },
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "null",
+      "string": "",
+      "number": 0
+    },
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "t",
+      "string": "",
+      "number": 0
+    },
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "dup",
+      "string": "b",
+      "number": 0
+    },
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "missing",
+      "string": "",
+      "number": 0
+    },
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "a..b",
+      "string": "",
+      "number": 0
+    },
+    {
+      "payload": "{\"access_token\":\"tok\",\"expires_in\":3599.9,\"neg\":-2.7,\"big\":1e300,\"a\":{\"b\":{\"c\":\"deep\",\"n\":7}},\"arr\":[1],\"s\":\"7\",\"null\":null,\"t\":true,\"dup\":\"a\",\"dup\":\"b\"}",
+      "path": "",
+      "string": "",
+      "number": 0
+    },
+    {
+      "payload": "not json",
+      "path": "x",
+      "string": "",
+      "number": 0
+    },
+    {
+      "payload": "[\"x\"]",
+      "path": "x",
+      "string": "",
+      "number": 0
+    },
+    {
+      "payload": "\"str\"",
+      "path": "x",
+      "string": "",
+      "number": 0
+    },
+    {
+      "payload": "{\"x\":\"é😀\"}",
+      "path": "x",
+      "string": "é😀",
+      "number": 0
+    },
+    {
+      "payload": "{\"x\":\"a�b\"}",
+      "path": "x",
+      "string": "a�b",
+      "number": 0
+    }
+  ],
+  "regexps": [
+    {
+      "pattern": "\"name\":\"([^\"]+)\"",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "{\"entries\":[{\"name\":\"sessions~1-a\"},{\"name\":\"streams~s~c2s~000000001.seg\"}],\"next\":null}",
+        "{\"name\":\"\"}"
+      ],
+      "matches": [
+        [
+          [
+            "\"name\":\"sessions~1-a\"",
+            "sessions~1-a"
+          ],
+          [
+            "\"name\":\"streams~s~c2s~000000001.seg\"",
+            "streams~s~c2s~000000001.seg"
+          ]
+        ],
+        []
+      ]
+    },
+    {
+      "pattern": "(",
+      "error": "error parsing regexp: missing closing ): `(`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "((((((((((a))))))))))",
+      "error": "",
+      "numSubexp": 10,
+      "texts": [
+        "a"
+      ],
+      "matches": [
+        [
+          [
+            "a",
+            "a",
+            "a",
+            "a",
+            "a",
+            "a",
+            "a",
+            "a",
+            "a",
+            "a",
+            "a"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "()",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "ab"
+      ],
+      "matches": [
+        [
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(.)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "a�b"
+      ],
+      "matches": [
+        [
+          [
+            "a",
+            "a"
+          ],
+          [
+            "�",
+            "�"
+          ],
+          [
+            "b",
+            "b"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(?-s:.)+(z)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "a\nz"
+      ],
+      "matches": [
+        []
+      ]
+    },
+    {
+      "pattern": "(?:a|b)+(c)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "abac"
+      ],
+      "matches": [
+        [
+          [
+            "abac",
+            "c"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(?\u003c\u003ea)",
+      "error": "error parsing regexp: invalid named capture: `(?\u003c\u003e`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "(?P\u003cn\u003ea)(?\u003cm\u003eb)",
+      "error": "",
+      "numSubexp": 2,
+      "texts": [
+        "ab"
+      ],
+      "matches": [
+        [
+          [
+            "ab",
+            "a",
+            "b"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(?U)x(a+)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "xaaa"
+      ],
+      "matches": [
+        [
+          [
+            "xa",
+            "a"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(?i",
+      "error": "error parsing regexp: invalid or unsupported Perl syntax: `(?i`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "(?i)(STRASSE)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "straße STRASSE"
+      ],
+      "matches": [
+        [
+          [
+            "STRASSE",
+            "STRASSE"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(?i)\u003cKEY\u003e(.*?)\u003c/key\u003e",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "\u003ckey\u003ea\u003c/KEY\u003e\u003cKey\u003eb\u003c/kEy\u003e"
+      ],
+      "matches": [
+        [
+          [
+            "\u003ckey\u003ea\u003c/KEY\u003e",
+            "a"
+          ],
+          [
+            "\u003cKey\u003eb\u003c/kEy\u003e",
+            "b"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(?i:A)(b)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "ab Ab aB"
+      ],
+      "matches": [
+        [
+          [
+            "ab",
+            "b"
+          ],
+          [
+            "Ab",
+            "b"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(?m)^(\\w+)$",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "one\ntwo\n"
+      ],
+      "matches": [
+        [
+          [
+            "one",
+            "one"
+          ],
+          [
+            "two",
+            "two"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(?s)\u003ca\u003e(.*)\u003c/a\u003e",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "\u003ca\u003ex\ny\u003c/a\u003e\u003ca\u003ez\u003c/a\u003e"
+      ],
+      "matches": [
+        [
+          [
+            "\u003ca\u003ex\ny\u003c/a\u003e\u003ca\u003ez\u003c/a\u003e",
+            "x\ny\u003c/a\u003e\u003ca\u003ez"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(?s-i)A(.)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "A\n"
+      ],
+      "matches": [
+        [
+          [
+            "A\n",
+            "\n"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(?z)a",
+      "error": "error parsing regexp: invalid or unsupported Perl syntax: `(?z`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "([[:alpha:]]+)(\\d)",
+      "error": "",
+      "numSubexp": 2,
+      "texts": [
+        "abc1 é2"
+      ],
+      "matches": [
+        [
+          [
+            "abc1",
+            "abc",
+            "1"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "([\\w-]+)@",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "a-b@c"
+      ],
+      "matches": [
+        [
+          [
+            "a-b@",
+            "a-b"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "([^\\n]+)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "l1\nl2"
+      ],
+      "matches": [
+        [
+          [
+            "l1",
+            "l1"
+          ],
+          [
+            "l2",
+            "l2"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(\\S+)\\s",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "a b c"
+      ],
+      "matches": [
+        [
+          [
+            "a b ",
+            "a b"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(\\cA)",
+      "error": "error parsing regexp: invalid escape sequence: `\\c`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "(\\d{2,3})",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "1 12 1234 ١٢٣"
+      ],
+      "matches": [
+        [
+          [
+            "12",
+            "12"
+          ],
+          [
+            "123",
+            "123"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(\\pL+)(\\d)?",
+      "error": "",
+      "numSubexp": 2,
+      "texts": [
+        "héllo1 wörld"
+      ],
+      "matches": [
+        [
+          [
+            "héllo1",
+            "héllo",
+            "1"
+          ],
+          [
+            "wörld",
+            "wörld",
+            ""
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(\\w+)\\s*=\\s*\"([^\"]*)\"",
+      "error": "",
+      "numSubexp": 2,
+      "texts": [
+        "k = \"v\" x=\"y\""
+      ],
+      "matches": [
+        [
+          [
+            "k = \"v\"",
+            "k",
+            "v"
+          ],
+          [
+            "x=\"y\"",
+            "x",
+            "y"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(\\x{1F600})",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "😀"
+      ],
+      "matches": [
+        [
+          [
+            "😀",
+            "😀"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(a*)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "baaac"
+      ],
+      "matches": [
+        [
+          [
+            "",
+            ""
+          ],
+          [
+            "aaa",
+            "aaa"
+          ],
+          [
+            "",
+            ""
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(a|ab)(c|bcd)(d*)",
+      "error": "",
+      "numSubexp": 3,
+      "texts": [
+        "abcd"
+      ],
+      "matches": [
+        [
+          [
+            "abcd",
+            "a",
+            "bcd",
+            ""
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(x)|(y)",
+      "error": "",
+      "numSubexp": 2,
+      "texts": [
+        "xy"
+      ],
+      "matches": [
+        [
+          [
+            "x",
+            "x",
+            ""
+          ],
+          [
+            "y",
+            "",
+            "y"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "(é)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "é é"
+      ],
+      "matches": [
+        [
+          [
+            "é",
+            "é"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "\u003cd:href\u003e/f/([^\u003c]+)\u003c/d:href\u003e",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "\u003cd:response\u003e\u003cd:href\u003e/f/a%20b\u003c/d:href\u003e\u003c/d:response\u003e\u003cd:response\u003e\u003cd:href\u003e/f/c\u003c/d:href\u003e\u003c/d:response\u003e"
+      ],
+      "matches": [
+        [
+          [
+            "\u003cd:href\u003e/f/a%20b\u003c/d:href\u003e",
+            "a%20b"
+          ],
+          [
+            "\u003cd:href\u003e/f/c\u003c/d:href\u003e",
+            "c"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "[[:foo:]]",
+      "error": "error parsing regexp: invalid character class range: `[:foo:]`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "[[:word:]]",
+      "error": "",
+      "numSubexp": 0,
+      "texts": [
+        "a_1"
+      ],
+      "matches": [
+        [
+          [
+            "a"
+          ],
+          [
+            "_"
+          ],
+          [
+            "1"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "[\\b](x)",
+      "error": "error parsing regexp: invalid escape sequence: `\\b`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "[\\d\\-a-f]+(z)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "a-1z"
+      ],
+      "matches": [
+        [
+          [
+            "a-1z",
+            "z"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "[^\\x00-\\x7f](.)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "aéb"
+      ],
+      "matches": [
+        [
+          [
+            "éb",
+            "b"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "[a-c\u0026\u0026b]",
+      "error": "",
+      "numSubexp": 0,
+      "texts": [
+        "\u0026b"
+      ],
+      "matches": [
+        [
+          [
+            "\u0026"
+          ],
+          [
+            "b"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "[z-a]",
+      "error": "error parsing regexp: invalid character class range: `z-a`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "\\$(\\d+)\\.(\\d\\d)",
+      "error": "",
+      "numSubexp": 2,
+      "texts": [
+        "$12.50 and $3.05"
+      ],
+      "matches": [
+        [
+          [
+            "$12.50",
+            "12",
+            "50"
+          ],
+          [
+            "$3.05",
+            "3",
+            "05"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "\\.(\\w+)$",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "file.seg"
+      ],
+      "matches": [
+        [
+          [
+            ".seg",
+            "seg"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "\\0(.)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "\u0000Q"
+      ],
+      "matches": [
+        [
+          [
+            "\u0000Q",
+            "Q"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "\\101(.)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "AB"
+      ],
+      "matches": [
+        [
+          [
+            "AB",
+            "B"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "\\8",
+      "error": "error parsing regexp: invalid escape sequence: `\\8`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "\\A(a)|(b)\\z",
+      "error": "",
+      "numSubexp": 2,
+      "texts": [
+        "ab"
+      ],
+      "matches": [
+        [
+          [
+            "a",
+            "a",
+            ""
+          ],
+          [
+            "b",
+            "",
+            "b"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "\\C",
+      "error": "error parsing regexp: invalid escape sequence: `\\C`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "\\Qa.b\\E(c)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "a.bc axbc"
+      ],
+      "matches": [
+        [
+          [
+            "a.bc",
+            "c"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "\\bname=(\\w+)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "name=a1 rename=b2 name=é3"
+      ],
+      "matches": [
+        [
+          [
+            "name=a1",
+            "a1"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "\\d+(\\.\\d+)?(e[+-]?\\d+)?",
+      "error": "",
+      "numSubexp": 2,
+      "texts": [
+        "1.5e+3 2"
+      ],
+      "matches": [
+        [
+          [
+            "1.5e+3",
+            ".5",
+            "e+3"
+          ],
+          [
+            "2",
+            "",
+            ""
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "\\pX",
+      "error": "error parsing regexp: invalid character class range: `\\pX`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "\\x41(\\x{42})",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "AB"
+      ],
+      "matches": [
+        [
+          [
+            "AB",
+            "B"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "\\z(x)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "x"
+      ],
+      "matches": [
+        []
+      ]
+    },
+    {
+      "pattern": "^(\\w+)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "ab cd"
+      ],
+      "matches": [
+        [
+          [
+            "ab",
+            "ab"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "a(?#comment)(b)",
+      "error": "error parsing regexp: invalid or unsupported Perl syntax: `(?#`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "a**",
+      "error": "error parsing regexp: invalid nested repetition operator: `**`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "a++",
+      "error": "error parsing regexp: invalid nested repetition operator: `++`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "a{,3}(b)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "a{,3}b aab"
+      ],
+      "matches": [
+        [
+          [
+            "a{,3}b",
+            "b"
+          ]
+        ]
+      ]
+    },
+    {
+      "pattern": "a{1000}(b)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "b"
+      ],
+      "matches": [
+        []
+      ]
+    },
+    {
+      "pattern": "x{1001}",
+      "error": "error parsing regexp: invalid repeat count: `{1001}`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "x{2,1}",
+      "error": "error parsing regexp: invalid repeat count: `{2,1}`",
+      "numSubexp": 0,
+      "texts": [],
+      "matches": []
+    },
+    {
+      "pattern": "x{2}(y)",
+      "error": "",
+      "numSubexp": 1,
+      "texts": [
+        "xxy xy"
+      ],
+      "matches": [
+        [
+          [
+            "xxy",
+            "y"
+          ]
+        ]
+      ]
+    }
+  ],
+  "urls": [
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "d",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/d"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "./d",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/d"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "../d",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/d"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "../../../../d",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/d"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "/d/./e/../f",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/d/f"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "?x=2",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/c?x=2"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "#f2",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/c?q=1#f2"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "?",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/c?"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "//other/x",
+      "error": "",
+      "resolved": "https://other/x"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "http://x.example/y/../z",
+      "error": "",
+      "resolved": "http://x.example/z"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "https:/nohost",
+      "error": "",
+      "resolved": "https:/nohost"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "g;x?y#s",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/g;x?y#s"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "d%2Fe/f%20g",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/d%2Fe/f%20g"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "..",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": ".",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "d/",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/d/"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "../",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "mailto:a@b",
+      "error": "",
+      "resolved": "mailto:a@b"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "%zz",
+      "error": "parse \"%zz\": invalid URL escape \"%zz\"",
+      "resolved": ""
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "http://[::1]:80/p",
+      "error": "",
+      "resolved": "http://[::1]:80/p"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "http://[::1",
+      "error": "parse \"http://[::1\": missing ']' in host",
+      "resolved": ""
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": " d",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/%20d"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "d e",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/d%20e"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "",
+      "error": "parse \"\\x7f\": net/url: invalid control character in URL",
+      "resolved": ""
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "HTTP://UP.example/X",
+      "error": "",
+      "resolved": "http://UP.example/X"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "#%7Ex",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/c?q=1#%7Ex"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "d#a%2Fb%20c",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/d#a%2Fb%20c"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "?q#f%41",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/c?q#f%41"
+    },
+    {
+      "base": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag",
+      "ref": "#",
+      "error": "",
+      "resolved": "https://user:p%40ss@h.example:8443/a/b/c?q=1#frag"
+    },
+    {
+      "base": "http://h",
+      "ref": "d",
+      "error": "",
+      "resolved": "http://h/d"
+    },
+    {
+      "base": "http://h",
+      "ref": "../d",
+      "error": "",
+      "resolved": "http://h/d"
+    },
+    {
+      "base": "http://h",
+      "ref": "?z",
+      "error": "",
+      "resolved": "http://h?z"
+    },
+    {
+      "base": "http://h",
+      "ref": "",
+      "error": "",
+      "resolved": "http://h"
+    },
+    {
+      "base": "http://h/",
+      "ref": "d",
+      "error": "",
+      "resolved": "http://h/d"
+    },
+    {
+      "base": "http://h/",
+      "ref": "../d",
+      "error": "",
+      "resolved": "http://h/d"
+    },
+    {
+      "base": "http://h/",
+      "ref": "?z",
+      "error": "",
+      "resolved": "http://h/?z"
+    },
+    {
+      "base": "http://h/",
+      "ref": "",
+      "error": "",
+      "resolved": "http://h/"
+    },
+    {
+      "base": "http://h/a%2Fb/c",
+      "ref": "d",
+      "error": "",
+      "resolved": "http://h/a%2Fb/d"
+    },
+    {
+      "base": "http://h/a%2Fb/c",
+      "ref": "../d",
+      "error": "",
+      "resolved": "http://h/d"
+    },
+    {
+      "base": "http://h/a%2Fb/c",
+      "ref": "?z",
+      "error": "",
+      "resolved": "http://h/a%2Fb/c?z"
+    },
+    {
+      "base": "http://h/a%2Fb/c",
+      "ref": "",
+      "error": "",
+      "resolved": "http://h/a%2Fb/c"
+    },
+    {
+      "base": "http://h/a?b",
+      "ref": "d",
+      "error": "",
+      "resolved": "http://h/d"
+    },
+    {
+      "base": "http://h/a?b",
+      "ref": "../d",
+      "error": "",
+      "resolved": "http://h/d"
+    },
+    {
+      "base": "http://h/a?b",
+      "ref": "?z",
+      "error": "",
+      "resolved": "http://h/a?z"
+    },
+    {
+      "base": "http://h/a?b",
+      "ref": "",
+      "error": "",
+      "resolved": "http://h/a?b"
+    },
+    {
+      "base": "mailto:x@y",
+      "ref": "d",
+      "error": "",
+      "resolved": "mailto:///d"
+    },
+    {
+      "base": "mailto:x@y",
+      "ref": "../d",
+      "error": "",
+      "resolved": "mailto:///d"
+    },
+    {
+      "base": "mailto:x@y",
+      "ref": "?z",
+      "error": "",
+      "resolved": "mailto:x@y?z"
+    },
+    {
+      "base": "mailto:x@y",
+      "ref": "",
+      "error": "",
+      "resolved": "mailto:x@y"
+    },
+    {
+      "base": "http://h/p#%7E",
+      "ref": "d",
+      "error": "",
+      "resolved": "http://h/d"
+    },
+    {
+      "base": "http://h/p#%7E",
+      "ref": "../d",
+      "error": "",
+      "resolved": "http://h/d"
+    },
+    {
+      "base": "http://h/p#%7E",
+      "ref": "?z",
+      "error": "",
+      "resolved": "http://h/p?z"
+    },
+    {
+      "base": "http://h/p#%7E",
+      "ref": "",
+      "error": "",
+      "resolved": "http://h/p#%7E"
+    }
+  ],
+  "redirects": [
+    {
+      "name": "see other drops the body",
+      "method": "PUT",
+      "url": "https://api.example/v1/put",
+      "headers": [
+        [
+          "Authorization",
+          "Bearer t"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Custom",
+          "1"
+        ],
+        [
+          "Cookie",
+          "c=1"
+        ]
+      ],
+      "body": "data",
+      "answers": [
+        {
+          "status": 303,
+          "location": "/v1/done?x=1"
+        },
+        {
+          "status": 200,
+          "location": ""
+        }
+      ],
+      "hops": [
+        {
+          "method": "PUT",
+          "url": "https://api.example/v1/put",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Content-Type",
+              "application/json"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": "data"
+        },
+        {
+          "method": "GET",
+          "url": "https://api.example/v1/done?x=1",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "Referer",
+              "https://api.example/v1/put"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        }
+      ],
+      "status": 200,
+      "error": false
+    },
+    {
+      "name": "found keeps get",
+      "method": "GET",
+      "url": "https://api.example/v1/get",
+      "headers": [
+        [
+          "Authorization",
+          "Bearer t"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Custom",
+          "1"
+        ],
+        [
+          "Cookie",
+          "c=1"
+        ]
+      ],
+      "body": "",
+      "answers": [
+        {
+          "status": 302,
+          "location": "https://cdn.api.example/blob"
+        },
+        {
+          "status": 301,
+          "location": "https://other.example/blob"
+        },
+        {
+          "status": 200,
+          "location": ""
+        }
+      ],
+      "hops": [
+        {
+          "method": "GET",
+          "url": "https://api.example/v1/get",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Content-Type",
+              "application/json"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "https://cdn.api.example/blob",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "Referer",
+              "https://api.example/v1/get"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "https://other.example/blob",
+          "headers": [
+            [
+              "Referer",
+              "https://cdn.api.example/blob"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        }
+      ],
+      "status": 200,
+      "error": false
+    },
+    {
+      "name": "temporary keeps method and body",
+      "method": "PUT",
+      "url": "https://api.example/a/b",
+      "headers": [
+        [
+          "Authorization",
+          "Bearer t"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Custom",
+          "1"
+        ],
+        [
+          "Cookie",
+          "c=1"
+        ]
+      ],
+      "body": "data",
+      "answers": [
+        {
+          "status": 307,
+          "location": "c"
+        },
+        {
+          "status": 308,
+          "location": "//api.example:8443/d"
+        },
+        {
+          "status": 201,
+          "location": ""
+        }
+      ],
+      "hops": [
+        {
+          "method": "PUT",
+          "url": "https://api.example/a/b",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Content-Type",
+              "application/json"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": "data"
+        },
+        {
+          "method": "PUT",
+          "url": "https://api.example/a/c",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Content-Type",
+              "application/json"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "Referer",
+              "https://api.example/a/b"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": "data"
+        },
+        {
+          "method": "PUT",
+          "url": "https://api.example:8443/d",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Content-Type",
+              "application/json"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "Referer",
+              "https://api.example/a/c"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": "data"
+        }
+      ],
+      "status": 201,
+      "error": false
+    },
+    {
+      "name": "post becomes get",
+      "method": "POST",
+      "url": "http://h.example/token",
+      "headers": [
+        [
+          "Authorization",
+          "Bearer t"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Custom",
+          "1"
+        ],
+        [
+          "Cookie",
+          "c=1"
+        ]
+      ],
+      "body": "form",
+      "answers": [
+        {
+          "status": 302,
+          "location": "/next"
+        },
+        {
+          "status": 307,
+          "location": "/again"
+        },
+        {
+          "status": 200,
+          "location": ""
+        }
+      ],
+      "hops": [
+        {
+          "method": "POST",
+          "url": "http://h.example/token",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Content-Type",
+              "application/json"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": "form"
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/next",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "Referer",
+              "http://h.example/token"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/again",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "Referer",
+              "http://h.example/next"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        }
+      ],
+      "status": 200,
+      "error": false
+    },
+    {
+      "name": "head stays head",
+      "method": "HEAD",
+      "url": "http://h.example/x",
+      "headers": [],
+      "body": "",
+      "answers": [
+        {
+          "status": 301,
+          "location": "/y"
+        },
+        {
+          "status": 200,
+          "location": ""
+        }
+      ],
+      "hops": [
+        {
+          "method": "HEAD",
+          "url": "http://h.example/x",
+          "headers": [],
+          "body": ""
+        },
+        {
+          "method": "HEAD",
+          "url": "http://h.example/y",
+          "headers": [
+            [
+              "Referer",
+              "http://h.example/x"
+            ]
+          ],
+          "body": ""
+        }
+      ],
+      "status": 200,
+      "error": false
+    },
+    {
+      "name": "no location",
+      "method": "GET",
+      "url": "http://h.example/x",
+      "headers": [],
+      "body": "",
+      "answers": [
+        {
+          "status": 302,
+          "location": ""
+        }
+      ],
+      "hops": [
+        {
+          "method": "GET",
+          "url": "http://h.example/x",
+          "headers": [],
+          "body": ""
+        }
+      ],
+      "status": 302,
+      "error": false
+    },
+    {
+      "name": "not modified",
+      "method": "GET",
+      "url": "http://h.example/x",
+      "headers": [],
+      "body": "",
+      "answers": [
+        {
+          "status": 304,
+          "location": "/y"
+        }
+      ],
+      "hops": [
+        {
+          "method": "GET",
+          "url": "http://h.example/x",
+          "headers": [],
+          "body": ""
+        }
+      ],
+      "status": 304,
+      "error": false
+    },
+    {
+      "name": "https to http drops the referer",
+      "method": "GET",
+      "url": "https://h.example/x",
+      "headers": [
+        [
+          "Authorization",
+          "Bearer t"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Custom",
+          "1"
+        ],
+        [
+          "Cookie",
+          "c=1"
+        ]
+      ],
+      "body": "",
+      "answers": [
+        {
+          "status": 302,
+          "location": "http://h.example/y"
+        },
+        {
+          "status": 302,
+          "location": "http://h.example/z"
+        },
+        {
+          "status": 200,
+          "location": ""
+        }
+      ],
+      "hops": [
+        {
+          "method": "GET",
+          "url": "https://h.example/x",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Content-Type",
+              "application/json"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/y",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/z",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "Referer",
+              "http://h.example/y"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        }
+      ],
+      "status": 200,
+      "error": false
+    },
+    {
+      "name": "explicit referer",
+      "method": "GET",
+      "url": "https://h.example/x",
+      "headers": [
+        [
+          "Referer",
+          "https://ref.example/"
+        ]
+      ],
+      "body": "",
+      "answers": [
+        {
+          "status": 302,
+          "location": "/y"
+        },
+        {
+          "status": 200,
+          "location": ""
+        }
+      ],
+      "hops": [
+        {
+          "method": "GET",
+          "url": "https://h.example/x",
+          "headers": [
+            [
+              "Referer",
+              "https://ref.example/"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "https://h.example/y",
+          "headers": [
+            [
+              "Referer",
+              "https://ref.example/"
+            ]
+          ],
+          "body": ""
+        }
+      ],
+      "status": 200,
+      "error": false
+    },
+    {
+      "name": "user information",
+      "method": "GET",
+      "url": "https://u:p@h.example/x",
+      "headers": [],
+      "body": "",
+      "answers": [
+        {
+          "status": 302,
+          "location": "https://w:q@h.example/y"
+        },
+        {
+          "status": 302,
+          "location": "/z"
+        },
+        {
+          "status": 200,
+          "location": ""
+        }
+      ],
+      "hops": [
+        {
+          "method": "GET",
+          "url": "https://u:p@h.example/x",
+          "headers": [
+            [
+              "Authorization",
+              "Basic dTpw"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "https://w:q@h.example/y",
+          "headers": [
+            [
+              "Authorization",
+              "Basic dzpx"
+            ],
+            [
+              "Referer",
+              "https://h.example/x"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "https://w:q@h.example/z",
+          "headers": [
+            [
+              "Authorization",
+              "Basic dzpx"
+            ],
+            [
+              "Referer",
+              "https://h.example/y"
+            ]
+          ],
+          "body": ""
+        }
+      ],
+      "status": 200,
+      "error": false
+    },
+    {
+      "name": "basic from the url only without authorization",
+      "method": "GET",
+      "url": "https://u:p@h.example/x",
+      "headers": [
+        [
+          "Authorization",
+          "Bearer t"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Custom",
+          "1"
+        ],
+        [
+          "Cookie",
+          "c=1"
+        ]
+      ],
+      "body": "",
+      "answers": [
+        {
+          "status": 200,
+          "location": ""
+        }
+      ],
+      "hops": [
+        {
+          "method": "GET",
+          "url": "https://u:p@h.example/x",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Content-Type",
+              "application/json"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        }
+      ],
+      "status": 200,
+      "error": false
+    },
+    {
+      "name": "subdomain then back keeps stripped",
+      "method": "GET",
+      "url": "https://example.com/x",
+      "headers": [
+        [
+          "Authorization",
+          "Bearer t"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Custom",
+          "1"
+        ],
+        [
+          "Cookie",
+          "c=1"
+        ]
+      ],
+      "body": "",
+      "answers": [
+        {
+          "status": 302,
+          "location": "https://a.example.com/y"
+        },
+        {
+          "status": 302,
+          "location": "https://evil.example/z"
+        },
+        {
+          "status": 302,
+          "location": "https://example.com/w"
+        },
+        {
+          "status": 200,
+          "location": ""
+        }
+      ],
+      "hops": [
+        {
+          "method": "GET",
+          "url": "https://example.com/x",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Content-Type",
+              "application/json"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "https://a.example.com/y",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "Referer",
+              "https://example.com/x"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "https://evil.example/z",
+          "headers": [
+            [
+              "Referer",
+              "https://a.example.com/y"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "https://example.com/w",
+          "headers": [
+            [
+              "Referer",
+              "https://evil.example/z"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        }
+      ],
+      "status": 200,
+      "error": false
+    },
+    {
+      "name": "port change strips nothing on the same host",
+      "method": "GET",
+      "url": "https://h.example/x",
+      "headers": [
+        [
+          "Authorization",
+          "Bearer t"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Custom",
+          "1"
+        ],
+        [
+          "Cookie",
+          "c=1"
+        ]
+      ],
+      "body": "",
+      "answers": [
+        {
+          "status": 302,
+          "location": "https://h.example:444/y"
+        },
+        {
+          "status": 200,
+          "location": ""
+        }
+      ],
+      "hops": [
+        {
+          "method": "GET",
+          "url": "https://h.example/x",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Content-Type",
+              "application/json"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "https://h.example:444/y",
+          "headers": [
+            [
+              "Authorization",
+              "Bearer t"
+            ],
+            [
+              "Cookie",
+              "c=1"
+            ],
+            [
+              "Referer",
+              "https://h.example/x"
+            ],
+            [
+              "X-Custom",
+              "1"
+            ]
+          ],
+          "body": ""
+        }
+      ],
+      "status": 200,
+      "error": false
+    },
+    {
+      "name": "ten requests at most",
+      "method": "GET",
+      "url": "http://h.example/start",
+      "headers": [],
+      "body": "",
+      "answers": [
+        {
+          "status": 302,
+          "location": "/loop"
+        },
+        {
+          "status": 302,
+          "location": "/loop"
+        },
+        {
+          "status": 302,
+          "location": "/loop"
+        },
+        {
+          "status": 302,
+          "location": "/loop"
+        },
+        {
+          "status": 302,
+          "location": "/loop"
+        },
+        {
+          "status": 302,
+          "location": "/loop"
+        },
+        {
+          "status": 302,
+          "location": "/loop"
+        },
+        {
+          "status": 302,
+          "location": "/loop"
+        },
+        {
+          "status": 302,
+          "location": "/loop"
+        },
+        {
+          "status": 302,
+          "location": "/loop"
+        }
+      ],
+      "hops": [
+        {
+          "method": "GET",
+          "url": "http://h.example/start",
+          "headers": [],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/loop",
+          "headers": [
+            [
+              "Referer",
+              "http://h.example/start"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/loop",
+          "headers": [
+            [
+              "Referer",
+              "http://h.example/loop"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/loop",
+          "headers": [
+            [
+              "Referer",
+              "http://h.example/loop"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/loop",
+          "headers": [
+            [
+              "Referer",
+              "http://h.example/loop"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/loop",
+          "headers": [
+            [
+              "Referer",
+              "http://h.example/loop"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/loop",
+          "headers": [
+            [
+              "Referer",
+              "http://h.example/loop"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/loop",
+          "headers": [
+            [
+              "Referer",
+              "http://h.example/loop"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/loop",
+          "headers": [
+            [
+              "Referer",
+              "http://h.example/loop"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/loop",
+          "headers": [
+            [
+              "Referer",
+              "http://h.example/loop"
+            ]
+          ],
+          "body": ""
+        }
+      ],
+      "status": 0,
+      "error": true
+    },
+    {
+      "name": "bad location",
+      "method": "GET",
+      "url": "http://h.example/x",
+      "headers": [],
+      "body": "",
+      "answers": [
+        {
+          "status": 302,
+          "location": "http://[::1"
+        }
+      ],
+      "hops": [
+        {
+          "method": "GET",
+          "url": "http://h.example/x",
+          "headers": [],
+          "body": ""
+        }
+      ],
+      "status": 0,
+      "error": true
+    },
+    {
+      "name": "fragment location",
+      "method": "GET",
+      "url": "http://h.example/x",
+      "headers": [],
+      "body": "",
+      "answers": [
+        {
+          "status": 302,
+          "location": "/y#frag"
+        },
+        {
+          "status": 302,
+          "location": "z"
+        },
+        {
+          "status": 200,
+          "location": ""
+        }
+      ],
+      "hops": [
+        {
+          "method": "GET",
+          "url": "http://h.example/x",
+          "headers": [],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/y#frag",
+          "headers": [
+            [
+              "Referer",
+              "http://h.example/x"
+            ]
+          ],
+          "body": ""
+        },
+        {
+          "method": "GET",
+          "url": "http://h.example/z",
+          "headers": [
+            [
+              "Referer",
+              "http://h.example/y#frag"
+            ]
+          ],
+          "body": ""
+        }
+      ],
+      "status": 200,
+      "error": false
+    }
+  ],
+  "h2": [
+    {
+      "method": "PUT",
+      "url": "https://storage.example/v1/f/streams~a~c2s~000000001.seg",
+      "headers": [
+        [
+          "User-Agent",
+          "xray-rust-oracle/1"
+        ],
+        [
+          "Content-Type",
+          "application/octet-stream"
+        ],
+        [
+          "X-Custom",
+          "1"
+        ]
+      ],
+      "bodyBytes": 4,
+      "settings": [
+        [
+          2,
+          0
+        ],
+        [
+          4,
+          4194304
+        ],
+        [
+          5,
+          1048576
+        ],
+        [
+          6,
+          10485760
+        ]
+      ],
+      "windowUpdate": 1073741824,
+      "endStream": false,
+      "pseudoHex": "418b424f60e62ae5f23a6ba0bf4303505554459963b858958426c28e947ff47ffd2091ffd00000000000ae82cd87",
+      "pseudo": [
+        [
+          ":authority",
+          "storage.example"
+        ],
+        [
+          ":method",
+          "PUT"
+        ],
+        [
+          ":path",
+          "/v1/f/streams~a~c2s~000000001.seg"
+        ],
+        [
+          ":scheme",
+          "https"
+        ]
+      ],
+      "regular": [
+        [
+          "accept-encoding",
+          "gzip"
+        ],
+        [
+          "content-length",
+          "4"
+        ],
+        [
+          "content-type",
+          "application/octet-stream"
+        ],
+        [
+          "user-agent",
+          "xray-rust-oracle/1"
+        ],
+        [
+          "x-custom",
+          "1"
+        ]
+      ],
+      "data": [
+        {
+          "length": 4,
+          "endStream": true
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "url": "https://storage.example/v1/list?prefix=a%2Fb",
+      "headers": [
+        [
+          "User-Agent",
+          "xray-rust-oracle/1"
+        ],
+        [
+          "Authorization",
+          "Bearer t"
+        ]
+      ],
+      "bodyBytes": 0,
+      "settings": [
+        [
+          2,
+          0
+        ],
+        [
+          4,
+          4194304
+        ],
+        [
+          5,
+          1048576
+        ],
+        [
+          6,
+          10485760
+        ]
+      ],
+      "windowUpdate": 1073741824,
+      "endStream": true,
+      "pseudoHex": "418b424f60e62ae5f23a6ba0bf82459063b858a0c84ff95d8594de601aa2c31f87",
+      "pseudo": [
+        [
+          ":authority",
+          "storage.example"
+        ],
+        [
+          ":method",
+          "GET"
+        ],
+        [
+          ":path",
+          "/v1/list?prefix=a%2Fb"
+        ],
+        [
+          ":scheme",
+          "https"
+        ]
+      ],
+      "regular": [
+        [
+          "accept-encoding",
+          "gzip"
+        ],
+        [
+          "authorization",
+          "Bearer t"
+        ],
+        [
+          "user-agent",
+          "xray-rust-oracle/1"
+        ]
+      ],
+      "data": []
+    },
+    {
+      "method": "DELETE",
+      "url": "https://bucket.storage.example:8443/key",
+      "headers": [
+        [
+          "User-Agent",
+          "xray-rust-oracle/1"
+        ]
+      ],
+      "bodyBytes": 0,
+      "settings": [
+        [
+          2,
+          0
+        ],
+        [
+          4,
+          4194304
+        ],
+        [
+          5,
+          1048576
+        ],
+        [
+          6,
+          10485760
+        ]
+      ],
+      "windowUpdate": 1073741824,
+      "endStream": true,
+      "pseudoHex": "41948ed2752a57424f60e62ae5f23a6ba0b71e69a67f430644454c45544545042f6b657987",
+      "pseudo": [
+        [
+          ":authority",
+          "bucket.storage.example:8443"
+        ],
+        [
+          ":method",
+          "DELETE"
+        ],
+        [
+          ":path",
+          "/key"
+        ],
+        [
+          ":scheme",
+          "https"
+        ]
+      ],
+      "regular": [
+        [
+          "accept-encoding",
+          "gzip"
+        ],
+        [
+          "user-agent",
+          "xray-rust-oracle/1"
+        ]
+      ],
+      "data": []
+    },
+    {
+      "method": "PUT",
+      "url": "https://storage.example/big",
+      "headers": [
+        [
+          "User-Agent",
+          "xray-rust-oracle/1"
+        ]
+      ],
+      "bodyBytes": 40000,
+      "settings": [
+        [
+          2,
+          0
+        ],
+        [
+          4,
+          4194304
+        ],
+        [
+          5,
+          1048576
+        ],
+        [
+          6,
+          10485760
+        ]
+      ],
+      "windowUpdate": 1073741824,
+      "endStream": false,
+      "pseudoHex": "418b424f60e62ae5f23a6ba0bf4303505554458362334d87",
+      "pseudo": [
+        [
+          ":authority",
+          "storage.example"
+        ],
+        [
+          ":method",
+          "PUT"
+        ],
+        [
+          ":path",
+          "/big"
+        ],
+        [
+          ":scheme",
+          "https"
+        ]
+      ],
+      "regular": [
+        [
+          "accept-encoding",
+          "gzip"
+        ],
+        [
+          "content-length",
+          "40000"
+        ],
+        [
+          "user-agent",
+          "xray-rust-oracle/1"
+        ]
+      ],
+      "data": [
+        {
+          "length": 16384,
+          "endStream": false
+        },
+        {
+          "length": 16384,
+          "endStream": false
+        },
+        {
+          "length": 7232,
+          "endStream": true
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "url": "https://storage.example/r",
+      "headers": [
+        [
+          "User-Agent",
+          "xray-rust-oracle/1"
+        ],
+        [
+          "Range",
+          "bytes=0-9"
+        ]
+      ],
+      "bodyBytes": 0,
+      "settings": [
+        [
+          2,
+          0
+        ],
+        [
+          4,
+          4194304
+        ],
+        [
+          5,
+          1048576
+        ],
+        [
+          6,
+          10485760
+        ]
+      ],
+      "windowUpdate": 1073741824,
+      "endStream": true,
+      "pseudoHex": "418b424f60e62ae5f23a6ba0bf8245022f7287",
+      "pseudo": [
+        [
+          ":authority",
+          "storage.example"
+        ],
+        [
+          ":method",
+          "GET"
+        ],
+        [
+          ":path",
+          "/r"
+        ],
+        [
+          ":scheme",
+          "https"
+        ]
+      ],
+      "regular": [
+        [
+          "range",
+          "bytes=0-9"
+        ],
+        [
+          "user-agent",
+          "xray-rust-oracle/1"
+        ]
+      ],
+      "data": []
+    },
+    {
+      "method": "PUT",
+      "url": "https://storage.example/empty",
+      "headers": [
+        [
+          "User-Agent",
+          "xray-rust-oracle/1"
+        ]
+      ],
+      "bodyBytes": 0,
+      "settings": [
+        [
+          2,
+          0
+        ],
+        [
+          4,
+          4194304
+        ],
+        [
+          5,
+          1048576
+        ],
+        [
+          6,
+          10485760
+        ]
+      ],
+      "windowUpdate": 1073741824,
+      "endStream": true,
+      "pseudoHex": "418b424f60e62ae5f23a6ba0bf4303505554458560b4d69f5f87",
+      "pseudo": [
+        [
+          ":authority",
+          "storage.example"
+        ],
+        [
+          ":method",
+          "PUT"
+        ],
+        [
+          ":path",
+          "/empty"
+        ],
+        [
+          ":scheme",
+          "https"
+        ]
+      ],
+      "regular": [
+        [
+          "accept-encoding",
+          "gzip"
+        ],
+        [
+          "content-length",
+          "0"
+        ],
+        [
+          "user-agent",
+          "xray-rust-oracle/1"
+        ]
+      ],
+      "data": []
+    },
+    {
+      "method": "POST",
+      "url": "https://storage.example/token",
+      "headers": [
+        [
+          "User-Agent",
+          "xray-rust-oracle/1"
+        ],
+        [
+          "Content-Type",
+          "application/x-www-form-urlencoded"
+        ]
+      ],
+      "bodyBytes": 7,
+      "settings": [
+        [
+          2,
+          0
+        ],
+        [
+          4,
+          4194304
+        ],
+        [
+          5,
+          1048576
+        ],
+        [
+          6,
+          10485760
+        ]
+      ],
+      "windowUpdate": 1073741824,
+      "endStream": false,
+      "pseudoHex": "418b424f60e62ae5f23a6ba0bf8345856127ea5abf87",
+      "pseudo": [
+        [
+          ":authority",
+          "storage.example"
+        ],
+        [
+          ":method",
+          "POST"
+        ],
+        [
+          ":path",
+          "/token"
+        ],
+        [
+          ":scheme",
+          "https"
+        ]
+      ],
+      "regular": [
+        [
+          "accept-encoding",
+          "gzip"
+        ],
+        [
+          "content-length",
+          "7"
+        ],
+        [
+          "content-type",
+          "application/x-www-form-urlencoded"
+        ],
+        [
+          "user-agent",
+          "xray-rust-oracle/1"
+        ]
+      ],
+      "data": [
+        {
+          "length": 7,
+          "endStream": true
+        }
+      ]
+    }
+  ]
+}

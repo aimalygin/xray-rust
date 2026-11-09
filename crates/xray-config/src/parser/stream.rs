@@ -91,7 +91,12 @@ impl Parser<'_> {
             self.validate_stream_settings_compatibility(stream, index);
         }
         self.validate_unconsumed_transport_settings(stream, stream_network, index);
-        let transport = self.parse_stream_transport(stream, stream_network, xdrive_h3, index)?;
+        let mut transport =
+            self.parse_stream_transport(stream, stream_network, xdrive_h3, index)?;
+        let fronting = self.parse_stream_fronting(stream, stream_network, index)?;
+        if let StreamTransport::Xdrive(settings) = &mut transport {
+            settings.fronting = fronting;
+        }
         if xdrive_h3 {
             self.validate_xdrive_h3_stream(stream, &transport, quic_params.as_ref(), index);
         }

@@ -571,5 +571,5 @@ async fn xdrive_profiles_xray_accepts_build_a_core() {
         }
     }
     assert!(mismatches.is_empty(), "{mismatches:#?}");
-    assert!(built >= 40, "only {built} cases built a core");
+    assert!(built >= 75, "only {built} cases built a core");
 }
