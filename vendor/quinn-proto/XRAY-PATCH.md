@@ -1,4 +1,4 @@
-# quinn-proto 0.11.16: bounded Hysteria DATAGRAMs and BBR corrections
+# quinn-proto 0.11.16: bounded Hysteria DATAGRAMs, BBR corrections and ChromeParrot
 
 Source: the complete unchanged-version crates.io `quinn-proto` **0.11.16** archive,
 SHA256 `2f4bfc015262b9df63c8845072ce59068853ff5872180c2ce2f13038b970e560`.
@@ -158,3 +158,48 @@ unit test `a_resized_stream_window_is_offered_from_the_next_read` covers a
 grown window, a smaller one with a resent update and the reader catching up,
 and a stream that opens under the smaller window; each of the three changes
 fails it when reverted. The complete 299-test library suite passes.
+
+## Xray-core's ChromeParrot client handshake
+
+Xray-core v26.10.31 dials Hysteria and HTTP/3 over the apernet quic-go fork
+(v0.61.1-0.20260806010916-184d081eef3e) with its `ChromeParrot` option on
+unless `quicParams.disableChromeParrot` is set. `TransportConfig::chrome_parrot`
+reproduces what that option does below TLS for a client connection; servers
+ignore it. `src/chrome_parrot.rs` ports each piece from the fork:
+
+- Transport parameters encoded as `marshalChrome` does: thirteen parameters
+  shuffled per connection, `version_information` (v1, then v1 and a GREASE
+  version in random order), `google_connection_options` = "ORIG", a GREASE
+  parameter whose identifier fills an 8-byte varint, and `ack_delay_exponent`,
+  `max_ack_delay`, `disable_active_migration`, `active_connection_id_limit`,
+  `min_ack_delay` and `grease_quic_bit` left out (their defaults are what this
+  end does). `max_datagram_frame_size` is 65536 whenever datagrams can be
+  received. Random bytes are read in the fork's order;
+  `chrome_parrot_transport_parameters` takes them from the caller for tests.
+- Initial packet numbers start at 1; every packet number takes the fork's
+  length (one, two or four bytes from the larger of the unacknowledged range
+  and the congestion window in packets, the window measured in the room an
+  Initial left in the last handshake datagram while that is at least 40
+  bytes, else in the MTU).
+- Until the handshake is confirmed, one packet per datagram (one datagram per
+  `poll_transmit`), Initial datagrams padded to the current MTU, loss probes
+  clamped to the minimum MTU rather than 1200, and a Handshake ACK sent on its
+  own before new Handshake CRYPTO data.
+- A ClientHello too large for one Initial goes out head (55..86 bytes) and
+  tail first, the middle in the next packet (`chromeCryptoSplit`).
+- An Initial packet with CRYPTO data and padding is rewritten with the fork's
+  chaos protection at finish time: the ACK first, the CRYPTO frames cut 2..10
+  times, 2..10 PINGs, the padding split into runs and the lot shuffled with
+  Go's `math/rand/v2` PCG, seeded per connection from 16 random bytes
+  (`chrome_parrot_seed` for tests). Retransmissions carry the frames as they
+  were written, shuffled afresh.
+
+The workspace test `crates/xray-transport/tests/chrome_parrot_tests.rs`
+replays the random reads recorded from Xray's own Hysteria dialer
+(`tools/chrome-parrot-oracle`) and gets the same transport parameters and the
+same four encrypted Initial datagrams, first flight and probes, byte for byte.
+`chrome_parrot_handshake_packs_one_packet_per_datagram` checks the handshake
+datagrams against a stock server, `chrome_parrot_numbers_initial_packets_from_one`
+the packet numbers, and the module's own tests Go's PCG values, the split,
+the chaos sizes and the packet number lengths. The complete 309-test library
+suite passes in the reconstruction.

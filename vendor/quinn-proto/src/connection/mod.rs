@@ -3761,6 +3761,12 @@ impl Connection {
         Some(packet.payload.to_vec())
     }
 
+    /// The number the next Initial packet will carry
+    #[cfg(test)]
+    pub(crate) fn next_initial_packet_number(&self) -> u64 {
+        self.spaces[SpaceId::Initial].next_packet_number
+    }
+
     /// The number of bytes of packets containing retransmittable frames that have not been
     /// acknowledged or declared lost.
     #[cfg(test)]

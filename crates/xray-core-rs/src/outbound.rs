@@ -8511,6 +8511,7 @@ mod tests {
             keep_alive_period_secs: 11,
             disable_path_mtu_discovery: true,
             max_incoming_streams: 16,
+            disable_chrome_parrot: true,
             disable_gso: true,
             disable_stateless_reset: true,
             brutal_disable_loss_compensation: true,
@@ -8519,6 +8520,7 @@ mod tests {
 
         let built = built_xhttp_transport(&outbound);
         let quic = built.h3_quic_config();
+        assert!(!quic.chrome_parrot, "disableChromeParrot turns it off");
         assert!(quic.disable_gso);
         assert!(quic.brutal_disable_loss_compensation);
         assert_eq!(quic.initial_stream_receive_window, 2_100_000);

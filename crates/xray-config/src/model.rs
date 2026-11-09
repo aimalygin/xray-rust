@@ -2009,6 +2009,10 @@ pub struct QuicParamsSettings {
     pub keep_alive_period_secs: i64,
     pub disable_path_mtu_discovery: bool,
     pub max_incoming_streams: i64,
+    /// `disableChromeParrot`: Xray-core shapes the Hysteria, XHTTP H3 and
+    /// XDRIVE H3 handshakes like Chrome's (quic-go's `ChromeParrot`) unless
+    /// this is true. MASQUE never does.
+    pub disable_chrome_parrot: bool,
     /// quic-go's `Transport.DisableGSO`.
     pub disable_gso: bool,
     /// Only Xray-core's QUIC servers consult it, so it changes nothing here.
