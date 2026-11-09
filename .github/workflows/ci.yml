@@ -353,8 +353,9 @@ jobs:
   go-oracles:
     if: github.event_name != 'push' || github.ref_type != 'tag' || contains(github.ref_name, '-rc.')
     runs-on: ubuntu-24.04
-    # The pinned-interop steps run about 21 minutes; leave room for a slow runner.
-    timeout-minutes: 30
+    # The pinned-interop steps run about 28 minutes (25 on main d8cee9f1, before
+    # the reverse proxy's); leave room for a slow runner.
+    timeout-minutes: 40
     # Every step builds its test binaries into one target directory, once per
     # run. Incremental caches and full debug info only cost disk here, and the
     # runner ran out of it after the xdns step; line tables keep panic locations.
@@ -479,6 +480,9 @@ jobs:
 
       - name: Verify the MASQUE client against pinned Xray-core
         run: bash scripts/check-masque-interop.sh
+
+      - name: Verify the VLESS reverse proxy bridge against pinned Xray-core
+        run: bash scripts/check-reverse-interop.sh
 
       # Keep this step last: it shows how much room the steps above leave.
       - name: Report disk use

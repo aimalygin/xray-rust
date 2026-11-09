@@ -3688,6 +3688,9 @@ mod xdns;
 #[path = "local_xray_interop_tests/masque.rs"]
 mod masque;
 
+#[path = "local_xray_interop_tests/reverse.rs"]
+mod reverse;
+
 #[path = "../../../tests/support/realm_rendezvous.rs"]
 mod realm_rendezvous;
 
