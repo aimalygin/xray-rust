@@ -482,7 +482,15 @@ where
 {
     /// Parses and validates a status-200 response, retaining bytes read past
     /// the header terminator for the body decoder.
-    pub async fn open(mut self) -> Result<H1ResponseBody<R>, H1Error> {
+    pub async fn open(self) -> Result<H1ResponseBody<R>, H1Error> {
+        match self.open_with_status().await? {
+            (200, body) => Ok(body),
+            (status, _) => Err(H1Error::UnexpectedStatus { status }),
+        }
+    }
+
+    /// The final response's status and body, whatever the status.
+    pub(crate) async fn open_with_status(mut self) -> Result<(u16, H1ResponseBody<R>), H1Error> {
         let mut received = Vec::with_capacity(1024);
         let mut consumed_head_bytes = 0usize;
         loop {
@@ -503,19 +511,16 @@ where
                     received.drain(..head_bytes);
                     continue;
                 }
-                if parsed.status != 200 {
-                    return Err(H1Error::UnexpectedStatus {
-                        status: parsed.status,
-                    });
-                }
-
                 let body = received.split_off(head_bytes);
-                return Ok(H1ResponseBody::new(
-                    self.reader,
-                    body,
-                    parsed.framing,
-                    parsed.reusable && self.request_allows_reuse,
-                    parsed.content_encoding,
+                return Ok((
+                    parsed.status,
+                    H1ResponseBody::new(
+                        self.reader,
+                        body,
+                        parsed.framing,
+                        parsed.reusable && self.request_allows_reuse,
+                        parsed.content_encoding,
+                    ),
                 ));
             }
             if consumed_head_bytes
@@ -1014,15 +1019,17 @@ fn parse_response_head(head: &[u8], response_to_head: bool) -> Result<ParsedResp
         true
     };
 
-    let framing = if response_to_head || (100..=199).contains(&status) {
-        ResponseFraming::ContentLength(0)
-    } else if chunked {
-        ResponseFraming::Chunked
-    } else if let Some(length) = content_length {
-        ResponseFraming::ContentLength(length)
-    } else {
-        ResponseFraming::CloseDelimited
-    };
+    // Go's `bodyAllowedForStatus`: 1xx, 204 and 304 carry no body.
+    let framing =
+        if response_to_head || (100..=199).contains(&status) || matches!(status, 204 | 304) {
+            ResponseFraming::ContentLength(0)
+        } else if chunked {
+            ResponseFraming::Chunked
+        } else if let Some(length) = content_length {
+            ResponseFraming::ContentLength(length)
+        } else {
+            ResponseFraming::CloseDelimited
+        };
 
     let has_close = header_values_contain_token(&connection_values, b"close");
     let has_keep_alive = header_values_contain_token(&connection_values, b"keep-alive");

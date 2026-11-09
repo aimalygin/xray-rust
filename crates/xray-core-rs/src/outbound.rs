@@ -4864,8 +4864,9 @@ pub async fn open_vless_tcp_stream(
     open_vless_tcp_stream_with_resolver(outbound, target, &SystemDnsResolver).await
 }
 
-/// UDP masks, noise, `header-custom`, `sudoku` and `xdns`, need a UDP
-/// carrier: Hysteria, mKCP or XHTTP with exact `h3` ALPN.
+/// UDP masks, noise, `header-custom`, `sudoku`, `xdns`, `realm` and
+/// `xicmp`, need a UDP carrier: Hysteria, mKCP or XHTTP with exact `h3`
+/// ALPN.
 pub(crate) fn validate_udp_noise(stream: &StreamSettings) -> Result<(), CoreError> {
     let udp_carrier = matches!(
         stream.transport,
@@ -4875,7 +4876,9 @@ pub(crate) fn validate_udp_noise(stream: &StreamSettings) -> Result<(), CoreErro
     if (stream.udp_noise.is_some()
         || stream.udp_header_custom.is_some()
         || stream.udp_sudoku.is_some()
-        || stream.udp_xdns.is_some())
+        || stream.udp_xdns.is_some()
+        || stream.udp_realm.is_some()
+        || stream.udp_xicmp.is_some())
         && !udp_carrier
     {
         return Err(CoreError::UnsupportedOutboundNetwork);
@@ -4978,6 +4981,8 @@ mod tests {
                 tcp_sudoku: None,
                 tcp_xmc: None,
                 udp_xdns: None,
+                udp_realm: None,
+                udp_xicmp: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5002,6 +5007,8 @@ mod tests {
                 tcp_sudoku: None,
                 tcp_xmc: None,
                 udp_xdns: None,
+                udp_realm: None,
+                udp_xicmp: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5037,6 +5044,8 @@ mod tests {
                 tcp_sudoku: None,
                 tcp_xmc: None,
                 udp_xdns: None,
+                udp_realm: None,
+                udp_xicmp: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5363,6 +5372,8 @@ mod tests {
                 tcp_sudoku: None,
                 tcp_xmc: None,
                 udp_xdns: None,
+                udp_realm: None,
+                udp_xicmp: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5411,6 +5422,8 @@ mod tests {
                     tcp_sudoku: None,
                     tcp_xmc: None,
                     udp_xdns: None,
+                    udp_realm: None,
+                    udp_xicmp: None,
                     udp_sudoku: None,
                     udp_noise: None,
                     socket_options: None,
@@ -5454,6 +5467,8 @@ mod tests {
             tcp_sudoku: None,
             tcp_xmc: None,
             udp_xdns: None,
+            udp_realm: None,
+            udp_xicmp: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -5494,6 +5509,8 @@ mod tests {
                 tcp_sudoku: None,
                 tcp_xmc: None,
                 udp_xdns: None,
+                udp_realm: None,
+                udp_xicmp: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5575,6 +5592,8 @@ mod tests {
                 tcp_sudoku: None,
                 tcp_xmc: None,
                 udp_xdns: None,
+                udp_realm: None,
+                udp_xicmp: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5619,6 +5638,8 @@ mod tests {
                 tcp_sudoku: None,
                 tcp_xmc: None,
                 udp_xdns: None,
+                udp_realm: None,
+                udp_xicmp: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: Some(SocketOptions {
@@ -5669,6 +5690,8 @@ mod tests {
                 tcp_sudoku: None,
                 tcp_xmc: None,
                 udp_xdns: None,
+                udp_realm: None,
+                udp_xicmp: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5694,6 +5717,8 @@ mod tests {
                 tcp_sudoku: None,
                 tcp_xmc: None,
                 udp_xdns: None,
+                udp_realm: None,
+                udp_xicmp: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: Some(SocketOptions {
@@ -5725,6 +5750,8 @@ mod tests {
                 tcp_sudoku: None,
                 tcp_xmc: None,
                 udp_xdns: None,
+                udp_realm: None,
+                udp_xicmp: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -5753,6 +5780,8 @@ mod tests {
                 tcp_sudoku: None,
                 tcp_xmc: None,
                 udp_xdns: None,
+                udp_realm: None,
+                udp_xicmp: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,

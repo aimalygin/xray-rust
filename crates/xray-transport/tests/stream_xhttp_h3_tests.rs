@@ -107,6 +107,7 @@ async fn pair_with_options(
         tls_config: client_tls,
         socket_protector,
         quic: H3QuicConfig::default(),
+        realm: None,
     })
     .await
     .expect("connect HTTP/3 client");
@@ -325,6 +326,7 @@ fn h3_network_dial(
                 tls_config: client_tls,
                 socket_protector: None,
                 quic: H3QuicConfig::default(),
+                realm: None,
             })
             .await
         })
@@ -371,6 +373,7 @@ async fn each_congestion_choice_runs_its_controller_after_the_handshake() {
                 congestion,
                 ..H3QuicConfig::default()
             },
+            realm: None,
         })
         .await
         .expect("connect HTTP/3 client");
@@ -754,6 +757,7 @@ async fn slow_path_uploads_buffer_only_their_share_of_the_send_budget() {
         tls_config: Arc::clone(&client_tls),
         socket_protector: None,
         quic: H3QuicConfig::default(),
+        realm: None,
     })
     .await
     .expect("connect HTTP/3 client through the delay relay");
@@ -821,6 +825,7 @@ async fn slow_path_uploads_buffer_only_their_share_of_the_send_budget() {
                 tls_config: client_tls,
                 socket_protector: None,
                 quic: H3QuicConfig::default(),
+                realm: None,
             })
             .await
             .expect("connect HTTP/3 client through its delay relay");
@@ -911,6 +916,7 @@ async fn credit_after_a_fast_download(quic: H3QuicConfig) -> usize {
         tls_config: client_tls,
         socket_protector: None,
         quic,
+        realm: None,
     })
     .await
     .expect("connect HTTP/3 client through the delay relay");
@@ -1071,6 +1077,7 @@ async fn credit_ahead_of_readers(reader: BudgetReader) -> usize {
             tls_config: Arc::clone(&client_tls),
             socket_protector: None,
             quic: H3QuicConfig::default(),
+            realm: None,
         })
     }))
     .await;
@@ -1150,6 +1157,7 @@ async fn small_data_frames_wait_in_the_stream_window() {
             max_connection_receive_window: Some(2 * WINDOW),
             ..H3QuicConfig::default()
         },
+        realm: None,
     })
     .await
     .expect("connect HTTP/3 client");
@@ -2444,6 +2452,7 @@ async fn xhttp_h3_hops_to_a_different_port_each_interval_on_one_connection() {
                 },
                 ..H3QuicConfig::default()
             },
+            realm: None,
         })
         .await
         .expect("connect through a hop port");
@@ -2532,6 +2541,7 @@ async fn xhttp_h3_local_hop_keeps_the_servers_address() {
                 },
                 ..H3QuicConfig::default()
             },
+            realm: None,
         })
         .await
         .expect("connect to the server's address");
@@ -2584,6 +2594,7 @@ async fn xhttp_h3_per_connection_remote_draws_once_and_never_hops() {
                 },
                 ..H3QuicConfig::default()
             },
+            realm: None,
         })
         .await
         .expect("connect through a drawn port");
@@ -2753,6 +2764,7 @@ async fn invalid_sni_precedes_socket_protection_and_protection_failure_stops_can
         tls_config: Arc::clone(&client_tls),
         socket_protector: Some(recording.clone()),
         quic: H3QuicConfig::default(),
+        realm: None,
     })
     .await
     .expect_err("invalid SNI must fail before UDP bind/protection");
@@ -2778,6 +2790,7 @@ async fn invalid_sni_precedes_socket_protection_and_protection_failure_stops_can
             tls_config: client_tls,
             socket_protector: Some(failing.clone()),
             quic: H3QuicConfig::default(),
+            realm: None,
         },
         &[server_addr, server_addr],
         Some(&policy),

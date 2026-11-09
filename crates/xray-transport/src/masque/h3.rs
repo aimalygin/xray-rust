@@ -68,6 +68,7 @@ pub async fn dial_h3(
         tls_config,
         socket_protector: config.socket_protector.clone(),
         quic: config.quic.clone(),
+        realm: None,
     };
     let carrier = connect.quic.hop_carrier();
     let protector = connect.socket_protector.clone();

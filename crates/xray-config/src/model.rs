@@ -1688,6 +1688,13 @@ pub struct StreamSettings {
     /// The `xdns` UDP mask, the outermost of mKCP's or a QUIC carrier's
     /// masks: it carries the datagrams in DNS queries.
     pub udp_xdns: Option<XdnsMask>,
+    /// The `realm` UDP mask, the outermost of mKCP's or a QUIC carrier's
+    /// masks: the carrier's socket meets the server through a rendezvous and
+    /// a punched hole.
+    pub udp_realm: Option<RealmMask>,
+    /// The `xicmp` UDP mask, the outermost of mKCP's or a QUIC carrier's
+    /// masks: it carries the datagrams in ICMP echo messages.
+    pub udp_xicmp: Option<XicmpMask>,
     pub udp_noise: Option<UdpNoiseSettings>,
     pub socket_options: Option<SocketOptions>,
 }
@@ -1795,6 +1802,99 @@ pub struct XdnsResolver {
 pub enum XdnsProtocol {
     Udp,
     Tcp,
+}
+
+/// The `xicmp` mask, as Xray-core v26.10.31's `Xicmp.Build` reads it: the
+/// carrier's datagrams ride in ICMP echo requests to the server and come
+/// back in its echo replies.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct XicmpMask {
+    /// Unprivileged datagram ICMP sockets, rather than raw ones.
+    pub dgram: bool,
+    /// The server addresses to send to, one drawn for each packet; the
+    /// outbound's address when empty.
+    pub ips: Vec<std::net::IpAddr>,
+}
+
+/// The `realm` mask, as Xray-core v26.10.31's `Realm.Build` reads it: the
+/// client finds its public addresses with STUN, asks a rendezvous to
+/// introduce it to the server registered under `id`, punches a hole to the
+/// addresses the server reported, and sends the carrier's datagrams to the
+/// one that answered.
+#[derive(Clone, PartialEq, Eq)]
+pub struct RealmMask {
+    /// `realm://` reaches the rendezvous over HTTPS, `realm+http://` over
+    /// HTTP.
+    pub scheme: RealmScheme,
+    /// The rendezvous host as `url.Hostname` reads it, without brackets.
+    pub host: String,
+    /// The port as the URL spells it, which Go keeps for the `Host` header;
+    /// `443` or `80` when it names none.
+    pub port_text: String,
+    /// The port's value.
+    pub port: u16,
+    /// The URL's user information, unescaped: the rendezvous's bearer token.
+    pub token: zeroize::Zeroizing<String>,
+    /// The URL's path without its leading slash, unescaped.
+    pub id: String,
+    pub stun_servers: Vec<RealmStunServer>,
+    /// `tlsConfig`, for an HTTPS rendezvous.
+    pub tls: Option<TlsSettings>,
+    pub ip_mode: RealmIpMode,
+    /// `portMapping`, which xray-rust reads but does not act on yet.
+    pub port_mapping: Option<RealmPortMapping>,
+}
+
+impl fmt::Debug for RealmMask {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RealmMask")
+            .field("scheme", &self.scheme)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("token", &"<redacted>")
+            .field("id", &self.id)
+            .field("stun_servers", &self.stun_servers)
+            .field("tls", &self.tls.is_some())
+            .field("ip_mode", &self.ip_mode)
+            .field("port_mapping", &self.port_mapping)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RealmScheme {
+    Https,
+    Http,
+}
+
+/// One `stunServers` entry, split as `net.SplitHostPort` splits it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RealmStunServer {
+    pub host: String,
+    /// The port as written: Xray-core tells servers apart by it.
+    pub port_text: String,
+    pub port: u16,
+}
+
+/// Which address families the client discovers and punches. Xray-core
+/// reads `dual`, `v4` and `v6`, case-insensitively, and any other value as
+/// `dual`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RealmIpMode {
+    #[default]
+    Dual,
+    V4,
+    V6,
+}
+
+/// `portMapping`: a UDP mapping on the local gateway through UPnP or
+/// NAT-PMP, renewed every half lifetime. Seconds; zero takes Xray-core's
+/// defaults of 10 seconds and 10 minutes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RealmPortMapping {
+    pub enabled: bool,
+    pub timeout: i64,
+    pub lifetime: i64,
 }
 
 /// The `xmc` mask, as Xray-core v26.10.31's `XMC.Build` reads it: a

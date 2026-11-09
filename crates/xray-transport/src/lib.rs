@@ -28,8 +28,10 @@ pub mod hysteria;
 pub mod kcp;
 pub mod masque;
 mod memory_class;
+pub mod realm;
 pub mod sudoku;
 pub mod xdns;
+pub mod xicmp;
 pub mod xmc;
 
 /// Validate a TLS DNS/IP verification name without performing network I/O.
@@ -203,6 +205,8 @@ pub enum TransportError {
     Xhttp(String),
     #[error("mKCP dial failed: {0}")]
     Kcp(std::io::Error),
+    #[error("realm socket failed: {0}")]
+    RealmSocket(std::io::Error),
     #[error(transparent)]
     Http2Connect(#[from] stream::Http2ConnectError),
     #[error("reality handshake failed: {0}")]

@@ -29,6 +29,37 @@ long-term supported release series.
     chaining, Mux and the TCP fragment mask fail the configuration.
 - The WireGuard outbound's userspace TCP/IP stack now takes IP packets from
   any source, as MASQUE needs; WireGuard itself is unchanged.
+- The `xicmp` UDP mask carries mKCP, Hysteria and XHTTP over HTTP/3 in
+  ICMP, as Xray-core's client does: every datagram rides in an echo request
+  to the server after the client's 8-byte id, and the server's come back in
+  its echo replies. See [xicmp mask](docs/config-compatibility.md#xicmp-mask).
+  - `dgram` takes datagram ICMP sockets, which macOS, iOS, Android and Linux
+    within `net.ipv4.ping_group_range` grant without privilege; raw sockets
+    need root or `CAP_NET_RAW`.
+  - Each server address gets its own socket, never bound and connected to
+    it, which a Network Extension needs; the families the addresses do not
+    use need no socket.
+  - It must be the last UDP mask and runs neither with udphop, xdns, realm
+    nor header-custom, nor with sudoku on QUIC. An outbound address that is
+    a name, with no `ips`, is refused when the core starts, where Xray-core
+    fails every dial.
+- The `realm` UDP mask reaches a server behind NAT, as Xray-core's client
+  does: mKCP, Hysteria and XHTTP over HTTP/3 learn their public addresses
+  from STUN servers over the carrier's own socket, a Hysteria realm
+  rendezvous introduces them to the server registered under the realm's
+  name, both sides punch, and the carrier's datagrams go to the address that
+  answered. See [realm mask](docs/config-compatibility.md#realm-mask).
+  - `portMapping` is read but not acted on yet: no UPnP or NAT-PMP mapping
+    is made, as when Xray-core finds no gateway.
+  - It must be the last UDP mask and runs neither with udphop, xdns nor
+    header-custom. A URL port of 0 or above 65535, a host with a colon that
+    is no IPv6 address, a token with control characters and a STUN server
+    whose port Xray-core cannot use fail the configuration, where Xray-core
+    fails every dial or skips the server.
+  - The rendezvous is spoken over HTTP/1.1 and its name and the STUN
+    servers' are resolved like the outbound's server address. A Hysteria
+    connection whose network changes closes, and the next dial is introduced
+    again.
 - `quicParams.bbrProfile` `conservative` and `aggressive` work on Hysteria and
   XHTTP over HTTP/3: they run a port of Xray-core's own BBR sender with the
   profile's gains, startup rounds and options, where they failed to parse

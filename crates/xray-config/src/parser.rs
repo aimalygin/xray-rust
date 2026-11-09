@@ -2,6 +2,7 @@ mod blackhole;
 mod dns;
 mod fragment;
 mod freedom;
+mod go_url;
 mod header_custom;
 mod http_inbound;
 mod http_outbound;
@@ -10,6 +11,7 @@ mod kcp;
 mod loopback;
 mod masque;
 mod noise;
+mod realm;
 mod routing;
 mod shadowsocks;
 mod socks;
@@ -23,6 +25,7 @@ mod vmess;
 mod wireguard;
 mod xdns;
 mod xhttp;
+mod xicmp;
 mod xmc;
 mod xray_lists;
 use xray_lists::PlainDomain;
@@ -2572,7 +2575,7 @@ fn dns_ip_rule_uses_geodata(value: &str) -> bool {
 }
 
 /// Go's `net.SplitHostPort`, with its error texts.
-fn go_split_host_port(hostport: &str) -> Result<(&str, &str), &'static str> {
+pub(super) fn go_split_host_port(hostport: &str) -> Result<(&str, &str), &'static str> {
     const MISSING_PORT: &str = "missing port in address";
     const TOO_MANY_COLONS: &str = "too many colons in address";
     // The port starts after the last colon.

@@ -173,6 +173,18 @@ pub(super) fn build_xhttp_transport(
     h3_quic.udp_header_custom = header_custom.map(super::carrier::quic_header_custom);
     h3_quic.udp_sudoku = sudoku.map(super::carrier::quic_sudoku);
     h3_quic.udp_xdns = xdns.map(super::carrier::xdns_config);
+    if stream.udp_realm.is_some() && http_version != XhttpHttpVersion::Http3 {
+        return Err(invalid_xhttp_configuration(
+            "a realm UDP mask requires XHTTP H3",
+        ));
+    }
+    h3_quic.udp_realm = stream.udp_realm.as_ref().map(super::carrier::realm_config);
+    if stream.udp_xicmp.is_some() && http_version != XhttpHttpVersion::Http3 {
+        return Err(invalid_xhttp_configuration(
+            "an xicmp UDP mask requires XHTTP H3",
+        ));
+    }
+    h3_quic.udp_xicmp = stream.udp_xicmp.as_ref().map(super::carrier::xicmp_config);
     XhttpTransport::new_with_h3_quic(config, endpoint, http_version, xmux, h3_quic)
         .map_err(invalid_xhttp_configuration)
 }
