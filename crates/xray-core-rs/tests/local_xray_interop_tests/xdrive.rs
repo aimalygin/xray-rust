@@ -5,7 +5,10 @@
 //! storages of a stand-in (`tools/xdrive-oracle/standin`): an S3 bucket that
 //! checks every SigV4 signature, and a REST store a `template` describes,
 //! Xray-core's server over plain HTTP and this client over HTTPS and HTTP/2
-//! through `streamSettings.address`.
+//! through `streamSettings.address`. The stand-in is written from the
+//! services' documentation, not from Xray-core, so Xray-core's own client
+//! crosses it first with this client's configuration: a stand-in Xray-core
+//! cannot use is wrong, whatever this client makes of it.
 //!
 //! Targets are documentation addresses: Xray's server hands each flow to a
 //! freedom outbound whose redirect sends it to the loopback echo servers,
@@ -168,6 +171,38 @@ fn client_config_with(session: &Session, stream: Value) -> Value {
     })
 }
 
+/// Xray-core's own client with `config`, one made for this client: its
+/// SOCKS inbound on a port of its own.
+async fn xray_client(mut config: Value) -> XrayServer {
+    let checkout = resolve_xray_checkout();
+    let temp_dir = create_temp_dir("xray-rust-xdrive-xray-client");
+    let binary = xray_binary(&checkout, &temp_dir);
+    let port = allocate_loopback_port();
+    config["inbounds"][0]["port"] = port.into();
+    config["log"] = json!({"loglevel": "debug"});
+    let config_path = temp_dir.path.join("client.json");
+    let stdout_path = temp_dir.path.join("xray-client.stdout.log");
+    let stderr_path = temp_dir.path.join("xray-client.stderr.log");
+    fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let mut child = Command::new(&binary)
+        .arg("run")
+        .arg("-config")
+        .arg(&config_path)
+        .stdout(Stdio::from(fs::File::create(&stdout_path).unwrap()))
+        .stderr(Stdio::from(fs::File::create(&stderr_path).unwrap()))
+        .spawn()
+        .expect("start Xray-core's client");
+    wait_for_xray_startup(&mut child, &stdout_path, &stderr_path).await;
+    XrayServer {
+        child,
+        _temp_dir: temp_dir,
+        addr: SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
+        stdout_path,
+        stderr_path,
+        tls_client_config: None,
+    }
+}
+
 async fn check(
     server: &XrayServer,
     case: &str,
@@ -292,8 +327,20 @@ impl Standin {
 
     /// Requests served whose log line holds every one of `parts`.
     fn served(&self, parts: &[&str]) -> usize {
+        self.served_after(0, parts)
+    }
+
+    /// The complete lines logged so far, to count what comes after.
+    fn mark(&self) -> usize {
+        self.log().matches('\n').count()
+    }
+
+    /// Requests served after the first `mark` lines whose log line holds
+    /// every one of `parts`.
+    fn served_after(&self, mark: usize, parts: &[&str]) -> usize {
         self.log()
             .lines()
+            .skip(mark)
             .filter(|line| {
                 line.starts_with("served ") && parts.iter().all(|part| line.contains(part))
             })
@@ -518,20 +565,44 @@ async fn xdrive_s3_meets_xray_in_a_bucket_over_both_http_versions() {
     let stream = json!({"network": "xdrive", "address": "127.0.0.1", "port": storage.https.port(),
         "security": "tls", "tlsSettings": {"pinnedPeerCertSha256": storage.pin},
         "xdriveSettings": xdrive});
+    // The URL names no port: the stream's port only takes the connection.
+    let host = " xdrive-bucket.s3.storage.test ";
+    let stored = ["HTTP/2.0 PUT", host, "/sessions/xray/streams/"];
+    // Xray-core's own client first, with this client's configuration.
+    let xray = xray_client(client_config_with(&session, stream.clone())).await;
+    carry(
+        server,
+        || storage.complaints(),
+        xray.addr,
+        tcp_port,
+        udp_port,
+    )
+    .await;
+    drop(xray);
+    assert!(
+        storage.served(&stored) > 0,
+        "Xray-core's client stored nothing over HTTP/2 to {host}: {}",
+        storage.log()
+    );
+    assert_eq!(storage.complaints(), "", "the stand-in failed Xray-core");
+    let mark = storage.mark();
+    let sessions = accepted_sessions(server);
     let mut client = core(client_config_with(&session, stream)).await;
     let proxy = client.inbound_addr(Some("socks-in")).unwrap();
     carry(server, || storage.complaints(), proxy, tcp_port, udp_port).await;
     client.stop().await.unwrap();
-    // The URL names no port: the stream's port only takes the connection.
-    let host = " xdrive-bucket.s3.storage.test ";
-    let virtual_hosted = storage.served(&["HTTP/2.0 PUT", host, "/sessions/xray/streams/"]);
+    let virtual_hosted = storage.served_after(mark, &stored);
     assert!(
         virtual_hosted > 0,
         "no PUT over HTTP/2 to {host}: {}",
         storage.log()
     );
+    assert!(
+        accepted_sessions(server) > sessions,
+        "Xray-core took no session: {}",
+        server.logs()
+    );
     let sessions = accepted_sessions(server);
-    assert!(sessions > 0, "Xray-core took no session: {}", server.logs());
     // And path-style over plain HTTP/1.1, as Xray-core's server reaches it.
     let mut xdrive = tuning();
     xdrive["service"] = "s3".into();
@@ -622,44 +693,68 @@ async fn xdrive_template_meets_xray_in_a_rest_store() {
     let stream = json!({"network": "xdrive", "address": "127.0.0.1", "port": storage.https.port(),
         "security": "tls", "tlsSettings": {"pinnedPeerCertSha256": storage.pin},
         "xdriveSettings": xdrive});
+    // Xray-core's own client first, with this client's configuration, then
+    // this client; each must have crossed every path of the store.
+    let xray = xray_client(client_config_with(&session, stream.clone())).await;
+    carry(
+        server,
+        || storage.complaints(),
+        xray.addr,
+        tcp_port,
+        udp_port,
+    )
+    .await;
+    drop(xray);
+    template_paths_crossed(&storage, 0, "Xray-core's client");
+    assert_eq!(storage.complaints(), "", "the stand-in failed Xray-core");
+    let mark = storage.mark();
+    let sessions = accepted_sessions(server);
     let mut client = core(client_config_with(&session, stream)).await;
     let proxy = client.inbound_addr(Some("socks-in")).unwrap();
     carry(server, || storage.complaints(), proxy, tcp_port, udp_port).await;
     client.stop().await.unwrap();
-    assert!(accepted_sessions(server) > 0, "{}", server.logs());
-    let host = " storage.test ".to_owned();
+    assert!(accepted_sessions(server) > sessions, "{}", server.logs());
+    template_paths_crossed(&storage, mark, "this client");
+    assert_eq!(storage.complaints(), "");
+}
+
+/// That the client whose requests the stand-in logged after `mark` lines
+/// went every way of the REST store over HTTP/2: tokens fetched again,
+/// objects as JSON, links redirected and followed, retries after rate
+/// limits by reason and by status, and new tokens after forgotten ones.
+fn template_paths_crossed(storage: &Standin, mark: usize, who: &str) {
+    let host = " storage.test ";
     for (what, parts) in [
         (
             "tokens fetched again",
-            vec!["HTTP/2.0 POST", host.as_str(), "/oauth/token 200"],
+            ["HTTP/2.0 POST", host, "/oauth/token 200"].as_slice(),
         ),
         (
             "objects stored as JSON",
-            vec!["HTTP/2.0 PUT", host.as_str(), "/api/files/xdrive/streams~"],
+            ["HTTP/2.0 PUT", host, "/api/files/xdrive/streams~"].as_slice(),
         ),
         (
             "links redirected",
-            vec!["HTTP/2.0 GET", host.as_str(), "/link/", " 302"],
+            ["HTTP/2.0 GET", host, "/link/", " 302"].as_slice(),
         ),
         (
             "linked bytes fetched",
-            vec!["HTTP/2.0 GET", host.as_str(), "/raw/", " 200"],
+            ["HTTP/2.0 GET", host, "/raw/", " 200"].as_slice(),
         ),
         (
             "rate limits by reason",
-            vec!["HTTP/2.0", host.as_str(), " 403"],
+            ["HTTP/2.0", host, " 403"].as_slice(),
         ),
         (
             "rate limits by status",
-            vec!["HTTP/2.0", host.as_str(), " 429"],
+            ["HTTP/2.0", host, " 429"].as_slice(),
         ),
-        ("forgotten tokens", vec!["HTTP/2.0", host.as_str(), " 401"]),
+        ("forgotten tokens", ["HTTP/2.0", host, " 401"].as_slice()),
     ] {
-        let count = storage.served(&parts);
+        let count = storage.served_after(mark, parts);
         let enough = if what == "tokens fetched again" { 2 } else { 1 };
-        assert!(count >= enough, "{what}: {count}; {}", storage.log());
+        assert!(count >= enough, "{who}, {what}: {count}; {}", storage.log());
     }
-    assert_eq!(storage.complaints(), "");
 }
 
 /// Xray-core's own fakeDrive on Google's paths, over TLS and HTTP/3 on one
