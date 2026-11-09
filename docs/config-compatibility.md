@@ -29,8 +29,7 @@ Hysteria accepts one Salamander mask and the v26.10.21 UDP-hop mask:
     {"type": "udphop", "settings": {
       "mode": "intervalLocal,intervalRemote", "remotePorts": "443,8443-8445", "interval": "5-10"
     }}
-  ],
-  "quicParams": {"disableChromeParrot": true}
+  ]
 }
 ```
 
@@ -100,9 +99,9 @@ network rebind closes the stale session. Stop/free aborts the timer. Salamander
 reserves its eight-byte salt in MTU discovery and handles receive GRO segments
 individually. Its bounded receive scratch is 64 KiB per live carrier; send
 scratch is reused. Profiles without either option use the existing UDP path.
-Hysteria accepts `disableChromeParrot: true` to acknowledge its native Quinn
-TLS behavior. Without it, parsing warns that ChromeParrot shaping is absent;
-explicit false/null is rejected. QUIC v2 transport and socket overrides remain
+Hysteria shapes its QUIC handshake like Chrome's, as Xray-core's
+ChromeParrot does, unless `quicParams.disableChromeParrot` is true; see
+[ChromeParrot](#chromeparrot). QUIC v2 transport and socket overrides remain
 unsupported.
 
 ### Hysteria bandwidth and the other QUIC parameters
@@ -111,7 +110,7 @@ Hysteria reads the rest of `finalmask.quicParams` as Xray's Hysteria dialer
 does:
 
 ```json
-"quicParams": {"disableChromeParrot": true, "brutalUp": "100 mbps", "brutalDown": "200 mbps"}
+"quicParams": {"brutalUp": "100 mbps", "brutalDown": "200 mbps"}
 ```
 
 Bandwidths use Xray's binary units: one `mbps` is 2^20 bits per second.
@@ -192,8 +191,9 @@ What differs from Xray, deliberately:
   if asked to. Quinn lowers it after detecting a black hole; the port then
   scales its windows down as it scales them up.
 - The startup sender. quic-go's is its cubic sender in Reno mode with a
-  32-datagram window of 1,280 bytes each; Quinn's NewReno starts at 12,000
-  bytes. It only carries the handshake, plus the authentication request on
+  32-datagram window; Quinn's NewReno starts at the same 32 datagrams of the
+  initial size (1,250 bytes with ChromeParrot), but runs Quinn's Reno rules.
+  It only carries the handshake, plus the authentication request on
   Hysteria.
 - The window rule. quic-go sends while the bytes in flight are below the
   window; Quinn sends a packet while the bytes in flight plus that packet stay
@@ -219,6 +219,87 @@ requires it to match the fixture. The same script runs each profile live
 against Xray-core's servers: Hysteria, also with `brutal` falling back to the
 profile's BBR and with Brutal once the server announces a rate, and XHTTP H3
 through the core with every congestion mode.
+
+### ChromeParrot
+
+Xray-core v26.10.31 dials Hysteria and XHTTP over HTTP/3 with the apernet
+quic-go fork's `ChromeParrot` on, so that the client's handshake looks like
+Google Chrome's, unless `finalmask.quicParams.disableChromeParrot` is true.
+This client does the same:
+
+```json
+"quicParams": {"disableChromeParrot": true}
+```
+
+`disableChromeParrot` is read as Xray reads a Go `bool`: `true` turns
+ChromeParrot off; `false`, `null`, or no `quicParams` or `finalmask` at all
+leave it on; any other JSON type fails the configuration on every transport,
+as it fails Xray's. Hysteria and XHTTP with exact `h3` ALPN dial with it; MASQUE
+never parrots Chrome, as Xray's MASQUE dial never does, and other transports
+do not read the field.
+
+With ChromeParrot on, a dial:
+
+- sends uTLS's Chrome QUIC ClientHello (quic-go's
+  `chromeQUICClientHelloSpec`): no GREASE value, TLS 1.3 alone, AES-128-GCM,
+  AES-256-GCM and ChaCha20-Poly1305, groups X25519MLKEM768, X25519, P-256
+  and P-384 with key shares for the first two, Chrome's nine signature
+  algorithms, brotli certificate compression, `psk_dhe_ke`, ALPN and ALPS
+  (the newer codepoint) for `h3`, and a GREASE ECH extension whose payload
+  takes one of BoringSSL's four lengths, with the extensions in a new random
+  order on every connection, drawn as uTLS draws it. Resumption and 0-RTT
+  stay off. `tlsSettings.fingerprint` does not reach QUIC either way;
+- encodes its transport parameters as Chrome does: in a random order, with
+  `version_information` (QUIC v1, then v1 and a GREASE version in random
+  order), `google_connection_options` "ORIG" and a GREASE parameter with an
+  8-byte identifier, without `ack_delay_exponent`, `max_ack_delay`,
+  `disable_active_migration` and `active_connection_id_limit`, whose defaults
+  are what the client then does;
+- pins quic-go's values: a 30-second idle timeout, 6 MiB stream and 15 MiB
+  connection windows, 100 bidirectional and 103 unidirectional streams,
+  1,472-byte UDP payloads and 65,536-byte DATAGRAM frames. These replace
+  `maxIdleTimeout`, `initStreamReceiveWindow`, `initConnectionReceiveWindow`
+  and `maxIncomingStreams`, and a configured window maximum below the pinned
+  start is raised to it. Hysteria advertises 65,536-byte DATAGRAM frames
+  instead of its usual 1,200, as Xray's client then does. A constrained host,
+  which otherwise holds the windows at their start, starts them at 6 and 15 MiB
+  too;
+- packs its Initial packets as quic-go's ChromeParrot does: 1,250-byte
+  datagrams numbered from 1, from zero-length source connection IDs to an
+  8-byte first destination ID, a ClientHello too large for one packet sent
+  with its head and its tail first and its middle next, and each packet's
+  CRYPTO frames cut at random and shuffled among PING frames and runs of
+  padding (Chromium's chaos protection), with quic-go's own generator.
+  Packet numbers take Chrome's lengths from the congestion window, and until
+  the handshake is confirmed every datagram carries one packet: the Initial
+  ACK alone and padded, then a Handshake ACK apart from the Finished.
+
+`tools/chrome-parrot-oracle` runs Xray-core's own Hysteria dialer under a
+deterministic `crypto/rand` and records its first four Initial datagrams,
+the first flight and its retransmission, with every random read behind them.
+Given the same reads, the client produces the same transport parameters and
+the same encrypted datagrams byte for byte, and the same ClientHello but for
+the key material in its key shares. `scripts/check-chrome-parrot-interop.sh`
+regenerates the oracle's fixture and requires it to match, rechecks the
+`disableChromeParrot` verdicts against `xray run -test`, and runs Hysteria
+(also under Salamander) and XHTTP H3 against Xray-core's servers with
+ChromeParrot on and off, checking the first flight on the wire.
+
+What differs from Xray:
+
+- A prebuilt rustls configuration from an embedding application keeps its own
+  ClientHello, as it does under a fingerprint; the packet shaping still
+  applies.
+- After the handshake, packet number lengths follow the running congestion
+  controller's window, which differs from Xray's where the controller does
+  (`standard` runs Quinn's BBR).
+- quic-go also shuffles the frames of every other packet with the same
+  generator, and starts its loss timer from a 100 ms RTT estimate rather than
+  Quinn's 333 ms, so a lost first flight is retransmitted later here. Neither
+  is ChromeParrot's own.
+- `disableChromeParrot: true` gives Quinn's own handshake, which is not
+  quic-go's either: its connection ID lengths, transport parameters, packet
+  layout and rustls's ClientHello differ from Xray's stock QUIC client.
 
 ## WireGuard destination DNS
 
@@ -1683,10 +1764,10 @@ The H3 path uses a protected UDP socket and the same resolved-candidate Happy
 Eyeballs policy as the other outbounds. Its stock TLS 1.3 config ignores
 `tlsSettings.fingerprint` and the configured ALPN payload after the exact
 `["h3"]` branch is selected, then advertises exactly `h3`; that is the same
-separation between QUIC TLS and the TCP uTLS callback. Xray v26.10.21 now
-adds ChromeParrot shaping; Rust does not reproduce that fingerprint. Set
-`quicParams.disableChromeParrot: true` for the explicitly supported contract.
-Omission warns, while explicit false/null fails. `disableGSO` turns off
+separation between QUIC TLS and the TCP uTLS callback. Unless
+`quicParams.disableChromeParrot` is true, the handshake is shaped like
+Chrome's instead, as Xray-core's ChromeParrot shapes it; see
+[ChromeParrot](#chromeparrot). `disableGSO` turns off
 segmentation offload, `brutalDisableLossCompensation` applies to
 `force-brutal`, and `disableStatelessReset`, which only Xray-core's servers
 read, is accepted without effect.

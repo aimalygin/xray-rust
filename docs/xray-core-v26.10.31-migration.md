@@ -63,12 +63,16 @@ their original source identities.
 
 ## Still out of scope
 
-The v26.10.21 record's stage 2 remains planned separately: MASQUE/WARP,
-XDRIVE, Lua for DNS/routing/noise, the newer FinalMask type filter, DNS
-over HTTPS resolvers for xdns and realm's UPnP/NAT-PMP `portMapping`.
-`localOS` and custom Blackhole responses arrived in 0.10.0, and so did the
-mKCP transport with its `mkcp-legacy` masks and the `header-custom`,
-`sudoku`, `xmc`, `xdns`, `realm` and `xicmp` masks.
+The v26.10.21 record's stage 2 remains planned separately: XDRIVE, Lua for
+DNS/routing/noise, the newer FinalMask type filter, DNS over HTTPS resolvers
+for xdns and realm's UPnP/NAT-PMP `portMapping`. `localOS` and custom
+Blackhole responses arrived in 0.10.0, and so did the mKCP transport with
+its `mkcp-legacy` masks, the `header-custom`, `sudoku`, `xmc`, `xdns`,
+`realm` and `xicmp` masks, the MASQUE client with WARP, and ChromeParrot,
+the Chrome-shaped QUIC handshake Xray-core's Hysteria and XHTTP H3 dialers
+send unless `quicParams.disableChromeParrot` (see
+[ChromeParrot](config-compatibility.md#chromeparrot)); before it,
+`disableChromeParrot: true` was required.
 
 ## Evidence
 
