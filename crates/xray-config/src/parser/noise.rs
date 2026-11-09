@@ -1,5 +1,5 @@
 use super::*;
-use crate::{go_lowercase, FragmentRange, UdpNoiseItem, UdpNoiseSettings};
+use crate::{go_lowercase, FragmentRange, NoiseSegment, UdpNoiseItem, UdpNoiseSettings};
 use base64::Engine as _;
 
 impl Parser<'_> {
@@ -183,6 +183,16 @@ impl Parser<'_> {
             return None;
         };
         self.reject_unknown_fields(settings, &p, &surface::UDP_NOISE);
+        // Xray-core runs a nonempty script in Lua instead of the items.
+        if settings
+            .get("script")
+            .is_some_and(|script| script.as_str() != Some(""))
+        {
+            self.error(
+                format!("{p}.script"),
+                "a noise script runs Lua, which is not supported yet",
+            );
+        }
         let reset_secs = self.fragment_range(settings.get("reset"), &format!("{p}.reset"))?;
         let items = match settings.get("noise") {
             None | Some(Value::Null) => Vec::new(),
@@ -206,6 +216,26 @@ impl Parser<'_> {
                     if random_length.to > 0 && item.get("packet").is_some() {
                         self.error(&p, "packet and nonzero rand cannot be combined");
                     }
+                    // Xray-core skips randRange's bounds for an `exp` item.
+                    let exp = item
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .is_some_and(|kind| go_lowercase(kind) == "exp");
+                    if exp {
+                        let segments = self.noise_exp(item.get("packet"), &p)?;
+                        let length = segments.iter().map(NoiseSegment::max_len).sum::<usize>();
+                        if length > 4096 || delay_ms.to > 1000 {
+                            self.error(&p, "an exp noise packet takes at most 4096 bytes here, and delay 0..1000 milliseconds");
+                        }
+                        result.push(UdpNoiseItem {
+                            packet: Vec::new(),
+                            random_length: FragmentRange::default(),
+                            random_bytes,
+                            delay_ms,
+                            segments,
+                        });
+                        continue;
+                    }
                     let packet = self.noise_packet(item.get("packet"), item.get("type"), &p)?;
                     if random_length.to > 4096
                         || packet.len() > 4096
@@ -219,6 +249,7 @@ impl Parser<'_> {
                         random_length,
                         random_bytes,
                         delay_ms,
+                        segments: Vec::new(),
                     });
                 }
                 result
@@ -274,24 +305,114 @@ impl Parser<'_> {
                     .decode(s.replace(['\r', '\n'], ""))
                     .ok()
             }),
-            "hex" => packet.as_str().and_then(|s| {
-                if !s.is_ascii() || s.len() % 2 != 0 {
-                    return None;
-                }
-                (0..s.len())
-                    .step_by(2)
-                    .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
-                    .collect()
-            }),
+            // Go's `hex.DecodeString`, which takes no sign.
+            "hex" => packet.as_str().and_then(|s| decode_hex(s).ok()),
             _ => None,
         };
         if result.is_none() {
             self.error(
                 format!("{path}.packet"),
-                "invalid noise packet or type (array, str, hex, base64)",
+                "invalid noise packet or type (array, str, hex, base64, exp)",
             );
         }
         result
+    }
+
+    /// The segments of an `exp` item's packet, which must be a string.
+    fn noise_exp(&mut self, packet: Option<&Value>, path: &str) -> Option<Vec<NoiseSegment>> {
+        let path = format!("{path}.packet");
+        let Some(Value::String(exp)) = packet else {
+            self.error(path, "the packet of an exp noise item must be a string");
+            return None;
+        };
+        parse_noise_exp(exp)
+            .map_err(|message| self.error(path, message))
+            .ok()
+    }
+}
+
+/// RE2's `\s`, which Xray-core's pattern for a segment uses.
+fn is_re2_space(c: char) -> bool {
+    matches!(c, '\t' | '\n' | '\x0c' | '\r' | ' ')
+}
+
+/// Xray-core's `parseNoiseExp`: segments `<key arg>`, nothing but whitespace
+/// between them. A key is lowercase letters; its argument follows after
+/// whitespace and runs to the next `>`.
+fn parse_noise_exp(exp: &str) -> Result<Vec<NoiseSegment>, String> {
+    let mut segments = Vec::new();
+    let mut rest = exp;
+    loop {
+        // Between segments, whatever Go's `strings.TrimSpace` removes.
+        let segment = rest.trim_start();
+        if segment.is_empty() {
+            break;
+        }
+        let near = || format!("invalid noise exp near {segment}");
+        let tag = segment.strip_prefix('<').ok_or_else(near)?;
+        let tag = tag.trim_start_matches(is_re2_space);
+        let key_len = tag
+            .find(|c: char| !c.is_ascii_lowercase())
+            .unwrap_or(tag.len());
+        let close = tag.find('>').ok_or_else(near)?;
+        if key_len == 0 || key_len > close {
+            return Err(near());
+        }
+        let (key, inside) = (&tag[..key_len], &tag[key_len..close]);
+        let arg = if inside.is_empty() || inside.starts_with(is_re2_space) {
+            inside.trim_matches(is_re2_space)
+        } else {
+            return Err(near());
+        };
+        segments.push(noise_segment(key, arg)?);
+        rest = &tag[close + 1..];
+    }
+    if segments.is_empty() {
+        return Err(format!("empty noise exp: {exp}"));
+    }
+    Ok(segments)
+}
+
+/// Xray-core's `buildNoiseSegment`.
+fn noise_segment(key: &str, arg: &str) -> Result<NoiseSegment, String> {
+    let size = || {
+        if arg.is_empty() {
+            return Err(format!("<{key}> in noise exp needs a size"));
+        }
+        match parse_xhttp_range_string(arg) {
+            Some((from, to)) if from >= 0 && from <= to && to <= 65_535 => Ok(FragmentRange {
+                from: from as u32,
+                to: to as u32,
+            }),
+            _ => Err(format!("invalid size in noise exp: {arg}")),
+        }
+    };
+    let bare = |segment| {
+        if arg.is_empty() {
+            Ok(segment)
+        } else {
+            Err(format!("<{key}> in noise exp takes no argument"))
+        }
+    };
+    match key {
+        "b" => {
+            let digits = arg.split_whitespace().collect::<String>();
+            let digits = digits.strip_prefix("0x").unwrap_or(&digits);
+            let digits = digits.strip_prefix("0X").unwrap_or(digits);
+            if digits.is_empty() {
+                return Err("empty bytes in noise exp".to_owned());
+            }
+            decode_hex(digits)
+                .map(NoiseSegment::Bytes)
+                .map_err(|_| format!("invalid hex in noise exp: {arg}"))
+        }
+        "r" => size().map(NoiseSegment::Random),
+        "rc" => size().map(NoiseSegment::RandomLetters),
+        "rd" => size().map(NoiseSegment::RandomDigits),
+        "t" => bare(NoiseSegment::Timestamp),
+        "c" => bare(NoiseSegment::Counter),
+        "n" => bare(NoiseSegment::Nonce),
+        _ => Err(format!("unknown <{key}> in noise exp")),
     }
 }
 

@@ -10,6 +10,26 @@ long-term supported release series.
 
 ## Unreleased
 
+- The FinalMask `fragment` mask selects whole writes with `packets`, as
+  Xray-core v26.10.31 does: empty or absent cuts every write, a number or a
+  `from-to` range the writes so numbered, each into raw pieces, every piece
+  its own write followed by its delay. Raw pieces need no TLS, so they run
+  on any TCP carrier of a proxy and on a raw freedom outbound; the deprecated
+  freedom `fragment` reads the same selectors. `tlshello` keeps its record
+  split. A write stages at most 64 KiB, 4096 pieces or ten seconds of delays
+  at once and continues in its next call. See
+  [TLS ClientHello fragmentation](docs/config-compatibility.md#v08-tls-clienthello-fragmentation).
+- The FinalMask noise mask builds `type: "exp"` packets as Xray-core does:
+  `<b hex>`, random `<r>` bytes, `<rc>` letters and `<rd>` digits, `<t>` Unix
+  seconds, the connection's `<c>` counter and an eight-byte `<n>`, built anew
+  for every send. A corpus of expressions read by Xray-core's own
+  configuration, and the packets its mask sends, are checked against
+  `tools/noise-exp-oracle`. A nonempty `script` (Lua) is refused for now. A
+  `hex` noise packet no longer accepts a sign, as Go's decoder refuses it.
+- Salamander, Gecko with it, runs on XHTTP over HTTP/3 and MASQUE over
+  HTTP/3 as on Hysteria, and Salamander on mKCP as a header mask grouped with
+  `mkcp-legacy`'s, as Xray-core applies it to any UDP dial. Gecko on mKCP is
+  refused for now. See [Hysteria carrier additions](docs/config-compatibility.md#v08-hysteria-carrier-additions).
 - The `xdrive` transport carries VLESS through a storage both ends reach, as
   Xray-core v26.10.31's client does: each connection announces a session
   under `sessions/`, writes its direction as numbered segments under
