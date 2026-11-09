@@ -34,9 +34,10 @@ long-term supported release series.
 - The WireGuard outbound's userspace TCP/IP stack now takes IP packets from
   any source, as MASQUE needs; WireGuard itself is unchanged.
 - The `xicmp` UDP mask carries mKCP, Hysteria, XHTTP over HTTP/3 and
-  MASQUE over HTTP/3 in ICMP, as Xray-core's client does: every datagram rides in an echo request
-  to the server after the client's 8-byte id, and the server's come back in
-  its echo replies. See [xicmp mask](docs/config-compatibility.md#xicmp-mask).
+  MASQUE over HTTP/3 in ICMP, as Xray-core's client does: every datagram
+  rides in an echo request to the server after the client's 8-byte id, and
+  the server's come back in its echo replies. See
+  [xicmp mask](docs/config-compatibility.md#xicmp-mask).
   - `dgram` takes datagram ICMP sockets, which macOS, iOS, Android and Linux
     within `net.ipv4.ping_group_range` grant without privilege; raw sockets
     need root or `CAP_NET_RAW`.
@@ -49,11 +50,11 @@ long-term supported release series.
     fails every dial.
 - The `realm` UDP mask reaches a server behind NAT, as Xray-core's client
   does: mKCP, Hysteria, XHTTP over HTTP/3 and MASQUE over HTTP/3 learn their
-  public addresses
-  from STUN servers over the carrier's own socket, a Hysteria realm
-  rendezvous introduces them to the server registered under the realm's
-  name, both sides punch, and the carrier's datagrams go to the address that
-  answered. See [realm mask](docs/config-compatibility.md#realm-mask).
+  public addresses from STUN servers over the carrier's own socket, a
+  Hysteria realm rendezvous introduces them to the server registered under
+  the realm's name, both sides punch, and the carrier's datagrams go to the
+  address that answered. See
+  [realm mask](docs/config-compatibility.md#realm-mask).
   - `portMapping` is read but not acted on yet: no UPnP or NAT-PMP mapping
     is made, as when Xray-core finds no gateway.
   - It must be the last UDP mask and runs neither with udphop, xdns nor

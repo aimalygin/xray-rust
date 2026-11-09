@@ -2399,11 +2399,10 @@ Xray-core's server.
 
 `realm` reaches a server behind NAT through a rendezvous, as Hysteria's
 Realms do, on mKCP, Hysteria, XHTTP with exact `h3` ALPN or MASQUE over
-HTTP/3. The server's
-inbound registers its public addresses with the rendezvous under a realm
-name; the client finds its own, asks the rendezvous to introduce it, and
-both send punch packets until one arrives. The rendezvous carries no
-traffic.
+HTTP/3. The server's inbound registers its public addresses with the
+rendezvous under a realm name; the client finds its own, asks the
+rendezvous to introduce it, and both send punch packets until one arrives.
+The rendezvous carries no traffic.
 
 ```json
 "finalmask": {"udp": [{"type": "realm", "settings": {
@@ -2461,8 +2460,9 @@ does and runs each carrier against its server through a local rendezvous.
 ### xicmp mask
 
 `xicmp` carries a UDP carrier in ICMP echo messages: mKCP, Hysteria, XHTTP
-with exact `h3` ALPN or MASQUE over HTTP/3. The server reads echo requests on raw ICMP sockets and
-answers in echo replies; the client sends echo requests:
+with exact `h3` ALPN or MASQUE over HTTP/3. The server reads echo requests
+on raw ICMP sockets and answers in echo replies; the client sends echo
+requests:
 
 ```json
 "finalmask": {"udp": [{"type": "xicmp", "settings": {
