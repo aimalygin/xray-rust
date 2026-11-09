@@ -163,6 +163,34 @@ async fn resume_after_idle() {
     expect_read(&mut server, b"second").await;
 }
 
+/// A write wakes the reader out of its back-off, as an answer is likely:
+/// what the server stored while the reader slept arrives at once, not after
+/// the seconds the reader would still wait.
+#[tokio::test]
+async fn a_write_wakes_a_reader_that_backed_off() {
+    let folder = Folder::new();
+    let slow = XdriveTuning {
+        flush_interval_ms: 5,
+        poll_interval_ms: 5,
+        max_poll_interval_ms: 60_000,
+        eager_window_ms: 10,
+        ..XdriveTuning::default()
+    };
+    let (mut client, mut server) = pair(&folder, slow).await;
+    // The reader polled last at about 2.56 s and waits until about 7.68 s:
+    // its waits double from 10 ms once the 10 ms eager window is over.
+    tokio::time::sleep(Duration::from_millis(3_000)).await;
+    server.write_all(b"pong").await.unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    client.write_all(b"ping").await.unwrap();
+    let mut got = [0; 4];
+    timeout(Duration::from_millis(500), client.read_exact(&mut got))
+        .await
+        .expect("the write woke the reader")
+        .unwrap();
+    assert_eq!(&got, b"pong");
+}
+
 /// What a session leaves in the folder: its announcement, then numbered
 /// segments and the end mark of each direction, which the reader deletes.
 #[tokio::test]

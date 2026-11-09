@@ -1789,6 +1789,141 @@
    ]
   },
   {
+   "name": "entries behind the head are no hole",
+   "concurrency": 8,
+   "holeTimeout": "zero",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      },
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "data of 000000000.seg",
+      "data of 000000001.seg"
+     ],
+     "discarded": [
+      "down/000000000.seg",
+      "down/000000001.seg"
+     ],
+     "seq": 2
+    },
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      },
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 2
+    },
+    {
+     "listing": [
+      {
+       "name": "000000001.seg",
+       "data": "data of 000000001.seg"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 2
+    },
+    {
+     "listing": [
+      {
+       "name": "000000002.seg",
+       "data": "data of 000000002.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "data of 000000002.seg"
+     ],
+     "discarded": [
+      "down/000000002.seg"
+     ],
+     "seq": 3
+    }
+   ]
+  },
+  {
+   "name": "names that are no entries are no hole",
+   "concurrency": 8,
+   "holeTimeout": "zero",
+   "steps": [
+    {
+     "listing": [
+      {
+       "name": "x",
+       "data": "data of x"
+      },
+      {
+       "name": "1.tmp",
+       "data": "data of 1.tmp"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    },
+    {
+     "listing": [
+      {
+       "name": "x",
+       "data": "data of x"
+      },
+      {
+       "name": "1.tmp",
+       "data": "data of 1.tmp"
+      }
+     ],
+     "advanced": false,
+     "eof": false,
+     "chunks": [],
+     "discarded": [],
+     "seq": 0
+    },
+    {
+     "listing": [
+      {
+       "name": "000000000.seg",
+       "data": "data of 000000000.seg"
+      }
+     ],
+     "advanced": true,
+     "eof": false,
+     "chunks": [
+      "data of 000000000.seg"
+     ],
+     "discarded": [
+      "down/000000000.seg"
+     ],
+     "seq": 1
+    }
+   ]
+  },
+  {
    "name": "batches of concurrency",
    "concurrency": 3,
    "holeTimeout": "long",

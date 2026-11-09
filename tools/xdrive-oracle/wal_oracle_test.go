@@ -488,6 +488,16 @@ func TestXrayRustOracle(t *testing.T) {
 			{Listing: xrayRustListing("000000000.seg", "000000001.seg", "000000002.seg", "000000003.seg",
 				"000000004.seg", "000000005.seg", "000000006.seg")},
 		}},
+		{Name: "entries behind the head are no hole", Concurrency: 8, HoleTimeout: "zero", Steps: []xrayRustReaderStep{
+			{Listing: xrayRustListing("000000000.seg", "000000001.seg")},
+			{Listing: xrayRustListing("000000000.seg", "000000001.seg")},
+			{Listing: xrayRustListing("000000001.seg")},
+			{Listing: xrayRustListing("000000002.seg")},
+		}},
+		{Name: "names that are no entries are no hole", Concurrency: 8, HoleTimeout: "zero", Steps: []xrayRustReaderStep{
+			{Listing: xrayRustListing("x", "1.tmp")}, {Listing: xrayRustListing("x", "1.tmp")},
+			{Listing: xrayRustListing("000000000.seg")},
+		}},
 		{Name: "batches of concurrency", Concurrency: 3, HoleTimeout: "long", Steps: []xrayRustReaderStep{
 			{Listing: xrayRustListing("000000000.seg", "000000001.seg", "000000002.seg", "000000003.seg",
 				"000000004.seg", "000000006.seg")},
