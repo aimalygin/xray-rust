@@ -14,8 +14,11 @@
 //! leasing its own until it ends.
 
 mod client;
+mod drive;
+mod gojson;
 mod goregex;
 mod h2;
+mod h3;
 #[cfg(test)]
 mod http_oracle_tests;
 mod http_storage;
@@ -27,6 +30,9 @@ mod oracle_tests;
 mod params;
 mod redirect;
 mod s3;
+#[cfg(test)]
+mod slot_tests;
+mod slots;
 mod storage;
 #[cfg(test)]
 mod storage_tests;
@@ -50,10 +56,12 @@ pub use params::XdriveTuning;
 pub use s3::XdriveS3;
 
 use client::ServiceDialer;
+use drive::{DriveShared, DriveStorage};
 use http_storage::HttpShared;
 use local::LocalStorage;
 use params::Params;
 use s3::{S3Shared, S3Storage};
+use slots::SlotStore;
 use storage::{Storage, StorageError};
 use stream::XdriveStream;
 use template::{StorageTemplate, TemplateShared, TemplateStorage};
@@ -76,6 +84,9 @@ pub struct XdriveHttpConfig {
     pub xmux: XhttpXmuxPolicy,
     /// The HTTP/2 PING period, `None` for none.
     pub keep_alive: Option<Duration>,
+    /// With `alpn` exactly `["h3"]`: `https` goes over HTTP/3, its QUIC
+    /// connections set up as XHTTP's are.
+    pub h3: Option<crate::stream::H3QuicConfig>,
 }
 
 /// A `template` service: the template's JSON as written, with what fills
@@ -97,8 +108,9 @@ impl fmt::Debug for XdriveTemplate {
     }
 }
 
-/// The storage an XDRIVE outbound keeps its sessions in.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// The storage an XDRIVE outbound keeps its sessions in. Its `Debug`
+/// shows how many secrets Drive has, never what they are.
+#[derive(Clone, PartialEq, Eq)]
 pub enum XdriveStorageConfig {
     /// `local`: files under `folder`, made when a session opens if missing.
     Local { folder: String },
@@ -112,6 +124,41 @@ pub enum XdriveStorageConfig {
         template: XdriveTemplate,
         http: XdriveHttpConfig,
     },
+    /// `google-drive`: files in the folder `folder` names by id, reached
+    /// with the client id, client secret and refresh token of `secrets`.
+    GoogleDrive {
+        folder: String,
+        secrets: Vec<Zeroizing<String>>,
+        http: XdriveHttpConfig,
+    },
+}
+
+impl fmt::Debug for XdriveStorageConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Local { folder } => f.debug_struct("Local").field("folder", folder).finish(),
+            Self::S3 { s3, http } => f
+                .debug_struct("S3")
+                .field("s3", s3)
+                .field("http", http)
+                .finish(),
+            Self::Template { template, http } => f
+                .debug_struct("Template")
+                .field("template", template)
+                .field("http", http)
+                .finish(),
+            Self::GoogleDrive {
+                folder,
+                secrets,
+                http,
+            } => f
+                .debug_struct("GoogleDrive")
+                .field("folder", folder)
+                .field("secrets", &secrets.len())
+                .field("http", http)
+                .finish(),
+        }
+    }
 }
 
 /// An XDRIVE outbound's storage and tuning.
@@ -145,6 +192,12 @@ enum Backend {
         http: XdriveHttpConfig,
         built: OnceLock<Arc<TemplateShared>>,
     },
+    Drive {
+        folder: String,
+        secrets: Vec<Zeroizing<String>>,
+        http: XdriveHttpConfig,
+        built: OnceLock<Result<Arc<DriveShared>, String>>,
+    },
 }
 
 impl fmt::Debug for Backend {
@@ -158,6 +211,11 @@ impl fmt::Debug for Backend {
             Self::Template { config, http, .. } => f
                 .debug_struct("Template")
                 .field("config", config)
+                .field("http", http)
+                .finish_non_exhaustive(),
+            Self::Drive { folder, http, .. } => f
+                .debug_struct("Drive")
+                .field("folder", folder)
                 .field("http", http)
                 .finish_non_exhaustive(),
         }
@@ -190,6 +248,7 @@ fn service_dialer(dialer: &TransportDialer, http: &XdriveHttpConfig) -> ServiceD
         tls: http.tls.clone(),
         fronting: http.fronting.clone(),
         keep_alive: http.keep_alive,
+        h3: http.h3.clone(),
     }
 }
 
@@ -199,6 +258,16 @@ impl XdriveTransport {
             XdriveStorageConfig::Local { folder } => Backend::Local(folder),
             XdriveStorageConfig::S3 { s3, http } => Backend::S3 {
                 shared: S3Shared::new(&s3).map(Arc::new),
+                http,
+                built: OnceLock::new(),
+            },
+            XdriveStorageConfig::GoogleDrive {
+                folder,
+                secrets,
+                http,
+            } => Backend::Drive {
+                folder,
+                secrets,
                 http,
                 built: OnceLock::new(),
             },
@@ -224,17 +293,32 @@ impl XdriveTransport {
         &self,
         dialer: &TransportDialer,
     ) -> Result<BoxedTransportStream, TransportError> {
-        let storage = self.open_storage(dialer).await?;
+        let (storage, slots) = self.open_storage(dialer).await?;
         let session = names::new_session_id();
+        // A storage of slots carries the session in a ring when it can make
+        // one; otherwise, as when Xray-core warns, in segments.
+        let ring = match &slots {
+            Some(store) => slots::make_ring(store, &session, &self.params).await.ok(),
+            None => None,
+        };
+        let announce = ring
+            .as_ref()
+            .map(|ring| Bytes::from(ring.to_json()))
+            .unwrap_or_default();
         storage
-            .put(
-                &names::announce_name(&session, SystemTime::now()),
-                Bytes::new(),
-            )
+            .put(&names::announce_name(&session, SystemTime::now()), announce)
             .await
             .map_err(|error| {
                 TransportError::Xdrive(format!("failed to announce session {session} > {error}"))
             })?;
+        if let (Some(ring), Some(store)) = (ring, slots) {
+            return Ok(Box::new(XdriveStream::slots(
+                store,
+                ring.up,
+                ring.down,
+                self.params,
+            )));
+        }
         Ok(Box::new(XdriveStream::new(
             storage,
             names::uplink_prefix(&session),
@@ -243,15 +327,37 @@ impl XdriveTransport {
         )))
     }
 
-    /// The storage of one session.
+    /// The storage of one session, and its slots when it keeps objects by
+    /// id.
     async fn open_storage(
         &self,
         dialer: &TransportDialer,
-    ) -> Result<Arc<dyn Storage>, TransportError> {
-        match self.backend.as_ref() {
-            Backend::Local(folder) => Ok(Arc::new(
-                LocalStorage::open(folder).await.map_err(storage_error)?,
-            )),
+    ) -> Result<(Arc<dyn Storage>, Option<Arc<dyn SlotStore>>), TransportError> {
+        let storage: Arc<dyn Storage> = match self.backend.as_ref() {
+            Backend::Local(folder) => {
+                Arc::new(LocalStorage::open(folder).await.map_err(storage_error)?)
+            }
+            Backend::Drive {
+                folder,
+                secrets,
+                http,
+                built,
+            } => {
+                let shared = built
+                    .get_or_init(|| {
+                        let connections = HttpShared::new(
+                            service_dialer(dialer, http),
+                            http.xmux,
+                            drive::MAX_INFLIGHT,
+                        );
+                        DriveShared::new(folder, secrets, Arc::new(connections)).map(Arc::new)
+                    })
+                    .as_ref()
+                    .map_err(|error| TransportError::Xdrive(error.clone()))?;
+                let session = shared.http.session();
+                let storage = Arc::new(DriveStorage::new(Arc::clone(shared), session));
+                return Ok((storage.clone(), Some(storage)));
+            }
             Backend::S3 {
                 shared,
                 http,
@@ -267,10 +373,7 @@ impl XdriveTransport {
                         s3::MAX_INFLIGHT,
                     ))
                 });
-                Ok(Arc::new(S3Storage::new(
-                    Arc::clone(shared),
-                    connections.session(),
-                )))
+                Arc::new(S3Storage::new(Arc::clone(shared), connections.session()))
             }
             Backend::Template {
                 template,
@@ -295,9 +398,10 @@ impl XdriveTransport {
                     ))
                 });
                 let session = shared.http.session();
-                Ok(Arc::new(TemplateStorage::new(Arc::clone(shared), session)))
+                Arc::new(TemplateStorage::new(Arc::clone(shared), session))
             }
-        }
+        };
+        Ok((storage, None))
     }
 }
 

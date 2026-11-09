@@ -1316,8 +1316,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "google-drive deprecated name",
@@ -1346,8 +1345,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "google-drive two secrets",
@@ -1483,8 +1481,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "google-drive null secret",
@@ -1513,8 +1510,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "google-drive secret number",
@@ -1596,8 +1592,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "deprecated name two secrets",
@@ -4627,8 +4622,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "encryption none",
@@ -5521,8 +5515,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "drive h3 noise upper",
@@ -5572,8 +5565,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "drive h3 salamander",
@@ -6025,8 +6017,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "HTTP/3"
+   "xray": "ok"
   },
   {
    "name": "drive h2 noise",
@@ -6113,8 +6104,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "drive h3 empty finalmask",
@@ -6151,8 +6141,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "drive h3 bbr",
@@ -6194,8 +6183,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "drive h3 reno",
@@ -6236,8 +6224,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "drive h3 brutal",
@@ -6393,8 +6380,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "local h3 windows",

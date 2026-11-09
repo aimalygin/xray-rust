@@ -552,3 +552,106 @@ async fn h2_requests_frame_as_gos_client() {
         assert_eq!(data, want, "{name}: DATA");
     }
 }
+
+fn bytes_of(value: &Value) -> Vec<u8> {
+    use base64::Engine as _;
+    match value.as_str() {
+        Some(text) => base64::engine::general_purpose::STANDARD
+            .decode(text)
+            .unwrap(),
+        None => Vec::new(),
+    }
+}
+
+#[test]
+fn slot_frames_match_xray_core() {
+    use super::slots::SlotFrame;
+    let vectors = vectors();
+    for case in vectors["slots"].as_array().unwrap() {
+        let data = Bytes::from(bytes_of(&case["data"]));
+        let frame = SlotFrame::new(
+            case["seq"].as_i64().unwrap(),
+            case["mode"].as_u64().unwrap() as u8,
+            &data,
+        );
+        assert_eq!(frame.encode(), text(&case["encoded"]), "{case}");
+    }
+    for case in vectors["slotDecodes"].as_array().unwrap() {
+        let description = text(&case["description"]);
+        let decoded = SlotFrame::decode(&description);
+        assert_eq!(
+            decoded.is_some(),
+            case["ok"].as_bool().unwrap(),
+            "{description}"
+        );
+        if let Some(frame) = decoded {
+            assert_eq!(frame.seq, case["seq"].as_i64().unwrap(), "{description}");
+            assert_eq!(
+                u64::from(frame.mode),
+                case["mode"].as_u64().unwrap(),
+                "{description}"
+            );
+            assert_eq!(
+                u64::from(frame.size),
+                case["size"].as_u64().unwrap(),
+                "{description}"
+            );
+            assert_eq!(
+                u64::from(frame.crc),
+                case["crc"].as_u64().unwrap(),
+                "{description}"
+            );
+            assert_eq!(
+                frame.data.to_vec(),
+                bytes_of(&case["data"]),
+                "{description}"
+            );
+        }
+    }
+}
+
+#[test]
+fn rings_match_xray_core() {
+    use super::slots::{Ring, SlotTable};
+    for case in vectors()["rings"].as_array().unwrap() {
+        let payload = text(&case["payload"]);
+        let decoded = Ring::from_json(payload.as_bytes());
+        assert_eq!(
+            decoded.is_some(),
+            case["ok"].as_bool().unwrap(),
+            "{payload}"
+        );
+        let table = |value: &Value| SlotTable {
+            slots: value[0].as_array().unwrap().iter().map(text).collect(),
+            watermark: text(&value[1][0]),
+        };
+        if let Some(ring) = decoded {
+            assert_eq!(ring.up, table(&case["up"]), "{payload}");
+            assert_eq!(ring.down, table(&case["down"]), "{payload}");
+            if let Some(marshal) = case["marshal"].as_str().filter(|m| !m.is_empty()) {
+                assert_eq!(ring.to_json(), marshal);
+            }
+        }
+    }
+}
+
+#[test]
+fn drive_helpers_match_xray_core() {
+    use super::drive::{multipart_body, quote_value, rate_limited};
+    let drive = &vectors()["drive"];
+    for pair in drive["quotes"].as_array().unwrap() {
+        assert_eq!(quote_value(pair[0].as_str().unwrap()), text(&pair[1]));
+    }
+    assert_eq!(
+        multipart_body(br#"{"name":"n"}"#, &[0, 1, 2]),
+        bytes_of(&drive["multipart"])
+    );
+    for case in drive["rateLimited"].as_array().unwrap() {
+        let payload = text(&case["payload"]);
+        assert_eq!(
+            rate_limited(payload.as_bytes()),
+            case["limited"].as_bool().unwrap(),
+            "{payload}"
+        );
+    }
+}

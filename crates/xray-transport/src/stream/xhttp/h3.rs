@@ -1048,6 +1048,12 @@ impl Drop for H3ConnectionDriver {
 }
 
 impl H3Client {
+    /// A handle that opens request streams on the connection, for callers
+    /// that read every status themselves, such as XDRIVE's storages.
+    pub(crate) fn request_sender(&self) -> H3SendRequest {
+        self.send_request.clone()
+    }
+
     /// Whether the HTTP/3 driver and underlying QUIC connection are live.
     pub fn is_live(&self) -> bool {
         !self.driver.task.is_finished() && self.driver.connection.close_reason().is_none()

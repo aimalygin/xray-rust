@@ -199,6 +199,8 @@ pub(crate) struct ServiceDialer {
     pub fronting: Option<(TargetAddr, u16)>,
     /// The HTTP/2 keepalive; `None` sends no PING.
     pub keep_alive: Option<Duration>,
+    /// With `alpn` exactly `["h3"]`, `https` goes over HTTP/3 with these.
+    pub h3: Option<crate::stream::H3QuicConfig>,
 }
 
 impl std::fmt::Debug for ServiceDialer {
@@ -252,6 +254,49 @@ impl ServiceDialer {
         }
     }
 
+    /// A QUIC connection for `url`'s host, as XHTTP's HTTP/3 dial makes
+    /// one: to the fronting address or the host, the server name the host's
+    /// unless the stream names one, through the stream's UDP masks.
+    async fn connect_h3(
+        &self,
+        url: &ServiceUrl,
+        quic: &crate::stream::H3QuicConfig,
+    ) -> Result<crate::stream::xhttp::H3Client, ServiceError> {
+        let (addr, port) = self.destination(url);
+        let target = Target::new(addr, port, Network::Udp);
+        if self.dialer.is_chained() {
+            return Err(ServiceError::Request(
+                "a storage over HTTP/3 cannot go through another outbound".to_owned(),
+            ));
+        }
+        let candidates = self.candidates(&target).await?;
+        let mut tls = self.tls.clone();
+        if tls.server_name.is_empty() {
+            tls.server_name = url.hostname.clone();
+        }
+        let material = self
+            .dialer
+            .h3_dial_material(&crate::ConnectorConfig::Tls(tls))
+            .map_err(transport_error)?;
+        let remote_addr = *candidates
+            .first()
+            .ok_or_else(|| ServiceError::Network(format!("no address for {}", url.hostname)))?;
+        let realm = quic.udp_realm.as_ref().map(|_| self.dialer.realm_env());
+        let config = crate::stream::H3ConnectConfig {
+            remote_addr,
+            server_name: material.server_name,
+            tls_config: material.tls_config,
+            socket_protector: material.socket_protector,
+            quic: quic.clone(),
+            realm,
+        };
+        let dial = crate::stream::xhttp::connect_h3_candidates(config, &candidates, None);
+        tokio::time::timeout(STALL_TIMEOUT, dial)
+            .await
+            .map_err(|_| ServiceError::Stalled)?
+            .map_err(|error| ServiceError::Network(format!("http3: {error}")))
+    }
+
     async fn candidates(&self, target: &Target) -> Result<Vec<SocketAddr>, ServiceError> {
         match &target.addr {
             TargetAddr::Ip(ip) => Ok(vec![SocketAddr::new(*ip, target.port)]),
@@ -290,6 +335,8 @@ impl std::fmt::Debug for ServiceClient {
 
 /// One host's connections.
 struct HostConnections {
+    /// The host's HTTP/3 connection, over `alpn` `["h3"]`.
+    h3: tokio::sync::Mutex<Option<Arc<crate::stream::xhttp::H3Client>>>,
     /// Held while the host's one HTTP/2 connection is dialed, so the
     /// requests after the first wait for it instead of dialing their own.
     h2: tokio::sync::Mutex<Option<H2Connection>>,
@@ -327,6 +374,7 @@ impl ServiceClient {
         let mut hosts = self.hosts.lock().unwrap();
         Arc::clone(hosts.entry(url.pool_key()).or_insert_with(|| {
             Arc::new(HostConnections {
+                h3: tokio::sync::Mutex::new(None),
                 h2: tokio::sync::Mutex::new(None),
                 idle: Mutex::new(Vec::new()),
                 h1_slots: Arc::new(Semaphore::new(self.max_conns)),
@@ -360,6 +408,19 @@ impl ServiceClient {
                 .lock()
                 .unwrap()
                 .contains(&request.url.authority);
+        if let Some(quic) = self.dialer.h3.as_ref().filter(|_| request.url.secure) {
+            let mut slot = host.h3.lock().await;
+            let client = match slot.as_ref().filter(|client| client.is_live()) {
+                Some(client) => Arc::clone(client),
+                None => {
+                    let client = Arc::new(self.dialer.connect_h3(&request.url, quic).await?);
+                    *slot = Some(Arc::clone(&client));
+                    client
+                }
+            };
+            drop(slot);
+            return super::h3::send(&client, &prepared, progress).await;
+        }
         if http1 {
             return self.http1(&host, &prepared, None, progress).await;
         }
@@ -773,6 +834,7 @@ mod tests {
             },
             fronting,
             keep_alive: None,
+            h3: None,
         };
         let url = ServiceUrl::parse("https://bucket.s3.example:8443/key").unwrap();
         let front = TargetAddr::Domain("front.example".to_owned());
