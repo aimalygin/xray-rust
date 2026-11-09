@@ -197,10 +197,11 @@ async fn run_tunnel(
         _ = wait_for_shutdown(&mut shutdown) => None,
         opened = opened => match opened {
             Ok(stream) => Some(stream),
-            Err(error) => {
+            // Dial errors can name the server, which logs keep out.
+            Err(_) => {
                 context
                     .logger
-                    .error(|| format!("Debug reverse tunnel failed tag={tag} error={error}"));
+                    .error(|| format!("Debug reverse tunnel failed tag={tag} error=<redacted>"));
                 None
             }
         },
