@@ -1416,6 +1416,8 @@
     {
       "context": "$.outbounds[].streamSettings; XHTTP downloadSettings after removing address/port",
       "fields": [
+        "address",
+        "port",
         "method",
         "network",
         "security",
@@ -1436,7 +1438,7 @@
         "sockopt"
       ],
       "id": "STREAM",
-      "notes": "method takes priority over network. raw/tcp, ws/websocket, httpupgrade, grpc, xhttp/splithttp, kcp/mkcp, hysteria, masque, xdrive; security none/tls/reality. Carrier/security combinations and inactive block handling require the validator."
+      "notes": "method takes priority over network. raw/tcp, ws/websocket, httpupgrade, grpc, xhttp/splithttp, kcp/mkcp, hysteria, masque, xdrive; security none/tls/reality. address and port are XDRIVE's: where its storage connections go instead of the URL's host, the port only when nonzero; other transports refuse them. Carrier/security combinations and inactive block handling require the validator."
     },
     {
       "context": "streamSettings.tlsSettings",
