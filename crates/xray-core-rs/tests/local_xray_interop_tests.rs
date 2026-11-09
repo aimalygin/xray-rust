@@ -3696,6 +3696,9 @@ mod realm;
 #[path = "local_xray_interop_tests/xicmp.rs"]
 mod xicmp;
 
+#[path = "../../../tests/support/chrome_parrot_wire.rs"]
+mod chrome_parrot_wire;
+
 /// Record-level observer: it forwards the finalized ClientHello unchanged and
 /// then becomes a byte relay, including Vision's later direct-mode payload.
 async fn fragment_observer(
@@ -4045,6 +4048,97 @@ async fn xhttp_h3_bbr_profiles_interop() {
     })
     .await
     .expect("bounded XHTTP H3 BBR profile interop");
+}
+
+/// XHTTP over HTTP/3 through Xray's own server with ChromeParrot as Xray
+/// dials by default (no `quicParams`), with `disableChromeParrot: true`, and
+/// with `false` next to a BBR profile: 256 KiB echo back intact, and the
+/// first flight on the wire is ChromeParrot's or the stock one.
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary"]
+async fn xhttp_h3_chrome_parrot_interop() {
+    timeout(Duration::from_secs(120), async {
+        let xray = timeout(
+            Duration::from_secs(60),
+            start_xray_vless_server(
+                &resolve_xray_checkout(),
+                XrayVlessServerConfig {
+                    security: XrayInboundSecurity::Tls,
+                    transport: XrayInboundTransport::Xhttp {
+                        path: XHTTP_PATH,
+                        mode: "stream-one",
+                        tls_alpn: Some("h3"),
+                    },
+                    flow: None,
+                },
+            ),
+        )
+        .await
+        .expect("start XHTTP H3 Xray server timeout");
+        let relay = chrome_parrot_wire::RecordingRelay::start(xray.addr).await;
+        for (quic, chrome_parrot) in [
+            (None, true),
+            (Some(serde_json::json!({"disableChromeParrot":true})), false),
+            (
+                Some(serde_json::json!({"disableChromeParrot":false,"bbrProfile":"conservative"})),
+                true,
+            ),
+        ] {
+            let mut rust_config = rust_xhttp_core_config(
+                relay.address,
+                StreamSecurity::Tls(TlsSettings {
+                    server_name: Some(TLS_SERVER_NAME.to_owned()),
+                    fingerprint: Some("chrome".to_owned()),
+                    allow_insecure: true,
+                    pinned_peer_cert_sha256: Vec::new(),
+                    verify_peer_cert_by_name: Vec::new(),
+                    alpn: vec!["h3".to_owned()],
+                }),
+                XhttpMode::StreamOne,
+            );
+            if let Some(quic) = &quic {
+                let raw = serde_json::json!({"outbounds":[{"protocol":"freedom","streamSettings":{
+                    "network":"xhttp","security":"tls","tlsSettings":{"serverName":"example.com","alpn":["h3"]},
+                    "finalmask":{"quicParams":quic}}}]});
+                rust_config.outbounds[0].stream.quic_params = parse_xray_json(&raw.to_string())
+                    .unwrap()
+                    .config
+                    .outbounds[0]
+                    .stream
+                    .quic_params
+                    .clone();
+            }
+
+            let mut core = Core::new(rust_config).expect("create Rust XHTTP core");
+            core.start().await.expect("start Rust XHTTP core");
+            let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+            let (echo_addr, _echo) = spawn_echo_server().await;
+            let mut client = open_socks_flow(&xray, socks_addr, echo_addr).await;
+            let payload = bulk_interop_payload(256 * 1024);
+            let mut echoed = vec![0; payload.len()];
+            let (mut reader, mut writer) = client.split();
+            let (written, read) = tokio::join!(writer.write_all(&payload), async {
+                timeout(Duration::from_secs(30), reader.read_exact(&mut echoed)).await
+            });
+            written.unwrap();
+            if let Err(error) = read.expect("echo deadline") {
+                eprintln!("{}", xray.logs());
+                panic!("{quic:?}: {error}");
+            }
+            assert_eq!(echoed, payload, "{quic:?}");
+            drop(client);
+            core.stop().await.unwrap();
+
+            let datagrams = relay.take();
+            if chrome_parrot {
+                chrome_parrot_wire::assert_chrome_first_flight(&datagrams, b"h3");
+            } else {
+                chrome_parrot_wire::assert_stock_first_flight(&datagrams);
+            }
+        }
+    })
+    .await
+    .expect("bounded XHTTP H3 ChromeParrot interop");
 }
 
 /// Xray-core v26.10.31 stopped answering every OPTIONS request as a CORS
