@@ -606,12 +606,17 @@ with its authority, path, User-Agent presets and Basic authorization, the
 server settings it waits for, the address request and assignment rules, the
 datagram and capsule formats and packet admission, ICMP Packet Too Big, the
 tunnel pool of its `xmux` with the one-second retry rule, and the stack over
-each tunnel with `remoteDNS`. Over HTTP/2 it runs Xray-core's own HTTP/2
+each tunnel with `remoteDNS`, and `warp` for Cloudflare WARP: its key and
+address checks, the device certificate, the endpoint key check and both
+Cloudflare request forms. Over HTTP/2 it runs Xray-core's own HTTP/2
 client: its SETTINGS, connection window and header block byte for byte, its
 stream windows, the 32 KiB write buffer, the 128 queued packets and the
 keepalive. Deliberate differences:
 
-- `warp` is not supported yet and fails the configuration.
+- A WARP TLS session is never resumed: its client certificate is part of
+  it, and the dial that resumes one would not show a fresh certificate.
+- Unknown fields in `warp` fail the configuration, as everywhere; Go's
+  JSON ignores them.
 - The stack is the WireGuard outbound's smoltcp stack, not gVisor: 16 TCP
   and 512 UDP flows a tunnel, its buffers and its TCP. smoltcp does not act
   on ICMP Packet Too Big; the QUIC connection never goes below its 1350-byte
@@ -668,7 +673,17 @@ the host and path checks) fails the tests each time, and so does mutating
 27 of the HTTP/2 path (capsule framing, the bare read rule, the
 write buffer and windows, the keepalive, the extended CONNECT check, the
 header block options and field order, ALPN, keepalive defaults and the TE
-check).
+check). For `warp`, a third oracle runs inside Xray-core's `infra/conf`
+and records its verdict on 156 private keys, 108 public keys and 22 address
+lists, well-formed and damaged, and ours match all of them; the HTTP/2
+oracle's WARP requests match byte for byte; and UDP of both families runs
+live over HTTP/3 with draft and RFC 9297 datagrams and over HTTP/2 with and
+without ALPN against a stand-in built from Xray-core's own warp tests, which
+checks the device certificate with Go's TLS, while an endpoint with another
+key is refused. 16 of its branches (key, curve and range
+checks, PEM and base64 rules, point validation, address rules, the
+certificate's validity and serial, the draft datagram setting, the
+Cloudflare protocol and request) fail the tests when mutated.
 
 ## QUIC BBR profiles
 

@@ -26,7 +26,12 @@ long-term supported release series.
     and TCP masks included, and runs Xray-core's own HTTP/2 client: its
     SETTINGS, windows and keepalive, and its request header block byte for
     byte. Packets travel in DATAGRAM capsules on the request stream.
-  - `warp` is not supported yet and fails the configuration.
+  - `warp` reaches Cloudflare WARP as Xray-core's client does: the device's
+    P-256 key authenticates with a certificate made at each dial, the
+    endpoint is known by its key, `cf-connect-ip` over HTTP/3 with draft or
+    RFC 9297 datagrams, or a plain CONNECT with bare capsules over HTTP/2,
+    and the configured addresses. It is tested against a local stand-in
+    built from Xray-core's own warp tests, not against Cloudflare.
   - Deliberate differences: a tunnel takes 16 TCP and 512 UDP flows, the
     bounds of the WireGuard outbound's stack, which it shares; `remoteDNS`
     takes at most 8 servers and no scoped address; an empty `address`,

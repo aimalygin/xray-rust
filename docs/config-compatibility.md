@@ -2349,8 +2349,8 @@ and no chaining; the `masque` network takes no other outbound.
   for a second before the next dial.
 
 The client uses HTTP/3 unless `tlsSettings.alpn` names `h2` and not `h3`,
-which selects HTTP/2, below; `warp` is not supported yet and fails the
-configuration. Over HTTP/3 the TLS ALPN is `h3` alone and the fingerprint is
+which selects HTTP/2, below; `warp` selects Cloudflare WARP, further below.
+Over HTTP/3 the TLS ALPN is `h3` alone and the fingerprint is
 not used: Xray-core's MASQUE dial shapes neither its TLS nor its QUIC
 handshake. The QUIC connection starts with 1350-byte packets and never goes
 below them, issues 4-byte connection IDs, refuses incoming streams, and
@@ -2406,10 +2406,39 @@ matches), for those families, IPv6 first when there is one. A TCP flow tries
 up to eight of its addresses, three seconds each and ten for the last; a UDP
 flow goes to the first. A flow's open deadline is the handshake timeout plus
 the ten seconds a tunnel dial may take, which goes on for the next flows if
-the one that started it gives up. `scripts/check-masque-interop.sh` compares
-the capsules, packets and the HTTP/2 client's frames with Xray-core's own
-code, rechecks the configuration verdicts with `xray run -test` and runs the
-client against Xray-core's server over HTTP/3 and HTTP/2.
+the one that started it gives up.
+
+`warp` reaches Cloudflare WARP, as Xray-core v26.10.31 does:
+
+```json
+"masqueSettings": {"warp": {"privateKey": "<device key>",
+  "publicKey": "<endpoint key>", "address": ["172.16.0.2/32", "fd00::2/128"]}}
+```
+
+`privateKey` is the device's ECDSA P-256 key, PKCS #8 or SEC 1, in PEM or
+standard base64; `publicKey` the endpoint's SubjectPublicKeyInfo in the same
+forms, any key Go's `x509.ParsePKIXPublicKey` takes; `address` at most one
+prefix or address of each family, read as Go's `netip` reads them (a zone is
+dropped, `::ffff:` addresses count as IPv6). `user` and `pass` cannot be
+used with it; `host` defaults to `cloudflareaccess.com` and `path` to `/`.
+Each dial presents a certificate made for the device key, as Xray-core's
+`warpCertificate` makes it, and checks the endpoint by its key alone, unless
+`pinnedPeerCertSha256`, `verifyPeerCertByName` or `allowInsecure` already
+decide how it is verified. Over HTTP/3 the QUIC connection issues 20-byte
+connection IDs, announces the draft-00 datagram setting, and sends
+`cf-connect-ip` without needing extended CONNECT, taking draft or RFC 9297
+datagrams. Over HTTP/2 the TLS negotiates `h2` or no protocol; the request
+is a plain CONNECT to the authority with port 443, with `Cf-Connect-Proto`
+and `Pq-Enabled: false` instead of `Capsule-Protocol`, and the packets ride
+bare DATAGRAM capsules. The tunnel takes the configured addresses without
+asking for any, and a WARP TLS session is never resumed.
+
+`scripts/check-masque-interop.sh` compares
+the capsules, packets, WARP keys and addresses and the HTTP/2 client's
+frames with Xray-core's own code, rechecks the configuration verdicts with
+`xray run -test` and runs the client against Xray-core's server over HTTP/3
+and HTTP/2, and against a WARP stand-in built from Xray-core's warp tests.
+It never connects to Cloudflare.
 
 ### TLS ClientHello shaping
 
