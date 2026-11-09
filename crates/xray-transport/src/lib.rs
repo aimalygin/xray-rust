@@ -32,6 +32,7 @@ mod memory_class;
 pub mod realm;
 pub mod sudoku;
 pub mod xdns;
+pub mod xdrive;
 pub mod xicmp;
 pub mod xmc;
 
@@ -204,6 +205,8 @@ pub enum TransportError {
     Grpc(String),
     #[error("xhttp transport error: {0}")]
     Xhttp(String),
+    #[error("xdrive transport error: {0}")]
+    Xdrive(String),
     #[error("mKCP dial failed: {0}")]
     Kcp(std::io::Error),
     #[error("realm socket failed: {0}")]

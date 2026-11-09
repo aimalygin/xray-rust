@@ -193,6 +193,8 @@ pub(crate) struct Url {
     pub host: String,
     pub path: Vec<u8>,
     pub raw_path: String,
+    /// A `?` with nothing after it ends the URL.
+    pub force_query: bool,
     pub raw_query: String,
     pub fragment: Vec<u8>,
 }
@@ -356,6 +358,7 @@ fn parse_without_fragment(raw: &str) -> Result<Url, String> {
     url.scheme = scheme.to_ascii_lowercase();
     let mut rest_owned;
     if rest.ends_with('?') && rest.matches('?').count() == 1 {
+        url.force_query = true;
         rest = &rest[..rest.len() - 1];
     } else if let Some((before, query)) = rest.split_once('?') {
         url.raw_query = query.to_owned();

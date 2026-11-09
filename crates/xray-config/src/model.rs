@@ -1246,6 +1246,133 @@ pub const MASQUE_DEFAULT_XMUX: XhttpXmuxSettings = XhttpXmuxSettings {
     h_keep_alive_period_secs: 0,
 };
 
+/// `xdriveSettings`, as Xray-core v26.10.31's `XDriveConfig.Build` leaves
+/// them: the service named, `"Google Drive"` read as `google-drive`, the `s3`
+/// block's `pathStyle` defaulted and an all-zero `xmux` replaced by XDRIVE's
+/// defaults. The tuning numbers stay as written: zero takes Xray-core's
+/// default when the transport starts. Its `Debug` shows how many secrets
+/// there are and how long the template is, never their text: both carry
+/// credentials.
+#[derive(Clone, PartialEq, Eq)]
+pub struct XdriveSettings {
+    pub service: XdriveService,
+    /// `remoteFolder`: the folder of `local`, the folder id of
+    /// `google-drive`, the key prefix of `s3`, `{folder}` in a `template`.
+    pub remote_folder: String,
+    /// `secrets`, in order, wiped when dropped.
+    pub secrets: Vec<zeroize::Zeroizing<String>>,
+    /// `segmentBytes`: zero is 512 KiB, more than 16 MiB is 16 MiB.
+    pub segment_bytes: u32,
+    /// `flushIntervalMs`: zero is 20 ms.
+    pub flush_interval_ms: u32,
+    /// `pollIntervalMs`: zero is 50 ms.
+    pub poll_interval_ms: u32,
+    /// `maxPollIntervalMs`: zero is 500 ms, never below the poll interval.
+    pub max_poll_interval_ms: u32,
+    /// `sessionTtlSeconds`: zero is 300 s.
+    pub session_ttl_seconds: u32,
+    /// `concurrency`: zero is 8, more than 64 is 64.
+    pub concurrency: u32,
+    /// `eagerWindowMs`: zero is 2 s.
+    pub eager_window_ms: u32,
+    /// `holeTimeoutMs`: zero is 30 s.
+    pub hole_timeout_ms: u32,
+    /// `template`, the JSON value as given, `None` when absent. Xray-core
+    /// reads it only when a connection dials.
+    pub template: Option<zeroize::Zeroizing<String>>,
+    pub s3: Option<XdriveS3Settings>,
+    /// Connection reuse, read as XHTTP's `xmux`; an all-zero object takes
+    /// [`xdrive_default_xmux`].
+    pub xmux: XhttpXmuxSettings,
+}
+
+impl fmt::Debug for XdriveSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("XdriveSettings")
+            .field("service", &self.service)
+            .field("remote_folder", &self.remote_folder)
+            .field("secrets", &self.secrets.len())
+            .field("segment_bytes", &self.segment_bytes)
+            .field("flush_interval_ms", &self.flush_interval_ms)
+            .field("poll_interval_ms", &self.poll_interval_ms)
+            .field("max_poll_interval_ms", &self.max_poll_interval_ms)
+            .field("session_ttl_seconds", &self.session_ttl_seconds)
+            .field("concurrency", &self.concurrency)
+            .field("eager_window_ms", &self.eager_window_ms)
+            .field("hole_timeout_ms", &self.hole_timeout_ms)
+            .field(
+                "template",
+                &self.template.as_ref().map(|template| template.len()),
+            )
+            .field("s3", &self.s3)
+            .field("xmux", &self.xmux)
+            .finish()
+    }
+}
+
+/// The storage an XDRIVE stream lives in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XdriveService {
+    /// No `xdriveSettings` under `network: "xdrive"`: Xray-core then keeps
+    /// its registered default, whose empty service fails every dial.
+    Unset,
+    /// A folder both ends can reach.
+    Local,
+    /// Google Drive, with an OAuth refresh token.
+    GoogleDrive,
+    /// HTTP requests a JSON `template` describes.
+    Template,
+    /// An S3 bucket, signed with AWS Signature Version 4.
+    S3,
+}
+
+impl XdriveService {
+    /// The name Xray-core's config gives the service.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Unset => "",
+            Self::Local => "local",
+            Self::GoogleDrive => "google-drive",
+            Self::Template => "template",
+            Self::S3 => "s3",
+        }
+    }
+}
+
+/// `xdriveSettings.s3`, checked as Xray-core's `ValidateS3Config` checks it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XdriveS3Settings {
+    /// An `http` or `https` URL, its path the prefix of every request.
+    pub endpoint: String,
+    /// The signing region; empty signs for `us-east-1`.
+    pub region: String,
+    pub bucket: String,
+    /// The bucket in the path rather than the host: `true` unless
+    /// `pathStyle` is false.
+    pub path_style: bool,
+}
+
+/// XDRIVE's `xmux` defaults: `connections` connections, reusable for 1800
+/// to 3000 seconds. Xray-core gives Google Drive four over HTTP/1.1 and
+/// HTTP/2, where one connection's window holds back long round trips, and
+/// every other case one.
+pub const fn xdrive_default_xmux(connections: i32) -> XhttpXmuxSettings {
+    XhttpXmuxSettings {
+        max_concurrency: XhttpRange { from: 0, to: 0 },
+        max_connections: XhttpRange {
+            from: connections,
+            to: connections,
+        },
+        c_max_reuse_times: XhttpRange { from: 0, to: 0 },
+        h_max_request_times: XhttpRange { from: 0, to: 0 },
+        h_max_reusable_secs: XhttpRange {
+            from: 1_800,
+            to: 3_000,
+        },
+        h_keep_alive_period_secs: 0,
+    }
+}
+
 /// Xray `loopback` outbound settings. The handler never dials: it routes the
 /// connection again, as if it came from an inbound tagged `inbound_tag`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -2086,6 +2213,9 @@ pub enum StreamTransport {
     Kcp(KcpSettings),
     /// `masque`, for the `masque` outbound only.
     Masque(Box<MasqueSettings>),
+    /// `xdrive`, for VLESS only: the stream rides files in a storage both
+    /// ends reach.
+    Xdrive(Box<XdriveSettings>),
 }
 
 /// An ordered XHTTP integer range. Xray accepts either a JSON integer or a

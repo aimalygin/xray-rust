@@ -48,8 +48,13 @@ impl Parser<'_> {
         // MASQUE runs over HTTP/3 unless its ALPN asks for HTTP/2 alone.
         let masque_h3 = stream_network == StreamNetwork::Masque
             && matches!(&security, StreamSecurity::Tls(tls) if !super::masque::masque_uses_http2(&tls.alpn));
+        // XDRIVE reaches an HTTP storage over HTTP/3 only when that is the
+        // one protocol its ALPN names.
+        let xdrive_h3 = stream_network == StreamNetwork::Xdrive
+            && matches!(&security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]);
         let is_quic = stream_network == StreamNetwork::Hysteria
             || masque_h3
+            || xdrive_h3
             || stream_network == StreamNetwork::Xhttp
                 && matches!(&security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]);
         let mut quic_params = self.parse_quic_params(stream, stream_network, is_quic, index);
@@ -86,7 +91,10 @@ impl Parser<'_> {
             self.validate_stream_settings_compatibility(stream, index);
         }
         self.validate_unconsumed_transport_settings(stream, stream_network, index);
-        let transport = self.parse_stream_transport(stream, stream_network, index)?;
+        let transport = self.parse_stream_transport(stream, stream_network, xdrive_h3, index)?;
+        if xdrive_h3 {
+            self.validate_xdrive_h3_stream(stream, &transport, quic_params.as_ref(), index);
+        }
         if let StreamTransport::Xhttp(xhttp) = &transport {
             if let Some(download) = &xhttp.download {
                 if security != StreamSecurity::None
@@ -102,6 +110,7 @@ impl Parser<'_> {
 
         let udp_carrier = matches!(stream_network, StreamNetwork::Hysteria | StreamNetwork::Kcp)
             || masque_h3
+            || xdrive_h3
             || stream_network == StreamNetwork::Xhttp
                 && matches!(&security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]);
         if udp_noise.is_some() && !udp_carrier {
@@ -311,6 +320,7 @@ impl Parser<'_> {
         &mut self,
         stream: Option<&Value>,
         network: StreamNetwork,
+        xdrive_h3: bool,
         index: usize,
     ) -> Option<StreamTransport> {
         match network {
@@ -340,6 +350,10 @@ impl Parser<'_> {
                 .parse_masque_transport(stream, index)
                 .map(Box::new)
                 .map(StreamTransport::Masque),
+            StreamNetwork::Xdrive => self
+                .parse_xdrive_transport(stream, index, xdrive_h3)
+                .map(Box::new)
+                .map(StreamTransport::Xdrive),
         }
     }
 
@@ -373,6 +387,7 @@ impl Parser<'_> {
             StreamNetwork::Xhttp => &["xhttpSettings", "splithttpSettings"],
             StreamNetwork::Kcp => &["kcpSettings"],
             StreamNetwork::Masque => &["masqueSettings"],
+            StreamNetwork::Xdrive => &["xdriveSettings"],
         };
 
         for key in [
@@ -386,6 +401,7 @@ impl Parser<'_> {
             "splithttpSettings",
             "kcpSettings",
             "masqueSettings",
+            "xdriveSettings",
         ] {
             let value = stream.get(key);
             let null_xhttp_pointer = matches!(key, "xhttpSettings" | "splithttpSettings")
@@ -428,6 +444,11 @@ impl Parser<'_> {
                 // Xray-core builds it under any network.
                 "masqueSettings" => {
                     let _ = self.parse_masque_transport(Some(stream), index);
+                }
+                // So it does this one, as over HTTP/1.1 and HTTP/2: its h3
+                // flag needs the xdrive network.
+                "xdriveSettings" => {
+                    let _ = self.parse_xdrive_transport(Some(stream), index, false);
                 }
                 // `xhttpSettings` has priority over the legacy spelling, so
                 // the lower-priority block is inert when both are present.
@@ -1446,13 +1467,7 @@ impl Parser<'_> {
             }
             "kcp" | "mkcp" => Some(StreamNetwork::Kcp),
             "masque" => Some(StreamNetwork::Masque),
-            network @ "xdrive" => {
-                self.error(
-                    network_path,
-                    format!("stream network `{network}` is not supported by xray-rust"),
-                );
-                None
-            }
+            "xdrive" => Some(StreamNetwork::Xdrive),
             network => {
                 self.error(
                     network_path,

@@ -703,6 +703,70 @@ checks, PEM and base64 rules, point validation, address rules, the
 certificate's validity and serial, the draft datagram setting, the
 Cloudflare protocol and request) fail the tests when mutated.
 
+## XDRIVE
+
+The `xdrive` transport runs Xray-core v26.10.31's XDRIVE client with the
+`local` service: its configuration checks and defaults, `validateXDrive`'s
+rules for the outbound it carries, the session announcement, the segment
+names and marks, the writer's cuts and eight-tick coalescing, the reader's
+polling, batches, hole timeout, failure marks and deletes, and the local
+folder's names and atomic writes. The server address is never looked up, as
+in Xray-core. Deliberate differences:
+
+- `google-drive`, `template` and `s3` are read and checked as Xray-core
+  reads them, `s3` with `ValidateS3Config`'s rules, and refused when the core
+  starts: their HTTP clients are not here yet.
+- No `xdriveSettings` under `network: "xdrive"`, and `local` with an empty
+  `remoteFolder`, fail when the core starts; Xray-core accepts both and
+  fails every dial.
+- A writer holds the sender back once twice `concurrency` segments are cut
+  and not yet stored; Xray-core starts a goroutine for each and lets them
+  pile up. Only then can a flush tick find a full segment in the buffer, so
+  under such back pressure segment boundaries may fall elsewhere than
+  Xray-core's would; the bytes of the stream do not change.
+- Shutting a stream down ends only its own direction (its buffer, then
+  `.end`) and keeps reading the server's; Xray-core's `Close` ends both,
+  which its server sees the same way. A stream dropped without a shutdown
+  stores its buffer and `.end` in the background for up to two minutes,
+  where Xray-core's `Close` blocks until they are stored.
+- VLESS `reverse`, which lets Xray-core run XDRIVE without Mux, is refused,
+  as on every VLESS outbound here.
+- Unknown fields in `xdriveSettings`, `s3` and `xmux` fail, as everywhere;
+  Go's JSON ignores them and matches field names in any case. Over
+  `tlsSettings.alpn` other than exactly `["h3"]` the UDP masks fail,
+  `salamander` needs Hysteria, and the TCP fragment mask needs TLS, as on
+  the other carriers; Xray-core accepts them and the masks do nothing there.
+  `disableChromeParrot` is read there as Xray-core reads it.
+
+Evidence: `tools/xdrive-oracle` runs inside Xray-core's `xdrive` package
+through a `go test -overlay` and records `paramsFromConfig` on 11 inputs,
+`objectName`, `parseEntry` on 33 names, `announceName`, the local storage's
+`resolve` on 22 names, and replays of its segment writer on 17 sequences of
+writes, flush ticks and closes (with refused segments and end marks) and of
+its reader on 18 sequences of listings (holes, entries behind the head, end
+and failure marks, inline payloads, failing and missing objects, duplicate
+spellings, a full discard queue); the tests replay them all, and
+`scripts/check-xdrive-interop.sh`
+regenerates them each run, byte for byte. 213 configuration cases carry
+`xray run -test` verdicts, rechecked with the binary each run: 203 match
+and 10 differ as listed above; every case both accept also builds a core,
+but the 47 the core refuses as listed above. Live against Xray-core's
+XDRIVE server, the two meeting in a temporary folder: TCP with a 128 KiB
+echo and UDP to IPv4 and IPv6 through Mux, eight parallel TCP flows on at
+most four sessions, the server deleting every segment the client stored,
+X25519 and ML-KEM-768 authentication, and 4 KiB segments two at a time.
+A flow through the core announces its session and stores its request with
+a resolver that fails every lookup. Mutating 54 branches fails the tests
+each time: 26 of the configuration (services, secrets, the template and
+`s3` presence, each `ValidateS3Config` rule, the xmux defaults and conflict,
+the HTTP/3 rules, every `validateXDrive` rule), 23 of the transport (names
+and their parsing, the tuning's defaults, caps and floor, the writer's
+coalescing, cuts, end and failure marks, the reader's holes, end marks,
+missing objects, discards and wake-up, the local folder's names and
+temporary files, the end a shutdown or a drop stores) and 5 of the core
+(both refusals, the skipped lookup, XDRIVE over HTTP/3 among the UDP
+carriers, the build at start).
+
 ## realm
 
 The `realm` UDP mask introduces the carrier's socket as Xray-core

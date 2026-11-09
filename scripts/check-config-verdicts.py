@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Recheck the Xray-core verdicts recorded in tests/fixtures/masque/config-verdicts.json.
+"""Recheck the Xray-core verdicts recorded in a config-verdicts.json corpus,
+such as tests/fixtures/masque/config-verdicts.json.
 
 Each case is a one-outbound configuration that `xray run -test` either
 accepts ("Configuration OK.") or refuses with an error whose text holds the

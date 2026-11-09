@@ -24,6 +24,7 @@ mod vless;
 mod vmess;
 mod wireguard;
 mod xdns;
+mod xdrive;
 mod xhttp;
 mod xicmp;
 mod xmc;
@@ -90,6 +91,7 @@ enum StreamNetwork {
     Xhttp,
     Kcp,
     Masque,
+    Xdrive,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1273,6 +1275,7 @@ impl Parser<'_> {
         }
 
         let mux = self.parse_mux(outbound, index, &settings);
+        self.validate_xdrive_pair(&settings, &stream, mux.as_ref(), index);
         // Xray's XHTTP inbound and its VLESS inbound for a Vision account both
         // restrict a Mux.Cool connection to UDP children and break the whole
         // connection on the first TCP child. Refuse the TCP pool up front.

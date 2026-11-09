@@ -2529,6 +2529,99 @@ frames with Xray-core's own code, rechecks the configuration verdicts with
 and HTTP/2, and against a WARP stand-in built from Xray-core's warp tests.
 It never connects to Cloudflare.
 
+### XDRIVE
+
+The `xdrive` transport carries a VLESS connection as objects in a storage
+both ends reach, as Xray-core v26.10.31's client does. Nothing connects to
+the VLESS server address: the client and Xray-core's server meet in the
+storage, and the address is never looked up. This release reaches the
+`local` service, a folder:
+
+```json
+{"protocol": "vless",
+ "settings": {"address": "127.0.0.1", "port": 443,
+   "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+   "encryption": "mlkem768x25519plus.native.0rtt.<client key>"},
+ "streamSettings": {"network": "xdrive",
+   "xdriveSettings": {"service": "local", "remoteFolder": "/srv/xdrive"}},
+ "mux": {"enabled": true}}
+```
+
+The outbound must be VLESS with `encryption` (`xray vlessenc` makes a
+pair), without `flow` or `testpre`, and Mux must be on with no negative
+`concurrency` or `xudpConcurrency` and no `xudpProxyUDP443: "skip"`: every
+TCP and UDP connection rides Mux.Cool, as Xray-core requires. VLESS
+`reverse`, which Xray-core lets open its own Mux instead, is refused here,
+as on every VLESS outbound.
+
+`xdriveSettings` is read as Xray-core's `XDriveConfig.Build` reads it:
+
+- `service`: `local`, `google-drive` (`Google Drive` is the deprecated
+  spelling, with a warning), `template` or `s3`, case-sensitive; any other
+  value, an empty one included, fails. `google-drive` needs exactly three
+  `secrets`, `template` a `template` value (any JSON, `null` included) and
+  `s3` an `s3` object. These three are read and checked but refused when the
+  core starts for now. Without `xdriveSettings` the core refuses to start,
+  where Xray-core's registered default fails every dial.
+- `remoteFolder`: the folder of `local`, made with its parents, readable by
+  this user only, when a session opens. An empty one fails when the core
+  starts, where Xray-core fails every dial.
+- `secrets` is an array of strings, `null` entries read as empty.
+- The numbers are unsigned 32-bit integers, `null` keeping zero, and zero
+  takes Xray-core's default: `segmentBytes` 512 KiB (at most 16 MiB),
+  `flushIntervalMs` 20, `pollIntervalMs` 50, `maxPollIntervalMs` 500 (never
+  below the poll interval), `eagerWindowMs` 2000, `holeTimeoutMs` 30000,
+  `sessionTtlSeconds` 300 (a server's setting) and `concurrency` 8 (at most
+  64).
+- `xmux` is read as XHTTP's; an all-zero one means one connection reused for
+  1800 to 3000 seconds, four for `google-drive` unless `tlsSettings.alpn` is
+  exactly `["h3"]`. It shapes the HTTP storages' connections; `local` has
+  none.
+- `s3` is checked as Xray-core's `ValidateS3Config` checks it when the
+  service is `s3`: `endpoint` an `http` or `https` URL without user
+  information, query (a bare `?` included) or fragment; `region` a header
+  value without `/`, `,`, space or tab, empty meaning `us-east-1`; `bucket`
+  without path separators, empty, `.` or `..`; `pathStyle` true unless
+  `false`, and virtual-hosted addressing needs a DNS endpoint and a lowercase
+  DNS-compatible bucket; `remoteFolder` a relative key prefix, one trailing
+  `/` allowed; `secrets` the AccessKeyID, SecretAccessKey and an optional
+  SessionToken, header values, the key ID without `/`, `,`, space or tab.
+
+Over `tlsSettings.alpn` exactly `["h3"]`, `google-drive` takes only the
+`noise` UDP mask and no service takes `brutal` or `force-brutal`
+congestion, as in Xray-core. The UDP masks follow the rules of the other
+QUIC carriers (XDRIVE over HTTP/3 counts as one); `security`, `sockopt` and
+the masks shape the HTTP storages' connections and play no part with
+`local`.
+
+A session works as Xray-core's does. The client announces it with an empty
+object `sessions/<Unix nanoseconds>-<32 hex digits>`, then writes its
+direction under `streams/<session>/c2s` and reads the server's under
+`streams/<session>/s2c`. A direction is a run of objects named by a
+zero-padded number, `%09d.seg` with up to `segmentBytes` of data, then
+`.end` after the last; a segment that could not be stored leaves `.err` in
+its place and fails the connection. The writer cuts a segment whenever its
+buffer holds a full one, and otherwise each flush interval once the buffer
+stopped growing or grew for eight ticks; at most `concurrency` segments are
+stored at a time, and once twice that many wait the writer holds the sender
+back, where Xray-core keeps cutting. The reader lists its direction every
+`pollIntervalMs` while data moves and for `eagerWindowMs` after, then twice
+as seldom each time up to `maxPollIntervalMs`, and at once after the client
+wrote; it fetches up to `concurrency` segments that follow in order, deletes
+what it read, and fails when a segment stays missing for `holeTimeoutMs`
+while later ones arrived. Shutting a stream down stores the rest of its
+buffer and its `.end`; the server's direction is read until its own
+`.end`. A stream dropped without a shutdown does the same in the background
+for up to two minutes. The `local` service writes each object to a
+temporary `.xdrive-tmp-` file beside it and renames it into place, so a
+reader never sees half an object.
+
+`scripts/check-xdrive-interop.sh` compares the tuning, names, the local
+folder's name resolution and step-by-step replays of the segment writer and
+reader with Xray-core's own code, rechecks the configuration verdicts with
+`xray run -test`, and runs VLESS over XDRIVE against Xray-core's server
+through a shared folder.
+
 ### realm mask
 
 `realm` reaches a server behind NAT through a rendezvous, as Hysteria's

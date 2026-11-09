@@ -58,19 +58,25 @@ their original source identities.
 - Not applicable: Darwin keepalive idle/interval swap (no `tcpKeepAlive*`
   support), Darwin and Windows TUN interface binding, WFP leak blocking, Linux
   IPv6 `process` routing, geodata download limits and gzip, inbound module
-  initialization order, file-loader extension checks, API commands, protobuf
-  regeneration, and XDRIVE (`s3` service and session slots).
+  initialization order, file-loader extension checks, API commands and
+  protobuf regeneration.
+- XDRIVE's `s3` service and Google Drive's session slots arrived upstream in
+  this range. 0.10.0 brings the XDRIVE client with the `local` service (see
+  [XDRIVE](config-compatibility.md#xdrive)); `s3` is read and checked as
+  v26.10.31 checks it, with `google-drive` and `template`, and refused when
+  the core starts until their HTTP clients land.
 
 ## Still out of scope
 
-The v26.10.21 record's stage 2 remains planned separately: XDRIVE, Lua for
-DNS/routing/noise, the newer FinalMask type filter, DNS over HTTPS resolvers
-for xdns and realm's UPnP/NAT-PMP `portMapping`. `localOS` and custom
-Blackhole responses arrived in 0.10.0, and so did the mKCP transport with
-its `mkcp-legacy` masks, the `header-custom`, `sudoku`, `xmc`, `xdns`,
-`realm` and `xicmp` masks, the MASQUE client with WARP, and ChromeParrot,
-the Chrome-shaped QUIC handshake Xray-core's Hysteria and XHTTP H3 dialers
-send unless `quicParams.disableChromeParrot` (see
+The v26.10.21 record's stage 2 remains planned separately: XDRIVE's
+`google-drive`, `template` and `s3` services, Lua for DNS/routing/noise, the
+newer FinalMask type filter, DNS over HTTPS resolvers for xdns and realm's
+UPnP/NAT-PMP `portMapping`. `localOS` and custom Blackhole responses arrived
+in 0.10.0, and so did the mKCP transport with its `mkcp-legacy` masks, the
+`header-custom`, `sudoku`, `xmc`, `xdns`, `realm` and `xicmp` masks, the
+MASQUE client with WARP, and ChromeParrot, the Chrome-shaped QUIC handshake
+Xray-core's Hysteria and XHTTP H3 dialers send unless
+`quicParams.disableChromeParrot` (see
 [ChromeParrot](config-compatibility.md#chromeparrot)); before it,
 `disableChromeParrot: true` was required.
 

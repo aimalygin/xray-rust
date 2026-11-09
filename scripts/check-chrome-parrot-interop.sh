@@ -50,7 +50,7 @@ cargo test --locked -p xray-core-rs --test core_lifecycle_tests chrome_parrot
 # `xray run -test`.
 env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
   go -C "$CHECKOUT" build -mod=readonly -o "$TEST_ROOT/xray" ./main
-python3 scripts/check-masque-config-verdicts.py \
+python3 scripts/check-config-verdicts.py \
   "$TEST_ROOT/xray" tests/fixtures/chrome-parrot/config-verdicts.json
 
 # Against Xray-core's own servers, with ChromeParrot and without: Hysteria
