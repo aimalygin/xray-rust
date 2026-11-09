@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use xray_config::{parse_xray_json, FragmentRange};
+use xray_config::{parse_xray_json, FragmentPackets, FragmentRange};
 
 fn settings() -> Value {
     json!({"packets":"tlshello","length":"100-200","delay":0,"maxSplit":8})
@@ -119,7 +119,7 @@ fn legacy_dialer_proxy_normalizes_only_dedicated_fragment_handlers() {
             json!("proxy"),
         ),
         ("/outbounds/0/streamSettings/sockopt/dialerProxy", json!(5)),
-        ("/outbounds/1/settings/fragment/packets", json!("1-3")),
+        ("/outbounds/1/settings/fragment/packets", json!("0-3")),
         ("/outbounds/1/settings/fragment/interval", Value::Null),
     ] {
         let mut invalid = config.clone();
@@ -177,8 +177,13 @@ fn an_inlined_fragment_handler_drops_the_callers_socket_options() {
 #[test]
 fn unsupported_masks_and_unbounded_values_fail_closed() {
     for (key, value) in [
-        ("packets", json!("")),
-        ("packets", json!("1-3")),
+        ("packets", json!("0")),
+        ("packets", json!("0-3")),
+        ("packets", json!("3-1")),
+        ("packets", json!("-1-3")),
+        ("packets", json!("1-")),
+        ("packets", json!("tls hello")),
+        ("packets", json!(1)),
         ("length", json!(0)),
         ("length", json!(-1)),
         ("length", json!(16385)),
@@ -212,4 +217,96 @@ fn unsupported_masks_and_unbounded_values_fail_closed() {
     config["outbounds"][0]["streamSettings"]["network"] = json!("xhttp");
     config["outbounds"][0]["streamSettings"]["tlsSettings"]["alpn"] = json!(["h3"]);
     assert!(parse_xray_json(&config.to_string()).is_err());
+}
+
+/// `packets` as Xray-core reads it: `tlshello` in any case, empty or absent
+/// for every write, one write number or a `from-to` range counting from one.
+#[test]
+fn write_selectors_read_as_xray_reads_them() {
+    let packets = |config: &Value| {
+        parse_xray_json(&config.to_string())
+            .unwrap()
+            .config
+            .outbounds[0]
+            .stream
+            .tcp_fragment
+            .as_ref()
+            .unwrap()
+            .packets
+    };
+    for (value, expected) in [
+        (json!("TLSHello"), FragmentPackets::TlsHello),
+        (json!(""), FragmentPackets::AllWrites),
+        (Value::Null, FragmentPackets::AllWrites),
+        (json!("1-3"), FragmentPackets::Writes { from: 1, to: 3 }),
+        (json!("5"), FragmentPackets::Writes { from: 5, to: 5 }),
+        (json!("+2-4"), FragmentPackets::Writes { from: 2, to: 4 }),
+    ] {
+        let mut fragment = settings();
+        fragment["packets"] = value.clone();
+        assert_eq!(packets(&profile(fragment)), expected, "{value}");
+    }
+    let mut fragment = settings();
+    fragment.as_object_mut().unwrap().remove("packets");
+    assert_eq!(packets(&profile(fragment)), FragmentPackets::AllWrites);
+
+    // The deprecated freedom spelling reads `packets` the same way, and its
+    // handler's selector reaches the outbound that dials through it.
+    let mut legacy = legacy_profile();
+    legacy["outbounds"][1]["settings"]["fragment"]["packets"] = json!("1-3");
+    let parsed = parse_xray_json(&legacy.to_string()).unwrap();
+    assert_eq!(
+        parsed.config.outbounds[0]
+            .stream
+            .tcp_fragment
+            .as_ref()
+            .unwrap()
+            .packets,
+        FragmentPackets::Writes { from: 1, to: 3 }
+    );
+}
+
+/// Raw pieces go on any TCP carrier of a proxy, TLS or not, as Xray-core
+/// cuts every TCP dial; `tlshello` still needs a TLS record.
+#[test]
+fn raw_pieces_need_a_tcp_carrier_but_no_tls() {
+    let socks = |packets: &str| {
+        json!({"outbounds":[{"protocol":"socks","settings":{"address":"192.0.2.10","port":1080},
+            "streamSettings":{"finalmask":{"tcp":[{"type":"fragment","settings":
+                {"packets":packets,"length":"1-5","delay":0}}]}}}]})
+    };
+    let refused = |config: &Value, message: &str| {
+        let error = parse_xray_json(&config.to_string()).unwrap_err();
+        assert!(
+            error
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains(message)),
+            "{config}: {:?}",
+            error.diagnostics
+        );
+    };
+    assert!(parse_xray_json(&socks("1-3").to_string()).is_ok());
+    assert!(parse_xray_json(&socks("").to_string()).is_ok());
+    refused(&socks("tlshello"), "tlshello fragmentation requires");
+    let mut websocket = socks("1-3");
+    websocket["outbounds"][0]["streamSettings"]["network"] = json!("ws");
+    assert!(parse_xray_json(&websocket.to_string()).is_ok());
+
+    let mut kcp = socks("1-3");
+    kcp["outbounds"][0]["streamSettings"]["network"] = json!("kcp");
+    refused(&kcp, "fragmentation requires a TCP carrier");
+    let mut blackhole = socks("1-3");
+    blackhole["outbounds"][0]["protocol"] = json!("blackhole");
+    blackhole["outbounds"][0]["settings"] = json!({});
+    refused(&blackhole, "fragmentation requires a TCP carrier");
+    let mut loopback = socks("1-3");
+    loopback["outbounds"][0]["protocol"] = json!("loopback");
+    loopback["outbounds"][0]["settings"] = json!({"inboundTag": "again"});
+    refused(&loopback, "fragmentation requires a TCP carrier");
+
+    // A raw freedom outbound cuts the writes it sends to the destination.
+    let mut freedom = settings();
+    freedom["packets"] = json!("1-2");
+    assert!(parse_xray_json(&profile(freedom).to_string()).is_ok());
 }

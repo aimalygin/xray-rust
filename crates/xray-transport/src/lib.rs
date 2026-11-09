@@ -20,7 +20,7 @@ mod connected_quic;
 
 mod dialer;
 mod fragment;
-pub use fragment::TcpFragmentConfig;
+pub use fragment::{FragmentPackets, TcpFragmentConfig};
 mod dns;
 mod happy_eyeballs;
 pub mod header_custom;

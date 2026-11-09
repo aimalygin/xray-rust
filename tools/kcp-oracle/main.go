@@ -29,6 +29,7 @@ import (
 	"github.com/xtls/xray-core/transport/internet/finalmask/mkcp/header"
 	"github.com/xtls/xray-core/transport/internet/finalmask/mkcp/original"
 	"github.com/xtls/xray-core/transport/internet/finalmask/noise"
+	"github.com/xtls/xray-core/transport/internet/finalmask/salamander"
 )
 
 type capture struct {
@@ -97,6 +98,8 @@ func mask(name string) finalmask.UDPMask {
 		return &noise.Config{Items: []*noise.Item{{Packet: []byte("NZ")}}}
 	case strings.HasPrefix(name, "dns:"):
 		return &header.Config{ID: 0, Domain: name[4:]}
+	case strings.HasPrefix(name, "salamander:"):
+		return &salamander.Config{Password: name[len("salamander:"):]}
 	}
 	ids := map[string]int32{"dtls": 1, "srtp": 2, "utp": 3, "wechat": 4, "wireguard": 5}
 	return &header.Config{ID: ids[name]}
@@ -118,7 +121,11 @@ func main() {
 			c.sent = nil
 			conn.Write(payload)
 			w := write{Connection: connection, Masks: names, Payload: hex.EncodeToString(payload)}
-			random := strings.HasPrefix(names[0], "aes:")
+			// AES draws its nonce and Salamander its salt at random.
+			random := false
+			for _, name := range names {
+				random = random || strings.HasPrefix(name, "aes:") || strings.HasPrefix(name, "salamander:")
+			}
 			for _, s := range c.sent {
 				if random {
 					w.Sent = append(w.Sent, fmt.Sprintf("len:%d", len(s)))
@@ -147,6 +154,9 @@ func main() {
 	addWrite([]string{"original"}, make([]byte, 4090), make([]byte, 4091))
 	addWrite([]string{"wechat", "noise", "srtp"}, make([]byte, 4083), make([]byte, 4084))
 	addWrite([]string{"aes:seed"}, make([]byte, 4068), make([]byte, 4069))
+	// Salamander is a header mask: it shares the group's 4096-byte limit.
+	addWrite([]string{"salamander:synthetic"}, []byte("data"), make([]byte, 4088), make([]byte, 4089))
+	addWrite([]string{"wechat", "salamander:synthetic", "noise"}, []byte("data"))
 	out["writes"] = writes
 
 	// DNS headers, with the random transaction ID cleared.
@@ -231,6 +241,15 @@ func main() {
 	addRead([]string{"aes:seed"}, aesPacket)
 	addRead([]string{"aes:other"}, aesPacket)
 	addRead([]string{"aes:seed"}, aesPacket[:27])
+	// Salamander with a fixed salt: what Xray's own deobfuscation reads out
+	// of these bytes, alone and outside a header.
+	salted := func(tail string) []byte { return append([]byte("fixsalt!"), tail...) }
+	addRead([]string{"salamander:synthetic"}, salted("sealed by nobody, read by Xray"))
+	addRead([]string{"salamander:other"}, salted("sealed by nobody, read by Xray"))
+	addRead([]string{"wechat", "salamander:synthetic"}, salted("thirteen-byte header and a payload"))
+	addRead([]string{"original", "salamander:synthetic"}, salted("not an original checksum"))
+	addRead([]string{"salamander:synthetic"}, salted(""))
+	addRead([]string{"salamander:synthetic"}, []byte("fixsalt"))
 	out["reads"] = reads
 	out["aesFixedNonce"] = hex.EncodeToString(aesPacket)
 
