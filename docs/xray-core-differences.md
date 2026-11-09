@@ -835,7 +835,8 @@ crossed the wire. Then in Xray-core's own fakeDrive, served on Google
 Drive's real paths over TLS and HTTP/3 by a third overlay: both in rings of
 eight slots over HTTP/2, the server taking this client's sessions in slots,
 and this client over HTTP/3 through a noise mask while Xray-core stays on
-HTTP/2. A flow through the core announces its session and stores its request
+HTTP/2; there too Xray-core's own client goes first, in slots and over
+HTTP/3. A flow through the core announces its session and stores its request
 with a resolver that fails every lookup. Mutating 54 branches of the
 sessions and the folder fails the tests each time: 26 of the configuration
 (services, secrets, the template and `s3` presence, each `ValidateS3Config`
