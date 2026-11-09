@@ -56,6 +56,13 @@ fn portal_frame(frame: PortalFrame<'_>) -> Vec<u8> {
     wire
 }
 
+/// Fails a test that would otherwise hang on a regression.
+async fn within<F: std::future::Future>(future: F) -> F::Output {
+    tokio::time::timeout(Duration::from_secs(5), future)
+        .await
+        .expect("timed out")
+}
+
 fn tcp(addr: &str, port: u16) -> Target {
     Target::new(TargetAddr::Ip(addr.parse().unwrap()), port, Network::Tcp)
 }
@@ -196,9 +203,9 @@ async fn a_stream_session_carries_both_ways_and_ends_with_the_bridge() {
     let mut session = new.session;
     harness.send(&keep(1, None, b" HTTP/1.1")).await;
     let mut read = [0; 64];
-    let n = session.read(&mut read).await.unwrap();
+    let n = within(session.read(&mut read)).await.unwrap();
     assert_eq!(&read[..n], b"GET /");
-    let n = session.read(&mut read).await.unwrap();
+    let n = within(session.read(&mut read)).await.unwrap();
     assert_eq!(&read[..n], b" HTTP/1.1");
 
     // A long answer goes in frames of at most 8 KiB.
@@ -224,7 +231,7 @@ async fn a_stream_session_carries_both_ways_and_ends_with_the_bridge() {
     }
     assert_eq!(received, answer);
     // Its End sent, the bridge reads nothing more on it.
-    assert_eq!(session.read(&mut read).await.unwrap(), 0);
+    assert_eq!(within(session.read(&mut read)).await.unwrap(), 0);
     drop(session);
     tokio::task::yield_now().await;
     assert_eq!(harness.held(), 0);
@@ -240,10 +247,10 @@ async fn the_portals_end_ends_the_session_both_ways() {
     harness.send(&keep(3, None, b"left over")).await;
     harness.send(&end(3)).await;
     let mut read = [0; 64];
-    let n = session.read(&mut read).await.unwrap();
+    let n = within(session.read(&mut read)).await.unwrap();
     assert_eq!(&read[..n], b"left over");
-    assert_eq!(session.read(&mut read).await.unwrap(), 0);
-    assert!(session.write_all(b"too late").await.is_err());
+    assert_eq!(within(session.read(&mut read)).await.unwrap(), 0);
+    assert!(within(session.write_all(b"too late")).await.is_err());
     drop(session);
     tokio::task::yield_now().await;
     assert_eq!(harness.held(), 0);
@@ -295,15 +302,15 @@ async fn a_datagram_session_keeps_each_address() {
         .await;
     harness.send(&keep(2, None, b"third")).await;
     assert_eq!(
-        session.recv_datagram().await,
+        within(session.recv_datagram()).await,
         Some((None, Bytes::from_static(b"first")))
     );
     assert_eq!(
-        session.recv_datagram().await,
+        within(session.recv_datagram()).await,
         Some((Some(udp("192.0.2.9", 5353)), Bytes::from_static(b"second")))
     );
     assert_eq!(
-        session.recv_datagram().await,
+        within(session.recv_datagram()).await,
         Some((None, Bytes::from_static(b"third")))
     );
 
@@ -321,7 +328,7 @@ async fn a_datagram_session_keeps_each_address() {
         .is_err());
 
     harness.send(&end(2)).await;
-    assert_eq!(session.recv_datagram().await, None);
+    assert_eq!(within(session.recv_datagram()).await, None);
     assert!(session
         .send_datagram(&udp("192.0.2.9", 5353), b"late")
         .await
@@ -430,7 +437,7 @@ async fn a_full_session_pauses_the_reader_without_losing_frames() {
     let mut received = Vec::new();
     while received.len() < (SESSION_QUEUE + 4) * 100 {
         let mut read = [0; 1000];
-        let n = slow.read(&mut read).await.unwrap();
+        let n = within(slow.read(&mut read)).await.unwrap();
         received.extend_from_slice(&read[..n]);
     }
     for (index, chunk) in received.chunks(100).enumerate() {
@@ -483,8 +490,8 @@ async fn closing_fails_every_session() {
     let mut session = harness.opened().await.session;
     harness.shared.close();
     let mut read = [0; 8];
-    assert!(session.read(&mut read).await.is_err());
-    assert!(session.write_all(b"x").await.is_err());
+    assert!(within(session.read(&mut read)).await.is_err());
+    assert!(within(session.write_all(b"x")).await.is_err());
 }
 
 #[tokio::test]
