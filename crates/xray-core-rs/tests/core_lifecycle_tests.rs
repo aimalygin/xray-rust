@@ -462,3 +462,39 @@ async fn masque_profiles_xray_accepts_build_a_core() {
     assert!(mismatches.is_empty(), "{mismatches:#?}");
     assert!(built > 50, "only {built} cases built a core");
 }
+
+/// Every XDRIVE profile Xray-core accepts builds a core, except the
+/// refusals the corpus records: the services not reached yet, and what
+/// Xray-core accepts only to fail every dial.
+#[tokio::test(flavor = "multi_thread")]
+async fn xdrive_profiles_xray_accepts_build_a_core() {
+    use serde_json::{json, Value};
+    let corpus: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/xdrive/config-verdicts.json"
+    ))
+    .unwrap();
+    let mut mismatches = Vec::new();
+    let mut built = 0;
+    for case in corpus["cases"].as_array().unwrap() {
+        let mut outbounds = vec![case["outbound"].clone()];
+        if let Some(extra) = case["extraOutbounds"].as_array() {
+            outbounds.extend(extra.iter().cloned());
+        }
+        let raw = json!({"outbounds": outbounds}).to_string();
+        let Ok(parsed) = xray_config::parse_xray_json(&raw) else {
+            continue;
+        };
+        let refusal = case.get("core").and_then(Value::as_str);
+        match (Core::new(parsed.config), refusal) {
+            (Ok(_), None) => built += 1,
+            (Err(error), Some(expected)) if error.to_string().contains(expected) => {}
+            (Ok(_), Some(expected)) => mismatches.push(format!(
+                "{}: built, expected the core to refuse with {expected:?}",
+                case["name"]
+            )),
+            (Err(error), _) => mismatches.push(format!("{}: {error}", case["name"])),
+        }
+    }
+    assert!(mismatches.is_empty(), "{mismatches:#?}");
+    assert!(built >= 40, "only {built} cases built a core");
+}

@@ -275,6 +275,7 @@ fn stream_settings_accept_every_transport_and_its_security() {
             StreamTransport::Hysteria(_) => "hysteria",
             StreamTransport::Kcp(_) => "kcp",
             StreamTransport::Masque(_) => "masque",
+            StreamTransport::Xdrive(_) => "xdrive",
         };
         let parsed_security = match parsed.security {
             StreamSecurity::None => "none",

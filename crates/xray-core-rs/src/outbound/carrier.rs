@@ -58,16 +58,21 @@ impl StreamCarrier {
         let xmc = stream.tcp_xmc.as_ref().map(xmc_config).transpose()?;
         let transport = build_connector(&stream.security, server);
         let transport_layer = build_transport_layer(stream, server, port, &transport, paths)?;
+        // XDRIVE dials no carrier of its own: its security and masks shape
+        // the storage's connections, which a `local` folder has none of.
+        let xdrive = matches!(transport_layer, TransportLayer::Xdrive(_));
         // Only TCP carriers take TCP masks; a split XHTTP download keeps its
         // own dialer, which does not run the handshake.
-        if (header_custom.is_some() || sudoku.is_some() || xmc.is_some())
+        if !xdrive
+            && (header_custom.is_some() || sudoku.is_some() || xmc.is_some())
             && (matches!(&transport_layer, TransportLayer::Xhttp(xhttp) if xhttp.http_version() == XhttpHttpVersion::Http3)
                 || matches!(transport_layer, TransportLayer::Kcp(_))
                 || matches!(&stream.transport, StreamTransport::Xhttp(xhttp) if xhttp.download.is_some()))
         {
             return Err(CoreError::UnsupportedOutboundNetwork);
         }
-        if fragment.is_some()
+        if !xdrive
+            && fragment.is_some()
             && (matches!(transport, ConnectorConfig::Tcp)
                 || matches!(&transport_layer, TransportLayer::Xhttp(xhttp) if xhttp.http_version() == XhttpHttpVersion::Http3)
                 || matches!(transport_layer, TransportLayer::Kcp(_))
@@ -120,7 +125,14 @@ impl StreamCarrier {
         resolver: &'a dyn DnsResolver,
         dialer: &'a TransportDialer,
     ) -> impl Future<Output = Result<Vec<SocketAddr>, CoreError>> + 'a {
-        address_port::resolve_server(&self.server, self.address_port, resolver, dialer)
+        async move {
+            // An XDRIVE session meets its server in the storage: Xray-core's
+            // dial never looks the server address up.
+            if matches!(self.transport_layer, TransportLayer::Xdrive(_)) {
+                return Ok(Vec::new());
+            }
+            address_port::resolve_server(&self.server, self.address_port, resolver, dialer).await
+        }
     }
 
     /// The XHTTP download server's candidates, after its leg's
@@ -267,6 +279,9 @@ fn build_transport_layer(
         StreamTransport::Raw => TransportLayer::Raw,
         StreamTransport::Hysteria(_) | StreamTransport::Masque(_) => {
             return Err(CoreError::UnsupportedOutboundNetwork)
+        }
+        StreamTransport::Xdrive(xdrive) => {
+            TransportLayer::Xdrive(super::xdrive::build_xdrive_transport(xdrive)?)
         }
         StreamTransport::WebSocket(websocket) => TransportLayer::WebSocket(WebSocketConfig {
             path: websocket.path.clone(),

@@ -3696,6 +3696,9 @@ mod realm;
 #[path = "local_xray_interop_tests/xicmp.rs"]
 mod xicmp;
 
+#[path = "local_xray_interop_tests/xdrive.rs"]
+mod xdrive;
+
 /// Record-level observer: it forwards the finalized ClientHello unchanged and
 /// then becomes a byte relay, including Vision's later direct-mode payload.
 async fn fragment_observer(

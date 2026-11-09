@@ -71,7 +71,7 @@ cargo test --locked -p xray-core-rs --lib outbound::masque
 # Every recorded verdict of the config corpus, rechecked with `xray run -test`.
 env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
   go -C "$CHECKOUT" build -mod=readonly -o "$TEST_ROOT/xray" ./main
-python3 scripts/check-masque-config-verdicts.py \
+python3 scripts/check-config-verdicts.py \
   "$TEST_ROOT/xray" tests/fixtures/masque/config-verdicts.json
 
 # A stand-in for Cloudflare's WARP endpoint, from Xray-core's own warp
