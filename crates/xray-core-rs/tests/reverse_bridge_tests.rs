@@ -249,9 +249,10 @@ async fn sessions_reach_the_services_freedom_allows() {
     let portal = Portal::start().await;
     let (tcp_addr, _) = tcp_echo().await;
     let udp_addr = udp_echo().await;
+    let other_udp = udp_echo().await;
     let mut core = start(bridge_config(
         portal.addr(),
-        allow(&[tcp_addr, udp_addr]),
+        allow(&[tcp_addr, udp_addr, other_udp]),
         json!([{"inboundTag": [TAG], "outboundTag": "direct"}]),
     ))
     .await;
@@ -310,6 +311,20 @@ async fn sessions_reach_the_services_freedom_allows() {
         .await;
     let (id, _, _, _, payload) = tunnel.next(Duration::from_secs(5)).await.unwrap();
     assert_eq!((id, payload.as_slice()), (3, &b"pong"[..]));
+    // A datagram whose frame names another address goes there, and the
+    // answer names it as its source.
+    tunnel
+        .send(&frame(
+            3,
+            Status::Keep,
+            Some(&udp(other_udp)),
+            None,
+            Some(b"elsewhere"),
+        ))
+        .await;
+    let (id, _, _, source, payload) = tunnel.next(Duration::from_secs(5)).await.unwrap();
+    assert_eq!((id, payload.as_slice()), (3, &b"elsewhere"[..]));
+    assert_eq!(source, Some(udp(other_udp)));
 
     tunnel.send(&frame(2, Status::End, None, None, None)).await;
     core.stop().await.unwrap();
