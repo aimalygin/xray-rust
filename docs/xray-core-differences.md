@@ -391,10 +391,11 @@ mKCP and its `mkcp-legacy` masks are read and run as Xray-core v26.10.31's
   segment that does not fit its 8192-byte buffer.
 - A `dns` header whose labels fill all 256 bytes of the name fails the dial.
   Xray-core panics there.
-- Only `mkcp-legacy` and `noise` masks apply to mKCP; Salamander, `udphop`
-  and TCP masks are refused on it, and `mkcp-legacy` on any other transport.
-  Xray-core applies every UDP mask to mKCP's socket, ignores TCP masks on it,
-  and ignores UDP masks on TCP transports.
+- Gecko, Salamander's `packetSize`, `udphop` and TCP masks are refused on
+  mKCP, and `mkcp-legacy` on any other transport. Xray-core applies every UDP
+  mask to mKCP's socket, ignores TCP masks on it, and ignores UDP masks on
+  TCP transports. Plain Salamander applies, a header mask grouped with
+  `mkcp-legacy`'s as in Xray-core.
 - mKCP over another outbound, through `dialerProxy` or `proxySettings`, is
   refused. Xray-core dials its datagrams through the chain.
 - A datagram the system refuses to send counts as lost, and goes again when

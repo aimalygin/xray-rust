@@ -1,11 +1,11 @@
 //! mKCP's `finalmask.udp` masks as Xray-core v26.10.31 applies them: the
-//! `mkcp-legacy`, noise and `header-custom` masks.
+//! `mkcp-legacy`, Salamander, noise and `header-custom` masks.
 //!
 //! Xray applies masks in array order on the way out, so the last one is
-//! outermost on the wire. Consecutive legacy masks share one
-//! `headerManagerConn`, which drops a datagram over 4096 bytes. Noise sends
-//! its packets through the masks after it. Noise and custom headers split
-//! the legacy masks into separate groups.
+//! outermost on the wire. Consecutive header masks, `mkcp-legacy`'s and
+//! Salamander, share one `headerManagerConn`, which drops a datagram over
+//! 4096 bytes. Noise sends its packets through the masks after it. Noise and
+//! custom headers split the header masks into separate groups.
 use std::{collections::VecDeque, io, net::SocketAddr, ops::Range, time::Duration};
 
 use aes_gcm::{
@@ -29,8 +29,10 @@ const NONCE: usize = 12;
 const TAG: usize = 16;
 /// The checksum and length the original mask puts first.
 const ORIGINAL: usize = 6;
+/// Salamander's salt.
+const SALT: usize = crate::hysteria::carrier::SALT_LEN;
 
-/// One `mkcp-legacy` mask.
+/// One header mask: an `mkcp-legacy` mask or Salamander.
 enum Legacy {
     Original,
     Aes(Box<Aes128Gcm>),
@@ -49,12 +51,22 @@ enum Legacy {
         sn: u32,
     },
     Wireguard,
+    Salamander(zeroize::Zeroizing<String>),
 }
 
 impl Legacy {
     fn new(mask: &KcpMask) -> io::Result<Option<Self>> {
         Ok(Some(match mask {
             KcpMask::Noise | KcpMask::HeaderCustom(_) | KcpMask::Sudoku(_) => return Ok(None),
+            KcpMask::Salamander(password) => {
+                if !(4..=4096).contains(&password.len()) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Salamander password must contain 4..=4096 bytes",
+                    ));
+                }
+                Self::Salamander(password.clone())
+            }
             KcpMask::Original => Self::Original,
             KcpMask::Aes128Gcm(password) => {
                 let key = Sha256::digest(password.as_bytes());
@@ -83,6 +95,7 @@ impl Legacy {
             Self::Dns(header) => header.len(),
             Self::Dtls { .. } | Self::Wechat { .. } => 13,
             Self::Srtp { .. } | Self::Utp | Self::Wireguard => 4,
+            Self::Salamander(_) => SALT,
         }
     }
 
@@ -150,6 +163,12 @@ impl Legacy {
                 b[6..].copy_from_slice(&[0x00, 0x10, 0x11, 0x18, 0x30, 0x22, 0x30]);
             }
             Self::Wireguard => buf[start..start + size].copy_from_slice(&[4, 0, 0, 0]),
+            Self::Salamander(password) => {
+                let mut salt = [0; SALT];
+                rand::thread_rng().fill_bytes(&mut salt);
+                buf[start..start + SALT].copy_from_slice(&salt);
+                salamander_xor(password, &mut buf[start..]);
+            }
         }
     }
 
@@ -181,9 +200,28 @@ impl Legacy {
                     .ok()?;
                 Some(NONCE..region.len() - TAG)
             }
+            // Xray's Deobfuscate leaves a bare salt alone; the group has
+            // already dropped anything shorter.
+            Self::Salamander(password) => {
+                if region.len() > SALT {
+                    salamander_xor(password, region);
+                }
+                Some(SALT..region.len())
+            }
             _ => Some(self.size()..region.len()),
         }
     }
+}
+
+/// XORs what follows `region`'s salt with the key the password and salt
+/// derive, both ways.
+fn salamander_xor(password: &str, region: &mut [u8]) {
+    let (salt, data) = region.split_at_mut(SALT);
+    let mut key = crate::hysteria::carrier::key(password, salt);
+    for (i, byte) in data.iter_mut().enumerate() {
+        *byte ^= key[i % key.len()];
+    }
+    zeroize::Zeroize::zeroize(&mut key);
 }
 
 /// Consecutive legacy masks in array order, as one `headerManagerConn`.
@@ -238,6 +276,8 @@ struct Noise {
     config: UdpNoiseConfig,
     /// When the next datagram sends noise again; `None` before the first.
     reset_at: Option<Instant>,
+    /// The `<c>` segments this connection has sent.
+    counter: u32,
 }
 
 /// Consecutive legacy masks share a size limit; other masks split groups.
@@ -251,6 +291,9 @@ enum Layer {
 enum Pending {
     Packet(Vec<u8>, usize),
     Pause(Duration),
+    /// A noise item of the layer, built only when its turn comes, as
+    /// Xray-core builds each just before sending it.
+    NoiseItem(usize, usize),
     NoiseSent(usize),
     Handshake(Vec<u8>, usize),
 }
@@ -301,6 +344,7 @@ impl Masks {
                     layers.push(Layer::Noise(Noise {
                         config: config.clone(),
                         reset_at: None,
+                        counter: 0,
                     }));
                 }
                 KcpMask::HeaderCustom(config) => {
@@ -355,6 +399,12 @@ impl Masks {
         while let Some(pending) = self.pending.pop_front() {
             match pending {
                 Pending::Pause(pause) => return Some(Action::Pause(pause)),
+                Pending::NoiseItem(index, item) => {
+                    if let Layer::Noise(noise) = &mut self.layers[index] {
+                        let packet = noise.config.items[item].build(&mut noise.counter);
+                        self.pending.push_front(Pending::Packet(packet, index + 1));
+                    }
+                }
                 Pending::NoiseSent(index) => {
                     if let Layer::Noise(noise) = &mut self.layers[index] {
                         noise.reset_at = Some(
@@ -389,12 +439,11 @@ impl Masks {
                                 .is_none_or(|reset| noise.config.reset_secs.to > 0 && now > reset)
                             {
                                 // Expand in reverse to send items in configuration order.
-                                for item in noise.config.items.iter().rev() {
+                                for (item, config) in noise.config.items.iter().enumerate().rev() {
                                     let pause =
-                                        Duration::from_millis(item.delay_ms.sample().into());
+                                        Duration::from_millis(config.delay_ms.sample().into());
                                     self.pending.push_front(Pending::Pause(pause));
-                                    self.pending
-                                        .push_front(Pending::Packet(item.build(), index + 1));
+                                    self.pending.push_front(Pending::NoiseItem(index, item));
                                 }
                             }
                         }

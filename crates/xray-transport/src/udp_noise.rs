@@ -28,16 +28,57 @@ impl NoiseRange {
         self.from <= self.to && self.to <= max
     }
 }
+/// One segment of an Xray `exp` noise packet.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NoiseSegment {
+    /// These bytes.
+    Bytes(Vec<u8>),
+    /// That many random bytes.
+    Random(NoiseRange),
+    /// That many random ASCII letters.
+    RandomLetters(NoiseRange),
+    /// That many random decimal digits.
+    RandomDigits(NoiseRange),
+    /// The Unix time in seconds, four big-endian bytes.
+    Timestamp,
+    /// The connection's count of these segments, from one, four big-endian
+    /// bytes.
+    Counter,
+    /// Eight random bytes.
+    Nonce,
+}
+impl NoiseSegment {
+    /// The most bytes this segment adds to a packet.
+    fn max_len(&self) -> usize {
+        match self {
+            Self::Bytes(bytes) => bytes.len(),
+            Self::Random(size) | Self::RandomLetters(size) | Self::RandomDigits(size) => {
+                size.to as usize
+            }
+            Self::Timestamp | Self::Counter => 4,
+            Self::Nonce => 8,
+        }
+    }
+}
+/// Xray-core's letters for `<rc>`, one drawn as a random byte modulo 52.
+const ASCII_LETTERS: &[u8; 52] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UdpNoiseItem {
     pub packet: Vec<u8>,
     pub random_length: NoiseRange,
     pub random_bytes: NoiseRange,
     pub delay_ms: NoiseRange,
+    /// The segments of an `exp` packet, built anew for every send; `packet`
+    /// is then empty and `random_length` zero.
+    pub segments: Vec<NoiseSegment>,
 }
 impl UdpNoiseItem {
-    /// One noise packet: the fixed bytes, or random ones of a random length.
-    pub(crate) fn build(&self) -> Vec<u8> {
+    /// One noise packet: the fixed bytes, random ones of a random length, or
+    /// the `exp` segments, `counter` counting each `<c>` the connection sends.
+    pub(crate) fn build(&self, counter: &mut u32) -> Vec<u8> {
+        if !self.segments.is_empty() {
+            return self.build_segments(counter);
+        }
         if self.random_length.to == 0 {
             return self.packet.clone();
         }
@@ -45,6 +86,62 @@ impl UdpNoiseItem {
         (0..self.random_length.sample())
             .map(|_| rng.gen_range(self.random_bytes.from..=self.random_bytes.to) as u8)
             .collect()
+    }
+
+    /// Xray-core's `buildPacket` for `exp` segments, sizes drawn inclusive.
+    fn build_segments(&self, counter: &mut u32) -> Vec<u8> {
+        let mut rng = rand::thread_rng();
+        let mut packet = Vec::with_capacity(self.segments.iter().map(NoiseSegment::max_len).sum());
+        for segment in &self.segments {
+            match segment {
+                NoiseSegment::Bytes(bytes) => packet.extend_from_slice(bytes),
+                NoiseSegment::Timestamp => {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |since| since.as_secs());
+                    // Go's `uint32(time.Now().Unix())`.
+                    packet.extend_from_slice(&(now as u32).to_be_bytes());
+                }
+                NoiseSegment::Counter => {
+                    *counter = counter.wrapping_add(1);
+                    packet.extend_from_slice(&counter.to_be_bytes());
+                }
+                NoiseSegment::Nonce => packet.extend((0..8).map(|_| rng.gen::<u8>())),
+                NoiseSegment::Random(size)
+                | NoiseSegment::RandomLetters(size)
+                | NoiseSegment::RandomDigits(size) => {
+                    packet.extend((0..size.sample()).map(|_| {
+                        let byte = rng.gen::<u8>();
+                        match segment {
+                            NoiseSegment::RandomLetters(_) => {
+                                ASCII_LETTERS[usize::from(byte) % ASCII_LETTERS.len()]
+                            }
+                            NoiseSegment::RandomDigits(_) => b'0' + byte % 10,
+                            _ => byte,
+                        }
+                    }));
+                }
+            }
+        }
+        packet
+    }
+
+    fn valid_segments(&self) -> bool {
+        self.segments.is_empty()
+            || self.packet.is_empty()
+                && self.random_length.to == 0
+                && self.segments.iter().all(|segment| match segment {
+                    NoiseSegment::Random(size)
+                    | NoiseSegment::RandomLetters(size)
+                    | NoiseSegment::RandomDigits(size) => size.valid(4096),
+                    _ => true,
+                })
+                && self
+                    .segments
+                    .iter()
+                    .map(NoiseSegment::max_len)
+                    .sum::<usize>()
+                    <= 4096
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -64,6 +161,7 @@ impl UdpNoiseConfig {
                     || !i.random_bytes.valid(255)
                     || !i.delay_ms.valid(1000)
                     || (!i.packet.is_empty() && i.random_length.to != 0)
+                    || !i.valid_segments()
             })
             || self.items.iter().map(|i| i.delay_ms.to).sum::<u32>() > 10_000
         {
@@ -106,6 +204,8 @@ struct State {
     packet: Option<Vec<u8>>,
     delay_until: Option<Instant>,
     expires: Option<Instant>,
+    /// The `<c>` segments sent so far, which a reset does not restart.
+    counter: u32,
 }
 struct NoiseSocket {
     inner: Arc<dyn AsyncUdpSocket>,
@@ -153,7 +253,10 @@ impl AsyncUdpSocket for NoiseSocket {
             let Some(item) = self.config.items.get(state.index) else {
                 break;
             };
-            let packet = state.packet.get_or_insert_with(|| item.build());
+            let State {
+                packet, counter, ..
+            } = &mut *state;
+            let packet = packet.get_or_insert_with(|| item.build(counter));
             let noise = udp::Transmit {
                 destination: self.peer,
                 ecn: None,
@@ -260,12 +363,14 @@ mod tests {
                     random_length: r(0),
                     random_bytes: r(0),
                     delay_ms: r(40),
+                    segments: Vec::new(),
                 },
                 UdpNoiseItem {
                     packet: vec![],
                     random_length: NoiseRange { from: 16, to: 24 },
                     random_bytes: r(7),
                     delay_ms: r(0),
+                    segments: Vec::new(),
                 },
             ],
             reset_secs: r(0),
@@ -422,6 +527,7 @@ mod state_tests {
                     random_length: range(0),
                     random_bytes: range(0),
                     delay_ms: range(0),
+                    segments: Vec::new(),
                 }],
                 reset_secs: range(reset),
                 before_salamander: false,
@@ -481,6 +587,7 @@ mod state_tests {
                     random_length: range(0),
                     random_bytes: range(0),
                     delay_ms: range(0),
+                    segments: Vec::new(),
                 })
                 .collect(),
             reset_secs: range(1),
@@ -527,5 +634,154 @@ mod state_tests {
                 b"four"
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod exp_tests {
+    use super::*;
+
+    fn exp(segments: Vec<NoiseSegment>) -> UdpNoiseItem {
+        UdpNoiseItem {
+            packet: Vec::new(),
+            random_length: NoiseRange { from: 0, to: 0 },
+            random_bytes: NoiseRange { from: 0, to: 255 },
+            delay_ms: NoiseRange { from: 0, to: 0 },
+            segments,
+        }
+    }
+
+    fn decode_hex(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// The segments the noise-exp oracle wrote for what Xray-core read.
+    fn oracle_segments(item: &serde_json::Value) -> Vec<NoiseSegment> {
+        item["segments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|segment| match segment["kind"].as_str().unwrap() {
+                "BYTES" => NoiseSegment::Bytes(decode_hex(segment["bytes"].as_str().unwrap())),
+                "COUNTER" => NoiseSegment::Counter,
+                kind => panic!("the oracle's sends draw nothing at random, not {kind}"),
+            })
+            .collect()
+    }
+
+    /// The packets Xray-core's noise mask sent for each connection, its
+    /// counter running across the items in order.
+    #[test]
+    fn exp_packets_match_what_xray_core_sends() {
+        let vectors: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/noise/exp-vectors.json"
+        ))
+        .unwrap();
+        let sends = vectors["sends"].as_array().unwrap();
+        assert!(!sends.is_empty());
+        for send in sends {
+            let mut counter = 0;
+            let built: Vec<String> = send["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|item| {
+                    let packet = exp(oracle_segments(item)).build(&mut counter);
+                    packet.iter().map(|byte| format!("{byte:02x}")).collect()
+                })
+                .collect();
+            let sent: Vec<&str> = send["sent"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|packet| packet.as_str().unwrap())
+                .collect();
+            assert_eq!(built, sent[..sent.len() - 1], "{send}");
+            assert_eq!(sent[sent.len() - 1], send["payload"].as_str().unwrap());
+        }
+    }
+
+    #[test]
+    fn random_segments_draw_inclusive_sizes_from_their_alphabets() {
+        let mut counter = 7;
+        let item = exp(vec![
+            NoiseSegment::RandomLetters(NoiseRange { from: 2, to: 4 }),
+            NoiseSegment::Bytes(b"|".to_vec()),
+            NoiseSegment::RandomDigits(NoiseRange { from: 3, to: 3 }),
+            NoiseSegment::Bytes(b"|".to_vec()),
+            NoiseSegment::Nonce,
+            NoiseSegment::Random(NoiseRange { from: 0, to: 0 }),
+        ]);
+        let mut lengths = std::collections::BTreeSet::new();
+        for _ in 0..500 {
+            let packet = item.build(&mut counter);
+            let letters = packet.iter().position(|byte| *byte == b'|').unwrap();
+            lengths.insert(letters);
+            assert!(packet[..letters].iter().all(u8::is_ascii_alphabetic));
+            let digits = &packet[letters + 1..letters + 4];
+            assert!(digits.iter().all(u8::is_ascii_digit), "{packet:?}");
+            assert_eq!(packet[letters + 4], b'|');
+            assert_eq!(
+                packet.len(),
+                letters + 5 + 8,
+                "eight nonce bytes, no random ones"
+            );
+        }
+        assert_eq!(lengths.into_iter().collect::<Vec<_>>(), [2, 3, 4]);
+        assert_eq!(counter, 7, "no counter segment counts");
+    }
+
+    #[test]
+    fn timestamps_are_unix_seconds_and_counters_run_per_connection() {
+        let unix = || {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as u32
+        };
+        let item = exp(vec![NoiseSegment::Timestamp, NoiseSegment::Counter]);
+        let mut counter = u32::MAX - 1;
+        let before = unix();
+        let first = item.build(&mut counter);
+        let second = item.build(&mut counter);
+        let after = unix();
+        let stamp = u32::from_be_bytes(first[..4].try_into().unwrap());
+        assert!((before..=after).contains(&stamp));
+        assert_eq!(first[4..], u32::MAX.to_be_bytes());
+        assert_eq!(second[4..], 0u32.to_be_bytes(), "Go's counter wraps");
+    }
+
+    #[test]
+    fn exp_items_are_bounded_like_literal_packets() {
+        let config = |item: UdpNoiseItem| UdpNoiseConfig {
+            items: vec![item],
+            reset_secs: NoiseRange { from: 0, to: 0 },
+            before_salamander: false,
+        };
+        let size = |to| NoiseRange { from: 0, to };
+        assert!(config(exp(vec![
+            NoiseSegment::Random(size(4088)),
+            NoiseSegment::Nonce
+        ]))
+        .validate()
+        .is_ok());
+        assert!(config(exp(vec![
+            NoiseSegment::Random(size(4089)),
+            NoiseSegment::Nonce
+        ]))
+        .validate()
+        .is_err());
+        assert!(config(exp(vec![NoiseSegment::Random(NoiseRange {
+            from: 3,
+            to: 2
+        })]))
+        .validate()
+        .is_err());
+        let mut mixed = exp(vec![NoiseSegment::Counter]);
+        mixed.packet = b"x".to_vec();
+        assert!(config(mixed).validate().is_err());
     }
 }

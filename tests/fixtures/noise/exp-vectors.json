@@ -1,0 +1,481 @@
+{
+  "cases": [
+    {
+      "packet": "\u003cb 01 02 03\u003e",
+      "segments": [
+        {
+          "kind": "BYTES",
+          "bytes": "010203"
+        }
+      ]
+    },
+    {
+      "packet": "\u003cb 0x0a0B\u003e",
+      "segments": [
+        {
+          "kind": "BYTES",
+          "bytes": "0a0b"
+        }
+      ]
+    },
+    {
+      "packet": "\u003cb\t0X ff\u003e",
+      "segments": [
+        {
+          "kind": "BYTES",
+          "bytes": "ff"
+        }
+      ]
+    },
+    {
+      "packet": "\u003cb 0x0Xab\u003e",
+      "segments": [
+        {
+          "kind": "BYTES",
+          "bytes": "ab"
+        }
+      ]
+    },
+    {
+      "packet": "\u003cb  01 02\u003e",
+      "error": "infra/conf: invalid noise exp near \u003cb  01 02\u003e"
+    },
+    {
+      "packet": "\u003cr 5\u003e",
+      "segments": [
+        {
+          "kind": "RANDOM",
+          "min": 5,
+          "max": 5
+        }
+      ]
+    },
+    {
+      "packet": "\u003cr 1-3\u003e",
+      "segments": [
+        {
+          "kind": "RANDOM",
+          "min": 1,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "packet": "\u003crc 4\u003e",
+      "segments": [
+        {
+          "kind": "RANDOM_ASCII",
+          "min": 4,
+          "max": 4
+        }
+      ]
+    },
+    {
+      "packet": "\u003crd 2-6\u003e",
+      "segments": [
+        {
+          "kind": "RANDOM_DIGIT",
+          "min": 2,
+          "max": 6
+        }
+      ]
+    },
+    {
+      "packet": "\u003cr 0\u003e",
+      "segments": [
+        {
+          "kind": "RANDOM"
+        }
+      ]
+    },
+    {
+      "packet": "\u003cr 0-0\u003e",
+      "segments": [
+        {
+          "kind": "RANDOM"
+        }
+      ]
+    },
+    {
+      "packet": "\u003cr 65535\u003e",
+      "segments": [
+        {
+          "kind": "RANDOM",
+          "min": 65535,
+          "max": 65535
+        }
+      ]
+    },
+    {
+      "packet": "\u003cr +3\u003e",
+      "segments": [
+        {
+          "kind": "RANDOM",
+          "min": 3,
+          "max": 3
+        }
+      ]
+    },
+    {
+      "packet": "\u003cr 2 \u003e",
+      "segments": [
+        {
+          "kind": "RANDOM",
+          "min": 2,
+          "max": 2
+        }
+      ]
+    },
+    {
+      "packet": "\u003crc\n7\r\u003e",
+      "segments": [
+        {
+          "kind": "RANDOM_ASCII",
+          "min": 7,
+          "max": 7
+        }
+      ]
+    },
+    {
+      "packet": "\u003ct\u003e",
+      "segments": [
+        {
+          "kind": "TIMESTAMP"
+        }
+      ]
+    },
+    {
+      "packet": "\u003cc\u003e",
+      "segments": [
+        {
+          "kind": "COUNTER"
+        }
+      ]
+    },
+    {
+      "packet": "\u003cn\u003e",
+      "segments": [
+        {
+          "kind": "NONCE"
+        }
+      ]
+    },
+    {
+      "packet": "\u003ct \u003e",
+      "segments": [
+        {
+          "kind": "TIMESTAMP"
+        }
+      ]
+    },
+    {
+      "packet": "\u003c t\u003e",
+      "segments": [
+        {
+          "kind": "TIMESTAMP"
+        }
+      ]
+    },
+    {
+      "packet": "\u003c\tc\t\u003e",
+      "segments": [
+        {
+          "kind": "COUNTER"
+        }
+      ]
+    },
+    {
+      "packet": "  \u003cb 01\u003e\n\u003cc\u003e\t\u003ct\u003e  ",
+      "segments": [
+        {
+          "kind": "BYTES",
+          "bytes": "01"
+        },
+        {
+          "kind": "COUNTER"
+        },
+        {
+          "kind": "TIMESTAMP"
+        }
+      ]
+    },
+    {
+      "packet": " \u003cc\u003e ",
+      "segments": [
+        {
+          "kind": "COUNTER"
+        }
+      ]
+    },
+    {
+      "packet": "\u003cb 01\u003e\u003cb 02\u003e",
+      "segments": [
+        {
+          "kind": "BYTES",
+          "bytes": "01"
+        },
+        {
+          "kind": "BYTES",
+          "bytes": "02"
+        }
+      ]
+    },
+    {
+      "packet": "\u003cr 3-3\u003e\u003crd 1\u003e\u003crc 2-4\u003e\u003cn\u003e",
+      "segments": [
+        {
+          "kind": "RANDOM",
+          "min": 3,
+          "max": 3
+        },
+        {
+          "kind": "RANDOM_DIGIT",
+          "min": 1,
+          "max": 1
+        },
+        {
+          "kind": "RANDOM_ASCII",
+          "min": 2,
+          "max": 4
+        },
+        {
+          "kind": "NONCE"
+        }
+      ]
+    },
+    {
+      "packet": "",
+      "error": "infra/conf: empty noise exp: "
+    },
+    {
+      "packet": "   ",
+      "error": "infra/conf: empty noise exp:    "
+    },
+    {
+      "packet": "\u003cx\u003e",
+      "error": "infra/conf: unknown \u003cx\u003e in noise exp"
+    },
+    {
+      "packet": "\u003cB 01\u003e",
+      "error": "infra/conf: invalid noise exp near \u003cB 01\u003e"
+    },
+    {
+      "packet": "\u003cb\u003e",
+      "error": "infra/conf: empty bytes in noise exp"
+    },
+    {
+      "packet": "\u003cb 0x\u003e",
+      "error": "infra/conf: empty bytes in noise exp"
+    },
+    {
+      "packet": "\u003cb 123\u003e",
+      "error": "infra/conf: invalid hex in noise exp: 123 \u003e encoding/hex: odd length hex string"
+    },
+    {
+      "packet": "\u003cb zz\u003e",
+      "error": "infra/conf: invalid hex in noise exp: zz \u003e encoding/hex: invalid byte: U+007A 'z'"
+    },
+    {
+      "packet": "\u003cb +1\u003e",
+      "error": "infra/conf: invalid hex in noise exp: +1 \u003e encoding/hex: invalid byte: U+002B '+'"
+    },
+    {
+      "packet": "\u003cb 0X0xab\u003e",
+      "error": "infra/conf: invalid hex in noise exp: 0X0xab \u003e encoding/hex: invalid byte: U+0078 'x'"
+    },
+    {
+      "packet": "\u003cr\u003e",
+      "error": "infra/conf: \u003cr\u003e in noise exp needs a size"
+    },
+    {
+      "packet": "\u003cr 3-1\u003e",
+      "error": "infra/conf: invalid size in noise exp: 3-1"
+    },
+    {
+      "packet": "\u003cr -1\u003e",
+      "error": "infra/conf: invalid size in noise exp: -1"
+    },
+    {
+      "packet": "\u003cr 65536\u003e",
+      "error": "infra/conf: invalid size in noise exp: 65536"
+    },
+    {
+      "packet": "\u003cr 1 - 3\u003e",
+      "error": "infra/conf: invalid range string: 1 - 3"
+    },
+    {
+      "packet": "\u003cr 1-3-5\u003e",
+      "error": "infra/conf: invalid range string: 1-3-5"
+    },
+    {
+      "packet": "\u003cr 1x\u003e",
+      "error": "infra/conf: invalid range string: 1x"
+    },
+    {
+      "packet": "\u003ct 1\u003e",
+      "error": "infra/conf: \u003ct\u003e in noise exp takes no argument"
+    },
+    {
+      "packet": "\u003cc x\u003e",
+      "error": "infra/conf: \u003cc\u003e in noise exp takes no argument"
+    },
+    {
+      "packet": "\u003cn 8\u003e",
+      "error": "infra/conf: \u003cn\u003e in noise exp takes no argument"
+    },
+    {
+      "packet": "abc",
+      "error": "infra/conf: invalid noise exp near abc"
+    },
+    {
+      "packet": "\u003cb 01\u003e junk",
+      "error": "infra/conf: invalid noise exp near  junk"
+    },
+    {
+      "packet": "junk \u003cb 01\u003e",
+      "error": "infra/conf: invalid noise exp near junk "
+    },
+    {
+      "packet": "\u003cb 01",
+      "error": "infra/conf: invalid noise exp near \u003cb 01"
+    },
+    {
+      "packet": "\u003crd5\u003e",
+      "error": "infra/conf: invalid noise exp near \u003crd5\u003e"
+    },
+    {
+      "packet": "\u003c\u000bt\u003e",
+      "error": "infra/conf: invalid noise exp near \u003c\u000bt\u003e"
+    },
+    {
+      "packet": "\u003ct\u000b\u003e",
+      "error": "infra/conf: invalid noise exp near \u003ct\u000b\u003e"
+    },
+    {
+      "packet": "\u003cr 1\u000b\u003e",
+      "error": "infra/conf: invalid range string: 1\u000b"
+    },
+    {
+      "packet": "\u003cb 01 \u003cc\u003e",
+      "error": "infra/conf: invalid hex in noise exp: 01 \u003cc \u003e encoding/hex: invalid byte: U+003C '\u003c'"
+    },
+    {
+      "packet": "\u003c\u003ct\u003e",
+      "error": "infra/conf: invalid noise exp near \u003c"
+    },
+    {
+      "packet": "\u003ct\u003e\u003e",
+      "error": "infra/conf: invalid noise exp near \u003e"
+    },
+    {
+      "packet": "\u003ct\u003e\u003c",
+      "error": "infra/conf: invalid noise exp near \u003c"
+    },
+    {
+      "packet": "\u003c\u003e",
+      "error": "infra/conf: invalid noise exp near \u003c\u003e"
+    },
+    {
+      "packet": "\u003c \u003e",
+      "error": "infra/conf: invalid noise exp near \u003c \u003e"
+    },
+    {
+      "packet": "\u003c1\u003e",
+      "error": "infra/conf: invalid noise exp near \u003c1\u003e"
+    },
+    {
+      "packet": "\u003cr 5\u003e",
+      "error": "infra/conf: invalid noise exp near \u003cr 5\u003e"
+    },
+    {
+      "packet": 5,
+      "error": "infra/conf: \"packet\" of noise \"type\": \"exp\" must be a string \u003e json: cannot unmarshal number into Go value of type string"
+    },
+    {
+      "packet": null,
+      "error": "infra/conf: empty noise exp: "
+    },
+    {
+      "packet": "\u003cb 01\u003e",
+      "rand": 3,
+      "error": "infra/conf: len(item.Packet) \u003e 0 \u0026\u0026 item.Rand.To \u003e 0"
+    }
+  ],
+  "sends": [
+    {
+      "items": [
+        {
+          "exp": "\u003cb 0102\u003e\u003cc\u003e",
+          "segments": [
+            {
+              "kind": "BYTES",
+              "bytes": "0102"
+            },
+            {
+              "kind": "COUNTER"
+            }
+          ]
+        },
+        {
+          "exp": "\u003cc\u003e\u003cb 03\u003e",
+          "segments": [
+            {
+              "kind": "COUNTER"
+            },
+            {
+              "kind": "BYTES",
+              "bytes": "03"
+            }
+          ]
+        }
+      ],
+      "payload": "7061796c6f6164",
+      "sent": [
+        "010200000001",
+        "0000000203",
+        "7061796c6f6164"
+      ]
+    },
+    {
+      "items": [
+        {
+          "exp": "\u003cc\u003e\u003cc\u003e\u003cc\u003e",
+          "segments": [
+            {
+              "kind": "COUNTER"
+            },
+            {
+              "kind": "COUNTER"
+            },
+            {
+              "kind": "COUNTER"
+            }
+          ]
+        }
+      ],
+      "payload": "7061796c6f6164",
+      "sent": [
+        "000000010000000200000003",
+        "7061796c6f6164"
+      ]
+    },
+    {
+      "items": [
+        {
+          "exp": "\u003cb 00 11 22 33 44 55 66 77 88 99 aa bb cc dd ee ff\u003e",
+          "segments": [
+            {
+              "kind": "BYTES",
+              "bytes": "00112233445566778899aabbccddeeff"
+            }
+          ]
+        }
+      ],
+      "payload": "7061796c6f6164",
+      "sent": [
+        "00112233445566778899aabbccddeeff",
+        "7061796c6f6164"
+      ]
+    }
+  ]
+}

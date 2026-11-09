@@ -193,6 +193,7 @@ async fn noise_goes_out_ahead_of_the_first_segment() {
             random_length: crate::udp_noise::NoiseRange { from: 0, to: 0 },
             random_bytes: crate::udp_noise::NoiseRange { from: 0, to: 0 },
             delay_ms: crate::udp_noise::NoiseRange { from: 30, to: 30 },
+            segments: Vec::new(),
         }],
         reset_secs: crate::udp_noise::NoiseRange { from: 0, to: 0 },
         before_salamander: false,

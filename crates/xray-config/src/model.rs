@@ -1372,6 +1372,9 @@ pub enum KcpMask {
     /// The stream's `sudoku` mask, read into `StreamSettings::udp_sudoku`,
     /// at its place in the array.
     Sudoku,
+    /// The stream's `salamander` mask, read into
+    /// `StreamSettings::udp_salamander`, at its place in the array.
+    Salamander,
 }
 
 impl fmt::Debug for KcpMask {
@@ -1383,6 +1386,7 @@ impl fmt::Debug for KcpMask {
             Self::Noise => f.write_str("Noise"),
             Self::HeaderCustom => f.write_str("HeaderCustom"),
             Self::Sudoku => f.write_str("Sudoku"),
+            Self::Salamander => f.write_str("Salamander"),
         }
     }
 }
@@ -1695,7 +1699,30 @@ pub struct StreamSettings {
     /// masks: it carries the datagrams in ICMP echo messages.
     pub udp_xicmp: Option<XicmpMask>,
     pub udp_noise: Option<UdpNoiseSettings>,
+    /// The `salamander` UDP mask of mKCP, XHTTP over HTTP/3 or MASQUE over
+    /// HTTP/3, at its place among the other masks; Hysteria keeps its own in
+    /// [`HysteriaSettings`].
+    pub udp_salamander: Option<SalamanderMask>,
     pub socket_options: Option<SocketOptions>,
+}
+
+/// A `salamander` UDP mask: every datagram behind a random salt and XORed
+/// with a key the password and salt derive.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SalamanderMask {
+    pub password: zeroize::Zeroizing<String>,
+    /// `packetSize` when its upper bound is positive, which selects Gecko:
+    /// `1 <= from <= to <= 2048`. Not on mKCP.
+    pub gecko_packet_size: Option<FragmentRange>,
+}
+
+impl fmt::Debug for SalamanderMask {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SalamanderMask")
+            .field("password", &"<redacted>")
+            .field("gecko_packet_size", &self.gecko_packet_size)
+            .finish()
+    }
 }
 
 /// Bounded FinalMask UDP prelude; ranges are inclusive and delays follow each packet.
@@ -1711,6 +1738,43 @@ pub struct UdpNoiseItem {
     pub random_length: FragmentRange,
     pub random_bytes: FragmentRange,
     pub delay_ms: FragmentRange,
+    /// The segments of an `exp` packet, built anew for every send; `packet`
+    /// is then empty and `random_length` zero.
+    pub segments: Vec<NoiseSegment>,
+}
+
+/// One segment of an `exp` noise packet, as Xray-core reads `<key arg>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NoiseSegment {
+    /// `<b hex>`: these bytes.
+    Bytes(Vec<u8>),
+    /// `<r n>` or `<r from-to>`: that many random bytes.
+    Random(FragmentRange),
+    /// `<rc ...>`: that many random ASCII letters.
+    RandomLetters(FragmentRange),
+    /// `<rd ...>`: that many random decimal digits.
+    RandomDigits(FragmentRange),
+    /// `<t>`: the Unix time in seconds, four big-endian bytes.
+    Timestamp,
+    /// `<c>`: the connection's count of these segments, from one, four
+    /// big-endian bytes.
+    Counter,
+    /// `<n>`: eight random bytes.
+    Nonce,
+}
+
+impl NoiseSegment {
+    /// The most bytes this segment adds to a packet.
+    pub fn max_len(&self) -> usize {
+        match self {
+            Self::Bytes(bytes) => bytes.len(),
+            Self::Random(size) | Self::RandomLetters(size) | Self::RandomDigits(size) => {
+                size.to as usize
+            }
+            Self::Timestamp | Self::Counter => 4,
+            Self::Nonce => 8,
+        }
+    }
 }
 
 /// The `header-custom` TCP mask, as Xray-core v26.10.31's `HeaderCustomTCP`
@@ -1976,12 +2040,27 @@ pub enum HeaderCustomArg {
     Transform(HeaderCustomExpr),
 }
 
-/// Bounded first-ClientHello record fragmentation. Ranges are inclusive.
+/// Bounded TCP fragmentation: the first ClientHello's record, or selected
+/// writes cut into raw pieces. Ranges are inclusive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TcpFragmentSettings {
+    pub packets: FragmentPackets,
     pub lengths: Vec<FragmentRange>,
     pub delays_ms: Vec<FragmentRange>,
     pub max_split: FragmentRange,
+}
+
+/// The writes a fragment mask cuts, as Xray's `packets` selects them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FragmentPackets {
+    /// `tlshello`: the first write's complete TLS handshake record, sent as
+    /// smaller records with the same handshake bytes.
+    TlsHello,
+    /// Empty or absent: every write, cut into raw pieces.
+    AllWrites,
+    /// `"from-to"` or one number: the writes so numbered, counting from one,
+    /// cut into raw pieces; `from` is at least one and `to` at least `from`.
+    Writes { from: u32, to: u32 },
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

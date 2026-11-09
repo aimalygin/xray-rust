@@ -280,23 +280,31 @@ impl Parser<'_> {
                 "a header-custom UDP mask cannot be combined with udphop",
             );
         }
-        if stream_network != StreamNetwork::Hysteria
-            && stream
-                .and_then(|s| s.pointer("/finalmask/udp"))
-                .and_then(Value::as_array)
-                .is_some_and(|m| {
-                    m.iter().any(|v| {
-                        v.get("type")
-                            .and_then(Value::as_str)
-                            .is_some_and(|s| s.eq_ignore_ascii_case("salamander"))
-                    })
-                })
-        {
-            self.error(
-                format!("$.outbounds[{index}].streamSettings.finalmask.udp"),
-                "Salamander requires Hysteria",
-            );
-        }
+        // Hysteria reads its own Salamander mask; the other UDP carriers take
+        // one here, at its place among their masks.
+        let udp_salamander = if stream_network == StreamNetwork::Hysteria {
+            None
+        } else {
+            let salamander = self.parse_udp_salamander(stream, index);
+            let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp");
+            if salamander.is_some() && !udp_carrier {
+                self.error(
+                    &path,
+                    "Salamander requires Hysteria, mKCP, XHTTP with exact h3 ALPN or MASQUE over HTTP/3",
+                );
+            }
+            if stream_network == StreamNetwork::Kcp
+                && salamander
+                    .as_ref()
+                    .is_some_and(|salamander| salamander.gecko_packet_size.is_some())
+            {
+                self.error(
+                    &path,
+                    "Gecko, Salamander's packetSize, is not supported on mKCP yet",
+                );
+            }
+            salamander
+        };
         Some(StreamSettings {
             // Native Hysteria owns a UDP carrier; other transports retain
             // their existing TCP classification (XHTTP selects H3 later).
@@ -318,6 +326,7 @@ impl Parser<'_> {
             udp_realm,
             udp_xicmp,
             udp_noise,
+            udp_salamander,
             socket_options,
         })
     }

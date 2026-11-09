@@ -286,7 +286,7 @@ fn the_mask_list_takes_a_fragment_first_then_header_custom() {
     for (masks, expected) in [
         (
             json!([header.clone(), fragment.clone()]),
-            "fragments the handshake",
+            "would cut the header-custom handshake",
         ),
         (
             json!([header.clone(), header.clone()]),
