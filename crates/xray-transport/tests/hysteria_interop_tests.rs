@@ -276,6 +276,15 @@ mod header_custom;
 #[path = "hysteria/sudoku.rs"]
 mod sudoku;
 
+#[path = "../../../tests/support/realm_rendezvous.rs"]
+mod realm_rendezvous;
+
+#[path = "hysteria/realm.rs"]
+mod realm;
+
+#[path = "hysteria/xicmp.rs"]
+mod xicmp;
+
 #[path = "hysteria/xdns.rs"]
 mod xdns;
 

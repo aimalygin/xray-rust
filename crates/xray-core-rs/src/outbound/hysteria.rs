@@ -117,6 +117,16 @@ impl HysteriaOutbound {
                 .udp_xdns
                 .as_ref()
                 .map(super::carrier::xdns_config),
+            realm: config
+                .stream
+                .udp_realm
+                .as_ref()
+                .map(super::carrier::realm_config),
+            xicmp: config
+                .stream
+                .udp_xicmp
+                .as_ref()
+                .map(super::carrier::xicmp_config),
             ..Default::default()
         };
         let (quic, receive_bytes_per_second) =
@@ -151,6 +161,7 @@ impl HysteriaOutbound {
         {
             return Err(CoreError::UnsupportedOutboundNetwork);
         }
+        super::carrier::check_xicmp_server(&config.stream, &server.server)?;
         let server_name = tls
             .server_name
             .clone()
@@ -228,11 +239,22 @@ impl HysteriaOutbound {
             return Err(HysteriaError::Closed.into());
         }
         let dialer = self.socket_dialer(dialer);
-        // One total deadline includes contention, endpoint DNS and candidate attempts.
+        // One total deadline includes contention, endpoint DNS and candidate
+        // attempts, and a realm introduction before them.
+        let deadline = Duration::from_secs(10) + self.realm_budget();
         tokio::select! {
             biased;
             _ = shutdown.changed() => Err(HysteriaError::Closed.into()),
-            result = tokio::time::timeout(Duration::from_secs(10), self.client_inner(resolver, &dialer)) => result.map_err(|_| HysteriaError::Timeout)?,
+            result = tokio::time::timeout(deadline, self.client_inner(resolver, &dialer)) => result.map_err(|_| HysteriaError::Timeout)?,
+        }
+    }
+
+    /// How long a realm introduction may add to a dial.
+    fn realm_budget(&self) -> Duration {
+        if self.inner.carrier.realm.is_some() {
+            xray_transport::realm::ESTABLISH_BUDGET
+        } else {
+            Duration::ZERO
         }
     }
 
@@ -295,17 +317,33 @@ impl HysteriaOutbound {
         )
         .await?;
         let mut last = HysteriaError::Connect;
-        for candidate in candidates.into_iter().take(8) {
+        // A realm socket goes to the punched peer whatever the address, so one
+        // introduction is all a dial makes.
+        let realm = self
+            .inner
+            .carrier
+            .realm
+            .as_ref()
+            .map(|_| dialer.realm_env());
+        // Nor does an xicmp client, which sends to its own addresses or to
+        // the one literal address it needs.
+        let attempts = if realm.is_some() || self.inner.carrier.xicmp.is_some() {
+            1
+        } else {
+            8
+        };
+        for candidate in candidates.into_iter().take(attempts) {
             let mut config = HysteriaConfig::new(candidate, self.inner.tls.clone(), String::new());
             config.auth = self.inner.auth.auth.clone();
             config.limits = self.inner.limits;
             config.carrier = self.inner.carrier.clone();
             config.quic = self.inner.quic.clone();
             config.receive_bytes_per_second = self.inner.receive_bytes_per_second;
+            config.realm = realm.clone();
             // Give later DNS candidates a chance within the total operation deadline.
             let generation = self.inner.network_generation.load(Ordering::Acquire);
             let attempt = tokio::time::timeout(
-                Duration::from_secs(3),
+                Duration::from_secs(3) + self.realm_budget(),
                 HysteriaClient::connect(config, dialer.tls_connector()),
             )
             .await;

@@ -1,7 +1,7 @@
 //! XHTTP wire engines.
 
 mod config;
-mod h1;
+pub(crate) mod h1;
 mod h2;
 mod h3;
 mod padding;

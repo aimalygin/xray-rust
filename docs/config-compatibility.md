@@ -2103,14 +2103,16 @@ REALITY. A `fragment` mask may stand before it in the array; after it, Xray-core
 fragments the handshake rather than the TLS ClientHello, so that order is
 refused. The TCP `header-custom` form is refused on mKCP, XHTTP over HTTP/3,
 a split XHTTP download and outbounds that dial directly. The UDP form is
-supported on mKCP, Hysteria and XHTTP over HTTP/3, as described below.
+supported on mKCP, Hysteria, XHTTP over HTTP/3 and MASQUE over HTTP/3, as
+described below.
 Deliberate differences and the evidence are in
 [header-custom TCP](xray-core-differences.md#header-custom-tcp).
 
 ### header-custom UDP mask
 
 One `header-custom` entry in `streamSettings.finalmask.udp` is supported on
-mKCP, Hysteria and XHTTP with exact `h3` ALPN, at its position among the
+mKCP, Hysteria, XHTTP with exact `h3` ALPN and MASQUE over HTTP/3, at its
+position among the
 `noise`, `salamander` and `mkcp-legacy` entries:
 
 ```json
@@ -2361,8 +2363,14 @@ nonzero, negative turning it off. Congestion `brutal` runs BBR with
 `bbrProfile`, as in Xray-core, and `force-brutal` runs Brutal; as on XHTTP
 over HTTP/3, a profile's BBR and Brutal take over from NewReno once the
 handshake completes, where Xray-core's dial installs them (see
-[BBR profiles](#bbr-profiles)). The TCP fragment mask fails on
-MASQUE over HTTP/3, which other TCP masks do not reach. `sockopt` applies
+[BBR profiles](#bbr-profiles)). Every UDP mask applies as on XHTTP over
+HTTP/3, [realm](#realm-mask) and [xicmp](#xicmp-mask) included, since
+Xray-core's dial opens the QUIC socket through the same `finalmask` path: a
+realm introduction counts toward the ten seconds a tunnel dial may take, as
+it runs under Xray-core's dial context, and an xicmp outbound whose address
+is a name needs `ips`. TCP masks fail on MASQUE over HTTP/3, the fragment
+mask in the configuration and the others when the core starts, as XHTTP
+over HTTP/3 refuses them; Xray-core's HTTP/3 dial ignores them. `sockopt` applies
 to the QUIC socket, and `addressPortStrategy` and `domainStrategy` choose
 the server's address, as Xray-core's system dialer does.
 
@@ -2410,6 +2418,127 @@ the one that started it gives up. `scripts/check-masque-interop.sh` compares
 the capsules, packets and the HTTP/2 client's frames with Xray-core's own
 code, rechecks the configuration verdicts with `xray run -test` and runs the
 client against Xray-core's server over HTTP/3 and HTTP/2.
+
+### realm mask
+
+`realm` reaches a server behind NAT through a rendezvous, as Hysteria's
+Realms do, on mKCP, Hysteria, XHTTP with exact `h3` ALPN or MASQUE over
+HTTP/3. The server's inbound registers its public addresses with the
+rendezvous under a realm name; the client finds its own, asks the
+rendezvous to introduce it, and both send punch packets until one arrives.
+The rendezvous carries no traffic.
+
+```json
+"finalmask": {"udp": [{"type": "realm", "settings": {
+  "url": "realm://public@realm.hy2.io/my-long-random-name",
+  "stunServers": ["stun.nextcloud.com:3478", "stun.sip.us:3478",
+    "global.stun.twilio.com:3478"],
+  "ipMode": "dual"
+}}]}
+```
+
+- `url`: `realm://token@host[:port]/name` over HTTPS, port 443 by default,
+  or `realm+http://` over HTTP, port 80. It is read with Go's `url.Parse`,
+  as Xray-core reads it: the user information, unescaped, is the bearer
+  token, the path without its first slash, unescaped, is the name, and the
+  query and fragment are ignored. The outbound's own address and port are
+  not used; the address must still resolve.
+- `stunServers`: one or more `host:port` entries, each port 1 to 65535. Each
+  is resolved to one address, the first of the family `ipMode` and the
+  socket allow that no earlier server took. The client waits up to four
+  seconds for their answers. Several servers expose a predictable symmetric
+  NAT, whose neighbouring ports are then punched too.
+- `tlsConfig`: `tlsSettings`' fields for an HTTPS rendezvous. `serverName`
+  defaults to the URL's host; `pinnedPeerCertSha256` and
+  `verifyPeerCertByName` apply as they do there. `fingerprint` is checked
+  and not used, as in Xray-core, whose HTTP client sends Go's own
+  ClientHello; this one sends rustls's. `alpn` is read and not used: the
+  rendezvous is spoken over HTTP/1.1.
+- `ipMode`: `dual` (the default, a dual-stack socket), `v4` or `v6`,
+  case-insensitive. Xray-core reads any other value as `dual`.
+- `portMapping`: `enabled`, `timeout` and `lifetime` (seconds) are read as
+  Xray-core reads them, but no UPnP or NAT-PMP mapping is made yet, as when
+  Xray-core finds no gateway, so the gateway's address is never offered.
+
+An attempt sends Binding requests to the STUN servers over the carrier's
+socket, then `POST /v1/{name}/connect` to the rendezvous with the addresses
+they reported and the attempt's 16-byte nonce and 32-byte key, then hello
+packets every 100 ms, for up to ten seconds, to the server's addresses in
+the families the client has addresses in. The first punch packet of the
+attempt names the peer, and a hello is answered. With the rendezvous's
+ten-second wait for the server, an attempt takes up to about 35 seconds,
+which Hysteria's dial deadline allows for.
+
+The mask must be the last UDP mask. Xray-core sends its STUN and punch
+packets through the masks listed after it, which mangle them or, for noise,
+announce them; list noise before realm. The masks listed before it run on
+the carrier's datagrams inside it. It cannot run with udphop or xdns, which
+send elsewhere, nor with header-custom, whose state Xray-core keys by the
+server's address while replies come from the peer's. The names of the
+rendezvous and of the STUN servers are resolved like the outbound's server
+address. A Hysteria connection whose network changes closes, and the next
+dial is introduced again; XHTTP introduces every QUIC connection it opens.
+`scripts/check-realm-interop.sh` replays what Xray-core's own realm code
+does and runs each carrier against its server through a local rendezvous.
+
+### xicmp mask
+
+`xicmp` carries a UDP carrier in ICMP echo messages: mKCP, Hysteria, XHTTP
+with exact `h3` ALPN or MASQUE over HTTP/3. The server reads echo requests
+on raw ICMP sockets and answers in echo replies; the client sends echo
+requests:
+
+```json
+"finalmask": {"udp": [{"type": "xicmp", "settings": {
+  "dgram": true,
+  "ips": ["203.0.113.5"]
+}}]}
+```
+
+- `dgram`: datagram ICMP sockets, which need no privilege where the system
+  grants them (below). Without it the sockets are raw, which need root or
+  `CAP_NET_RAW`.
+- `ips`: the server addresses, read with Go's `netip.ParseAddr`; one is
+  drawn for each packet. A zone on an IPv6 address is dropped, as Xray-core
+  drops it, and an IPv4-mapped address is the IPv4 one. Empty sends to the
+  outbound's address, which must then be an IP address, else the core
+  refuses to start: Xray-core never resolves it. With `ips`, the outbound's
+  address is not used, but a name there must still resolve.
+
+Every datagram goes out as an echo request: a random identifier for the
+connection, a sequence number counting from one, then the client's random
+8-byte id and the packet, at most 4080 bytes; a larger one is dropped. The
+server answers with the identifier and sequence of the client's last request
+and the packet alone. The server's own system echoes each request back as
+well; the client drops a reply that starts with its id. On a raw socket,
+and on an Apple datagram socket, which keeps the identifier and receives
+every reply from its address, it also drops replies with another
+identifier; a Linux datagram socket gets only its own.
+
+Where the sockets come from:
+
+| System | `dgram: true` | `dgram: false` |
+|---|---|---|
+| macOS | Granted to any process (checked) | Root only |
+| Linux | Granted to the groups in `net.ipv4.ping_group_range`: the kernel's default `1 0` refuses everyone, systemd and Docker set `0 2147483647` (both checked in a container) | `CAP_NET_RAW` |
+| Android | Granted to apps: `init.rc` sets `ping_group_range` to `0 2147483647`; the sockets take the VPN's protection like the core's others (not checked on a device) | Not granted to apps |
+| iOS | Granted without entitlements, as Apple's SimplePing uses them; inside a Network Extension Apple's forum reports `bind` and reads on an unconnected socket failing with `EPERM`, which the client avoids (not checked on a device) | Not granted |
+
+Each server address gets its own socket, never bound and connected to it: an
+unbound socket is bound on its first send, and replies come only from the
+address each packet went to, as Xray-core's Linux server makes them. Linux
+datagram sockets put their own identifier in the request, and the server's
+replies with it reach them. On macOS and iOS an IPv4 datagram socket would
+return the IP header, which the client switches off as Go does.
+
+The mask must be the last UDP mask: Xray-core fails every dial with it
+anywhere else. The masks listed before it run inside it. It cannot run with
+udphop, xdns or realm, which send elsewhere, nor with header-custom, whose
+state Xray-core keys by the server's address and port while replies come
+without a port, nor on QUIC with sudoku, whose datagrams exceed what an echo
+carries. A QUIC carrier keeps its path MTU discovery off, as quic-go's is on
+a masked conn. `scripts/check-xicmp-interop.sh` compares the messages with
+Xray-core's own code and, on Linux, runs each carrier against its server.
 
 ### TLS ClientHello shaping
 
