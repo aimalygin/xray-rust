@@ -2,7 +2,16 @@
 //! `MasqueClientConfig.Build` and `MasqueConfig.Build` read them, and the
 //! checks its client makes when it starts.
 use super::*;
-use crate::{MasqueOutboundSettings, MasqueSettings, XhttpXmuxSettings, MASQUE_DEFAULT_XMUX};
+use crate::{
+    MasqueOutboundSettings, MasqueSettings, MasqueWarpSettings, XhttpXmuxSettings,
+    MASQUE_DEFAULT_XMUX,
+};
+
+mod warp;
+
+/// Xray's `masque.WarpHost` and `masque.WarpPath`, warp's defaults.
+pub(crate) const MASQUE_WARP_HOST: &str = "cloudflareaccess.com";
+const MASQUE_WARP_PATH: &str = "/";
 use base64::Engine as _;
 
 /// Xray's `masque.DefaultPath`.
@@ -194,10 +203,24 @@ impl Parser<'_> {
         let mut valid = true;
         let mut host = host.to_owned();
         let mut request_path = request_path.to_owned();
-        if warp.is_some() {
-            self.error(format!("{path}.warp"), "MASQUE warp is not supported yet");
-            valid = false;
-        }
+        let warp = match warp {
+            Some(warp) => match self.parse_masque_warp(warp, &format!("{path}.warp"), user, pass) {
+                Some(warp) => {
+                    if host.is_empty() {
+                        host = MASQUE_WARP_HOST.to_owned();
+                    }
+                    if request_path.is_empty() {
+                        request_path = MASQUE_WARP_PATH.to_owned();
+                    }
+                    Some(warp)
+                }
+                None => {
+                    valid = false;
+                    None
+                }
+            },
+            None => None,
+        };
         if request_path.is_empty() {
             request_path = MASQUE_DEFAULT_PATH.to_owned();
         }
@@ -275,8 +298,79 @@ impl Parser<'_> {
             host,
             path: request_path,
             headers: deduped,
-            warp: None,
+            warp,
             xmux,
+        })
+    }
+
+    /// `warp`, as Xray's `MasqueConfig.Build` reads it: no `user` or `pass`
+    /// beside it, then the private key, the public key and the addresses,
+    /// stopping at the first that fails.
+    fn parse_masque_warp(
+        &mut self,
+        warp: &Value,
+        path: &str,
+        user: &str,
+        pass: &str,
+    ) -> Option<MasqueWarpSettings> {
+        self.reject_unknown_fields(warp, path, &surface::MASQUE_WARP);
+        let private_key = self.nullable_string_at(warp, "privateKey", format!("{path}.privateKey"));
+        let public_key = self.nullable_string_at(warp, "publicKey", format!("{path}.publicKey"));
+        let address = match warp.get("address") {
+            None | Some(Value::Null) => Some(Vec::new()),
+            Some(Value::Array(items)) => items
+                .iter()
+                .map(|item| match item {
+                    Value::String(text) => Some(text.clone()),
+                    Value::Null => Some(String::new()),
+                    _ => None,
+                })
+                .collect::<Option<Vec<String>>>(),
+            Some(_) => None,
+        };
+        let Some(address) = address else {
+            self.error(
+                format!("{path}.address"),
+                "field `address` must be an array of strings",
+            );
+            return None;
+        };
+        let (private_key, public_key) = (private_key?, public_key?);
+        if !user.is_empty() || !pass.is_empty() {
+            self.error(path, r#""user" and "pass" can't be used with "warp""#);
+            return None;
+        }
+        let private_key = match warp::private_key(private_key) {
+            Ok(key) => key,
+            Err(error) => {
+                self.error(
+                    format!("{path}.privateKey"),
+                    format!(r#"invalid "privateKey" in "warp": {error}"#),
+                );
+                return None;
+            }
+        };
+        let public_key = match warp::public_key(public_key) {
+            Ok(key) => key,
+            Err(error) => {
+                self.error(
+                    format!("{path}.publicKey"),
+                    format!(r#"invalid "publicKey" in "warp": {error}"#),
+                );
+                return None;
+            }
+        };
+        let addresses = match warp::addresses(&address) {
+            Ok(addresses) => addresses,
+            Err(error) => {
+                self.error(format!("{path}.address"), error);
+                return None;
+            }
+        };
+        Some(MasqueWarpSettings {
+            private_key,
+            public_key,
+            addresses,
         })
     }
 

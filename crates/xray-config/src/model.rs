@@ -1193,8 +1193,7 @@ pub struct MasqueSettings {
 /// `masqueSettings.warp`: Cloudflare WARP's MASQUE flavour.
 #[derive(Clone, PartialEq, Eq)]
 pub struct MasqueWarpSettings {
-    /// The device's ECDSA P-256 key as PKCS #8 DER, re-encoded as Go's
-    /// `x509.MarshalPKCS8PrivateKey` writes it.
+    /// The device key's ECDSA P-256 private scalar: 32 bytes.
     pub private_key: zeroize::Zeroizing<Vec<u8>>,
     /// The endpoint's public key, a DER SubjectPublicKeyInfo.
     pub public_key: Vec<u8>,

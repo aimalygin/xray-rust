@@ -207,3 +207,98 @@ fn quic_parameters_apply_and_brutal_runs_bbr() {
         .unwrap();
     assert_eq!(quic.max_idle_timeout_secs, 60);
 }
+
+/// A WARP key pair from the oracle's vectors: the first P-256 key Xray-core
+/// takes with its scalar, and the first endpoint key it takes, as written.
+fn warp_keys() -> (String, String, String) {
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/masque/warp-config-vectors.json"
+    ))
+    .unwrap();
+    let text = |case: &Value| {
+        let hex = case["input"].as_str().unwrap();
+        String::from_utf8(
+            (0..hex.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap() ^ 0x5a)
+                .collect(),
+        )
+        .unwrap()
+    };
+    let private = vectors["private"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["scalar"].is_string())
+        .unwrap();
+    let public = vectors["public"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["ok"] == true)
+        .unwrap();
+    (
+        text(private),
+        private["scalar"].as_str().unwrap().to_owned(),
+        text(public),
+    )
+}
+
+#[test]
+fn warp_keeps_its_key_and_addresses_and_takes_cloudflares_request() {
+    let (private, scalar, public) = warp_keys();
+    let settings = transport(Some(json!({"warp": {"privateKey": private,
+        "publicKey": public, "address": ["172.16.0.2", "fd00::2/128"]}})));
+    assert_eq!(settings.host, "cloudflareaccess.com");
+    assert_eq!(settings.path, "/");
+    let warp = settings.warp.as_ref().unwrap();
+    let kept: String = warp
+        .private_key
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    assert_eq!(kept, scalar);
+    assert_eq!(
+        warp.addresses,
+        [
+            ("172.16.0.2".parse().unwrap(), 32),
+            ("fd00::2".parse().unwrap(), 128)
+        ]
+    );
+    assert!(!format!("{warp:?}").contains(&scalar[..16]));
+
+    // A host and a path of its own stay.
+    let settings = transport(Some(json!({"host": "warp.example", "path": "/w",
+        "warp": {"privateKey": private, "publicKey": public, "address": ["172.16.0.2"]}})));
+    assert_eq!(
+        (settings.host.as_str(), settings.path.as_str()),
+        ("warp.example", "/w")
+    );
+
+    // Xray's order: credentials first, then each key, then the addresses.
+    let refused = |warp: Value, extra: Value| {
+        let mut masque = json!({"warp": warp});
+        for (key, value) in extra.as_object().unwrap() {
+            masque[key] = value.clone();
+        }
+        errors(base(Some(masque)))
+    };
+    let all = json!({"privateKey": private, "publicKey": public, "address": ["10.0.0.1"]});
+    assert!(refused(all.clone(), json!({"user": "u"}))[0]
+        .contains(r#""user" and "pass" can't be used with "warp""#));
+    assert!(refused(
+        json!({"privateKey": public, "publicKey": public, "address": ["10.0.0.1"]}),
+        json!({})
+    )[0]
+    .contains(r#"invalid "privateKey" in "warp""#));
+    assert!(refused(
+        json!({"privateKey": private, "publicKey": private, "address": ["10.0.0.1"]}),
+        json!({})
+    )[0]
+    .contains(r#"invalid "publicKey" in "warp""#));
+    assert!(refused(
+        json!({"privateKey": private, "publicKey": public, "address": ["10.0.0.1", "10.0.0.2"]}),
+        json!({})
+    )[0]
+    .contains("at most one IPv4 and one IPv6 address"));
+}
