@@ -24,7 +24,15 @@ long-term supported release series.
   parent, keeps a larger one, and lets a parent hand out 1024 children over
   its life, as Xray-core v26.11.9 does; both concurrencies take any 16-bit
   value instead of at most 64.
-
+- quinn-udp 0.5.16. On macOS and iOS, a datagram longer than the 1,472-byte
+  receive buffer no longer makes a QUIC carrier spin at full CPU:
+  - The carriers are Hysteria, XHTTP over HTTP/3, MASQUE over HTTP/3 and DoQ.
+    Salamander reads into its own buffer and was not affected.
+  - quinn-udp 0.5.15 retried recvmsg after the cut datagram until a datagram
+    that fits arrived.
+  - On macOS the socket is connected, so only the server or a host on the path
+    could cause it. On iOS anyone who could reach the client's port could.
+  - Linux and Android were not affected. 0.9.0 was.
 - The FinalMask `fragment` mask selects whole writes with `packets`, as
   Xray-core v26.10.31 does: empty or absent cuts every write, a number or a
   `from-to` range the writes so numbered, each into raw pieces, every piece
