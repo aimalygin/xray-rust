@@ -10,6 +10,34 @@ long-term supported release series.
 
 ## Unreleased
 
+- Hysteria and XHTTP over HTTP/3 shape their QUIC handshake like Chrome's,
+  as Xray-core v26.10.31's default ChromeParrot does, unless
+  `finalmask.quicParams.disableChromeParrot` is true. Until now the flag had
+  to be true: without it parsing warned, `false` failed, and profile imports
+  set it. It is now read as Xray reads it, a Go `bool` with `null` for false,
+  on every transport, and imports no longer add it. See
+  [ChromeParrot](docs/config-compatibility.md#chromeparrot).
+  - The ClientHello is uTLS's Chrome QUIC one: no GREASE, TLS 1.3,
+    X25519MLKEM768 and X25519 key shares, brotli certificate compression,
+    ALPS, a GREASE ECH extension, and its extensions in a new random order
+    on every connection, drawn as uTLS draws it.
+  - The vendored `quinn-proto` gains `TransportConfig::chrome_parrot`:
+    transport parameters encoded as Chrome encodes them, Initial packet
+    numbers from 1 with Chrome's lengths, 1,250-byte chaos-protected Initial
+    datagrams (a large ClientHello's head and tail first), and one packet per
+    datagram until the handshake is confirmed, the Handshake ACK apart from
+    the Finished.
+  - quic-go's pinned values apply with it: a 30-second idle timeout, 6 MiB
+    stream and 15 MiB connection windows, 100 and 103 streams, zero-length
+    source connection IDs and an 8-byte first destination ID; Hysteria
+    advertises 65,536-byte DATAGRAM frames, as Xray's client then does.
+  - The congestion controller that runs before Xray's switch starts at
+    quic-go's 32-packet window instead of 12,000 bytes.
+  - MASQUE never parrots Chrome, as in Xray-core. XDRIVE's storages over
+    HTTP/3 keep Quinn's own handshake for now; without
+    `disableChromeParrot: true` the configuration still warns there.
+  - `H3QuicConfig::chrome_parrot` turns it on for any HTTP/3 client, with the
+    TLS configuration `TlsConnector::h3_client_config_for` builds for it.
 - A VLESS outbound with `reverse` is the bridge of Xray-core v26.10.31's
   VLESS reverse proxy: it keeps tunnels open to its server, and the server,
   the portal, opens TCP and UDP connections back through them to what the

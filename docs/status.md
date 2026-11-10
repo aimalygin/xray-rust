@@ -63,6 +63,7 @@ recorded with its original RC identity.
 | realm mask | Implemented in development 0.10 | mKCP, Hysteria, XHTTP H3 and MASQUE over HTTP/3 introduced to a server behind NAT: STUN over the carrier's socket, the Hysteria realm rendezvous over HTTP or HTTPS, candidates with predictable symmetric-NAT ports, and the punch. Verdicts, STUN reading, punch packets, candidates and rendezvous exchanges recorded from Xray-core v26.10.31's own code and replayed, and live interop against its servers through a local rendezvous; `portMapping` is read but not acted on; [configuration limits](config-compatibility.md#realm-mask) |
 | xicmp mask | Implemented in development 0.10 | mKCP, Hysteria, XHTTP H3 and MASQUE over HTTP/3 in ICMP echo requests and replies, over datagram sockets (no privilege on macOS, iOS, Android and Linux within `ping_group_range`) or raw ones, a connected socket per server address. Settings verdicts, echoes, checksums and message reading recorded from Xray-core v26.10.31's own code and replayed, and live interop against its servers on Linux, where its server reads ICMP on raw sockets, with datagram and raw clients; iOS and Android not checked on a device; [configuration limits](config-compatibility.md#xicmp-mask) |
 | QUIC BBR profiles | Implemented in development 0.10 | `quicParams.bbrProfile` `conservative` and `aggressive` on Hysteria and XHTTP H3 run a port of Xray-core's BBR sender, switching from NewReno where Xray's dialer installs its controller; `standard` keeps Quinn's BBR pending a decision. Xray-core's own sender replayed to the same state after each of 4,399 recorded congestion events, 184 matching `xray run -test` verdicts, and live interop with every profile against its Hysteria and XHTTP H3 servers; [profiles and differences](config-compatibility.md#bbr-profiles) |
+| ChromeParrot | Implemented in development 0.10 | Hysteria and XHTTP H3 shape their QUIC handshake like Chrome's, as Xray-core's default ChromeParrot does, unless `quicParams.disableChromeParrot` is true: uTLS's Chrome QUIC ClientHello, Chrome's transport parameters and pinned values, and quic-go's chaos-protected 1,250-byte Initial packets, one packet per datagram until the handshake is confirmed. Xray-core's own Hysteria dialer recorded under a deterministic `crypto/rand`, its transport parameters and four Initial datagrams reproduced byte for byte and its ClientHello but for the key material, 28 matching `xray run -test` verdicts, and live interop against its Hysteria (also under Salamander) and XHTTP H3 servers with ChromeParrot on and off, the first flight checked on the wire; [behavior and differences](config-compatibility.md#chromeparrot) |
 | UDP noise | Implemented in development 0.8 | Bounded FinalMask for Hysteria2/XHTTP H3; idle reset, cancellable delays and Salamander order. Pinned interop covers both Hysteria mask orders/hopping and all three H3 modes. Since 0.10.0 `exp` packets, checked against a corpus Xray-core's own configuration reads (`tools/noise-exp-oracle`); a Lua `script` is refused. Freedom's deprecated `noises` since 0.10.0, before each SOCKS and TUN UDP flow's first datagram. |
 | Linux TPROXY inbound | Implemented in development 0.8 | Transparent IPv4/IPv6 TCP/UDP with shared routing/protocol handling, bounded flows and source-preserving replies; exercised through actual Linux interception in an isolated network. Requires operator-owned firewall/routes; unsupported mobile platforms reject startup. |
 | Hysteria 2 / WireGuard | Supported subset since 0.7 | Bounded TCP/UDP client paths, shared imports, native adapters and independent-server tests; v0.8 adds Hysteria Salamander/port hopping, host stream budgets and Android rebind; [configuration limits](config-compatibility.md) and [0.7 performance evidence](v07-performance.md) retain their original acceptance boundaries. |
@@ -196,16 +197,17 @@ measures a single download on the same delayed host path, including a
 The production HTTP/3 branch is intentionally narrower. It is selected only by
 TLS with the exact configured ALPN list `["h3"]`, opens a protected UDP socket,
 races resolved candidates with the normal Happy Eyeballs policy, requires
-negotiated ALPN `h3`, and never downgrades to TCP. It uses stock TLS 1.3, as
-Xray's QUIC path does, so `tlsSettings.fingerprint` does not shape this
-ClientHello. QUIC v1, Xray's default 300-second idle timeout, keepalive,
-path-MTU control, stream limits, Reno, and all three XHTTP modes are
-implemented.
+negotiated ALPN `h3`, and never downgrades to TCP. Its ClientHello is
+uTLS's Chrome QUIC one, as Xray-core's default ChromeParrot sends, or stock
+TLS 1.3 with `disableChromeParrot`; `tlsSettings.fingerprint` shapes
+neither, as in Xray. QUIC v1, Xray's default 300-second idle timeout (30
+seconds under ChromeParrot), keepalive, path-MTU control, stream limits,
+Reno, and all three XHTTP modes are implemented.
 
 Three performance details are explicit approximations rather than parity
-claims. First, Quinn uses static receive windows (2 MiB per stream and 3 MiB
-per connection by default), while quic-go adapts those initial values toward
-6 MiB and 15 MiB. Second, Xray's standard BBR selection maps to Quinn BBR with
+claims. First, Quinn uses static receive windows (6 MiB per stream and 15 MiB
+per connection under ChromeParrot, 2 MiB and 3 MiB without it), while
+quic-go adapts the initial values toward its maxima. Second, Xray's standard BBR selection maps to Quinn BBR with
 Xray's initial window, not quic-go's controller; the conservative and
 aggressive profiles run a port of Xray's sender. Third, the pool conservatively
 allows one active HTTP request per QUIC connection, opening another connection

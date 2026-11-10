@@ -155,16 +155,21 @@ fn vless_reality_without_sid_uses_the_empty_short_id() {
 }
 
 #[test]
-fn vless_xhttp_h3_needs_the_chrome_parrot_acknowledgement() {
+fn vless_xhttp_h3_imports_with_chrome_parrot_unless_fm_disables_it() {
     let link = format!("vless://{ID}@example.com:443?type=xhttp&security=tls&alpn=h3");
-    assert_eq!(import(&link).unwrap_err(), ImportError::Configuration);
+    let config = import(&link).unwrap();
+    assert_eq!(
+        stream(&config)["tlsSettings"]["alpn"],
+        serde_json::json!(["h3"])
+    );
+    assert!(stream(&config).get("finalmask").is_none());
     let config = import(&format!(
         "{link}&fm=%7B%22quicParams%22%3A%7B%22disableChromeParrot%22%3Atrue%7D%7D"
     ))
     .unwrap();
     assert_eq!(
-        stream(&config)["tlsSettings"]["alpn"],
-        serde_json::json!(["h3"])
+        stream(&config)["finalmask"]["quicParams"]["disableChromeParrot"],
+        true
     );
 }
 

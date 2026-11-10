@@ -722,10 +722,10 @@ operations, Drive's files, tokens and queries, sessions in rings of slots,
 HTTP/3 storages, auth, retries and redirects. The server address is never
 looked up, as in Xray-core. Deliberate differences:
 
-- A storage over HTTP/3 runs on Quinn's QUIC, as the other QUIC carriers
-  here do: Xray-core shapes it as Chrome (ChromeParrot, zero-length
-  connection IDs) unless `disableChromeParrot` is set, and the configuration
-  warns. Its request headers come in the vendored `h3`'s order (`:method`,
+- A storage over HTTP/3 runs on Quinn's own QUIC handshake for now, where
+  Hysteria and XHTTP H3 here parrot Chrome: Xray-core shapes it as Chrome
+  (ChromeParrot, zero-length connection IDs) unless `disableChromeParrot` is
+  set, and the configuration warns unless it is true. Its request headers come in the vendored `h3`'s order (`:method`,
   `:scheme`, `:authority`, `:path`), where quic-go writes `:authority`,
   `:method`, `:path`, `:scheme`, as for XHTTP over HTTP/3. A storage over
   HTTP/3 cannot go through another outbound; Xray-core dials its UDP with
@@ -785,9 +785,9 @@ looked up, as in Xray-core. Deliberate differences:
 - Unknown fields in `xdriveSettings`, `s3` and `xmux` fail, as everywhere;
   Go's JSON ignores them and matches field names in any case. Over
   `tlsSettings.alpn` other than exactly `["h3"]` the UDP masks, Salamander
-  among them, and `disableChromeParrot` fail, and the TCP fragment mask
-  needs TLS, as on the other carriers; Xray-core accepts them and the masks
-  do nothing there.
+  among them, fail, and the TCP fragment mask needs TLS, as on the other
+  carriers; Xray-core accepts them and the masks do nothing there.
+  `disableChromeParrot` is read there as Xray-core reads it.
 
 Evidence: `tools/xdrive-oracle` runs inside Xray-core's `xdrive` package
 through a `go test -overlay` and records `paramsFromConfig` on 11 inputs,
@@ -1047,8 +1047,8 @@ Quinn's NewReno, as Xray's runs quic-go's Reno. Deliberate differences:
   burst at 256 datagrams; Xray's pacer has no cap.
 - Quinn lowers the datagram size after detecting a black hole. Xray's sender
   panics if asked to; the port scales its windows down.
-- Quinn's startup NewReno starts at 12,000 bytes, quic-go's Reno at 32
-  datagrams.
+- Quinn's startup NewReno starts at quic-go's 32 datagrams of the initial
+  size but follows Quinn's Reno rules.
 
 Evidence: `tools/bbr-oracle` records Xray-core's own sender over fifteen
 simulated paths, and the port replays every call to the same 54 state values
@@ -1056,6 +1056,35 @@ after each congestion event; `scripts/check-bbr-interop.sh` regenerates the
 trace each run and runs every profile live against Xray-core's Hysteria and
 XHTTP H3 servers. `xray run -test` and the parser agree on 184 configurations
 of `bbrProfile` and `congestion`.
+
+## ChromeParrot
+
+Hysteria and XHTTP H3 shape their QUIC handshake like Chrome's, as Xray-core
+v26.10.31's dialers do through the apernet quic-go fork, unless
+`quicParams.disableChromeParrot` is true; MASQUE never does, as there.
+XDRIVE's storages over HTTP/3 don't yet, where Xray-core's do (see XDRIVE
+above).
+`disableChromeParrot` is a Go `bool`: `null` is false and any other type
+fails the configuration on every transport. The vendored `quinn-proto` ports
+the fork's packet shaping and transport parameter encoding, and a rustls
+ClientHello customizer sends uTLS's Chrome QUIC spec. Differences:
+
+- A prebuilt rustls configuration from an embedding application keeps its own
+  ClientHello, as under a fingerprint; the packet shaping still applies.
+- After the handshake, packet number lengths follow the running congestion
+  controller's window, which differs from Xray's where the controller does.
+- Not ChromeParrot's own: quic-go shuffles every packet's frames and starts
+  its loss timer from a 100 ms RTT estimate (Quinn 333 ms), and
+  `disableChromeParrot: true` gives Quinn's handshake rather than quic-go's.
+
+Evidence: `tools/chrome-parrot-oracle` runs Xray-core's own Hysteria dialer
+under `testing/cryptotest` and records its first four Initial datagrams and
+every `crypto/rand` read; given the same reads the client produces the same
+transport parameters and encrypted datagrams byte for byte, and the same
+ClientHello but for the key material. `scripts/check-chrome-parrot-interop.sh`
+regenerates the fixture each run, rechecks 28 `xray run -test` verdicts, and
+runs Hysteria (also under Salamander) and XHTTP H3 live against Xray-core's
+servers with ChromeParrot on and off, checking the first flight on the wire.
 
 ## DNS `UseSystem` route probe
 

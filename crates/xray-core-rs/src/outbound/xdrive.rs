@@ -154,6 +154,9 @@ fn h3_quic(settings: &XdriveSettings, stream: &StreamSettings) -> Result<H3QuicC
     let invalid = |error: CoreError| CoreError::InvalidXdriveConfiguration(error.to_string());
     let params = stream.quic_params.as_ref();
     let mut config = xhttp_h3_quic_config(params).map_err(invalid)?;
+    // Xray-core parrots Chrome here unless `disableChromeParrot`; this client
+    // keeps Quinn's own handshake for now, and the parser warns about it.
+    config.chrome_parrot = false;
     if params.is_none_or(|params| params.keep_alive_period_secs == 0) {
         let period = settings.xmux.h_keep_alive_period_secs;
         config.keep_alive_interval = (period > 0).then(|| Duration::from_secs(period as u64));

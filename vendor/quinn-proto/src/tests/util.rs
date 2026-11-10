@@ -42,6 +42,8 @@ pub(super) struct Pair {
     /// Number of spin bit flips
     pub(super) spins: u64,
     last_spin: bool,
+    /// Every datagram the client sent, in order
+    pub(super) client_datagrams: Vec<Bytes>,
 }
 
 impl Pair {
@@ -85,6 +87,7 @@ impl Pair {
             spins: 0,
             last_spin: false,
             congestion_experienced: false,
+            client_datagrams: Vec::new(),
         }
     }
 
@@ -142,6 +145,7 @@ impl Pair {
         let _guard = span.enter();
         self.client.drive(self.time, self.server.addr);
         for (packet, buffer) in self.client.outbound.drain(..) {
+            self.client_datagrams.push(buffer.clone());
             let packet_size = packet_size(&packet, &buffer);
             if packet_size > self.mtu {
                 info!(packet_size, "dropping packet (max size exceeded)");

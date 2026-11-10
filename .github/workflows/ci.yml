@@ -486,6 +486,9 @@ jobs:
       - name: Verify the XDRIVE client against pinned Xray-core
         run: bash scripts/check-xdrive-interop.sh
 
+      - name: Verify ChromeParrot against pinned Xray-core's dialer and servers
+        run: bash scripts/check-chrome-parrot-interop.sh
+
       # Keep this step last: it shows how much room the steps above leave.
       - name: Report disk use
         if: always()

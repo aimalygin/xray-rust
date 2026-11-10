@@ -6489,8 +6489,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "ours": "error"
+   "xray": "ok"
   },
   {
    "name": "local no alpn noise",
