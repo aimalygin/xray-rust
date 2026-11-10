@@ -12154,6 +12154,12 @@ mod reverse_chain_tests {
             {"action": "allow", "ip": ["127.0.0.1"], "port": "8443"}]}})
     }
 
+    fn xhttp_testpre() -> Value {
+        let mut outbound = vless(xhttp("link"));
+        outbound["settings"]["testpre"] = 2.into();
+        outbound
+    }
+
     /// A VLESS outbound at 127.0.0.1:8443, dialing through `link`.
     fn second(stream: Value) -> Value {
         let mut outbound = vless(through("link", stream));
@@ -12279,6 +12285,11 @@ mod reverse_chain_tests {
                     second(json!({"network": "raw"})),
                     allowing_8443("link"),
                 ],
+                false,
+            ),
+            (
+                "XHTTP with testpre through a freedom",
+                vec![xhttp_testpre(), freedom("link", false, json!({}))],
                 false,
             ),
             (
