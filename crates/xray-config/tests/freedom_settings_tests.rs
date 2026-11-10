@@ -250,13 +250,127 @@ fn final_rules_read_as_xray_reads_them() {
     assert!(inverse.matches("198.51.100.1".parse().unwrap()));
     assert_eq!(ips(json!([])), None);
 
-    // Int32Range of seconds, in either order.
-    let delay = |raw: Value| final_rule(json!({"action": "block", "blockDelay": raw})).block_delay;
+    // Int32Range of seconds, in either order, under `delay` and under the
+    // deprecated `blockDelay`.
     let seconds = |min_secs, max_secs| Some(FreedomBlockDelay { min_secs, max_secs });
-    assert_eq!(delay(json!(5)), seconds(5, 5));
-    assert_eq!(delay(json!("10-5")), seconds(5, 10));
-    assert_eq!(delay(json!("")), seconds(0, 0));
-    assert_eq!(delay(Value::Null), None);
+    for field in ["delay", "blockDelay"] {
+        let delay = |raw: Value| final_rule(json!({"action": "block", field: raw})).block_delay;
+        assert_eq!(delay(json!(5)), seconds(5, 5), "{field}");
+        assert_eq!(delay(json!("10-5")), seconds(5, 10), "{field}");
+        assert_eq!(delay(json!("")), seconds(0, 0), "{field}");
+        assert_eq!(delay(Value::Null), None, "{field}");
+    }
+}
+
+#[test]
+fn final_rule_delay_and_log_level_read_as_xray_reads_them() {
+    use xray_config::{FreedomBlockDelay, FreedomRuleAction, FreedomRuleLogLevel};
+    let seconds = |min_secs, max_secs| Some(FreedomBlockDelay { min_secs, max_secs });
+
+    // `blockDelay` takes the place of `delay` when both are set, as
+    // Xray-core's Build copies it over with a deprecation warning.
+    let freedom =
+        |settings: Value| json!({"outbounds": [{"protocol": "freedom", "settings": settings}]});
+    let (settings, warned) = warnings(&freedom(json!({
+        "finalRules": [{"action": "block", "delay": 7, "blockDelay": "1-2"}]
+    })));
+    assert_eq!(settings.final_rules[0].block_delay, seconds(1, 2));
+    assert_eq!(warned, ["$.outbounds[0].settings.finalRules[0].blockDelay"]);
+    let (settings, warned) = warnings(&freedom(json!({
+        "finalRules": [{"action": "block", "delay": 7, "blockDelay": null}]
+    })));
+    assert_eq!(settings.final_rules[0].block_delay, seconds(7, 7));
+    assert!(warned.is_empty(), "{warned:?}");
+
+    let level = |raw: Value| final_rule(json!({"action": "block", "logLevel": raw})).log_level;
+    assert_eq!(level(Value::Null), FreedomRuleLogLevel::Info);
+    assert_eq!(level(json!("")), FreedomRuleLogLevel::Info);
+    assert_eq!(level(json!("Info")), FreedomRuleLogLevel::Info);
+    assert_eq!(level(json!("NONE")), FreedomRuleLogLevel::None);
+    assert_eq!(level(json!("debug")), FreedomRuleLogLevel::Debug);
+    assert_eq!(level(json!("Warning")), FreedomRuleLogLevel::Warning);
+    assert_eq!(level(json!("error")), FreedomRuleLogLevel::Error);
+    // Go's strings.ToLower maps İ to a plain i.
+    assert_eq!(level(json!("İNFO")), FreedomRuleLogLevel::Info);
+
+    // An allow rule keeps the defaults and takes an empty or null level.
+    for rule in [
+        json!({"action": "allow"}),
+        json!({"action": "allow", "logLevel": ""}),
+        json!({"action": "allow", "logLevel": null, "delay": null, "blockDelay": null}),
+    ] {
+        let allowed = final_rule(rule.clone());
+        assert_eq!(allowed.action, FreedomRuleAction::Allow, "{rule}");
+        assert_eq!(allowed.block_delay, None, "{rule}");
+        assert_eq!(allowed.log_level, FreedomRuleLogLevel::Info, "{rule}");
+    }
+}
+
+#[test]
+fn final_rule_delay_and_log_level_reject_what_xray_rejects() {
+    let rule_path = "$.outbounds[0].settings.finalRules[0]";
+    for (rule, field, message) in [
+        (
+            json!({"action": "allow", "delay": 5}),
+            "delay",
+            "only supported for block",
+        ),
+        (
+            json!({"action": "allow", "blockDelay": 5}),
+            "blockDelay",
+            "only supported for block",
+        ),
+        (
+            json!({"action": "allow", "delay": 5, "blockDelay": 1}),
+            "blockDelay",
+            "only supported for block",
+        ),
+        (
+            json!({"action": "allow", "logLevel": "info"}),
+            "logLevel",
+            "only supported for block",
+        ),
+        // Xray-core refuses an allow rule's level before it reads its value.
+        (
+            json!({"action": "allow", "logLevel": "loud"}),
+            "logLevel",
+            "only supported for block",
+        ),
+        (
+            json!({"action": "block", "logLevel": "loud"}),
+            "logLevel",
+            "loud",
+        ),
+        (
+            json!({"action": "block", "logLevel": "warn"}),
+            "logLevel",
+            "warn",
+        ),
+        (
+            json!({"action": "block", "logLevel": 1}),
+            "logLevel",
+            "string",
+        ),
+        (
+            json!({"action": "block", "delay": "x"}),
+            "delay",
+            "delay must be",
+        ),
+        (
+            json!({"action": "block", "delay": 1.5}),
+            "delay",
+            "delay must be",
+        ),
+        (
+            json!({"action": "block", "delay": "-5-10"}),
+            "delay",
+            "delay must be",
+        ),
+    ] {
+        let (path, error) = rejection(json!({ "finalRules": [rule.clone()] }));
+        assert_eq!(path, format!("{rule_path}.{field}"), "{rule}");
+        assert!(error.contains(message), "{rule}: {error}");
+    }
 }
 
 #[test]
@@ -373,6 +487,7 @@ fn an_empty_condition_matches_nothing_and_an_absent_one_everything() {
         port_ranges: None,
         ip_matchers: None,
         block_delay: None,
+        log_level: Default::default(),
     };
     let ip: IpAddr = "192.0.2.1".parse().unwrap();
     assert!(any.applies(Network::Tcp, ip, 1));
@@ -561,4 +676,35 @@ fn noises_reject_what_xray_core_rejects() {
         rejection(json!({ "noises": many })).0,
         format!("{base}.noises")
     );
+}
+
+/// Every case of the corpus gets Xray-core's verdict, except the
+/// deliberate differences, which get theirs. scripts/check-xray-verdicts.sh
+/// rechecks the recorded verdicts against the pinned Xray-core.
+#[test]
+fn config_verdicts_match_xray_core() {
+    let corpus: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/freedom/config-verdicts.json"
+    ))
+    .unwrap();
+    let mut mismatches = Vec::new();
+    for case in corpus["cases"].as_array().unwrap() {
+        let raw = json!({"outbounds": [case["outbound"].clone()]}).to_string();
+        let parsed = parse_xray_json(&raw);
+        let expected_ok = match case.get("ours").and_then(Value::as_str) {
+            Some(ours) => ours == "ok",
+            None => case["xray"] == "ok",
+        };
+        if parsed.is_ok() != expected_ok {
+            let detail = parsed
+                .err()
+                .map(|e| format!("{:?}", e.diagnostics))
+                .unwrap_or_default();
+            mismatches.push(format!(
+                "{}: expected {}: {detail}",
+                case["name"], case["xray"]
+            ));
+        }
+    }
+    assert!(mismatches.is_empty(), "{mismatches:#?}");
 }

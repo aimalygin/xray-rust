@@ -1,4 +1,4 @@
-// Records what Xray-core v26.10.31's connectip package writes and reads:
+// Records what Xray-core v26.11.9's connectip package writes and reads:
 // CONNECT-IP capsules, the datagrams composeDatagram builds, the ICMP
 // messages composeICMPTooLargePacket builds, which incoming packets
 // handleIncomingProxiedPacket accepts and what ReadPacket takes from the

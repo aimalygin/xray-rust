@@ -1133,3 +1133,270 @@ async fn drive_requests_match_xray_core() {
         assert_eq!(got.body, decode(&want["body"]), "{label}");
     }
 }
+
+/// A Drive storage over `server`, its shared part returned too.
+fn drive_parts(server: &Server) -> (Arc<super::drive::DriveShared>, super::drive::DriveStorage) {
+    use super::drive::{DriveShared, DriveStorage, DriveUrls};
+    let secrets = ["id", "secret", "refresh"].map(|s| Zeroizing::new(s.to_owned()));
+    let mut shared = DriveShared::new("folder-id", &secrets, Arc::new(http())).unwrap();
+    let base = format!("http://{}", server.addr);
+    shared.urls = DriveUrls {
+        token: format!("{base}/token"),
+        files: format!("{base}/drive/v3/files"),
+        upload: format!("{base}/upload/drive/v3/files?uploadType=multipart&fields=id,name"),
+    };
+    shared.backoff = Duration::from_millis(2);
+    shared.cooldown = Duration::from_millis(300);
+    let shared = Arc::new(shared);
+    let session = shared.http.session();
+    (Arc::clone(&shared), DriveStorage::new(shared, session))
+}
+
+fn token_requests(server: &Server) -> usize {
+    server
+        .seen()
+        .iter()
+        .filter(|seen| seen.target == "/token")
+        .count()
+}
+
+/// `TestTokenSingleFlightDuringOutage`: callers that come while a token
+/// fetch is under way share it, and a failed fetch holds the next one off.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn drive_token_fetches_are_shared_and_a_failure_holds_the_next_off() {
+    let server = serve(|request, _| {
+        if request.target == "/token" {
+            std::thread::sleep(Duration::from_millis(300));
+            return (500, vec![], b"outage".to_vec());
+        }
+        (500, vec![], Vec::new())
+    })
+    .await;
+    let (shared, _storage) = drive_parts(&server);
+    let callers: Vec<_> = (0..8)
+        .map(|_| {
+            let shared = Arc::clone(&shared);
+            tokio::spawn(async move { shared.access_token().await })
+        })
+        .collect();
+    for caller in callers {
+        assert!(caller.await.unwrap().is_err(), "an outage caller succeeded");
+    }
+    assert_eq!(token_requests(&server), 1, "one fetch for every caller");
+    assert!(shared.access_token().await.is_err());
+    assert_eq!(
+        token_requests(&server),
+        1,
+        "the backoff holds the next fetch off"
+    );
+}
+
+/// Google refusing the credentials ends every request at once, without
+/// another token fetch.
+#[tokio::test]
+async fn drive_refused_credentials_end_every_request_at_once() {
+    use super::slots::SlotStore;
+    let server = serve(|request, _| {
+        if request.target == "/token" {
+            return (400, vec![], br#"{"error":"invalid_grant"}"#.to_vec());
+        }
+        (200, vec![], br#"{"description":"x"}"#.to_vec())
+    })
+    .await;
+    let (_shared, storage) = drive_parts(&server);
+    for _ in 0..2 {
+        match storage.read_description("slot").await {
+            Err(StorageError::Auth(error)) => assert!(
+                error.contains("Google rejected the OAuth credentials (invalid_grant)"),
+                "{error}"
+            ),
+            other => panic!("{other:?}"),
+        }
+    }
+    assert_eq!(token_requests(&server), 1);
+    assert_eq!(server.seen().len(), 1, "no Drive request went out");
+}
+
+/// `TestToken401RefetchOnce`: a 401 drops the token it answered and the
+/// retry takes a new one; dropping the old token again keeps the new one.
+#[tokio::test]
+async fn drive_a_401_takes_a_new_token_once() {
+    use super::slots::SlotStore;
+    let issued = Arc::new(Mutex::new(0));
+    let tokens = Arc::clone(&issued);
+    let server = serve(move |request, _| {
+        if request.target == "/token" {
+            let mut issued = tokens.lock().unwrap();
+            *issued += 1;
+            let body = format!(r#"{{"access_token":"tok{issued}","expires_in":3600}}"#);
+            return (200, vec![], body.into_bytes());
+        }
+        let bearer = request
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+            .map(|(_, value)| value.clone())
+            .unwrap_or_default();
+        if bearer == "Bearer tok1" {
+            return (401, vec![], Vec::new());
+        }
+        (200, vec![], br#"{"description":"frame"}"#.to_vec())
+    })
+    .await;
+    let (shared, storage) = drive_parts(&server);
+    assert_eq!(storage.read_description("slot").await.unwrap(), "frame");
+    assert_eq!(token_requests(&server), 2);
+    shared.invalidate_token("tok1");
+    assert_eq!(shared.access_token().await.unwrap().as_str(), "tok2");
+    assert_eq!(
+        token_requests(&server),
+        2,
+        "a stale invalidation drops nothing"
+    );
+}
+
+/// Drive throttling a request, with a 429 or a 403 for a rate limit, makes
+/// every request wait the cooldown first.
+#[tokio::test]
+async fn drive_throttling_cools_every_request() {
+    use super::slots::SlotStore;
+    for throttled in [
+        (429, Vec::new()),
+        (
+            403,
+            br#"{"error":{"errors":[{"reason":"rateLimitExceeded"}]}}"#.to_vec(),
+        ),
+    ] {
+        let server = serve(move |request, index| {
+            if request.target == "/token" {
+                return (
+                    200,
+                    vec![],
+                    br#"{"access_token":"tok","expires_in":3600}"#.to_vec(),
+                );
+            }
+            if index == 1 {
+                return (throttled.0, vec![], throttled.1.clone());
+            }
+            (200, vec![], br#"{"description":"frame"}"#.to_vec())
+        })
+        .await;
+        let (_shared, storage) = drive_parts(&server);
+        let started = tokio::time::Instant::now();
+        assert_eq!(storage.read_description("slot").await.unwrap(), "frame");
+        // A jittered 150 to 300 ms, where the retry's own pause is 1 to 2 ms.
+        assert!(
+            started.elapsed() >= Duration::from_millis(150),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+}
+
+/// `TestTokenBackgroundFailureBacksOff`: a token with a fifth of its life
+/// left is refreshed in the background, and a failed refresh holds the next
+/// one off while the cached token still serves.
+#[tokio::test]
+async fn drive_tokens_refresh_in_the_background_and_back_off() {
+    let issued = Arc::new(Mutex::new(0));
+    let tokens = Arc::clone(&issued);
+    let server = serve(move |request, _| {
+        if request.target != "/token" {
+            return (404, vec![], Vec::new());
+        }
+        let mut issued = tokens.lock().unwrap();
+        *issued += 1;
+        if *issued == 1 {
+            // 61 s, of which a minute comes off: inside the refresh window.
+            return (
+                200,
+                vec![],
+                br#"{"access_token":"tok1","expires_in":61}"#.to_vec(),
+            );
+        }
+        (500, vec![], b"outage".to_vec())
+    })
+    .await;
+    let (shared, _storage) = drive_parts(&server);
+    assert_eq!(shared.access_token().await.unwrap().as_str(), "tok1");
+    assert_eq!(shared.access_token().await.unwrap().as_str(), "tok1");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(token_requests(&server), 2, "one background refresh");
+    assert_eq!(shared.access_token().await.unwrap().as_str(), "tok1");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(token_requests(&server), 2, "the failure holds the next off");
+}
+
+/// A description read that does not answer is tried again after its three
+/// seconds, over another connection.
+#[tokio::test]
+async fn drive_a_description_read_that_hangs_is_tried_again() {
+    use super::slots::SlotStore;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    // A server whose first description answer comes only after five seconds,
+    // without holding up anything else.
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let descriptions = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&descriptions);
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let counted = Arc::clone(&counted);
+            tokio::spawn(async move {
+                while let Some(request) = read_request(&mut stream).await {
+                    let body: &[u8] = if request.target == "/token" {
+                        br#"{"access_token":"tok","expires_in":3600}"#
+                    } else {
+                        if counted.fetch_add(1, Ordering::SeqCst) == 0 {
+                            tokio::time::sleep(Duration::from_secs(5)).await;
+                        }
+                        br#"{"description":"frame"}"#
+                    };
+                    let mut out =
+                        format!("HTTP/1.1 200 X\r\nContent-Length: {}\r\n\r\n", body.len())
+                            .into_bytes();
+                    out.extend_from_slice(body);
+                    if stream.write_all(&out).await.is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+    });
+    let server = Server {
+        addr,
+        seen: Arc::default(),
+    };
+    let (_shared, storage) = drive_parts(&server);
+    let started = tokio::time::Instant::now();
+    let read = tokio::time::timeout(Duration::from_secs(10), storage.read_description("slot"))
+        .await
+        .expect("the retry answers");
+    assert_eq!(read.unwrap(), "frame");
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed >= Duration::from_secs(3) && elapsed < Duration::from_secs(5),
+        "{elapsed:?}"
+    );
+    assert_eq!(descriptions.load(Ordering::SeqCst), 2);
+}
+
+/// An answer past 32 MiB fails the request rather than being read whole.
+#[tokio::test]
+async fn drive_answers_past_32_mib_fail() {
+    use super::slots::SlotStore;
+    let server = serve(|request, _| {
+        if request.target == "/token" {
+            return (
+                200,
+                vec![],
+                br#"{"access_token":"tok","expires_in":3600}"#.to_vec(),
+            );
+        }
+        (200, vec![], vec![0u8; (32 << 20) + 1])
+    })
+    .await;
+    let (_shared, storage) = drive_parts(&server);
+    let error = storage.read_body("slot").await.unwrap_err().to_string();
+    assert!(error.contains("exceeds the 33554432 byte cap"), "{error}");
+}

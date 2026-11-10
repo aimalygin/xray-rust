@@ -76,8 +76,11 @@ pub(super) async fn start_server(
                 "masqueSettings": {"path": PATH}
             }
         }],
+        // Since v26.11.9 freedom blocks private addresses for the MASQUE
+        // inbound by default; the redirect to the loopback echo servers is
+        // allowed by a rule of its own, which wins over the default.
         "outbounds": [
-            {"tag": "direct", "protocol": "freedom", "settings": {"redirect": "127.0.0.1:0"}},
+            {"tag": "direct", "protocol": "freedom", "settings": {"redirect": "127.0.0.1:0", "finalRules": [{"action": "allow"}]}},
             {"tag": "dns-out", "protocol": "dns"}
         ],
         "dns": {"hosts": {ECHO_NAME: [ECHO_V4, ECHO_V6]}},

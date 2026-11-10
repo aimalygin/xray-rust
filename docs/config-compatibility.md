@@ -14,8 +14,8 @@ See [Xray-core differences and verification gaps](xray-core-differences.md)
 for the reference revision, deliberate SOCKS restrictions, mobile integration
 gaps, and pending HTTP decisions from issues #79 and #81.
 
-The active compatibility reference is **Xray-core v26.10.31**; see the
-[migration record](xray-core-v26.10.31-migration.md) for checks and limitations.
+The active compatibility reference is **Xray-core v26.11.9**; see the
+[migration record](xray-core-v26.11.9-migration.md) for checks and limitations.
 References to earlier versions below describe the origin of unchanged behavior.
 
 ## v0.8 Hysteria carrier additions
@@ -544,7 +544,7 @@ adapter. UDP noise is available through their ordinary JSON configuration.
 The current development tree adds Trojan, Shadowsocks 2022 and VMess AEAD.
 These additions are not part of the published 0.7 artifacts. See the
 [implementation evidence](v08-implementation-plan.md) for verified combinations,
-resource bounds and remaining release gates. The active reference is Xray-core v26.10.31; unsupported options fail closed.
+resource bounds and remaining release gates. The active reference is Xray-core v26.11.9; unsupported options fail closed.
 
 | Outbound | Settings | Import |
 | --- | --- | --- |
@@ -626,13 +626,17 @@ Server restart with unchanged keys is verified on an existing client session;
 forged, misbound and replayed replies remain rejected.
 
 `mux.enabled: true` activates bounded shared Mux for these three outbounds and
-for VLESS ([below](#vless-mux)). TCP `concurrency` defaults to 8 (including zero), a negative value disables TCP
-multiplexing. `xudpConcurrency: 0` shares the TCP pool, a positive value creates
-a separate UDP pool, and a negative value uses the native protocol UDP path.
-Positive concurrency is limited to 64. `xudpProxyUDP443` is `reject` by default,
+for VLESS ([below](#vless-mux)). Both concurrencies are 16-bit integers, as in
+Xray-core. TCP `concurrency` from zero up to 128 runs as 128 children per
+parent, as Xray-core v26.11.9 runs it, a larger value stays, and a negative
+value disables TCP multiplexing. `xudpConcurrency: 0` shares the TCP pool, a
+positive value creates a separate UDP pool with that many children per
+parent, and a negative value uses the native protocol UDP path.
+`xudpProxyUDP443` is `reject` by default,
 or `allow`/`skip`; `skip` bypasses Mux for UDP/443. Each pool opens children
-on at most four parents, with 128 lifetime child IDs per parent. A parent that
-has used all 128 IDs keeps serving its remaining children without counting
+on at most four parents, with 1024 lifetime child IDs per parent, Xray-core
+v26.11.9's `maxReuseTimes`. A parent that
+has used all 1024 IDs keeps serving its remaining children without counting
 toward the four, so a long-lived child does not block new connections; a pool
 holds at most 16 parents in all. Per-child queues are bounded (eight frames, at
 most 64 KiB, per direction) and an empty parent times out after 30 seconds.
@@ -1124,8 +1128,17 @@ that no rule matches is allowed.
   the connection is blocked when any one of them is.
 - A blocked TCP connection is held open, as in Xray-core: the client sees
   success, what it sends is discarded, and the connection closes once the
-  client finishes or after `blockDelay`. That is whole seconds drawn from an
-  integer or a `min-max` range, 30 to 90 by default.
+  client finishes or after `delay`. That is whole seconds drawn from an
+  integer or a `min-max` range, 30 to 90 by default. `blockDelay`, its name
+  before Xray-core v26.11.9, still works with a deprecation warning and wins
+  over `delay` when both are set.
+- `logLevel` is the severity at which Xray-core logs a rule's blocked
+  connections: `none`, `debug`, `info` (the default, also empty), `warning`
+  or `error`, matched without case; any other value is refused. xray-rust
+  writes no log line for a blocked connection, so the level is checked and
+  has no other effect.
+- `delay`, `blockDelay` and a nonempty `logLevel` belong to block rules. An
+  allow rule with any of them is refused, as Xray-core v26.11.9 refuses it.
 - A blocked UDP flow discards its datagrams for the block delay. An open flow
   drops each reply whose source a rule blocks.
 - When freedom carries another outbound through `dialerProxy`, the rules check
@@ -1181,7 +1194,8 @@ Differences from Xray-core:
   dialing. Without a domain strategy, Xray-core checks it against the system
   resolver's answer.
 - In a final rule, a numeric port above 65535 is rejected, as in routing
-  rules. A negative `blockDelay`, or one outside 32-bit integers, is rejected;
+  rules. A negative `delay` or `blockDelay`, or one outside 32-bit integers,
+  is rejected;
   Xray-core accepts both, wraps the latter, and on a negative delay later
   panics or closes at once. An unknown field in a rule is rejected rather than
   ignored.
@@ -2788,7 +2802,7 @@ as on every VLESS outbound.
   `flushIntervalMs` 20, `pollIntervalMs` 50, `maxPollIntervalMs` 500 (never
   below the poll interval), `eagerWindowMs` 2000, `holeTimeoutMs` 30000,
   `sessionTtlSeconds` 300 (a server's setting) and `concurrency` 8 (at most
-  64).
+  256 since Xray-core v26.11.9).
 - `xmux` is read as XHTTP's; an all-zero one means one connection reused for
   1800 to 3000 seconds, four for `google-drive` unless `tlsSettings.alpn` is
   exactly `["h3"]`. It shapes the HTTP storages' connections; `local` has
@@ -2866,27 +2880,61 @@ an answer, as in Xray-core, so a signature never goes to another host.
 `google-drive` keeps each object as a file in the folder `remoteFolder`
 names by id, reached with Google Drive's v3 API and the client id, client
 secret and refresh token of `secrets`: an access token from
-`oauth2.googleapis.com/token`, kept for its lifetime less a minute and
-fetched again after a 401; names flat, their `/` written as `~`; an object
-of up to 12000 bytes as base64 in the file's description and a larger one
-uploaded as its body; files found by a query on their name, page after
-page, their ids remembered for every session of the outbound; and every
-request tried up to eight times as with `s3`, also after a 403 that names
-one of Drive's rate limits. A session announces a ring of slots: two to
-eight files a direction (`concurrency`, at most eight) and a watermark, made
-when the session opens. Segment `n` goes into slot `n` modulo the depth,
-its frame (`XDRVSL01`, the number, a mode, the size and CRC-32, and up to 14
-KiB of segment inline) in the description and a larger segment in the body
-of the same request. The writer cuts 14 KiB segments, doubling the size up
-to `segmentBytes` after eight full ones in a row and sending a burst of more
-than 56 KiB at once, and writes a slot only once the reader's watermark
-says it took what the slot held a lap before. The reader asks for the head
-often, from 50 ms up to 200 ms (or `maxPollIntervalMs` once idle), and for
-up to six segments behind it at the pace they come, writes its watermark as
-the head moves, takes a body only once it matches its frame, and fails when
-the writer marks a segment it could not store or a slot stays gone for a
-minute. When the ring cannot be made, the session goes in segments, as in
-Xray-core.
+`oauth2.googleapis.com/token`, kept for its lifetime less a minute, fetched
+again in the background once a fifth of the lifetime is left and after a 401
+(once, however many requests the 401 answered); names flat, their `/`
+written as `~`; an object of up to 12000 bytes as base64 in the file's
+description and a larger one uploaded as its body; files found by a query on
+their name, page after page, their ids remembered for every session of the
+outbound; and every request tried up to eight times as with `s3`, also after
+a 403 that names one of Drive's rate limits. As in Xray-core v26.11.9:
+
+- one token fetch serves every request waiting for it, and a failed fetch
+  holds the next off for 30 seconds, doubling to five minutes; Google
+  refusing the credentials (`invalid_grant`, `invalid_client`,
+  `unauthorized_client`) fails every request at once from then on;
+- a 429, or a 403 for a rate limit, makes every request of the outbound wait
+  a jittered two seconds;
+- a session keeps up to 64 requests in flight, and eight more for watermark
+  reads and writes and head reads, so that those never wait behind bodies; a
+  description read gets three seconds a try and a description write five,
+  and a connection on which two tries time out within three seconds is
+  retired for the next request (not in the first twelve seconds of a
+  connection that has not answered yet);
+- an answer past 32 MiB fails its request, and a deletion removes up to
+  eight files at once.
+
+A session announces a ring of slots: `concurrency` files a direction (at
+least two, at most 256; 64 when the configuration leaves it at zero, which
+also takes a 10 ms `flushIntervalMs` and a 200 ms `maxPollIntervalMs` for
+Drive) and a watermark. Rings are made ahead of time: after a dial in slots,
+up to two spare rings wait for the next dials, one made every two seconds; a
+spare older than two thirds of the session TTL is not taken and one older
+than a third is replaced, a quarter TTL apart while dials came in the last
+ten minutes. The dial returns at once and announces the session once its
+first segment is cut or 25 ms passed, that segment inline in the
+announcement (`first`) when it fits in the 12000 bytes, as v26.11.9's server
+reads it; the segment also goes to slot 0, for a server older than v26.11.9.
+An announcement that fails fails the session's reads and writes. Segment `n`
+goes into slot `n` modulo the depth, its frame (`XDRVSL01`, the number, a
+mode, the size and CRC-32, and up to 14 KiB of segment inline) in the
+description and a larger segment in the body of the same request. The writer
+keeps at most twelve segments on their way, cuts 14 KiB segments and sends a
+burst that twice those twelve take in 14 KiB segments as such, doubles the
+size up to `segmentBytes` after eight full ones in a row (or at once while
+most write slots are busy), sends a larger burst at once, and writes a slot
+only once the reader's watermark says it took what the slot held a lap
+before. The reader asks for the head often, from 10 ms up to 25 ms (or
+`maxPollIntervalMs` once idle) and, while data moves, with up to three reads
+at once; asks for the next three segments at once and for those behind them,
+up to twelve past the head or past the furthest segment seen, at the pace
+they come (every 40 ms in a burst); sends a second request for a body that
+has not come after two seconds, or after twice what its size takes at the
+rate bodies came; writes its watermark as the head moves; takes a body only
+once it matches its frame; and fails when the writer marks a segment it could
+not store, a slot stays gone, holds a frame that does not decode or a body
+that never matches for a minute. An empty slot is idle. When the ring cannot
+be made, the session goes in segments, as in Xray-core.
 
 `template` sends the requests its operations describe:
 
@@ -2910,8 +2958,8 @@ Xray-core.
 The template is read as Go's `encoding/json` reads it into Xray-core's
 types: field names in any case, `null` as nothing, whole numbers only.
 `put`, `get`, `delete` and `list` need a `url` and `list` a `namesRegex`
-with a group; `concurrency` caps requests in flight a session, 32 when not
-positive and at most 256. In URLs, headers and bodies `{folder}` is
+with a group; `concurrency` caps requests in flight a session, 64 when not
+positive (Xray-core's `driveMaxInflight`, 32 before v26.11.9) and at most 256. In URLs, headers and bodies `{folder}` is
 `remoteFolder`, `{secretN}` the Nth secret, `{name}` and `{prefix}` the
 object's name (with `flatten`, its `/` written as `~`), `{data}` the
 object in base64 when `put` has a `body`, which then replaces the raw
@@ -3090,7 +3138,7 @@ Xray-core's own code and, on Linux, runs each carrier against its server.
 ### TLS ClientHello shaping
 
 `security: "tls"` sends a uTLS-shaped ClientHello, as Xray-core does on every
-TLS connection. `tlsSettings.fingerprint` selects the shape from the same 61
+TLS connection. `tlsSettings.fingerprint` selects the shape from the same 62
 names Xray accepts. An absent or empty value means `chrome`, matching Xray's
 `GetFingerprint("")`, so shaping is the default rather than an opt-in; an
 unknown name is rejected at parse time with a JSON path and the offending
@@ -3101,7 +3149,35 @@ under three names — are refused for a separate reason given below. The
 X25519MLKEM768 requirement of REALITY v26.10.21 servers does not apply here
 either.
 
-Those 61 are the union of the three maps Xray's `GetFingerprint` consults --
+Since Xray-core v26.11.9, `chrome`, `hellochrome_auto` and an empty name are
+Chrome 155 (`hellochrome_155`), as they are in uTLS 20261108164504, instead of
+Chrome 133, which keeps its explicit name `hellochrome_133`. Chrome 155 sends
+Chrome 133's hello with three changes: GREASE and ML-DSA 44, 65 and 87
+(`0x0904`-`0x0906`) ahead of the signature algorithms, and a `trust_anchors`
+extension (`0xca34`, draft-ietf-tls-trust-anchor-ids) with the 28 Chrome Root
+Store trust anchor IDs uTLS snapshots, sent byte for byte. A server may answer
+the extension in its EncryptedExtensions or certificate entries; rustls takes
+both, as an offered extension and an ignored certificate-entry extension. No
+server in the web PKI holds an ML-DSA certificate; one that signed with ML-DSA
+would fail the handshake, as rustls cannot verify it. In
+[XTLS/Xray-core#7131](https://github.com/XTLS/Xray-core/issues/7131), Chrome
+133 hellos stalled for about 8.4 seconds on a mobile network in Russia where
+Chrome 155, Firefox 148 and QQ passed, which is why upstream moved the default.
+`random` draws from twelve modern names now, `hellochrome_155` included.
+
+Every hello draws what uTLS draws for each connection, on TLS and REALITY
+alike: the GREASE value of each slot (cipher suite, the group that
+supported_groups and the GREASE key share both carry, supported_versions,
+signature_algorithms and the two GREASE extensions, which never agree), from
+sixteen random seed bytes as uTLS reads them, and for the ten Chrome profiles
+whose uTLS spec runs `ShuffleChromeTLSExtensions` — `hellochrome_106_shuffle`
+through `hellochrome_155`, and so `chrome` — the extension order, shuffled
+from the spec's own order with Go's `math/rand` and a fresh seed, the GREASE
+extensions, padding and pre_shared_key staying in place. Other profiles keep
+their fixed order. The ECH GREASE payload length stays pinned (see
+[ECH GREASE](#ech-grease)).
+
+Those 62 are the union of the three maps Xray's `GetFingerprint` consults --
 `PresetFingerprints`, `ModernFingerprints`, `OtherFingerprints` -- less
 `unsafe`, described below, and `hellogolang`.
 
@@ -3188,7 +3264,7 @@ failing.
 The REALITY server shipped with Xray-core v26.10.21 requires an
 X25519MLKEM768 key share (group `0x11ec`, 1216 bytes) before any ordinary
 X25519 key share, and treats any other ClientHello as an unauthenticated
-visitor. Profiles that meet this are Chrome 131/133, Firefox 148 and
+visitor. Profiles that meet this are Chrome 131/133/155, Firefox 148 and
 Safari 26.3, including their current `chrome`, `firefox`, `safari` and `_auto`
 aliases, plus the frozen `randomizednoalpn` and `hellorandomized` snapshots
 (`XRAY_REALITY_HYBRID_FINGERPRINTS`).
@@ -3202,7 +3278,7 @@ requirement, so a profile that stops working after a server upgrade has an
 explanation before the first dial. The thirteen TLS-1.2-era names with no
 X25519 key share at all remain a parse error, as before.
 
-For REALITY, `random` and `randomized` each choose independently from the four
+For REALITY, `random` and `randomized` each choose independently from the five
 fixed hybrid profiles above, once per process. This is a deliberate
 restriction of the upstream random pool, which can still pick a profile the
 new server rejects. The ordinary TLS random pool is unchanged. `randomized` remains a

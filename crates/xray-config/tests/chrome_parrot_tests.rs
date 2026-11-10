@@ -1,7 +1,7 @@
 //! `disableChromeParrot` read as Xray-core reads it.
 //!
 //! `tests/fixtures/chrome-parrot/config-verdicts.json` records what
-//! Xray-core v26.10.31's `xray run -test` says about each case
+//! Xray-core v26.11.9's `xray run -test` says about each case
 //! (`scripts/check-chrome-parrot-interop.sh` rechecks it): a Go bool, null
 //! for false, on any transport, and nothing else.
 

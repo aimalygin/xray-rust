@@ -107,7 +107,7 @@
     "eagerWindowNs": 2000000000,
     "holeTimeoutNs": 30000000000,
     "sessionTtlNs": 300000000000,
-    "concurrency": 64
+    "concurrency": 65
    }
   },
   {
@@ -129,7 +129,7 @@
     "eagerWindowNs": 4294967295000000,
     "holeTimeoutNs": 4294967295000000,
     "sessionTtlNs": 4294967295000000000,
-    "concurrency": 64
+    "concurrency": 256
    }
   },
   {

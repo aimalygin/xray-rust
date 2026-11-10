@@ -253,7 +253,7 @@ expected_rc_interop="$(cat <<'EXPECTED'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: XTLS/Xray-core
-          ref: a4a3dff5b20c2faae567b742c172c7b95e75c083
+          ref: 676eaf66f8f05d4d558ee7a74b4736623d3feeb9
           path: Xray-core
           persist-credentials: false
       - name: Install pinned Go toolchain
@@ -286,7 +286,7 @@ expected_scheduled_pinned="$(cat <<'EXPECTED'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: XTLS/Xray-core
-          ref: a4a3dff5b20c2faae567b742c172c7b95e75c083
+          ref: 676eaf66f8f05d4d558ee7a74b4736623d3feeb9
           path: Xray-core
           persist-credentials: false
       - name: Install pinned Go toolchain

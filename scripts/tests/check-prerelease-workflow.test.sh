@@ -128,7 +128,7 @@ done
 
 rc_interop_job="$(job_body rc-interop)"
 [[ -n "$rc_interop_job" ]] || die "RC interoperability job is missing"
-grep -Fxq '          ref: a4a3dff5b20c2faae567b742c172c7b95e75c083' <<<"$rc_interop_job" || \
+grep -Fxq '          ref: 676eaf66f8f05d4d558ee7a74b4736623d3feeb9' <<<"$rc_interop_job" || \
   die "RC interoperability does not pin the audited Xray-core commit"
 grep -Fxq '        run: bash scripts/check-rc-interop.sh' <<<"$rc_interop_job" || \
   die "RC interoperability script is not part of the tag workflow"

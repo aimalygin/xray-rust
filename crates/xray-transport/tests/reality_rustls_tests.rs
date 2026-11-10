@@ -9,6 +9,9 @@ use xray_transport::{
     RustlsRealityTlsSessionProvider,
 };
 
+#[path = "support/client_hello_draws.rs"]
+mod client_hello_draws;
+
 const TLS_GROUP_X25519: u16 = 0x001d;
 const TLS_GROUP_SECP256R1: u16 = 0x0017;
 const TLS_GROUP_X25519_MLKEM768: u16 = 0x11ec;
@@ -444,6 +447,10 @@ const RISKY_FINGERPRINT_RAW_ORACLES: &[(&str, &str)] = &[
         include_str!("../../../tests/fixtures/reality/clienthello_raw_chrome.json"),
     ),
     (
+        "hellochrome_133",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_133.json"),
+    ),
+    (
         "helloios_13",
         include_str!("../../../tests/fixtures/reality/clienthello_raw_helloios_13.json"),
     ),
@@ -682,7 +689,13 @@ fn decode_hex(input: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+/// Compares a hello with the oracle's after taking out what uTLS draws per
+/// connection: GREASE values, and for a profile that shuffles, the extension
+/// order (`client_hello_draws`). Everything else stays byte-exact.
 fn assert_masked_client_hello_eq(fingerprint: &str, actual: &[u8], expected: &[u8]) {
+    let shuffles = client_hello_draws::shuffles(fingerprint);
+    let actual = &client_hello_draws::canonical_client_hello(actual, shuffles);
+    let expected = &client_hello_draws::canonical_client_hello(expected, shuffles);
     let actual_ciphers = raw_client_hello_cipher_suites(actual)
         .unwrap_or_else(|error| panic!("{fingerprint}: parse actual cipher suites: {error}"));
     let expected_ciphers = raw_client_hello_cipher_suites(expected)

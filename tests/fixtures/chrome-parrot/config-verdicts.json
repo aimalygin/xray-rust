@@ -1,5 +1,5 @@
 {
- "comment": "disableChromeParrot cases with Xray-core v26.10.31's `xray run -test` verdicts. `xray` is \"ok\" or a substring of its error; `chromeParrot` is whether the dial parrots Chrome (null where no QUIC dial reads it). scripts/check-chrome-parrot-interop.sh rechecks every Xray verdict.",
+ "comment": "disableChromeParrot cases with Xray-core v26.11.9's `xray run -test` verdicts. `xray` is \"ok\" or a substring of its error; `chromeParrot` is whether the dial parrots Chrome (null where no QUIC dial reads it). scripts/check-chrome-parrot-interop.sh rechecks every Xray verdict.",
  "cases": [
   {
    "name": "hysteria without finalmask",

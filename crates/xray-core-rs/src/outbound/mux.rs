@@ -21,7 +21,9 @@ use xray_proxy::mux::{self as wire, Frame, Status};
 const MAX_PARENTS: usize = 4;
 /// All parents, including exhausted ones that only finish their children.
 const MAX_LIVE_PARENTS: usize = 16;
-const MAX_CHILDREN_EVER: u16 = 128;
+/// Child IDs a parent hands out over its life, Xray-core's `MaxConnection`
+/// (`maxReuseTimes`) since v26.11.9.
+const MAX_CHILDREN_EVER: u16 = 1024;
 /// Frames buffered per child and direction (at most 64 KiB of payload). Xray-core
 /// bounds the same downlink by its per-connection buffer policy: 4 KiB on arm64,
 /// 512 KiB on amd64 (`features/policy/policy.go`).
@@ -57,13 +59,11 @@ impl Runtime {
         let Some(options) = options else {
             return Ok(None);
         };
-        if options.concurrency > 64 || options.xudp_concurrency > 64 {
-            return Err(CoreError::UnsupportedOutboundNetwork);
-        }
         let mut options = options.clone();
-        if options.concurrency == 0 {
-            options.concurrency = 8;
-        }
+        // As Xray-core's outbound handler does, for settings that did not
+        // come through the parser. More children than a parent ever hands
+        // out are as good as `MAX_CHILDREN_EVER`.
+        options.concurrency = xray_config::mux_tcp_concurrency(options.concurrency);
         // The pinned Xray XHTTP inbound only permits UDP Mux children.
         // TCP already shares the carrier's HTTP/2 or HTTP/3 connection.
         // A cacheable error keeps a config built without the parser from
@@ -852,12 +852,31 @@ mod tests {
                 }
             }
         }
-        let invalid = Some(MuxSettings {
-            concurrency: 65,
-            xudp_concurrency: 0,
-            udp443: MuxUdp443::Reject,
-        });
-        assert!(Runtime::new(&invalid, &StreamTransport::Raw).is_err());
+        // Xray-core's v26.11.9 handler: zero up to 128 children become 128,
+        // more stay, and the UDP pool takes its number as it is.
+        for (tcp, udp, want_tcp) in [
+            (0, 0, 128),
+            (1, 0, 128),
+            (8, 2, 128),
+            (128, 0, 128),
+            (129, 0, 129),
+            (i16::MAX, i16::MAX, i16::MAX as u16),
+        ] {
+            let settings = Some(MuxSettings {
+                concurrency: tcp,
+                xudp_concurrency: udp,
+                udp443: MuxUdp443::Reject,
+            });
+            let runtime = Runtime::new(&settings, &StreamTransport::Raw)
+                .unwrap()
+                .unwrap();
+            assert_eq!(runtime.tcp.as_ref().unwrap().concurrency, want_tcp, "{tcp}");
+            assert_eq!(
+                runtime.udp.as_ref().map(|pool| pool.concurrency),
+                (udp > 0).then_some(udp as u16),
+                "{udp}"
+            );
+        }
     }
 
     #[tokio::test]

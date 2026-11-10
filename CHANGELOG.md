@@ -10,6 +10,42 @@ long-term supported release series.
 
 ## Unreleased
 
+- Compatibility reference moved to Xray-core v26.11.9
+  (`676eaf66f8f05d4d558ee7a74b4736623d3feeb9`, Go 1.27.3): CI, interop
+  guards, oracle modules, fixtures and the benchmark harness pin it. See the
+  [migration record](docs/xray-core-v26.11.9-migration.md).
+- Freedom `finalRules` read `delay` and `logLevel` as Xray-core v26.11.9
+  does. `blockDelay` still works with a deprecation warning and wins over
+  `delay`; `logLevel` is `none`, `debug`, `info`, `warning` or `error`, is
+  checked, and writes nothing here, since xray-rust logs no blocked
+  connection. An allow rule with a delay or a level is refused, as upstream
+  now refuses it. See [Freedom outbound](docs/config-compatibility.md#freedom-outbound).
+- `chrome`, `hellochrome_auto` and an empty `fingerprint` send Chrome 155,
+  Xray-core v26.11.9's default: Chrome 133's hello with GREASE and ML-DSA
+  44/65/87 signature algorithms and a `trust_anchors` extension carrying 28
+  Chrome Root Store trust anchor IDs. `hellochrome_155` is a new name and joins
+  `random`'s draw; `hellochrome_133` keeps Chrome 133. See
+  [TLS ClientHello shaping](docs/config-compatibility.md#tls-clienthello-shaping).
+- Every uTLS-shaped hello, on TLS and REALITY, draws its GREASE values per
+  connection as uTLS does, one per slot, and the Chrome profiles whose uTLS
+  spec shuffles its extensions (`hellochrome_106_shuffle` through
+  `hellochrome_155`, and so `chrome`) draw their extension order per
+  connection too, GREASE, padding and pre_shared_key staying in place. Until
+  now each profile sent `0x0a0a` in every GREASE slot and one fixed order.
+  The ECH GREASE payload length of the Chrome profiles stays pinned. See
+  [uTLS per-connection draws](docs/xray-core-differences.md#utls-per-connection-draws).
+- XDRIVE on Google Drive follows Xray-core v26.11.9: rings as deep as
+  `concurrency` (64 by default, at most 256) with spare rings made ahead,
+  sessions announced after their first segment with that segment inline,
+  read-ahead and hedged reads, and on the Drive side a shared token fetch
+  with background refresh and backoff, a stop on refused OAuth credentials,
+  a cooldown after throttling, a reserved lane for watermarks and the head,
+  per-try timeouts that retire stalled connections and a 32 MiB answer cap.
+  It still meets v26.10.31's server. See [XDRIVE](docs/config-compatibility.md#xdrive).
+- Mux runs every TCP `concurrency` from zero up to 128 as 128 children per
+  parent, keeps a larger one, and lets a parent hand out 1024 children over
+  its life, as Xray-core v26.11.9 does; both concurrencies take any 16-bit
+  value instead of at most 64.
 - Hysteria, XHTTP over HTTP/3 and XDRIVE's storages over HTTP/3 shape their
   QUIC handshake like Chrome's, as Xray-core v26.10.31's default ChromeParrot
   does, unless

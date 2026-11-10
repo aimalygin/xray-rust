@@ -952,11 +952,25 @@ pub struct OutboundConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MuxSettings {
-    /// Zero is normalized to 8; a negative value disables TCP multiplexing.
+    /// Children a parent carries at once. Zero up to 128 is normalized to
+    /// 128, see [`mux_tcp_concurrency`]; a negative value disables TCP
+    /// multiplexing.
     pub concurrency: i16,
-    /// Zero shares the TCP pool; a negative value uses native UDP.
+    /// Zero shares the TCP pool; a negative value uses native UDP; a
+    /// positive one is a UDP pool's children per parent, taken as it is.
     pub xudp_concurrency: i16,
     pub udp443: MuxUdp443,
+}
+
+/// The TCP `concurrency` Xray-core's outbound handler runs a Mux pool with:
+/// since v26.11.9 every value from zero up to 128 becomes 128, a larger one
+/// stays, and a negative one turns TCP multiplexing off.
+pub fn mux_tcp_concurrency(concurrency: i16) -> i16 {
+    if (0..=128).contains(&concurrency) {
+        128
+    } else {
+        concurrency
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MuxUdp443 {
@@ -1035,9 +1049,13 @@ pub struct FreedomFinalRule {
     pub port_ranges: Option<Vec<RoutingPortRange>>,
     /// The addresses the rule applies to; `None` applies to every address.
     pub ip_matchers: Option<IpMatcherSet>,
-    /// How long a blocked connection is held before it closes. `None` is
-    /// Xray-core's default, 30 to 90 seconds.
+    /// How long a blocked connection is held before it closes, the rule's
+    /// `delay` (or the deprecated `blockDelay`). `None` is Xray-core's
+    /// default, 30 to 90 seconds. Only a block rule has one.
     pub block_delay: Option<FreedomBlockDelay>,
+    /// The rule's `logLevel`. Only a block rule sets one; an allow rule keeps
+    /// the default.
+    pub log_level: FreedomRuleLogLevel,
 }
 
 /// What a matching final rule does.
@@ -1045,6 +1063,22 @@ pub struct FreedomFinalRule {
 pub enum FreedomRuleAction {
     Allow,
     Block,
+}
+
+/// The severity at which Xray-core logs the connections a block rule holds,
+/// its `finalRules.logLevel`. xray-rust writes no log line for a blocked
+/// connection, so the level is read and checked as Xray-core reads it and
+/// changes nothing else.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum FreedomRuleLogLevel {
+    /// `none`: the rule logs nothing.
+    None,
+    Debug,
+    /// An absent or empty `logLevel`, or `info`.
+    #[default]
+    Info,
+    Warning,
+    Error,
 }
 
 /// A whole number of seconds drawn uniformly from `min_secs..=max_secs`.

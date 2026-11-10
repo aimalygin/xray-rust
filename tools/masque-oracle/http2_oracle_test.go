@@ -1,4 +1,4 @@
-// Records the frames Xray-core v26.10.31's own HTTP/2 client writes for a
+// Records the frames Xray-core v26.11.9's own HTTP/2 client writes for a
 // MASQUE tunnel, from its SETTINGS through the extended CONNECT request:
 // newHTTP2ClientConn on one end of a pipe and establish sending the
 // request, against a server that enables extended CONNECT. Xray draws its

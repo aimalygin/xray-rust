@@ -307,7 +307,7 @@ impl ReferenceServer {
                 .contains(if independent_reference() {
                     "sing-box started ("
                 } else {
-                    "core: Xray 26.10.31 started"
+                    "core: Xray 26.11.9 started"
                 })
                 && tokio::net::TcpStream::connect(self.listen).await.is_ok()
             {

@@ -1,4 +1,4 @@
-// Records what Xray-core v26.10.31's XDRIVE transport and the Go library
+// Records what Xray-core v26.11.9's XDRIVE transport and the Go library
 // under it make of the HTTP storages: the S3 URL and SigV4 headers of a
 // request (s3Storage.target and sign at a fixed time, with
 // ValidateS3Config and objectKey), the S3 answers it reads (s3ListPage and

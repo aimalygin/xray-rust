@@ -15,9 +15,10 @@ checks; it does not expand the supported configuration surface.
 
 ## Reference revision
 
-The active oracle pin is `a4a3dff5b20c2faae567b742c172c7b95e75c083`
-(v26.10.31), built with Go 1.27.3; see the
-[v26.10.31 migration record](xray-core-v26.10.31-migration.md). The
+The active oracle pin is `676eaf66f8f05d4d558ee7a74b4736623d3feeb9`
+(v26.11.9), built with Go 1.27.3; see the
+[v26.11.9 migration record](xray-core-v26.11.9-migration.md) and, before it,
+the [v26.10.31 one](xray-core-v26.10.31-migration.md). The
 [v26.10.21 migration](xray-core-v26.10.21-migration.md) introduced the REALITY
 and SS2022 changes described next. The dated main evidence below remains
 historical.
@@ -259,7 +260,7 @@ Development ABI 1.14 additionally imports `http://` and `https://` proxy links
 through the shared Rust parser and Swift/Kotlin APIs. See the
 [URI subset, TCP DNS and capability guard](http-profile-import.md). This retains
 the HTTP/1.1 CONNECT runtime limits below. Imported profiles are exercised by
-`check-http-interop.sh` against the currently pinned Xray-core v26.10.31; HTTPS
+`check-http-interop.sh` against the currently pinned Xray-core v26.11.9; HTTPS
 trust/name failures are covered by the local TLS fixture.
 
 The [#79 proposal](https://github.com/aimalygin/xray-rust/issues/79#issuecomment-6400188060)
@@ -732,8 +733,9 @@ looked up, as in Xray-core. Deliberate differences:
   type and fronting address, a key without the template, TLS settings or
   `xmux`, so a second outbound differing only there runs on the first one's
   storage; here each outbound has its own.
-- A template's or Drive's answer is read up to 64 MiB; Xray-core reads it
-  whole. S3 answers keep Xray-core's limits.
+- A template's answer is read up to 64 MiB; Xray-core reads it whole.
+  Drive's has Xray-core's own cap of 32 MiB since v26.11.9, and S3 answers
+  keep Xray-core's limits.
 - A Drive listing and the children a delete removes are taken in name
   order; Xray-core takes them in Go's random map order.
 - A slot writer that finds a full segment no slot is free for waits before
@@ -779,6 +781,13 @@ looked up, as in Xray-core. Deliberate differences:
   where Xray-core's `Close` blocks until they are stored.
 - VLESS `reverse`, which lets Xray-core run XDRIVE without Mux, is refused,
   as on every VLESS outbound here.
+- Google Drive's spare rings that no dial took are deleted when their
+  outbound goes away (the core stops); Xray-core keeps them as long as its
+  process runs and leaves them in the folder when it exits. A token fetch
+  that every waiter gave up on still completes and keeps its token, as in
+  Xray-core, and Drive's throttle counter, which only its tests read, is not
+  kept. The `local` service's retry of Windows sharing violations has no
+  counterpart: xray-rust does not run on Windows.
 - Unknown fields in `xdriveSettings`, `s3` and `xmux` fail, as everywhere;
   Go's JSON ignores them and matches field names in any case. Over
   `tlsSettings.alpn` other than exactly `["h3"]` the UDP masks, Salamander
@@ -1298,7 +1307,8 @@ stop reading after the status line.
 
 Xray's XHTTP client dials HTTP/2 with a bare `golang.org/x/net/http2`
 `Transport` (`transport/internet/splithttp/dialer.go`, only `IdleConnTimeout`
-and `ReadIdleTimeout` set). With x/net v0.61.0, the version v26.10.31 pins,
+and `ReadIdleTimeout` set). With x/net v0.62.0, the version v26.11.9 pins
+(its `http2` package is the one v0.61.0 shipped),
 its first SETTINGS frame is ENABLE_PUSH=0, INITIAL_WINDOW_SIZE=4 MiB,
 MAX_FRAME_SIZE=1 MiB, MAX_HEADER_LIST_SIZE=10 MiB, in that order
 (`http2/transport.go` `newClientConn`). xray-rust's XHTTP HTTP/2 client sends
@@ -1328,6 +1338,45 @@ needs the h3-quinn adapter's `poll_finish` to report a STOP_SENDING that
 already arrived (quinn's `finish` maps it to success); today the GREASE write
 in h3's `finish` is what surfaces it for unknown-length uploads.
 
+## uTLS per-connection draws
+
+uTLS draws two parts of every hello per connection, and so does xray-rust,
+on TLS and REALITY alike (resolved in 0.10.0, against uTLS 20261108164504):
+
+- GREASE values. Each hello reads sixteen bytes of BoringSSL GREASE seeds, as
+  uTLS's `ApplyPreset` does, and fills each slot from its own seed: the cipher
+  suite, the group (supported_groups and the GREASE key share carry the same
+  one), supported_versions, signature_algorithms (Chrome 155) and the two
+  GREASE extensions, the second moved off the first's value when they agree.
+  Every profile with GREASE draws them, not only Chrome's.
+- Extension order. The ten Chrome profiles whose uTLS spec runs
+  `ShuffleChromeTLSExtensions`, from `hellochrome_106_shuffle` to
+  `hellochrome_155` and so `chrome`, shuffle the spec's own order with Go's
+  `math/rand` from a `crypto/rand.Int` seed, skipping every swap that would
+  move a GREASE extension, padding or pre_shared_key. Other profiles keep
+  their fixed order.
+
+Until then every profile sent `0x0a0a` in each GREASE slot (`0x1a1a` for the
+second GREASE extension) and the order of the zero-seed shuffle, so several
+hellos from one client looked alike where real Chrome and Xray-core vary.
+The zero draws remain the reference: each spec order shuffled with seed 0 is
+the order of its raw oracle fixture, for all ten profiles, and the byte
+comparisons with those fixtures write every GREASE value as `0x0a0a` and,
+for the shuffling profiles, compare the extensions in a canonical order
+(`crates/xray-transport/tests/support/client_hello_draws.rs`). Unit tests in
+`utls_shaping.rs` hold the GREASE seeds to `getBoringGREASEValue` and show
+that GREASE, padding and pre_shared_key stay in place while every other
+extension reaches every other place; `utls_tls_shaping_tests` shows two
+hellos in a row differ in exactly these draws and that each GREASE slot is
+drawn on its own.
+
+One draw uTLS makes per connection is still pinned: the ECH GREASE payload
+length of the Chrome profiles, described in
+[ECH GREASE](config-compatibility.md#ech-grease).
+`scripts/check-xray-default-fingerprint.py` holds the pinned Xray-core
+binary's own hellos for `""`, `chrome`, `hellochrome_155` and `hellochrome_133`
+to the fixtures with the per-connection draws set aside.
+
 ## Follow-up checks
 
 - [x] Integrate the #87 review follow-up, including both relay-address fixes,
@@ -1346,6 +1395,10 @@ in h3's `finish` is what surfaces it for unknown-length uploads.
   `false` default; see [SOCKS inbound `udp`](#socks-inbound-udp-false-and-the-absent-default).
 - [ ] Keep #81 cleanup separate from new SDK API/lifecycle behavior and verify
   each against the documented FFI/host contract.
+- [x] Decide whether Chrome-family hellos should draw their GREASE values and
+  extension order per connection, as uTLS does: they do, as the owner chose
+  for 0.10.0, against uTLS 20261108164504 (Xray-core v26.11.9); see
+  [uTLS per-connection draws](#utls-per-connection-draws).
 
 When an item is resolved, update its status, the tested xray-rust and upstream
 revisions, and links to durable tests/results in the same PR. Update

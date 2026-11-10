@@ -245,7 +245,7 @@ impl ReferenceServer {
             "server up and running"
         } else {
             command.args(["run", "-config"]);
-            "core: Xray 26.10.31 started"
+            "core: Xray 26.11.9 started"
         };
         let child = command
             .arg(directory.join("config.json"))

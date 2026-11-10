@@ -242,6 +242,7 @@ public struct XrayRealityFingerprintMode: RawRepresentable,
     public static let hellochrome120 = Self("hellochrome_120")
     public static let hellochrome131 = Self("hellochrome_131")
     public static let hellochrome133 = Self("hellochrome_133")
+    public static let hellochrome155 = Self("hellochrome_155")
     public static let helloios13 = Self("helloios_13")
     public static let helloios14 = Self("helloios_14")
     public static let helloedge106 = Self("helloedge_106")
@@ -291,6 +292,7 @@ public struct XrayRealityFingerprintMode: RawRepresentable,
         .hellochrome120,
         .hellochrome131,
         .hellochrome133,
+        .hellochrome155,
         .helloios13,
         .helloios14,
         .helloedge106,

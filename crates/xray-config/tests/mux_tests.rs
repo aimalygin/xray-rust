@@ -12,9 +12,29 @@ fn mux_pinned_defaults_separate_udp_policy_and_explicit_disabling() {
         .unwrap()
         .config;
     let mux = config.outbounds[0].mux.as_ref().unwrap();
-    assert_eq!(mux.concurrency, 8);
+    assert_eq!(mux.concurrency, 128);
     assert_eq!(mux.xudp_concurrency, 0);
     assert_eq!(mux.udp443, MuxUdp443::Reject);
+    // Xray-core v26.11.9's handler runs every TCP concurrency from zero up to
+    // 128 as 128 and keeps a larger one; XUDP takes its number as it is.
+    for (concurrency, xudp, want) in [
+        (0, 1, 128),
+        (1, 5, 128),
+        (8, 64, 128),
+        (128, 65, 128),
+        (129, 200, 129),
+        (32767, 32767, 32767),
+        (-32768, -32768, -32768),
+    ] {
+        let raw = profile(json!({"enabled":true,"concurrency":concurrency,"xudpConcurrency":xudp}));
+        let config = parse_xray_json(&raw.to_string()).unwrap().config;
+        let mux = config.outbounds[0].mux.as_ref().unwrap();
+        assert_eq!(
+            (mux.concurrency, mux.xudp_concurrency),
+            (want, xudp),
+            "{raw}"
+        );
+    }
     for policy in ["skip", "allow", "reject"] {
         let config=parse_xray_json(&profile(json!({"enabled":true,"concurrency":-1,"xudpConcurrency":64,"xudpProxyUDP443":policy})).to_string()).unwrap().config;
         let mux = config.outbounds[0].mux.as_ref().unwrap();
@@ -37,10 +57,11 @@ fn mux_pinned_defaults_separate_udp_policy_and_explicit_disabling() {
 fn mux_type_limits_and_unsupported_protocols_fail_with_paths() {
     for (key, value) in [
         ("enabled", json!(1)),
-        ("concurrency", json!(65)),
+        ("concurrency", json!(32768)),
         ("concurrency", json!(-32769)),
         ("concurrency", json!("8")),
-        ("xudpConcurrency", json!(65)),
+        ("concurrency", json!(8.0)),
+        ("xudpConcurrency", json!(32768)),
         ("xudpConcurrency", json!(false)),
         ("xudpProxyUDP443", json!(true)),
         ("xudpProxyUDP443", json!("unknown")),
@@ -104,7 +125,7 @@ fn vless_mux_follows_the_shared_pool_settings() {
         .unwrap()
         .config;
     let mux = config.outbounds[0].mux.as_ref().unwrap();
-    assert_eq!(mux.concurrency, 8);
+    assert_eq!(mux.concurrency, 128);
     assert_eq!(mux.xudp_concurrency, 0);
     assert_eq!(mux.udp443, MuxUdp443::Reject);
     let mux = json!({"enabled":true,"concurrency":4,"xudpConcurrency":-1,"xudpProxyUDP443":"skip"});
@@ -112,7 +133,7 @@ fn vless_mux_follows_the_shared_pool_settings() {
         .unwrap()
         .config;
     let mux = config.outbounds[0].mux.as_ref().unwrap();
-    assert_eq!((mux.concurrency, mux.xudp_concurrency), (4, -1));
+    assert_eq!((mux.concurrency, mux.xudp_concurrency), (128, -1));
     assert_eq!(mux.udp443, MuxUdp443::Skip);
 }
 
@@ -150,4 +171,35 @@ fn vless_mux_keeps_the_xhttp_udp_only_rule() {
             assert!(concurrency_rejected(&config));
         }
     }
+}
+
+/// Every case of the corpus gets Xray-core's verdict, except the
+/// deliberate differences, which get theirs. scripts/check-xray-verdicts.sh
+/// rechecks the recorded verdicts against the pinned Xray-core.
+#[test]
+fn config_verdicts_match_xray_core() {
+    let corpus: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/mux/config-verdicts.json"
+    ))
+    .unwrap();
+    let mut mismatches = Vec::new();
+    for case in corpus["cases"].as_array().unwrap() {
+        let raw = json!({"outbounds": [case["outbound"].clone()]}).to_string();
+        let parsed = parse_xray_json(&raw);
+        let expected_ok = match case.get("ours").and_then(Value::as_str) {
+            Some(ours) => ours == "ok",
+            None => case["xray"] == "ok",
+        };
+        if parsed.is_ok() != expected_ok {
+            let detail = parsed
+                .err()
+                .map(|e| format!("{:?}", e.diagnostics))
+                .unwrap_or_default();
+            mismatches.push(format!(
+                "{}: expected {}: {detail}",
+                case["name"], case["xray"]
+            ));
+        }
+    }
+    assert!(mismatches.is_empty(), "{mismatches:#?}");
 }

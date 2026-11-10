@@ -20,7 +20,7 @@ pub const DEFAULT_UTLS_FINGERPRINT: &str = "chrome";
 /// The set is deliberately not a superset. Xray-core v26.7.28 added explicit
 /// names for the current auto profiles -- `hellochrome_133`,
 /// `hellofirefox_148`, and `hellosafari_26_3` -- so those aliases are included
-/// here. Other uTLS-only names remain rejected: accepting one would let a
+/// here, and v26.11.9 added `hellochrome_155`, which `chrome` now names. Other uTLS-only names remain rejected: accepting one would let a
 /// profile parse here and fail on xray-core with `unknown "fingerprint"`.
 pub const XRAY_UTLS_FINGERPRINTS: &[&str] = &[
     "chrome",
@@ -39,6 +39,7 @@ pub const XRAY_UTLS_FINGERPRINTS: &[&str] = &[
     "hellochrome_120",
     "hellochrome_131",
     "hellochrome_133",
+    "hellochrome_155",
     "helloios_13",
     "helloios_14",
     "helloedge_106",
@@ -103,6 +104,7 @@ pub const XRAY_MODERN_FINGERPRINTS: &[&str] = &[
     "hellochrome_120",
     "hellochrome_131",
     "hellochrome_133",
+    "hellochrome_155",
     "helloios_13",
     "helloios_14",
     "helloedge_106",
@@ -117,6 +119,7 @@ pub const XRAY_REALITY_MODERN_FINGERPRINTS: &[&str] = &[
     "hellofirefox_148",
     "hellochrome_131",
     "hellochrome_133",
+    "hellochrome_155",
     "hellosafari_26_3",
 ];
 
@@ -159,6 +162,7 @@ pub const XRAY_REALITY_CAPABLE_FINGERPRINTS: &[&str] = &[
     "hellochrome_120",
     "hellochrome_131",
     "hellochrome_133",
+    "hellochrome_155",
     "helloios_13",
     "helloios_14",
     "helloedge_106",
@@ -212,6 +216,7 @@ pub const XRAY_REALITY_HYBRID_FINGERPRINTS: &[&str] = &[
     "hellofirefox_148",
     "hellochrome_131",
     "hellochrome_133",
+    "hellochrome_155",
     "hellosafari_26_3",
     "hellorandomized",
     "hellofirefox_auto",
@@ -352,15 +357,31 @@ mod tests {
         }
     }
 
-    /// Every explicit v26.7.28 name keeps the preset and `_auto` aliases that
-    /// emit the same bytes -- `Chrome-133`, `Firefox-148`, `Safari-26.3` in
-    /// `docs/shaped-rustls-utls-fingerprint-parity-report.md`.
+    /// Xray-core v26.11.9 registers Chrome 155, the shape `chrome` and an
+    /// empty fingerprint name since that release, for plain TLS and REALITY
+    /// alike; Chrome 133 keeps its explicit name.
+    #[test]
+    fn accepts_xray_v26_11_9_chrome_155() {
+        for fingerprint in ["hellochrome_155", "hellochrome_133"] {
+            assert_eq!(normalize_tls_fingerprint(fingerprint), Some(fingerprint));
+            assert_eq!(
+                normalize_reality_supported_fingerprint(fingerprint),
+                Some(fingerprint)
+            );
+            assert!(is_reality_fingerprint_hybrid(fingerprint), "{fingerprint}");
+        }
+        assert!(XRAY_MODERN_FINGERPRINTS.contains(&"hellochrome_155"));
+        assert!(XRAY_REALITY_MODERN_FINGERPRINTS.contains(&"hellochrome_155"));
+    }
+
+    /// Every explicit name keeps the preset and `_auto` aliases that emit the
+    /// same bytes -- `Chrome-155`, `Firefox-148`, `Safari-26.3`.
     #[test]
     fn current_auto_profile_shapes_keep_all_xray_aliases() {
         for fingerprint in [
             "chrome",
             "hellochrome_auto",
-            "hellochrome_133",
+            "hellochrome_155",
             "firefox",
             "hellofirefox_auto",
             "hellofirefox_148",
@@ -381,14 +402,14 @@ mod tests {
         }
     }
 
-    /// Xray's three maps hold 63 entries. `unsafe` is a nil entry the config
+    /// Xray's three maps hold 64 entries. `unsafe` is a nil entry the config
     /// builder special-cases rather than a shape, and `hellogolang` names no
-    /// shape at all, which leaves 61. Dropping `hellogolang` is the one place
+    /// shape at all, which leaves 62. Dropping `hellogolang` is the one place
     /// this table is narrower than Xray's -- a known divergence, recorded on
     /// [`XRAY_UTLS_FINGERPRINTS`]; if it is ever closed, this count moves.
     #[test]
     fn fingerprint_table_matches_xrays_map_union() {
-        assert_eq!(XRAY_UTLS_FINGERPRINTS.len(), 61);
+        assert_eq!(XRAY_UTLS_FINGERPRINTS.len(), 62);
     }
 
     #[test]
@@ -531,7 +552,7 @@ mod tests {
 
     #[test]
     fn modern_fingerprints_match_xrays_table_size() {
-        assert_eq!(XRAY_MODERN_FINGERPRINTS.len(), 11);
+        assert_eq!(XRAY_MODERN_FINGERPRINTS.len(), 12);
     }
 
     #[test]
