@@ -610,6 +610,12 @@ AES and noise inside xdns; XHTTP over HTTP/3 and Hysteria, alone and with
 Salamander inside, before and after a rebind, carry the same. A client with
 another domain never gets through.
 
+Deliberate difference: a UDP resolver's socket reads answers from that
+resolver's address alone. Xray-core's socket is unconnected and reads from
+any source, and an answer is matched to nothing but the tunnel's domain in
+its question, so anyone who knows the domain and reaches the port can feed
+the carrier packets and set off a poll for each.
+
 ## MASQUE
 
 The `masque` outbound runs Xray-core v26.10.31's MASQUE client over HTTP/3
@@ -719,7 +725,9 @@ Deliberate difference: the control capsules that wait for the request
 stream are bounded at 256 KiB as well as at Xray-core's 128. The answer to
 an ADDRESS_REQUEST is as large as the request, so a proxy that grants the
 stream no credit and keeps asking would otherwise have the client hold 128
-answers of about 200 KiB each.
+answers of about 200 KiB each. Over HTTP/2, a DATAGRAM capsule longer than
+the 8,192-byte packets the tunnel reads is skipped as it arrives; Xray-core
+buffers one up to 65,535 bytes and drops it on read.
 
 ## XDRIVE
 

@@ -24,10 +24,16 @@ long-term supported release series.
     address the rendezvous lists, ten times a second for ten seconds.
   - MASQUE: the control capsules waiting for the request stream are bounded
     at 256 KiB as well as at Xray-core's 128 capsules, and the error for a
-    `user` with a colon no longer quotes the value.
+    `user` with a colon no longer quotes the value. Over HTTP/2, a DATAGRAM
+    capsule longer than the 8,192-byte packets the tunnel reads is skipped
+    as it arrives instead of being queued whole and dropped on read.
   - HTTP inbound: a header block of a request, or of a response it forwards,
     stops at 1 MiB (Go's `http.DefaultMaxHeaderBytes`) instead of being read
-    for as long as the peer sends headers.
+    for as long as the peer sends headers. A header whose name is not a
+    token, such as `Transfer-Encoding : chunked`, is no longer forwarded;
+    Go's `Header.writeSubset` leaves it out too.
+  - xdns: a UDP resolver's socket reads answers from that resolver's address
+    alone. Xray-core reads them from any source.
   - VLESS reverse: a tunnel whose portal lets more than 2,048 session Ends
     wait unread fails instead of queueing them without bound.
 - DNS: a server's `queryStrategy: "UseSystem"` while the system routes
