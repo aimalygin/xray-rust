@@ -727,7 +727,10 @@ an ADDRESS_REQUEST is as large as the request, so a proxy that grants the
 stream no credit and keeps asking would otherwise have the client hold 128
 answers of about 200 KiB each. Over HTTP/2, a DATAGRAM capsule longer than
 the 8,192-byte packets the tunnel reads is skipped as it arrives; Xray-core
-buffers one up to 65,535 bytes and drops it on read.
+buffers one up to 65,535 bytes and drops it on read. A tunnel the proxy
+closes within five seconds of establishing it counts as a failed dial: flows
+take the failure for a second, as after a refused dial, where Xray-core
+dials again for the next flow at once.
 
 ## XDRIVE
 
@@ -1210,8 +1213,16 @@ differences:
   such as `.tcp.example.com`, dials the configured server. Xray-core panics
   on it.
 - The `addressPortStrategy` lookup protects its sockets with the platform's
-  protector, so inside a mobile VPN it bypasses the tunnel; Go's resolver in
-  Xray-core sets nothing on them.
+  protector, so inside a mobile VPN it bypasses the tunnel, and applies the
+  outbound's `sockopt` to them; Go's resolver in Xray-core sets nothing on
+  them. The connection to a `realm` rendezvous takes both as well.
+- `interface` is bound before every other option. In Xray-core the binding
+  follows `mark` on Linux and the TCP options on Apple platforms, and an
+  option that fails stops the rest: with `tcpFastOpen` on an Apple platform,
+  where the kernel refuses it on a dialing socket, or a `mark` the process
+  may not set, the socket stays unbound and the dial goes on.
+- The raw socket of an `xicmp` mask without `dgram` takes the options a UDP
+  socket takes. Xray-core's sets none.
 - A `dialerProxy` inside an XHTTP `downloadSettings` fails parsing. Xray-core
   would carry the download leg through that outbound. Here the leg either
   takes the outbound's own chain, with `penetrate`, or dials directly.

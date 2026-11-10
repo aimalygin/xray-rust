@@ -26,7 +26,10 @@ long-term supported release series.
     at 256 KiB as well as at Xray-core's 128 capsules, and the error for a
     `user` with a colon no longer quotes the value. Over HTTP/2, a DATAGRAM
     capsule longer than the 8,192-byte packets the tunnel reads is skipped
-    as it arrives instead of being queued whole and dropped on read.
+    as it arrives instead of being queued whole and dropped on read. A
+    tunnel the proxy closes within five seconds of establishing it counts as
+    a failed dial, so flows wait a second before the next handshake instead
+    of each paying for one.
   - HTTP inbound: a header block of a request, or of a response it forwards,
     stops at 1 MiB (Go's `http.DefaultMaxHeaderBytes`) instead of being read
     for as long as the peer sends headers. A header whose name is not a
@@ -36,6 +39,15 @@ long-term supported release series.
     alone. Xray-core reads them from any source.
   - VLESS reverse: a tunnel whose portal lets more than 2,048 session Ends
     wait unread fails instead of queueing them without bound.
+- Socket options: `sockopt.interface` is bound before every other option.
+  In Xray-core's order an option that fails first stops the rest, the
+  binding among them: `tcpFastOpen` on Apple platforms, where the kernel
+  refuses it on a dialing socket, and a `mark` the process may not set, as
+  on Android, left the socket unbound and the dial went on over whatever
+  interface the system chose. The connection to a `realm` rendezvous and
+  the `addressPortStrategy` lookups now take the outbound's `sockopt` as
+  well as the platform's protection, and so does the raw socket of an
+  `xicmp` mask without `dgram`.
 - DNS: a server's `queryStrategy: "UseSystem"` while the system routes
   neither family, the gap between two networks, leaves the lookup unanswered
   instead of answering it empty. The empty answer stayed in the DNS cache for
