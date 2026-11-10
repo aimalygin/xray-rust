@@ -101,7 +101,7 @@ Mirrors the notable unsupported areas in [project status](docs/status.md#configu
 - Shadowsocks stream ciphers and `none`, legacy VMess authentication, and server-side proxy protocols;
 - generic HTTP/2, QUIC and KCP transports, and stream transports beyond raw,
   WebSocket, HTTPUpgrade, gRPC and XHTTP;
-- reverse proxy, observatory command/API services, regex `leastLoad`
+- the reverse proxy's portal (server) side, observatory command/API services, regex `leastLoad`
   costs, and outbound chaining outside the documented transport-layer TCP
   subset;
 - HTTP inbound transparent proxy mode;

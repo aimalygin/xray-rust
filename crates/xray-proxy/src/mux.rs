@@ -117,6 +117,78 @@ pub fn encode(frame: &Frame<'_>) -> io::Result<Vec<u8>> {
 
 /// `None` means incomplete input. Invalid lengths fail before payload allocation.
 pub fn decode(input: &[u8]) -> io::Result<Option<(Frame<'_>, usize)>> {
+    Ok(decode_with(input, false)?.map(|(frame, consumed)| (frame.frame, consumed)))
+}
+
+/// A frame of a reverse Mux.Cool connection, as the bridge of Xray-core's
+/// VLESS reverse proxy reads what the portal sends: a new session names,
+/// in place of an XUDP global ID, the address of the portal's client and
+/// the address that client reached, each when the portal knows it.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ReverseFrame<'a> {
+    pub frame: Frame<'a>,
+    /// The portal's client (Xray-core's `inbound.Source`).
+    pub source: Option<Target>,
+    /// Where that client arrived (`inbound.Local`).
+    pub local: Option<Target>,
+}
+
+/// Decodes a frame the portal of a reverse proxy sends, as Xray-core's
+/// `FrameMetadata.Unmarshal` with `readSourceAndLocal` reads it. Port 0 is
+/// read as any other, since the portal's control session goes to
+/// `reverse:0`. `None` means incomplete input.
+pub fn decode_reverse(input: &[u8]) -> io::Result<Option<(ReverseFrame<'_>, usize)>> {
+    decode_with(input, true)
+}
+
+/// Reads a port, then an address, as Xray-core's Mux address parser does.
+fn read_port_address(rest: &[u8], allow_port_zero: bool) -> io::Result<(u16, TargetAddr, usize)> {
+    if rest.len() < 3 {
+        return Err(invalid());
+    }
+    let port = u16::from_be_bytes(rest[..2].try_into().unwrap());
+    if port == 0 && !allow_port_zero {
+        return Err(invalid());
+    }
+    let (addr, count) = match rest[2] {
+        1 if rest.len() >= 7 => (
+            TargetAddr::Ip(IpAddr::from(<[u8; 4]>::try_from(&rest[3..7]).unwrap())),
+            7,
+        ),
+        3 if rest.len() >= 19 => (
+            TargetAddr::Ip(IpAddr::from(<[u8; 16]>::try_from(&rest[3..19]).unwrap())),
+            19,
+        ),
+        2 if rest.len() >= 4 => {
+            let n = rest[3] as usize;
+            if n == 0 || rest.len() < 4 + n {
+                return Err(invalid());
+            }
+            let name = std::str::from_utf8(&rest[4..4 + n]).map_err(|_| invalid())?;
+            if name.chars().any(|c| c.is_control() || c.is_whitespace()) {
+                return Err(invalid());
+            }
+            (TargetAddr::Domain(name.into()), 4 + n)
+        }
+        _ => return Err(invalid()),
+    };
+    Ok((port, addr, count))
+}
+
+/// Reads a network byte, then a port and an address. `None` when the network
+/// byte is zero, which Xray-core reads as padding after a session's target.
+fn read_endpoint(rest: &[u8], allow_port_zero: bool) -> io::Result<Option<(Target, usize)>> {
+    let network = match rest.first() {
+        None | Some(0) => return Ok(None),
+        Some(1) => Network::Tcp,
+        Some(2) => Network::Udp,
+        Some(_) => return Err(invalid()),
+    };
+    let (port, addr, count) = read_port_address(&rest[1..], allow_port_zero)?;
+    Ok(Some((Target::new(addr, port, network), 1 + count)))
+}
+
+fn decode_with(input: &[u8], reverse: bool) -> io::Result<Option<(ReverseFrame<'_>, usize)>> {
     if input.len() < 2 {
         return Ok(None);
     }
@@ -141,46 +213,33 @@ pub fn decode(input: &[u8]) -> io::Result<Option<(Frame<'_>, usize)>> {
     }
     let mut rest = &meta[4..];
     let target = if status == Status::New || status == Status::Keep && rest.first() == Some(&2) {
+        // Xray-core wants the network byte, port and address type at least.
         if rest.len() < 4 {
             return Err(invalid());
         }
-        let network = match rest[0] {
-            1 => Network::Tcp,
-            2 => Network::Udp,
-            _ => return Err(invalid()),
-        };
-        let port = u16::from_be_bytes(rest[1..3].try_into().unwrap());
-        if port == 0 {
+        let Some((target, count)) = read_endpoint(rest, reverse)? else {
             return Err(invalid());
-        }
-        let (addr, count) = match rest[3] {
-            1 if rest.len() >= 8 => (
-                TargetAddr::Ip(IpAddr::from(<[u8; 4]>::try_from(&rest[4..8]).unwrap())),
-                8,
-            ),
-            3 if rest.len() >= 20 => (
-                TargetAddr::Ip(IpAddr::from(<[u8; 16]>::try_from(&rest[4..20]).unwrap())),
-                20,
-            ),
-            2 if rest.len() >= 5 => {
-                let n = rest[4] as usize;
-                if n == 0 || rest.len() < 5 + n {
-                    return Err(invalid());
-                }
-                let name = std::str::from_utf8(&rest[5..5 + n]).map_err(|_| invalid())?;
-                if name.chars().any(|c| c.is_control() || c.is_whitespace()) {
-                    return Err(invalid());
-                }
-                (TargetAddr::Domain(name.into()), 5 + n)
-            }
-            _ => return Err(invalid()),
         };
         rest = &rest[count..];
-        Some(Target::new(addr, port, network))
+        Some(target)
     } else {
         None
     };
-    let global_id = if status == Status::New
+    let (mut source, mut local) = (None, None);
+    let global_id = if reverse {
+        // A reverse session names its client and where it arrived instead.
+        if status == Status::New {
+            if let Some((endpoint, count)) = read_endpoint(rest, true)? {
+                source = Some(endpoint);
+                rest = &rest[count..];
+                if let Some((endpoint, count)) = read_endpoint(rest, true)? {
+                    local = Some(endpoint);
+                    rest = &rest[count..];
+                }
+            }
+        }
+        None
+    } else if status == Status::New
         && target.as_ref().is_some_and(|t| t.network == Network::Udp)
         && rest.len() >= 8
     {
@@ -215,13 +274,17 @@ pub fn decode(input: &[u8]) -> io::Result<Option<(Frame<'_>, usize)>> {
         None
     };
     Ok(Some((
-        Frame {
-            session_id,
-            status,
-            error: meta[3] & 2 != 0,
-            target,
-            global_id,
-            payload,
+        ReverseFrame {
+            frame: Frame {
+                session_id,
+                status,
+                error: meta[3] & 2 != 0,
+                target,
+                global_id,
+                payload,
+            },
+            source,
+            local,
         },
         consumed,
     )))
@@ -312,6 +375,95 @@ mod tests {
                 assert!(decode(&wire[..n]).unwrap().is_none());
             }
             assert_eq!(decode(&wire).unwrap(), Some((frame, wire.len())));
+        }
+    }
+    #[test]
+    fn reverse_frames_name_the_portals_client_and_allow_port_zero() {
+        // The portal's control session: `udp reverse:0`, no data, no client.
+        let control = [
+            0, 16, 0, 1, 1, 0, 2, 0, 0, 2, 7, b'r', b'e', b'v', b'e', b'r', b's', b'e',
+        ];
+        let (frame, consumed) = decode_reverse(&control).unwrap().unwrap();
+        assert_eq!(consumed, control.len());
+        assert_eq!(
+            frame,
+            ReverseFrame {
+                frame: Frame {
+                    session_id: 1,
+                    status: Status::New,
+                    error: false,
+                    target: Some(Target::new(
+                        TargetAddr::Domain("reverse".into()),
+                        0,
+                        Network::Udp
+                    )),
+                    global_id: None,
+                    payload: None,
+                },
+                source: None,
+                local: None,
+            }
+        );
+        // The client mode keeps refusing port 0.
+        assert!(decode(&control).is_err());
+
+        // A TCP session from 192.0.2.7:40000 that arrived at [2001:db8::1]:443.
+        let mut meta = vec![0, 2, 1, 1, 1, 0x1f, 0x90, 1, 127, 0, 0, 1];
+        meta.extend([1, 0x9c, 0x40, 1, 192, 0, 2, 7]);
+        meta.extend([1, 1, 0xbb, 3]);
+        meta.extend(
+            "2001:db8::1"
+                .parse::<std::net::Ipv6Addr>()
+                .unwrap()
+                .octets(),
+        );
+        let mut wire = (meta.len() as u16).to_be_bytes().to_vec();
+        wire.extend(&meta);
+        wire.extend([0, 3, b'a', b'b', b'c']);
+        let (frame, consumed) = decode_reverse(&wire).unwrap().unwrap();
+        assert_eq!(consumed, wire.len());
+        assert_eq!(frame.frame.payload, Some(&b"abc"[..]));
+        assert_eq!(
+            frame.source,
+            Some(Target::new(
+                TargetAddr::Ip("192.0.2.7".parse().unwrap()),
+                40000,
+                Network::Tcp
+            ))
+        );
+        assert_eq!(
+            frame.local,
+            Some(Target::new(
+                TargetAddr::Ip("2001:db8::1".parse().unwrap()),
+                443,
+                Network::Tcp
+            ))
+        );
+        // A client mode reader would take the client for metadata it cannot place.
+        assert!(decode(&wire).is_err());
+        for n in 0..wire.len() {
+            assert!(decode_reverse(&wire[..n]).unwrap().is_none());
+        }
+
+        // A UDP session names no global ID; zero padding after the target
+        // stops the client fields, other bytes or networks fail closed.
+        let udp = [
+            0, 14, 0, 9, 1, 1, 2, 0, 53, 1, 10, 0, 0, 1, 0, 0, 0, 1, 0xff,
+        ];
+        let (frame, _) = decode_reverse(&udp).unwrap().unwrap();
+        assert_eq!(frame.frame.global_id, None);
+        assert_eq!(frame.source, None);
+        assert_eq!(frame.frame.payload, Some(&[0xff][..]));
+        for meta in [
+            &[0, 9, 1, 0, 2, 0, 53, 1, 10, 0, 0, 1, 3][..],
+            &[0, 9, 1, 0, 2, 0, 53, 1, 10, 0, 0, 1, 0, 7],
+            &[
+                0, 9, 1, 0, 2, 0, 53, 1, 10, 0, 0, 1, 1, 0, 1, 1, 10, 0, 0, 2, 9,
+            ],
+        ] {
+            let mut wire = (meta.len() as u16).to_be_bytes().to_vec();
+            wire.extend(meta);
+            assert!(decode_reverse(&wire).is_err(), "{meta:?}");
         }
     }
     #[test]

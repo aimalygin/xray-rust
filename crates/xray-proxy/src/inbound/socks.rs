@@ -124,6 +124,12 @@ impl InboundUser {
         Self(Zeroizing::new(String::from_utf8_lossy(user).into_owned()))
     }
 
+    /// A user Xray-core names by email, such as the one a VLESS reverse
+    /// proxy's outbound gives the connections its server opens.
+    pub fn from_email(email: &str) -> Self {
+        Self(Zeroizing::new(email.to_owned()))
+    }
+
     /// The name, its invalid UTF-8 replaced.
     pub fn as_str(&self) -> &str {
         &self.0

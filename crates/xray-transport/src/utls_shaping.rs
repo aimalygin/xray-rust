@@ -580,7 +580,9 @@ fn extension_payloads(
 /// One draw covers a HelloRetryRequest as well, because the plan this lands in
 /// is built once per connection and reused for the second flight -- the reuse
 /// rule uTLS states for the same fields.
-fn encrypted_client_hello_payload(grease: &UtlsEchGrease) -> Result<Vec<u8>, RustlsError> {
+pub(crate) fn encrypted_client_hello_payload(
+    grease: &UtlsEchGrease,
+) -> Result<Vec<u8>, RustlsError> {
     const OUTER_TYPE: u8 = 0;
     const HPKE_KDF_HKDF_SHA256: u16 = 0x0001;
 
@@ -714,7 +716,7 @@ fn grease_plan(
     Ok(Some(grease))
 }
 
-fn signature_algorithms_payload(algorithms: &[u16]) -> Result<Vec<u8>, RustlsError> {
+pub(crate) fn signature_algorithms_payload(algorithms: &[u16]) -> Result<Vec<u8>, RustlsError> {
     let byte_len = algorithms
         .len()
         .checked_mul(2)
@@ -770,7 +772,7 @@ fn trust_anchors_payload(ids: &[&[u8]]) -> Result<Vec<u8>, RustlsError> {
     Ok(payload)
 }
 
-fn application_settings_payload(protocols: &[&[u8]]) -> Result<Vec<u8>, RustlsError> {
+pub(crate) fn application_settings_payload(protocols: &[&[u8]]) -> Result<Vec<u8>, RustlsError> {
     let protocols_len = protocols.iter().try_fold(0usize, |total, protocol| {
         if protocol.len() > usize::from(u8::MAX) {
             return Err(RustlsError::General(
@@ -793,7 +795,7 @@ fn application_settings_payload(protocols: &[&[u8]]) -> Result<Vec<u8>, RustlsEr
     Ok(payload)
 }
 
-fn push_exact_or_raw_extension(
+pub(crate) fn push_exact_or_raw_extension(
     exact_extensions: &mut Vec<ClientHelloExactExtension>,
     raw_extensions: &mut Vec<ClientHelloRawExtension>,
     extension_type: u16,

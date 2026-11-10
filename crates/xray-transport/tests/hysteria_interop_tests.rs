@@ -290,3 +290,9 @@ mod xdns;
 
 #[path = "hysteria/bbr_profiles.rs"]
 mod bbr_profiles;
+
+#[path = "../../../tests/support/chrome_parrot_wire.rs"]
+mod chrome_parrot_wire;
+
+#[path = "hysteria/chrome_parrot.rs"]
+mod chrome_parrot;

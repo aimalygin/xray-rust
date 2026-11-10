@@ -49,6 +49,8 @@ pub struct TransportConfig {
     pub(crate) datagram_receive_buffer_size: Option<usize>,
     pub(crate) advertised_datagram_frame_size: Option<u16>,
     pub(crate) datagram_send_buffer_size: usize,
+    pub(crate) chrome_parrot: bool,
+    pub(crate) chrome_parrot_seed: Option<[u8; 16]>,
     #[cfg(test)]
     pub(crate) deterministic_packet_numbers: bool,
 
@@ -308,6 +310,40 @@ impl TransportConfig {
         self
     }
 
+    /// Shape a client's handshake as Xray-core's ChromeParrot does
+    ///
+    /// Xray-core v26.10.31 dials Hysteria and HTTP/3 with the apernet quic-go
+    /// fork's `ChromeParrot` on unless `quicParams.disableChromeParrot` is set.
+    /// With this on, a client connection sends what that fork sends below TLS:
+    /// Initial packet numbers from 1, Chrome's packet number lengths, every
+    /// datagram carrying one packet until the handshake is confirmed, Initial
+    /// datagrams padded to the current MTU, chaos-protected Initial packets
+    /// with a large ClientHello's head and tail first, a Handshake ACK apart
+    /// from new CRYPTO data, and transport parameters encoded as Chrome encodes
+    /// them, in a random order, with `min_ack_delay`, `grease_quic_bit` and a
+    /// non-default `active_connection_id_limit` left out and a 65536-byte
+    /// `max_datagram_frame_size` whenever datagrams can be received.
+    ///
+    /// The values Xray pins along with it (windows, stream limits, idle timeout,
+    /// a 1250-byte initial MTU, an 8-byte initial destination connection ID and
+    /// zero-length local connection IDs) belong to the rest of the
+    /// configuration. Servers ignore the setting.
+    pub fn chrome_parrot(&mut self, enabled: bool) -> &mut Self {
+        self.chrome_parrot = enabled;
+        self
+    }
+
+    /// Seeds the ChromeParrot packet layout instead of the system's randomness
+    ///
+    /// The 16 bytes are those quic-go's packet packer reads from `crypto/rand`
+    /// to seed its PCG generator. Only for deterministic tests: every
+    /// connection built from this configuration lays its packets out alike.
+    #[doc(hidden)]
+    pub fn chrome_parrot_seed(&mut self, seed: Option<[u8; 16]>) -> &mut Self {
+        self.chrome_parrot_seed = seed;
+        self
+    }
+
     /// Whether to force every packet number to be used
     ///
     /// By default, packet numbers are occasionally skipped to ensure peers aren't ACKing packets
@@ -394,6 +430,8 @@ impl Default for TransportConfig {
             datagram_receive_buffer_size: Some(STREAM_RWND as usize),
             advertised_datagram_frame_size: None,
             datagram_send_buffer_size: 1024 * 1024,
+            chrome_parrot: false,
+            chrome_parrot_seed: None,
             #[cfg(test)]
             deterministic_packet_numbers: false,
 
@@ -431,6 +469,8 @@ impl fmt::Debug for TransportConfig {
             datagram_receive_buffer_size,
             advertised_datagram_frame_size,
             datagram_send_buffer_size,
+            chrome_parrot,
+            chrome_parrot_seed: _,
             #[cfg(test)]
                 deterministic_packet_numbers: _,
             congestion_controller_factory: _,
@@ -467,6 +507,7 @@ impl fmt::Debug for TransportConfig {
                 advertised_datagram_frame_size,
             )
             .field("datagram_send_buffer_size", datagram_send_buffer_size)
+            .field("chrome_parrot", chrome_parrot)
             // congestion_controller_factory not debug
             .field("enable_segmentation_offload", enable_segmentation_offload);
         if cfg!(feature = "qlog") {

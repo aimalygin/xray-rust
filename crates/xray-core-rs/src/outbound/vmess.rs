@@ -55,6 +55,15 @@ impl VmessOutbound {
     fn mux_pool(&self, target: &Target) -> Result<Option<&super::mux::Pool>, CoreError> {
         self.0.mux.as_ref().map_or(Ok(None), |m| m.pool(target))
     }
+    /// Whether TCP flows ride pooled Mux.Cool connections.
+    pub(super) fn pools_tcp_flows(&self) -> bool {
+        self.0.mux.as_ref().is_some_and(|m| m.pools_tcp())
+    }
+    /// Whether a UDP flow to `target` rides a Mux.Cool connection, or is
+    /// refused by the Mux policy.
+    pub(super) fn udp_uses_mux(&self, target: &Target) -> bool {
+        !matches!(self.mux_pool(target), Ok(None))
+    }
 
     pub fn server(&self) -> &Target {
         &self.0.carrier.server

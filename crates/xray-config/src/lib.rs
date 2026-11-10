@@ -32,13 +32,13 @@ pub use model::{
     RoutingLeastLoadSettings, RoutingOrigin, RoutingPortRange, RoutingRule, RoutingRuleTarget,
     RoutingUsers, Shadowsocks2022OutboundSettings, SniffingDestination, SocketOptions,
     StreamSecurity, StreamSettings, StreamTransport, SudokuMask, TargetAddr, TcpFragmentSettings,
-    TlsSettings, TproxyMode, TrojanOutboundSettings, VlessOutboundSettings, VlessUser,
-    VmessOutboundSettings, WebSocketSettings, WireguardOutboundSettings, WireguardPeerSettings,
-    XhttpDownloadSettings, XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement,
-    XhttpRange, XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings, DEFAULT_DNS_POLICY_KEY,
-    DEFAULT_DNS_SERVER_TIMEOUT_MS, DEFAULT_OBSERVATORY_PROBE_INTERVAL,
-    DEFAULT_OBSERVATORY_PROBE_URL, LOCAL_OS, MAX_DNS_SERVER_TIMEOUT_MS,
-    MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
+    TlsSettings, TproxyMode, TrojanOutboundSettings, VlessOutboundSettings, VlessReverseSettings,
+    VlessUser, VmessOutboundSettings, WebSocketSettings, WireguardOutboundSettings,
+    WireguardPeerSettings, XhttpDownloadSettings, XhttpMode, XhttpPaddingMethod,
+    XhttpPaddingPlacement, XhttpPlacement, XhttpRange, XhttpSettings, XhttpUplinkDataPlacement,
+    XhttpXmuxSettings, DEFAULT_DNS_POLICY_KEY, DEFAULT_DNS_SERVER_TIMEOUT_MS,
+    DEFAULT_OBSERVATORY_PROBE_INTERVAL, DEFAULT_OBSERVATORY_PROBE_URL, LOCAL_OS,
+    MAX_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
 };
 pub use model::{xdrive_default_xmux, XdriveS3Settings, XdriveService, XdriveSettings};
 pub use model::{

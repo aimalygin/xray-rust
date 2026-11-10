@@ -353,9 +353,12 @@ impl TransportDialer {
         self.socket_protector.clone()
     }
 
+    /// The TLS material of an HTTP/3 dial, with Xray's ChromeParrot
+    /// ClientHello when `chrome_parrot` is set.
     pub(crate) fn h3_dial_material(
         &self,
         config: &ConnectorConfig,
+        chrome_parrot: bool,
     ) -> Result<H3DialMaterial, TransportError> {
         if self.tcp_fragment.is_some() {
             return Err(TransportError::UnsupportedConnectorConfig(
@@ -368,7 +371,7 @@ impl TransportDialer {
         match config {
             ConnectorConfig::Tls(tls) => Ok(H3DialMaterial {
                 server_name: tls.server_name.clone(),
-                tls_config: self.tls.http3_client_config_for(tls)?,
+                tls_config: self.tls.h3_client_config_for(tls, b"h3", chrome_parrot)?,
                 socket_protector: self.socket_protector.clone(),
             }),
             ConnectorConfig::Tcp => Err(TransportError::UnsupportedHttp3Security("TCP")),

@@ -702,6 +702,17 @@ impl PacketNumber {
         }
     }
 
+    /// A packet number encoded in `len` bytes, which must suffice for the peer
+    /// to recover it
+    pub(crate) fn with_len(n: u64, len: usize) -> Self {
+        match len {
+            1 => Self::U8(n as u8),
+            2 => Self::U16(n as u16),
+            3 => Self::U24(n as u32),
+            _ => Self::U32(n as u32),
+        }
+    }
+
     pub(crate) fn len(self) -> usize {
         use PacketNumber::*;
         match self {
