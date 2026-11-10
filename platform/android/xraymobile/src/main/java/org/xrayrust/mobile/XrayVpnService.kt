@@ -765,12 +765,30 @@ open class XrayVpnService : VpnService() {
                     { writeTunPackets(session) },
                     "xray-tun-out",
                 )
+            } else {
+                // The core pumps the descriptor itself and has no way to call back when it
+                // gives up on it, so this session watches for that as a pump thread would fail.
+                session.fdWatchThread = XrayTunFdLoopWatch(
+                    loopExits = {
+                        runCatching { session.core.stats() }.getOrNull()
+                            ?.let { it.tunFdReadLoopExits + it.tunFdWriteLoopExits }
+                    },
+                    onStopped = {
+                        if (session.active.get()) {
+                            handlePacketPumpFailure(
+                                session,
+                                IOException("the core stopped pumping the Android VPN tunnel"),
+                            )
+                        }
+                    },
+                ).thread
             }
 
             val published = try {
                 lifecycle.publish(attempt, session) {
                     session.inboundThread?.start()
                     session.outboundThread?.start()
+                    session.fdWatchThread?.start()
                 }
             } catch (error: Throwable) {
                 runCatching { session.shutdown() }
@@ -1080,9 +1098,14 @@ open class XrayVpnService : VpnService() {
     }
 
     private fun handlePacketPumpFailure(session: TunnelSession, error: Throwable) {
+        // A shutdown step that throws has still taken the session and left it stopped, so the
+        // host hears of the failure all the same, with what the shutdown threw attached.
         val stopped = runCatching {
             teardownFailedXraySession(lifecycle, session) { it.shutdown() }
-        }.getOrDefault(false)
+        }.getOrElse { failure ->
+            error.addSuppressed(failure)
+            true
+        }
         if (stopped) {
             fatalTunErrors.incrementAndGet()
             runCatching { onXrayTunnelFatalError(error) }
@@ -1099,6 +1122,7 @@ open class XrayVpnService : VpnService() {
         val active = AtomicBoolean(true)
         var inboundThread: Thread? = null
         var outboundThread: Thread? = null
+        var fdWatchThread: Thread? = null
 
         fun shutdown() {
             if (!active.compareAndSet(true, false)) {
@@ -1111,6 +1135,7 @@ open class XrayVpnService : VpnService() {
             networkChange?.let { failures.capture { it.close() } }
             inboundThread?.interrupt()
             outboundThread?.interrupt()
+            fdWatchThread?.interrupt()
 
             if (backend == XrayTunBackend.PacketPump) {
                 // Closing first unblocks FileInputStream.read. The Rust core does
@@ -1123,6 +1148,7 @@ open class XrayVpnService : VpnService() {
             } else {
                 // Rust owns active tasks over a borrowed descriptor. Stop and free
                 // them before closing the ParcelFileDescriptor.
+                joinXrayPumpThreadUninterruptibly(fdWatchThread)
                 failures.capture { core.stop() }
                 failures.capture { core.close() }
                 failures.capture { tunnel.close() }

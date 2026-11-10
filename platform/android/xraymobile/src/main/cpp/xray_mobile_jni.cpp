@@ -1561,9 +1561,11 @@ Java_org_xrayrust_mobile_XrayCore_nativeStats(JNIEnv *env, jobject, jlong handle
       static_cast<jlong>(stats.tcp_remote_written_bytes),
       static_cast<jlong>(stats.tcp_remote_read_bytes),
       static_cast<jlong>(stats.udp_oversize_datagrams),
+      static_cast<jlong>(stats.tun_fd_read_loop_exits),
+      static_cast<jlong>(stats.tun_fd_write_loop_exits),
   };
   constexpr jsize value_count = sizeof(values) / sizeof(values[0]);
-  static_assert(value_count == 22, "keep NATIVE_TUN_STATS_VALUE_COUNT in XrayCore.kt in sync");
+  static_assert(value_count == 24, "keep NATIVE_TUN_STATS_VALUE_COUNT in XrayCore.kt in sync");
   jlongArray array = env->NewLongArray(value_count);
   if (array == nullptr) {
     return nullptr;

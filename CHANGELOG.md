@@ -125,6 +125,23 @@ long-term supported release series.
   reaches after 92 idle seconds. The wrapped, negative count kept the
   ack-aggregation epoch open on the first ACK after the idle and took the
   cap off the congestion window. Xray-core's product wraps.
+- A TUN session over a file descriptor no longer dies without the host
+  hearing of it:
+  - A packet the device refuses stops holding the write queue. A raw-IP
+    packet that is neither IPv4 nor IPv6, or any write that fails with
+    `EINVAL` or `EMSGSIZE`, was retried with backoff for ever while every
+    packet behind it waited; it is now dropped and counted in
+    `outbound_dropped_packets`.
+  - Android: `XrayVpnService` on the default file-descriptor backend calls
+    `onXrayTunnelFatalError` when the core's read or write loop gives up on
+    the descriptor. Only the packet-pump backend reported a dead tunnel
+    until now, so the app kept showing a tunnel that moved no packets.
+    `XrayTunStats` gains `tunFdReadLoopExits` and `tunFdWriteLoopExits`.
+    A shutdown step that throws during that teardown no longer swallows the
+    callback.
+  - A TUN TCP flow whose client sends a few bytes and closes while the
+    sniffer still waits for more keeps those bytes for the destination. The
+    flow was closed and the bytes dropped without an error.
 - Hysteria, XHTTP over HTTP/3 and XDRIVE's storages over HTTP/3 shape their
   QUIC handshake like Chrome's, as Xray-core v26.10.31's default ChromeParrot
   does, unless
