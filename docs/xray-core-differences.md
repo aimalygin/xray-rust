@@ -722,14 +722,11 @@ operations, Drive's files, tokens and queries, sessions in rings of slots,
 HTTP/3 storages, auth, retries and redirects. The server address is never
 looked up, as in Xray-core. Deliberate differences:
 
-- A storage over HTTP/3 runs on Quinn's own QUIC handshake for now, where
-  Hysteria and XHTTP H3 here parrot Chrome: Xray-core shapes it as Chrome
-  (ChromeParrot, zero-length connection IDs) unless `disableChromeParrot` is
-  set, and the configuration warns unless it is true. Its request headers come in the vendored `h3`'s order (`:method`,
-  `:scheme`, `:authority`, `:path`), where quic-go writes `:authority`,
-  `:method`, `:path`, `:scheme`, as for XHTTP over HTTP/3. A storage over
-  HTTP/3 cannot go through another outbound; Xray-core dials its UDP with
-  the stream's socket options.
+- A storage over HTTP/3 writes its request headers in the vendored `h3`'s
+  order (`:method`, `:scheme`, `:authority`, `:path`), where quic-go writes
+  `:authority`, `:method`, `:path`, `:scheme`, as for XHTTP over HTTP/3. A
+  storage over HTTP/3 cannot go through another outbound; Xray-core dials
+  its UDP with the stream's socket options.
 - A storage is shared by the sessions of its outbound only. Xray-core shares
   one process-wide by the service, folder, S3 addressing, secrets, security
   type and fronting address, a key without the template, TLS settings or
@@ -1059,11 +1056,10 @@ of `bbrProfile` and `congestion`.
 
 ## ChromeParrot
 
-Hysteria and XHTTP H3 shape their QUIC handshake like Chrome's, as Xray-core
-v26.10.31's dialers do through the apernet quic-go fork, unless
-`quicParams.disableChromeParrot` is true; MASQUE never does, as there.
-XDRIVE's storages over HTTP/3 don't yet, where Xray-core's do (see XDRIVE
-above).
+Hysteria, XHTTP H3 and XDRIVE's storages over HTTP/3 shape their QUIC
+handshake like Chrome's, as Xray-core v26.10.31's dialers do through the
+apernet quic-go fork, unless `quicParams.disableChromeParrot` is true;
+MASQUE never does, as there.
 `disableChromeParrot` is a Go `bool`: `null` is false and any other type
 fails the configuration on every transport. The vendored `quinn-proto` ports
 the fork's packet shaping and transport parameter encoding, and a rustls
@@ -1082,9 +1078,11 @@ under `testing/cryptotest` and records its first four Initial datagrams and
 every `crypto/rand` read; given the same reads the client produces the same
 transport parameters and encrypted datagrams byte for byte, and the same
 ClientHello but for the key material. `scripts/check-chrome-parrot-interop.sh`
-regenerates the fixture each run, rechecks 28 `xray run -test` verdicts, and
+regenerates the fixture each run, rechecks 35 `xray run -test` verdicts, and
 runs Hysteria (also under Salamander) and XHTTP H3 live against Xray-core's
-servers with ChromeParrot on and off, checking the first flight on the wire.
+servers with ChromeParrot on and off, checking the first flight on the wire;
+`scripts/check-xdrive-interop.sh` checks every QUIC connection of a storage
+over HTTP/3 the same way, Xray-core's own XDRIVE client first.
 
 ## DNS `UseSystem` route probe
 

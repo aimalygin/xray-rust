@@ -10,8 +10,9 @@ long-term supported release series.
 
 ## Unreleased
 
-- Hysteria and XHTTP over HTTP/3 shape their QUIC handshake like Chrome's,
-  as Xray-core v26.10.31's default ChromeParrot does, unless
+- Hysteria, XHTTP over HTTP/3 and XDRIVE's storages over HTTP/3 shape their
+  QUIC handshake like Chrome's, as Xray-core v26.10.31's default ChromeParrot
+  does, unless
   `finalmask.quicParams.disableChromeParrot` is true. Until now the flag had
   to be true: without it parsing warned, `false` failed, and profile imports
   set it. It is now read as Xray reads it, a Go `bool` with `null` for false,
@@ -33,9 +34,7 @@ long-term supported release series.
     advertises 65,536-byte DATAGRAM frames, as Xray's client then does.
   - The congestion controller that runs before Xray's switch starts at
     quic-go's 32-packet window instead of 12,000 bytes.
-  - MASQUE never parrots Chrome, as in Xray-core. XDRIVE's storages over
-    HTTP/3 keep Quinn's own handshake for now; without
-    `disableChromeParrot: true` the configuration still warns there.
+  - MASQUE never parrots Chrome, as in Xray-core.
   - `H3QuicConfig::chrome_parrot` turns it on for any HTTP/3 client, with the
     TLS configuration `TlsConnector::h3_client_config_for` builds for it.
 - A VLESS outbound with `reverse` is the bridge of Xray-core v26.10.31's
@@ -144,8 +143,8 @@ long-term supported release series.
     reader took what they held.
   - Over `alpn` exactly `["h3"]` a storage is reached over HTTP/3, its QUIC
     connections set up as XHTTP's are, with the stream's `quicParams` and
-    UDP masks, Salamander among them; Xray-core's ChromeParrot is not there
-    yet.
+    UDP masks, Salamander among them, and ChromeParrot unless
+    `disableChromeParrot` is true, as in Xray-core.
   - Deliberate differences: a writer waits once twice `concurrency`
     segments are not yet stored, where Xray-core keeps cutting; no
     `xdriveSettings` and an empty `local` folder fail when the core starts,

@@ -74,8 +74,8 @@ Blackhole responses arrived in 0.10.0, and so did the mKCP transport with its
 `mkcp-legacy` masks, the `header-custom`, `sudoku`, `xmc`, `xdns`, `realm`
 and `xicmp` masks, the MASQUE client with WARP, the XDRIVE client, the bridge
 side of the VLESS reverse proxy (an outbound's `reverse`), and ChromeParrot,
-the Chrome-shaped QUIC handshake Xray-core's Hysteria and XHTTP H3 dialers
-send unless `quicParams.disableChromeParrot` (see
+the Chrome-shaped QUIC handshake Xray-core's Hysteria, XHTTP H3 and XDRIVE
+HTTP/3 dialers send unless `quicParams.disableChromeParrot` (see
 [ChromeParrot](config-compatibility.md#chromeparrot)); before it,
 `disableChromeParrot: true` was required. The reverse proxy's portal side
 stays out of scope; the legacy root `reverse`, which upstream removed in
