@@ -351,6 +351,8 @@ func clientHelloID(fingerprint string) (utls.ClientHelloID, error) {
 		return utls.HelloChrome_131, nil
 	case "hellochrome_133":
 		return utls.HelloChrome_133, nil
+	case "hellochrome_155":
+		return utls.HelloChrome_155, nil
 	case "helloios_11_1":
 		return utls.HelloIOS_11_1, nil
 	case "helloios_12_1":

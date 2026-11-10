@@ -402,7 +402,10 @@ fn rustls_reality_provider_matches_utls_xray_fingerprints_in_order() {
             continue;
         }
 
-        let mut expected = utls_client_hello_shape_from_oracle(fingerprint);
+        let mut expected = without_drawn_order(
+            fingerprint,
+            utls_client_hello_shape_from_oracle(fingerprint),
+        );
         apply_provider_cipher_filter(&mut expected);
         let session = provider
             .create_session(RealityClientHelloRequest {
@@ -421,6 +424,7 @@ fn rustls_reality_provider_matches_utls_xray_fingerprints_in_order() {
             "example.com",
             &prepared.raw_client_hello,
         )
+        .map(|shape| without_drawn_order(fingerprint, shape))
         .unwrap_or_else(|error| panic!("{fingerprint}: rustls ClientHello shape: {error}"));
 
         assert_eq!(actual, expected, "{fingerprint}");
@@ -1238,7 +1242,8 @@ fn collect_fingerprint_parity_results() -> Vec<FingerprintParityResult> {
     xray_utls::XRAY_UTLS_FINGERPRINTS
         .iter()
         .map(|&fingerprint| {
-            let expected = try_utls_client_hello_shape_from_oracle(fingerprint).map(|mut shape| {
+            let expected = try_utls_client_hello_shape_from_oracle(fingerprint).map(|shape| {
+                let mut shape = without_drawn_order(fingerprint, shape);
                 apply_provider_cipher_filter(&mut shape);
                 shape
             });
@@ -1291,7 +1296,24 @@ fn rustls_client_hello_shape(
         "example.com",
         &prepared.raw_client_hello,
     )
+    .map(|shape| without_drawn_order(fingerprint, shape))
     .map_err(|error| format!("rustls ClientHello shape: {error}"))
+}
+
+/// `shape` without the extension order uTLS draws per connection when
+/// `fingerprint`'s spec shuffles: its extensions in order of type, the two
+/// GREASE extensions, which never move, keeping theirs. A shape already writes
+/// every GREASE value as `GREASE`. The raw comparisons take the same draws out
+/// in `assert_masked_client_hello_eq`; where each extension may go is held to
+/// uTLS's rule in `utls_shaping`'s own tests.
+fn without_drawn_order(fingerprint: &str, mut shape: ClientHelloShape) -> ClientHelloShape {
+    if client_hello_draws::shuffles(fingerprint) {
+        shape.extension_order.sort();
+        shape
+            .extensions
+            .sort_by(|left, right| left.r#type.cmp(&right.r#type));
+    }
+    shape
 }
 
 fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> String {
@@ -1336,6 +1358,11 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     writeln!(
         report,
         "Byte-level agreement is a separate guard, and the one to reach for when a body's contents matter: `rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerprints` compares whole ClientHellos against committed oracle output, masking only what uTLS redraws per connection, and runs in the ordinary `cargo test --workspace` CI job.\n"
+    )
+    .unwrap();
+    writeln!(
+        report,
+        "What uTLS draws per connection does not show here either. The shape JSON writes every GREASE value as `GREASE`, and for the Chrome profiles whose uTLS spec shuffles its extensions (`hellochrome_106_shuffle` through `hellochrome_155`, and so `chrome`) both sides list their extensions in order of type, since the order is drawn anew for every hello. Where each extension may go is held to uTLS's rule by `utls_shaping`'s own tests.\n"
     )
     .unwrap();
     writeln!(report, "## Reproduce\n").unwrap();
