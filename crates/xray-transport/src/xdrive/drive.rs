@@ -36,7 +36,7 @@ const BOUNDARY: &str = "xdrive-boundary";
 const PAGE_SIZE: usize = 1000;
 /// `driveMaxInflight`: requests in flight a session, and HTTP/1.1
 /// connections a host.
-pub(crate) const MAX_INFLIGHT: usize = 32;
+pub(crate) const MAX_INFLIGHT: usize = 64;
 /// The largest object that goes in a description instead of a body.
 const INLINE_LIMIT: usize = 12000;
 /// Xray-core reads an answer whole; here at most this much.

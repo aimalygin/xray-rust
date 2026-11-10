@@ -897,7 +897,8 @@ impl FreedomOutbound {
     }
 
     /// Xray-core's `defaultBlockAllRule`, which follows freedom's own final
-    /// rules for connections from a VLESS reverse proxy.
+    /// rules for connections from a VLESS reverse proxy and, since v26.11.9,
+    /// logs at warning.
     fn reverse_rule() -> FreedomFinalRule {
         FreedomFinalRule {
             action: xray_config::FreedomRuleAction::Block,
@@ -905,6 +906,7 @@ impl FreedomOutbound {
             port_ranges: None,
             ip_matchers: None,
             block_delay: None,
+            log_level: xray_config::FreedomRuleLogLevel::Warning,
         }
     }
 

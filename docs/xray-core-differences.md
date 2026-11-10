@@ -15,9 +15,10 @@ checks; it does not expand the supported configuration surface.
 
 ## Reference revision
 
-The active oracle pin is `a4a3dff5b20c2faae567b742c172c7b95e75c083`
-(v26.10.31), built with Go 1.27.3; see the
-[v26.10.31 migration record](xray-core-v26.10.31-migration.md). The
+The active oracle pin is `676eaf66f8f05d4d558ee7a74b4736623d3feeb9`
+(v26.11.9), built with Go 1.27.3; see the
+[v26.11.9 migration record](xray-core-v26.11.9-migration.md) and, before it,
+the [v26.10.31 one](xray-core-v26.10.31-migration.md). The
 [v26.10.21 migration](xray-core-v26.10.21-migration.md) introduced the REALITY
 and SS2022 changes described next. The dated main evidence below remains
 historical.
@@ -259,7 +260,7 @@ Development ABI 1.14 additionally imports `http://` and `https://` proxy links
 through the shared Rust parser and Swift/Kotlin APIs. See the
 [URI subset, TCP DNS and capability guard](http-profile-import.md). This retains
 the HTTP/1.1 CONNECT runtime limits below. Imported profiles are exercised by
-`check-http-interop.sh` against the currently pinned Xray-core v26.10.31; HTTPS
+`check-http-interop.sh` against the currently pinned Xray-core v26.11.9; HTTPS
 trust/name failures are covered by the local TLS fixture.
 
 The [#79 proposal](https://github.com/aimalygin/xray-rust/issues/79#issuecomment-6400188060)
@@ -1300,7 +1301,8 @@ stop reading after the status line.
 
 Xray's XHTTP client dials HTTP/2 with a bare `golang.org/x/net/http2`
 `Transport` (`transport/internet/splithttp/dialer.go`, only `IdleConnTimeout`
-and `ReadIdleTimeout` set). With x/net v0.61.0, the version v26.10.31 pins,
+and `ReadIdleTimeout` set). With x/net v0.62.0, the version v26.11.9 pins
+(its `http2` package is the one v0.61.0 shipped),
 its first SETTINGS frame is ENABLE_PUSH=0, INITIAL_WINDOW_SIZE=4 MiB,
 MAX_FRAME_SIZE=1 MiB, MAX_HEADER_LIST_SIZE=10 MiB, in that order
 (`http2/transport.go` `newClientConn`). xray-rust's XHTTP HTTP/2 client sends

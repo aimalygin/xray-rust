@@ -503,7 +503,7 @@
       "template": "{\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"}}",
       "error": "",
       "flatten": false,
-      "concurrency": 32,
+      "concurrency": 64,
       "authType": "",
       "authHeader": [],
       "username": "",
@@ -611,7 +611,7 @@
       "template": "{\"auth\":{\"type\":\"oauth2\",\"tokenUrl\":\"https://t/token\",\"form\":{\"grant_type\":\"refresh_token\",\"refresh_token\":\"{secret0}\",\"x\":null},\"header\":{\"Authorization\":\"Bearer {token}\"},\"tokenPath\":\"a.b\",\"expiryPath\":\"exp\"},\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"}}",
       "error": "",
       "flatten": false,
-      "concurrency": 32,
+      "concurrency": 64,
       "authType": "oauth2",
       "authHeader": [
         [
@@ -681,7 +681,7 @@
       "template": "{\"auth\":{\"type\":\"basic\",\"username\":\"{secret0}\",\"password\":\"{secret1}\"},\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"}}",
       "error": "",
       "flatten": false,
-      "concurrency": 32,
+      "concurrency": 64,
       "authType": "basic",
       "authHeader": [],
       "username": "{secret0}",
@@ -733,7 +733,7 @@
       "template": "{\"PUT\":{\"METHOD\":\"PUT\",\"Url\":\"https://h/upper\"},\"Get\":{\"URL\":\"https://h/g\"},\"DELETE\":{\"url\":\"https://h/d\"},\"List\":{\"URL\":\"https://h/l\",\"NamesRegex\":\"(x)\"},\"FLATTEN\":true}",
       "error": "",
       "flatten": true,
-      "concurrency": 32,
+      "concurrency": 64,
       "authType": "",
       "authHeader": [],
       "username": "",
@@ -785,7 +785,7 @@
       "template": "{\"put\":{\"url\":\"https://h/p\"},\"get\":{\"url\":\"https://h/g\",\"hrefPath\":\"href\",\"hrefMethod\":\"PUT\"},\"delete\":{\"url\":\"https://h/d\"},\"list\":{\"url\":\"https://h/l\",\"namesRegex\":\"(x)\"},\"unknown\":{\"a\":1},\"concurrency\":-3}",
       "error": "",
       "flatten": false,
-      "concurrency": 32,
+      "concurrency": 64,
       "authType": "",
       "authHeader": [],
       "username": "",
@@ -1097,7 +1097,7 @@
       "template": "{\"put\":{\"method\":\"PUT\",\"url\":\"https://h/{folder}/{name}\"},\"get\":{\"url\":\"https://h/{folder}/{name}\"},\"delete\":{\"method\":\"DELETE\",\"url\":\"https://h/{folder}/{name}\"},\"list\":{\"url\":\"https://h/{folder}/\",\"namesRegex\":\"\u003cn\u003e([^\u003c]+)\u003c/n\u003e\"},\"auth\":null,\"retry\":null}",
       "error": "",
       "flatten": false,
-      "concurrency": 32,
+      "concurrency": 64,
       "authType": "",
       "authHeader": [],
       "username": "",
@@ -1513,7 +1513,7 @@
       "template": "{\"put\":{\"url\":\"p\",\"url\":\"p2\"},\"get\":{\"url\":\"g\"},\"delete\":{\"url\":\"d\"},\"list\":{\"url\":\"l\",\"namesRegex\":\"(x)\"},\"put\":{\"url\":\"p3\"}}",
       "error": "",
       "flatten": false,
-      "concurrency": 32,
+      "concurrency": 64,
       "authType": "",
       "authHeader": [],
       "username": "",
@@ -5752,24 +5752,9 @@
     },
     {
       "payload": "{\"u\":{\"s\":[\"a\",null],\"w\":\"w\"},\"d\":{\"s\":[\"c\"],\"w\":\"x\"}}",
-      "ok": true,
-      "up": [
-        [
-          "a",
-          ""
-        ],
-        [
-          "w"
-        ]
-      ],
-      "down": [
-        [
-          "c"
-        ],
-        [
-          "x"
-        ]
-      ],
+      "ok": false,
+      "up": null,
+      "down": null,
       "marshal": ""
     },
     {

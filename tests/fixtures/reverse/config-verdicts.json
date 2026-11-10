@@ -1,5 +1,5 @@
 {
- "comment": "VLESS reverse proxy configurations with Xray-core v26.10.31's `xray run -test` verdicts. `xray` is \"ok\" or a substring of its error; `ours` overrides the verdict xray-rust gives, for the reason in `why`; `core` is the error a configuration xray-rust takes still meets when the core starts, for the reason in `why`. scripts/check-reverse-interop.sh rechecks every Xray verdict.",
+ "comment": "VLESS reverse proxy configurations with Xray-core v26.11.9's `xray run -test` verdicts. `xray` is \"ok\" or a substring of its error; `ours` overrides the verdict xray-rust gives, for the reason in `why`; `core` is the error a configuration xray-rust takes still meets when the core starts, for the reason in `why`. scripts/check-reverse-interop.sh rechecks every Xray verdict.",
  "cases": [
   {
    "name": "bridge",

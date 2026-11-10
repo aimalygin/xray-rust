@@ -1,4 +1,4 @@
-// Records how Xray-core v26.10.31's XDRIVE transport names and moves a
+// Records how Xray-core v26.11.9's XDRIVE transport names and moves a
 // session's objects: paramsFromConfig, objectName, parseEntry, announceName,
 // the local storage's resolve, and step-by-step replays of its segment
 // writer and reader. The writer and reader run without their goroutines'

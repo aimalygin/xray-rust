@@ -87,7 +87,10 @@ async fn reference(alpn: &str) -> Reference {
                 "tlsSettings": {"alpn": [alpn], "certificates": [{
                     "certificateFile": directory.join("cert.pem"),
                     "keyFile": directory.join("key.pem")}]}}}],
-        "outbounds": [{"protocol": "freedom", "settings": {"redirect": "127.0.0.1:0"}}]
+        // Since v26.11.9 freedom blocks private addresses for the MASQUE
+        // inbound unless a rule allows them.
+        "outbounds": [{"protocol": "freedom",
+            "settings": {"redirect": "127.0.0.1:0", "finalRules": [{"action": "allow"}]}}]
     });
     std::fs::write(directory.join("config.json"), config.to_string()).unwrap();
     let log = std::fs::File::create(directory.join("xray.log")).unwrap();

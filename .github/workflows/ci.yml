@@ -353,9 +353,9 @@ jobs:
   go-oracles:
     if: github.event_name != 'push' || github.ref_type != 'tag' || contains(github.ref_name, '-rc.')
     runs-on: ubuntu-24.04
-    # The pinned-interop steps run about 28 minutes (25 on main d8cee9f1, before
-    # the reverse proxy's); leave room for a slow runner.
-    timeout-minutes: 40
+    # The pinned-interop steps run about 31 minutes (29 on main dbf1360f, 23-27
+    # on the v26.11.9 stack before it); leave room for a slow runner.
+    timeout-minutes: 45
     # Every step builds its test binaries into one target directory, once per
     # run. Incremental caches and full debug info only cost disk here, and the
     # runner ran out of it after the xdns step; line tables keep panic locations.
@@ -368,7 +368,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # The pinned Xray-core v26.10.31 source requires Go 1.27.
+      # The pinned Xray-core v26.11.9 source requires Go 1.27.
       # Use one exact toolchain for all oracle and interoperability checks.
       #
       # Every locally committed module's `go.sum` is listed: the cache key uses these
@@ -391,7 +391,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: XTLS/Xray-core
-          ref: a4a3dff5b20c2faae567b742c172c7b95e75c083
+          ref: 676eaf66f8f05d4d558ee7a74b4736623d3feeb9
           path: Xray-core
           persist-credentials: false
 
@@ -486,6 +486,9 @@ jobs:
       - name: Verify the XDRIVE client against pinned Xray-core
         run: bash scripts/check-xdrive-interop.sh
 
+      - name: Recheck the freedom finalRules and Mux config verdicts against pinned Xray-core
+        run: bash scripts/check-xray-verdicts.sh
+
       - name: Verify ChromeParrot against pinned Xray-core's dialer and servers
         run: bash scripts/check-chrome-parrot-interop.sh
 
@@ -511,7 +514,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: XTLS/Xray-core
-          ref: a4a3dff5b20c2faae567b742c172c7b95e75c083
+          ref: 676eaf66f8f05d4d558ee7a74b4736623d3feeb9
           path: Xray-core
           persist-credentials: false
 
@@ -546,7 +549,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: XTLS/Xray-core
-          ref: a4a3dff5b20c2faae567b742c172c7b95e75c083
+          ref: 676eaf66f8f05d4d558ee7a74b4736623d3feeb9
           path: Xray-core
           persist-credentials: false
 
@@ -694,7 +697,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: XTLS/Xray-core
-          ref: a4a3dff5b20c2faae567b742c172c7b95e75c083
+          ref: 676eaf66f8f05d4d558ee7a74b4736623d3feeb9
           path: Xray-core
           persist-credentials: false
 

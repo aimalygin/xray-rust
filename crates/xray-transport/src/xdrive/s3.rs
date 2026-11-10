@@ -29,7 +29,7 @@ pub(crate) const MAX_BACKOFF: Duration = Duration::from_secs(8);
 /// Xray-core's `driveInitialBackoff`.
 pub(crate) const INITIAL_BACKOFF: Duration = Duration::from_millis(200);
 /// Xray-core's `driveMaxInflight`: requests one session keeps in flight.
-pub(crate) const MAX_INFLIGHT: usize = 32;
+pub(crate) const MAX_INFLIGHT: usize = super::drive::MAX_INFLIGHT;
 /// Xray-core's `maxSegmentBytes`: the largest successful answer read.
 const MAX_ANSWER: usize = 16 * 1024 * 1024;
 /// The largest error answer read.

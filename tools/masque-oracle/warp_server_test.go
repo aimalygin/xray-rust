@@ -1,5 +1,5 @@
 // A stand-in for Cloudflare's WARP endpoint, built from Xray-core
-// v26.10.31's own warp_test.go servers, for the client's live tests. It
+// v26.11.9's own warp_test.go servers, for the client's live tests. It
 // never contacts Cloudflare.
 //
 // It runs inside the masque package, added without touching the checkout,

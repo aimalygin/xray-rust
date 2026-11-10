@@ -2101,7 +2101,7 @@ fn accepts_enabled_vless_mux_with_pinned_defaults() {
 
     let config = parse_xray_json(&raw).expect("config should parse").config;
     let mux = config.outbounds[0].mux.as_ref().expect("enabled Mux");
-    assert_eq!(mux.concurrency, 8);
+    assert_eq!(mux.concurrency, 128);
 }
 
 #[test]

@@ -1,0 +1,438 @@
+{
+ "comment": "Freedom finalRules cases with what `xray run -test` of Xray-core v26.11.9 says of each: \"ok\" or a substring of its error. \"ours\" records a deliberate difference of the parser, for the reason in \"why\". Rechecked by scripts/check-config-verdicts.py in scripts/check-xray-verdicts.sh.",
+ "cases": [
+  {
+   "name": "block-delay",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "delay": 5
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "block-delay-range",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "delay": "10-5"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "block-delay-empty-string",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "delay": ""
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "block-deprecated-blockDelay",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "blockDelay": "1-2"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "block-delay-and-blockDelay",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "delay": 7,
+       "blockDelay": 1
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "block-null-delays",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "delay": null,
+       "blockDelay": null,
+       "logLevel": null
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "block-delay-not-a-range",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "delay": "x"
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: Invalid integer range, expected either string of form \"1-2\" or plain integer."
+  },
+  {
+   "name": "block-delay-float",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "delay": 1.5
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: Invalid integer range, expected either string of form \"1-2\" or plain integer."
+  },
+  {
+   "name": "block-loglevel-none",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "logLevel": "none"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "block-loglevel-debug",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "logLevel": "debug"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "block-loglevel-info-mixed-case",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "logLevel": "Info"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "block-loglevel-warning-upper",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "logLevel": "WARNING"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "block-loglevel-error",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "logLevel": "error"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "block-loglevel-empty",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "logLevel": ""
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "block-loglevel-dotted-capital-i",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "logLevel": "İNFO"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "block-loglevel-warn",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "logLevel": "warn"
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: unknown finalRules.logLevel: warn"
+  },
+  {
+   "name": "block-loglevel-unknown",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "logLevel": "loud"
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: unknown finalRules.logLevel: loud"
+  },
+  {
+   "name": "block-loglevel-number",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "logLevel": 1
+      }
+     ]
+    }
+   },
+   "xray": "json: cannot unmarshal number into Go struct field FreedomConfig.finalRules.0.logLevel of type string"
+  },
+  {
+   "name": "allow-plain",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "allow"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "allow-empty-loglevel",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "allow",
+       "logLevel": ""
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "allow-delay",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "allow",
+       "delay": 5
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: delay and logLevel are only supported for block finalRules"
+  },
+  {
+   "name": "allow-blockDelay",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "allow",
+       "blockDelay": 5
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: delay and logLevel are only supported for block finalRules"
+  },
+  {
+   "name": "allow-loglevel",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "allow",
+       "logLevel": "info"
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: delay and logLevel are only supported for block finalRules"
+  },
+  {
+   "name": "allow-unknown-loglevel",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "allow",
+       "logLevel": "loud"
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: delay and logLevel are only supported for block finalRules"
+  },
+  {
+   "name": "allow-then-block-with-both",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "allow",
+       "network": "udp"
+      },
+      {
+       "action": "block",
+       "delay": "0-1",
+       "logLevel": "warning"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "block-delay-negative",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "delay": "-5-10"
+      }
+     ]
+    }
+   },
+   "xray": "ok",
+   "ours": "error",
+   "why": "Deliberate: Xray-core takes a negative or wrapped delay, which later panics or never holds the connection; xray-rust refuses it, as it refused blockDelay's."
+  },
+  {
+   "name": "block-delay-wraps-int32",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "delay": "2147483648"
+      }
+     ]
+    }
+   },
+   "xray": "ok",
+   "ours": "error",
+   "why": "Deliberate: Xray-core takes a negative or wrapped delay, which later panics or never holds the connection; xray-rust refuses it, as it refused blockDelay's."
+  },
+  {
+   "name": "block-blockDelay-negative",
+   "outbound": {
+    "protocol": "freedom",
+    "settings": {
+     "finalRules": [
+      {
+       "action": "block",
+       "blockDelay": "-1-3"
+      }
+     ]
+    }
+   },
+   "xray": "ok",
+   "ours": "error",
+   "why": "Deliberate: Xray-core takes a negative or wrapped delay, which later panics or never holds the connection; xray-rust refuses it, as it refused blockDelay's."
+  }
+ ]
+}
