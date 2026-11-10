@@ -18,7 +18,8 @@ impl Parser<'_> {
         })?;
         let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp[{i}]");
         // It opens its own sockets, so Xray-core dials it only outermost,
-        // and fails every dial with "incorrect index" elsewhere.
+        // and fails every dial with "incorrect index" elsewhere, a filter
+        // after it included.
         if i + 1 != masks.len() {
             self.error(
                 &path,

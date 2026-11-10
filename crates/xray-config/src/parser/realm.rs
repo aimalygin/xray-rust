@@ -22,8 +22,8 @@ impl Parser<'_> {
         // masks listed after realm. Every one of them but noise mangles
         // them, and Xray-core fails each dial; noise there would announce
         // the STUN and punch packets, which the carrier's masks never see
-        // here.
-        if i + 1 != masks.len() {
+        // here. A filter there passes them on untouched.
+        if masks[i + 1..].iter().any(|mask| !filter::is_filter(mask)) {
             self.error(
                 &path,
                 "realm must be the last UDP mask: the masks listed after it would wrap its STUN and punch packets; list noise before realm",

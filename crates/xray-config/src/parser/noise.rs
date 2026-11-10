@@ -18,7 +18,8 @@ impl Parser<'_> {
         let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp[{i}].settings");
         // Xray applies UDP masks to any UDP dial; here the QUIC carriers hop.
         // Xray reverses the list and dials only an outermost udphop, so any
-        // mask after it fails every dial with "incorrect index".
+        // mask after it fails every dial with "incorrect index". A filter
+        // there fails them too: the check counts places, not what wraps.
         if !is_quic || i + 1 != masks.len() {
             self.error(
                 &path,
@@ -116,13 +117,14 @@ impl Parser<'_> {
         let mut xdns = None;
         let mut realm = None;
         let mut xicmp = None;
-        // mKCP takes any number of `mkcp-legacy` masks besides these.
-        let legacy = |mask: &Value| {
-            mask.get("type")
-                .and_then(Value::as_str)
-                .is_some_and(|kind| go_lowercase(kind) == "mkcp-legacy")
+        // mKCP takes any number of `mkcp-legacy` masks besides these, and
+        // every carrier any number of filters, which wrap nothing on a
+        // client.
+        let counted = |mask: &Value| {
+            let kind = mask.get("type").and_then(Value::as_str).map(go_lowercase);
+            !matches!(kind.as_deref(), Some("mkcp-legacy" | "filter"))
         };
-        if masks.iter().filter(|mask| !legacy(mask)).count() > 8 {
+        if masks.iter().filter(|mask| counted(mask)).count() > 8 {
             self.error(
                 &path,
                 "at most one udphop, one noise, one Salamander, one header-custom, one sudoku, one xdns, one realm and one xicmp mask are supported",
@@ -138,6 +140,9 @@ impl Parser<'_> {
                 .map(go_lowercase)
                 .as_deref()
             {
+                Some("filter") => {
+                    self.validate_filter_mask(mask.get("settings"), &format!("{p}.settings"));
+                }
                 Some("noise") if noise.is_none() => {
                     noise = Some(i);
                 }

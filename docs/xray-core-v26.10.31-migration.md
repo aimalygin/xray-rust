@@ -68,11 +68,14 @@ their original source identities.
 ## Still out of scope
 
 The v26.10.21 record's stage 2 remains planned separately: Lua for
-DNS/routing/noise, the newer FinalMask type filter, DNS over HTTPS resolvers
-for xdns and realm's UPnP/NAT-PMP `portMapping`. `localOS` and custom
+DNS/routing/noise, DNS over HTTPS resolvers for xdns and realm's
+UPnP/NAT-PMP `portMapping`. `localOS` and custom
 Blackhole responses arrived in 0.10.0, and so did the mKCP transport with its
 `mkcp-legacy` masks, the `header-custom`, `sudoku`, `xmc`, `xdns`, `realm`
-and `xicmp` masks, the MASQUE client with WARP, the XDRIVE client, the bridge
+and `xicmp` masks, the `filter` mask, validated and then ignored as
+Xray-core's client ignores it (see
+[filter mask](config-compatibility.md#filter-mask)), the MASQUE client with
+WARP, the XDRIVE client, the bridge
 side of the VLESS reverse proxy (an outbound's `reverse`), and ChromeParrot,
 the Chrome-shaped QUIC handshake Xray-core's Hysteria, XHTTP H3 and XDRIVE
 HTTP/3 dialers send unless `quicParams.disableChromeParrot` (see

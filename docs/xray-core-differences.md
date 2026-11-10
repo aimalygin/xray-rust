@@ -1045,6 +1045,34 @@ inbound, WireGuard carries TCP and UDP under Salamander with noise on
 either side, header-custom in both modes and sudoku. Another Salamander
 password carries nothing on either.
 
+## filter
+
+The `filter` mask is read and validated as Xray-core v26.11.9's
+`Filter.Build` reads it, in `finalmask.tcp` and `finalmask.udp` of any
+outbound, and then dropped: Xray-core's client wrappers return every
+connection unchanged. With only filters, Xray-core's carriers take their
+masked dial path, which dials what their plain path dials. Deliberate
+differences:
+
+- A filter after udphop or xicmp is refused. Xray-core accepts it, and then
+  fails every dial with `incorrect index`, since it finds those masks by
+  their place in the list.
+- A field the object spells several ways, such as `blockedSourceIPs` and
+  `BlockedSourceIPs`, has every spelling checked. Go keeps the last one it
+  decodes, an order serde_json does not keep.
+
+Evidence: `tests/fixtures/filter/config-verdicts.json` holds what the pinned
+`xray run -test` says of 117 cases: carriers and outbounds, settings and
+list shapes, the rules `geodata.ParseIPRules` takes and refuses, field
+spellings, and filters among other masks. The parser gives each its
+verdict but for the two differences above; with its filters taken out, each
+accepted case parses to the same configuration and warnings, and each builds
+a core. Through freedom's UDP and a VLESS TCP carrier, filters among noise
+and header-custom send the same bytes as the masks alone, and a reply from
+an address a filter blocks still arrives. Rules naming geodata were checked
+against the binary with files under `XRAY_LOCATION_ASSET`, and udphop and
+xicmp before a filter by dialing it.
+
 ## VLESS reverse proxy
 
 A VLESS outbound with `reverse` is the bridge of Xray-core v26.10.31's VLESS
