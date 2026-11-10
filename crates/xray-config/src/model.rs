@@ -2199,6 +2199,11 @@ pub struct TcpFragmentSettings {
     pub lengths: Vec<FragmentRange>,
     pub delays_ms: Vec<FragmentRange>,
     pub max_split: FragmentRange,
+    /// The `finalRules` of the dedicated freedom fragment outbound a
+    /// `dialerProxy` named, when the parser folded that freedom into this
+    /// outbound; `None` for any other fragment mask. A connection from a VLESS
+    /// reverse proxy still meets them, as it meets that freedom in Xray-core.
+    pub folded_final_rules: Option<Vec<FreedomFinalRule>>,
 }
 
 /// The writes a fragment mask cuts, as Xray's `packets` selects them.

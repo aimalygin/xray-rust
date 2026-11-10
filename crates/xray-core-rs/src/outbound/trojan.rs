@@ -62,10 +62,14 @@ impl TrojanOutbound {
     fn mux_pool(&self, target: &Target) -> Result<Option<&super::mux::Pool>, CoreError> {
         self.0.mux.as_ref().map_or(Ok(None), |m| m.pool(target))
     }
-    /// Whether each TCP flow rides a connection opened for it alone.
-    pub(super) fn opens_a_connection_per_flow(&self) -> bool {
-        self.0.mux.as_ref().is_none_or(|m| !m.pools_tcp())
-            && self.0.carrier.opens_a_connection_per_stream()
+    /// Whether TCP flows ride pooled Mux.Cool connections.
+    pub(super) fn pools_tcp_flows(&self) -> bool {
+        self.0.mux.as_ref().is_some_and(|m| m.pools_tcp())
+    }
+    /// Whether a UDP flow to `target` rides a Mux.Cool connection, or is
+    /// refused by the Mux policy.
+    pub(super) fn udp_uses_mux(&self, target: &Target) -> bool {
+        !matches!(self.mux_pool(target), Ok(None))
     }
 
     pub fn server(&self) -> &Target {

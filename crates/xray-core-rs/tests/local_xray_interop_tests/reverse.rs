@@ -587,6 +587,149 @@ async fn reverse_bridge_chains_meet_freedoms_rule_where_xray_does() {
     }
 }
 
+/// Over XHTTP, whose connections are shared, the freedom a chain ends on
+/// refuses the portal's sessions, and the tunnel, before anything is
+/// dialed unless its final rules allow the next hop: always, by the owner's
+/// choice, where Xray-core refuses only when the session itself dials.
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-reverse-interop.sh"]
+async fn reverse_bridge_refuses_xhttp_chains_until_their_freedom_allows() {
+    let checkout = resolve_xray_checkout();
+    let server = XrayVlessServerConfig {
+        security: XrayInboundSecurity::Tls,
+        transport: XrayInboundTransport::Xhttp {
+            path: "/rvs",
+            mode: "stream-one",
+            tls_alpn: None,
+        },
+        flow: None,
+    };
+    let services = start_services().await;
+    let relay = SocketAddr::from((Ipv4Addr::LOCALHOST, allocate_loopback_port()));
+    let portal_freedom = allow(&services);
+    let (portal, public) = start_portal_with(&checkout, server, &services, None, |config| {
+        config["inbounds"].as_array_mut().unwrap().push(json!({
+            "tag": "relay-xhttp", "protocol": "vless", "listen": "127.0.0.1",
+            "port": relay.port(),
+            "settings": {"clients": [{"id": WRONG_UUID}], "decryption": "none"},
+            "streamSettings": {"network": "xhttp", "xhttpSettings": {"path": "/relay"}}}));
+        config["outbounds"] =
+            json!([{"tag": "direct", "protocol": "freedom", "settings": portal_freedom}]);
+        config["routing"]["rules"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"inboundTag": ["relay-xhttp"], "outboundTag": "direct"}));
+    })
+    .await;
+    let allowing = |port: u16| {
+        json!({"finalRules": [{"action": "allow", "ip": ["127.0.0.1"],
+            "port": port.to_string()}]})
+    };
+    // (case, sessions through the XHTTP relay or freedom, the link's
+    // settings, whether the tunnel dials through the link, whether a session
+    // reaches the service)
+    let cases = [
+        ("XHTTP through a freedom", true, json!({}), false, false),
+        (
+            "XHTTP through a freedom allowing it",
+            true,
+            allowing(relay.port()),
+            false,
+            true,
+        ),
+        (
+            "an XHTTP tunnel through a freedom",
+            false,
+            json!({}),
+            true,
+            false,
+        ),
+        (
+            "an XHTTP tunnel through a freedom allowing the portal",
+            false,
+            allowing(portal.addr.port()),
+            true,
+            true,
+        ),
+    ];
+    for (name, through_relay, link, tunnel_through_link, reaches) in cases {
+        eprintln!("reverse XHTTP chain: {name}");
+        let mut stream = json!({"network": "xhttp", "security": "tls",
+            "tlsSettings": {"serverName": TLS_SERVER_NAME,
+                "pinnedPeerCertSha256": certificate_pin(&portal)},
+            "xhttpSettings": {"path": "/rvs", "mode": "stream-one", "xPaddingBytes": 64,
+                "scMaxEachPostBytes": 4096, "scMinPostsIntervalMs": 1}});
+        if tunnel_through_link {
+            stream["sockopt"] = json!({"dialerProxy": "link"});
+        }
+        let mut outbounds = vec![
+            json!({"tag": "portal", "protocol": "vless", "settings": {
+                "address": "127.0.0.1", "port": portal.addr.port(), "id": TEST_UUID,
+                "encryption": "none", "reverse": {"tag": BRIDGE_TAG}},
+                "streamSettings": stream}),
+            json!({"tag": "link", "protocol": "freedom", "settings": link}),
+            json!({"tag": "direct", "protocol": "freedom", "settings": allow(&services)}),
+        ];
+        let route = if through_relay {
+            outbounds.push(json!({"tag": "via", "protocol": "vless", "settings": {
+                "address": "127.0.0.1", "port": relay.port(), "id": WRONG_UUID,
+                "encryption": "none"},
+                "streamSettings": {"network": "xhttp", "xhttpSettings": {"path": "/relay"},
+                    "sockopt": {"dialerProxy": "link"}}}));
+            "via"
+        } else {
+            "direct"
+        };
+        let tunnels = tunnels_opened(&portal);
+        let served = services.accepted.load(Ordering::SeqCst);
+        let mut core = start_bridge(json!({"outbounds": outbounds,
+            "routing": {"rules": [{"inboundTag": [BRIDGE_TAG], "outboundTag": route}]}}))
+        .await;
+        if reaches {
+            assert!(
+                wait_for_tunnel(public.tcp).await,
+                "{name}: nothing reached the service; {}",
+                portal.logs()
+            );
+        } else if tunnel_through_link {
+            sleep(Duration::from_secs(5)).await;
+            assert_eq!(
+                tunnels_opened(&portal),
+                tunnels,
+                "{name}; {}",
+                portal.logs()
+            );
+            assert!(
+                tcp_round_trip(public.tcp, b"no tunnel").await.is_err(),
+                "{name}"
+            );
+        } else {
+            let deadline = Instant::now() + Duration::from_secs(20);
+            while tunnels_opened(&portal) == tunnels && Instant::now() < deadline {
+                sleep(Duration::from_millis(250)).await;
+            }
+            assert!(
+                tunnels_opened(&portal) > tunnels,
+                "{name}; {}",
+                portal.logs()
+            );
+            for _ in 0..3 {
+                assert!(
+                    tcp_round_trip(public.tcp, b"refused").await.is_err(),
+                    "{name}"
+                );
+            }
+            assert_eq!(services.accepted.load(Ordering::SeqCst), served, "{name}");
+            assert!(
+                !portal.logs().contains("relay-xhttp"),
+                "{name}: the relay was dialed; {}",
+                portal.logs()
+            );
+        }
+        core.stop().await.unwrap();
+    }
+}
+
 #[tokio::test]
 #[ignore = "requires a pinned Xray-core; run check-reverse-interop.sh"]
 async fn reverse_bridge_opens_a_second_tunnel_when_the_portal_drains() {

@@ -1598,6 +1598,33 @@ async fn bridge_socks_udp_flow(
         }
     };
 
+    // A reverse flow a folded freedom fragment refuses drops its datagrams,
+    // as a refused freedom flow does.
+    if context.is_reverse()
+        && !matches!(
+            outbound
+                .reverse_refused(
+                    &dial_target,
+                    context.dns_resolvers.bootstrap.as_ref(),
+                    context.transport_dialer.as_ref(),
+                )
+                .await,
+            Ok(false)
+        )
+    {
+        drop(pending_open_permit);
+        drop(first_payload);
+        absorb_socks_udp_blackhole_flow(
+            &target,
+            BlackholeOutbound::new(&xray_config::BlackholeResponse::None),
+            &context,
+            from_client,
+            shutdown,
+            connection,
+        )
+        .await;
+        return;
+    }
     match outbound {
         UdpOutbound::Freedom(freedom) => {
             let freedom = if context.is_reverse() {

@@ -17,9 +17,10 @@ use super::{client_label, BridgeContext};
 use crate::connection::wait_for_connection_close;
 use crate::dns_outbound_runtime::FakeIpTargetProvenance;
 use crate::outbound::{
-    open_tcp_stream_with_resolvers_and_dialer, InboundSource, TcpSessionOutbound,
+    final_rules, open_tcp_stream_with_resolvers_and_dialer, InboundSource, TcpSessionOutbound,
 };
 use crate::policy::{copy_bidirectional_with_idle_timeout_and_traffic, EffectivePolicy};
+use xray_transport::BoxedTransportStream;
 
 /// Serves one session to its end.
 pub(super) async fn serve(
@@ -220,19 +221,32 @@ async fn serve_tcp(
         .names_the_client()
         .then(|| source.map(InboundSource::tcp))
         .flatten();
-    let opened = tokio::select! {
-        result = tokio::time::timeout(
-            open_timeout,
-            open_tcp_stream_with_resolvers_and_dialer(
-                &outbound,
-                &dial_target,
-                context.dns.destination.as_ref(),
-                context.dns.bootstrap.as_ref(),
-                context.dialer.as_ref(),
-                client.as_ref(),
-            ),
-        ) => Some(result),
+    // Refused before anything is dialed where the chain shares connections
+    // (`TcpOutbound::reverse_refusal`); held as a blocked connection is.
+    let refusal = tokio::select! {
+        result = outbound.reverse_refusal(context.dns.bootstrap.as_ref(), context.dialer.as_ref()) => Some(result),
         () = wait_for_connection_close(&mut connection_close) => None,
+    };
+    let opened = match refusal {
+        None => None,
+        Some(Err(error)) => Some(Ok(Err(error))),
+        Some(Ok(Some(delay))) => Some(Ok(Ok(
+            Box::new(final_rules::BlockedStream::new(delay)) as BoxedTransportStream
+        ))),
+        Some(Ok(None)) => tokio::select! {
+            result = tokio::time::timeout(
+                open_timeout,
+                open_tcp_stream_with_resolvers_and_dialer(
+                    &outbound,
+                    &dial_target,
+                    context.dns.destination.as_ref(),
+                    context.dns.bootstrap.as_ref(),
+                    context.dialer.as_ref(),
+                    client.as_ref(),
+                ),
+            ) => Some(result),
+            () = wait_for_connection_close(&mut connection_close) => None,
+        },
     };
     let mut outbound_stream = match opened {
         None => return true,

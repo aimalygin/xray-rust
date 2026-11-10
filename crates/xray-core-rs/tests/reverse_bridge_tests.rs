@@ -232,7 +232,10 @@ async fn vless_relay() -> (SocketAddr, Arc<AtomicUsize>) {
                 stream.read_exact(&mut head).await?;
                 let mut addons = vec![0; usize::from(head[17])];
                 stream.read_exact(&mut addons).await?;
-                assert_eq!(stream.read_u8().await?, 0x01, "a TCP request");
+                // Only TCP requests are relayed.
+                if stream.read_u8().await? != 0x01 {
+                    return Ok(());
+                }
                 let port = stream.read_u16().await?;
                 assert_eq!(stream.read_u8().await?, 1, "an IPv4 target");
                 let mut ip = [0; 4];
@@ -511,6 +514,81 @@ async fn a_freedom_a_chain_ends_on_refuses_what_its_final_rules_do_not_allow() {
             );
             core.stop().await.unwrap();
         }
+    }
+}
+
+/// A dedicated freedom fragment outbound that `dialerProxy` names is folded
+/// into the outbound naming it, and still refuses the portal's sessions, and
+/// the tunnel, unless its final rules allow the server: always, by the
+/// owner's choice, where Xray-core refuses on the dials that carry them.
+#[tokio::test]
+async fn a_folded_freedom_fragment_refuses_what_its_final_rules_do_not_allow() {
+    let fragment = |allowing: Option<SocketAddr>| {
+        let mut outbound = json!({"tag": "frag", "protocol": "freedom", "settings": {
+            "fragment": {"packets": "1-1", "length": "100-200", "interval": "1-2"}}});
+        if let Some(server) = allowing {
+            outbound["settings"]["finalRules"] = allow(&[server])["finalRules"].clone();
+        }
+        outbound
+    };
+    let (service, service_accepted) = tcp_echo().await;
+    let (relay, relay_accepted) = vless_relay().await;
+    for allowed in [false, true] {
+        let portal = Portal::start().await;
+        let mut core = start(json!({
+            "outbounds": [
+                {"tag": "portal", "protocol": "vless", "settings": {
+                    "address": "127.0.0.1", "port": portal.addr().port(), "id": ID,
+                    "encryption": "none", "reverse": {"tag": TAG}}},
+                {"tag": "via", "protocol": "vless", "settings": {
+                    "address": "127.0.0.1", "port": relay.port(), "id": ID, "encryption": "none"},
+                 "streamSettings": {"sockopt": {"dialerProxy": "frag"}}},
+                fragment(allowed.then_some(relay))
+            ],
+            "routing": {"rules": [{"inboundTag": [TAG], "outboundTag": "via"}]}
+        }))
+        .await;
+        let mut tunnel = portal.accept(TUNNEL_WAIT).await.expect("a tunnel");
+        tunnel.open_control().await;
+        let relayed = relay_accepted.load(Ordering::SeqCst);
+        let served = service_accepted.load(Ordering::SeqCst);
+        tunnel
+            .open(2, &tcp(service), "198.51.100.7:40000", b"fragmented")
+            .await;
+        if allowed {
+            let (id, status, _, _, payload) = tunnel.next(Duration::from_secs(5)).await.unwrap();
+            assert_eq!(
+                (id, status, payload.as_slice()),
+                (2, Status::Keep, &b"fragmented"[..])
+            );
+        } else {
+            assert!(tunnel.next(Duration::from_secs(1)).await.is_none());
+            assert_eq!(relay_accepted.load(Ordering::SeqCst), relayed);
+            assert_eq!(service_accepted.load(Ordering::SeqCst), served);
+            // A UDP flow is refused too: the relay is never dialed.
+            tunnel
+                .open(3, &udp(udp_echo().await), "198.51.100.7:40001", b"datagram")
+                .await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            assert_eq!(relay_accepted.load(Ordering::SeqCst), relayed);
+        }
+        core.stop().await.unwrap();
+    }
+    for allowed in [false, true] {
+        let portal = Portal::start().await;
+        let mut core = start(json!({
+            "outbounds": [
+                {"tag": "portal", "protocol": "vless", "settings": {
+                    "address": "127.0.0.1", "port": portal.addr().port(), "id": ID,
+                    "encryption": "none", "reverse": {"tag": TAG}},
+                 "streamSettings": {"sockopt": {"dialerProxy": "frag"}}},
+                fragment(allowed.then_some(portal.addr()))
+            ]
+        }))
+        .await;
+        let tunnel = portal.accept(Duration::from_secs(5)).await;
+        assert_eq!(tunnel.is_some(), allowed, "a tunnel, allowed: {allowed}");
+        core.stop().await.unwrap();
     }
 }
 

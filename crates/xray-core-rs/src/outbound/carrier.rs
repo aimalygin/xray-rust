@@ -25,6 +25,9 @@ pub(super) struct StreamCarrier {
     pub(super) download: Option<XhttpDownloadOutbound>,
     pub(super) happy_eyeballs: Option<HappyEyeballsConfig>,
     pub(super) fragment: Option<Arc<xray_transport::TcpFragmentConfig>>,
+    /// The final rules of a freedom fragment outbound folded into this one,
+    /// which a connection from a VLESS reverse proxy meets.
+    pub(super) folded_fragment_rules: Option<Arc<[xray_config::FreedomFinalRule]>>,
     /// The `header-custom` TCP mask, run on every TCP carrier it opens.
     pub(super) header_custom: Option<Arc<xray_transport::header_custom::HeaderCustomTcpConfig>>,
     /// The `sudoku` TCP mask, outermost on every TCP carrier it opens.
@@ -89,6 +92,11 @@ impl StreamCarrier {
             server: Target::new(addr, port, RoutingNetwork::Tcp),
             transport_layer,
             fragment,
+            folded_fragment_rules: stream
+                .tcp_fragment
+                .as_ref()
+                .and_then(|fragment| fragment.folded_final_rules.as_deref())
+                .map(Arc::from),
             header_custom,
             sudoku,
             xmc,
@@ -128,6 +136,11 @@ impl StreamCarrier {
             self.transport_layer,
             TransportLayer::Grpc(_) | TransportLayer::Xhttp(_)
         )
+    }
+
+    /// Whether the streams share an XHTTP transport's connections.
+    pub(super) fn is_xhttp(&self) -> bool {
+        matches!(self.transport_layer, TransportLayer::Xhttp(_))
     }
 
     /// The server's candidates, after its `addressPortStrategy`.
