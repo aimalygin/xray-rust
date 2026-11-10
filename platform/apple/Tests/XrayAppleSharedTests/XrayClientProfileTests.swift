@@ -315,6 +315,14 @@ final class XrayClientProfileTests: XCTestCase {
         )
     }
 
+    func testRealityFingerprintModeAcceptsXrayCoreV26119Chrome155() {
+        XCTAssertEqual(
+            XrayRealityFingerprintMode(rawValue: "hellochrome_155"),
+            .hellochrome155
+        )
+        XCTAssertTrue(XrayRealityFingerprintMode.allCases.contains(.hellochrome155))
+    }
+
     func testUpdatingRealityFingerprintModeChangesRealitySettings() throws {
         let profile = try XrayVlessURLImporter.profile(
             from: Self.sampleVlessURL,

@@ -20,6 +20,12 @@ long-term supported release series.
   checked, and writes nothing here, since xray-rust logs no blocked
   connection. An allow rule with a delay or a level is refused, as upstream
   now refuses it. See [Freedom outbound](docs/config-compatibility.md#freedom-outbound).
+- `chrome`, `hellochrome_auto` and an empty `fingerprint` send Chrome 155,
+  Xray-core v26.11.9's default: Chrome 133's hello with GREASE and ML-DSA
+  44/65/87 signature algorithms and a `trust_anchors` extension carrying 28
+  Chrome Root Store trust anchor IDs. `hellochrome_155` is a new name and joins
+  `random`'s draw; `hellochrome_133` keeps Chrome 133. See
+  [TLS ClientHello shaping](docs/config-compatibility.md#tls-clienthello-shaping).
 - Mux runs every TCP `concurrency` from zero up to 128 as 128 children per
   parent, keeps a larger one, and lets a parent hand out 1024 children over
   its life, as Xray-core v26.11.9 does; both concurrencies take any 16-bit

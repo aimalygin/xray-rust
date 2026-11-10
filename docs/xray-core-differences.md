@@ -1332,6 +1332,32 @@ needs the h3-quinn adapter's `poll_finish` to report a STOP_SENDING that
 already arrived (quinn's `finish` maps it to success); today the GREASE write
 in h3's `finish` is what surfaces it for unknown-length uploads.
 
+## uTLS per-connection draws
+
+Every uTLS profile is a fixed spec here, and uTLS draws some fields per
+connection. Two of those draws are fixed in xray-rust, for every Chrome-family
+profile, `chrome` (Chrome 155 since v26.11.9) included:
+
+- GREASE values. uTLS takes each Chrome GREASE slot (cipher, group, version,
+  key share, signature algorithm, two extensions) from a per-connection
+  BoringSSL seed. xray-rust sends `0x0a0a` in every slot and `0x1a1a` for the
+  second GREASE extension: what uTLS sends under the zeroed `crypto/rand` the
+  oracle fixtures are made with.
+- Extension order. uTLS shuffles Chrome's extensions per connection
+  (`ShuffleChromeTLSExtensions`); xray-rust sends the order that shuffle gives
+  under the same zeroed `crypto/rand`.
+
+A censor that sees several hellos from one client therefore sees the same
+GREASE values and order each time, which real Chrome and Xray-core do not
+send. Both are held fixed because the raw ClientHello fixtures compare them
+byte for byte; drawing them would need the comparison to canonicalize them
+and the GREASE plan to take a value per slot. The ECH GREASE payload length,
+pinned to its first candidate, is the third such draw, described in
+[ECH GREASE](config-compatibility.md#ech-grease).
+`scripts/check-xray-default-fingerprint.py` holds the pinned Xray-core
+binary's own hellos for `""`, `chrome`, `hellochrome_155` and `hellochrome_133`
+to the fixtures with exactly these draws set aside.
+
 ## Follow-up checks
 
 - [x] Integrate the #87 review follow-up, including both relay-address fixes,
@@ -1350,6 +1376,9 @@ in h3's `finish` is what surfaces it for unknown-length uploads.
   `false` default; see [SOCKS inbound `udp`](#socks-inbound-udp-false-and-the-absent-default).
 - [ ] Keep #81 cleanup separate from new SDK API/lifecycle behavior and verify
   each against the documented FFI/host contract.
+- [ ] Decide whether Chrome-family hellos should draw their GREASE values and
+  extension order per connection, as uTLS does; see
+  [uTLS per-connection draws](#utls-per-connection-draws).
 
 When an item is resolved, update its status, the tested xray-rust and upstream
 revisions, and links to durable tests/results in the same PR. Update

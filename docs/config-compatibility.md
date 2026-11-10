@@ -3106,7 +3106,7 @@ Xray-core's own code and, on Linux, runs each carrier against its server.
 ### TLS ClientHello shaping
 
 `security: "tls"` sends a uTLS-shaped ClientHello, as Xray-core does on every
-TLS connection. `tlsSettings.fingerprint` selects the shape from the same 61
+TLS connection. `tlsSettings.fingerprint` selects the shape from the same 62
 names Xray accepts. An absent or empty value means `chrome`, matching Xray's
 `GetFingerprint("")`, so shaping is the default rather than an opt-in; an
 unknown name is rejected at parse time with a JSON path and the offending
@@ -3117,7 +3117,23 @@ under three names — are refused for a separate reason given below. The
 X25519MLKEM768 requirement of REALITY v26.10.21 servers does not apply here
 either.
 
-Those 61 are the union of the three maps Xray's `GetFingerprint` consults --
+Since Xray-core v26.11.9, `chrome`, `hellochrome_auto` and an empty name are
+Chrome 155 (`hellochrome_155`), as they are in uTLS 20261108164504, instead of
+Chrome 133, which keeps its explicit name `hellochrome_133`. Chrome 155 sends
+Chrome 133's hello with three changes: GREASE and ML-DSA 44, 65 and 87
+(`0x0904`-`0x0906`) ahead of the signature algorithms, and a `trust_anchors`
+extension (`0xca34`, draft-ietf-tls-trust-anchor-ids) with the 28 Chrome Root
+Store trust anchor IDs uTLS snapshots, sent byte for byte. A server may answer
+the extension in its EncryptedExtensions or certificate entries; rustls takes
+both, as an offered extension and an ignored certificate-entry extension. No
+server in the web PKI holds an ML-DSA certificate; one that signed with ML-DSA
+would fail the handshake, as rustls cannot verify it. In
+[XTLS/Xray-core#7131](https://github.com/XTLS/Xray-core/issues/7131), Chrome
+133 hellos stalled for about 8.4 seconds on a mobile network in Russia where
+Chrome 155, Firefox 148 and QQ passed, which is why upstream moved the default.
+`random` draws from twelve modern names now, `hellochrome_155` included.
+
+Those 62 are the union of the three maps Xray's `GetFingerprint` consults --
 `PresetFingerprints`, `ModernFingerprints`, `OtherFingerprints` -- less
 `unsafe`, described below, and `hellogolang`.
 
@@ -3204,7 +3220,7 @@ failing.
 The REALITY server shipped with Xray-core v26.10.21 requires an
 X25519MLKEM768 key share (group `0x11ec`, 1216 bytes) before any ordinary
 X25519 key share, and treats any other ClientHello as an unauthenticated
-visitor. Profiles that meet this are Chrome 131/133, Firefox 148 and
+visitor. Profiles that meet this are Chrome 131/133/155, Firefox 148 and
 Safari 26.3, including their current `chrome`, `firefox`, `safari` and `_auto`
 aliases, plus the frozen `randomizednoalpn` and `hellorandomized` snapshots
 (`XRAY_REALITY_HYBRID_FINGERPRINTS`).
@@ -3218,7 +3234,7 @@ requirement, so a profile that stops working after a server upgrade has an
 explanation before the first dial. The thirteen TLS-1.2-era names with no
 X25519 key share at all remain a parse error, as before.
 
-For REALITY, `random` and `randomized` each choose independently from the four
+For REALITY, `random` and `randomized` each choose independently from the five
 fixed hybrid profiles above, once per process. This is a deliberate
 restriction of the upstream random pool, which can still pick a profile the
 new server rejects. The ordinary TLS random pool is unchanged. `randomized` remains a

@@ -489,6 +489,9 @@ jobs:
       - name: Recheck the freedom finalRules and Mux config verdicts against pinned Xray-core
         run: bash scripts/check-xray-verdicts.sh
 
+      - name: Hold pinned Xray-core's own ClientHellos to the uTLS fixtures
+        run: bash scripts/check-xray-default-fingerprint.sh
+
       - name: Verify ChromeParrot against pinned Xray-core's dialer and servers
         run: bash scripts/check-chrome-parrot-interop.sh
 

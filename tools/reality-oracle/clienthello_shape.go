@@ -10,7 +10,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdh"
 	cryptoRand "crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -236,7 +238,11 @@ func buildRawClientHello(fingerprint string) ([]byte, string, error) {
 	if hello == nil {
 		return nil, "", errors.New("uTLS did not build a ClientHello")
 	}
-	return append([]byte(nil), hello.Raw...), id.Str(), nil
+	raw := append([]byte(nil), hello.Raw...)
+	if err := pinECHGreaseKey(raw); err != nil {
+		return nil, "", err
+	}
+	return raw, id.Str(), nil
 }
 
 // applyWebsocketALPNOverride mirrors `UConn.WebsocketHandshakeContext` in
@@ -802,4 +808,59 @@ func (c *byteCursor) readProtocolNameList(message string) ([]string, error) {
 		protocols = append(protocols, string(protocol))
 	}
 	return protocols, nil
+}
+
+// pinECHGreaseKey writes the X25519 point of an all-zero private key over the
+// encapsulated key of an ECH GREASE extension. uTLS 20261108164504 draws that
+// key through the standard crypto/hpke, which takes its randomness from the
+// process's own source rather than the zeroed crypto/rand installed here, so
+// it would differ on every run. The zero source derived exactly this point
+// before, which keeps the fixtures reproducible; the Rust side masks the key
+// in any case, as a real client draws it per connection.
+func pinECHGreaseKey(raw []byte) error {
+	zeroKey, err := ecdh.X25519().NewPrivateKey(make([]byte, 32))
+	if err != nil {
+		return err
+	}
+	point := zeroKey.PublicKey().Bytes()
+	short := errors.New("ClientHello too short to pin its ECH GREASE key")
+	offset := 4 + 2 + 32
+	if offset >= len(raw) {
+		return short
+	}
+	offset += 1 + int(raw[offset])
+	if offset+2 > len(raw) {
+		return short
+	}
+	offset += 2 + int(binary.BigEndian.Uint16(raw[offset:]))
+	if offset >= len(raw) {
+		return short
+	}
+	offset += 1 + int(raw[offset])
+	if offset+2 > len(raw) {
+		return short
+	}
+	end := offset + 2 + int(binary.BigEndian.Uint16(raw[offset:]))
+	offset += 2
+	if end > len(raw) {
+		return short
+	}
+	for offset+4 <= end {
+		kind := binary.BigEndian.Uint16(raw[offset:])
+		length := int(binary.BigEndian.Uint16(raw[offset+2:]))
+		if offset+4+length > end {
+			return short
+		}
+		body := raw[offset+4 : offset+4+length]
+		// An outer ECHClientHello: type 0, KDF, AEAD, config id, then the
+		// two-byte length of the encapsulated key and the key.
+		if kind == 0xfe0d && len(body) >= 8 && body[0] == 0 {
+			encLength := int(binary.BigEndian.Uint16(body[6:8]))
+			if encLength == len(point) && len(body) >= 8+encLength {
+				copy(body[8:8+encLength], point)
+			}
+		}
+		offset += 4 + length
+	}
+	return nil
 }

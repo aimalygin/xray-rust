@@ -1,7 +1,6 @@
-// A module of its own, deliberately: importing xray-core drags golang.org/x/crypto
-// from v0.36.0 up to v0.54.0, and uTLS compiled against v0.54.0 emits different
-// ClientHello bytes -- enough to break the committed
-// tests/fixtures/reality/clienthello_chrome_auto.json. Keeping this oracle out
+// A module of its own, deliberately: the root module holds exactly the uTLS
+// graph Xray-core builds its ClientHellos with, and importing xray-core there
+// would move it with every requirement xray-core adds. Keeping this oracle out
 // of the root module keeps the two dependency graphs from colliding.
 //
 // Run it from anywhere in the repo with `go run -C`:
