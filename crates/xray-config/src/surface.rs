@@ -115,7 +115,7 @@ objects! {
         "A signed profile the server holds too: username is 3 to 16 ASCII letters, digits or underscores; uuid is read as github.com/google/uuid reads it; texturesValue and texturesSignature are required."),
     HEADER_CUSTOM_UDP: ("streamSettings.finalmask.udp[].settings (header-custom)",
         ["mode", "client", "server"],
-        "mKCP, Hysteria, XHTTP with exact h3 ALPN, MASQUE over HTTP/3, freedom and WireGuard, never with udphop. mode is prefix (or empty), every datagram carrying the client's items in front and the server's checked and taken off, or standalone, the client's items sent alone and the server's answer awaited before the first datagram to a peer and five seconds after each answer; an unanswered request goes out again after a second on QUIC carriers. Case-sensitive, as in Xray-core."),
+        "mKCP, Hysteria, XHTTP with exact h3 ALPN, MASQUE over HTTP/3, freedom and WireGuard, never with udphop. mode is prefix (or empty), every datagram carrying the client's items in front and the server's checked and taken off, or standalone, the client's items sent alone and the server's answer awaited before the first datagram to a peer and five seconds after each answer; an unanswered request goes out again after a second on QUIC carriers, freedom and WireGuard, whose held send reads the answer in meanwhile. Case-sensitive, as in Xray-core."),
     HEADER_CUSTOM_UDP_ITEM: ("streamSettings.finalmask.udp[].settings.{client,server}[] (header-custom)",
         ["rand", "randRange", "capture", "type", "reuse", "transform", "packet"],
         "As a TCP item, without delay."),

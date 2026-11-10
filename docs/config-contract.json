@@ -890,7 +890,7 @@
         "server"
       ],
       "id": "HEADER_CUSTOM_UDP",
-      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN, MASQUE over HTTP/3, freedom and WireGuard, never with udphop. mode is prefix (or empty), every datagram carrying the client's items in front and the server's checked and taken off, or standalone, the client's items sent alone and the server's answer awaited before the first datagram to a peer and five seconds after each answer; an unanswered request goes out again after a second on QUIC carriers. Case-sensitive, as in Xray-core."
+      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN, MASQUE over HTTP/3, freedom and WireGuard, never with udphop. mode is prefix (or empty), every datagram carrying the client's items in front and the server's checked and taken off, or standalone, the client's items sent alone and the server's answer awaited before the first datagram to a peer and five seconds after each answer; an unanswered request goes out again after a second on QUIC carriers, freedom and WireGuard, whose held send reads the answer in meanwhile. Case-sensitive, as in Xray-core."
     },
     {
       "context": "streamSettings.finalmask.udp[].settings.{client,server}[] (header-custom)",

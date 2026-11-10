@@ -470,12 +470,12 @@ Evidence, against Xray-core v26.10.31:
 
 ## header-custom UDP
 
-The mKCP, Hysteria and XHTTP over HTTP/3 clients support Xray-core
-v26.10.31's prefix and standalone UDP custom masks, including captures,
-expressions, address metadata on writes, five-second per-peer state and mask
-ordering. The parser accepts one custom mask on those carriers; other UDP
-carriers, multiple custom masks and a custom mask with `udphop` are
-rejected. Under `udphop` Xray-core writes to `0.0.0.0:0` but reads from the
+The mKCP, Hysteria, XHTTP over HTTP/3, MASQUE over HTTP/3, freedom and
+WireGuard clients support Xray-core v26.10.31's prefix and standalone UDP
+custom masks, including captures, expressions, address metadata on writes,
+five-second per-peer state and mask ordering. The parser accepts one custom
+mask on those carriers; other UDP carriers, multiple custom masks and a
+custom mask with `udphop` are rejected. Under `udphop` Xray-core writes to `0.0.0.0:0` but reads from the
 hop's address, so its standalone reply never completes and prefix captures
 never match. The same item and expression limits as the TCP implementation
 apply.
@@ -489,7 +489,9 @@ A standalone request unanswered for a second goes out again. On mKCP,
 Xray-core blocks its data updater on the reply for good; its ping updater's
 next write sends a new request, and once that is answered, data goes out
 only at the ping updater's five-second pace. On QUIC, quic-go's send loop
-waits for the reply for good.
+waits for the reply for good. Freedom and WireGuard read the reply while
+the send waits; see
+[UDP masks on freedom and WireGuard](#udp-masks-on-freedom-and-wireguard).
 
 Thirteen client/server exchanges recorded directly from Xray-core are
 checked byte for byte (`tools/header-custom-udp-oracle`,
@@ -981,17 +983,28 @@ order. Deliberate differences:
   masks, Salamander among them, write at most 4096 bytes a datagram, so its
   server cannot answer one that large, for example a 1200-byte payload
   under sudoku inside Salamander.
+- A send that a standalone header-custom holds for the server's answer reads
+  in the receiver's place meanwhile. It keeps up to 256 KiB of datagrams for
+  the receiver and drops the rest. Xray-core's mask reads in a goroutine of
+  its own, which holds up to 16 datagrams for the receiver and stops reading
+  while they wait. An unanswered request goes out again after a second, as
+  on the QUIC carriers; Xray-core's write waits for the answer for good.
 
 Evidence: unit tests drive the masked socket against a plain one, noise
 inside and outside Salamander, salted replies, another sender's datagrams
 and unmaskable ones dropped, a datagram longer than the receiver's buffer
-cut, or dropped under Salamander; a TUN flow through freedom runs under
-noise and a header-custom prefix. Live against Xray-core's `tunnel` inbound
-under the same masks, freedom carries UDP under Salamander, noise inside it,
-header-custom, sudoku and sudoku inside Salamander. Against its WireGuard
+cut, or dropped under Salamander. A send a standalone header holds takes the
+answer in itself, keeps an earlier reply for the next receive, and hands a
+receiver in another task what it read, that receiver waiting on the socket
+again once the send is through. A TUN flow through freedom runs under noise
+and a header-custom prefix, and waits out a standalone header; a query the
+TUN DNS proxy sends through freedom goes under a standalone header too.
+Live against Xray-core's `tunnel` inbound under the same masks, freedom
+carries UDP under Salamander, noise inside it, header-custom in prefix and
+standalone mode, sudoku and sudoku inside Salamander. Against its WireGuard
 inbound, WireGuard carries TCP and UDP under Salamander with noise on
-either side, header-custom and sudoku. Another Salamander password carries
-nothing on either.
+either side, header-custom in both modes and sudoku. Another Salamander
+password carries nothing on either.
 
 ## VLESS reverse proxy
 

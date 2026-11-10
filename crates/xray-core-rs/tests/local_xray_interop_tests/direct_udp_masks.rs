@@ -29,6 +29,14 @@ fn header_custom() -> Value {
         "server": [{"reuse": "token"}, {"transform": {"op": "be16", "args": [{"u64": 443}]}}]}})
 }
 
+/// The client's request goes alone and holds the first datagram until the
+/// server answers it, again five seconds after each answer.
+fn standalone() -> Value {
+    json!({"type": "header-custom", "settings": {"mode": "standalone",
+        "client": [{"rand": 8, "capture": "token"}, {"type": "str", "packet": "hello"}],
+        "server": [{"reuse": "token"}, {"type": "str", "packet": "world"}]}})
+}
+
 fn sudoku() -> Value {
     json!({"type": "sudoku", "settings": {"password": "synthetic-sudoku"}})
 }
@@ -172,6 +180,12 @@ async fn freedom_udp_flows_run_under_masks() {
             json!([header_custom()]),
             sizes,
         ),
+        (
+            "header-custom standalone",
+            json!([standalone()]),
+            json!([standalone()]),
+            sizes,
+        ),
         ("sudoku", json!([sudoku()]), json!([sudoku()]), sizes),
         (
             "sudoku inside salamander",
@@ -284,6 +298,11 @@ async fn wireguard_runs_under_masks() {
             "header-custom",
             json!([header_custom()]),
             json!([header_custom()]),
+        ),
+        (
+            "header-custom standalone",
+            json!([standalone()]),
+            json!([standalone()]),
         ),
         ("sudoku", json!([sudoku()]), json!([sudoku()])),
     ] {

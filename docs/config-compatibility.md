@@ -3023,6 +3023,11 @@ xdns and xicmp.
   bit a QUIC carrier sets. Under Salamander one may exceed 4096 bytes, which
   Xray-core's header masks never write: its server cannot answer one that
   large.
+- A standalone `header-custom` holds a send until the server answers its
+  request, and the socket reads meanwhile, as Xray-core's mask does in a
+  goroutine of its own: up to 256 KiB of what arrives is kept for the
+  receiver, the rest dropped. An unanswered request goes out again after a
+  second, where Xray-core waits for good.
 - Not supported yet on either: udphop and realm, each of which needs a
   driver that replaces or introduces the socket, and `mkcp-legacy`, which
   only mKCP takes here. Sudoku cannot run under xdns or xicmp: its datagrams
