@@ -422,3 +422,23 @@ fn salamander_salts_every_datagram_and_opens_its_own() {
     }
     assert!(Masks::new(&[KcpMask::Salamander("abc".to_owned().into())], None).is_err());
 }
+
+/// An AES mask takes its tag as well as its nonce, so what it leaves for the
+/// masks inside it can be shorter than they need. A peer that knows the
+/// password sends such a datagram; it is dropped, not unwrapped.
+#[test]
+fn a_datagram_too_short_for_the_masks_inside_aes_is_dropped() {
+    for inner in ["original", "dtls", "salamander:seed"] {
+        let mut victim = masks(&serde_json::json!([inner, "aes:seed"]));
+        let mut peer_side =
+            Masks::new(&[KcpMask::Aes128Gcm("seed".to_owned().into())], None).unwrap();
+        for plaintext in [&b""[..], &b"abc"[..], &b"abcde"[..]] {
+            let mut datagram = wire(&mut peer_side, plaintext.to_vec()).remove(0);
+            assert!(
+                victim.open(&mut datagram, peer(), Instant::now()).is_none(),
+                "{inner} inside aes, {} bytes",
+                plaintext.len()
+            );
+        }
+    }
+}

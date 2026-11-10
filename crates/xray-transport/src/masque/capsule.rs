@@ -16,6 +16,11 @@ pub(crate) const MAX_ENTRIES_PER_CAPSULE: usize = 8192;
 const MAX_BUFFERED_CAPSULE: usize = MAX_ENTRIES_PER_CAPSULE * 34;
 /// Xray's `maxCapsulePacketSize`, after the context ID.
 pub(crate) const MAX_CAPSULE_PACKET: usize = (1 << 16) - 1;
+/// The longest DATAGRAM capsule worth buffering: the tunnel reads packets of
+/// at most [`MAX_TUNNEL_PACKET`] bytes after a context ID of up to eight.
+/// Xray buffers one up to its `maxCapsulePacketSize` and drops it on read;
+/// queued whole, 128 of those hold eight times what the tunnel can deliver.
+const MAX_BUFFERED_DATAGRAM: usize = 8 + super::session::MAX_TUNNEL_PACKET;
 
 /// A capsule failure: `limit` ends the stream as Xray's `errCapsuleLimit`
 /// does, with H3_EXCESSIVE_LOAD; anything else with H3_MESSAGE_ERROR.
@@ -247,7 +252,7 @@ pub(crate) struct CapsuleParser {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Parsed {
     Capsule(Capsule),
-    /// A DATAGRAM capsule longer than Xray takes, skipped: its length.
+    /// A DATAGRAM capsule longer than the tunnel reads, skipped: its length.
     OversizedDatagram(u64),
 }
 
@@ -291,8 +296,7 @@ impl CapsuleParser {
                 kind,
                 CAPSULE_ADDRESS_ASSIGN | CAPSULE_ADDRESS_REQUEST | CAPSULE_ROUTE_ADVERTISEMENT
             );
-            let oversized_datagram =
-                kind == CAPSULE_DATAGRAM && len > (1 + MAX_CAPSULE_PACKET) as u64;
+            let oversized_datagram = kind == CAPSULE_DATAGRAM && len > MAX_BUFFERED_DATAGRAM as u64;
             if !known && kind != CAPSULE_DATAGRAM || oversized_datagram {
                 // Skip what is buffered, then the rest as it arrives.
                 let buffered = (self.buf.len() - header) as u64;
@@ -608,6 +612,33 @@ mod tests {
         parser.push(&vec![0u8; 70_000][..]);
         assert!(!parser.is_mid_capsule());
         assert_eq!(parser.next().unwrap(), None);
+    }
+
+    /// A DATAGRAM the tunnel would drop on read is skipped as well, though
+    /// it is within what a capsule may carry.
+    #[test]
+    fn a_datagram_capsule_longer_than_the_tunnel_reads_is_skipped() {
+        let mut parser = CapsuleParser::default();
+        let longest = MAX_BUFFERED_DATAGRAM as u64;
+        let mut head = BytesMut::new();
+        put_varint(&mut head, CAPSULE_DATAGRAM);
+        put_varint(&mut head, longest + 1);
+        parser.push(&head[..]);
+        assert_eq!(
+            parser.next().unwrap(),
+            Some(Parsed::OversizedDatagram(longest + 1))
+        );
+        parser.push(&vec![0u8; longest as usize + 1][..]);
+
+        let mut whole = BytesMut::new();
+        put_varint(&mut whole, CAPSULE_DATAGRAM);
+        put_varint(&mut whole, longest);
+        whole.extend_from_slice(&vec![0u8; longest as usize]);
+        parser.push(&whole[..]);
+        assert!(matches!(
+            parser.next().unwrap(),
+            Some(Parsed::Capsule(Capsule::Datagram(datagram))) if datagram.len() == longest as usize
+        ));
     }
 
     #[test]

@@ -177,13 +177,45 @@ fn an_old_or_closed_tunnel_is_not_reused() {
         left_usage: AtomicI32::new(-1),
         unreusable_at: Some(Instant::now() - Duration::from_secs(1)),
         not_used: AtomicBool::new(false),
+        established: Instant::now(),
     });
     let fresh = flow(&mut pool, &mut dials, || Ok(Arc::new(Fake::default()))).unwrap();
     assert_eq!(dials, 2);
     assert!(old.is_closed(), "an expired tunnel without flows closes");
+    // Closed after it had been up for a while.
+    pool.entries[0] = Arc::new(Entry {
+        tunnel: Arc::clone(&fresh.0.tunnel),
+        running: AtomicI32::new(0),
+        left_usage: AtomicI32::new(-1),
+        unreusable_at: None,
+        not_used: AtomicBool::new(false),
+        established: Instant::now() - SHORT_LIVED,
+    });
     fresh.0.tunnel.close();
     let _next = flow(&mut pool, &mut dials, || Ok(Arc::new(Fake::default()))).unwrap();
     assert_eq!(dials, 3, "a closed tunnel is dropped from the pool");
+}
+
+/// A proxy that answers and then hangs up: the tunnel that closed right
+/// after it was established is a failed dial, so the next flows fail for a
+/// second instead of each paying for a handshake.
+#[test]
+fn a_tunnel_closed_right_after_it_was_established_is_not_redialed_at_once() {
+    let mut pool = pool(zero());
+    let mut dials = 0;
+    let lease = flow(&mut pool, &mut dials, || Ok(Arc::new(Fake::default()))).unwrap();
+    lease.0.tunnel.close();
+    drop(lease);
+    for _ in 0..3 {
+        let Err(error) = flow(&mut pool, &mut dials, || Ok(Arc::new(Fake::default()))) else {
+            panic!("no dial within a second of a tunnel that closed at once");
+        };
+        assert!(error.contains("closed right after"), "{error}");
+    }
+    assert_eq!(dials, 1);
+    pool.last_error.as_mut().unwrap().1 -= RETRY_INTERVAL;
+    let _next = flow(&mut pool, &mut dials, || Ok(Arc::new(Fake::default()))).unwrap();
+    assert_eq!(dials, 2, "after a second the next flow dials again");
 }
 
 #[test]

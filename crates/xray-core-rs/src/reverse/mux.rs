@@ -35,6 +35,10 @@ const SESSION_QUEUE: usize = 8;
 /// tunnel once more than 256 sessions, its control session included, were opened on it, so its own never come
 /// near this; Xray-core's bridge has no bound.
 pub(super) const MAX_SESSIONS: usize = 512;
+/// The most Ends that wait for the writer. The reader queues one for each
+/// refused session and each frame of an unknown one, whether or not the
+/// portal reads them, so a portal that reads nothing fails the tunnel here.
+const MAX_QUEUED_ENDS: usize = 4 * MAX_SESSIONS;
 
 /// How often Xray-core's worker checks for idleness: it closes when it held
 /// no session at one check and opened none by the next.
@@ -52,6 +56,14 @@ fn wake(slot: &mut Option<Waker>) {
 
 fn closed() -> io::Error {
     io::Error::new(io::ErrorKind::BrokenPipe, "reverse Mux session closed")
+}
+
+fn queue_end(state: &mut State, id: u16, error: bool) -> io::Result<()> {
+    if state.ends.len() >= MAX_QUEUED_ENDS {
+        return Err(protocol_error());
+    }
+    state.ends.push_back((id, error));
+    Ok(())
 }
 
 fn protocol_error() -> io::Error {
@@ -449,7 +461,7 @@ fn deliver(
                 return Ok(true);
             }
             if state.sessions.len() >= MAX_SESSIONS {
-                state.ends.push_back((id, true));
+                queue_end(&mut state, id, true)?;
                 drop(state);
                 shared.changed.notify_one();
                 return Ok(true);
@@ -480,7 +492,7 @@ fn deliver(
             let Some(entry) = state.sessions.get_mut(&id) else {
                 // As Xray-core does, tell the portal the session is gone.
                 if frame.payload.is_some() {
-                    state.ends.push_back((id, false));
+                    queue_end(&mut state, id, false)?;
                     drop(state);
                     shared.changed.notify_one();
                 }

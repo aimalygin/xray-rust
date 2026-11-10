@@ -381,3 +381,48 @@ async fn chunked_bodies_go_on_chunk_by_chunk() {
         );
     }
 }
+
+/// A peer that never ends its headers is cut off at Go's default header
+/// limit rather than read for as long as it sends them.
+#[tokio::test]
+async fn a_header_block_past_a_mebibyte_is_refused() {
+    let line = "a:\r\n";
+    let fits = "HTTP/1.1 200 OK\r\n".to_owned() + &line.repeat(1000) + "\r\n";
+    assert!(response(fits.as_bytes(), "GET").await.is_ok());
+    let endless = "HTTP/1.1 200 OK\r\n".to_owned() + &line.repeat((1 << 20) / line.len() + 1);
+    assert_eq!(
+        response(endless.as_bytes(), "GET").await.unwrap_err(),
+        HttpParseError::HeadTooLarge
+    );
+    let request = "GET http://example.com/ HTTP/1.1\r\n".to_owned()
+        + &line.repeat((1 << 20) / line.len() + 1);
+    assert_eq!(
+        read_http_request_head(&mut Cursor::new(request.into_bytes()))
+            .await
+            .unwrap_err(),
+        HttpParseError::HeadTooLarge
+    );
+}
+
+/// Reading keeps a header whose name has a space in it; writing leaves it
+/// out, as Go's `Header.writeSubset` does. Forwarded, `Transfer-Encoding :
+/// chunked` would announce a body this side framed as none.
+#[tokio::test]
+async fn a_header_name_that_is_not_a_token_is_not_forwarded() {
+    let sent = forwarded(
+        "GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding : chunked\r\nProxy-Authorization : Basic eDp5\r\nX-Kept: 1\r\n\r\n",
+    )
+    .await;
+    assert_eq!(
+        sent,
+        "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\nX-Kept: 1\r\n\r\n"
+    );
+    let (_, head, _, _) = response(
+        b"HTTP/1.1 200 OK\r\nContent-Length : 5\r\nX-Kept: 1\r\n\r\n",
+        "GET",
+    )
+    .await
+    .unwrap();
+    assert!(!head.contains("Content-Length :"), "{head}");
+    assert!(head.contains("X-Kept: 1"), "{head}");
+}

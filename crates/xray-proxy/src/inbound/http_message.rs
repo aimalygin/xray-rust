@@ -17,6 +17,10 @@ use super::http::{parse_authority_target, HttpParseError};
 
 /// The longest line read in a message head.
 const MAX_LINE_LEN: usize = 8192;
+/// The most a header block holds, line ends included: Go's
+/// `http.DefaultMaxHeaderBytes`. Xray-core reads a block of any size, so a
+/// peer that never ends its headers grows the process until it dies.
+const MAX_HEADER_BLOCK: usize = 1 << 20;
 /// Xray-core forwards at most this much of a `1xx` response head.
 const MAX_INFORMATIONAL_HEAD: usize = 1024;
 
@@ -77,10 +81,13 @@ impl HttpHeaders {
     }
 
     /// Go's `Header.writeSubset`: every field but `exclude`, by name, each
-    /// value with line breaks turned to spaces and trimmed.
+    /// value with line breaks turned to spaces and trimmed. A name that is
+    /// not a token is left out, as Go leaves it out: reading keeps a name
+    /// with a space in it, and `Transfer-Encoding : chunked` must not reach
+    /// a peer that reads it as the framing this side did not apply.
     fn write_subset(&self, exclude: &[&str], output: &mut Vec<u8>) {
         for (name, values) in self.iter() {
-            if exclude.contains(&name) {
+            if exclude.contains(&name) || !name.bytes().all(is_token_byte) {
                 continue;
             }
             for value in values {
@@ -285,8 +292,13 @@ async fn read_header_block<R: AsyncRead + Unpin>(
     let mut headers = HttpHeaders::default();
     let mut proxy_authorization: Option<Zeroizing<Vec<u8>>> = None;
     let mut last = Last::Nothing;
+    let mut read = 0usize;
     loop {
         let line = read_line(reader).await?;
+        read += line.len() + 2;
+        if read > MAX_HEADER_BLOCK {
+            return Err(HttpParseError::HeadTooLarge);
+        }
         if line.is_empty() {
             return Ok(HeaderBlock {
                 headers,

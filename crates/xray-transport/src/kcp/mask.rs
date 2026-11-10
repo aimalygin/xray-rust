@@ -259,10 +259,15 @@ impl Group {
         if self.0.is_empty() {
             return Some(range);
         }
-        if range.len() < self.size() {
-            return None;
-        }
+        // What the masks still to open reserve, checked before each of them:
+        // an AES mask takes its tag as well, so the length of the whole says
+        // nothing about what it leaves for the masks inside it.
+        let mut reserved = self.size();
         for mask in self.0.iter().rev() {
+            if range.len() < reserved {
+                return None;
+            }
+            reserved -= mask.size();
             let inner = mask.open(&mut buf[range.clone()])?;
             range = range.start + inner.start..range.start + inner.end;
         }

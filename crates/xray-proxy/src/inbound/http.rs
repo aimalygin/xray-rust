@@ -15,6 +15,8 @@ pub enum HttpParseError {
     NotConnect,
     #[error("request line is too long")]
     LineTooLong,
+    #[error("message head is too large")]
+    HeadTooLarge,
     #[error("request is malformed")]
     Malformed,
     #[error("invalid authority")]
