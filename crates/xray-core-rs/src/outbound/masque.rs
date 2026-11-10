@@ -23,6 +23,10 @@ use xray_wireguard::Netstack;
 /// Xray's `retryInterval`: after a failed tunnel, flows take an existing one
 /// or the same error for this long, without dialing again.
 const RETRY_INTERVAL: Duration = Duration::from_secs(1);
+/// A tunnel the proxy closes this soon after it was established counts as
+/// a failed dial. Xray dials again for the next flow at once, so a proxy
+/// that answers and then hangs up costs a handshake for every flow.
+const SHORT_LIVED: Duration = Duration::from_secs(5);
 /// Xray's client defaults for `remoteDNS`.
 const DEFAULT_REMOTE_DNS: [&str; 4] = [
     "1.1.1.1",
@@ -152,6 +156,7 @@ struct Entry<T: Pooled = Tunnel> {
     left_usage: AtomicI32,
     unreusable_at: Option<Instant>,
     not_used: AtomicBool,
+    established: Instant,
 }
 
 impl<T: Pooled> Entry<T> {
@@ -742,6 +747,7 @@ impl<T: Pooled> Pool<T> {
     /// A tunnel to hold, or whether to dial one. Within a second of a failed
     /// dial, flows take an existing tunnel or the failure.
     fn take(&mut self) -> Take<T> {
+        self.retire();
         let recent_failure = self
             .last_error
             .as_ref()
@@ -773,20 +779,36 @@ impl<T: Pooled> Pool<T> {
         }
     }
 
-    /// Xray's `getXmuxClient`: drops tunnels that are closed, used up or too
-    /// old, then picks one. `None` with `create` asks for a new tunnel.
-    fn select(&mut self, create: bool) -> Option<Arc<Entry<T>>> {
+    /// Drops tunnels that are closed, used up or too old. One that closed
+    /// within [`SHORT_LIVED`] of being established is a failed dial: flows
+    /// wait out [`RETRY_INTERVAL`] before the next one.
+    fn retire(&mut self) {
         let now = Instant::now();
+        let mut short_lived = false;
         self.entries.retain(|entry| {
-            let retired = entry.tunnel.is_closed()
+            let closed = entry.tunnel.is_closed();
+            let retired = closed
                 || entry.left_usage.load(Ordering::Acquire) == 0
                 || entry.unreusable_at.is_some_and(|at| now > at);
             if retired {
+                short_lived |= closed && now.duration_since(entry.established) < SHORT_LIVED;
                 entry.not_used.store(true, Ordering::Release);
                 entry.maybe_close();
             }
             !retired
         });
+        if short_lived {
+            self.last_error = Some((
+                "the MASQUE tunnel closed right after it was established".to_owned(),
+                now,
+            ));
+        }
+    }
+
+    /// Xray's `getXmuxClient`: drops tunnels that are closed, used up or too
+    /// old, then picks one. `None` with `create` asks for a new tunnel.
+    fn select(&mut self, create: bool) -> Option<Arc<Entry<T>>> {
+        self.retire();
         if self.entries.is_empty() {
             return None;
         }
@@ -822,6 +844,7 @@ impl<T: Pooled> Pool<T> {
             left_usage: AtomicI32::new(if reuse > 0 { reuse - 1 } else { -1 }),
             unreusable_at: (secs > 0).then(|| Instant::now() + Duration::from_secs(secs as u64)),
             not_used: AtomicBool::new(false),
+            established: Instant::now(),
         });
         self.entries.push(Arc::clone(&entry));
         entry
