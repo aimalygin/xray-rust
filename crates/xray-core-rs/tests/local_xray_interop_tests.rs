@@ -29,7 +29,7 @@ use xray_transport::{
 const TEST_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
 const TLS_SERVER_NAME: &str = "vless.test";
 const XRAY_CORE_EXPECTED_REVISION_ENV: &str = "XRAY_CORE_EXPECTED_REVISION";
-const PINNED_XRAY_CORE_REVISION: &str = "a4a3dff5b20c2faae567b742c172c7b95e75c083";
+const PINNED_XRAY_CORE_REVISION: &str = "676eaf66f8f05d4d558ee7a74b4736623d3feeb9";
 // This external-origin legacy suite needs X25519MLKEM support. The hermetic
 // ML-DSA/Vision matrix uses its own local cover origin instead.
 const REALITY_SERVER_NAME: &str = "www.google.com";
