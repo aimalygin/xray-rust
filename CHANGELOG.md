@@ -10,6 +10,21 @@ long-term supported release series.
 
 ## Unreleased
 
+- Compatibility reference moved to Xray-core v26.11.9
+  (`676eaf66f8f05d4d558ee7a74b4736623d3feeb9`, Go 1.27.3): CI, interop
+  guards, oracle modules, fixtures and the benchmark harness pin it. See the
+  [migration record](docs/xray-core-v26.11.9-migration.md).
+- Freedom `finalRules` read `delay` and `logLevel` as Xray-core v26.11.9
+  does. `blockDelay` still works with a deprecation warning and wins over
+  `delay`; `logLevel` is `none`, `debug`, `info`, `warning` or `error`, is
+  checked, and writes nothing here, since xray-rust logs no blocked
+  connection. An allow rule with a delay or a level is refused, as upstream
+  now refuses it. See [Freedom outbound](docs/config-compatibility.md#freedom-outbound).
+- Mux runs every TCP `concurrency` from zero up to 128 as 128 children per
+  parent, keeps a larger one, and lets a parent hand out 1024 children over
+  its life, as Xray-core v26.11.9 does; both concurrencies take any 16-bit
+  value instead of at most 64.
+
 - The FinalMask `fragment` mask selects whole writes with `packets`, as
   Xray-core v26.10.31 does: empty or absent cuts every write, a number or a
   `from-to` range the writes so numbered, each into raw pieces, every piece

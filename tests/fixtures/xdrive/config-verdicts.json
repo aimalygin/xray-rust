@@ -1,5 +1,5 @@
 {
- "comment": "XDRIVE configurations and what `xray run -test` of Xray-core v26.10.31 says of each: \"ok\" or a substring of its error. \"ours\" records a deliberate difference of the parser, \"core\" a refusal when the core starts (a substring of its error). Rechecked by scripts/check-config-verdicts.py in scripts/check-xdrive-interop.sh.",
+ "comment": "XDRIVE configurations and what `xray run -test` of Xray-core v26.11.9 says of each: \"ok\" or a substring of its error. \"ours\" records a deliberate difference of the parser, \"core\" a refusal when the core starts (a substring of its error). Rechecked by scripts/check-config-verdicts.py in scripts/check-xdrive-interop.sh.",
  "cases": [
   {
    "name": "minimal local",

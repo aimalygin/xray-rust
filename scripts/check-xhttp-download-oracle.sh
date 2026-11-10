@@ -43,7 +43,7 @@ XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT" \
   cargo test --locked -p xray-core-rs --test local_xray_interop_tests \
     xhttp_download::full_xray_download_carrier_matrix -- --ignored --nocapture
 
-# Xray-core v26.10.31 reads an OPTIONS request without a CORS preflight header
+# Xray-core v26.11.9 reads an OPTIONS request without a CORS preflight header
 # as an uplink; earlier servers answered it without reading the upload.
 XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT" \
   cargo test --locked -p xray-core-rs --test local_xray_interop_tests \

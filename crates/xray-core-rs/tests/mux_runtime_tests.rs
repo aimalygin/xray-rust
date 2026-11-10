@@ -67,9 +67,11 @@ async fn mux_runtime_selected_protocols_share_tcp_udp_and_close_children() {
                     let reply=parse_socks5_udp_datagram(&bytes[..n]).unwrap();
                     assert_eq!(reply.payload.as_ref(),payload);assert_eq!(reply.target,target);
                 }
-                // Six TCP children share two Mux parents. A dedicated UDP pool
-                // adds one parent. H2 carriers share their protected socket.
-                assert_eq!(protector.0.load(Ordering::SeqCst),if matches!(carrier, "grpc" | "xhttp") {1} else if separate_udp {3} else {2});
+                // Six TCP children share one Mux parent: like Xray-core's
+                // v26.11.9 handler, a concurrency of 4 runs as 128. A dedicated
+                // UDP pool adds one parent. H2 carriers share their protected
+                // socket.
+                assert_eq!(protector.0.load(Ordering::SeqCst),if matches!(carrier, "grpc" | "xhttp") {1} else if separate_udp {2} else {1});
                 let id=core.connection_snapshot().connections.iter().find(|c|c.network==Network::Udp).unwrap().id;
                 core.close_connection(id).unwrap();
                 for stream in &mut streams {echo(stream,b"siblings survive child close").await;}

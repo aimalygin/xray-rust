@@ -741,10 +741,12 @@
         "network",
         "port",
         "ip",
+        "delay",
+        "logLevel",
         "blockDelay"
       ],
       "id": "FREEDOM_FINAL_RULE",
-      "notes": "action is allow or block, case-insensitive. network is a comma-separated string or array; names other than tcp and udp match nothing, and absent or empty matches every network. port and ip read as in routing rules, and ip may also be a comma-separated string. blockDelay is seconds, an integer or min-max, defaulting to 30-90."
+      "notes": "action is allow or block, case-insensitive. network is a comma-separated string or array; names other than tcp and udp match nothing, and absent or empty matches every network. port and ip read as in routing rules, and ip may also be a comma-separated string. delay is seconds, an integer or min-max, defaulting to 30-90; blockDelay is its deprecated name, warned about, and wins over delay. logLevel is none, debug, info (the default), warning or error, case-insensitive, and is checked but writes no log here. delay, blockDelay and a nonempty logLevel belong to block rules only."
     },
     {
       "context": "streamSettings.finalmask.tcp[]",
@@ -1135,7 +1137,7 @@
         "xudpProxyUDP443"
       ],
       "id": "MUX",
-      "notes": "Enabled Mux supports VLESS, Trojan, Shadowsocks (2022 and AEAD) and VMess. TCP concurrency 0 defaults to 8; negative disables TCP. XHTTP and VLESS Vision require negative TCP concurrency because the pinned server accepts only UDP children there. XUDP concurrency 0 shares TCP, negative uses native UDP. Positive concurrency is capped at 64. UDP/443: reject (default), allow, skip. Each pool opens children on four parents with 128 lifetime children each; exhausted parents finish their children, up to 16 parents in all."
+      "notes": "Enabled Mux supports VLESS, Trojan, Shadowsocks (2022 and AEAD) and VMess. Both concurrencies are int16. TCP concurrency 0 to 128 becomes 128, as in Xray-core v26.11.9, a larger one stays; negative disables TCP. XHTTP and VLESS Vision require negative TCP concurrency because the pinned server accepts only UDP children there. XUDP concurrency 0 shares TCP, negative uses native UDP, positive is taken as it is. UDP/443: reject (default), allow, skip. Each pool opens children on four parents with 1024 lifetime children each; exhausted parents finish their children, up to 16 parents in all."
     },
     {
       "context": "$.observatory",

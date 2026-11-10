@@ -9,7 +9,7 @@
 // handshake_server_tls13.go does (an Ed25519 self-signed x509 certificate with
 // serial 0 whose signature bytes are replaced by HMAC-SHA512(auth_key,
 // ed25519_public_key)), using only the Go standard library. Xray-core
-// v26.10.31 (commit a4a3dff5b20c2faae567b742c172c7b95e75c083) accepts the
+// v26.11.9 (commit 676eaf66f8f05d4d558ee7a74b4736623d3feeb9) accepts the
 // same binding in transport/internet/reality/reality.go. The Ed25519 key comes
 // from a fixed seed so the vectors are reproducible.
 package main

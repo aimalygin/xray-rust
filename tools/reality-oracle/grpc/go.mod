@@ -21,16 +21,16 @@
 // `go mod tidy` drops the requirements below, because the only file that needs
 // them sits behind a build tag. Edit this file by hand.
 //
-// The Xray-core requirement is release v26.10.31, commit
-// a4a3dff5b20c2faae567b742c172c7b95e75c083.
+// The Xray-core requirement is release v26.11.9, commit
+// 676eaf66f8f05d4d558ee7a74b4736623d3feeb9.
 module xray-rust-tools/grpc-oracle
 
 go 1.27
 
 require (
-	github.com/xtls/xray-core v1.260327.1-0.20261031132019-a4a3dff5b20c
-	golang.org/x/net v0.61.0
-	google.golang.org/grpc v1.84.0
+	github.com/xtls/xray-core v1.260327.1-0.20261109052709-676eaf66f8f0
+	golang.org/x/net v0.62.0
+	google.golang.org/grpc v1.85.0
 )
 
 require (
@@ -38,6 +38,6 @@ require (
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260817212433-ac3dfec99bb1 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )

@@ -1,10 +1,10 @@
 //! Freedom's `proxyProtocol`, `finalRules`, `noises` and the removed
-//! `ipsBlocked` and `noise`, read as Xray-core v26.10.31 reads them.
+//! `ipsBlocked` and `noise`, read as Xray-core v26.11.9 reads them.
 
 use super::*;
 use crate::{
-    FreedomBlockDelay, FreedomFinalRule, FreedomNoise, FreedomNoiseFamily, FreedomNoisePacket,
-    FreedomRuleAction, ProxyProtocolVersion,
+    go_lowercase, FreedomBlockDelay, FreedomFinalRule, FreedomNoise, FreedomNoiseFamily,
+    FreedomNoisePacket, FreedomRuleAction, FreedomRuleLogLevel, ProxyProtocolVersion,
 };
 
 /// Bounds Xray-core does not set, as for FinalMask noise.
@@ -111,14 +111,75 @@ impl Parser<'_> {
             )
             .map(|list| list.and_then(|list| list.has_ranges.then_some(list.ranges)));
         let ip_matchers = self.final_rule_ips(rule.get("ip"), &format!("{path}.ip"));
-        let block_delay = self.block_delay(rule.get("blockDelay"), &format!("{path}.blockDelay"));
+        let delay = self.block_delay(rule.get("delay"), &format!("{path}.delay"));
+        let deprecated_path = format!("{path}.blockDelay");
+        let deprecated = self.block_delay(rule.get("blockDelay"), &deprecated_path);
+        let log_level_path = format!("{path}.logLevel");
+        let log_level = self.final_rule_log_level(rule.get("logLevel"), &log_level_path);
+        let (action, delay, deprecated, log_level) = (action?, delay?, deprecated?, log_level?);
+
+        // Xray-core's `FreedomFinalRuleConfig.Build`: `blockDelay` warns and
+        // takes the place of `delay`; an allow rule then refuses a delay and
+        // any nonempty `logLevel`, before the level's value is looked at.
+        let (block_delay, delay_path) = match deprecated {
+            Some(deprecated) => {
+                self.warning(
+                    &deprecated_path,
+                    "freedom final rule `blockDelay` is deprecated; use `delay`",
+                );
+                (Some(deprecated), deprecated_path)
+            }
+            None => (delay, format!("{path}.delay")),
+        };
+        if action == FreedomRuleAction::Allow {
+            let refused = if block_delay.is_some() {
+                Some(delay_path)
+            } else {
+                (!log_level.is_empty()).then(|| log_level_path.clone())
+            };
+            if let Some(refused) = refused {
+                self.error(
+                    refused,
+                    "delay and logLevel are only supported for block final rules",
+                );
+                return None;
+            }
+        }
+        let log_level = match go_lowercase(log_level).as_ref() {
+            "" | "info" => FreedomRuleLogLevel::Info,
+            "none" => FreedomRuleLogLevel::None,
+            "debug" => FreedomRuleLogLevel::Debug,
+            "warning" => FreedomRuleLogLevel::Warning,
+            "error" => FreedomRuleLogLevel::Error,
+            _ => {
+                self.error(
+                    log_level_path,
+                    format!("unknown final rule logLevel `{log_level}`"),
+                );
+                return None;
+            }
+        };
         Some(FreedomFinalRule {
-            action: action?,
+            action,
             networks: networks?,
             port_ranges: port_ranges?,
             ip_matchers: ip_matchers?,
-            block_delay: block_delay?,
+            block_delay,
+            log_level,
         })
+    }
+
+    /// Xray-core's `logLevel` string field; Go leaves one that decodes null
+    /// empty.
+    fn final_rule_log_level<'v>(&mut self, raw: Option<&'v Value>, path: &str) -> Option<&'v str> {
+        match raw {
+            None | Some(Value::Null) => Some(""),
+            Some(Value::String(level)) => Some(level),
+            Some(_) => {
+                self.error(path, "field `logLevel` must be a string");
+                None
+            }
+        }
     }
 
     /// Xray-core's `StringList` of routing IP rules: a comma-separated
@@ -137,8 +198,8 @@ impl Parser<'_> {
         }
     }
 
-    /// Xray-core's `Int32Range` of seconds: an integer or a `min-max` string,
-    /// in either order.
+    /// Xray-core's `Int32Range` of seconds, for `delay` and `blockDelay`: an
+    /// integer or a `min-max` string, in either order.
     fn block_delay(
         &mut self,
         raw: Option<&Value>,
@@ -158,9 +219,10 @@ impl Parser<'_> {
                 max_secs: a.max(b).unsigned_abs(),
             })),
             _ => {
+                let field = path.rsplit('.').next().unwrap_or("delay");
                 self.error(
                     path,
-                    "blockDelay must be a nonnegative integer or `min-max` range of seconds",
+                    format!("{field} must be a nonnegative integer or `min-max` range of seconds"),
                 );
                 None
             }

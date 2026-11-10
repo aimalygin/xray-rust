@@ -14,8 +14,8 @@ See [Xray-core differences and verification gaps](xray-core-differences.md)
 for the reference revision, deliberate SOCKS restrictions, mobile integration
 gaps, and pending HTTP decisions from issues #79 and #81.
 
-The active compatibility reference is **Xray-core v26.10.31**; see the
-[migration record](xray-core-v26.10.31-migration.md) for checks and limitations.
+The active compatibility reference is **Xray-core v26.11.9**; see the
+[migration record](xray-core-v26.11.9-migration.md) for checks and limitations.
 References to earlier versions below describe the origin of unchanged behavior.
 
 ## v0.8 Hysteria carrier additions
@@ -445,7 +445,7 @@ adapter. UDP noise is available through their ordinary JSON configuration.
 The current development tree adds Trojan, Shadowsocks 2022 and VMess AEAD.
 These additions are not part of the published 0.7 artifacts. See the
 [implementation evidence](v08-implementation-plan.md) for verified combinations,
-resource bounds and remaining release gates. The active reference is Xray-core v26.10.31; unsupported options fail closed.
+resource bounds and remaining release gates. The active reference is Xray-core v26.11.9; unsupported options fail closed.
 
 | Outbound | Settings | Import |
 | --- | --- | --- |
@@ -527,13 +527,17 @@ Server restart with unchanged keys is verified on an existing client session;
 forged, misbound and replayed replies remain rejected.
 
 `mux.enabled: true` activates bounded shared Mux for these three outbounds and
-for VLESS ([below](#vless-mux)). TCP `concurrency` defaults to 8 (including zero), a negative value disables TCP
-multiplexing. `xudpConcurrency: 0` shares the TCP pool, a positive value creates
-a separate UDP pool, and a negative value uses the native protocol UDP path.
-Positive concurrency is limited to 64. `xudpProxyUDP443` is `reject` by default,
+for VLESS ([below](#vless-mux)). Both concurrencies are 16-bit integers, as in
+Xray-core. TCP `concurrency` from zero up to 128 runs as 128 children per
+parent, as Xray-core v26.11.9 runs it, a larger value stays, and a negative
+value disables TCP multiplexing. `xudpConcurrency: 0` shares the TCP pool, a
+positive value creates a separate UDP pool with that many children per
+parent, and a negative value uses the native protocol UDP path.
+`xudpProxyUDP443` is `reject` by default,
 or `allow`/`skip`; `skip` bypasses Mux for UDP/443. Each pool opens children
-on at most four parents, with 128 lifetime child IDs per parent. A parent that
-has used all 128 IDs keeps serving its remaining children without counting
+on at most four parents, with 1024 lifetime child IDs per parent, Xray-core
+v26.11.9's `maxReuseTimes`. A parent that
+has used all 1024 IDs keeps serving its remaining children without counting
 toward the four, so a long-lived child does not block new connections; a pool
 holds at most 16 parents in all. Per-child queues are bounded (eight frames, at
 most 64 KiB, per direction) and an empty parent times out after 30 seconds.
@@ -1023,8 +1027,17 @@ that no rule matches is allowed.
   the connection is blocked when any one of them is.
 - A blocked TCP connection is held open, as in Xray-core: the client sees
   success, what it sends is discarded, and the connection closes once the
-  client finishes or after `blockDelay`. That is whole seconds drawn from an
-  integer or a `min-max` range, 30 to 90 by default.
+  client finishes or after `delay`. That is whole seconds drawn from an
+  integer or a `min-max` range, 30 to 90 by default. `blockDelay`, its name
+  before Xray-core v26.11.9, still works with a deprecation warning and wins
+  over `delay` when both are set.
+- `logLevel` is the severity at which Xray-core logs a rule's blocked
+  connections: `none`, `debug`, `info` (the default, also empty), `warning`
+  or `error`, matched without case; any other value is refused. xray-rust
+  writes no log line for a blocked connection, so the level is checked and
+  has no other effect.
+- `delay`, `blockDelay` and a nonempty `logLevel` belong to block rules. An
+  allow rule with any of them is refused, as Xray-core v26.11.9 refuses it.
 - A blocked UDP flow discards its datagrams for the block delay. An open flow
   drops each reply whose source a rule blocks.
 - When freedom carries another outbound through `dialerProxy`, the rules check
@@ -1078,7 +1091,8 @@ Differences from Xray-core:
   dialing. Without a domain strategy, Xray-core checks it against the system
   resolver's answer.
 - In a final rule, a numeric port above 65535 is rejected, as in routing
-  rules. A negative `blockDelay`, or one outside 32-bit integers, is rejected;
+  rules. A negative `delay` or `blockDelay`, or one outside 32-bit integers,
+  is rejected;
   Xray-core accepts both, wraps the latter, and on a negative delay later
   panics or closes at once. An unknown field in a rule is rejected rather than
   ignored.
@@ -2564,7 +2578,7 @@ as on every VLESS outbound.
   `flushIntervalMs` 20, `pollIntervalMs` 50, `maxPollIntervalMs` 500 (never
   below the poll interval), `eagerWindowMs` 2000, `holeTimeoutMs` 30000,
   `sessionTtlSeconds` 300 (a server's setting) and `concurrency` 8 (at most
-  64).
+  256 since Xray-core v26.11.9).
 - `xmux` is read as XHTTP's; an all-zero one means one connection reused for
   1800 to 3000 seconds, four for `google-drive` unless `tlsSettings.alpn` is
   exactly `["h3"]`. It shapes the HTTP storages' connections; `local` has
@@ -2687,8 +2701,8 @@ Xray-core.
 The template is read as Go's `encoding/json` reads it into Xray-core's
 types: field names in any case, `null` as nothing, whole numbers only.
 `put`, `get`, `delete` and `list` need a `url` and `list` a `namesRegex`
-with a group; `concurrency` caps requests in flight a session, 32 when not
-positive and at most 256. In URLs, headers and bodies `{folder}` is
+with a group; `concurrency` caps requests in flight a session, 64 when not
+positive (Xray-core's `driveMaxInflight`, 32 before v26.11.9) and at most 256. In URLs, headers and bodies `{folder}` is
 `remoteFolder`, `{secretN}` the Nth secret, `{name}` and `{prefix}` the
 object's name (with `flatten`, its `/` written as `~`), `{data}` the
 object in base64 when `put` has a `body`, which then replaces the raw

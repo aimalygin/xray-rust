@@ -1,6 +1,6 @@
 use std::{env, path::Path, process::Command};
 
-const XRAY_CORE_REFERENCE_REVISION: &str = "a4a3dff5b20c2faae567b742c172c7b95e75c083";
+const XRAY_CORE_REFERENCE_REVISION: &str = "676eaf66f8f05d4d558ee7a74b4736623d3feeb9";
 
 #[test]
 fn compat_smoke_xray_core_reference_checkout_is_available() {
@@ -36,6 +36,6 @@ fn compat_smoke_xray_core_reference_checkout_is_available() {
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         XRAY_CORE_REFERENCE_REVISION,
-        "Xray-core oracle checkout is not the pinned v26.10.31 revision"
+        "Xray-core oracle checkout is not the pinned v26.11.9 revision"
     );
 }

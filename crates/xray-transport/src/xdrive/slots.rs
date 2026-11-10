@@ -34,6 +34,10 @@ const SLOT_HEADER_LEN: usize = 8 + 8 + 1 + 4 + 4;
 /// one request less than a body.
 pub(crate) const SLOT_INLINE_LIMIT: usize = 14 << 10;
 const SLOT_DEPTH_LIMIT: usize = 8;
+/// Xray-core's `maxSlotIDLen`: the longest slot or watermark id a server takes
+/// from a peer's announcement.
+#[cfg(test)]
+const MAX_SLOT_ID_LEN: usize = 128;
 /// So many segments of one size in a row double it, from
 /// [`SLOT_INLINE_LIMIT`] up to `segmentBytes`.
 const INLINE_RAMP_SEGMENTS: u32 = 8;
@@ -254,7 +258,17 @@ impl Ring {
             up: table("u")?,
             down: table("d")?,
         };
-        let usable = |t: &SlotTable| !t.slots.is_empty() && !t.watermark.is_empty();
+        // Since v26.11.9 the server also bounds the slots by `maxConcurrency`
+        // and every id by `maxSlotIDLen`, refusing an empty slot id.
+        let usable = |t: &SlotTable| {
+            !t.slots.is_empty()
+                && !t.watermark.is_empty()
+                && t.slots.len() <= super::params::MAX_CONCURRENCY
+                && t.watermark.len() <= MAX_SLOT_ID_LEN
+                && t.slots
+                    .iter()
+                    .all(|id| !id.is_empty() && id.len() <= MAX_SLOT_ID_LEN)
+        };
         (usable(&ring.up) && usable(&ring.down)).then_some(ring)
     }
 }

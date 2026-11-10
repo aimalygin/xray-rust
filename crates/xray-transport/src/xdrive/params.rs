@@ -1,4 +1,4 @@
-//! The tuning of a session, as Xray-core v26.10.31's `params.go` derives it
+//! The tuning of a session, as Xray-core v26.11.9's `params.go` derives it
 //! from the configured numbers.
 
 use std::time::Duration;
@@ -13,7 +13,7 @@ const DEFAULT_SESSION_TTL: Duration = Duration::from_secs(5 * 60);
 const DEFAULT_CONCURRENCY: usize = 8;
 
 const MAX_SEGMENT_BYTES: usize = 16 * 1024 * 1024;
-const MAX_CONCURRENCY: usize = 64;
+pub(crate) const MAX_CONCURRENCY: usize = 256;
 
 /// The numbers of `xdriveSettings`, as configured; zero takes the default.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -127,7 +127,7 @@ mod tests {
             ..XdriveTuning::default()
         });
         assert_eq!(params.segment_bytes, 16 * 1024 * 1024);
-        assert_eq!(params.concurrency, 64);
+        assert_eq!(params.concurrency, 256);
         assert_eq!(params.max_poll_interval, Duration::from_millis(300));
         let params = Params::from_tuning(&XdriveTuning {
             segment_bytes: 1,
