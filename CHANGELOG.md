@@ -32,8 +32,16 @@ long-term supported release series.
   `hellochrome_155`, and so `chrome`) draw their extension order per
   connection too, GREASE, padding and pre_shared_key staying in place. Until
   now each profile sent `0x0a0a` in every GREASE slot and one fixed order.
-  The ECH GREASE payload length of the Chrome profiles stays pinned. See
-  [uTLS per-connection draws](docs/xray-core-differences.md#utls-per-connection-draws).
+  See [uTLS per-connection draws](docs/xray-core-differences.md#utls-per-connection-draws).
+- The Chrome profiles with ECH GREASE (`chrome`, `hellochrome_120`,
+  `hellochrome_120_pq`, `hellochrome_131`, `hellochrome_133` and
+  `hellochrome_155`) draw its payload length per connection as uTLS does, 128,
+  160, 192 or 224 bytes, instead of always 128. Padded profiles now pad as
+  BoringSSL does: a hello past 511 bytes before padding goes out without the
+  padding extension instead of with an empty one, and one of 508 to 511 bytes
+  gets a single byte. Chrome 120's hello now goes unpadded with the three
+  longer ECH lengths, as does any padded profile's behind a long server name.
+  See [ECH GREASE](docs/config-compatibility.md#ech-grease).
 - XDRIVE on Google Drive follows Xray-core v26.11.9: rings as deep as
   `concurrency` (64 by default, at most 256) with spare rings made ahead,
   sessions announced after their first segment with that segment inline,

@@ -26,7 +26,7 @@ use rustls::client::{
 use rustls::{CertificateCompressionAlgorithm, CipherSuite, Error as RustlsError, NamedGroup};
 
 use crate::sudoku::gorand::{crypto_rand_int63, GoRand};
-use crate::utls_profiles::{UtlsEchGrease, HPKE_AEAD_AES_128_GCM};
+use crate::utls_profiles::ECH_GREASE_BORING;
 use crate::utls_shaping::{
     application_settings_payload, encrypted_client_hello_payload, push_exact_or_raw_extension,
     signature_algorithms_payload,
@@ -103,14 +103,6 @@ const SIGNATURE_ALGORITHMS: [u16; 9] = [
     0x0201, // rsa_pkcs1_sha1
 ];
 
-/// `BoringGREASEECH`: one cipher suite and a payload of 128, 160, 192 or 224
-/// bytes plus the AEAD tag, drawn per connection; these are the resulting
-/// extension body lengths.
-const ECH_GREASE: UtlsEchGrease = UtlsEchGrease {
-    aead_ids: &[HPKE_AEAD_AES_128_GCM],
-    lengths: &[186, 218, 250, 282],
-};
-
 /// The ClientHello quic-go's ChromeParrot sends through uTLS.
 ///
 /// No GREASE value anywhere; TLS 1.3 alone; suites AES-128-GCM, AES-256-GCM
@@ -170,7 +162,7 @@ impl ChromeQuicHello {
         if let Some(draws) = &self.draws {
             return Ok(draws.encrypted_client_hello.clone());
         }
-        encrypted_client_hello_payload(&ECH_GREASE)
+        encrypted_client_hello_payload(&ECH_GREASE_BORING)
     }
 }
 

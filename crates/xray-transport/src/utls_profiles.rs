@@ -63,23 +63,22 @@ pub(crate) struct UtlsEchGrease {
     pub lengths: &'static [usize],
 }
 
-/// `BoringGREASEECH`, the scheme BoringSSL — and so Chrome — uses by default.
+/// `BoringGREASEECH`, the scheme BoringSSL — and so Chrome — uses by default,
+/// on TCP for the Chrome profiles and on QUIC for ChromeParrot alike.
 ///
 /// One cipher suite, so the AEAD really is fixed here: AES-128-GCM is what
 /// Chrome always sends, not a simplification on our part.
 ///
-/// uTLS draws the payload length from `{128, 160, 192, 224}`, which is
-/// `{186, 218, 250, 282}` once the tag and the outer header are added. We pin
-/// the first: both the raw-hello and the shape fixtures record one length per
-/// fingerprint, so a per-connection draw would fail those byte-exact
-/// comparisons three runs in four. Unpinning it means teaching
-/// `clienthello_shape.go` to force a candidate index and committing a fixture
-/// per candidate, so the guard can assert the hello matches one of the four
-/// uTLS can produce. Until then this is a known divergence, recorded in
-/// `docs/config-compatibility.md`.
+/// uTLS draws the payload length from `{128, 160, 192, 224}` for every hello,
+/// which is `{186, 218, 250, 282}` once the tag and the outer header are added,
+/// and so does every hello here (`HelloDraws`). The oracle fixtures are made
+/// one per candidate: `clienthello_shape.go -ech-payload-length` forces each
+/// in turn, and the byte-exact comparisons hold a hello of each length to its
+/// own fixture. The longer three push Chrome 120's hello past BoringSSL's
+/// padding window, which `utls_shaping` follows as uTLS does.
 pub(crate) const ECH_GREASE_BORING: UtlsEchGrease = UtlsEchGrease {
     aead_ids: &[HPKE_AEAD_AES_128_GCM],
-    lengths: &[186],
+    lengths: &[186, 218, 250, 282],
 };
 
 /// Firefox's own GREASE scheme (`u_parrots.go`).

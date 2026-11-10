@@ -200,6 +200,27 @@ async fn rust_socks_clients_open_parallel_echo_flows_through_local_xray_vless_re
     .unwrap();
 }
 
+/// VLESS over TLS on the production shaping path, many connections per
+/// fingerprint: each handshake draws its own GREASE values, extension order and
+/// ECH GREASE length, and Xray-core's TLS server must take every hello drawn.
+/// The default names cover Chrome's four ECH lengths, Chrome 120's unpadded
+/// hellos among them; `XRAY_TLS_INTEROP_BURST_FINGERPRINTS` and
+/// `XRAY_TLS_INTEROP_BURST_FLOWS` choose others.
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_clients_open_parallel_echo_flows_through_local_xray_vless_tls_selected_fingerprints(
+) {
+    timeout(Duration::from_secs(240), async {
+        let flow_count = selected_tls_interop_burst_flow_count();
+        for fingerprint in selected_tls_interop_burst_fingerprints() {
+            eprintln!("running TLS burst interop fingerprint={fingerprint} flows={flow_count}");
+            run_local_xray_vless_shaped_tls_burst_interop(&fingerprint, flow_count).await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
 async fn xray_core_socks_clients_open_parallel_echo_flows_through_local_xray_vless_reality_vision_selected_fingerprints(
@@ -543,6 +564,39 @@ fn selected_reality_interop_burst_fingerprints() -> Vec<String> {
     vec!["hellofirefox_148".to_owned()]
 }
 
+fn selected_tls_interop_burst_fingerprints() -> Vec<String> {
+    if let Ok(raw) = env::var("XRAY_TLS_INTEROP_BURST_FINGERPRINTS") {
+        return raw
+            .split(',')
+            .map(str::trim)
+            .filter(|fingerprint| !fingerprint.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
+    }
+
+    [
+        "chrome",
+        "hellochrome_133",
+        "hellochrome_131",
+        "hellochrome_120",
+    ]
+    .into_iter()
+    .map(ToOwned::to_owned)
+    .collect()
+}
+
+fn selected_tls_interop_burst_flow_count() -> usize {
+    let flow_count = env::var("XRAY_TLS_INTEROP_BURST_FLOWS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(64);
+    assert!(
+        (1..=256).contains(&flow_count),
+        "XRAY_TLS_INTEROP_BURST_FLOWS must be between 1 and 256"
+    );
+    flow_count
+}
+
 fn selected_reality_interop_burst_flow_count() -> usize {
     let flow_count = env::var("XRAY_REALITY_INTEROP_BURST_FLOWS")
         .ok()
@@ -793,6 +847,41 @@ async fn run_local_xray_vless_reality_vision_burst_interop(fingerprint: &str, fl
     )
     .await;
     let rust_config = rust_reality_vision_core_config(xray.addr, fingerprint);
+
+    run_local_xray_vless_parallel_interop_scenario(xray, rust_config, flow_count).await;
+}
+
+/// `flow_count` parallel flows over VLESS with `security: tls` and
+/// `fingerprint`, through the core's own TLS connector rather than a pinned
+/// rustls config, so every flow's handshake is a shaped one. The server's
+/// certificate is generated for the run, hence `allowInsecure`.
+async fn run_local_xray_vless_shaped_tls_burst_interop(fingerprint: &str, flow_count: usize) {
+    let xray_checkout = resolve_xray_checkout();
+    let xray = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            &xray_checkout,
+            XrayVlessServerConfig {
+                security: XrayInboundSecurity::Tls,
+                transport: XrayInboundTransport::Raw,
+                flow: None,
+            },
+        ),
+    )
+    .await
+    .expect("start xray timeout");
+    let rust_config = rust_core_config_with_security(
+        xray.addr,
+        StreamSecurity::Tls(TlsSettings {
+            server_name: Some(TLS_SERVER_NAME.to_owned()),
+            fingerprint: Some(fingerprint.to_owned()),
+            allow_insecure: true,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
+            alpn: Vec::new(),
+        }),
+        None,
+    );
 
     run_local_xray_vless_parallel_interop_scenario(xray, rust_config, flow_count).await;
 }

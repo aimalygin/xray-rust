@@ -307,6 +307,7 @@ impl ClientHelloCustomizer for RustlsRealityClientHelloCustomizer {
             self.profile,
             context,
             &HelloDraws::draw(self.profile)?,
+            None,
         )?;
 
         if let Some(capture) = &self.capture {
