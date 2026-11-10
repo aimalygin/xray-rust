@@ -26,6 +26,9 @@ use std::{
     ops,
 };
 
+mod chrome_parrot;
+#[doc(hidden)]
+pub use chrome_parrot::chrome_parrot_transport_parameters;
 mod cid_queue;
 pub mod coding;
 mod constant_time;

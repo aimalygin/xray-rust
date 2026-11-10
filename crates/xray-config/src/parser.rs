@@ -412,6 +412,18 @@ impl Parser<'_> {
         {
             self.error("$.meta", "field `meta` must be an object or null");
         }
+        // Xray-core v26.10.31 refuses any legacy reverse proxy, bridges and
+        // portals alike, before reading it.
+        if self
+            .root
+            .get("reverse")
+            .is_some_and(|reverse| !reverse.is_null())
+        {
+            self.error(
+                "$.reverse",
+                "The feature \"legacy reverse\" has been removed and migrated to \"VLESS Reverse Proxy\". Please update your config(s) according to release note and documentation.",
+            );
+        }
     }
 
     fn parse_observatory(&mut self) -> Option<ObservatoryConfig> {

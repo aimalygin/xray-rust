@@ -79,6 +79,10 @@ impl Runtime {
             options,
         }))
     }
+    /// Whether TCP flows ride pooled Mux.Cool connections.
+    pub(super) fn pools_tcp(&self) -> bool {
+        self.tcp.is_some()
+    }
     pub(super) fn pool(&self, target: &Target) -> Result<Option<&Pool>, CoreError> {
         if target.network == RoutingNetwork::Tcp {
             return Ok(self.tcp.as_ref());

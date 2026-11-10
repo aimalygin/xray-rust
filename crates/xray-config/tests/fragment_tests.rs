@@ -1,5 +1,20 @@
 use serde_json::{json, Value};
-use xray_config::{parse_xray_json, FragmentPackets, FragmentRange};
+use xray_config::{parse_xray_json, FragmentPackets, FragmentRange, TcpFragmentSettings};
+
+/// A fragment mask folded from a dedicated freedom handler: the handler's own
+/// mask, which also carries the handler's `finalRules` for connections from a
+/// VLESS reverse proxy (none here).
+fn assert_folded(folded: &Option<TcpFragmentSettings>, handler: &Option<TcpFragmentSettings>) {
+    let folded = folded.as_ref().expect("a folded mask");
+    assert_eq!(folded.folded_final_rules, Some(Vec::new()));
+    assert_eq!(
+        Some(TcpFragmentSettings {
+            folded_final_rules: None,
+            ..folded.clone()
+        }),
+        *handler
+    );
+}
 
 fn settings() -> Value {
     json!({"packets":"tlshello","length":"100-200","delay":0,"maxSplit":8})
@@ -68,9 +83,9 @@ fn dialer_proxy_chain_through_a_fragment_user_does_not_depend_on_outbound_order(
                 .find(|o| o.tag.as_deref() == Some(tag))
                 .unwrap()
         };
-        assert_eq!(
-            by_tag("chain").stream.tcp_fragment,
-            by_tag("fragment").stream.tcp_fragment
+        assert_folded(
+            &by_tag("chain").stream.tcp_fragment,
+            &by_tag("fragment").stream.tcp_fragment,
         );
         assert!(by_tag("entry").stream.tcp_fragment.is_none());
         assert_eq!(
@@ -105,9 +120,9 @@ fn freedom_fragment_parses_with_the_upstream_deprecation_warning() {
 fn legacy_dialer_proxy_normalizes_only_dedicated_fragment_handlers() {
     let config = legacy_profile();
     let parsed = parse_xray_json(&config.to_string()).unwrap();
-    assert_eq!(
-        parsed.config.outbounds[0].stream.tcp_fragment,
-        parsed.config.outbounds[1].stream.tcp_fragment
+    assert_folded(
+        &parsed.config.outbounds[0].stream.tcp_fragment,
+        &parsed.config.outbounds[1].stream.tcp_fragment,
     );
     for (path, value) in [
         (

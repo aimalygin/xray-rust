@@ -21,9 +21,20 @@ keep their original source identities.
   fails. The parser follows all of it, including Go's order: an allow rule
   refuses an unknown level before the level is read. xray-rust writes no log
   line for a blocked connection, so `logLevel` changes nothing else. The
-  default rules now log at `warning`; they arise only for server inbounds
-  (and, upstream, for the MASQUE inbound, which is what "the default safe
-  policy on MASQUE" means), none of which xray-rust has.
+  default rules now log at `warning`. One of them applies here: the rule
+  that blocks every destination for the connections a VLESS reverse proxy's
+  portal opens through the bridge, which carries that level too. The others
+  arise for server inbounds (and, upstream, for the MASQUE inbound, which is
+  what "the default safe policy on MASQUE" means), none of which xray-rust
+  has.
+- **uTLS draws behind ChromeParrot.** The new uTLS reads 16 bytes of GREASE
+  seeds per hello instead of 10 (eight slots instead of five) and takes the
+  ECH GREASE key from `crypto/hpke`. The Chrome QUIC ClientHello carries no
+  GREASE value and quic-go's ChromeParrot code is unchanged, but every random
+  read after the seeds moved. `tests/fixtures/chrome-parrot/initials.json` is
+  therefore regenerated from v26.11.9's own Hysteria dialer; the Rust side
+  replays the new reads to the same transport parameters, datagrams and
+  ClientHello without a change.
 - **Mux defaults** (`app/proxyman/outbound/handler.go`). Every TCP
   `concurrency` from zero up to 128 runs as 128 children per parent, a larger
   value stays, and a parent hands out 1024 children over its life instead of

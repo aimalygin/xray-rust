@@ -3374,13 +3374,56 @@
           "port": 443,
           "id": "my-short-id",
           "encryption": "none",
+          "email": "bridge",
           "reverse": {
-            "tag": "portal"
+            "tag": "portal",
+            "sniffing": {
+              "enabled": true,
+              "destOverride": [
+                "http",
+                "tls"
+              ]
+            }
+          }
+        }
+      },
+      "objects": {
+        "VLESS_REVERSE": "/outbounds/0/settings/reverse"
+      },
+      "accepted": true
+    },
+    {
+      "name": "vless-simplified-reverse-empty-tag",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/settings": {
+          "address": "server.example",
+          "port": 443,
+          "id": "my-short-id",
+          "encryption": "none",
+          "reverse": {
+            "tag": ""
           }
         }
       },
       "accepted": false,
-      "errorPath": "$.outbounds[0].settings.reverse"
+      "errorPath": "$.outbounds[0].settings.reverse.tag"
+    },
+    {
+      "name": "legacy-root-reverse",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/reverse": {
+          "bridges": [
+            {
+              "tag": "bridge",
+              "domain": "reverse.example"
+            }
+          ]
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.reverse"
     },
     {
       "name": "vless-testpre",
@@ -3907,12 +3950,21 @@
       "warningPath": "$.outbounds[0].settings.domainStrategy"
     },
     {
-      "name": "quic-unsupported-disableChromeParrot",
+      "name": "quic-chrome-parrot-on",
       "base": "udp-hop-mask-261021",
       "set": {
         "/outbounds/0/streamSettings/finalmask/quicParams/disableChromeParrot": false
       },
-      "accepted": false
+      "accepted": true
+    },
+    {
+      "name": "quic-disableChromeParrot-string",
+      "base": "udp-hop-mask-261021",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/quicParams/disableChromeParrot": "true"
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.quicParams.disableChromeParrot"
     },
     {
       "name": "quic-disableGSO",

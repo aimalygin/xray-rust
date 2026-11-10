@@ -1,6 +1,8 @@
 //! Go's `math/rand` (v1) generator, which Xray-core's sudoku mask seeds
 //! from the password's SHA-256 to shuffle its grids: `rngSource` and the
-//! `Shuffle` that `rand.New(rand.NewSource(seed))` runs.
+//! `Shuffle` that `rand.New(rand.NewSource(seed))` runs. uTLS shuffles the
+//! extensions of a ChromeParrot ClientHello with the same generator
+//! (`crate::chrome_parrot`).
 //!
 //! The `RNG_COOKED` values are Go's `rngCooked`, from `math/rand/rng.go`:
 //! Copyright 2009 The Go Authors. All rights reserved. Use of this source
@@ -13,7 +15,7 @@ const RNG_MASK: u64 = (1 << 63) - 1;
 const INT32_MAX: i64 = (1 << 31) - 1;
 
 /// Go's `rngSource`: an additive lagged Fibonacci generator.
-pub(super) struct GoRand {
+pub(crate) struct GoRand {
     tap: usize,
     feed: usize,
     vec: [i64; RNG_LEN],
@@ -35,7 +37,7 @@ fn seed_rand(x: i32) -> i32 {
 
 impl GoRand {
     /// `rand.NewSource(seed)`.
-    pub(super) fn new(seed: i64) -> Self {
+    pub(crate) fn new(seed: i64) -> Self {
         let mut rng = Self {
             tap: 0,
             feed: RNG_LEN - RNG_TAP,
@@ -106,7 +108,7 @@ impl GoRand {
     }
 
     /// `Rand.Shuffle` for fewer than 2^31 elements.
-    pub(super) fn shuffle<T>(&mut self, items: &mut [T]) {
+    pub(crate) fn shuffle<T>(&mut self, items: &mut [T]) {
         for i in (1..items.len()).rev() {
             let j = self.int31n((i + 1) as i32) as usize;
             items.swap(i, j);

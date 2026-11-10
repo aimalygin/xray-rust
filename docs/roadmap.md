@@ -1140,7 +1140,9 @@ The following are out of scope unless the project deliberately changes from an
 embedded mobile client core into a general proxy gateway or server:
 
 - matching every Xray-core or sing-box inbound and outbound;
-- server-side VLESS or Trojan, reverse proxy, and a server ecosystem;
+- server-side VLESS or Trojan, the reverse proxy's server side (its portal;
+  the bridge, a VLESS outbound with `reverse`, arrived in 0.10.0), and a
+  server ecosystem;
 - legacy transports solely for feature-count parity (mKCP, which client
   profiles still use, arrived in 0.10.0);
 - a Clash-compatible dashboard, embedded REST/gRPC daemon, or remote-control

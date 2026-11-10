@@ -588,7 +588,7 @@ impl XhttpTransport {
     ) -> Result<XhttpModeDial, XhttpTransportError> {
         if self.http_version == XhttpHttpVersion::Http3 {
             let material = dialer
-                .h3_dial_material(connector)
+                .h3_dial_material(connector, self.h3_quic.chrome_parrot)
                 .map_err(XhttpTransportError::Dial)?;
             let candidates = candidates.to_vec();
             let happy_eyeballs = happy_eyeballs.copied();
