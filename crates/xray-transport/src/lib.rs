@@ -29,6 +29,7 @@ pub mod hysteria;
 pub mod kcp;
 pub mod masque;
 mod memory_class;
+mod network_change;
 pub mod realm;
 pub mod sudoku;
 pub mod xdns;
@@ -67,6 +68,7 @@ pub use dns::{
 };
 pub use happy_eyeballs::{connect_tcp_dual_stack, connect_tcp_happy_eyeballs, HappyEyeballsConfig};
 pub use memory_class::{memory_class, set_memory_class, MemoryClass};
+pub use network_change::NetworkChanges;
 pub(crate) use penetrating_tls::{CapturedStream, PenetratingTlsStream, ServerReadLog};
 pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};
 pub use reality_runtime::{

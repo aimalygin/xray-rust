@@ -542,6 +542,9 @@ pub struct H3ConnectConfig {
     pub quic: H3QuicConfig,
     /// What a `realm` mask's introduction takes from the dial.
     pub realm: Option<crate::realm::RealmEnv>,
+    /// The connection takes a fresh socket whenever these report that the
+    /// OS network changed, for the callers that keep it for long.
+    pub network_changes: Option<crate::NetworkChanges>,
 }
 
 impl fmt::Debug for H3ConnectConfig {
@@ -554,6 +557,7 @@ impl fmt::Debug for H3ConnectConfig {
             .field("socket_protector", &self.socket_protector.is_some())
             .field("quic", &self.quic)
             .field("realm", &self.realm.is_some())
+            .field("network_changes", &self.network_changes.is_some())
             .finish()
     }
 }
@@ -1230,18 +1234,19 @@ pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
     let receive_window = config.quic.populated().receive_window(class);
     let carrier = config.quic.hop_carrier();
     let protector = config.socket_protector.clone();
+    let network_changes = config.network_changes.clone();
     let (endpoint, connection, diagnostics, wire_peer) =
         connect_quic_transport(config, b"h3").await?;
     let send_window = XhttpSendWindow::new(&connection, class);
-    let hop = diagnostics.udp_hop.then(|| {
-        tokio::spawn(hop_udp_carrier(
-            endpoint.clone(),
-            connection.clone(),
-            carrier,
-            protector,
-            wire_peer,
-        ))
-    });
+    let hop = move_udp_carrier(
+        &endpoint,
+        &connection,
+        carrier,
+        protector,
+        wire_peer,
+        CarrierSocket::Streams,
+        network_changes.as_ref(),
+    );
     // quic-go's http3 client, which Xray's XHTTP H3 dial uses, opens its
     // control stream with SETTINGS_MAX_FIELD_SECTION_SIZE = 10 MiB alone
     // (`http3/client.go`, `defaultMaxResponseHeaderBytes`); h3 used to
@@ -1271,6 +1276,49 @@ pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
     })
 }
 
+/// What a connection's socket is set up for, at dial and at every rebind.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CarrierSocket {
+    /// Streams alone, XHTTP's: the receive batch every XHTTP endpoint has.
+    Streams,
+    /// QUIC datagrams as well, MASQUE's: the datagram socket buffers.
+    Datagrams,
+}
+
+/// Starts the task that moves one connection's carrier to a fresh socket:
+/// at every `udphop` interval, and whenever `network_changes` report that
+/// the OS network changed. `None` when the connection does neither. The
+/// task holds the connection, so its owner aborts it.
+pub(crate) fn move_udp_carrier(
+    endpoint: &Endpoint,
+    connection: &quinn::Connection,
+    carrier: crate::hysteria::HysteriaCarrierConfig,
+    protector: Option<Arc<dyn SocketProtector>>,
+    wire_peer: SocketAddr,
+    socket: CarrierSocket,
+    network_changes: Option<&crate::NetworkChanges>,
+) -> Option<tokio::task::JoinHandle<()>> {
+    // A realm socket was introduced to the server and a new one needs a new
+    // introduction; xdns and xicmp carry nothing over the UDP socket. The
+    // next dial takes the new network.
+    let fixed = carrier.realm.is_some() || carrier.xdns.is_some() || carrier.xicmp.is_some();
+    let network = network_changes
+        .filter(|_| !fixed)
+        .map(crate::NetworkChanges::follow);
+    if carrier.next_interval().is_none() && network.is_none() {
+        return None;
+    }
+    Some(tokio::spawn(follow_udp_carrier(
+        endpoint.clone(),
+        connection.clone(),
+        carrier,
+        protector,
+        wire_peer,
+        socket,
+        network,
+    )))
+}
+
 /// Hops one connection's carrier as Xray's `udphop` finalmask does for any
 /// UDP transport, with these deliberate differences: the timer starts once
 /// the connection exists rather than at dial, every remote hop changes the
@@ -1278,31 +1326,64 @@ pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
 /// previous socket until the new path authenticates, and the task ends with
 /// the connection. A failed hop keeps the current protected path until the
 /// next interval, as in Xray.
-pub(crate) async fn hop_udp_carrier(
+///
+/// A change of the OS network takes a fresh socket towards the same peer,
+/// which Xray-core does not do: the old socket's network is gone, and the
+/// connection would otherwise sit out its idle timeout before a redial.
+async fn follow_udp_carrier(
     endpoint: Endpoint,
     connection: quinn::Connection,
     carrier: crate::hysteria::HysteriaCarrierConfig,
     protector: Option<Arc<dyn SocketProtector>>,
     mut wire_peer: SocketAddr,
+    socket: CarrierSocket,
+    mut network: Option<tokio::sync::watch::Receiver<u64>>,
 ) {
     let logical_peer = connection.remote_address();
-    while let Some(delay) = carrier.next_interval() {
-        tokio::select! {
-            _ = connection.closed() => return,
-            () = tokio::time::sleep(delay) => {}
+    loop {
+        let hop = carrier.next_interval();
+        if hop.is_none() && network.is_none() {
+            return;
         }
-        let next = carrier.next_hop_peer(logical_peer, wire_peer);
+        let next = tokio::select! {
+            _ = connection.closed() => return,
+            () = sleep_for(hop) => carrier.next_hop_peer(logical_peer, wire_peer),
+            changed = network_changed(&mut network) => {
+                if !changed {
+                    // The signal's owner is gone: only the hops are left.
+                    network = None;
+                    continue;
+                }
+                wire_peer
+            }
+        };
         if rebind_carrier(
             &endpoint,
             logical_peer,
             next,
             &carrier,
             protector.as_deref(),
+            socket,
         )
         .is_ok()
         {
             wire_peer = next;
         }
+    }
+}
+
+async fn sleep_for(delay: Option<std::time::Duration>) {
+    match delay {
+        Some(delay) => tokio::time::sleep(delay).await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Whether the network changed; `false` once nothing can report it.
+async fn network_changed(network: &mut Option<tokio::sync::watch::Receiver<u64>>) -> bool {
+    match network {
+        Some(network) => network.changed().await.is_ok(),
+        None => std::future::pending().await,
     }
 }
 
@@ -1312,22 +1393,49 @@ fn rebind_carrier(
     wire_peer: SocketAddr,
     carrier: &crate::hysteria::HysteriaCarrierConfig,
     protector: Option<&dyn SocketProtector>,
+    kind: CarrierSocket,
 ) -> io::Result<()> {
     let socket = StdUdpSocket::bind(unspecified_bind_addr(logical_peer))?;
+    if kind == CarrierSocket::Datagrams {
+        configure_quic_datagram_socket(&socket);
+    }
     crate::protect_std_udp_socket(&socket, protector).map_err(io::Error::other)?;
     socket.set_nonblocking(true)?;
-    let socket = crate::hysteria::carrier::wrap(
-        socket,
-        logical_peer,
-        wire_peer,
-        carrier,
-        &Default::default(),
-    )?;
-    // Keep the receive batch every XHTTP endpoint starts with.
-    endpoint.rebind_abstract(crate::quic_receive_batch::cap(
-        socket,
-        xhttp_receive_batch(memory_class()),
-    ))
+    let socket = if carrier.enabled() {
+        crate::hysteria::carrier::wrap(
+            socket,
+            logical_peer,
+            wire_peer,
+            carrier,
+            &Default::default(),
+        )?
+    } else {
+        direct_socket(socket, logical_peer)?
+    };
+    endpoint.rebind_abstract(match kind {
+        // Keep the receive batch every XHTTP endpoint starts with.
+        CarrierSocket::Streams => {
+            crate::quic_receive_batch::cap(socket, xhttp_receive_batch(memory_class()))
+        }
+        CarrierSocket::Datagrams => socket,
+    })
+}
+
+/// The socket of a connection without a carrier, as the dial makes it.
+fn direct_socket(
+    socket: StdUdpSocket,
+    remote: SocketAddr,
+) -> io::Result<Arc<dyn quinn::AsyncUdpSocket>> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::connected_quic::wrap(socket, remote)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        use quinn::Runtime as _;
+        let _ = remote;
+        quinn::TokioRuntime.wrap_udp_socket(socket)
+    }
 }
 
 fn unspecified_bind_addr(remote: SocketAddr) -> SocketAddr {

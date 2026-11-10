@@ -612,6 +612,7 @@ impl XhttpTransport {
                             socket_protector: material.socket_protector,
                             quic,
                             realm,
+                            network_changes: Some(material.network_changes),
                         },
                         &candidates,
                         happy_eyeballs.as_ref(),
