@@ -221,6 +221,62 @@ async fn rust_socks_clients_open_parallel_echo_flows_through_local_xray_vless_tl
     .unwrap();
 }
 
+/// Xray-core's TLS inbound held to P-256 (`curvePreferences`), which no
+/// Chrome profile sends a key share for: Go's server answers every shaped
+/// hello with a HelloRetryRequest naming P-256, and refuses a second
+/// ClientHello carrying any share besides that one ("client didn't send one
+/// key share in second ClientHello"). Every flow must get through, Chrome
+/// 120's padded hellos among them.
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_socks_clients_open_parallel_echo_flows_through_local_xray_vless_tls_after_a_hello_retry_request(
+) {
+    timeout(Duration::from_secs(240), async {
+        for fingerprint in [
+            "chrome",
+            "hellochrome_133",
+            "hellochrome_131",
+            "hellochrome_120",
+        ] {
+            eprintln!("running TLS HelloRetryRequest interop fingerprint={fingerprint}");
+            let xray_checkout = resolve_xray_checkout();
+            let xray = timeout(
+                Duration::from_secs(60),
+                start_xray_vless_server_customized(
+                    &xray_checkout,
+                    XrayVlessServerConfig {
+                        security: XrayInboundSecurity::Tls,
+                        transport: XrayInboundTransport::Raw,
+                        flow: None,
+                    },
+                    |json| {
+                        json["inbounds"][0]["streamSettings"]["tlsSettings"]["curvePreferences"] =
+                            serde_json::json!(["CurveP256"]);
+                    },
+                ),
+            )
+            .await
+            .expect("start xray timeout");
+            let rust_config = rust_core_config_with_security(
+                xray.addr,
+                StreamSecurity::Tls(TlsSettings {
+                    server_name: Some(TLS_SERVER_NAME.to_owned()),
+                    fingerprint: Some(fingerprint.to_owned()),
+                    allow_insecure: true,
+                    pinned_peer_cert_sha256: Vec::new(),
+                    verify_peer_cert_by_name: Vec::new(),
+                    alpn: Vec::new(),
+                }),
+                None,
+            );
+
+            run_local_xray_vless_parallel_interop_scenario(xray, rust_config, 16).await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
 async fn xray_core_socks_clients_open_parallel_echo_flows_through_local_xray_vless_reality_vision_selected_fingerprints(

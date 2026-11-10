@@ -3,6 +3,7 @@
 //! capsule stream, address assignment and the packets in datagrams.
 use std::future::poll_fn;
 use std::net::IpAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use bytes::{Buf, Bytes, BytesMut};
@@ -19,6 +20,11 @@ use super::MIN_PACKET_SIZE;
 /// Xray's `maxQueuedCapsules`: control capsules waiting to be written, and
 /// address updates waiting to be read.
 const MAX_QUEUED_CAPSULES: usize = 128;
+/// The bytes those control capsules may hold. Xray bounds only their number,
+/// and the answer to an ADDRESS_REQUEST is as large as the request: a proxy
+/// that grants the request stream no credit and keeps asking would have the
+/// client hold a full queue of answers of about 200 KiB each.
+const MAX_QUEUED_CAPSULE_BYTES: usize = 256 * 1024;
 /// Xray's `maxQueuedDatagrams`: DATAGRAM capsules read and not yet taken.
 const MAX_QUEUED_DATAGRAMS: usize = 128;
 /// Xray's `maxStreamBuffer`: DATAGRAM capsule bytes an HTTP/2 tunnel holds
@@ -216,6 +222,7 @@ struct Shared {
     destinations: Mutex<Destinations>,
     path: DatagramPath,
     control: mpsc::Sender<Bytes>,
+    control_bytes: Arc<AtomicUsize>,
     http: HttpConnection,
     closed: watch::Sender<Option<String>>,
     tasks: Mutex<Vec<JoinHandle<()>>>,
@@ -261,7 +268,7 @@ impl Shared {
     /// Queues a control capsule; a full queue closes the tunnel, as Xray's
     /// `queueWrite` does.
     fn queue(&self, capsule: Bytes) -> Result<(), MasqueError> {
-        match self.control.try_send(capsule) {
+        match queue_control(&self.control, &self.control_bytes, capsule) {
             Ok(()) => Ok(()),
             Err(mpsc::error::TrySendError::Full(_)) => {
                 self.close("connect-ip: capsule queue full", H3_EXCESSIVE_LOAD);
@@ -270,6 +277,24 @@ impl Shared {
             Err(mpsc::error::TrySendError::Closed(_)) => Err(self.closed_error()),
         }
     }
+}
+
+/// Puts `capsule` in the control queue unless it holds [`MAX_QUEUED_CAPSULES`]
+/// capsules or [`MAX_QUEUED_CAPSULE_BYTES`] already; the writer takes the
+/// bytes off `queued` as it takes each capsule.
+fn queue_control(
+    control: &mpsc::Sender<Bytes>,
+    queued: &AtomicUsize,
+    capsule: Bytes,
+) -> Result<(), mpsc::error::TrySendError<Bytes>> {
+    let len = capsule.len();
+    if queued.load(Ordering::Relaxed) > MAX_QUEUED_CAPSULE_BYTES {
+        return Err(mpsc::error::TrySendError::Full(capsule));
+    }
+    queued.fetch_add(len, Ordering::Relaxed);
+    control.try_send(capsule).inspect_err(|_| {
+        queued.fetch_sub(len, Ordering::Relaxed);
+    })
 }
 
 /// A CONNECT-IP tunnel: IP packets in and out, from the local addresses the
@@ -317,6 +342,7 @@ pub(crate) async fn start(
     addressing: Addressing,
 ) -> Result<MasqueTunnel, MasqueError> {
     let (control, control_rx) = mpsc::channel(MAX_QUEUED_CAPSULES);
+    let control_bytes = Arc::new(AtomicUsize::new(0));
     let (assignments, mut assignments_rx) = mpsc::channel(MAX_QUEUED_CAPSULES);
     let (path, outgoing, incoming) = match datagrams {
         Datagrams::Quic {
@@ -351,6 +377,7 @@ pub(crate) async fn start(
         destinations: Mutex::new(Destinations::default()),
         path,
         control,
+        control_bytes,
         http,
         closed: watch::channel(None).0,
         tasks: Mutex::new(Vec::new()),
@@ -362,6 +389,7 @@ pub(crate) async fn start(
         let writer = tokio::spawn(write_capsules(
             send,
             control_rx,
+            Arc::clone(&shared.control_bytes),
             outgoing,
             Arc::downgrade(&shared),
         ));
@@ -477,6 +505,7 @@ fn room_for(len: usize) -> u32 {
 async fn write_capsules(
     mut send: RequestSend,
     mut control: mpsc::Receiver<Bytes>,
+    control_bytes: Arc<AtomicUsize>,
     mut datagrams: Option<OutgoingCapsules>,
     shared: std::sync::Weak<Shared>,
 ) {
@@ -492,6 +521,9 @@ async fn write_capsules(
             break;
         };
         let len = capsule.len();
+        if !counted {
+            control_bytes.fetch_sub(len, Ordering::Relaxed);
+        }
         if let Err(error) = send.send(capsule).await {
             if let Some(shared) = shared.upgrade() {
                 shared.close(
@@ -901,6 +933,33 @@ mod tests {
             addrs(&["2001:db8::2"])
         );
         assert!(local_addrs(&assigned(&["0.0.0.0/32", "::/128"])).is_empty());
+    }
+
+    #[test]
+    fn control_capsules_are_bounded_in_bytes_as_well_as_in_number() {
+        let (control, mut taken) = mpsc::channel(MAX_QUEUED_CAPSULES);
+        let queued = AtomicUsize::new(0);
+        let large = Bytes::from(vec![0u8; 200 * 1024]);
+        assert!(queue_control(&control, &queued, large.clone()).is_ok());
+        assert!(queue_control(&control, &queued, large.clone()).is_ok());
+        assert!(matches!(
+            queue_control(&control, &queued, large.clone()),
+            Err(mpsc::error::TrySendError::Full(_))
+        ));
+        assert_eq!(queued.load(Ordering::Relaxed), 2 * large.len());
+        // The writer took one: there is room again.
+        queued.fetch_sub(taken.try_recv().unwrap().len(), Ordering::Relaxed);
+        assert!(queue_control(&control, &queued, large.clone()).is_ok());
+
+        // Small capsules still stop at their number, and one the queue
+        // refused does not count.
+        let (control, _taken) = mpsc::channel(MAX_QUEUED_CAPSULES);
+        let queued = AtomicUsize::new(0);
+        for _ in 0..MAX_QUEUED_CAPSULES {
+            assert!(queue_control(&control, &queued, Bytes::from_static(b"x")).is_ok());
+        }
+        assert!(queue_control(&control, &queued, Bytes::from_static(b"x")).is_err());
+        assert_eq!(queued.load(Ordering::Relaxed), MAX_QUEUED_CAPSULES);
     }
 
     #[test]

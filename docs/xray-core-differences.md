@@ -431,6 +431,16 @@ Evidence, against Xray-core v26.10.31:
   needed, ours 53 to 74. The protocol is the same; when acks are read
   relative to flushes differs.
 
+Deliberate differences, both against a peer that misbehaves:
+
+- A repeated data segment is acknowledged again in its place in the ack
+  list. Xray-core's `AckList.Add` lists the number once more each time, and
+  entries leave only when the peer's `sending_next` passes them, so one
+  repeated segment grows the list, and with it every ack flush, without
+  bound; with the `original` or a header mask alone that needs no secret.
+- A datagram that an `mkcp-legacy` AES mask opens to less than the masks
+  inside it reserve is dropped before they read it.
+
 ## header-custom TCP
 
 The `header-custom` TCP mask is read and run as Xray-core v26.10.31's
@@ -603,6 +613,12 @@ AES and noise inside xdns; XHTTP over HTTP/3 and Hysteria, alone and with
 Salamander inside, before and after a rebind, carry the same. A client with
 another domain never gets through.
 
+Deliberate difference: a UDP resolver's socket reads answers from that
+resolver's address alone. Xray-core's socket is unconnected and reads from
+any source, and an answer is matched to nothing but the tunnel's domain in
+its question, so anyone who knows the domain and reaches the port can feed
+the carrier packets and set off a poll for each.
+
 ## MASQUE
 
 The `masque` outbound runs Xray-core v26.10.31's MASQUE client over HTTP/3
@@ -707,6 +723,17 @@ key is refused. 16 of its branches (key, curve and range
 checks, PEM and base64 rules, point validation, address rules, the
 certificate's validity and serial, the draft datagram setting, the
 Cloudflare protocol and request) fail the tests when mutated.
+
+Deliberate difference: the control capsules that wait for the request
+stream are bounded at 256 KiB as well as at Xray-core's 128. The answer to
+an ADDRESS_REQUEST is as large as the request, so a proxy that grants the
+stream no credit and keeps asking would otherwise have the client hold 128
+answers of about 200 KiB each. Over HTTP/2, a DATAGRAM capsule longer than
+the 8,192-byte packets the tunnel reads is skipped as it arrives; Xray-core
+buffers one up to 65,535 bytes and drops it on read. A tunnel the proxy
+closes within five seconds of establishing it counts as a failed dial: flows
+take the failure for a second, as after a refused dial, where Xray-core
+dials again for the next flow at once.
 
 ## XDRIVE
 
@@ -915,6 +942,12 @@ packets with their salt, padding and SHA-256 mask. Deliberate differences:
 - A peer address with a named IPv6 zone does not parse, which loses the
   whole list, as any address Go cannot parse does there.
 
+Deliberate difference: one attempt punches the first 64 candidates, in the
+order above. Xray-core punches every address the rendezvous lists, a hello
+of up to 1,057 bytes to each ten times a second for ten seconds, so a
+rendezvous, or anyone who can answer for one reached over plain HTTP, picks
+where that traffic goes and how much of it there is.
+
 Evidence: `tools/realm-oracle` records `Realm.Build`'s verdicts on 77 URLs,
 23 STUN servers and 29 settings, 720 STUN answers read by
 `parseSTUNBindingResponse`, 138 punch packets read by `DecodePunchPacket`,
@@ -1088,6 +1121,10 @@ allows the relay or the portal (`scripts/check-reverse-interop.sh`). Unit
 tests and the portal written here refuse sessions, UDP flows and the tunnel
 through a folded freedom fragment until it allows the server.
 
+Deliberate difference: the bridge fails a tunnel once 2,048 session Ends
+wait for a portal that reads none of them, rather than queueing one for
+every frame of a session it does not hold.
+
 ## QUIC BBR profiles
 
 `quicParams.bbrProfile` `conservative` and `aggressive` run a port of
@@ -1163,6 +1200,11 @@ server's `UseIP`) ask for the same record types in both cores. That holds
 on macOS, which routes both families, and in a Linux container without IPv6,
 where `UseSystem` asks for `A` alone.
 
+Deliberate difference: when the system routes neither family, a server with
+its own `UseSystem` leaves the lookup unanswered. Xray-core returns an empty
+response there and keeps no record of it; here an empty answer would be
+cached for 30 seconds, past the moment the routes are back.
+
 ## DNS hosts `"#N"` RCODE answers
 
 `dns.hosts` reads a `"#N"` value as Xray-core's `app/dns/hosts.go` does: the
@@ -1227,8 +1269,16 @@ differences:
   such as `.tcp.example.com`, dials the configured server. Xray-core panics
   on it.
 - The `addressPortStrategy` lookup protects its sockets with the platform's
-  protector, so inside a mobile VPN it bypasses the tunnel; Go's resolver in
-  Xray-core sets nothing on them.
+  protector, so inside a mobile VPN it bypasses the tunnel, and applies the
+  outbound's `sockopt` to them; Go's resolver in Xray-core sets nothing on
+  them. The connection to a `realm` rendezvous takes both as well.
+- `interface` is bound before every other option. In Xray-core the binding
+  follows `mark` on Linux and the TCP options on Apple platforms, and an
+  option that fails stops the rest: with `tcpFastOpen` on an Apple platform,
+  where the kernel refuses it on a dialing socket, or a `mark` the process
+  may not set, the socket stays unbound and the dial goes on.
+- The raw socket of an `xicmp` mask without `dgram` takes the options a UDP
+  socket takes. Xray-core's sets none.
 - A `dialerProxy` inside an XHTTP `downloadSettings` fails parsing. Xray-core
   would carry the download leg through that outbound. Here the leg either
   takes the outbound's own chain, with `penetrate`, or dials directly.

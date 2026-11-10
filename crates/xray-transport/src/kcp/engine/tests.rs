@@ -304,8 +304,15 @@ fn a_duplicate_is_acknowledged_again_and_read_once() {
     client.flush(0);
     let datagram = std::mem::take(&mut client.out).remove(0);
     server.input(read_segments(&datagram), 0);
-    server.input(read_segments(&datagram), 0);
-    assert_eq!(server.receiving.acks.numbers, [0, 0]);
+    server.flush(0);
+    assert_ne!(server.receiving.acks.next_flush, [0], "the ack went out");
+    // Listed once and due again at once, however often the peer repeats it:
+    // Xray lists it again each time.
+    for _ in 0..100 {
+        server.input(read_segments(&datagram), 0);
+    }
+    assert_eq!(server.receiving.acks.numbers, [0]);
+    assert_eq!(server.receiving.acks.next_flush, [0]);
     assert_eq!(read_all(&mut server), Some(b"once".to_vec()));
 }
 

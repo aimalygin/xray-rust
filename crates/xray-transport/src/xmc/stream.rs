@@ -20,6 +20,11 @@ const KEEP_ALIVE: i32 = 0x04;
 const CHANNEL: &str = "xmc:data";
 /// `maxPacketData`: the proxied bytes one packet carries.
 const MAX_PAYLOAD: usize = 24 * 1024;
+/// The most keep-alive answers that wait for the carrier before reading
+/// stops: a peer that sends keep-alives and reads nothing would otherwise
+/// grow `out` for as long as it sends them. Xray answers each one with a
+/// blocking write, which stops its reader in the same way.
+const MAX_UNSENT_ANSWERS: usize = 64 * 1024;
 
 pub struct XmcStream {
     inner: BoxedTransportStream,
@@ -34,6 +39,8 @@ pub struct XmcStream {
     /// Encrypted frames, and how much of them went out.
     out: Vec<u8>,
     written: usize,
+    /// Bytes of keep-alive answers put in `out` since it last emptied.
+    unsent_answers: usize,
     /// The task a write or flush waits in. A carrier keeps one waker per
     /// direction, so a drain from the read side takes the writer's place
     /// and must wake it once the frames are out.
@@ -59,6 +66,7 @@ impl XmcStream {
             consumed: 0,
             out: Vec::new(),
             written: 0,
+            unsent_answers: 0,
             blocked_writer: None,
             scratch: vec![0; READ_CHUNK].into_boxed_slice(),
             eof: false,
@@ -88,6 +96,7 @@ impl XmcStream {
         }
         self.out.clear();
         self.written = 0;
+        self.unsent_answers = 0;
         Poll::Ready(Ok(()))
     }
 
@@ -121,6 +130,7 @@ impl XmcStream {
                     out.extend_from_slice(&id.to_be_bytes())
                 })?;
                 self.write_cipher.apply(&mut self.out[start..]);
+                self.unsent_answers += self.out.len() - start;
             }
             _ => {}
         }
@@ -142,11 +152,18 @@ impl AsyncRead for XmcStream {
             // A keep-alive answer goes out on whichever poll can send it,
             // and a writer this drain displaced hears that it may go on.
             if this.written < this.out.len() {
-                if let Poll::Ready(result) = this.poll_drain(cx) {
-                    if let Some(writer) = this.blocked_writer.take() {
-                        writer.wake();
+                match this.poll_drain(cx) {
+                    Poll::Ready(result) => {
+                        if let Some(writer) = this.blocked_writer.take() {
+                            writer.wake();
+                        }
+                        result?;
                     }
-                    result?;
+                    // The drain left this task's waker with the carrier.
+                    Poll::Pending if this.unsent_answers > MAX_UNSENT_ANSWERS => {
+                        return Poll::Pending;
+                    }
+                    Poll::Pending => {}
                 }
             }
             if this.consumed < this.pending.len() {

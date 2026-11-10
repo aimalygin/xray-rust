@@ -35,8 +35,6 @@ use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSec
 use zeroize::Zeroize;
 
 use crate::sudoku::gorand::{crypto_rand_int63, GoRand};
-use rustls::pki_types::ServerName;
-
 use crate::utls_profiles::{UtlsClientHelloProfile, UtlsEchGrease};
 
 const EXT_SERVER_NAME: u16 = 0x0000;
@@ -48,6 +46,7 @@ const EXT_ALPN: u16 = 0x0010;
 const EXT_SIGNED_CERTIFICATE_TIMESTAMP: u16 = 0x0012;
 const EXT_PADDING: u16 = 0x0015;
 const EXT_PRE_SHARED_KEY: u16 = 0x0029;
+const EXT_COOKIE: u16 = 0x002c;
 const EXT_EXTENDED_MASTER_SECRET: u16 = 0x0017;
 const EXT_CERTIFICATE_COMPRESSION: u16 = 0x001b;
 const EXT_RECORD_SIZE_LIMIT: u16 = 0x001c;
@@ -74,11 +73,6 @@ const ENCAPSULATED_KEY_LEN: usize = 32;
 const ZLIB_CERTIFICATE_COMPRESSION: u16 = 0x0001;
 const BROTLI_CERTIFICATE_COMPRESSION: u16 = 0x0002;
 const ZSTD_CERTIFICATE_COMPRESSION: u16 = 0x0003;
-/// BoringSSL pads a ClientHello whose handshake message, padding aside, is
-/// 256 to 511 bytes long, and no other (`BoringPaddingStyle` in uTLS).
-const BORINGSSL_PADDING_WINDOW: std::ops::Range<usize> = 0x100..0x200;
-/// What a padding extension adds before its body: type and length.
-const EXTENSION_HEADER_LEN: usize = 4;
 const STRUCTURED_OPTIONAL_EXTENSIONS: &[u16] = &[
     EXT_SERVER_NAME,
     EXT_STATUS_REQUEST,
@@ -114,6 +108,9 @@ pub(crate) struct HelloDraws {
     grease: [u16; GREASE_SEEDS],
     order: Option<Vec<u16>>,
     ech: Option<EchDraw>,
+    /// Where a HelloRetryRequest's cookie goes, as a fraction of the places
+    /// uTLS allows (`cookie_place`).
+    cookie: u32,
 }
 
 /// The cipher suite and payload length a GREASE ECH extension takes:
@@ -167,7 +164,12 @@ impl HelloDraws {
             .as_ref()
             .map(EchDraw::draw)
             .transpose()?;
-        Ok(Self::from_seeds(profile, seeds, shuffle_seed, ech))
+        let mut cookie = [0; 4];
+        fill_random(&mut cookie, "the cookie's place")?;
+        Ok(Self {
+            cookie: u32::from_le_bytes(cookie),
+            ..Self::from_seeds(profile, seeds, shuffle_seed, ech)
+        })
     }
 
     /// The draws uTLS makes from `seeds`, its sixteen bytes of GREASE seeds,
@@ -194,6 +196,7 @@ impl HelloDraws {
             grease: seed.map(boring_grease),
             order,
             ech,
+            cookie: 0,
         }
     }
 
@@ -211,17 +214,15 @@ impl HelloDraws {
         )
     }
 
-    /// These draws with the ECH payload length `length` instead.
-    #[cfg(test)]
-    pub(crate) fn with_ech_length(mut self, length: usize) -> Self {
-        if let Some(ech) = &mut self.ech {
-            ech.length = length;
-        }
-        self
-    }
-
     fn grease(&self, slot: usize) -> u16 {
         self.grease[slot]
+    }
+
+    /// The place among `extensions` uTLS's `p.Intn(extensions - 2)` gives a
+    /// HelloRetryRequest's cookie: evenly over all but the last two.
+    fn cookie_place(&self, extensions: usize) -> usize {
+        let places = extensions.saturating_sub(2) as u64;
+        ((u64::from(self.cookie) * places) >> 32) as usize
     }
 
     /// The profile's extension types in this hello's order, GREASE
@@ -305,6 +306,7 @@ pub(crate) fn apply_utls_profile(
 ) -> Result<ClientHelloPlan, RustlsError> {
     let supported_versions = supported_versions(profile)?;
     let cipher_suites = cipher_suites(profile, context, supported_versions.as_slice())?;
+    let padding_offset = boringssl_padding_offset(profile, context, supported_versions.as_slice());
     plan = plan
         .with_cipher_suites(cipher_suites)
         .with_supported_versions(supported_versions);
@@ -330,14 +332,17 @@ pub(crate) fn apply_utls_profile(
         plan = plan.with_certificate_compression_algorithms(certificate_compression(profile)?);
     }
 
+    // Xray's override appends ALPN to a profile that has none.
+    let appended_alpn = alpn_override.is_some() && !profile_has_extension(profile, EXT_ALPN);
+    let extensions = planned_extensions(profile, draws, appended_alpn);
     let forced_extensions = forced_extensions(profile);
-    let extension_plan = extension_plan(profile, false)?;
+    let extension_plan = extension_plan(profile, appended_alpn)?;
     let (exact_extensions, raw_extensions) = extension_payloads(profile, draws)?;
 
     plan = plan
         .with_forced_extensions(forced_extensions)
         .with_extensions(extension_plan)
-        .with_extension_order(extension_order(profile, draws, false)?);
+        .with_extension_order(extension_order(profile, &extensions)?);
 
     if let Some(exact_extensions) = exact_extensions {
         plan = plan.with_exact_extensions(exact_extensions);
@@ -345,96 +350,76 @@ pub(crate) fn apply_utls_profile(
     if let Some(raw_extensions) = raw_extensions {
         plan = plan.with_raw_extensions(raw_extensions);
     }
-    if let Some(grease) = grease_plan(profile, context, draws)? {
+    if let Some(grease) = grease_plan(profile, context, draws, &extensions)? {
         plan = plan.with_grease(grease);
     }
     if let Some(protocols) = alpn_override {
-        plan = apply_alpn_override(plan, profile, protocols, draws)?;
+        plan = plan.with_alpn_protocols(ClientHelloAlpnProtocols::try_from(protocols.to_vec())?);
     }
     if profile.padding_length.is_some() {
-        let unpadded = utls_unpadded_len(profile, context, alpn_override, draws);
-        if let Some(padding) = boring_padding_len(unpadded) {
-            // The length uTLS's own hello comes to. rustls pads this one to
-            // it when it encodes the hello, so the padding also makes up the
-            // suites the provider filter took out of the cipher list.
-            plan = plan.with_padding(ClientHelloPaddingPlan::pad_to_handshake_size(
-                unpadded + EXTENSION_HEADER_LEN + padding,
-            )?);
-        }
+        plan = plan.with_padding(ClientHelloPaddingPlan::boringssl(padding_offset)?);
     }
 
     Ok(plan)
 }
 
-/// The length of the hello uTLS itself sends on this connection, padding
-/// aside: what its `MarshalClientHello` hands `BoringPaddingStyle`.
+/// What the hello uTLS sends on this connection has that this one does not,
+/// in bytes: the suites this provider cannot negotiate, which the plan leaves
+/// out of the cipher list, less the `supported_versions` rustls adds to a
+/// TLS-1.2-era hello (one version, `0x0303`: seven bytes).
 ///
-/// The profile records every extension at the length uTLS writes it, so this
-/// is the profile with what the connection decides put in: the server name,
-/// which uTLS leaves out for an IP literal and writes without a trailing dot,
-/// the ALPN list an override forces (appending the extension to a profile that
-/// has none, as Xray does), and the drawn ECH payload. The whole recorded
-/// cipher list counts, suites this provider cannot negotiate included, and
-/// uTLS fills a 32-byte session id and the null compression method into every
-/// hello.
-fn utls_unpadded_len(
+/// Every other extension is as long on both hellos -- the profile records
+/// them as uTLS writes them, and the server name, the ALPN list or override
+/// and the ECH GREASE draw go into both alike -- so shaped-rustls, applying
+/// BoringSSL's padding rule to each ClientHello as it encodes it with this
+/// added, pads as uTLS's own hello is padded and to its length: the second
+/// ClientHello a HelloRetryRequest asks for as much as the first.
+fn boringssl_padding_offset(
     profile: &UtlsClientHelloProfile,
     context: ClientHelloContext<'_>,
-    alpn_override: Option<&[Vec<u8>]>,
-    draws: &HelloDraws,
-) -> usize {
-    let override_alpn_body =
-        alpn_override.map(|protocols| 2 + protocols.iter().map(|p| 1 + p.len()).sum::<usize>());
-    let server_name_body = match context.server_name {
-        ServerName::DnsName(name) => Some(5 + name.as_ref().trim_end_matches('.').len()),
-        _ => None,
-    };
-    let extensions = profile
-        .extensions
+    supported_versions: &[ProtocolVersion],
+) -> isize {
+    const TLS12_SUPPORTED_VERSIONS_LEN: isize = 4 + 1 + 2;
+    let filtered = profile
+        .cipher_suites
         .iter()
-        .filter_map(|extension| {
-            let body = match extension.extension_type {
-                EXT_PADDING => return None,
-                EXT_SERVER_NAME => server_name_body?,
-                EXT_ALPN => override_alpn_body.unwrap_or(extension.payload_len),
-                EXT_ENCRYPTED_CLIENT_HELLO => {
-                    draws.ech.map_or(extension.payload_len, |ech| ech.length)
-                }
-                _ => extension.payload_len,
-            };
-            Some(EXTENSION_HEADER_LEN + body)
+        .filter(|suite| {
+            !is_grease_value(**suite)
+                && !provider_supports_cipher_suite(**suite, context, supported_versions)
         })
-        .sum::<usize>();
-    let appended_alpn = match override_alpn_body {
-        Some(body) if !profile_has_extension(profile, EXT_ALPN) => EXTENSION_HEADER_LEN + body,
-        _ => 0,
+        .count() as isize;
+    let added = if profile_has_extension(profile, EXT_SUPPORTED_VERSIONS) {
+        0
+    } else {
+        TLS12_SUPPORTED_VERSIONS_LEN
     };
-
-    4 // handshake type and length
-        + 2 // legacy_version
-        + 32 // random
-        + 1 + 32 // legacy_session_id
-        + 2 + 2 * profile.cipher_suites.len()
-        + 1 + 1 // compression_methods: null
-        + 2 // extensions length
-        + extensions
-        + appended_alpn
+    2 * filtered - added
 }
 
-/// The padding body BoringSSL gives a hello of `unpadded` bytes, as uTLS's
-/// `BoringPaddingStyle` writes it: up to 512 bytes in all, or a single byte
-/// when the extension header alone would reach 512, and none -- no padding
-/// extension at all -- outside its window.
-fn boring_padding_len(unpadded: usize) -> Option<usize> {
-    if !BORINGSSL_PADDING_WINDOW.contains(&unpadded) {
-        return None;
+/// This hello's extensions in uTLS's order, GREASE ones included: the drawn
+/// order, the ALPN extension Xray's override appends to a profile without
+/// one, and the cookie a HelloRetryRequest may bring.
+///
+/// No uTLS spec carries a cookie extension. When a HelloRetryRequest brings
+/// one, uTLS inserts it at `p.Intn(len(Extensions) - 2)`, anywhere but the last
+/// two places (`handshake_client_tls13.go`). The place is drawn with the rest
+/// of this hello's draws, and shaped-rustls leaves the entry out of a
+/// ClientHello that carries no cookie, so only the second one a cookie asks
+/// for shows it.
+fn planned_extensions(
+    profile: &UtlsClientHelloProfile,
+    draws: &HelloDraws,
+    appended_alpn: bool,
+) -> Vec<u16> {
+    let mut extensions = draws.extension_types(profile);
+    if appended_alpn {
+        extensions.push(EXT_ALPN);
     }
-    let padding = BORINGSSL_PADDING_WINDOW.end - unpadded;
-    Some(if padding > EXTENSION_HEADER_LEN {
-        padding - EXTENSION_HEADER_LEN
-    } else {
-        1
-    })
+    if !extensions.contains(&EXT_COOKIE) {
+        let place = draws.cookie_place(extensions.len());
+        extensions.insert(place, EXT_COOKIE);
+    }
+    extensions
 }
 
 fn cipher_suites(
@@ -680,26 +665,6 @@ impl rustls::compress::CertDecompressor for ZstdCertificateDecompressor {
 ///
 /// Xray appends it last (`tls.go`'s `if !hasALPNExtension`) and the order
 /// pinned here matches.
-fn apply_alpn_override(
-    mut plan: ClientHelloPlan,
-    profile: &'static UtlsClientHelloProfile,
-    protocols: &[Vec<u8>],
-    draws: &HelloDraws,
-) -> Result<ClientHelloPlan, RustlsError> {
-    plan = plan.with_alpn_protocols(ClientHelloAlpnProtocols::try_from(protocols.to_vec())?);
-    if profile_has_extension(profile, EXT_ALPN) {
-        return Ok(plan);
-    }
-
-    // The two must move together: un-suppressing the extension without also
-    // ordering it is an error inside rustls, not a shape difference.
-    plan = plan
-        .with_extensions(extension_plan(profile, true)?)
-        .with_extension_order(extension_order(profile, draws, true)?);
-
-    Ok(plan)
-}
-
 /// Builds the pinned extension order: the profile's own order, plus whatever
 /// rustls emits on top of it.
 ///
@@ -717,17 +682,13 @@ fn apply_alpn_override(
 /// we cannot suppress to the tail.
 fn extension_order(
     profile: &UtlsClientHelloProfile,
-    draws: &HelloDraws,
-    appended_alpn: bool,
+    extensions: &[u16],
 ) -> Result<ClientHelloExtensionOrder, RustlsError> {
-    let mut order = draws
-        .extension_types(profile)
-        .into_iter()
+    let mut order = extensions
+        .iter()
+        .copied()
         .filter(|extension_type| !is_grease_value(*extension_type))
         .collect::<Vec<_>>();
-    if appended_alpn {
-        order.push(EXT_ALPN);
-    }
     if !profile_has_extension(profile, EXT_SUPPORTED_VERSIONS) {
         order.push(EXT_SUPPORTED_VERSIONS);
     }
@@ -979,6 +940,7 @@ fn grease_plan(
     profile: &UtlsClientHelloProfile,
     context: ClientHelloContext<'_>,
     draws: &HelloDraws,
+    extensions: &[u16],
 ) -> Result<Option<ClientHelloGreasePlan>, RustlsError> {
     let has_grease = profile
         .cipher_suites
@@ -1015,7 +977,7 @@ fn grease_plan(
     }
     let mut non_grease_position = 0;
     let mut grease_extensions = 0;
-    for extension_type in draws.extension_types(profile) {
+    for &extension_type in extensions {
         if !is_grease_value(extension_type) {
             non_grease_position += 1;
             continue;
@@ -1513,20 +1475,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn padding_follows_boringssls_window() {
-        assert_eq!(boring_padding_len(0xff), None);
-        assert_eq!(boring_padding_len(0x100), Some(0x200 - 0x100 - 4));
-        // Chrome 120 under uTLS with its shortest ECH GREASE length.
-        assert_eq!(boring_padding_len(494), Some(14));
-        assert_eq!(boring_padding_len(507), Some(1));
-        // Too close to 512 for the extension header: one byte, past 512.
-        assert_eq!(boring_padding_len(508), Some(1));
-        assert_eq!(boring_padding_len(511), Some(1));
-        assert_eq!(boring_padding_len(0x200), None);
-        // Chrome 120 with the next ECH length.
-        assert_eq!(boring_padding_len(526), None);
-    }
+    /// What a padding extension adds before its body: type and length.
+    const EXTENSION_HEADER_LEN: usize = 4;
 
     /// A ClientHello handshake message's cipher suite count and its
     /// extensions as type and body length, in order.
@@ -1549,6 +1499,14 @@ mod tests {
         (cipher_suites, extensions)
     }
 
+    /// The body length of the `wanted` extension in a hello's layout.
+    fn body_len(extensions: &[(u16, usize)], wanted: u16) -> Option<usize> {
+        extensions
+            .iter()
+            .find(|(extension_type, _)| *extension_type == wanted)
+            .map(|(_, body)| *body)
+    }
+
     /// A hello's length without its padding extension.
     fn unpadded(hello_len: usize, padding: Option<usize>) -> usize {
         hello_len - padding.map_or(0, |padding| EXTENSION_HEADER_LEN + padding)
@@ -1561,65 +1519,103 @@ mod tests {
             .collect()
     }
 
-    /// What `utls_unpadded_len` reads off a profile is what uTLS's own hello
-    /// measures before padding, for every committed oracle hello: each ECH
-    /// length of each Chrome profile, and the `http/1.1` override's shapes.
-    #[test]
-    fn the_unpadded_length_is_utls_own() {
+    /// A plain-TLS hello of `fingerprint` to example.com whose ECH GREASE
+    /// extension is `ech` long: hellos are made until one draws it.
+    fn hello_with_ech(fingerprint: &str, websocket_alpn: bool, ech: Option<usize>) -> Vec<u8> {
+        let config = crate::TlsClientConfig {
+            server_name: "example.com".to_owned(),
+            allow_insecure: true,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
+            alpn: if websocket_alpn {
+                vec!["http/1.1".to_owned()]
+            } else {
+                Vec::new()
+            },
+            fingerprint: Some(fingerprint.to_owned()),
+        };
+        for _ in 0..256 {
+            let record = crate::tls::plain_tls_client_hello_bytes(&config)
+                .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+            let hello = record[5..].to_vec();
+            let (_, extensions) = hello_layout(&hello);
+            if body_len(&extensions, EXT_ENCRYPTED_CLIENT_HELLO) == ech {
+                return hello;
+            }
+        }
+        panic!("{fingerprint}: no hello in 256 drew the ECH length {ech:?}");
+    }
+
+    /// `boringssl_padding_offset` for a profile as the plain-TLS path shapes it:
+    /// the shaping provider's suites, and TLS 1.2 alone for a TLS-1.2-era
+    /// profile.
+    fn padding_offset(profile: &UtlsClientHelloProfile) -> isize {
         let provider = std::sync::Arc::new(rustls::crypto::aws_lc_rs::default_provider());
-        let server_name = ServerName::try_from("example.com").unwrap();
+        let server_name = rustls::pki_types::ServerName::try_from("example.com").unwrap();
+        let tls12: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS12];
         let context = ClientHelloContext {
             server_name: &server_name,
             alpn_protocols: &[],
-            versions: rustls::ALL_VERSIONS,
+            versions: if profile_offers_tls13(profile) {
+                rustls::ALL_VERSIONS
+            } else {
+                tls12
+            },
             crypto_provider: &provider,
             is_quic: false,
         };
-        let dotted_name = ServerName::try_from("example.com.").unwrap();
-        let dotted = ClientHelloContext {
-            server_name: &dotted_name,
-            ..context
-        };
-        for name in ["hellochrome_120", "hellochrome_100"] {
-            let profile = profile(name);
-            let draws = HelloDraws::zero(profile);
-            assert_eq!(
-                utls_unpadded_len(profile, dotted, None, &draws),
-                utls_unpadded_len(profile, context, None, &draws),
-                "{name}: SNI goes without the trailing dot, in rustls as in uTLS"
-            );
-        }
-        let http11 = [b"http/1.1".to_vec()];
-        let predicted = |name: &str, ech: Option<usize>, websocket_alpn: bool| {
-            let profile = profile(name);
-            let draws = match ech {
-                Some(length) => HelloDraws::zero(profile).with_ech_length(length),
-                None => HelloDraws::zero(profile),
-            };
-            utls_unpadded_len(
-                profile,
-                context,
-                websocket_alpn.then_some(http11.as_slice()),
-                &draws,
-            )
-        };
+        let supported_versions = supported_versions(profile).unwrap();
+        boringssl_padding_offset(profile, context, supported_versions.as_slice())
+    }
 
+    #[test]
+    fn the_padding_offset_counts_filtered_suites_and_the_added_supported_versions() {
+        // Six suites rustls lacks (CBC and RSA key exchange), the twelve bytes
+        // Chrome 120's padding makes up against uTLS's fixtures.
+        assert_eq!(padding_offset(profile("hellochrome_120")), 12);
+
+        let provider = rustls::crypto::aws_lc_rs::default_provider();
+        for name in ["hellofirefox_120", "hellochrome_133", "hellochrome_58"] {
+            let profile = profile(name);
+            let tls13 = profile_offers_tls13(profile);
+            let filtered = profile
+                .cipher_suites
+                .iter()
+                .filter(|suite| !is_grease_value(**suite))
+                .filter(|suite| {
+                    !provider.cipher_suites.iter().any(|candidate| {
+                        u16::from(candidate.suite()) == **suite
+                            && (tls13 || candidate.version().version == ProtocolVersion::TLSv1_2)
+                    })
+                })
+                .count() as isize;
+            // A TLS-1.2-era hello also carries the seven-byte
+            // supported_versions rustls adds and uTLS's lacks.
+            let added = if tls13 { 0 } else { 7 };
+            assert_eq!(padding_offset(profile), 2 * filtered - added, "{name}");
+        }
+        assert!(!profile_offers_tls13(profile("hellochrome_58")));
+    }
+
+    /// Our hello plus `boringssl_padding_offset` is uTLS's own hello before
+    /// padding, for every committed oracle hello: each ECH length of each
+    /// Chrome profile, and the `http/1.1` override's shapes. That is the
+    /// length shaped-rustls hands BoringSSL's rule on every flight.
+    #[test]
+    fn the_padding_offset_brings_our_hellos_to_utls_lengths() {
         for fixture in RAW_ORACLE_HELLOS {
             let fixture: serde_json::Value = serde_json::from_str(fixture).unwrap();
             let name = fixture["fingerprint"].as_str().unwrap();
             assert_eq!(fixture["server_name"], "example.com");
-            let hello = decode_hex(fixture["client_hello_hex"].as_str().unwrap());
-            let (_, extensions) = hello_layout(&hello);
-            let body = |wanted: u16| {
-                extensions
-                    .iter()
-                    .find(|(extension_type, _)| *extension_type == wanted)
-                    .map(|(_, body)| *body)
-            };
-            let ech = body(EXT_ENCRYPTED_CLIENT_HELLO);
+            let utls = decode_hex(fixture["client_hello_hex"].as_str().unwrap());
+            let (_, utls_extensions) = hello_layout(&utls);
+            let ech = body_len(&utls_extensions, EXT_ENCRYPTED_CLIENT_HELLO);
+            let ours = hello_with_ech(name, false, ech);
+            let (_, our_extensions) = hello_layout(&ours);
             assert_eq!(
-                predicted(name, ech, false),
-                unpadded(hello.len(), body(EXT_PADDING)),
+                unpadded(ours.len(), body_len(&our_extensions, EXT_PADDING)) as isize
+                    + padding_offset(profile(name)),
+                unpadded(utls.len(), body_len(&utls_extensions, EXT_PADDING)) as isize,
                 "{name} (ECH {ech:?})"
             );
         }
@@ -1630,12 +1626,15 @@ mod tests {
             let length = |key: &str| shape[key].as_u64().map(|value| value as usize);
             let ech = length("encrypted_client_hello_length");
             let websocket_alpn = shape["websocket_alpn"].as_bool().unwrap_or(false);
+            let ours = hello_with_ech(name, websocket_alpn, ech);
+            let (_, our_extensions) = hello_layout(&ours);
             assert_eq!(
-                predicted(name, ech, websocket_alpn),
+                unpadded(ours.len(), body_len(&our_extensions, EXT_PADDING)) as isize
+                    + padding_offset(profile(name)),
                 unpadded(
                     length("handshake_length").unwrap(),
                     length("padding_length")
-                ),
+                ) as isize,
                 "{name} (ECH {ech:?}, websocket ALPN {websocket_alpn})"
             );
         }
@@ -1662,7 +1661,8 @@ mod tests {
     /// name with a trailing dot, which is sent without it, come on top.
     ///
     /// uTLS's length is read off our own hello, independently of
-    /// `utls_unpadded_len`: the suites the provider filtered go back in, and
+    /// `boringssl_padding_offset`: the suites the provider filtered go back
+    /// in, as counted on the wire, and
     /// what rustls adds that the profile lacks (`supported_versions` on a
     /// TLS-1.2-era hello) comes out. BoringSSL's rule is restated here from
     /// `BoringPaddingStyle`.

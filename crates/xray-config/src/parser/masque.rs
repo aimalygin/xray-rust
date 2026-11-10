@@ -273,7 +273,8 @@ impl Parser<'_> {
         }
         if credentials {
             if user.contains(':') {
-                self.error(format!("{path}.user"), format!(r#"invalid "user": {user}"#));
+                // Not the value: with a colon in it, it is most likely `name:password`.
+                self.error(format!("{path}.user"), r#""user" must not contain ':'"#);
                 valid = false;
             }
             // Built in place, so no copy of the credential outlives it.

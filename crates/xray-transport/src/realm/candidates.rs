@@ -7,6 +7,11 @@ use std::net::{IpAddr, SocketAddr};
 const SYMMETRIC_NAT_PORT_GAP: u16 = 4;
 const SYMMETRIC_NAT_EXTRA_PORTS: u32 = 4;
 const SYMMETRIC_NAT_MAX_PORTS_PER_HOST: usize = 32;
+/// The most addresses one attempt punches. Xray punches every address the
+/// rendezvous lists; the list is the rendezvous's to write, and a hello goes
+/// to each address ten times a second, so an unbounded one turns the client
+/// into a source of UDP towards whatever it names.
+pub(super) const MAX_PUNCH_CANDIDATES: usize = 64;
 
 /// `netip.Addr.Is4`: an IPv4-mapped IPv6 address is not IPv4.
 fn is4(addr: &SocketAddr) -> bool {
@@ -22,7 +27,8 @@ pub(super) fn parse_addr_ports(addresses: &[String]) -> Vec<SocketAddr> {
         .unwrap_or_default()
 }
 
-/// `candidatePunchAddrs` then `expandSymmetricNATCandidates`.
+/// `candidatePunchAddrs` then `expandSymmetricNATCandidates`, the first
+/// [`MAX_PUNCH_CANDIDATES`] of them.
 pub(super) fn punch_candidates(
     locals: &[SocketAddr],
     peers: &[SocketAddr],
@@ -46,7 +52,9 @@ pub(super) fn punch_candidates(
             candidates.push(*peer);
         }
     }
-    expand_symmetric_nat(candidates, seen)
+    let mut candidates = expand_symmetric_nat(candidates, seen);
+    candidates.truncate(MAX_PUNCH_CANDIDATES);
+    candidates
 }
 
 /// `expandSymmetricNATCandidates`: for each IPv4 host whose ports lie at

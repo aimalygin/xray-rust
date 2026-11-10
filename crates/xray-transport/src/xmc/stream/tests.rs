@@ -324,3 +324,58 @@ async fn a_drain_from_the_read_side_wakes_the_writer_it_displaced() {
     // One frame: its length, the packet ID, the channel and the bytes.
     assert_eq!(gate.lock().unwrap().written, 1 + 1 + 9 + 100);
 }
+
+/// A peer that stops reading and keeps sending keep-alives: the answers
+/// that cannot go out stop the reading instead of piling up, and the stream
+/// goes on once the peer reads again.
+#[tokio::test]
+async fn unread_keep_alive_answers_stop_the_reading() {
+    const KEEP_ALIVES: usize = 20_000;
+    let test = async {
+        let (mut stream, mut server) = pair();
+        // More than the carrier holds: the rest waits in `out`, as the
+        // answers will behind it.
+        assert_eq!(stream.write(&vec![0u8; 2 << 20]).await.unwrap(), 2 << 20);
+        let waiting = stream.out.len() - stream.written;
+        assert!(waiting > 0);
+        for id in 0..KEEP_ALIVES as i64 {
+            server
+                .write_all(&server_frame(0x04, None, &id.to_be_bytes()))
+                .await
+                .unwrap();
+        }
+        let mut byte = [0u8; 1];
+        let mut read = ReadBuf::new(&mut byte);
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(Pin::new(&mut stream)
+            .poll_read(&mut cx, &mut read)
+            .is_pending());
+        let answers = stream.out.len() - stream.written - waiting;
+        assert!(
+            answers <= MAX_UNSENT_ANSWERS + 16,
+            "{answers} bytes of answers wait"
+        );
+
+        let reader = tokio::spawn(async move {
+            let mut data = [0u8; 5];
+            stream.read_exact(&mut data).await.unwrap();
+            stream.flush().await.unwrap();
+            (stream, data)
+        });
+        server
+            .write_all(&server_frame(0x01, Some("xmc:data"), b"after"))
+            .await
+            .unwrap();
+        let mut echoed = 0;
+        while echoed < KEEP_ALIVES {
+            if server.read_packet().await.unwrap().0 == 0x04 {
+                echoed += 1;
+            }
+        }
+        let (_stream, data) = reader.await.unwrap();
+        assert_eq!(&data, b"after");
+    };
+    tokio::time::timeout(Duration::from_secs(30), test)
+        .await
+        .unwrap();
+}
