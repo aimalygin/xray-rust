@@ -1141,6 +1141,14 @@ Quinn's NewReno, as Xray's runs quic-go's Reno. Deliberate differences:
   panics if asked to; the port scales its windows down.
 - Quinn's startup NewReno starts at quic-go's 32 datagrams of the initial
   size but follows Quinn's Reno rules.
+- The bytes a bandwidth should deliver over an interval
+  (`bytesFromBandwidthAndTimeDelta`) are computed in 128 bits. Xray-core's
+  int64 product wraps once bandwidth times interval passes 2^63, which
+  100 Mbit/s reaches after 92 seconds: the first ACK after such an idle then
+  finds a negative count, the ack-aggregation epoch stays open, and the
+  extra acked bytes lift the cap off the congestion window. Every product
+  short of the wrap is the same as Xray-core's, so the oracle traces still
+  replay.
 
 Evidence: `tools/bbr-oracle` records Xray-core's own sender over fifteen
 simulated paths, and the port replays every call to the same 54 state values
