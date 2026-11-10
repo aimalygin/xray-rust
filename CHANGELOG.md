@@ -22,8 +22,10 @@ long-term supported release series.
     as Xray-core's freedom does, so each service the portal may reach needs
     an `allow` rule. So does the freedom a `dialerProxy` chain ends on, for
     the hop before it, and for the tunnel when the outbound dials through
-    one; under a shared Mux, `testpre`, gRPC or XHTTP connection the chain is
-    left as it is.
+    one; under a shared Mux, `testpre` or gRPC connection the chain is left
+    as it is. Under an XHTTP link, and through a dedicated freedom fragment
+    outbound that `dialerProxy` names, sessions and the tunnel are refused
+    before dialing unless that freedom's `finalRules` allow the server.
   - Tunnels are kept as Xray-core keeps them: every two seconds the bridge
     opens one when none is active or each holds more than 16 sessions, and
     another when the portal drains one after more than 256 sessions. A
@@ -40,9 +42,9 @@ long-term supported release series.
   - Deliberate differences: a tunnel holds at most 512 sessions and a bridge
     16 tunnels; each destination of a UDP session is routed on its own, as a
     SOCKS association's are; a bridge whose outbound cannot be built, such as
-    Vision without TLS or REALITY, fails the core's start; an XHTTP link of a
-    chain, and a dedicated freedom fragment `dialerProxy`, are not refused
-    as Xray-core refuses them.
+    Vision without TLS or REALITY, fails the core's start; XHTTP links and
+    folded freedom fragments refuse always, where Xray-core refuses only the
+    dials that carry the session.
 - The FinalMask `fragment` mask selects whole writes with `packets`, as
   Xray-core v26.10.31 does: empty or absent cuts every write, a number or a
   `from-to` range the writes so numbered, each into raw pieces, every piece

@@ -1228,11 +1228,16 @@ through them to the services the bridge's routing lets it reach:
   VLESS server, as Xray-core hands each link of a chain the connection's
   context. A freedom that itself dials through `dialerProxy` applies no rule.
   Under a link whose connections other flows share, a `mux` or `testpre` one
-  or a gRPC or XHTTP carrier, the chain is left as it is: Xray-core opens
-  Mux, `testpre` and gRPC connections without the connection's context, and
-  a refused shared connection would stall every flow on it (XHTTP is a
-  [difference](xray-core-differences.md#vless-reverse-proxy)). UDP does not
-  go through `dialerProxy` here at all.
+  or a gRPC carrier, the chain is left as it is: Xray-core opens those
+  connections without the connection's context, and a refused shared
+  connection would stall every flow on it. Under an XHTTP link the connection
+  is refused before anything is dialed unless the freedom the chain ends on
+  allows the link's server, and so through a dedicated freedom fragment
+  outbound that `dialerProxy` names, which this implementation folds into the
+  outbound, unless that freedom's `finalRules` allow the server, for UDP flows
+  as well; Xray-core refuses these only on the dials that carry them
+  ([difference](xray-core-differences.md#vless-reverse-proxy)). UDP does not
+  go through other `dialerProxy` chains here at all.
 - Other outbounds take what routing sends them: another proxy, `blackhole`,
   `dns`. Without a matching rule the first outbound does; when that is the
   bridge itself, its server refuses the request, as a user with `reverse` may
@@ -1246,8 +1251,10 @@ through them to the services the bridge's routing lets it reach:
   `testpre` is not used and the outbound's `mux` applies only to connections
   routed to it, as in Xray-core. Through `dialerProxy`, the freedom the chain
   ends on refuses the tunnel unless its `finalRules` allow the portal's
-  address, as Xray-core's bridge then never connects; over a gRPC or XHTTP
-  carrier the chain is left as it is.
+  address, as Xray-core's bridge then never connects. Over an XHTTP carrier,
+  and through a folded freedom fragment outbound, the tunnel is refused before
+  it dials unless that freedom allows the portal; over gRPC the chain is left
+  as it is.
 - Two seconds after the start, and every two seconds after that, the bridge
   opens a tunnel when none is active or the active ones hold more than 16
   sessions each. A tunnel stops being active when it closes or when the

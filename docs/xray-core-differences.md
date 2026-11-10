@@ -975,17 +975,16 @@ the portal's side is not supported. Deliberate differences:
   an error End. Xray-core sets no bound; its portal drains a tunnel once more
   than 256 sessions, its control session included, were opened on it, so its
   own never reach these.
-- Over a `dialerProxy` chain whose link is an XHTTP carrier, the freedom the
-  chain ends on does not refuse the portal's sessions, nor a tunnel over an
-  XHTTP carrier: XHTTP's connections are shared across flows here, and one
-  refused for a reverse session would stall the others. Xray-core's XHTTP dial
-  carries the session's context, so its freedom refuses them. (Over Mux,
-  `testpre` and gRPC neither refuses: Xray-core opens those connections
-  without the session's context.)
-- A `dialerProxy` to a dedicated freedom fragment outbound is folded into the
-  outbound here, so that freedom is no link: its final rules, and the reverse
-  sessions' refusal, do not apply to the connections or the tunnel it carries.
-  Xray-core's freedom refuses both unless its `finalRules` allow the server.
+- Under an XHTTP link of a `dialerProxy` chain, and through a dedicated
+  freedom fragment outbound that `dialerProxy` names (folded into the outbound
+  here), the portal's sessions and the tunnel are refused always, before
+  anything is dialed, unless the freedom's `finalRules` allow the server:
+  the freedom the chain ends on for XHTTP, the fragment freedom otherwise.
+  Xray-core refuses them only on the dials that carry the session, so a
+  session reusing an XHTTP connection another opened passes there. XHTTP's
+  connections are shared across flows here, and refusing at the dial would
+  stall the others. (Over Mux, `testpre` and gRPC neither refuses: Xray-core
+  opens those connections without the session's context.)
 - Each destination of a UDP session is a flow of its own, routed and relayed
   as a SOCKS association's flows are, and the session ends once its flows went
   idle, after 60 seconds. Xray-core routes the session once by its target and
@@ -1028,8 +1027,11 @@ TLS with Vision, WebSocket, gRPC and XHTTP; freedom without final rules
 dials nothing; a wrong UUID gets no tunnel; and after 260 sessions the
 portal drains the first tunnel and the bridge opens a second; chains through
 one and two freedoms are refused until the last allows the relay, Mux and gRPC
-links are not, and a tunnel through a freedom opens once it allows the portal
-(`scripts/check-reverse-interop.sh`).
+links are not, and a tunnel through a freedom opens once it allows the portal;
+over XHTTP a session through a freedom and a tunnel are refused until it
+allows the relay or the portal (`scripts/check-reverse-interop.sh`). Unit
+tests and the portal written here refuse sessions, UDP flows and the tunnel
+through a folded freedom fragment until it allows the server.
 
 ## QUIC BBR profiles
 
