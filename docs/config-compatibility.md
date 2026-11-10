@@ -2657,27 +2657,61 @@ an answer, as in Xray-core, so a signature never goes to another host.
 `google-drive` keeps each object as a file in the folder `remoteFolder`
 names by id, reached with Google Drive's v3 API and the client id, client
 secret and refresh token of `secrets`: an access token from
-`oauth2.googleapis.com/token`, kept for its lifetime less a minute and
-fetched again after a 401; names flat, their `/` written as `~`; an object
-of up to 12000 bytes as base64 in the file's description and a larger one
-uploaded as its body; files found by a query on their name, page after
-page, their ids remembered for every session of the outbound; and every
-request tried up to eight times as with `s3`, also after a 403 that names
-one of Drive's rate limits. A session announces a ring of slots: two to
-eight files a direction (`concurrency`, at most eight) and a watermark, made
-when the session opens. Segment `n` goes into slot `n` modulo the depth,
-its frame (`XDRVSL01`, the number, a mode, the size and CRC-32, and up to 14
-KiB of segment inline) in the description and a larger segment in the body
-of the same request. The writer cuts 14 KiB segments, doubling the size up
-to `segmentBytes` after eight full ones in a row and sending a burst of more
-than 56 KiB at once, and writes a slot only once the reader's watermark
-says it took what the slot held a lap before. The reader asks for the head
-often, from 50 ms up to 200 ms (or `maxPollIntervalMs` once idle), and for
-up to six segments behind it at the pace they come, writes its watermark as
-the head moves, takes a body only once it matches its frame, and fails when
-the writer marks a segment it could not store or a slot stays gone for a
-minute. When the ring cannot be made, the session goes in segments, as in
-Xray-core.
+`oauth2.googleapis.com/token`, kept for its lifetime less a minute, fetched
+again in the background once a fifth of the lifetime is left and after a 401
+(once, however many requests the 401 answered); names flat, their `/`
+written as `~`; an object of up to 12000 bytes as base64 in the file's
+description and a larger one uploaded as its body; files found by a query on
+their name, page after page, their ids remembered for every session of the
+outbound; and every request tried up to eight times as with `s3`, also after
+a 403 that names one of Drive's rate limits. As in Xray-core v26.11.9:
+
+- one token fetch serves every request waiting for it, and a failed fetch
+  holds the next off for 30 seconds, doubling to five minutes; Google
+  refusing the credentials (`invalid_grant`, `invalid_client`,
+  `unauthorized_client`) fails every request at once from then on;
+- a 429, or a 403 for a rate limit, makes every request of the outbound wait
+  a jittered two seconds;
+- a session keeps up to 64 requests in flight, and eight more for watermark
+  reads and writes and head reads, so that those never wait behind bodies; a
+  description read gets three seconds a try and a description write five,
+  and a connection on which two tries time out within three seconds is
+  retired for the next request (not in the first twelve seconds of a
+  connection that has not answered yet);
+- an answer past 32 MiB fails its request, and a deletion removes up to
+  eight files at once.
+
+A session announces a ring of slots: `concurrency` files a direction (at
+least two, at most 256; 64 when the configuration leaves it at zero, which
+also takes a 10 ms `flushIntervalMs` and a 200 ms `maxPollIntervalMs` for
+Drive) and a watermark. Rings are made ahead of time: after a dial in slots,
+up to two spare rings wait for the next dials, one made every two seconds; a
+spare older than two thirds of the session TTL is not taken and one older
+than a third is replaced, a quarter TTL apart while dials came in the last
+ten minutes. The dial returns at once and announces the session once its
+first segment is cut or 25 ms passed, that segment inline in the
+announcement (`first`) when it fits in the 12000 bytes, as v26.11.9's server
+reads it; the segment also goes to slot 0, for a server older than v26.11.9.
+An announcement that fails fails the session's reads and writes. Segment `n`
+goes into slot `n` modulo the depth, its frame (`XDRVSL01`, the number, a
+mode, the size and CRC-32, and up to 14 KiB of segment inline) in the
+description and a larger segment in the body of the same request. The writer
+keeps at most twelve segments on their way, cuts 14 KiB segments and sends a
+burst that twice those twelve take in 14 KiB segments as such, doubles the
+size up to `segmentBytes` after eight full ones in a row (or at once while
+most write slots are busy), sends a larger burst at once, and writes a slot
+only once the reader's watermark says it took what the slot held a lap
+before. The reader asks for the head often, from 10 ms up to 25 ms (or
+`maxPollIntervalMs` once idle) and, while data moves, with up to three reads
+at once; asks for the next three segments at once and for those behind them,
+up to twelve past the head or past the furthest segment seen, at the pace
+they come (every 40 ms in a burst); sends a second request for a body that
+has not come after two seconds, or after twice what its size takes at the
+rate bodies came; writes its watermark as the head moves; takes a body only
+once it matches its frame; and fails when the writer marks a segment it could
+not store, a slot stays gone, holds a frame that does not decode or a body
+that never matches for a minute. An empty slot is idle. When the ring cannot
+be made, the session goes in segments, as in Xray-core.
 
 `template` sends the requests its operations describe:
 

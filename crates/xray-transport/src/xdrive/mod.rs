@@ -35,6 +35,7 @@ mod s3;
 #[cfg(test)]
 mod slot_tests;
 mod slots;
+mod spares;
 mod storage;
 #[cfg(test)]
 mod storage_tests;
@@ -175,6 +176,10 @@ pub struct XdriveConfig {
 pub struct XdriveTransport {
     backend: Arc<Backend>,
     params: Params,
+    /// `paramsForStorage`'s numbers for a storage of slots.
+    slot_params: Params,
+    /// Google Drive's spare rings, made ahead of time.
+    spares: Option<Arc<spares::SpareBox>>,
 }
 
 /// An HTTP storage: what Xray-core checks when it first builds one, kept
@@ -280,8 +285,13 @@ impl XdriveTransport {
                 built: OnceLock::new(),
             },
         };
+        let slot_params = params::for_slot_store(&config.tuning);
+        let spares = matches!(backend, Backend::Drive { .. })
+            .then(|| spares::SpareBox::new(Params::from_tuning(&config.tuning)));
         Self {
             params: Params::from_tuning(&config.tuning),
+            slot_params,
+            spares,
             backend: Arc::new(backend),
         }
     }
@@ -291,51 +301,119 @@ impl XdriveTransport {
     /// is where both ends meet. `dialer` reaches an HTTP storage; the first
     /// dial's serves every later one, as Xray-core keeps the storage it
     /// first built.
+    ///
+    /// A storage of slots takes a spare ring when one waits, or makes the
+    /// ring now, and returns the session at once: it is announced once its
+    /// first segment is cut, or after 25 ms, the segment inline in the
+    /// announcement when it fits, and an announcement that fails fails the
+    /// session's reads and writes. Other storages announce first.
     pub async fn open_stream(
         &self,
         dialer: &TransportDialer,
     ) -> Result<BoxedTransportStream, TransportError> {
-        let (storage, slots) = self.open_storage(dialer).await?;
-        let session = names::new_session_id();
+        let spare = self.spares.as_ref().and_then(|spares| spares.take());
+        let (storage, slots, session, ring) = match spare {
+            Some(spare) => (
+                spare.storage,
+                Some(spare.slots),
+                spare.session,
+                Some(spare.ring),
+            ),
+            None => {
+                let (storage, slots) = open_storage(&self.backend, dialer).await?;
+                (storage, slots, names::new_session_id(), None)
+            }
+        };
+        let params = if slots.is_some() {
+            self.slot_params
+        } else {
+            self.params
+        };
         // A storage of slots carries the session in a ring when it can make
         // one; otherwise, as when Xray-core warns, in segments.
-        let ring = match &slots {
-            Some(store) => slots::make_ring(store, &session, &self.params).await.ok(),
-            None => None,
+        let ring = match (ring, &slots) {
+            (Some(ring), _) => Some(ring),
+            (None, Some(store)) => slots::make_ring(store, &session, &params).await.ok(),
+            (None, None) => None,
         };
-        let announce = ring
-            .as_ref()
-            .map(|ring| Bytes::from(ring.to_json()))
-            .unwrap_or_default();
+        if let (Some(ring), Some(store)) = (ring, slots) {
+            if let Some(spares) = &self.spares {
+                let backend = Arc::clone(&self.backend);
+                let dialer = dialer.clone();
+                spares.warm(Arc::new(move || {
+                    let backend = Arc::clone(&backend);
+                    let dialer = dialer.clone();
+                    Box::pin(async move {
+                        let (storage, slots) = open_storage(&backend, &dialer).await.ok()?;
+                        Some((storage, slots?))
+                    })
+                }));
+            }
+            let (stream, announcer) =
+                XdriveStream::slots_announced(store, ring.up.clone(), ring.down.clone(), params);
+            tokio::spawn(announce(storage, session, ring, announcer));
+            return Ok(Box::new(stream));
+        }
         storage
-            .put(&names::announce_name(&session, SystemTime::now()), announce)
+            .put(
+                &names::announce_name(&session, SystemTime::now()),
+                Bytes::new(),
+            )
             .await
             .map_err(|error| {
                 TransportError::Xdrive(format!("failed to announce session {session} > {error}"))
             })?;
-        if let (Some(ring), Some(store)) = (ring, slots) {
-            return Ok(Box::new(XdriveStream::slots(
-                store,
-                ring.up,
-                ring.down,
-                self.params,
-            )));
-        }
         Ok(Box::new(XdriveStream::new(
             storage,
             names::uplink_prefix(&session),
             names::downlink_prefix(&session),
-            self.params,
+            params,
         )))
     }
+}
 
-    /// The storage of one session, and its slots when it keeps objects by
-    /// id.
-    async fn open_storage(
-        &self,
-        dialer: &TransportDialer,
-    ) -> Result<(Arc<dyn Storage>, Option<Arc<dyn SlotStore>>), TransportError> {
-        let storage: Arc<dyn Storage> = match self.backend.as_ref() {
+/// How long a dial waits for the first segment to announce it with.
+const FIRST_SEGMENT_WAIT: Duration = Duration::from_millis(25);
+/// `driveInlineLimit`: the largest announcement that takes its first segment.
+const ANNOUNCE_INLINE_LIMIT: usize = 12000;
+
+/// Announces a session in slots, as Xray-core v26.11.9's dial does after it
+/// returned the connection.
+async fn announce(
+    storage: Arc<dyn Storage>,
+    session: String,
+    ring: slots::Ring,
+    mut announcer: stream::Announcer,
+) {
+    let first = tokio::time::timeout(FIRST_SEGMENT_WAIT, &mut announcer.first)
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .filter(|first| !first.is_empty() && first.len() <= slots::SLOT_INLINE_LIMIT);
+    let mut announcement = ring.to_json();
+    if let Some(first) = first {
+        let with_first = slots::Ring {
+            first: Some(first),
+            ..ring
+        }
+        .to_json();
+        if with_first.len() <= ANNOUNCE_INLINE_LIMIT {
+            announcement = with_first;
+        }
+    }
+    let name = names::announce_name(&session, SystemTime::now());
+    if let Err(error) = storage.put(&name, Bytes::from(announcement)).await {
+        announcer.fail(format!("failed to announce session {session} > {error}"));
+    }
+}
+
+/// The storage of one session, and its slots when it keeps objects by id.
+async fn open_storage(
+    backend: &Backend,
+    dialer: &TransportDialer,
+) -> Result<(Arc<dyn Storage>, Option<Arc<dyn SlotStore>>), TransportError> {
+    {
+        let storage: Arc<dyn Storage> = match backend {
             Backend::Local(folder) => {
                 Arc::new(LocalStorage::open(folder).await.map_err(storage_error)?)
             }

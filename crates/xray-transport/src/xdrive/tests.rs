@@ -530,3 +530,81 @@ fn storages_keep_alive_as_xmux_says() {
     assert_eq!(keep_alive_for(20), Some(Duration::from_secs(20)));
     assert_eq!(keep_alive_for(-1), None);
 }
+
+/// A storage that keeps what was put.
+#[derive(Debug, Default)]
+struct Puts(std::sync::Mutex<Vec<(String, Bytes)>>);
+
+#[async_trait::async_trait]
+impl Storage for Puts {
+    async fn put(&self, name: &str, data: Bytes) -> Result<(), StorageError> {
+        self.0.lock().unwrap().push((name.to_owned(), data));
+        Ok(())
+    }
+    async fn get(&self, _: &str) -> Result<Bytes, StorageError> {
+        Err(StorageError::NotFound)
+    }
+    async fn delete(&self, _: &str) -> Result<(), StorageError> {
+        Ok(())
+    }
+    async fn list(&self, _: &str) -> Result<Vec<super::storage::Entry>, StorageError> {
+        Ok(Vec::new())
+    }
+}
+
+/// `TestSlotFirstAnnouncement` and `TestSlotFirstAnnouncementTooLarge`: a
+/// session is announced with its first segment inline when the
+/// announcement stays within 12000 bytes, and without it otherwise or when
+/// nothing was written in 25 ms.
+#[tokio::test]
+async fn sessions_in_slots_are_announced_with_their_first_segment() {
+    use super::slots::memory::MemorySlots;
+    use super::slots::{make_ring, SlotStore};
+    use tokio::io::AsyncWriteExt;
+    for (written, inline) in [(Some(100usize), true), (Some(9000), false), (None, false)] {
+        let slots: Arc<dyn SlotStore> = Arc::new(MemorySlots::default());
+        let params = super::params::Params::from_tuning(&super::XdriveTuning {
+            concurrency: 2,
+            flush_interval_ms: 1,
+            ..super::XdriveTuning::default()
+        });
+        let ring = make_ring(&slots, "s", &params).await.unwrap();
+        let (mut stream, announcer) = super::stream::XdriveStream::slots_announced(
+            slots,
+            ring.up.clone(),
+            ring.down.clone(),
+            params,
+        );
+        if let Some(size) = written {
+            stream.write_all(&vec![7u8; size]).await.unwrap();
+        }
+        let puts = Arc::new(Puts::default());
+        super::announce(
+            Arc::clone(&puts) as Arc<dyn Storage>,
+            "s".to_owned(),
+            ring.clone(),
+            announcer,
+        )
+        .await;
+        let puts = puts.0.lock().unwrap();
+        let (name, body) = &puts[0];
+        assert!(
+            name.starts_with("sessions/") && name.ends_with("-s"),
+            "{name}"
+        );
+        let announced = super::slots::Ring::from_json(body).unwrap();
+        assert_eq!(
+            (announced.up.clone(), announced.down.clone()),
+            (ring.up.clone(), ring.down.clone())
+        );
+        assert_eq!(
+            announced.first.is_some(),
+            inline,
+            "{written:?} bytes: {}",
+            String::from_utf8_lossy(body)
+        );
+        if inline {
+            assert_eq!(announced.first.unwrap().len(), written.unwrap());
+        }
+    }
+}

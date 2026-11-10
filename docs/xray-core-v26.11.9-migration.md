@@ -54,6 +54,23 @@ keep their original source identities.
   Xray-core's sessions from writing to a parent at once, has no counterpart
   to add: one task writes each parent's frames.
 
+- **XDRIVE on Google Drive** (#7340, #7352). The client follows the new
+  `drive.go`, `slots.go`, `xdrive.go`, `params.go` and `client.go`: rings as
+  deep as `concurrency` (64 by default for Drive, with a 10 ms flush and
+  200 ms polls; at most 256), two spare rings made ahead of time, the dial
+  returning at once and announcing the session after its first segment with
+  that segment inline (`first`), at most twelve slot writes on their way and
+  bursts in inline segments, a reader that reads three segments ahead, polls
+  the head with up to three reads, hedges slow bodies and fails on a slot
+  that holds a broken frame or body for a minute; on the Drive side, one
+  shared token fetch with background refresh, backoff after failures and a
+  hard stop on refused credentials, a cooldown after throttling, a reserved
+  lane for watermarks and the head, per-try timeouts that retire a
+  stalled connection, a 32 MiB answer cap and parallel deletes. The wire
+  stays compatible both ways: the new client meets v26.10.31's server
+  (which ignores `first`; the segment still goes to slot 0) and v26.11.9's.
+  See [XDRIVE](config-compatibility.md#xdrive).
+
 ## Reviewed without a change
 
 - WireGuard gives up on a domain endpoint's lookup at the connection's

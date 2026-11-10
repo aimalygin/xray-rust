@@ -96,6 +96,24 @@ impl Params {
     }
 }
 
+/// `paramsForStorage`: a storage of slots (Google Drive) takes defaults of
+/// its own for the numbers the configuration leaves at zero -- 64 slots a
+/// way, a 10 ms flush and polls of at most 200 ms -- since its concurrency
+/// and flush mean other things than the segment storages'.
+pub(crate) fn for_slot_store(tuning: &XdriveTuning) -> Params {
+    let mut tuning = *tuning;
+    if tuning.concurrency == 0 {
+        tuning.concurrency = 64;
+    }
+    if tuning.flush_interval_ms == 0 {
+        tuning.flush_interval_ms = 10;
+    }
+    if tuning.max_poll_interval_ms == 0 {
+        tuning.max_poll_interval_ms = 200;
+    }
+    Params::from_tuning(&tuning)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,6 +133,24 @@ mod tests {
                 concurrency: 8,
             }
         );
+    }
+
+    #[test]
+    fn slot_stores_take_their_own_defaults_for_zero_only() {
+        let params = for_slot_store(&XdriveTuning::default());
+        assert_eq!(params.concurrency, 64);
+        assert_eq!(params.flush_interval, Duration::from_millis(10));
+        assert_eq!(params.max_poll_interval, Duration::from_millis(200));
+        assert_eq!(params.min_poll_interval, Duration::from_millis(50));
+        let params = for_slot_store(&XdriveTuning {
+            concurrency: 3,
+            flush_interval_ms: 7,
+            max_poll_interval_ms: 900,
+            ..XdriveTuning::default()
+        });
+        assert_eq!(params.concurrency, 3);
+        assert_eq!(params.flush_interval, Duration::from_millis(7));
+        assert_eq!(params.max_poll_interval, Duration::from_millis(900));
     }
 
     #[test]

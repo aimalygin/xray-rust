@@ -735,8 +735,9 @@ looked up, as in Xray-core. Deliberate differences:
   type and fronting address, a key without the template, TLS settings or
   `xmux`, so a second outbound differing only there runs on the first one's
   storage; here each outbound has its own.
-- A template's or Drive's answer is read up to 64 MiB; Xray-core reads it
-  whole. S3 answers keep Xray-core's limits.
+- A template's answer is read up to 64 MiB; Xray-core reads it whole.
+  Drive's has Xray-core's own cap of 32 MiB since v26.11.9, and S3 answers
+  keep Xray-core's limits.
 - A Drive listing and the children a delete removes are taken in name
   order; Xray-core takes them in Go's random map order.
 - A slot writer that finds a full segment no slot is free for waits before
@@ -782,6 +783,13 @@ looked up, as in Xray-core. Deliberate differences:
   where Xray-core's `Close` blocks until they are stored.
 - VLESS `reverse`, which lets Xray-core run XDRIVE without Mux, is refused,
   as on every VLESS outbound here.
+- Google Drive's spare rings that no dial took are deleted when their
+  outbound goes away (the core stops); Xray-core keeps them as long as its
+  process runs and leaves them in the folder when it exits. A token fetch
+  that every waiter gave up on still completes and keeps its token, as in
+  Xray-core, and Drive's throttle counter, which only its tests read, is not
+  kept. The `local` service's retry of Windows sharing violations has no
+  counterpart: xray-rust does not run on Windows.
 - Unknown fields in `xdriveSettings`, `s3` and `xmux` fail, as everywhere;
   Go's JSON ignores them and matches field names in any case. Over
   `tlsSettings.alpn` other than exactly `["h3"]` the UDP masks, Salamander
