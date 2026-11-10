@@ -217,9 +217,15 @@ fn bandwidth_from_delta(bytes: ByteCount, delta: Nanos) -> Bandwidth {
         .wrapping_mul(BYTES_PER_SECOND)
 }
 
-/// `bytesFromBandwidthAndTimeDelta`.
+/// `bytesFromBandwidthAndTimeDelta`, without its overflow. Go's int64
+/// product wraps once bandwidth times interval passes 2^63, which 100 Mbit/s
+/// reaches after 92 seconds: an idle connection's first ACK then finds a
+/// negative number of expected bytes, the ack-aggregation epoch is not
+/// restarted, and about a gigabyte of "extra" acked bytes lifts the cap off
+/// the congestion window. The product is taken in 128 bits instead.
 fn bytes_from_bandwidth_and_time_delta(bandwidth: Bandwidth, delta: Nanos) -> ByteCount {
-    (bandwidth as ByteCount).wrapping_mul(delta) / (SECOND * 8)
+    let bytes = i128::from(bandwidth) * i128::from(delta) / i128::from(SECOND * 8);
+    bytes.clamp(i128::from(ByteCount::MIN), i128::from(ByteCount::MAX)) as ByteCount
 }
 
 /// `bdpFromRttAndBandwidth`.

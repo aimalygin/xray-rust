@@ -10,6 +10,18 @@ long-term supported release series.
 
 ## Unreleased
 
+- A ChromeParrot connection that closes before its handshake is confirmed
+  sends its CONNECTION_CLOSE once. One packet per datagram stopped the close
+  at the first packet space with keys, the connection never counted it as
+  sent, and it made a new close packet on every poll, as fast as the socket
+  took them, until the close timer: after a certificate the client refused,
+  or a dial given up after the Finished. Found in XHTTP over HTTP/3 and
+  Hysteria, which parrot Chrome by default.
+- Xray's BBR (`conservative` and `aggressive`): the bytes a bandwidth should
+  have delivered over an interval no longer wrap past 2^63, which 100 Mbit/s
+  reaches after 92 idle seconds. The wrapped, negative count kept the
+  ack-aggregation epoch open on the first ACK after the idle and took the
+  cap off the congestion window. Xray-core's product wraps.
 - Hysteria and XHTTP over HTTP/3 shape their QUIC handshake like Chrome's,
   as Xray-core v26.10.31's default ChromeParrot does, unless
   `finalmask.quicParams.disableChromeParrot` is true. Until now the flag had
