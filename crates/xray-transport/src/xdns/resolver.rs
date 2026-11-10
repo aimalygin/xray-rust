@@ -136,9 +136,16 @@ impl UdpShared {
         let sending = socket.clone();
         state.reader = Some(self.runtime.spawn(async move {
             let mut buf = vec![0u8; MAX_PACKET];
-            // Datagrams from any source, as Xray's unconnected socket reads
-            // them; a failed read drops the socket.
-            while let Ok((length, _)) = reading.recv_from(&mut buf).await {
+            // The resolver's datagrams alone; a failed read drops the
+            // socket. Xray reads its unconnected socket from any source, so
+            // whoever knows the tunnel's domain and reaches this port feeds
+            // the carrier packets and has the client poll at their pace.
+            while let Ok((length, from)) = reading.recv_from(&mut buf).await {
+                if (from.ip().to_canonical(), from.port())
+                    != (shared.addr.ip().to_canonical(), shared.addr.port())
+                {
+                    continue;
+                }
                 if shared.responses.send(buf[..length].to_vec()).await.is_err() {
                     return;
                 }
