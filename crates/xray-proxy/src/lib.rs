@@ -8,6 +8,7 @@ pub mod hysteria;
 pub mod inbound;
 pub mod mux;
 pub mod outbound;
+pub mod reverse;
 pub mod shadowsocks;
 pub mod shadowsocks2022;
 pub mod trojan;
