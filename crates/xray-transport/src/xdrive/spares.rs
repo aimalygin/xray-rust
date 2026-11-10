@@ -111,6 +111,11 @@ impl SpareBox {
     }
 
     #[cfg(test)]
+    pub(crate) fn params(&self) -> Params {
+        self.params
+    }
+
+    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.spares.lock().unwrap().len()
     }

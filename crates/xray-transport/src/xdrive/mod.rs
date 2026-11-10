@@ -286,8 +286,10 @@ impl XdriveTransport {
             },
         };
         let slot_params = params::for_slot_store(&config.tuning);
-        let spares = matches!(backend, Backend::Drive { .. })
-            .then(|| spares::SpareBox::new(Params::from_tuning(&config.tuning)));
+        // Spares are rings of a storage of slots, made with its numbers, as
+        // Xray-core warms them with `paramsForStorage`'s.
+        let spares =
+            matches!(backend, Backend::Drive { .. }).then(|| spares::SpareBox::new(slot_params));
         Self {
             params: Params::from_tuning(&config.tuning),
             slot_params,

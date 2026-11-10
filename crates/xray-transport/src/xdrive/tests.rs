@@ -608,3 +608,41 @@ async fn sessions_in_slots_are_announced_with_their_first_segment() {
         }
     }
 }
+
+/// Google Drive's spare rings are made with the slot path's numbers: 64 slots
+/// a way when the configuration leaves `concurrency` at zero.
+#[test]
+fn drive_spares_take_the_slot_paths_numbers() {
+    let transport = XdriveTransport::new(XdriveConfig {
+        storage: XdriveStorageConfig::GoogleDrive {
+            folder: "folder".to_owned(),
+            secrets: ["a", "b", "c"]
+                .map(|s| zeroize::Zeroizing::new(s.to_owned()))
+                .to_vec(),
+            http: XdriveHttpConfig {
+                tls: crate::TlsClientConfig {
+                    server_name: String::new(),
+                    allow_insecure: false,
+                    pinned_peer_cert_sha256: Vec::new(),
+                    verify_peer_cert_by_name: Vec::new(),
+                    alpn: Vec::new(),
+                    fingerprint: None,
+                },
+                fronting: None,
+                xmux: crate::stream::XhttpXmuxPolicy::default(),
+                keep_alive: None,
+                h3: None,
+            },
+        },
+        tuning: XdriveTuning::default(),
+    });
+    assert_eq!(transport.slot_params.concurrency, 64);
+    assert_eq!(transport.spares.as_ref().unwrap().params().concurrency, 64);
+    let local = XdriveTransport::new(XdriveConfig {
+        storage: XdriveStorageConfig::Local {
+            folder: "/tmp".to_owned(),
+        },
+        tuning: XdriveTuning::default(),
+    });
+    assert!(local.spares.is_none());
+}
