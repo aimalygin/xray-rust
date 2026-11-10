@@ -40,6 +40,13 @@ pub(crate) struct UtlsClientHelloProfile {
     /// same fixed list into every hello of the profile. Empty for a profile
     /// without the extension.
     pub trust_anchor_ids: &'static [&'static [u8]],
+    /// For a profile whose uTLS spec runs `ShuffleChromeTLSExtensions`, the
+    /// spec's extensions in the order it lists them, before the shuffle uTLS
+    /// draws anew for every hello. `extensions` then holds the order of the
+    /// zero-seed draw the oracle fixtures record, and the two GREASE
+    /// extensions, padding and pre_shared_key stay where the spec has them.
+    /// Empty for a profile whose order is fixed.
+    pub unshuffled_extensions: &'static [u16],
 }
 
 /// What a profile's ECH GREASE extension draws from, per connection.
@@ -109,6 +116,213 @@ pub(crate) struct UtlsExtension {
 
 const GREASE: u16 = 0x0a0a;
 const GREASE_SECOND: u16 = 0x1a1a;
+
+// The extensions of uTLS's Chrome specs that run `ShuffleChromeTLSExtensions`,
+// in the order `u_parrots.go` (a13c59ffe98b) lists them; see
+// `UtlsClientHelloProfile::unshuffled_extensions`.
+const CHROME_106_SHUFFLE_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    GREASE_SECOND,
+    0x0015,
+];
+const CHROME_115_PQ_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    GREASE_SECOND,
+    0x0015,
+];
+const CHROME_120_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    0xfe0d,
+    GREASE_SECOND,
+    0x0015,
+];
+const CHROME_120_PQ_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    0xfe0d,
+    GREASE_SECOND,
+];
+const CHROME_131_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    0xfe0d,
+    GREASE_SECOND,
+];
+const CHROME_133_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x44cd,
+    0xfe0d,
+    GREASE_SECOND,
+];
+const CHROME_155_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x44cd,
+    0xca34,
+    0xfe0d,
+    GREASE_SECOND,
+];
+const CHROME_112_PSK_SHUF_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    GREASE_SECOND,
+    0x0029,
+];
+const CHROME_114_PADDING_PSK_SHUF_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    GREASE_SECOND,
+    0x0015,
+    0x0029,
+];
+const CHROME_115_PQ_PSK_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    GREASE_SECOND,
+    0x0029,
+];
 
 const PROFILE_0_CIPHERS: &[u16] = &[
     0x0a0a, 0x1301, 0x1302, 0x1303, 0xc02b, 0xc02f, 0xc02c, 0xc030, 0xcca9, 0xcca8, 0xc013, 0xc014,
@@ -230,6 +444,7 @@ const PROFILE_0: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: Some(ECH_GREASE_BORING),
     trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_133_SPEC,
 };
 
 const PROFILE_1_CIPHERS: &[u16] = &[
@@ -336,6 +551,7 @@ const PROFILE_1: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: Some(ECH_GREASE_FIREFOX),
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_2_CIPHERS: &[u16] = &[
@@ -442,6 +658,7 @@ const PROFILE_2: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_3_CIPHERS: &[u16] = &[
@@ -545,6 +762,7 @@ const PROFILE_3: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(190),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_4_CIPHERS: &[u16] = &[
@@ -605,6 +823,7 @@ const PROFILE_4: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_5_CIPHERS: &[u16] = &[
@@ -715,6 +934,7 @@ const PROFILE_5: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(209),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_6_CIPHERS: &[u16] = &[
@@ -788,6 +1008,7 @@ const PROFILE_6: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_7_CIPHERS: &[u16] = &[
@@ -906,6 +1127,7 @@ const PROFILE_7: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(200),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_8_CIPHERS: &[u16] = &[
@@ -996,6 +1218,7 @@ const PROFILE_8: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_9_CIPHERS: &[u16] = &[
@@ -1059,6 +1282,7 @@ const PROFILE_9: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_10_CIPHERS: &[u16] = &[
@@ -1161,6 +1385,7 @@ const PROFILE_10: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: Some(ECH_GREASE_FIREFOX),
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_11_CIPHERS: &[u16] = &[
@@ -1283,6 +1508,7 @@ const PROFILE_11: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(14),
     encrypted_client_hello: Some(ECH_GREASE_BORING),
     trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_120_SPEC,
 };
 
 const PROFILE_12_CIPHERS: &[u16] = &[
@@ -1405,6 +1631,7 @@ const PROFILE_12: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: Some(ECH_GREASE_BORING),
     trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_131_SPEC,
 };
 
 const PROFILE_13_CIPHERS: &[u16] = &[
@@ -1494,6 +1721,7 @@ const PROFILE_13: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(210),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_14_CIPHERS: &[u16] = &[
@@ -1612,6 +1840,7 @@ const PROFILE_14: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(204),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_15_CIPHERS: &[u16] = &[
@@ -1726,6 +1955,7 @@ const PROFILE_15: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(201),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_16_CIPHERS: &[u16] = &[
@@ -1793,6 +2023,7 @@ const PROFILE_16: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_17_CIPHERS: &[u16] = &[
@@ -1862,6 +2093,7 @@ const PROFILE_17: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_18_CIPHERS: &[u16] = &[
@@ -1931,6 +2163,7 @@ const PROFILE_18: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_19_CIPHERS: &[u16] = &[
@@ -2029,6 +2262,7 @@ const PROFILE_19: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(147),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_20_CIPHERS: &[u16] = &[
@@ -2127,6 +2361,7 @@ const PROFILE_20: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(147),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_21_CIPHERS: &[u16] = &[
@@ -2229,6 +2464,7 @@ const PROFILE_21: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(133),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_22_CIPHERS: &[u16] = &[
@@ -2331,6 +2567,7 @@ const PROFILE_22: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(148),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_23_CIPHERS: &[u16] = &[
@@ -2433,6 +2670,7 @@ const PROFILE_23: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(139),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_24_CIPHERS: &[u16] = &[
@@ -2518,6 +2756,7 @@ const PROFILE_24: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_25_CIPHERS: &[u16] = &[
@@ -2603,6 +2842,7 @@ const PROFILE_25: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_26_CIPHERS: &[u16] = &[
@@ -2717,6 +2957,7 @@ const PROFILE_26: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(201),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_27_CIPHERS: &[u16] = &[
@@ -2827,6 +3068,7 @@ const PROFILE_27: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(205),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_28_CIPHERS: &[u16] = &[
@@ -2937,6 +3179,7 @@ const PROFILE_28: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(209),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_29_CIPHERS: &[u16] = &[
@@ -3047,6 +3290,7 @@ const PROFILE_29: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(209),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_30_CIPHERS: &[u16] = &[
@@ -3165,6 +3409,7 @@ const PROFILE_30: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(200),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_31_CIPHERS: &[u16] = &[
@@ -3283,6 +3528,7 @@ const PROFILE_31: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(204),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_32_CIPHERS: &[u16] = &[
@@ -3401,6 +3647,7 @@ const PROFILE_32: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(204),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_33_CIPHERS: &[u16] = &[
@@ -3519,6 +3766,7 @@ const PROFILE_33: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(204),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_106_SHUFFLE_SPEC,
 };
 
 const PROFILE_34_CIPHERS: &[u16] = &[
@@ -3600,6 +3848,7 @@ const PROFILE_34: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_35_CIPHERS: &[u16] = &[
@@ -3681,6 +3930,7 @@ const PROFILE_35: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_36_CIPHERS: &[u16] = &[
@@ -3787,6 +4037,7 @@ const PROFILE_36: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(195),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_37_CIPHERS: &[u16] = &[
@@ -3901,6 +4152,7 @@ const PROFILE_37: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_38_CIPHERS: &[u16] = &[
@@ -4015,6 +4267,7 @@ const PROFILE_38: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_112_PSK_SHUF_SPEC,
 };
 
 const PROFILE_39_CIPHERS: &[u16] = &[
@@ -4133,6 +4386,7 @@ const PROFILE_39: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: Some(204),
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_114_PADDING_PSK_SHUF_SPEC,
 };
 
 const PROFILE_40_CIPHERS: &[u16] = &[
@@ -4251,6 +4505,7 @@ const PROFILE_40: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_115_PQ_SPEC,
 };
 
 const PROFILE_41_CIPHERS: &[u16] = &[
@@ -4369,6 +4624,7 @@ const PROFILE_41: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_115_PQ_PSK_SPEC,
 };
 
 const PROFILE_42_CIPHERS: &[u16] = &[
@@ -4491,6 +4747,7 @@ const PROFILE_42: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: Some(ECH_GREASE_BORING),
     trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_120_PQ_SPEC,
 };
 
 // Xray's `randomizednoalpn` preset: `HelloRandomizedNoALPN` under the weights
@@ -4584,6 +4841,7 @@ const PROFILE_43: UtlsClientHelloProfile = UtlsClientHelloProfile {
     padding_length: None,
     encrypted_client_hello: None,
     trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 // Chrome 155 (`HelloChrome_155`), the profile `chrome` names since Xray-core
@@ -4707,6 +4965,7 @@ const PROFILE_44: UtlsClientHelloProfile = UtlsClientHelloProfile {
     signature_algorithms: PROFILE_44_SIGALGS,
     extensions: PROFILE_44_EXTENSIONS,
     trust_anchor_ids: PROFILE_44_TRUST_ANCHORS,
+    unshuffled_extensions: CHROME_155_SPEC,
     ..PROFILE_0
 };
 

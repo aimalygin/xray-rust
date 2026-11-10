@@ -34,6 +34,7 @@ use rustls::{
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSecret};
 use zeroize::Zeroize;
 
+use crate::sudoku::gorand::{crypto_rand_int63, GoRand};
 use crate::utls_profiles::{UtlsClientHelloProfile, UtlsEchGrease};
 
 const EXT_SERVER_NAME: u16 = 0x0000;
@@ -44,6 +45,7 @@ const EXT_SIGNATURE_ALGORITHMS: u16 = 0x000d;
 const EXT_ALPN: u16 = 0x0010;
 const EXT_SIGNED_CERTIFICATE_TIMESTAMP: u16 = 0x0012;
 const EXT_PADDING: u16 = 0x0015;
+const EXT_PRE_SHARED_KEY: u16 = 0x0029;
 const EXT_EXTENDED_MASTER_SECRET: u16 = 0x0017;
 const EXT_CERTIFICATE_COMPRESSION: u16 = 0x001b;
 const EXT_RECORD_SIZE_LIMIT: u16 = 0x001c;
@@ -84,10 +86,160 @@ const STRUCTURED_OPTIONAL_EXTENSIONS: &[u16] = &[
     EXT_RENEGOTIATION_INFO,
 ];
 
+/// BoringSSL's GREASE slots, as uTLS numbers its per-hello seeds
+/// (`ssl_grease_cipher` … `ssl_grease_signature_algorithm`).
+const GREASE_SEEDS: usize = 8;
+const GREASE_CIPHER: usize = 0;
+const GREASE_GROUP: usize = 1;
+const GREASE_EXTENSION1: usize = 2;
+const GREASE_EXTENSION2: usize = 3;
+const GREASE_VERSION: usize = 4;
+const GREASE_SIGNATURE_ALGORITHM: usize = 7;
+
+/// What uTLS draws anew for every hello of a profile: the GREASE value of
+/// each slot, and for a Chrome profile whose spec runs
+/// `ShuffleChromeTLSExtensions`, the extension order.
+///
+/// One draw serves the whole hello, a HelloRetryRequest's second flight
+/// included, since the plan it shapes is built once per connection.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct HelloDraws {
+    grease: [u16; GREASE_SEEDS],
+    order: Option<Vec<u16>>,
+}
+
+impl HelloDraws {
+    /// Fresh draws for one connection, as uTLS's `ApplyPreset` reads its
+    /// GREASE seeds from `crypto/rand` and `ShuffleChromeTLSExtensions` its
+    /// seed from `crypto/rand.Int`.
+    pub(crate) fn draw(profile: &UtlsClientHelloProfile) -> Result<Self, RustlsError> {
+        let mut seeds = [0; 2 * GREASE_SEEDS];
+        fill_random(&mut seeds, "GREASE")?;
+        let shuffle_seed = if profile.unshuffled_extensions.is_empty() {
+            None
+        } else {
+            Some(loop {
+                let mut bytes = [0; 8];
+                fill_random(&mut bytes, "the extension order")?;
+                if let Some(seed) = crypto_rand_int63(bytes) {
+                    break seed;
+                }
+            })
+        };
+        Ok(Self::from_seeds(profile, seeds, shuffle_seed))
+    }
+
+    /// The draws uTLS makes from `seeds`, its sixteen bytes of GREASE seeds,
+    /// and `shuffle_seed`, the extension shuffle's seed, for a profile that
+    /// shuffles.
+    fn from_seeds(
+        profile: &UtlsClientHelloProfile,
+        seeds: [u8; 2 * GREASE_SEEDS],
+        shuffle_seed: Option<i64>,
+    ) -> Self {
+        let mut seed = [0u16; GREASE_SEEDS];
+        for (slot, bytes) in seed.iter_mut().zip(seeds.chunks_exact(2)) {
+            *slot = u16::from_le_bytes([bytes[0], bytes[1]]);
+        }
+        // The two GREASE extensions of one hello must differ.
+        if boring_grease(seed[GREASE_EXTENSION1]) == boring_grease(seed[GREASE_EXTENSION2]) {
+            seed[GREASE_EXTENSION2] ^= 0x1010;
+        }
+        let order = shuffle_seed
+            .filter(|_| !profile.unshuffled_extensions.is_empty())
+            .map(|seed| chrome_shuffled_extensions(profile, seed));
+        Self {
+            grease: seed.map(boring_grease),
+            order,
+        }
+    }
+
+    /// The draws of an all-zero `crypto/rand`, the one the oracle fixtures
+    /// are made with: `0x0a0a` in every slot but the second GREASE
+    /// extension's `0x1a1a`, and the order `extensions` records.
+    #[cfg(test)]
+    pub(crate) fn zero(profile: &UtlsClientHelloProfile) -> Self {
+        Self::from_seeds(profile, [0; 2 * GREASE_SEEDS], Some(0))
+    }
+
+    fn grease(&self, slot: usize) -> u16 {
+        self.grease[slot]
+    }
+
+    /// The profile's extension types in this hello's order, GREASE
+    /// extensions included.
+    fn extension_types(&self, profile: &UtlsClientHelloProfile) -> Vec<u16> {
+        match &self.order {
+            Some(order) => order.clone(),
+            None => profile
+                .extensions
+                .iter()
+                .map(|extension| extension.extension_type)
+                .collect(),
+        }
+    }
+
+    /// `values` with every GREASE value replaced by `slot`'s.
+    fn regrease(&self, values: &[u16], slot: usize) -> Vec<u16> {
+        values
+            .iter()
+            .map(|value| {
+                if is_grease_value(*value) {
+                    self.grease(slot)
+                } else {
+                    *value
+                }
+            })
+            .collect()
+    }
+}
+
+/// `getBoringGREASEValue`: `0x?a?a` from the high nibble of the seed's low
+/// byte.
+fn boring_grease(seed: u16) -> u16 {
+    let value = (seed & 0xf0) | 0x0a;
+    value | (value << 8)
+}
+
+/// `ShuffleChromeTLSExtensions` on the profile's spec order with `seed`: Go's
+/// `rand.New(rand.NewSource(seed)).Shuffle`, skipping every swap that would
+/// move a GREASE, padding or pre_shared_key extension, and then the
+/// extensions this hello does not carry (padding a long hello leaves out,
+/// pre_shared_key without a ticket).
+fn chrome_shuffled_extensions(profile: &UtlsClientHelloProfile, seed: i64) -> Vec<u16> {
+    let mut order = chrome_shuffle(profile.unshuffled_extensions, seed);
+    order.retain(|extension_type| profile_has_extension(profile, *extension_type));
+    order
+}
+
+fn chrome_shuffle(spec: &[u16], seed: i64) -> Vec<u16> {
+    let mut order = spec.to_vec();
+    GoRand::new(seed).shuffle_by(order.len(), |i, j| {
+        if !stays_in_place(order[i]) && !stays_in_place(order[j]) {
+            order.swap(i, j);
+        }
+    });
+    order
+}
+
+/// The extensions `ShuffleChromeTLSExtensions` never moves.
+fn stays_in_place(extension_type: u16) -> bool {
+    is_grease_value(extension_type)
+        || extension_type == EXT_PADDING
+        || extension_type == EXT_PRE_SHARED_KEY
+}
+
+fn fill_random(bytes: &mut [u8], what: &str) -> Result<(), RustlsError> {
+    OsRng
+        .try_fill_bytes(bytes)
+        .map_err(|error| RustlsError::General(format!("{what} needs randomness: {error}")))
+}
+
 pub(crate) fn apply_utls_profile(
     mut plan: ClientHelloPlan,
     profile: &'static UtlsClientHelloProfile,
     context: ClientHelloContext<'_>,
+    draws: &HelloDraws,
 ) -> Result<ClientHelloPlan, RustlsError> {
     let supported_versions = supported_versions(profile)?;
     let cipher_suites = cipher_suites(profile, context, supported_versions.as_slice())?;
@@ -96,16 +248,17 @@ pub(crate) fn apply_utls_profile(
         .with_supported_versions(supported_versions);
 
     if !profile.supported_versions.is_empty() {
-        plan = plan.with_advertised_supported_versions(advertised_supported_versions(profile)?);
+        plan =
+            plan.with_advertised_supported_versions(advertised_supported_versions(profile, draws)?);
     }
     if !profile.supported_groups.is_empty() {
         plan = plan.with_supported_groups(supported_groups(profile)?);
-        plan = plan.with_advertised_supported_groups(advertised_supported_groups(profile)?);
+        plan = plan.with_advertised_supported_groups(advertised_supported_groups(profile, draws)?);
     }
     if !profile.key_shares.is_empty() {
         plan = plan.with_key_share_plan(key_share_plan(profile)?);
     }
-    if let Some(raw_key_shares) = raw_key_shares(profile)? {
+    if let Some(raw_key_shares) = raw_key_shares(profile, draws)? {
         plan = plan.with_raw_key_shares(raw_key_shares);
     }
     if !profile.alpn_protocols.is_empty() {
@@ -117,12 +270,12 @@ pub(crate) fn apply_utls_profile(
 
     let forced_extensions = forced_extensions(profile);
     let extension_plan = extension_plan(profile, false)?;
-    let (exact_extensions, raw_extensions) = extension_payloads(profile)?;
+    let (exact_extensions, raw_extensions) = extension_payloads(profile, draws)?;
 
     plan = plan
         .with_forced_extensions(forced_extensions)
         .with_extensions(extension_plan)
-        .with_extension_order(extension_order(profile, false)?);
+        .with_extension_order(extension_order(profile, draws, false)?);
 
     if let Some(exact_extensions) = exact_extensions {
         plan = plan.with_exact_extensions(exact_extensions);
@@ -130,7 +283,7 @@ pub(crate) fn apply_utls_profile(
     if let Some(raw_extensions) = raw_extensions {
         plan = plan.with_raw_extensions(raw_extensions);
     }
-    if let Some(grease) = grease_plan(profile, context)? {
+    if let Some(grease) = grease_plan(profile, context, draws)? {
         plan = plan.with_grease(grease);
     }
     if profile.padding_length.is_some() {
@@ -211,12 +364,12 @@ fn supported_versions(
 
 fn advertised_supported_versions(
     profile: &UtlsClientHelloProfile,
+    draws: &HelloDraws,
 ) -> Result<ClientHelloAdvertisedSupportedVersions, RustlsError> {
     ClientHelloAdvertisedSupportedVersions::try_from(
-        profile
-            .supported_versions
-            .iter()
-            .copied()
+        draws
+            .regrease(profile.supported_versions, GREASE_VERSION)
+            .into_iter()
             .map(ProtocolVersion::from)
             .collect::<Vec<_>>(),
     )
@@ -241,12 +394,12 @@ fn supported_groups(
 
 fn advertised_supported_groups(
     profile: &UtlsClientHelloProfile,
+    draws: &HelloDraws,
 ) -> Result<ClientHelloAdvertisedSupportedGroups, RustlsError> {
     ClientHelloAdvertisedSupportedGroups::try_from(
-        profile
-            .supported_groups
-            .iter()
-            .copied()
+        draws
+            .regrease(profile.supported_groups, GREASE_GROUP)
+            .into_iter()
             .map(NamedGroup::from)
             .collect::<Vec<_>>(),
     )
@@ -267,28 +420,38 @@ fn key_share_plan(
     ClientHelloKeySharePlan::try_from(groups)
 }
 
+/// The key shares rustls does not make: the GREASE share, one zero byte in
+/// the group slot's GREASE value as uTLS writes it (the value supported_groups
+/// carries), and a zero-filled share for each group rustls cannot offer.
+///
+/// Each goes in at its place in the profile's list: rustls inserts them in
+/// turn after making the real shares, so every entry before that place is
+/// already there.
 fn raw_key_shares(
     profile: &UtlsClientHelloProfile,
+    draws: &HelloDraws,
 ) -> Result<Option<ClientHelloRawKeyShares>, RustlsError> {
     let mut raw_key_shares = Vec::new();
-    let mut non_grease_position = 0;
 
-    for key_share in profile.key_shares {
+    for (position, key_share) in profile.key_shares.iter().enumerate() {
         if is_grease_value(key_share.group) {
+            raw_key_shares.push(ClientHelloRawKeyShare::new_at(
+                position,
+                NamedGroup::from(draws.grease(GREASE_GROUP)),
+                vec![0],
+            )?);
             continue;
         }
 
         if real_key_share_group(key_share.group).is_some() {
-            non_grease_position += 1;
             continue;
         }
 
         raw_key_shares.push(ClientHelloRawKeyShare::new_at(
-            non_grease_position,
+            position,
             NamedGroup::from(key_share.group),
             vec![0; key_share.key_exchange_len],
         )?);
-        non_grease_position += 1;
     }
 
     if raw_key_shares.is_empty() {
@@ -379,6 +542,7 @@ pub(crate) fn apply_alpn_override(
     mut plan: ClientHelloPlan,
     profile: &'static UtlsClientHelloProfile,
     protocols: &[Vec<u8>],
+    draws: &HelloDraws,
 ) -> Result<ClientHelloPlan, RustlsError> {
     plan = plan.with_alpn_protocols(ClientHelloAlpnProtocols::try_from(protocols.to_vec())?);
     if profile_has_extension(profile, EXT_ALPN) {
@@ -389,7 +553,7 @@ pub(crate) fn apply_alpn_override(
     // ordering it is an error inside rustls, not a shape difference.
     plan = plan
         .with_extensions(extension_plan(profile, true)?)
-        .with_extension_order(extension_order(profile, true)?);
+        .with_extension_order(extension_order(profile, draws, true)?);
 
     Ok(plan)
 }
@@ -411,12 +575,12 @@ pub(crate) fn apply_alpn_override(
 /// we cannot suppress to the tail.
 fn extension_order(
     profile: &UtlsClientHelloProfile,
+    draws: &HelloDraws,
     appended_alpn: bool,
 ) -> Result<ClientHelloExtensionOrder, RustlsError> {
-    let mut order = profile
-        .extensions
-        .iter()
-        .map(|extension| extension.extension_type)
+    let mut order = draws
+        .extension_types(profile)
+        .into_iter()
         .filter(|extension_type| !is_grease_value(*extension_type))
         .collect::<Vec<_>>();
     if appended_alpn {
@@ -463,6 +627,7 @@ fn forced_extensions(profile: &UtlsClientHelloProfile) -> ClientHelloForcedExten
 
 fn extension_payloads(
     profile: &UtlsClientHelloProfile,
+    draws: &HelloDraws,
 ) -> Result<
     (
         Option<ClientHelloExactExtensions>,
@@ -476,7 +641,9 @@ fn extension_payloads(
     if profile_has_extension(profile, EXT_SIGNATURE_ALGORITHMS) {
         exact_extensions.push(ClientHelloExactExtension::new(
             EXT_SIGNATURE_ALGORITHMS,
-            signature_algorithms_payload(profile.signature_algorithms)?,
+            signature_algorithms_payload(
+                &draws.regrease(profile.signature_algorithms, GREASE_SIGNATURE_ALGORITHM),
+            )?,
         )?);
     }
     if profile_has_extension(profile, EXT_DELEGATED_CREDENTIALS) {
@@ -661,8 +828,9 @@ fn draw_candidate<T: Copy>(candidates: &[T], what: &str) -> Result<T, RustlsErro
 fn grease_plan(
     profile: &UtlsClientHelloProfile,
     context: ClientHelloContext<'_>,
+    draws: &HelloDraws,
 ) -> Result<Option<ClientHelloGreasePlan>, RustlsError> {
-    let grease_value = profile
+    let has_grease = profile
         .cipher_suites
         .iter()
         .chain(profile.key_shares.iter().map(|key_share| &key_share.group))
@@ -672,13 +840,15 @@ fn grease_plan(
                 .iter()
                 .map(|extension| &extension.extension_type),
         )
-        .copied()
-        .find(|value| is_grease_value(*value));
-    let Some(grease_value) = grease_value else {
+        .any(|value| is_grease_value(*value));
+    if !has_grease {
         return Ok(None);
-    };
+    }
 
-    let mut grease = ClientHelloGreasePlan::new(grease_value)?;
+    // The plan's own value goes only into the cipher suites: the GREASE key
+    // share is a raw one with the group slot's value, and supported_versions
+    // and supported_groups carry theirs in the advertised lists.
+    let mut grease = ClientHelloGreasePlan::new(draws.grease(GREASE_CIPHER))?;
     if let Some(grease_index) = profile
         .cipher_suites
         .iter()
@@ -693,24 +863,35 @@ fn grease_plan(
             .count();
         grease = grease.with_cipher_suite_position(position);
     }
-    if let Some(position) = profile
-        .key_shares
-        .iter()
-        .position(|key_share| is_grease_value(key_share.group))
-    {
-        grease = grease.with_key_share_position(position);
-    }
     let mut non_grease_position = 0;
-    for extension in profile.extensions {
-        if is_grease_value(extension.extension_type) {
-            grease = grease.with_extension(ClientHelloGreaseExtension::new(
-                extension.extension_type,
-                non_grease_position,
-                vec![0; extension.payload_len],
-            )?)?;
-        } else {
+    let mut grease_extensions = 0;
+    for extension_type in draws.extension_types(profile) {
+        if !is_grease_value(extension_type) {
             non_grease_position += 1;
+            continue;
         }
+        // uTLS fills the first GREASE extension from one slot and the second
+        // from another, and takes no third.
+        let slot = match grease_extensions {
+            0 => GREASE_EXTENSION1,
+            1 => GREASE_EXTENSION2,
+            _ => {
+                return Err(RustlsError::General(
+                    "a uTLS profile carries at most two GREASE extensions".into(),
+                ))
+            }
+        };
+        grease_extensions += 1;
+        let payload_len = profile
+            .extensions
+            .iter()
+            .find(|extension| extension.extension_type == extension_type)
+            .map_or(0, |extension| extension.payload_len);
+        grease = grease.with_extension(ClientHelloGreaseExtension::new(
+            draws.grease(slot),
+            non_grease_position,
+            vec![0; payload_len],
+        )?)?;
     }
 
     Ok(Some(grease))
@@ -896,6 +1077,204 @@ mod tests {
 
     use super::*;
     use crate::utls_profiles::{ECH_GREASE_BORING, ECH_GREASE_FIREFOX};
+
+    /// The fingerprints whose uTLS spec runs `ShuffleChromeTLSExtensions`
+    /// (`u_parrots.go`), with Chrome 155's two other names.
+    const SHUFFLED: [&str; 12] = [
+        "chrome",
+        "hellochrome_auto",
+        "hellochrome_106_shuffle",
+        "hellochrome_112_psk_shuf",
+        "hellochrome_114_padding_psk_shuf",
+        "hellochrome_115_pq",
+        "hellochrome_115_pq_psk",
+        "hellochrome_120",
+        "hellochrome_120_pq",
+        "hellochrome_131",
+        "hellochrome_133",
+        "hellochrome_155",
+    ];
+
+    fn profile(name: &str) -> &'static UtlsClientHelloProfile {
+        crate::utls_profiles::profile_for_fingerprint(name)
+            .unwrap_or_else(|| panic!("{name}: no profile"))
+    }
+
+    fn recorded_order(profile: &UtlsClientHelloProfile) -> Vec<u16> {
+        profile
+            .extensions
+            .iter()
+            .map(|extension| extension.extension_type)
+            .collect()
+    }
+
+    fn random_seed() -> i64 {
+        loop {
+            let mut bytes = [0; 8];
+            OsRng.fill_bytes(&mut bytes);
+            if let Some(seed) = crypto_rand_int63(bytes) {
+                return seed;
+            }
+        }
+    }
+
+    #[test]
+    fn exactly_the_shuffling_specs_shuffle() {
+        for name in xray_utls::XRAY_UTLS_FINGERPRINTS {
+            if matches!(*name, "random" | "randomized") {
+                continue;
+            }
+            let Some(profile) = crate::utls_profiles::profile_for_fingerprint(name) else {
+                continue;
+            };
+            assert_eq!(
+                !profile.unshuffled_extensions.is_empty(),
+                SHUFFLED.contains(name),
+                "{name}"
+            );
+        }
+    }
+
+    /// uTLS's own output: the oracle fixtures are made under an all-zero
+    /// `crypto/rand`, whose shuffle seed is 0, and each spec order shuffled
+    /// with it, less the padding and pre_shared_key the hello leaves out, is
+    /// the order its fixture records.
+    #[test]
+    fn the_zero_seed_shuffles_each_spec_into_its_fixture_order() {
+        for name in SHUFFLED {
+            let profile = profile(name);
+            assert_eq!(
+                HelloDraws::zero(profile).extension_types(profile),
+                recorded_order(profile),
+                "{name}"
+            );
+        }
+    }
+
+    /// What stays where the spec puts it: the two GREASE extensions, padding
+    /// and pre_shared_key. Every other extension reaches every other place:
+    /// the rarest pairing comes up in about one draw in twenty, so a thousand
+    /// draws miss one with odds below 10^-18.
+    #[test]
+    fn the_shuffle_keeps_grease_padding_and_psk_in_place() {
+        for name in SHUFFLED {
+            let spec = profile(name).unshuffled_extensions;
+            let mut seen = HashSet::new();
+            for _ in 0..1000 {
+                let order = chrome_shuffle(spec, random_seed());
+                let mut sorted = order.clone();
+                sorted.sort_unstable();
+                let mut expected = spec.to_vec();
+                expected.sort_unstable();
+                assert_eq!(
+                    sorted, expected,
+                    "{name}: the shuffle moves nothing in or out"
+                );
+                for (place, (now, was)) in order.iter().zip(spec).enumerate() {
+                    if stays_in_place(*was) {
+                        assert_eq!(now, was, "{name}: {was:#06x} left place {place}");
+                    } else {
+                        seen.insert((*now, place));
+                    }
+                }
+            }
+            let movable = spec
+                .iter()
+                .filter(|extension| !stays_in_place(**extension))
+                .count();
+            assert_eq!(seen.len(), movable * movable, "{name}");
+        }
+    }
+
+    /// `getBoringGREASEValue` on uTLS's little-endian seeds, the second
+    /// GREASE extension moved off the first's value, and each slot drawn on
+    /// its own.
+    #[test]
+    fn grease_takes_boringssl_values_from_the_seeds() {
+        assert_eq!(boring_grease(0x0000), 0x0a0a);
+        assert_eq!(boring_grease(0x00f0), 0xfafa);
+        assert_eq!(boring_grease(0xab35), 0x3a3a);
+        assert_eq!(boring_grease(0xff0f), 0x0a0a);
+
+        let chrome = profile("hellochrome_155");
+        assert_eq!(
+            HelloDraws::zero(chrome).grease,
+            [0x0a0a, 0x0a0a, 0x0a0a, 0x1a1a, 0x0a0a, 0x0a0a, 0x0a0a, 0x0a0a]
+        );
+        let mut seeds = [0; 2 * GREASE_SEEDS];
+        seeds[0] = 0x35;
+        seeds[1] = 0xab;
+        seeds[2] = 0x70;
+        seeds[4] = 0xc0;
+        seeds[6] = 0xc0;
+        seeds[8] = 0x10;
+        seeds[14] = 0xe5;
+        assert_eq!(
+            HelloDraws::from_seeds(chrome, seeds, None).grease,
+            [0x3a3a, 0x7a7a, 0xcaca, 0xdada, 0x1a1a, 0x0a0a, 0x0a0a, 0xeaea]
+        );
+
+        let mut values = vec![HashSet::new(); GREASE_SEEDS];
+        for _ in 0..2000 {
+            let draws = HelloDraws::draw(chrome).unwrap();
+            assert_ne!(
+                draws.grease(GREASE_EXTENSION1),
+                draws.grease(GREASE_EXTENSION2)
+            );
+            for (slot, value) in draws.grease.iter().enumerate() {
+                assert!(is_grease_value(*value));
+                values[slot].insert(*value);
+            }
+        }
+        for slot in [
+            GREASE_CIPHER,
+            GREASE_GROUP,
+            GREASE_EXTENSION1,
+            GREASE_EXTENSION2,
+            GREASE_VERSION,
+            GREASE_SIGNATURE_ALGORITHM,
+        ] {
+            assert_eq!(values[slot].len(), 16, "slot {slot}");
+        }
+    }
+
+    /// Fixed draws fail this: every hello of a shuffling profile draws its
+    /// own order and GREASE values, and a profile with a fixed order keeps it
+    /// while its GREASE values still change.
+    #[test]
+    fn each_hello_draws_anew() {
+        for name in SHUFFLED {
+            let profile = profile(name);
+            let draws = (0..64)
+                .map(|_| HelloDraws::draw(profile).unwrap())
+                .collect::<Vec<_>>();
+            let orders = draws
+                .iter()
+                .map(|draws| draws.extension_types(profile))
+                .collect::<HashSet<_>>();
+            let grease = draws
+                .iter()
+                .map(|draws| draws.grease)
+                .collect::<HashSet<_>>();
+            assert!(orders.len() > 60, "{name}: {} orders", orders.len());
+            assert!(grease.len() > 60, "{name}: {} GREASE draws", grease.len());
+        }
+        let safari = profile("safari");
+        let draws = (0..64)
+            .map(|_| HelloDraws::draw(safari).unwrap())
+            .collect::<Vec<_>>();
+        assert!(draws
+            .iter()
+            .all(|draws| draws.extension_types(safari) == recorded_order(safari)));
+        assert!(
+            draws
+                .iter()
+                .map(|draws| draws.grease)
+                .collect::<HashSet<_>>()
+                .len()
+                > 60
+        );
+    }
 
     /// The two ECH GREASE schemes the profile table records: Chrome's
     /// `BoringGREASEECH` (body 186, payload 144) and Firefox's

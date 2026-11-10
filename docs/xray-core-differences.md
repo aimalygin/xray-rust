@@ -1334,29 +1334,42 @@ in h3's `finish` is what surfaces it for unknown-length uploads.
 
 ## uTLS per-connection draws
 
-Every uTLS profile is a fixed spec here, and uTLS draws some fields per
-connection. Two of those draws are fixed in xray-rust, for every Chrome-family
-profile, `chrome` (Chrome 155 since v26.11.9) included:
+uTLS draws two parts of every hello per connection, and so does xray-rust,
+on TLS and REALITY alike (resolved in 0.10.0, against uTLS 20261108164504):
 
-- GREASE values. uTLS takes each Chrome GREASE slot (cipher, group, version,
-  key share, signature algorithm, two extensions) from a per-connection
-  BoringSSL seed. xray-rust sends `0x0a0a` in every slot and `0x1a1a` for the
-  second GREASE extension: what uTLS sends under the zeroed `crypto/rand` the
-  oracle fixtures are made with.
-- Extension order. uTLS shuffles Chrome's extensions per connection
-  (`ShuffleChromeTLSExtensions`); xray-rust sends the order that shuffle gives
-  under the same zeroed `crypto/rand`.
+- GREASE values. Each hello reads sixteen bytes of BoringSSL GREASE seeds, as
+  uTLS's `ApplyPreset` does, and fills each slot from its own seed: the cipher
+  suite, the group (supported_groups and the GREASE key share carry the same
+  one), supported_versions, signature_algorithms (Chrome 155) and the two
+  GREASE extensions, the second moved off the first's value when they agree.
+  Every profile with GREASE draws them, not only Chrome's.
+- Extension order. The ten Chrome profiles whose uTLS spec runs
+  `ShuffleChromeTLSExtensions`, from `hellochrome_106_shuffle` to
+  `hellochrome_155` and so `chrome`, shuffle the spec's own order with Go's
+  `math/rand` from a `crypto/rand.Int` seed, skipping every swap that would
+  move a GREASE extension, padding or pre_shared_key. Other profiles keep
+  their fixed order.
 
-A censor that sees several hellos from one client therefore sees the same
-GREASE values and order each time, which real Chrome and Xray-core do not
-send. Both are held fixed because the raw ClientHello fixtures compare them
-byte for byte; drawing them would need the comparison to canonicalize them
-and the GREASE plan to take a value per slot. The ECH GREASE payload length,
-pinned to its first candidate, is the third such draw, described in
+Until then every profile sent `0x0a0a` in each GREASE slot (`0x1a1a` for the
+second GREASE extension) and the order of the zero-seed shuffle, so several
+hellos from one client looked alike where real Chrome and Xray-core vary.
+The zero draws remain the reference: each spec order shuffled with seed 0 is
+the order of its raw oracle fixture, for all ten profiles, and the byte
+comparisons with those fixtures write every GREASE value as `0x0a0a` and,
+for the shuffling profiles, compare the extensions in a canonical order
+(`crates/xray-transport/tests/support/client_hello_draws.rs`). Unit tests in
+`utls_shaping.rs` hold the GREASE seeds to `getBoringGREASEValue` and show
+that GREASE, padding and pre_shared_key stay in place while every other
+extension reaches every other place; `utls_tls_shaping_tests` shows two
+hellos in a row differ in exactly these draws and that each GREASE slot is
+drawn on its own.
+
+One draw uTLS makes per connection is still pinned: the ECH GREASE payload
+length of the Chrome profiles, described in
 [ECH GREASE](config-compatibility.md#ech-grease).
 `scripts/check-xray-default-fingerprint.py` holds the pinned Xray-core
 binary's own hellos for `""`, `chrome`, `hellochrome_155` and `hellochrome_133`
-to the fixtures with exactly these draws set aside.
+to the fixtures with the per-connection draws set aside.
 
 ## Follow-up checks
 
@@ -1376,8 +1389,9 @@ to the fixtures with exactly these draws set aside.
   `false` default; see [SOCKS inbound `udp`](#socks-inbound-udp-false-and-the-absent-default).
 - [ ] Keep #81 cleanup separate from new SDK API/lifecycle behavior and verify
   each against the documented FFI/host contract.
-- [ ] Decide whether Chrome-family hellos should draw their GREASE values and
-  extension order per connection, as uTLS does; see
+- [x] Decide whether Chrome-family hellos should draw their GREASE values and
+  extension order per connection, as uTLS does: they do, as the owner chose
+  for 0.10.0, against uTLS 20261108164504 (Xray-core v26.11.9); see
   [uTLS per-connection draws](#utls-per-connection-draws).
 
 When an item is resolved, update its status, the tested xray-rust and upstream

@@ -3133,6 +3133,18 @@ would fail the handshake, as rustls cannot verify it. In
 Chrome 155, Firefox 148 and QQ passed, which is why upstream moved the default.
 `random` draws from twelve modern names now, `hellochrome_155` included.
 
+Every hello draws what uTLS draws for each connection, on TLS and REALITY
+alike: the GREASE value of each slot (cipher suite, the group that
+supported_groups and the GREASE key share both carry, supported_versions,
+signature_algorithms and the two GREASE extensions, which never agree), from
+sixteen random seed bytes as uTLS reads them, and for the ten Chrome profiles
+whose uTLS spec runs `ShuffleChromeTLSExtensions` — `hellochrome_106_shuffle`
+through `hellochrome_155`, and so `chrome` — the extension order, shuffled
+from the spec's own order with Go's `math/rand` and a fresh seed, the GREASE
+extensions, padding and pre_shared_key staying in place. Other profiles keep
+their fixed order. The ECH GREASE payload length stays pinned (see
+[ECH GREASE](#ech-grease)).
+
 Those 62 are the union of the three maps Xray's `GetFingerprint` consults --
 `PresetFingerprints`, `ModernFingerprints`, `OtherFingerprints` -- less
 `unsafe`, described below, and `hellogolang`.
