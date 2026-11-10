@@ -91,7 +91,7 @@ pub(crate) fn build_xdrive_transport(
 /// is given, or without TLS settings Xray-core's default config, a Chrome
 /// hello offering `h2` and `http/1.1`; and over `alpn` exactly `["h3"]`,
 /// HTTP/3 with the stream's QUIC parameters and UDP masks.
-fn http_config(
+pub(super) fn http_config(
     settings: &XdriveSettings,
     stream: &StreamSettings,
 ) -> Result<XdriveHttpConfig, CoreError> {
@@ -147,16 +147,15 @@ fn http_config(
 }
 
 /// The QUIC connections of a storage over HTTP/3, as Xray-core configures
-/// quic-go for them: `quicParams` as XHTTP takes them, a keepalive only
-/// when asked for, there or by a positive `xmux.hKeepAlivePeriod`, and the
-/// stream's UDP masks.
+/// quic-go for them: `quicParams` as XHTTP takes them, ChromeParrot unless
+/// `disableChromeParrot` (and with it zero-length connection IDs, which the
+/// dial gives every ChromeParrot connection), a keepalive only when asked
+/// for, there or by a positive `xmux.hKeepAlivePeriod`, and the stream's UDP
+/// masks.
 fn h3_quic(settings: &XdriveSettings, stream: &StreamSettings) -> Result<H3QuicConfig, CoreError> {
     let invalid = |error: CoreError| CoreError::InvalidXdriveConfiguration(error.to_string());
     let params = stream.quic_params.as_ref();
     let mut config = xhttp_h3_quic_config(params).map_err(invalid)?;
-    // Xray-core parrots Chrome here unless `disableChromeParrot`; this client
-    // keeps Quinn's own handshake for now, and the parser warns about it.
-    config.chrome_parrot = false;
     if params.is_none_or(|params| params.keep_alive_period_secs == 0) {
         let period = settings.xmux.h_keep_alive_period_secs;
         config.keep_alive_interval = (period > 0).then(|| Duration::from_secs(period as u64));
@@ -343,6 +342,47 @@ mod tests {
                 .is_none()
         );
         assert!(build_xdrive_transport(&template, &stream(&template, tls(&["h3"]))).is_ok());
+    }
+
+    #[test]
+    fn storages_over_http3_parrot_chrome_unless_disabled() {
+        // Xray-core's XDRIVE client: ChromeParrot = !DisableChromeParrot, on
+        // without quicParams, and quic-go's pinned values with it.
+        let quic_of = |quic: Option<serde_json::Value>| {
+            let mut stream = serde_json::json!({"network": "xdrive", "security": "tls",
+                "tlsSettings": {"alpn": ["h3"]},
+                "xdriveSettings": {"service": "google-drive", "remoteFolder": "id",
+                    "secrets": ["a", "b", "c"]}});
+            if let Some(quic) = quic {
+                stream["finalmask"] = serde_json::json!({"quicParams": quic});
+            }
+            let raw = serde_json::json!({"outbounds": [{"protocol": "vless",
+                "settings": {"address": "127.0.0.1", "port": 443,
+                    "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+                    "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"},
+                "streamSettings": stream, "mux": {"enabled": true}}]})
+            .to_string();
+            let parsed = xray_config::parse_xray_json(&raw).unwrap();
+            // No warning about the handshake any more: it is Xray-core's.
+            assert!(
+                !parsed
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.message.contains("ChromeParrot")),
+                "{:?}",
+                parsed.diagnostics
+            );
+            let stream = &parsed.config.outbounds[0].stream;
+            let StreamTransport::Xdrive(xdrive) = &stream.transport else {
+                panic!("not XDRIVE")
+            };
+            http_config(xdrive, stream).unwrap().h3.unwrap()
+        };
+        assert!(quic_of(None).chrome_parrot);
+        assert!(quic_of(Some(serde_json::json!({}))).chrome_parrot);
+        assert!(quic_of(Some(serde_json::json!({"disableChromeParrot": false}))).chrome_parrot);
+        assert!(quic_of(Some(serde_json::json!({"disableChromeParrot": null}))).chrome_parrot);
+        assert!(!quic_of(Some(serde_json::json!({"disableChromeParrot": true}))).chrome_parrot);
     }
 
     #[test]

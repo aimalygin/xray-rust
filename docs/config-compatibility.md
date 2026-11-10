@@ -234,10 +234,11 @@ through the core with every congestion mode.
 
 ### ChromeParrot
 
-Xray-core v26.10.31 dials Hysteria and XHTTP over HTTP/3 with the apernet
-quic-go fork's `ChromeParrot` on, so that the client's handshake looks like
-Google Chrome's, unless `finalmask.quicParams.disableChromeParrot` is true.
-This client does the same:
+Xray-core v26.10.31 dials Hysteria, XHTTP over HTTP/3 and XDRIVE's storages
+over HTTP/3 with the apernet quic-go fork's `ChromeParrot` on, so that the
+client's handshake looks like Google Chrome's, unless
+`finalmask.quicParams.disableChromeParrot` is true. This client does the
+same:
 
 ```json
 "quicParams": {"disableChromeParrot": true}
@@ -246,12 +247,10 @@ This client does the same:
 `disableChromeParrot` is read as Xray reads a Go `bool`: `true` turns
 ChromeParrot off; `false`, `null`, or no `quicParams` or `finalmask` at all
 leave it on; any other JSON type fails the configuration on every transport,
-as it fails Xray's. Hysteria and XHTTP with exact `h3` ALPN dial with it.
-XDRIVE's storages over HTTP/3, which Xray dials with it too, do not yet: they
-keep Quinn's own handshake, and the configuration warns unless
-`disableChromeParrot` is true (see [XDRIVE](#xdrive)). MASQUE never parrots
-Chrome, as Xray's MASQUE dial never does, and other transports do not read
-the field.
+as it fails Xray's. Hysteria, XHTTP with exact `h3` ALPN and XDRIVE's
+storages over HTTP/3 (see [XDRIVE](#xdrive)) dial with it. MASQUE never
+parrots Chrome, as Xray's MASQUE dial never does, and other transports do
+not read the field.
 
 With ChromeParrot on, a dial:
 
@@ -2833,11 +2832,10 @@ one QUIC connection a host, set up as XHTTP's HTTP/3 connections are, with
 the stream's `quicParams`, its UDP masks, BBR (or Reno), udphop and the
 storage's server name and certificate rules, and a keepalive only when
 `quicParams.keepAlivePeriod` or a positive `xmux.hKeepAlivePeriod` asks
-for one, as Xray-core configures quic-go for it. Xray-core shapes that
-connection as Chrome unless `disableChromeParrot` is set; this client's
-QUIC is Quinn's own for now, unlike its Hysteria and XHTTP H3 dials, and the
-configuration warns about it unless `disableChromeParrot` is true. A storage
-over HTTP/3 cannot go through another outbound (`dialerProxy`).
+for one, as Xray-core configures quic-go for it. That connection parrots
+Chrome, with zero-length connection IDs, unless `disableChromeParrot` is
+true, as in Xray-core. A storage over HTTP/3 cannot go through another
+outbound (`dialerProxy`).
 
 `streamSettings.address` and `port`, which Xray-core reads for every stream
 and only XDRIVE uses, name where every connection to an HTTP storage goes:

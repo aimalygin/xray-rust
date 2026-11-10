@@ -411,10 +411,15 @@ impl InFlightDnsLeader {
             .is_some_and(|current| Arc::ptr_eq(current, &self.lookup));
         if still_leader {
             state.in_flight.remove(&self.key);
+            // One instant for the remaining TTL and the expiry, so that a
+            // cached answer never outlives its upstream TTL by the time
+            // between two clock reads.
+            let now = Instant::now();
             let (ttl, allow_stale) = match &outcome {
-                InFlightDnsOutcome::Resolved(lookup) => {
-                    (lookup.ttl().filter(|ttl| !ttl.is_zero()), true)
-                }
+                InFlightDnsOutcome::Resolved(lookup) => (
+                    lookup.remaining_ttl_at(now).filter(|ttl| !ttl.is_zero()),
+                    true,
+                ),
                 InFlightDnsOutcome::NameError(_, _) | InFlightDnsOutcome::NoData(_, _) => (
                     (!self.negative_ttl.is_zero()).then_some(self.negative_ttl),
                     false,
@@ -422,7 +427,6 @@ impl InFlightDnsLeader {
                 _ => (None, false),
             };
             if let Some(ttl) = ttl {
-                let now = Instant::now();
                 if let Some(expires_at) = now.checked_add(ttl) {
                     let stale_until = if allow_stale {
                         self.stale_ttl
