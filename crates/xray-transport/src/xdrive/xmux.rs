@@ -153,32 +153,62 @@ impl<C: XmuxConn> XmuxManager<C> {
     }
 }
 
+/// `stalledGrace`: a connection that has not answered yet is given this long
+/// before its timeouts retire it, so that a dial or handshake is not cut
+/// short again.
+const STALLED_GRACE: Duration = Duration::from_secs(12);
+/// Two timeouts this close together retire the connection.
+const STALL_WINDOW: Duration = Duration::from_secs(3);
+/// A session retires at most one connection this often.
+const RETIRE_INTERVAL: Duration = Duration::from_secs(2);
+
 /// `sessionTransport`: the XMUX connection one session's requests take, and
-/// another once it has no requests or time left.
+/// another once it has no requests or time left, or was retired for
+/// stalling.
 pub(crate) struct SessionLease<C: XmuxConn> {
     pool: Arc<Mutex<XmuxManager<C>>>,
-    current: Mutex<Option<Arc<XmuxClient<C>>>>,
+    state: Mutex<LeaseState<C>>,
     closed: AtomicBool,
+}
+
+/// The connection a session holds and what its stalls left: `client`,
+/// `slowAt`, `retiredAt`, `movedAt`, `takenAt` and `served`.
+struct LeaseState<C> {
+    current: Option<Arc<XmuxClient<C>>>,
+    slow_at: Option<Instant>,
+    retired_at: Option<Instant>,
+    moved_at: Option<Instant>,
+    taken_at: Option<Instant>,
+    served: bool,
 }
 
 impl<C: XmuxConn> SessionLease<C> {
     pub(crate) fn new(pool: Arc<Mutex<XmuxManager<C>>>) -> Self {
         Self {
             pool,
-            current: Mutex::new(None),
+            state: Mutex::new(LeaseState {
+                current: None,
+                slow_at: None,
+                retired_at: None,
+                moved_at: None,
+                taken_at: None,
+                served: false,
+            }),
             closed: AtomicBool::new(false),
         }
     }
 
     /// The connection the next request goes over, or `None` once the
-    /// session closed.
+    /// session closed. A connection that closed, ran out of requests or of
+    /// time gives way to the one XMUX hands out next.
     pub(crate) fn next(&self) -> Option<Arc<XmuxClient<C>>> {
         if self.closed.load(Ordering::Acquire) {
             return None;
         }
-        let mut current = self.current.lock().unwrap();
-        let reuse = current.as_ref().filter(|client| {
-            client.left_requests.fetch_sub(1, Ordering::AcqRel) > 0
+        let mut state = self.state.lock().unwrap();
+        let reuse = state.current.as_ref().filter(|client| {
+            !client.conn.is_closed()
+                && client.left_requests.fetch_sub(1, Ordering::AcqRel) > 0
                 && client.unreusable_at.is_none_or(|at| Instant::now() <= at)
         });
         if let Some(client) = reuse {
@@ -187,16 +217,68 @@ impl<C: XmuxConn> SessionLease<C> {
         let next = self.pool.lock().unwrap().get();
         next.add_running();
         next.left_requests.fetch_sub(1, Ordering::AcqRel);
-        if let Some(previous) = current.replace(Arc::clone(&next)) {
+        let now = Instant::now();
+        if let Some(previous) = state.current.replace(Arc::clone(&next)) {
             previous.done_running();
+            state.moved_at = Some(now);
         }
+        state.taken_at = Some(now);
+        state.served = false;
         Some(next)
+    }
+
+    /// A request over `client` was answered.
+    pub(crate) fn served(&self, client: &Arc<XmuxClient<C>>) {
+        let mut state = self.state.lock().unwrap();
+        if state
+            .current
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, client))
+        {
+            state.served = true;
+        }
+    }
+
+    /// `stalled`: a request begun at `began` timed out. A second timeout
+    /// within three seconds retires the connection -- at most one every two
+    /// seconds, never for a request sent before the session last moved on,
+    /// and never in the first twelve seconds of a connection that has not
+    /// answered yet -- so that the next request takes another.
+    pub(crate) fn stalled(&self, began: Instant) {
+        let mut state = self.state.lock().unwrap();
+        if state.moved_at.is_some_and(|moved| began < moved) {
+            return;
+        }
+        let now = Instant::now();
+        if !state.served
+            && state
+                .taken_at
+                .is_some_and(|taken| now.duration_since(taken) < STALLED_GRACE)
+        {
+            return;
+        }
+        let slow = state
+            .slow_at
+            .is_some_and(|at| now.duration_since(at) < STALL_WINDOW);
+        state.slow_at = Some(now);
+        if !slow
+            || state
+                .retired_at
+                .is_some_and(|at| now.duration_since(at) < RETIRE_INTERVAL)
+        {
+            return;
+        }
+        let Some(current) = state.current.clone() else {
+            return;
+        };
+        state.retired_at = Some(now);
+        current.conn.close();
     }
 
     /// `sessionTransport.Close`.
     pub(crate) fn close(&self) {
         self.closed.store(true, Ordering::Release);
-        if let Some(client) = self.current.lock().unwrap().take() {
+        if let Some(client) = self.state.lock().unwrap().current.take() {
             client.done_running();
         }
     }
@@ -328,5 +410,57 @@ mod tests {
         assert!(first.conn.is_closed());
         session.close();
         assert!(session.next().is_none());
+    }
+
+    /// `TestSessionRetiresStalledConn`: a second timeout within three
+    /// seconds retires a connection that has answered, and the next request
+    /// takes another.
+    #[tokio::test(start_paused = true)]
+    async fn a_session_retires_a_connection_that_stalls_twice() {
+        let made = Arc::new(AtomicUsize::new(0));
+        let lease = SessionLease::new(manager(policy(0, 1, 0), Arc::clone(&made)));
+        let first = lease.next().unwrap();
+        lease.served(&first);
+        let began = Instant::now();
+        tokio::time::advance(Duration::from_secs(1)).await;
+        lease.stalled(began);
+        assert!(!first.conn.is_closed(), "one timeout retires nothing");
+        tokio::time::advance(Duration::from_secs(1)).await;
+        lease.stalled(began);
+        assert!(first.conn.is_closed(), "a second within 3 s retires it");
+        let next = lease.next().unwrap();
+        assert!(!Arc::ptr_eq(&first, &next));
+        assert_eq!(made.load(Ordering::SeqCst), 2);
+    }
+
+    /// `TestSessionIgnoresStallOfRetiredConn` and
+    /// `TestSessionSparesFreshConn`: a timeout of a request sent before the
+    /// session moved on, or of a connection that has not answered in its
+    /// first twelve seconds, retires nothing.
+    #[tokio::test(start_paused = true)]
+    async fn stale_stalls_and_fresh_connections_are_spared() {
+        let made = Arc::new(AtomicUsize::new(0));
+        let lease = SessionLease::new(manager(policy(0, 1, 0), Arc::clone(&made)));
+        let fresh = lease.next().unwrap();
+        let began = Instant::now();
+        tokio::time::advance(Duration::from_secs(1)).await;
+        lease.stalled(began);
+        lease.stalled(began);
+        assert!(!fresh.conn.is_closed(), "a fresh connection is spared");
+        tokio::time::advance(Duration::from_secs(12)).await;
+        lease.stalled(Instant::now());
+        lease.stalled(Instant::now());
+        assert!(fresh.conn.is_closed(), "past the grace it is retired");
+        let before_move = Instant::now();
+        tokio::time::advance(Duration::from_secs(1)).await;
+        let next = lease.next().unwrap();
+        lease.served(&next);
+        tokio::time::advance(Duration::from_secs(3)).await;
+        lease.stalled(before_move);
+        lease.stalled(before_move);
+        assert!(
+            !next.conn.is_closed(),
+            "a stall from before the move counts not"
+        );
     }
 }

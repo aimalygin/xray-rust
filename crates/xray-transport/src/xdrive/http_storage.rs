@@ -1,4 +1,4 @@
-//! What the HTTP storages of one outbound share, as Xray-core v26.10.31's
+//! What the HTTP storages of one outbound share, as Xray-core v26.11.9's
 //! `connPool` and the token client of `drive.go` and `template.go` hold it:
 //! the XMUX connections every session's requests go over, each a client of
 //! its own, and a client apart for tokens, which no session's connection
@@ -40,13 +40,22 @@ impl XmuxConn for Arc<PoolConn> {
 
 impl PoolConn {
     async fn send(&self, request: &ServiceRequest) -> Result<ServiceResponse, ServiceError> {
-        self.inflight.fetch_add(1, Ordering::AcqRel);
-        let result = self.client.send(request).await;
-        if self.inflight.fetch_sub(1, Ordering::AcqRel) == 1 && self.closing.load(Ordering::Acquire)
-        {
-            self.client.close();
+        // A request given up on (a try's timeout drops it) still counts down,
+        // or a retired connection would never close.
+        struct Inflight<'a>(&'a PoolConn);
+        impl Drop for Inflight<'_> {
+            fn drop(&mut self) {
+                let conn = self.0;
+                if conn.inflight.fetch_sub(1, Ordering::AcqRel) == 1
+                    && conn.closing.load(Ordering::Acquire)
+                {
+                    conn.client.close();
+                }
+            }
         }
-        result
+        self.inflight.fetch_add(1, Ordering::AcqRel);
+        let _inflight = Inflight(self);
+        self.client.send(request).await
     }
 }
 
@@ -124,7 +133,16 @@ impl SessionHttp {
         let Some(client) = self.lease.next() else {
             return Err(ServiceError::Request("the session is closed".to_owned()));
         };
-        client.conn.send(request).await
+        let answer = client.conn.send(request).await;
+        if answer.is_ok() {
+            self.lease.served(&client);
+        }
+        answer
+    }
+
+    /// A request begun at `began` timed out; see [`SessionLease::stalled`].
+    pub(crate) fn stalled(&self, began: Instant) {
+        self.lease.stalled(began);
     }
 
     /// A request and the redirects its answers give, each hop over the
