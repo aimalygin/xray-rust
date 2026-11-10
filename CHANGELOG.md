@@ -34,6 +34,14 @@ long-term supported release series.
   now each profile sent `0x0a0a` in every GREASE slot and one fixed order.
   The ECH GREASE payload length of the Chrome profiles stays pinned. See
   [uTLS per-connection draws](docs/xray-core-differences.md#utls-per-connection-draws).
+- XDRIVE on Google Drive follows Xray-core v26.11.9: rings as deep as
+  `concurrency` (64 by default, at most 256) with spare rings made ahead,
+  sessions announced after their first segment with that segment inline,
+  read-ahead and hedged reads, and on the Drive side a shared token fetch
+  with background refresh and backoff, a stop on refused OAuth credentials,
+  a cooldown after throttling, a reserved lane for watermarks and the head,
+  per-try timeouts that retire stalled connections and a 32 MiB answer cap.
+  It still meets v26.10.31's server. See [XDRIVE](docs/config-compatibility.md#xdrive).
 - Mux runs every TCP `concurrency` from zero up to 128 as 128 children per
   parent, keeps a larger one, and lets a parent hand out 1024 children over
   its life, as Xray-core v26.11.9 does; both concurrencies take any 16-bit

@@ -1,4 +1,4 @@
-//! Sessions in slots, as Xray-core v26.10.31's `slots.go` carries them on
+//! Sessions in slots, as Xray-core v26.11.9's `slots.go` carries them on
 //! a storage that keeps objects by id (Google Drive). Each direction is a
 //! ring of slots both ends know by id: segment `n` is written to slot
 //! `n % depth` and read from it, with nothing to list. The reader of a
@@ -33,7 +33,6 @@ const SLOT_HEADER_LEN: usize = 8 + 8 + 1 + 4 + 4;
 /// The largest segment that goes in its slot's description, which takes
 /// one request less than a body.
 pub(crate) const SLOT_INLINE_LIMIT: usize = 14 << 10;
-const SLOT_DEPTH_LIMIT: usize = 8;
 /// Xray-core's `maxSlotIDLen`: the longest slot or watermark id a server takes
 /// from a peer's announcement.
 #[cfg(test)]
@@ -49,19 +48,33 @@ pub(crate) const SLOT_MEDIA: u8 = 2;
 pub(crate) const SLOT_END: u8 = 3;
 pub(crate) const SLOT_ERR: u8 = 4;
 
-/// The head is asked for between these, a segment behind it at about the
-/// pace segments come.
-const SLOT_HUNT_FLOOR: Duration = Duration::from_millis(50);
-const SLOT_HUNT_CEILING: Duration = Duration::from_millis(200);
+/// The head is asked for between these, a segment behind it soon after it
+/// was asked for, then at about the pace segments come.
+const SLOT_HUNT_FLOOR: Duration = Duration::from_millis(10);
+const SLOT_HUNT_CEILING: Duration = Duration::from_millis(25);
 const SLOT_TAIL_MIN: Duration = Duration::from_millis(150);
 const SLOT_TAIL_MAX: Duration = Duration::from_millis(800);
-const SLOT_FETCH_AHEAD: usize = 6;
+const SLOT_FETCH_AHEAD: usize = 12;
 
-const SLOT_ACK_RETRY: Duration = Duration::from_millis(100);
-const SLOT_WATERMARK_TTL: Duration = Duration::from_millis(250);
+const SLOT_ACK_RETRY: Duration = Duration::from_millis(30);
+const SLOT_WATERMARK_TTL: Duration = Duration::from_millis(100);
 const SLOT_STALL_TIMEOUT: Duration = Duration::from_secs(60);
 const SLOT_CLOSE_GRACE: Duration = Duration::from_secs(10);
 const SLOT_GONE_TIMEOUT: Duration = Duration::from_secs(60);
+/// `slotBodyHedge`: a body read that has not answered in this long, or in
+/// twice what its size takes at the rate bodies came, gets a second request.
+const SLOT_BODY_HEDGE: Duration = Duration::from_secs(2);
+/// `slotReadAhead`: segments past the head asked for at once, not after the
+/// tail wait.
+const SLOT_READ_AHEAD: usize = 3;
+/// `slotReadAheadPoll`: how often such a segment is asked for again while
+/// segments come in a burst, one less than `slotReadAheadBurst` apart.
+const SLOT_READ_AHEAD_POLL: Duration = Duration::from_millis(40);
+const SLOT_READ_AHEAD_BURST: Duration = Duration::from_millis(500);
+/// `slotWriteInflight`: segments a writer has on their way at most.
+const SLOT_WRITE_INFLIGHT: usize = 12;
+/// Description reads the head keeps in flight at most while data moves.
+const SLOT_HEAD_READS: usize = 3;
 
 /// `slotStore`: objects written and read again by id, each with a
 /// description and a body.
@@ -77,6 +90,15 @@ pub(crate) trait SlotStore: Send + Sync + fmt::Debug {
     ) -> Result<(), StorageError>;
     async fn read_description(&self, id: &str) -> Result<String, StorageError>;
     async fn read_body(&self, id: &str) -> Result<Bytes, StorageError>;
+    /// [`SlotStore::read_description`] on the storage's reserved lane, where
+    /// Xray-core sends watermark and head reads (its `laneKey`).
+    async fn read_description_lane(&self, id: &str) -> Result<String, StorageError> {
+        self.read_description(id).await
+    }
+    /// A description alone, on the reserved lane: the reader's acks.
+    async fn set_slot_lane(&self, id: &str, description: &str) -> Result<(), StorageError> {
+        self.set_slot(id, description, None).await
+    }
 }
 
 /// Go's `crc32.ChecksumIEEE`.
@@ -232,13 +254,30 @@ impl SlotTable {
 pub(crate) struct Ring {
     pub up: SlotTable,
     pub down: SlotTable,
+    /// `First`: the first segment of the uplink, which since v26.11.9 a
+    /// client may announce with the ring to save the server a read. The
+    /// segment still goes to its slot, for a server that does not read this.
+    pub first: Option<Bytes>,
 }
 
 impl Ring {
     /// `json.Marshal` of the ring.
     pub(crate) fn to_json(&self) -> String {
+        // `[]byte` marshals as standard base64, and `omitempty` leaves an
+        // empty one out.
+        let first = self
+            .first
+            .as_ref()
+            .filter(|first| !first.is_empty())
+            .map(|first| {
+                format!(
+                    ",\"first\":\"{}\"",
+                    base64::engine::general_purpose::STANDARD.encode(first)
+                )
+            })
+            .unwrap_or_default();
         format!(
-            "{{\"u\":{},\"d\":{}}}",
+            "{{\"u\":{},\"d\":{}{first}}}",
             self.up.to_json(),
             self.down.to_json()
         )
@@ -254,9 +293,19 @@ impl Ring {
             Ok(None) => Some(SlotTable::default()),
             Err(()) => None,
         };
+        let first = match gojson::field(&root, "first") {
+            None | Some(serde_json::Value::Null) => None,
+            Some(serde_json::Value::String(text)) => Some(Bytes::from(
+                base64::engine::general_purpose::STANDARD
+                    .decode(text)
+                    .ok()?,
+            )),
+            Some(_) => return None,
+        };
         let ring = Self {
             up: table("u")?,
             down: table("d")?,
+            first: first.filter(|first| !first.is_empty()),
         };
         // Since v26.11.9 the server also bounds the slots by `maxConcurrency`
         // and every id by `maxSlotIDLen`, refusing an empty slot id.
@@ -280,7 +329,8 @@ pub(crate) async fn make_ring(
     session: &str,
     params: &Params,
 ) -> Result<Ring, StorageError> {
-    let depth = params.concurrency.clamp(2, SLOT_DEPTH_LIMIT);
+    // As deep as the concurrency, since v26.11.9 without a limit of its own.
+    let depth = params.concurrency.max(2);
     let mut names = Vec::with_capacity(2 * depth + 2);
     for prefix in [uplink_prefix(session), downlink_prefix(session)] {
         for i in 0..depth {
@@ -300,12 +350,16 @@ pub(crate) async fn make_ring(
     };
     let up = table();
     let down = table();
-    Ok(Ring { up, down })
+    Ok(Ring {
+        up,
+        down,
+        first: None,
+    })
 }
 
 /// `readWatermark`: how far the reader read, `-1` before it read anything.
 async fn read_watermark(store: &Arc<dyn SlotStore>, id: &str) -> Result<i64, StorageError> {
-    let description = store.read_description(id).await?;
+    let description = store.read_description_lane(id).await?;
     if description.is_empty() {
         return Ok(-1);
     }
@@ -329,8 +383,13 @@ struct WriterInner {
     store: Arc<dyn SlotStore>,
     table: SlotTable,
     params: Params,
-    /// A permit for each segment on its way, at most one for each slot.
+    /// A permit for each segment on its way: one a slot, and at most
+    /// [`SLOT_WRITE_INFLIGHT`].
     slots: Arc<Semaphore>,
+    /// How many permits `slots` holds in all.
+    slot_cap: usize,
+    /// Where the first segment goes as it is cut, for the announcement.
+    first: Mutex<Option<tokio::sync::oneshot::Sender<Bytes>>>,
     state: Mutex<WriterState>,
     ack: tokio::sync::Mutex<Ack>,
     /// When the reader last took something, or the writer closed.
@@ -367,8 +426,11 @@ impl SlotWriter {
         params: Params,
         cancel: Cancel,
     ) -> Self {
+        let slot_cap = table.slots.len().min(SLOT_WRITE_INFLIGHT);
         let inner = Arc::new(WriterInner {
-            slots: Arc::new(Semaphore::new(table.slots.len())),
+            slots: Arc::new(Semaphore::new(slot_cap)),
+            slot_cap,
+            first: Mutex::new(None),
             state: Mutex::new(WriterState {
                 buf: Vec::new(),
                 seq: 0,
@@ -417,6 +479,27 @@ impl SlotWriter {
         state.buf.extend_from_slice(data);
         cut_full(&self.inner, &mut state);
         Poll::Ready(Ok(data.len()))
+    }
+
+    /// The first segment once it is cut: Xray-core's `writer.first`, which
+    /// its dial reads to announce the session with it.
+    pub(crate) fn first_segment(&self) -> tokio::sync::oneshot::Receiver<Bytes> {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        *self.inner.first.lock().unwrap() = Some(sender);
+        receiver
+    }
+
+    /// `fail`: the session failed outside the writer, as when its
+    /// announcement could not be stored; writes report it from now on.
+    pub(crate) fn fail(&self, error: String) {
+        let waker = {
+            let mut state = self.inner.state.lock().unwrap();
+            state.err.get_or_insert(error);
+            state.waker.take()
+        };
+        if let Some(waker) = waker {
+            waker.wake();
+        }
     }
 
     /// `Close`: stores the rest, waits for every segment, then marks the end
@@ -486,9 +569,24 @@ fn cut(inner: &Arc<WriterInner>, state: &mut WriterState, permit: OwnedSemaphore
         return;
     }
     let segment_bytes = inner.params.segment_bytes;
+    // The permit of this segment is taken already, as in Xray-core.
+    let in_flight = state.uploading + 1;
+    // Most write slots busy: the next segments go at the full size.
+    if state.size < segment_bytes
+        && state.buf.len() >= state.size
+        && in_flight * 4 > inner.slot_cap * 3
+    {
+        state.size = segment_bytes;
+        state.full = 0;
+    }
     let mut n = state.buf.len().min(state.size);
     if state.buf.len() > 4 * SLOT_INLINE_LIMIT {
         n = state.buf.len().min(segment_bytes);
+    }
+    // A burst the write slots take in inline segments goes as such, each a
+    // request less than a body.
+    if n > SLOT_INLINE_LIMIT && state.buf.len() <= 2 * inner.slot_cap * SLOT_INLINE_LIMIT {
+        n = SLOT_INLINE_LIMIT;
     }
     if n == state.size && state.size < segment_bytes {
         state.full += 1;
@@ -500,6 +598,11 @@ fn cut(inner: &Arc<WriterInner>, state: &mut WriterState, permit: OwnedSemaphore
     let chunk = Bytes::from(state.buf.drain(..n).collect::<Vec<u8>>());
     let seq = state.seq;
     state.seq += 1;
+    if seq == 0 {
+        if let Some(first) = inner.first.lock().unwrap().take() {
+            let _ = first.send(chunk.clone());
+        }
+    }
     state.last_size = state.buf.len();
     state.held = 0;
     state.uploading += 1;
@@ -590,7 +693,8 @@ async fn await_drained(inner: &WriterInner, seq: i64) -> Result<(), StorageError
         }
         let closed = inner.state.lock().unwrap().closed;
         let still = inner.progress.lock().unwrap().elapsed();
-        if start.elapsed() > SLOT_STALL_TIMEOUT || closed && still > SLOT_CLOSE_GRACE {
+        // Stalled once neither the wait nor the reader moved for a minute.
+        if start.elapsed().min(still) > SLOT_STALL_TIMEOUT || closed && still > SLOT_CLOSE_GRACE {
             let cause = match &result {
                 Err(error) => format!(" > {error}"),
                 Ok(_) => String::new(),
@@ -647,6 +751,12 @@ async fn flush_loop(inner: Arc<WriterInner>) {
 fn ready_to_flush(state: &mut WriterState) -> bool {
     let grew = state.buf.len() > state.last_size;
     state.last_size = state.buf.len();
+    // With segments on their way, a buffer under half a segment waits for
+    // more, up to the same eight ticks.
+    if state.uploading > 0 && state.held < MAX_COALESCED_TICKS && state.buf.len() < state.size / 2 {
+        state.held += 1;
+        return false;
+    }
     if grew && state.held < MAX_COALESCED_TICKS {
         state.held += 1;
         return false;
@@ -662,6 +772,10 @@ pub(crate) struct SlotReaderShared {
     state: Mutex<ReaderState>,
     wake: Notify,
     acks: Notify,
+    /// `grow`: a fetch saw a segment past the window's end.
+    grow: Notify,
+    /// Ends the reader when the session failed outside it.
+    stop: Cancel,
     eager_window: Duration,
 }
 
@@ -676,6 +790,10 @@ struct ReaderState {
     gap: Duration,
     active_at: Instant,
     active: Arc<Notify>,
+    /// The furthest segment a fetch saw in its slot.
+    frontier: i64,
+    /// Bytes a second the last bodies came at, averaged.
+    body_rate: f64,
     err: Option<String>,
 }
 
@@ -691,6 +809,14 @@ impl SlotReaderShared {
         self.wake.notify_one();
     }
 
+    /// `setErr` from outside the reader: the session failed, as when its
+    /// announcement could not be stored, and the reader stops so that a read
+    /// returns the error instead of waiting.
+    pub(crate) fn fail(&self, error: String) {
+        self.set_err(error);
+        self.stop.cancel();
+    }
+
     fn set_err(&self, error: String) {
         self.state.lock().unwrap().err.get_or_insert(error);
     }
@@ -699,10 +825,19 @@ impl SlotReaderShared {
         self.state.lock().unwrap().head == seq
     }
 
+    fn idle(&self) -> bool {
+        self.state.lock().unwrap().active_at.elapsed() > self.eager_window
+    }
+
     /// `pace`: about how long segments take to come one after another.
     fn pace(&self) -> Duration {
         let gap = self.state.lock().unwrap().gap;
         gap.clamp(Duration::from_millis(300), Duration::from_secs(3))
+    }
+
+    /// `bursting`: a segment came within the last half second.
+    fn bursting(&self) -> bool {
+        self.state.lock().unwrap().hit_at.elapsed() <= SLOT_READ_AHEAD_BURST
     }
 
     fn hit(&self) {
@@ -715,6 +850,22 @@ impl SlotReaderShared {
         };
         state.hit_at = Instant::now();
         state.touch(self.eager_window);
+    }
+
+    /// `reach`: a fetch saw `seq` in its slot; the window grows to keep
+    /// [`SLOT_FETCH_AHEAD`] fetches past it.
+    fn reach(&self, seq: i64) {
+        let grown = {
+            let mut state = self.state.lock().unwrap();
+            let grown = seq > state.frontier;
+            if grown {
+                state.frontier = seq;
+            }
+            grown
+        };
+        if grown {
+            self.grow.notify_one();
+        }
     }
 }
 
@@ -742,12 +893,15 @@ struct SlotFetch {
     ready: Cancel,
     /// Fires when the segment becomes the head.
     promoted: Cancel,
+    /// `near`: fires when the segment is at most [`SLOT_READ_AHEAD`] past the
+    /// head, which asks for it at once instead of after the tail wait.
+    near: Cancel,
     result: Mutex<Option<Fetched>>,
 }
 
 /// `slotReader`: fetches the segments of its table in order, the head often
-/// and up to six behind it at the pace they come, and writes its watermark
-/// as the head moves.
+/// and those behind it as described for [`SlotReader::find`], and writes its
+/// watermark as the head moves.
 pub(crate) struct SlotReader {
     store: Arc<dyn SlotStore>,
     table: SlotTable,
@@ -775,10 +929,14 @@ impl SlotReader {
                 gap: Duration::ZERO,
                 active_at: now,
                 active: Arc::new(Notify::new()),
+                frontier: 0,
+                body_rate: 0.0,
                 err: None,
             }),
             wake: Notify::new(),
             acks: Notify::new(),
+            grow: Notify::new(),
+            stop: Cancel::default(),
             eager_window: params.eager_window,
         });
         let reader = Arc::new(Self {
@@ -795,19 +953,21 @@ impl SlotReader {
         (received, shared)
     }
 
-    /// `run`: hands the head on as it comes, the slots behind it fetched
-    /// ahead once the first came.
+    /// `run`: hands the head on as it comes. Once the first came, the window
+    /// of fetches reaches [`SLOT_FETCH_AHEAD`] past the head or past the
+    /// furthest segment seen, whichever is further, within the ring.
     async fn run(self: Arc<Self>, chunks: mpsc::Sender<Bytes>) {
         let fetch_cancel = Cancel::default();
         let mut fetches: HashMap<i64, Arc<SlotFetch>> = HashMap::new();
         let depth = self.table.slots.len();
         loop {
-            let (head, started) = {
+            let (head, started, frontier) = {
                 let state = self.shared.state.lock().unwrap();
-                (state.head, state.started)
+                (state.head, state.started, state.frontier)
             };
             let window = if started {
-                SLOT_FETCH_AHEAD.min(depth)
+                let ahead = SLOT_FETCH_AHEAD as i64;
+                (frontier - head + ahead).max(ahead).min(depth as i64) as usize
             } else {
                 1
             };
@@ -815,6 +975,9 @@ impl SlotReader {
                 let seq = head + offset as i64;
                 fetches.entry(seq).or_insert_with(|| {
                     let fetch = Arc::new(SlotFetch::default());
+                    if offset <= SLOT_READ_AHEAD {
+                        fetch.near.cancel();
+                    }
                     tokio::spawn(Arc::clone(&self).fetch(
                         seq,
                         offset,
@@ -827,7 +990,9 @@ impl SlotReader {
             let fetch = Arc::clone(&fetches[&head]);
             tokio::select! {
                 () = self.cancel.cancelled() => break,
+                () = self.shared.stop.cancelled() => break,
                 () = fetch.ready.cancelled() => {}
+                () = self.shared.grow.notified() => continue,
             }
             fetches.remove(&head);
             let found = fetch.result.lock().unwrap().take();
@@ -846,10 +1011,14 @@ impl SlotReader {
             }
             if let Some(next) = fetches.get(&(head + 1)) {
                 next.promoted.cancel();
+                if let Some(near) = fetches.get(&(head + 1 + SLOT_READ_AHEAD as i64)) {
+                    near.near.cancel();
+                }
             }
             self.shared.acks.notify_one();
             tokio::select! {
                 () = self.cancel.cancelled() => break,
+                () = self.shared.stop.cancelled() => break,
                 sent = chunks.send(body) => if sent.is_err() { break },
             }
         }
@@ -869,6 +1038,13 @@ impl SlotReader {
         fetch.ready.cancel();
     }
 
+    /// The head is asked for often, through [`SlotReader::read_head`] while
+    /// data moves. A segment behind it waits the tail wait, or not at all
+    /// once it is near, then is asked for at the pace segments come, or every
+    /// [`SLOT_READ_AHEAD_POLL`] while near and in a burst. A slot that holds
+    /// a frame of its segment whose body never checks out, or a frame that
+    /// does not decode, fails the session after a minute; an empty or absent
+    /// slot is idle, not a failure.
     async fn find(
         &self,
         seq: i64,
@@ -876,32 +1052,43 @@ impl SlotReader {
         fetch: &SlotFetch,
         cancel: &Cancel,
     ) -> Option<Fetched> {
-        if offset > 0 {
-            let wait = self.shared.pace() * offset as u32;
-            if !self
-                .hold(cancel, Some(wait), Some(&fetch.promoted), None, false)
+        if offset > 0
+            && !self
+                .hold(
+                    cancel,
+                    Some(SLOT_TAIL_MIN),
+                    Some(&fetch.promoted),
+                    Some(&fetch.near),
+                    None,
+                    false,
+                )
                 .await
-            {
-                return None;
-            }
+        {
+            return None;
         }
         let id = self.table.slot(seq).to_owned();
         let mut backoff = SLOT_HUNT_FLOOR;
         let mut gone_since: Option<Instant> = None;
+        let mut visible_since: Option<Instant> = None;
         loop {
-            let read = tokio::select! {
-                () = cancel.cancelled() => return None,
-                () = self.cancel.cancelled() => return None,
-                read = self.store.read_description(&id) => read,
+            let read = if !self.shared.idle() && self.shared.is_head(seq) {
+                self.read_head(&id, seq, cancel).await?
+            } else {
+                tokio::select! {
+                    () = cancel.cancelled() => return None,
+                    () = self.cancel.cancelled() => return None,
+                    read = self.store.read_description(&id) => read,
+                }
             };
             match read {
-                Ok(description) => {
-                    if let Some(frame) = SlotFrame::decode(&description).filter(|f| f.seq == seq) {
+                Ok(description) => match SlotFrame::decode(&description) {
+                    Some(frame) if frame.seq == seq => {
                         self.shared
                             .state
                             .lock()
                             .unwrap()
                             .touch(self.params.eager_window);
+                        self.shared.reach(seq);
                         match frame.mode {
                             SLOT_END => return Some(Fetched::End),
                             SLOT_ERR => {
@@ -914,29 +1101,54 @@ impl SlotReader {
                                 return Some(Fetched::Body(frame.data));
                             }
                             SLOT_MEDIA => {
-                                if let Ok(body) = self.store.read_body(&id).await {
-                                    if frame.holds(&body) {
+                                let body = self
+                                    .read_body_hedged(&id, frame.size as usize, cancel)
+                                    .await?;
+                                let cause = match body {
+                                    Ok(body) if frame.holds(&body) => {
                                         self.shared.hit();
                                         return Some(Fetched::Body(body));
                                     }
+                                    Ok(_) => String::new(),
+                                    Err(error) => format!(" > {error}"),
+                                };
+                                let since = *visible_since.get_or_insert_with(Instant::now);
+                                if since.elapsed() > SLOT_STALL_TIMEOUT {
+                                    return Some(Fetched::Failed(format!(
+                                        "segment {seq} has no usable body after {SLOT_STALL_TIMEOUT:?}{cause}"
+                                    )));
                                 }
                             }
                             _ => {}
                         }
                     }
-                }
-                Err(StorageError::NotFound) => match gone_since {
-                    None => gone_since = Some(Instant::now()),
-                    Some(since)
-                        if since.elapsed() > SLOT_GONE_TIMEOUT && self.shared.is_head(seq) =>
-                    {
-                        return Some(Fetched::Failed(format!(
-                            "slot {id} of segment {seq} is gone > {}",
-                            StorageError::NotFound
-                        )));
-                    }
                     Some(_) => {}
+                    None if description.is_empty() => visible_since = None,
+                    None => {
+                        let since = *visible_since.get_or_insert_with(Instant::now);
+                        if since.elapsed() > SLOT_STALL_TIMEOUT {
+                            return Some(Fetched::Failed(format!(
+                                "slot {id} of segment {seq} holds an invalid frame"
+                            )));
+                        }
+                    }
                 },
+                Err(StorageError::NotFound) => {
+                    visible_since = None;
+                    match gone_since {
+                        None => gone_since = Some(Instant::now()),
+                        Some(since)
+                            if since.elapsed() > SLOT_GONE_TIMEOUT && self.shared.is_head(seq) =>
+                        {
+                            return Some(Fetched::Failed(format!(
+                                "slot {id} of segment {seq} is gone > {}",
+                                StorageError::NotFound
+                            )));
+                        }
+                        Some(_) => {}
+                    }
+                }
+                Err(StorageError::Auth(error)) => return Some(Fetched::Failed(error)),
                 Err(StorageError::Failed(_)) => gone_since = None,
             }
             let (head, idle, active) = {
@@ -954,17 +1166,36 @@ impl SlotReader {
                     ceiling = ceiling.max(self.params.max_poll_interval);
                 }
                 backoff = (2 * backoff).min(ceiling);
-                self.hold(cancel, Some(wait), None, None, true).await
+                self.hold(cancel, Some(wait), None, None, None, true).await
             } else if idle {
                 // Only the head is asked for until something comes.
                 backoff = SLOT_HUNT_FLOOR;
-                self.hold(cancel, None, Some(&fetch.promoted), Some(&active), false)
-                    .await
+                self.hold(
+                    cancel,
+                    None,
+                    Some(&fetch.promoted),
+                    None,
+                    Some(&active),
+                    false,
+                )
+                .await
             } else {
                 backoff = SLOT_HUNT_FLOOR;
-                let wait = self.shared.pace().clamp(SLOT_TAIL_MIN, SLOT_TAIL_MAX);
-                self.hold(cancel, Some(wait), Some(&fetch.promoted), None, false)
-                    .await
+                let mut wait = self.shared.pace().clamp(SLOT_TAIL_MIN, SLOT_TAIL_MAX);
+                let near = fetch.near.is_cancelled();
+                if near && self.shared.bursting() {
+                    wait = SLOT_READ_AHEAD_POLL;
+                }
+                let near_signal = (!near).then_some(&fetch.near);
+                self.hold(
+                    cancel,
+                    Some(wait),
+                    Some(&fetch.promoted),
+                    near_signal,
+                    None,
+                    false,
+                )
+                .await
             };
             if !held {
                 return None;
@@ -972,14 +1203,123 @@ impl SlotReader {
         }
     }
 
-    /// `hold`: waits `wait` (none: no limit), or until `promoted` fires,
+    /// `readHead`: the head's description on the reserved lane, asked for
+    /// again every [`SLOT_HUNT_CEILING`] and on every wake, up to
+    /// [`SLOT_HEAD_READS`] reads at once, until one holds the head or, once
+    /// the reader went idle, with the last description read. `None` once the
+    /// reader is done.
+    async fn read_head(
+        &self,
+        id: &str,
+        seq: i64,
+        cancel: &Cancel,
+    ) -> Option<Result<String, StorageError>> {
+        use futures_util::stream::{FuturesUnordered, StreamExt as _};
+
+        let mut reads = FuturesUnordered::new();
+        reads.push(self.store.read_description_lane(id));
+        let mut ticker =
+            tokio::time::interval_at(Instant::now() + SLOT_HUNT_CEILING, SLOT_HUNT_CEILING);
+        let mut last: Option<String> = None;
+        loop {
+            tokio::select! {
+                () = cancel.cancelled() => return None,
+                () = self.cancel.cancelled() => return None,
+                Some(read) = reads.next(), if !reads.is_empty() => match read {
+                    Err(error) => return Some(Err(error)),
+                    Ok(description) => {
+                        if SlotFrame::decode(&description).is_some_and(|frame| frame.seq == seq) {
+                            return Some(Ok(description));
+                        }
+                        last = Some(description);
+                    }
+                },
+                _ = ticker.tick() => {
+                    if self.shared.idle() {
+                        if let Some(description) = last.take() {
+                            return Some(Ok(description));
+                        }
+                    } else if reads.len() < SLOT_HEAD_READS {
+                        reads.push(self.store.read_description_lane(id));
+                    }
+                }
+                () = self.shared.wake.notified() => {
+                    if reads.len() < SLOT_HEAD_READS {
+                        reads.push(self.store.read_description_lane(id));
+                    }
+                }
+            }
+        }
+    }
+
+    /// `readBodyHedged`: a body read that has not answered after
+    /// [`SLOT_BODY_HEDGE`], or after twice what `size` takes at the rate
+    /// bodies came, gets a second request; the first answer wins and feeds
+    /// the rate. `None` once the reader is done.
+    async fn read_body_hedged(
+        &self,
+        id: &str,
+        size: usize,
+        cancel: &Cancel,
+    ) -> Option<Result<Bytes, StorageError>> {
+        use futures_util::stream::{FuturesUnordered, StreamExt as _};
+
+        let rate = self.shared.state.lock().unwrap().body_rate;
+        let mut delay = SLOT_BODY_HEDGE;
+        if rate > 0.0 && size > 0 {
+            if let Ok(scaled) = Duration::try_from_secs_f64(2.0 * size as f64 / rate) {
+                delay = delay.max(scaled);
+            }
+        }
+        let start = Instant::now();
+        let mut reads = FuturesUnordered::new();
+        reads.push(self.store.read_body(id));
+        let hedge = tokio::time::sleep(delay);
+        tokio::pin!(hedge);
+        let mut hedged = false;
+        loop {
+            tokio::select! {
+                () = cancel.cancelled() => return None,
+                () = self.cancel.cancelled() => return None,
+                Some(read) = reads.next(), if !reads.is_empty() => match read {
+                    Ok(body) => {
+                        let elapsed = start.elapsed().as_secs_f64();
+                        if elapsed > 0.0 && !body.is_empty() {
+                            let instant = body.len() as f64 / elapsed;
+                            let mut state = self.shared.state.lock().unwrap();
+                            state.body_rate = if state.body_rate == 0.0 {
+                                instant
+                            } else {
+                                (state.body_rate + instant) / 2.0
+                            };
+                        }
+                        return Some(Ok(body));
+                    }
+                    Err(error) => {
+                        if reads.is_empty() {
+                            return Some(Err(error));
+                        }
+                    }
+                },
+                () = &mut hedge, if !hedged => {
+                    hedged = true;
+                    if reads.len() == 1 {
+                        reads.push(self.store.read_body(id));
+                    }
+                }
+            }
+        }
+    }
+
+    /// `hold`: waits `wait` (none: no limit), or until `a` or `b` fires,
     /// `active` fires, or with `woken` a write wakes the reader. False once
     /// the reader is done.
     async fn hold(
         &self,
         cancel: &Cancel,
         wait: Option<Duration>,
-        promoted: Option<&Cancel>,
+        a: Option<&Cancel>,
+        b: Option<&Cancel>,
         active: Option<&Arc<Notify>>,
         woken: bool,
     ) -> bool {
@@ -994,12 +1334,17 @@ impl SlotReader {
                 None => std::future::pending().await,
             }
         };
-        let promoted_fired = async {
-            match promoted {
-                Some(promoted) => promoted.cancelled().await,
-                None => std::future::pending().await,
+        let fired = |signal: Option<&Cancel>| {
+            let signal = signal.cloned();
+            async move {
+                match signal {
+                    Some(signal) => signal.cancelled().await,
+                    None => std::future::pending().await,
+                }
             }
         };
+        let a_fired = fired(a);
+        let b_fired = fired(b);
         let active_fired = async {
             match active_notified.as_mut().as_pin_mut() {
                 Some(notified) => notified.await,
@@ -1016,15 +1361,17 @@ impl SlotReader {
         tokio::select! {
             () = cancel.cancelled() => false,
             () = self.cancel.cancelled() => false,
+            () = self.shared.stop.cancelled() => false,
             () = timer => true,
-            () = promoted_fired => true,
+            () = a_fired => true,
+            () = b_fired => true,
             () = active_fired => true,
             () = wake => true,
         }
     }
 
     /// `ackLoop`: writes the watermark when the head moves, the last head
-    /// only if it moved more than once meanwhile.
+    /// only if it moved more than once meanwhile, on the reserved lane.
     async fn ack_loop(self: Arc<Self>) {
         let mut acked = -1i64;
         let mut wait = SLOT_ACK_RETRY;
@@ -1041,7 +1388,7 @@ impl SlotReader {
                 let mark = want.to_string();
                 let set = tokio::select! {
                     () = self.cancel.cancelled() => return,
-                    set = self.store.set_slot(&self.table.watermark, &mark, None) => set,
+                    set = self.store.set_slot_lane(&self.table.watermark, &mark) => set,
                 };
                 if set.is_ok() {
                     acked = want;

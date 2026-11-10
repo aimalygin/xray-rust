@@ -72,6 +72,22 @@ impl SessionReader {
     }
 }
 
+/// What a dial needs of a session in slots to announce it after the fact,
+/// as Xray-core v26.11.9 does: the first segment, and both directions to fail.
+pub(crate) struct Announcer {
+    pub first: tokio::sync::oneshot::Receiver<Bytes>,
+    writer: SlotWriter,
+    reader: Arc<SlotReaderShared>,
+}
+
+impl Announcer {
+    /// The announcement failed: writes and reads report `error` from now on.
+    pub(crate) fn fail(&self, error: String) {
+        self.writer.fail(error.clone());
+        self.reader.fail(error);
+    }
+}
+
 /// A session: what is written goes to the storage under one prefix or into
 /// one ring, what is read comes from the other.
 pub(crate) struct XdriveStream {
@@ -117,17 +133,35 @@ impl XdriveStream {
     }
 
     /// `newSlotConn`: a session that writes the ring `write` and reads `read`.
+    #[cfg(test)]
     pub(crate) fn slots(
         store: Arc<dyn SlotStore>,
         write: SlotTable,
         read: SlotTable,
         params: Params,
     ) -> Self {
+        Self::slots_announced(store, write, read, params).0
+    }
+
+    /// A session in slots whose announcement is still to be stored: the
+    /// stream, and what the dial announces it with -- its first segment once
+    /// cut, and a way to fail the session should the announcement fail.
+    pub(crate) fn slots_announced(
+        store: Arc<dyn SlotStore>,
+        write: SlotTable,
+        read: SlotTable,
+        params: Params,
+    ) -> (Self, Announcer) {
         let writer_cancel = Cancel::default();
         let reader_cancel = Cancel::default();
         let writer = SlotWriter::new(Arc::clone(&store), write, params, writer_cancel.clone());
         let (chunks, reader) = SlotReader::spawn(store, read, params, reader_cancel.clone());
-        Self {
+        let announcer = Announcer {
+            first: writer.first_segment(),
+            writer: writer.clone(),
+            reader: Arc::clone(&reader),
+        };
+        let stream = Self {
             writer: SessionWriter::Slots(writer),
             writer_cancel,
             chunks,
@@ -136,7 +170,8 @@ impl XdriveStream {
             read_buf: Bytes::new(),
             closing: None,
             shut: false,
-        }
+        };
+        (stream, announcer)
     }
 }
 

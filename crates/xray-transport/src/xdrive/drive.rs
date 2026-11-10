@@ -1,4 +1,4 @@
-//! The `google-drive` service, as Xray-core v26.10.31's `drive.go` reaches
+//! The `google-drive` service, as Xray-core v26.11.9's `drive.go` reaches
 //! Google Drive's v3 API: an access token from the refresh token, objects
 //! as files in the folder `remoteFolder` names by id, their names flat with
 //! `~`, small ones in the description and larger ones uploaded as media,
@@ -39,8 +39,28 @@ const PAGE_SIZE: usize = 1000;
 pub(crate) const MAX_INFLIGHT: usize = 64;
 /// The largest object that goes in a description instead of a body.
 const INLINE_LIMIT: usize = 12000;
-/// Xray-core reads an answer whole; here at most this much.
-const MAX_ANSWER: usize = 64 << 20;
+/// `driveMaxResponse`: the largest answer read; a larger one fails the
+/// request.
+const MAX_ANSWER: usize = 32 << 20;
+/// `driveReservedInflight`: requests in flight a session keeps for the slot
+/// reads and writes that must not wait behind bodies -- watermarks, the head
+/// and its acks.
+const RESERVED_INFLIGHT: usize = 8;
+/// `driveCooldown`: how long every request of the storage waits, jittered,
+/// once Drive throttled one.
+const COOLDOWN: Duration = Duration::from_secs(2);
+/// `driveSlotRead`: one try of a slot description read.
+const SLOT_READ_TIMEOUT: Duration = Duration::from_secs(3);
+/// `driveSlotWrite`: one try of a slot write without a body.
+const SLOT_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+/// `tokenRefreshBackoff` and `maxTokenBackoff`: how long a failed token fetch
+/// keeps the next one off, doubling.
+const TOKEN_REFRESH_BACKOFF: Duration = Duration::from_secs(30);
+const MAX_TOKEN_BACKOFF: Duration = Duration::from_secs(5 * 60);
+/// A token fetch shared by every waiter ends after this long.
+const TOKEN_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
+/// Files a deletion removes at once.
+const DELETE_WORKERS: usize = 8;
 const MAX_TOKEN_ANSWER: usize = 1 << 20;
 const JSON: &str = "application/json; charset=UTF-8";
 
@@ -72,9 +92,37 @@ pub(crate) struct DriveShared {
     pub http: Arc<HttpShared>,
     pub urls: DriveUrls,
     pub backoff: Duration,
-    token: Mutex<Option<(Zeroizing<String>, Instant)>>,
+    /// [`COOLDOWN`], or less in tests.
+    pub cooldown: Duration,
+    token: Mutex<TokenState>,
+    /// One foreground fetch at a time; waiters read what it stored.
     token_lock: tokio::sync::Mutex<()>,
     ids: Mutex<HashMap<String, String>>,
+    /// Until when every request waits after Drive throttled one.
+    cool_until: Mutex<Option<Instant>>,
+}
+
+/// The access token and what the last fetches left: `token`, `tokenExpiry`,
+/// `tokenLifetime`, `refreshing`, `authErr`, `tokenRetryAt`, `tokenBackoff`
+/// and `lastTokenErr`.
+#[derive(Default)]
+struct TokenState {
+    token: Option<(Zeroizing<String>, Instant)>,
+    lifetime: Duration,
+    refreshing: bool,
+    /// Google refused the credentials themselves; nothing retries them.
+    auth_err: Option<String>,
+    retry_at: Option<Instant>,
+    backoff: Duration,
+    last_err: Option<String>,
+}
+
+/// Why no access token came.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum TokenError {
+    /// `authError`: Google refused the client or the refresh token.
+    Auth(String),
+    Failed(String),
 }
 
 impl std::fmt::Debug for DriveShared {
@@ -112,9 +160,11 @@ impl DriveShared {
             http,
             urls: DriveUrls::default(),
             backoff: INITIAL_BACKOFF,
-            token: Mutex::new(None),
+            cooldown: COOLDOWN,
+            token: Mutex::new(TokenState::default()),
             token_lock: tokio::sync::Mutex::new(()),
             ids: Mutex::new(HashMap::new()),
+            cool_until: Mutex::new(None),
         })
     }
 
@@ -133,26 +183,147 @@ impl DriveShared {
         self.ids.lock().unwrap().get(name).cloned()
     }
 
-    fn invalidate_token(&self) {
-        *self.token.lock().unwrap() = None;
+    /// `invalidateToken`: drops the token a 401 answered, unless a newer one
+    /// already took its place.
+    pub(crate) fn invalidate_token(&self, used: &str) {
+        let mut state = self.token.lock().unwrap();
+        if state
+            .token
+            .as_ref()
+            .is_some_and(|(token, _)| token.as_str() == used)
+        {
+            state.token = None;
+        }
     }
 
-    /// `accessToken`: the cached token, or one the refresh token gets.
-    async fn access_token(&self) -> Result<Zeroizing<String>, String> {
-        let _guard = self.token_lock.lock().await;
-        if let Some((token, expiry)) = self.token.lock().unwrap().as_ref() {
-            if !token.is_empty() && Instant::now() < *expiry {
-                return Ok(token.clone());
+    /// The cached token if it is still good, starting a background refresh
+    /// once a fifth of its lifetime is left; the refused credentials' error
+    /// if Google refused them.
+    fn cached_token(self: &Arc<Self>) -> Option<Result<Zeroizing<String>, TokenError>> {
+        let mut state = self.token.lock().unwrap();
+        if let Some(error) = &state.auth_err {
+            return Some(Err(TokenError::Auth(error.clone())));
+        }
+        let now = Instant::now();
+        let (token, expiry) = state.token.clone().filter(|(_, expiry)| now < *expiry)?;
+        let lifetime = state.lifetime;
+        if !lifetime.is_zero()
+            && expiry.saturating_duration_since(now) < lifetime / 5
+            && !state.refreshing
+            && state.retry_at.is_none_or(|at| now >= at)
+        {
+            state.refreshing = true;
+            let shared = Arc::clone(self);
+            tokio::spawn(async move { shared.refresh_in_background().await });
+        }
+        Some(Ok(token))
+    }
+
+    /// `accessToken`: the cached token, or one a single fetch gets for every
+    /// waiter. A failed fetch holds the next one off for a while, and Google's
+    /// refusal of the credentials holds every request off for good.
+    pub(crate) async fn access_token(self: &Arc<Self>) -> Result<Zeroizing<String>, TokenError> {
+        if let Some(cached) = self.cached_token() {
+            return cached;
+        }
+        let _flight = self.token_lock.lock().await;
+        if let Some(cached) = self.cached_token() {
+            return cached;
+        }
+        {
+            let state = self.token.lock().unwrap();
+            if let (Some(at), Some(error)) = (state.retry_at, &state.last_err) {
+                if Instant::now() < at {
+                    return Err(TokenError::Failed(error.clone()));
+                }
             }
         }
+        // The fetch outlives a waiter that gives up, as Xray-core's shared
+        // flight does, and stores what it found for the next one.
+        let shared = Arc::clone(self);
+        let fetched = tokio::spawn(async move {
+            let result = tokio::time::timeout(TOKEN_FETCH_TIMEOUT, shared.fetch_token())
+                .await
+                .unwrap_or_else(|_| {
+                    Err(TokenError::Failed(
+                        "failed to refresh the access token > timed out".to_owned(),
+                    ))
+                });
+            shared.settle_fetch(&result);
+            result
+        })
+        .await
+        .unwrap_or_else(|_| Err(TokenError::Failed("the token fetch stopped".to_owned())))?;
+        Ok(fetched.0)
+    }
+
+    /// What a fetch leaves behind, for the foreground and the background
+    /// alike.
+    fn settle_fetch(&self, result: &Result<(Zeroizing<String>, Duration), TokenError>) {
+        let mut state = self.token.lock().unwrap();
+        match result {
+            Ok((token, lifetime)) => {
+                if state.auth_err.is_none() {
+                    let expiry = if *lifetime > Duration::from_secs(60) {
+                        *lifetime - Duration::from_secs(60)
+                    } else {
+                        *lifetime
+                    };
+                    let expiry = Instant::now()
+                        .checked_add(expiry)
+                        .unwrap_or_else(Instant::now);
+                    state.token = Some((token.clone(), expiry));
+                    state.lifetime = *lifetime;
+                    state.backoff = Duration::ZERO;
+                    state.retry_at = None;
+                    state.last_err = None;
+                }
+            }
+            Err(error) => {
+                let message = match error {
+                    TokenError::Auth(message) => {
+                        state.auth_err.get_or_insert_with(|| message.clone());
+                        message
+                    }
+                    TokenError::Failed(message) => message,
+                };
+                state.last_err = Some(message.clone());
+                // `noteTokenFailure`.
+                state.backoff = if state.backoff.is_zero() {
+                    TOKEN_REFRESH_BACKOFF
+                } else {
+                    (2 * state.backoff).min(MAX_TOKEN_BACKOFF)
+                };
+                state.retry_at = Instant::now().checked_add(state.backoff);
+            }
+        }
+    }
+
+    /// `refreshTokenBackground`.
+    async fn refresh_in_background(self: Arc<Self>) {
+        let result = tokio::time::timeout(TOKEN_FETCH_TIMEOUT, self.fetch_token())
+            .await
+            .unwrap_or_else(|_| {
+                Err(TokenError::Failed(
+                    "failed to refresh the access token > timed out".to_owned(),
+                ))
+            });
+        self.settle_fetch(&result);
+        self.token.lock().unwrap().refreshing = false;
+    }
+
+    /// `fetchToken`: a token and its lifetime from the refresh token. Google
+    /// refusing the client or the refresh token is an [`TokenError::Auth`].
+    async fn fetch_token(&self) -> Result<(Zeroizing<String>, Duration), TokenError> {
         let form = Zeroizing::new(go_url::encode_values(&[
             ("client_id", self.client_id.as_str()),
             ("client_secret", self.client_secret.as_str()),
             ("refresh_token", self.refresh_token.as_str()),
             ("grant_type", "refresh_token"),
         ]));
-        let url = new_request_url(&self.urls.token)
-            .map_err(|error| format!("failed to build the token request > {error}"))?;
+        let url = new_request_url(&self.urls.token).map_err(|error| {
+            TokenError::Failed(format!("failed to build the token request > {error}"))
+        })?;
         let answer = self
             .http
             .send_token(Followed {
@@ -166,14 +337,26 @@ impl DriveShared {
                 max_body: MAX_TOKEN_ANSWER,
             })
             .await
-            .map_err(|error| format!("failed to refresh the access token > {error}"))?;
+            .map_err(|error| {
+                TokenError::Failed(format!("failed to refresh the access token > {error}"))
+            })?;
         let body = &answer.body[..answer.body.len().min(MAX_TOKEN_ANSWER)];
         if answer.status != 200 {
-            return Err(format!(
+            if let Ok(code) = gojson::root(body).and_then(|root| gojson::string(&root, "error")) {
+                if matches!(
+                    code.as_str(),
+                    "invalid_grant" | "invalid_client" | "unauthorized_client"
+                ) {
+                    return Err(TokenError::Auth(format!(
+                        "Google rejected the OAuth credentials ({code}); create a new refresh token, see the XDRIVE setup guide"
+                    )));
+                }
+            }
+            return Err(TokenError::Failed(format!(
                 "the token endpoint answered {}: {}",
                 answer.status,
                 String::from_utf8_lossy(body)
-            ));
+            )));
         }
         let parsed = gojson::root(body).and_then(|object| {
             Ok((
@@ -181,19 +364,33 @@ impl DriveShared {
                 gojson::int64(&object, "expires_in")?,
             ))
         });
-        let Ok((token, mut lifetime)) = parsed else {
-            return Err("failed to parse the token response".to_owned());
+        let Ok((token, lifetime)) = parsed else {
+            return Err(TokenError::Failed(
+                "failed to parse the token response".to_owned(),
+            ));
         };
         if token.is_empty() {
-            return Err("the token endpoint returned no access token".to_owned());
+            return Err(TokenError::Failed(
+                "the token endpoint returned no access token".to_owned(),
+            ));
         }
-        if lifetime > 60 {
-            lifetime -= 60;
+        let lifetime =
+            token_expiry(Instant::now(), lifetime).saturating_duration_since(Instant::now());
+        Ok((Zeroizing::new(token), lifetime))
+    }
+
+    /// `waitCool`: the wait every request makes while Drive throttles.
+    async fn wait_cool(&self) {
+        let until = *self.cool_until.lock().unwrap();
+        if let Some(until) = until {
+            tokio::time::sleep_until(until).await;
         }
-        let token = Zeroizing::new(token);
-        let expiry = token_expiry(Instant::now(), lifetime);
-        *self.token.lock().unwrap() = Some((token.clone(), expiry));
-        Ok(token)
+    }
+
+    /// `cool`: Drive throttled a request; every request waits a jittered
+    /// two seconds.
+    fn cool(&self) {
+        *self.cool_until.lock().unwrap() = Instant::now().checked_add(jitter(self.cooldown));
     }
 }
 
@@ -276,6 +473,16 @@ pub(crate) struct DriveStorage {
     shared: Arc<DriveShared>,
     http: SessionHttp,
     inflight: Semaphore,
+    /// `reserved`: the lane of watermarks, the head and acks.
+    reserved: Semaphore,
+}
+
+/// Which requests a slot read or write goes with: [`Lane::Reserved`] keeps
+/// watermarks, the head and acks off the queue bodies wait in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Lane {
+    Bulk,
+    Reserved,
 }
 
 /// A file a listing found.
@@ -290,6 +497,7 @@ impl DriveStorage {
             shared,
             http,
             inflight: Semaphore::new(MAX_INFLIGHT),
+            reserved: Semaphore::new(RESERVED_INFLIGHT),
         }
     }
 
@@ -303,9 +511,24 @@ impl DriveStorage {
 
     /// `do`: up to eight tries with a growing jittered pause, after a failed
     /// request, a rejected token, a 403 for a rate limit or a status worth
-    /// another try.
+    /// another try. Every try first waits out a cooldown Drive's throttling
+    /// started; `timeout` bounds one try, and a try it ends tells the session
+    /// its connection stalled. Refused credentials end every try at once.
     async fn exchange(
         &self,
+        method: Method,
+        target: &str,
+        content_type: &str,
+        body: Option<Bytes>,
+    ) -> Result<ServiceResponse, StorageError> {
+        self.exchange_on(Lane::Bulk, None, method, target, content_type, body)
+            .await
+    }
+
+    async fn exchange_on(
+        &self,
+        lane: Lane,
+        timeout: Option<Duration>,
         method: Method,
         target: &str,
         content_type: &str,
@@ -321,9 +544,11 @@ impl DriveStorage {
                 tokio::time::sleep(jitter(backoff)).await;
                 backoff = (backoff * 2).min(MAX_BACKOFF);
             }
+            self.shared.wait_cool().await;
             let token = match self.shared.access_token().await {
                 Ok(token) => token,
-                Err(error) => {
+                Err(TokenError::Auth(error)) => return Err(StorageError::Auth(error)),
+                Err(TokenError::Failed(error)) => {
                     last = error;
                     continue;
                 }
@@ -335,21 +560,34 @@ impl DriveStorage {
             if !content_type.is_empty() {
                 headers.push(("Content-Type".to_owned(), content_type.to_owned()));
             }
-            let permit = self
-                .inflight
+            let pool = match lane {
+                Lane::Bulk => &self.inflight,
+                Lane::Reserved => &self.reserved,
+            };
+            let permit = pool
                 .acquire()
                 .await
                 .map_err(|_| StorageError::Failed("the session is closed".to_owned()))?;
-            let answer = self
-                .http
-                .send_following(Followed {
-                    method: method.clone(),
-                    url: url.clone(),
-                    headers,
-                    body: body.clone().unwrap_or_default(),
-                    max_body: MAX_ANSWER,
-                })
-                .await;
+            let began = Instant::now();
+            let request = self.http.send_following(Followed {
+                method: method.clone(),
+                url: url.clone(),
+                headers,
+                body: body.clone().unwrap_or_default(),
+                max_body: MAX_ANSWER,
+            });
+            let answer = match timeout {
+                None => request.await,
+                Some(limit) => match tokio::time::timeout(limit, request).await {
+                    Ok(answer) => answer,
+                    Err(_) => {
+                        drop(permit);
+                        self.http.stalled(began);
+                        last = format!("Drive request timed out after {limit:?}");
+                        continue;
+                    }
+                },
+            };
             drop(permit);
             let answer = match answer {
                 Ok(answer) => answer,
@@ -358,8 +596,13 @@ impl DriveStorage {
                     continue;
                 }
             };
+            if answer.body.len() > MAX_ANSWER {
+                return Err(StorageError::Failed(format!(
+                    "Drive response exceeds the {MAX_ANSWER} byte cap"
+                )));
+            }
             if answer.status == 401 {
-                self.shared.invalidate_token();
+                self.shared.invalidate_token(&token);
                 last = "Drive rejected the access token".to_owned();
                 continue;
             }
@@ -368,6 +611,7 @@ impl DriveStorage {
                     "Drive is rate limiting: {}",
                     String::from_utf8_lossy(&answer.body)
                 );
+                self.shared.cool();
                 continue;
             }
             if retryable_status(answer.status) {
@@ -376,6 +620,9 @@ impl DriveStorage {
                     answer.status,
                     String::from_utf8_lossy(&answer.body)
                 );
+                if answer.status == 429 {
+                    self.shared.cool();
+                }
                 continue;
             }
             return Ok(answer);
@@ -594,12 +841,27 @@ impl Storage for DriveStorage {
                 quote_value(&format!("{flat}{FLAT_SEPARATOR}"))
             ))
             .await?;
+        // Up to eight at once; every one is tried, and the first failure is
+        // the answer, as Xray-core's workers do.
         let mut names: Vec<&String> = children.keys().collect();
         names.sort();
-        for name in names {
-            self.delete_id(name, &children[name].id).await?;
-        }
-        Ok(())
+        let gate = Semaphore::new(DELETE_WORKERS);
+        let deletions: Vec<_> = names
+            .into_iter()
+            .map(|name| {
+                let gate = &gate;
+                let id = &children[name].id;
+                async move {
+                    let _turn = gate.acquire().await;
+                    self.delete_id(name, id).await
+                }
+            })
+            .collect();
+        futures_util::future::join_all(deletions)
+            .await
+            .into_iter()
+            .find_map(Result::err)
+            .map_or(Ok(()), Err)
     }
 
     async fn list(&self, prefix: &str) -> Result<Vec<Entry>, StorageError> {
@@ -657,6 +919,43 @@ impl SlotStore for DriveStorage {
         description: &str,
         body: Option<Bytes>,
     ) -> Result<(), StorageError> {
+        self.write_slot(Lane::Bulk, id, description, body).await
+    }
+
+    async fn set_slot_lane(&self, id: &str, description: &str) -> Result<(), StorageError> {
+        self.write_slot(Lane::Reserved, id, description, None).await
+    }
+
+    async fn read_description(&self, id: &str) -> Result<String, StorageError> {
+        self.description(Lane::Bulk, id).await
+    }
+
+    async fn read_description_lane(&self, id: &str) -> Result<String, StorageError> {
+        self.description(Lane::Reserved, id).await
+    }
+
+    async fn read_body(&self, id: &str) -> Result<Bytes, StorageError> {
+        let target = self.file_url(id, "alt=media&supportsAllDrives=true");
+        let answer = self.exchange(Method::GET, &target, "", None).await?;
+        match answer.status {
+            200 => Ok(answer.body),
+            404 => Err(StorageError::NotFound),
+            status => Err(StorageError::Failed(format!(
+                "Drive answered {status} for the body of {id}: {}",
+                String::from_utf8_lossy(&answer.body)
+            ))),
+        }
+    }
+}
+
+impl DriveStorage {
+    async fn write_slot(
+        &self,
+        lane: Lane,
+        id: &str,
+        description: &str,
+        body: Option<Bytes>,
+    ) -> Result<(), StorageError> {
         let mut payload = metadata(None, Some(description), None).into_bytes();
         let mut target = self.file_url(id, "fields=id&supportsAllDrives=true");
         let mut content_type = JSON.to_owned();
@@ -675,8 +974,12 @@ impl SlotStore for DriveStorage {
             content_type = format!("multipart/related; boundary={BOUNDARY}");
             payload = multipart_body(&payload, &body);
         }
+        // A description alone gets five seconds a try.
+        let timeout = (content_type == JSON).then_some(SLOT_WRITE_TIMEOUT);
         let answer = self
-            .exchange(
+            .exchange_on(
+                lane,
+                timeout,
                 Method::PATCH,
                 &target,
                 &content_type,
@@ -693,9 +996,19 @@ impl SlotStore for DriveStorage {
         }
     }
 
-    async fn read_description(&self, id: &str) -> Result<String, StorageError> {
+    /// `readDescription`: three seconds a try.
+    async fn description(&self, lane: Lane, id: &str) -> Result<String, StorageError> {
         let target = self.file_url(id, "fields=description&supportsAllDrives=true");
-        let answer = self.exchange(Method::GET, &target, "", None).await?;
+        let answer = self
+            .exchange_on(
+                lane,
+                Some(SLOT_READ_TIMEOUT),
+                Method::GET,
+                &target,
+                "",
+                None,
+            )
+            .await?;
         match answer.status {
             200 => gojson::root(&answer.body)
                 .and_then(|root| gojson::string(&root, "description"))
@@ -705,19 +1018,6 @@ impl SlotStore for DriveStorage {
             404 => Err(StorageError::NotFound),
             status => Err(StorageError::Failed(format!(
                 "Drive answered {status} for the description of {id}: {}",
-                String::from_utf8_lossy(&answer.body)
-            ))),
-        }
-    }
-
-    async fn read_body(&self, id: &str) -> Result<Bytes, StorageError> {
-        let target = self.file_url(id, "alt=media&supportsAllDrives=true");
-        let answer = self.exchange(Method::GET, &target, "", None).await?;
-        match answer.status {
-            200 => Ok(answer.body),
-            404 => Err(StorageError::NotFound),
-            status => Err(StorageError::Failed(format!(
-                "Drive answered {status} for the body of {id}: {}",
                 String::from_utf8_lossy(&answer.body)
             ))),
         }
