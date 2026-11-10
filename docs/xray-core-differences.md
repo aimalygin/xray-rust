@@ -370,7 +370,8 @@ Deliberate differences:
   profiles; accepting them breaks none it accepts.
 - A server port of 0 fails parsing, as before. Xray-core accepts it and
   dials port 0.
-- VLESS `reverse` fails parsing: the reverse proxy is not implemented.
+- VLESS `reverse` makes the outbound the bridge of a reverse proxy; its
+  differences are listed [below](#vless-reverse-proxy).
 - VLESS `testpre` is at most 64 here; Xray-core starts any number of dialers.
 - A `testpre` dialer whose dial fails waits 200 ms before the next, twice as
   long after each further failure, up to ten seconds. Xray-core dials again at
@@ -955,6 +956,82 @@ the outbound's address and to two listed ones, and over raw sockets, with
 AES and noise inside xicmp; XHTTP over HTTP/3 and Hysteria, alone and with
 Salamander inside, before and after a rebind, and MASQUE over HTTP/3 carry
 the same.
+
+## VLESS reverse proxy
+
+A VLESS outbound with `reverse` is the bridge of Xray-core v26.10.31's VLESS
+reverse proxy, as its outbound and `app/reverse` bridge worker are: the same
+monitor (every 2 seconds from 2 seconds after the start, a new tunnel when
+none is active or each holds more than 16 sessions), the reverse command with
+its header held 500 ms and five dials, a Mux.Cool server reading the portal's
+client and local addresses and its control session, sessions dispatched as
+from the reverse tag with the outbound's email and the reverse sniffing, and
+freedom's default final rule for them, which blocks every address. The legacy
+root `reverse`, removed upstream in v26.4.25, fails with upstream's message;
+the portal's side is not supported. Deliberate differences:
+
+- A tunnel holds at most 512 sessions at once and a bridge keeps at most 16
+  tunnels, draining ones included. A session past the bound is refused with
+  an error End. Xray-core sets no bound; its portal drains a tunnel once more
+  than 256 sessions, its control session included, were opened on it, so its
+  own never reach these.
+- Under an XHTTP link of a `dialerProxy` chain, and through a dedicated
+  freedom fragment outbound that `dialerProxy` names (folded into the outbound
+  here), the portal's sessions and the tunnel are refused always, before
+  anything is dialed, unless the freedom's `finalRules` allow the server:
+  the freedom the chain ends on for XHTTP, the fragment freedom otherwise.
+  Xray-core refuses them only on the dials that carry the session, so a
+  session reusing an XHTTP connection another opened passes there. XHTTP's
+  connections are shared across flows here, and refusing at the dial would
+  stall the others. (Over Mux, `testpre` and gRPC neither refuses: Xray-core
+  opens those connections without the session's context.)
+- Each destination of a UDP session is a flow of its own, routed and relayed
+  as a SOCKS association's flows are, and the session ends once its flows went
+  idle, after 60 seconds. Xray-core routes the session once by its target and
+  sends each datagram through that route to the address its frame names; with
+  routing per destination the bridge opens nothing that routing would refuse
+  on its own.
+- With `dns.fakeIp` on, a fake IP in a session's target turns back into its
+  domain, as for every inbound here; Xray-core does that only when sniffing
+  names `fakedns`.
+- A bridge whose outbound cannot be built, such as Vision without TLS or
+  REALITY, fails the core's start. Xray-core starts and fails every dial of
+  the tunnel, every two seconds.
+- A frame payload over 8 KiB, metadata after the portal's client and local
+  address other than zero padding, or a session ID used twice closes the
+  tunnel. Xray-core's portal writes none of these; its bridge reads stream
+  chunks up to 64 KiB and ignores trailing metadata.
+- The bridge sends no End back for a session the portal ended. Xray-core's
+  sends one with the error flag, which the portal discards.
+- Unknown fields in `reverse` fail parsing, as everywhere here.
+
+Evidence: `tools/reverse-oracle` records what Xray-core's own mux, reverse
+and VLESS code write: the portal's frames, with its client's addresses, its
+control session and a UDP session; the bridge's answers; control messages;
+and the tunnel request with and without Vision. The tests read the portal's
+frames back as written and write the bridge's byte for byte
+(`tests/fixtures/reverse/vectors.json`). 47 configuration cases carry
+`xray run -test`'s verdicts; 45 match and the parser refuses two that Xray
+takes (an unknown field in `reverse`, a VLESS inbound), and each case the
+parser takes builds a core but two with Vision on a raw carrier. A portal
+written in the tests from the same sources drives the core's monitor, Mux
+server and routing: TCP and UDP, freedom's refusal, routing by tag, source
+and email, a drained and a lost tunnel, the freedom a chain ends on, under one
+freedom and under two, refusing sessions and a tunnel until it allows the next
+hop. Xray-core as the bridge, checked first against its own portal, refuses
+sessions at the freedom a chain ends on over raw, WebSocket, HTTPUpgrade,
+XHTTP, HTTP and SOCKS links and a tunnel through a freedom, and refuses none
+over Mux, gRPC or `testpre`. Live, with Xray-core as the portal,
+TCP and UDP services behind the bridge answer over raw, VLESS encryption,
+TLS with Vision, WebSocket, gRPC and XHTTP; freedom without final rules
+dials nothing; a wrong UUID gets no tunnel; and after 260 sessions the
+portal drains the first tunnel and the bridge opens a second; chains through
+one and two freedoms are refused until the last allows the relay, Mux and gRPC
+links are not, and a tunnel through a freedom opens once it allows the portal;
+over XHTTP a session through a freedom and a tunnel are refused until it
+allows the relay or the portal (`scripts/check-reverse-interop.sh`). Unit
+tests and the portal written here refuse sessions, UDP flows and the tunnel
+through a folded freedom fragment until it allows the server.
 
 ## QUIC BBR profiles
 

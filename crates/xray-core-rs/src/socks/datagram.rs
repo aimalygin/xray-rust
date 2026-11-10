@@ -25,14 +25,14 @@ pub(super) async fn bridge(
             context.dns_resolvers.destination.as_ref(),
             context.dns_resolvers.bootstrap.as_ref(),
             context.transport_dialer.as_ref(),
-            socks_udp_flow_global_id(context.client_addr, &target),
+            context.global_id(&target),
         )
         .await?;
         drop(pending_open_permit);
         connection.mark_active();
         crate::debug_log::log_access_accepted(
             &context.runtime_logger,
-            &context.client_addr.to_string(),
+            &context.client_label(),
             &target,
             crate::debug_log::udp_outbound_label(&outbound),
         );

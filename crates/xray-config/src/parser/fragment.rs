@@ -94,6 +94,7 @@ impl Parser<'_> {
             lengths,
             delays_ms,
             max_split,
+            folded_final_rules: None,
         })
     }
 
@@ -227,7 +228,18 @@ impl Parser<'_> {
             // security or transport behavior. Inline its sole socket transform
             // before the caller's TLS/REALITY handshake; no proxy protocol exists
             // to chain and the existing REALITY-over-proxy restriction stays intact.
-            let fragment = target.stream.tcp_fragment.clone();
+            let final_rules = match &target.settings {
+                OutboundSettings::Freedom(freedom) => freedom.final_rules.clone(),
+                _ => Vec::new(),
+            };
+            let fragment = target
+                .stream
+                .tcp_fragment
+                .clone()
+                .map(|fragment| TcpFragmentSettings {
+                    folded_final_rules: Some(final_rules),
+                    ..fragment
+                });
             outbounds[index].stream.tcp_fragment = fragment;
             outbounds[index].proxy_settings = None;
             // Xray-core's sockets here are the handler's, which sets no
