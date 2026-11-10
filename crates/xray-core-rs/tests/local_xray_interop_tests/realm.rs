@@ -179,7 +179,11 @@ async fn realm_introduces_xhttp_h3_to_xray() {
         }),
         XhttpMode::StreamOne,
     );
-    let raw = json!({"outbounds":[{"protocol":"freedom","streamSettings":{
+    // Read off a VLESS outbound: freedom would take the mask for its own
+    // UDP flows, where realm is refused.
+    let raw = json!({"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"127.0.0.1",
+        "port":xray.addr.port(),"users":[{"id":TEST_UUID,"encryption":"none"}]}]},
+        "streamSettings":{
         "network":"xhttp","security":"tls",
         "tlsSettings":{"serverName":"example.com","alpn":["h3"]},
         "finalmask":{"udp":[realm(&rendezvous, name, stun, json!({}))]}}}]});
