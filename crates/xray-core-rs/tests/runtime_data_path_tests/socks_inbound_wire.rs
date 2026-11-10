@@ -207,7 +207,18 @@ async fn the_handshake_has_one_deadline() {
     client.write_all(&[5, 1, 0]).await.unwrap();
     sleep(Duration::from_millis(700)).await;
     let _ = client.write_all(&[1, 127, 0, 0, 1, 0, 80]).await;
-    assert_eq!(rest(&mut client).await, b"");
+    // The inbound has closed at the deadline, before the address, so the
+    // address draws a reset. Once the reset is in, macOS reports it instead
+    // of the end of the stream, but only after the bytes that came before the
+    // close, so a reset here still means a close without a reply.
+    let mut received = Vec::new();
+    let read = timeout(Duration::from_secs(5), client.read_to_end(&mut received))
+        .await
+        .expect("the inbound closes the connection");
+    if let Err(error) = read {
+        assert_eq!(error.kind(), ErrorKind::ConnectionReset, "{error}");
+    }
+    assert_eq!(received, b"");
     core.stop().await.unwrap();
 }
 
