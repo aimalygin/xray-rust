@@ -1,8 +1,10 @@
 //! Go's `math/rand` (v1) generator, which Xray-core's sudoku mask seeds
 //! from the password's SHA-256 to shuffle its grids: `rngSource` and the
-//! `Shuffle` that `rand.New(rand.NewSource(seed))` runs. uTLS shuffles the
-//! extensions of a ChromeParrot ClientHello with the same generator
-//! (`crate::chrome_parrot`).
+//! `Shuffle` that `rand.New(rand.NewSource(seed))` runs. uTLS's
+//! `ShuffleChromeTLSExtensions` shuffles the extensions of a ChromeParrot
+//! ClientHello (`crate::chrome_parrot`) and of every Chrome profile that runs
+//! it (`crate::utls_shaping`) with the same generator, from a seed
+//! `crypto/rand.Int` draws ([`crypto_rand_int63`]).
 //!
 //! The `RNG_COOKED` values are Go's `rngCooked`, from `math/rand/rng.go`:
 //! Copyright 2009 The Go Authors. All rights reserved. Use of this source
@@ -109,11 +111,28 @@ impl GoRand {
 
     /// `Rand.Shuffle` for fewer than 2^31 elements.
     pub(crate) fn shuffle<T>(&mut self, items: &mut [T]) {
-        for i in (1..items.len()).rev() {
+        self.shuffle_by(items.len(), |i, j| items.swap(i, j));
+    }
+
+    /// `Rand.Shuffle(n, swap)` for fewer than 2^31 elements: the draws are
+    /// [`GoRand::shuffle`]'s whatever `swap` does with them, which is how
+    /// uTLS keeps some extensions in place.
+    pub(crate) fn shuffle_by(&mut self, n: usize, mut swap: impl FnMut(usize, usize)) {
+        for i in (1..n).rev() {
             let j = self.int31n((i + 1) as i32) as usize;
-            items.swap(i, j);
+            swap(i, j);
         }
     }
+}
+
+/// `crypto/rand.Int(crypto/rand.Reader, math.MaxInt64)` on eight bytes: the
+/// top bit cleared, and `None` in the one case Go reads again, a value not
+/// below the bound.
+pub(crate) fn crypto_rand_int63(bytes: [u8; 8]) -> Option<i64> {
+    let mut bytes = bytes;
+    bytes[0] &= 0x7f;
+    let value = i64::from_be_bytes(bytes);
+    (value < i64::MAX).then_some(value)
 }
 
 #[rustfmt::skip]

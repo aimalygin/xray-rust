@@ -26,6 +26,14 @@ long-term supported release series.
   Chrome Root Store trust anchor IDs. `hellochrome_155` is a new name and joins
   `random`'s draw; `hellochrome_133` keeps Chrome 133. See
   [TLS ClientHello shaping](docs/config-compatibility.md#tls-clienthello-shaping).
+- Every uTLS-shaped hello, on TLS and REALITY, draws its GREASE values per
+  connection as uTLS does, one per slot, and the Chrome profiles whose uTLS
+  spec shuffles its extensions (`hellochrome_106_shuffle` through
+  `hellochrome_155`, and so `chrome`) draw their extension order per
+  connection too, GREASE, padding and pre_shared_key staying in place. Until
+  now each profile sent `0x0a0a` in every GREASE slot and one fixed order.
+  The ECH GREASE payload length of the Chrome profiles stays pinned. See
+  [uTLS per-connection draws](docs/xray-core-differences.md#utls-per-connection-draws).
 - XDRIVE on Google Drive follows Xray-core v26.11.9: rings as deep as
   `concurrency` (64 by default, at most 256) with spare rings made ahead,
   sessions announced after their first segment with that segment inline,
