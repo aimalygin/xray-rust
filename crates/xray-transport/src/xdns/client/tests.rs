@@ -129,6 +129,26 @@ async fn answers_bring_packets_and_then_polls() {
     assert_eq!((data.len(), data[8]), (17, 8));
 }
 
+/// An answer from an address that is not the resolver's is not read, though
+/// it is well formed and names the tunnel's domain.
+#[tokio::test]
+async fn an_answer_from_another_address_is_dropped() {
+    let resolver = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let stranger = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let address = resolver.local_addr().unwrap();
+    let client = XdnsClient::connect(&config(vec![XdnsResolver::Udp(vec![address])], 255), None)
+        .await
+        .unwrap();
+    client.send(b"ping").unwrap();
+    let (query, from) = next_query(&resolver).await;
+    let forged = message::txt_answer(&query, &message::frame(&[b"forged"]));
+    stranger.send_to(&forged, from).await.unwrap();
+    let answer = message::txt_answer(&query, &message::frame(&[b"pong"]));
+    resolver.send_to(&answer, from).await.unwrap();
+    let packet = timeout(WAIT, client.recv()).await.unwrap().unwrap();
+    assert_eq!(packet.data, b"pong");
+}
+
 #[tokio::test]
 async fn queries_go_to_the_resolver_that_sent_fewer() {
     let first = UdpSocket::bind("127.0.0.1:0").await.unwrap();

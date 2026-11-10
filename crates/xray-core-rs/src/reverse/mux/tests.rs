@@ -511,3 +511,24 @@ async fn reads_and_writes_count_as_activity() {
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert!(*lock(&harness.shared.activity) > read, "a write counts");
 }
+
+/// A portal that floods frames for sessions the bridge does not hold and
+/// reads none of the Ends it gets back: the tunnel fails once they back up.
+#[tokio::test]
+async fn ends_the_portal_never_reads_fail_the_tunnel() {
+    let mut harness = Harness::new();
+    let flood = keep(9, None, b"x").repeat(400_000);
+    let Harness { portal, tasks, .. } = &mut harness;
+    let stopped = tokio::time::timeout(Duration::from_secs(20), async {
+        tokio::select! {
+            joined = tasks.join_next() => joined,
+            _ = async {
+                let _ = portal.write_all(&flood).await;
+                std::future::pending::<()>().await
+            } => unreachable!(),
+        }
+    })
+    .await
+    .expect("the reader stops");
+    assert!(stopped.is_some());
+}

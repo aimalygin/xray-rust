@@ -53,3 +53,16 @@ fn one_bad_address_loses_them_all() {
     );
     assert!(parse_addr_ports(&["198.51.100.1:1".into(), "nope".into()]).is_empty());
 }
+
+#[test]
+fn a_long_list_is_cut_to_the_first_candidates() {
+    let locals = addrs(&["198.51.100.1:1000"]);
+    let peers: Vec<SocketAddr> = (0..1000u32)
+        .map(|i| SocketAddr::from(([203, 0, (i >> 8) as u8, i as u8], 4000)))
+        .collect();
+    let punched = punch_candidates(&locals, &peers, RealmFamily::Dual);
+    assert_eq!(punched.len(), MAX_PUNCH_CANDIDATES);
+    let mut sorted = peers.clone();
+    sort_by_string(&mut sorted);
+    assert_eq!(punched, sorted[..MAX_PUNCH_CANDIDATES]);
+}

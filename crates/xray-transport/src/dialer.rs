@@ -141,8 +141,10 @@ impl TransportDialer {
     }
 
     /// The resolver for `addressPortStrategy` lookups: the one set with
-    /// [`Self::with_record_resolver`], else Go's behind the platform's
-    /// protector.
+    /// [`Self::with_record_resolver`], else Go's behind this dialer's
+    /// protector, the outbound's `sockopt` included: a `mark` or an
+    /// `interface` that keeps the outbound out of a tunnel keeps its lookup
+    /// out of it too.
     pub fn record_resolver(&self) -> Arc<dyn RecordResolver> {
         match self
             .replaced
@@ -150,7 +152,7 @@ impl TransportDialer {
             .and_then(|replaced| replaced.record_resolver.as_ref())
         {
             Some(resolver) => Arc::clone(resolver),
-            None => Arc::new(SystemRecordResolver::new(self.platform_protector.clone())),
+            None => Arc::new(SystemRecordResolver::new(self.socket_protector.clone())),
         }
     }
 
@@ -164,8 +166,9 @@ impl TransportDialer {
 
     /// What a `realm` mask's introduction takes from this dialer: the
     /// resolver set with [`Self::with_realm_resolver`], else the platform's,
-    /// and the platform's socket protection, which its connection to the
-    /// rendezvous goes through.
+    /// and this dialer's socket protection, the outbound's `sockopt`
+    /// included, which its connection to the rendezvous goes through as the
+    /// punched socket does.
     pub fn realm_env(&self) -> crate::realm::RealmEnv {
         crate::realm::RealmEnv {
             resolver: self
@@ -174,7 +177,7 @@ impl TransportDialer {
                 .and_then(|replaced| replaced.realm_resolver.clone())
                 .unwrap_or_else(|| Arc::new(crate::SystemDnsResolver)),
             tls: self.tls.clone(),
-            protector: self.platform_protector.clone(),
+            protector: self.socket_protector.clone(),
         }
     }
 
@@ -923,5 +926,32 @@ fn no_resolved_candidates_error(target: &Target) -> TransportError {
             io::ErrorKind::InvalidInput,
             format!("no resolved TCP candidates for {ip}:{}", target.port),
         )),
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    /// The socket of a `realm` mask's rendezvous takes the outbound's
+    /// `sockopt`, as the socket it dials over does: here an interface that
+    /// cannot be bound fails it. The record lookups take the same protector.
+    #[test]
+    fn a_realm_rendezvous_takes_the_outbounds_socket_options() {
+        let plain = TransportDialer::system().unwrap();
+        assert!(plain.realm_env().protector.is_none());
+
+        let options = SocketOptions {
+            interface: "xray-missing0".to_owned(),
+            ..SocketOptions::default()
+        };
+        let dialer = plain.with_socket_options(Arc::new(options));
+        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let protector = dialer.realm_env().protector;
+        let error = crate::protect_std_udp_socket(&socket, protector.as_deref()).unwrap_err();
+        assert!(
+            error.to_string().contains("failed to bind to interface"),
+            "{error}"
+        );
     }
 }

@@ -298,12 +298,13 @@ pub(crate) mod sys {
         }
     }
 
-    /// Whether `fd` is a TCP or UDP socket, and of which family. Anything
-    /// else is left alone.
+    /// Whether `fd` is a TCP socket or a datagram one, and of which family.
+    /// A raw socket, the `xicmp` mask's without `dgram`, takes what a UDP
+    /// socket takes: left alone, it went out unbound and unmarked.
     pub(super) fn socket_kind(fd: RawFd) -> Option<SocketKind> {
         let tcp = match get_int(fd, libc::SOL_SOCKET, libc::SO_TYPE).ok()? {
             libc::SOCK_STREAM => true,
-            libc::SOCK_DGRAM => false,
+            libc::SOCK_DGRAM | libc::SOCK_RAW => false,
             _ => return None,
         };
         // SAFETY: `storage` is a zeroed, writable `sockaddr_storage` and
@@ -423,16 +424,15 @@ pub(crate) mod sys {
         const IP_TRANSPARENT: c_int = 19;
         const TCP_FASTOPEN_CONNECT: c_int = 30;
 
-        /// `sockopt_linux.go`'s `applyOutboundSocketOptions`.
+        /// `sockopt_linux.go`'s `applyOutboundSocketOptions`, with the
+        /// interface bound first. There the mark comes first, and an option
+        /// that fails stops the rest: a mark the process may not set, as on
+        /// Android, left the socket unbound and the dial went on.
         pub(in super::super) fn apply_outbound(
             fd: RawFd,
             kind: SocketKind,
             options: &SocketOptions,
         ) -> Result<(), ApplyError> {
-            if options.mark != 0 {
-                set_int(fd, libc::SOL_SOCKET, SO_MARK, options.mark)
-                    .map_err(|error| option_error("failed to set SO_MARK", error))?;
-            }
             if !options.interface.is_empty() {
                 set_bytes(
                     fd,
@@ -441,6 +441,10 @@ pub(crate) mod sys {
                     options.interface.as_bytes(),
                 )
                 .map_err(|error| bind_error("failed to set Interface", error))?;
+            }
+            if options.mark != 0 {
+                set_int(fd, libc::SOL_SOCKET, SO_MARK, options.mark)
+                    .map_err(|error| option_error("failed to set SO_MARK", error))?;
             }
             if kind.tcp {
                 let mut tfo = options.parsed_tcp_fast_open();
@@ -517,14 +521,40 @@ pub(crate) mod sys {
         const IP_BOUND_IF: c_int = 25;
         const IPV6_BOUND_IF: c_int = 125;
 
-        /// `sockopt_darwin.go`'s `applyOutboundSocketOptions`. The kernel
-        /// accepts `TCP_FASTOPEN` only on a listening socket, so a configured
-        /// `tcpFastOpen` stops the options after it here as it does there.
+        /// `sockopt_darwin.go`'s `applyOutboundSocketOptions`, with the
+        /// interface bound first. The kernel accepts `TCP_FASTOPEN` only on a
+        /// listening socket, so a configured `tcpFastOpen` stops the options
+        /// after it here as it does there; there the binding is one of them,
+        /// and the dial went on over whatever interface the system chose.
         pub(in super::super) fn apply_outbound(
             fd: RawFd,
             kind: SocketKind,
             options: &SocketOptions,
         ) -> Result<(), ApplyError> {
+            if !options.interface.is_empty() {
+                let index = CString::new(options.interface.as_str())
+                    .ok()
+                    // SAFETY: `name` is a valid NUL-terminated string.
+                    .map(|name| unsafe { libc::if_nametoindex(name.as_ptr()) })
+                    .filter(|index| *index != 0)
+                    .ok_or_else(|| {
+                        bind_error(
+                            format_args!("failed to get interface {}", options.interface),
+                            io::Error::new(io::ErrorKind::NotFound, "no such network interface"),
+                        )
+                    })?;
+                let (level, name, what) = if kind.ipv6 {
+                    (
+                        libc::IPPROTO_IPV6,
+                        IPV6_BOUND_IF,
+                        "failed to set IPV6_BOUND_IF",
+                    )
+                } else {
+                    (libc::IPPROTO_IP, IP_BOUND_IF, "failed to set IP_BOUND_IF")
+                };
+                set_int(fd, level, name, index as c_int)
+                    .map_err(|error| bind_error(what, error))?;
+            }
             if kind.tcp {
                 let mut tfo = options.parsed_tcp_fast_open();
                 if tfo > 0 {
@@ -550,30 +580,6 @@ pub(crate) mod sys {
                     set_int(fd, libc::SOL_SOCKET, libc::SO_KEEPALIVE, 0)
                         .map_err(|error| option_error("failed to unset SO_KEEPALIVE", error))?;
                 }
-            }
-            if !options.interface.is_empty() {
-                let index = CString::new(options.interface.as_str())
-                    .ok()
-                    // SAFETY: `name` is a valid NUL-terminated string.
-                    .map(|name| unsafe { libc::if_nametoindex(name.as_ptr()) })
-                    .filter(|index| *index != 0)
-                    .ok_or_else(|| {
-                        bind_error(
-                            format_args!("failed to get interface {}", options.interface),
-                            io::Error::new(io::ErrorKind::NotFound, "no such network interface"),
-                        )
-                    })?;
-                let (level, name, what) = if kind.ipv6 {
-                    (
-                        libc::IPPROTO_IPV6,
-                        IPV6_BOUND_IF,
-                        "failed to set IPV6_BOUND_IF",
-                    )
-                } else {
-                    (libc::IPPROTO_IP, IP_BOUND_IF, "failed to set IP_BOUND_IF")
-                };
-                set_int(fd, level, name, index as c_int)
-                    .map_err(|error| bind_error(what, error))?;
             }
             apply_custom(fd, kind, options)
         }
@@ -884,10 +890,16 @@ mod socket_tests {
 
     /// Apple kernels take `TCP_FASTOPEN` only on a listening socket, so a
     /// configured `tcpFastOpen` stops every option after it on a TCP socket,
-    /// as in Xray-core, while a UDP socket never reads it.
+    /// as in Xray-core, while a UDP socket never reads it. The interface is
+    /// bound before it, so it is bound all the same.
     #[cfg(target_vendor = "apple")]
     #[test]
     fn apple_tcp_fast_open_stops_the_tcp_options_after_it() {
+        let lo0 = {
+            let name = std::ffi::CString::new("lo0").unwrap();
+            // SAFETY: a valid NUL-terminated name.
+            unsafe { libc::if_nametoindex(name.as_ptr()) as c_int }
+        };
         for tcp_fast_open in [256, -1, 3] {
             let options = SocketOptions {
                 tcp_fast_open,
@@ -898,7 +910,7 @@ mod socket_tests {
             let reports = Reports::default();
             let tcp = socket(true, false);
             apply(&options, &tcp, &reports).unwrap();
-            assert_eq!(get(&tcp, libc::IPPROTO_IP, 25), 0, "{tcp_fast_open}");
+            assert_eq!(get(&tcp, libc::IPPROTO_IP, 25), lo0, "{tcp_fast_open}");
             assert_eq!(reports.taken().len(), 1);
             // The dialer still turns keepalive on with the configured idle time.
             assert_eq!(keepalive(&tcp), (true, 30, 45));
@@ -966,7 +978,7 @@ mod socket_tests {
 
     #[cfg(any(target_os = "linux", target_os = "android"))]
     #[test]
-    fn linux_mark_comes_first_and_needs_privilege() {
+    fn linux_mark_comes_before_the_tcp_options_and_needs_privilege() {
         const SO_MARK: c_int = 36;
         const TCP_USER_TIMEOUT: c_int = 18;
         let options = SocketOptions {

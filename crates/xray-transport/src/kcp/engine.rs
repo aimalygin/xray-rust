@@ -304,10 +304,18 @@ struct AckList {
 const FLUSH_CANDIDATES: usize = 128;
 
 impl AckList {
+    /// A number already listed is acknowledged again at once, in its place:
+    /// Xray lists it a second time, so a peer that repeats one segment grows
+    /// the list, and every flush, without bound.
     fn add(&mut self, number: u32, timestamp: u32) {
-        self.timestamps.push(timestamp);
-        self.numbers.push(number);
-        self.next_flush.push(0);
+        if let Some(listed) = self.numbers.iter().position(|&n| n == number) {
+            self.timestamps[listed] = timestamp;
+            self.next_flush[listed] = 0;
+        } else {
+            self.timestamps.push(timestamp);
+            self.numbers.push(number);
+            self.next_flush.push(0);
+        }
         self.dirty = true;
     }
 
