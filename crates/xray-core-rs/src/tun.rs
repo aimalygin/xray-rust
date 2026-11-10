@@ -3192,7 +3192,25 @@ async fn read_tun_tcp_sniff_payload(
                         .done();
                         return Some((initial_upload, sniffed));
                     }
-                    data = from_stack.recv() => data?,
+                    data = from_stack.recv() => match data {
+                        Some(data) => data,
+                        // The client closed before the sniffer had enough:
+                        // what it sent still goes to the destination, which
+                        // then sees the close. With nothing sent there is
+                        // nothing to carry.
+                        None if initial_upload.is_empty() => return None,
+                        None => {
+                            let sniffed = crate::sniffing::sniff_tcp_initial_payload(
+                                config,
+                                target,
+                                &sniff_buffer,
+                                true,
+                                record_attributes,
+                            )
+                            .done();
+                            return Some((initial_upload, sniffed));
+                        }
+                    },
                 };
         let remaining = TUN_TCP_SNIFF_BUFFER_SIZE.saturating_sub(sniff_buffer.len());
         let inspected = data.data.len().min(remaining);
@@ -8705,6 +8723,54 @@ mod tests {
             result.protocol,
             Some(crate::sniffing::SniffedProtocol::Quic)
         );
+    }
+
+    /// A client that sends a few bytes and closes before the sniffer has
+    /// seen enough of them: the bytes are kept for the destination rather
+    /// than dropped with the flow. One that closes having sent nothing has
+    /// nothing to carry.
+    #[tokio::test]
+    async fn a_close_during_the_sniff_wait_keeps_what_the_client_sent() {
+        let config = InboundSniffingConfig {
+            enabled: true,
+            dest_override: vec![xray_config::SniffingDestination::Http],
+            ..Default::default()
+        };
+        let (_shutdown_tx, mut shutdown) = watch::channel(false);
+
+        let (to_remote, mut from_stack) = mpsc::channel(4);
+        to_remote
+            .send(stack_to_remote_data(Bytes::from_static(b"QUIT\r\n")))
+            .await
+            .unwrap();
+        drop(to_remote);
+        let (upload, _) = tokio::time::timeout(
+            Duration::from_secs(5),
+            read_tun_tcp_sniff_payload(
+                &mut from_stack,
+                &mut shutdown,
+                &config,
+                &test_tcp443_target(),
+                false,
+            ),
+        )
+        .await
+        .unwrap()
+        .expect("the bytes sent before the close are kept");
+        let sent: Vec<&[u8]> = upload.iter().map(|chunk| chunk.data.as_ref()).collect();
+        assert_eq!(sent, [b"QUIT\r\n"]);
+
+        let (to_remote, mut from_stack) = mpsc::channel::<StackToRemoteData>(4);
+        drop(to_remote);
+        assert!(read_tun_tcp_sniff_payload(
+            &mut from_stack,
+            &mut shutdown,
+            &config,
+            &test_tcp443_target(),
+            false,
+        )
+        .await
+        .is_none());
     }
 
     #[test]
