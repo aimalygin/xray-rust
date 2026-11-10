@@ -29,8 +29,7 @@ Hysteria accepts one Salamander mask and the v26.10.21 UDP-hop mask:
     {"type": "udphop", "settings": {
       "mode": "intervalLocal,intervalRemote", "remotePorts": "443,8443-8445", "interval": "5-10"
     }}
-  ],
-  "quicParams": {"disableChromeParrot": true}
+  ]
 }
 ```
 
@@ -112,9 +111,9 @@ network rebind closes the stale session. Stop/free aborts the timer. Salamander
 reserves its eight-byte salt in MTU discovery and handles receive GRO segments
 individually. Its bounded receive scratch is 64 KiB per live carrier; send
 scratch is reused. Profiles without either option use the existing UDP path.
-Hysteria accepts `disableChromeParrot: true` to acknowledge its native Quinn
-TLS behavior. Without it, parsing warns that ChromeParrot shaping is absent;
-explicit false/null is rejected. QUIC v2 transport and socket overrides remain
+Hysteria shapes its QUIC handshake like Chrome's, as Xray-core's
+ChromeParrot does, unless `quicParams.disableChromeParrot` is true; see
+[ChromeParrot](#chromeparrot). QUIC v2 transport and socket overrides remain
 unsupported.
 
 ### Hysteria bandwidth and the other QUIC parameters
@@ -123,7 +122,7 @@ Hysteria reads the rest of `finalmask.quicParams` as Xray's Hysteria dialer
 does:
 
 ```json
-"quicParams": {"disableChromeParrot": true, "brutalUp": "100 mbps", "brutalDown": "200 mbps"}
+"quicParams": {"brutalUp": "100 mbps", "brutalDown": "200 mbps"}
 ```
 
 Bandwidths use Xray's binary units: one `mbps` is 2^20 bits per second.
@@ -204,8 +203,9 @@ What differs from Xray, deliberately:
   if asked to. Quinn lowers it after detecting a black hole; the port then
   scales its windows down as it scales them up.
 - The startup sender. quic-go's is its cubic sender in Reno mode with a
-  32-datagram window of 1,280 bytes each; Quinn's NewReno starts at 12,000
-  bytes. It only carries the handshake, plus the authentication request on
+  32-datagram window; Quinn's NewReno starts at the same 32 datagrams of the
+  initial size (1,250 bytes with ChromeParrot), but runs Quinn's Reno rules.
+  It only carries the handshake, plus the authentication request on
   Hysteria.
 - The window rule. quic-go sends while the bytes in flight are below the
   window; Quinn sends a packet while the bytes in flight plus that packet stay
@@ -231,6 +231,106 @@ requires it to match the fixture. The same script runs each profile live
 against Xray-core's servers: Hysteria, also with `brutal` falling back to the
 profile's BBR and with Brutal once the server announces a rate, and XHTTP H3
 through the core with every congestion mode.
+
+### ChromeParrot
+
+Xray-core v26.10.31 dials Hysteria and XHTTP over HTTP/3 with the apernet
+quic-go fork's `ChromeParrot` on, so that the client's handshake looks like
+Google Chrome's, unless `finalmask.quicParams.disableChromeParrot` is true.
+This client does the same:
+
+```json
+"quicParams": {"disableChromeParrot": true}
+```
+
+`disableChromeParrot` is read as Xray reads a Go `bool`: `true` turns
+ChromeParrot off; `false`, `null`, or no `quicParams` or `finalmask` at all
+leave it on; any other JSON type fails the configuration on every transport,
+as it fails Xray's. Hysteria and XHTTP with exact `h3` ALPN dial with it.
+XDRIVE's storages over HTTP/3, which Xray dials with it too, do not yet: they
+keep Quinn's own handshake, and the configuration warns unless
+`disableChromeParrot` is true (see [XDRIVE](#xdrive)). MASQUE never parrots
+Chrome, as Xray's MASQUE dial never does, and other transports do not read
+the field.
+
+With ChromeParrot on, a dial:
+
+- sends uTLS's Chrome QUIC ClientHello (quic-go's
+  `chromeQUICClientHelloSpec`): no GREASE value, TLS 1.3 alone, AES-128-GCM,
+  AES-256-GCM and ChaCha20-Poly1305, groups X25519MLKEM768, X25519, P-256
+  and P-384 with key shares for the first two, Chrome's nine signature
+  algorithms, brotli certificate compression, `psk_dhe_ke`, ALPN and ALPS
+  (the newer codepoint) for `h3`, and a GREASE ECH extension whose payload
+  takes one of BoringSSL's four lengths, with the extensions in a new random
+  order on every connection, drawn as uTLS draws it. Resumption and 0-RTT
+  stay off. `tlsSettings.fingerprint` does not reach QUIC either way;
+- encodes its transport parameters as Chrome does: in a random order, with
+  `version_information` (QUIC v1, then v1 and a GREASE version in random
+  order), `google_connection_options` "ORIG" and a GREASE parameter with an
+  8-byte identifier, without `ack_delay_exponent`, `max_ack_delay`,
+  `disable_active_migration` and `active_connection_id_limit`, whose defaults
+  are what the client then does;
+- pins quic-go's values: a 30-second idle timeout, 6 MiB stream and 15 MiB
+  connection windows, 100 bidirectional and 103 unidirectional streams,
+  1,472-byte UDP payloads and 65,536-byte DATAGRAM frames. These replace
+  `maxIdleTimeout`, `initStreamReceiveWindow`, `initConnectionReceiveWindow`
+  and `maxIncomingStreams`, and a configured window maximum below the pinned
+  start is raised to it. Hysteria advertises 65,536-byte DATAGRAM frames
+  instead of its usual 1,200, as Xray's client then does. A constrained host,
+  which otherwise holds the windows at their start, starts them at 6 and 15 MiB
+  too;
+- packs its Initial packets as quic-go's ChromeParrot does: 1,250-byte
+  datagrams numbered from 1, from zero-length source connection IDs to an
+  8-byte first destination ID, a ClientHello too large for one packet sent
+  with its head and its tail first and its middle next, and each packet's
+  CRYPTO frames cut at random and shuffled among PING frames and runs of
+  padding (Chromium's chaos protection), with quic-go's own generator.
+  Packet numbers take Chrome's lengths from the congestion window, and until
+  the handshake is confirmed every datagram carries one packet: the Initial
+  ACK alone and padded, then a Handshake ACK apart from the Finished.
+
+Two consequences, the same as with Xray's own client:
+
+- Many parallel XHTTP H3 downloads cost memory. The 6 MiB and 15 MiB windows
+  apply on constrained devices too, and a reader that falls behind lets the
+  server fill them: with 32 parallel downloads the client's peak memory grew
+  by about 30–40 MiB in a Linux measurement, while 8 or fewer, and Hysteria,
+  showed no difference. `disableChromeParrot: true` brings back the previous
+  windows (on XHTTP H3, 2 and 3 MiB to start, held there on a constrained
+  host).
+- Hysteria loses large UDP replies from Xray-core v26.5.9 … v26.7.28 servers.
+  Their quic-go fork (`6c6cc9bcb716`) drops every fragment of a UDP reply it
+  has to split once the client advertises 65,536-byte DATAGRAM frames, so a
+  4 KiB reply never arrives, while TCP and small datagrams work. Xray-core's
+  own client meets the same. Update the server to v26.9.9 or newer, or set
+  `disableChromeParrot: true`. Servers v26.1.31 … v26.4.25 were not checked.
+
+`tools/chrome-parrot-oracle` runs Xray-core's own Hysteria dialer under a
+deterministic `crypto/rand` and records its first four Initial datagrams,
+the first flight and its retransmission, with every random read behind them.
+Given the same reads, the client produces the same transport parameters and
+the same encrypted datagrams byte for byte, and the same ClientHello but for
+the key material in its key shares. `scripts/check-chrome-parrot-interop.sh`
+regenerates the oracle's fixture and requires it to match, rechecks the
+`disableChromeParrot` verdicts against `xray run -test`, and runs Hysteria
+(also under Salamander) and XHTTP H3 against Xray-core's servers with
+ChromeParrot on and off, checking the first flight on the wire.
+
+What differs from Xray:
+
+- A prebuilt rustls configuration from an embedding application keeps its own
+  ClientHello, as it does under a fingerprint; the packet shaping still
+  applies.
+- After the handshake, packet number lengths follow the running congestion
+  controller's window, which differs from Xray's where the controller does
+  (`standard` runs Quinn's BBR).
+- quic-go also shuffles the frames of every other packet with the same
+  generator, and starts its loss timer from a 100 ms RTT estimate rather than
+  Quinn's 333 ms, so a lost first flight is retransmitted later here. Neither
+  is ChromeParrot's own.
+- `disableChromeParrot: true` gives Quinn's own handshake, which is not
+  quic-go's either: its connection ID lengths, transport parameters, packet
+  layout and rustls's ClientHello differ from Xray's stock QUIC client.
 
 ## WireGuard destination DNS
 
@@ -622,6 +722,7 @@ exposes an unauthenticated proxy to the network.
 | `dns` | Hosts, string/object servers with managed selection policy, global and per-server `queryStrategy` including `UseSystem`, and `fakeIp` subset |
 | `policy` | Level/system fields are parsed; runtime timeout/buffer behavior is a subset |
 | `log` | Accepted for input compatibility, but runtime file logging is configured through the embedding API |
+| `reverse` | The legacy reverse proxy, refused unless `null` with Xray-core's message: upstream removed it for the [VLESS reverse proxy](#vless-reverse-proxy) |
 | `remarks`, `meta` | Subscription labels, such as those in Remnawave's XRAY_JSON format; `remarks` must be a string and `meta` an object (or null), and both are ignored, as in Xray-core |
 
 Other top-level keys are rejected.
@@ -821,8 +922,9 @@ it), optional `level` and these flow values:
 - `xtls-rprx-vision-udp443`.
 
 `testseed` sets Vision's padding parameters, the first four numbers when there
-are at least four, Xray-core's `[900, 500, 900, 256]` otherwise. `seed` and
-`email` are ignored. VLESS `reverse` is not supported and fails parsing.
+are at least four, Xray-core's `[900, 500, 900, 256]` otherwise. `seed` is
+ignored, and so is `email` except for a reverse proxy. VLESS `reverse` makes
+the outbound the bridge of a [VLESS reverse proxy](#vless-reverse-proxy).
 
 `testpre` keeps carrier connections opened ahead of the requests that take
 them, as Xray-core's VLESS outbound does, at most 64 here:
@@ -1046,6 +1148,8 @@ that no rule matches is allowed.
   drops them.
 - Xray-core's default rules, which block private addresses for connections
   from its server inbounds, do not arise: xray-rust has only client inbounds.
+  Its default for the connections a [VLESS reverse proxy](#vless-reverse-proxy)'s
+  portal opens does: after the rules, every address is blocked.
 
 Each item of `noises` is a datagram sent before a UDP flow's first payload,
 after any PROXY protocol header, as Xray-core's freedom sends it. Xray-core
@@ -1196,6 +1300,127 @@ Differences from Xray-core:
   and, on a loop, recurses until it runs out of stack and exits.
 - The loopback's own `sniffing` is read as an inbound's, but enabling it is
   refused for now; Xray-core sniffs the connection again with it.
+
+### VLESS reverse proxy
+
+A VLESS outbound in the simplified form takes `reverse`, which makes it the
+bridge of Xray-core v26.10.31's VLESS reverse proxy. The bridge keeps tunnels
+open to its server; the server, the portal, opens TCP and UDP connections back
+through them to the services the bridge's routing lets it reach:
+
+```json
+{
+  "outbounds": [
+    {"tag": "portal", "protocol": "vless",
+     "settings": {"address": "portal.example.com", "port": 443,
+       "id": "<uuid>", "encryption": "none", "flow": "xtls-rprx-vision",
+       "email": "home", "reverse": {"tag": "from-portal"}},
+     "streamSettings": {"security": "reality", "realitySettings": {}}},
+    {"tag": "home", "protocol": "freedom",
+     "settings": {"finalRules": [{"action": "allow", "network": "tcp",
+       "ip": ["192.168.1.10"], "port": "22,443"}]}}
+  ],
+  "routing": {"rules": [{"inboundTag": ["from-portal"], "outboundTag": "home"}]}
+}
+```
+
+- `tag` must not be empty. `sniffing` reads as an inbound's `sniffing`. The
+  `vnext` form refuses `reverse`, and unknown fields in it fail parsing.
+- Each connection is routed as if an inbound tagged `tag` had accepted it:
+  `source` and `sourcePort` match the portal's client, `localIP` and
+  `localPort` the address that client reached on the portal, `user` the
+  outbound's `email`, and `protocol` and `attrs` what `reverse.sniffing`
+  finds. Access logs name the portal's client.
+- A freedom outbound refuses these connections unless its `finalRules` allow
+  them, as Xray-core's freedom gives connections from a reverse proxy a final
+  rule that blocks every address: a refused TCP connection is held and
+  discarded as a blocked final rule holds it, a refused UDP flow drops its
+  datagrams. Write an `allow` rule for each service the portal may reach.
+- The freedom a `dialerProxy` chain ends on refuses them too, unless its
+  `finalRules` allow the hop before it: routed to a `vless` outbound with
+  `dialerProxy: "direct"`, a connection opens only when `direct` allows the
+  VLESS server, as Xray-core hands each link of a chain the connection's
+  context. A freedom that itself dials through `dialerProxy` applies no rule.
+  Under a link whose connections other flows share, a `mux` or `testpre` one
+  or a gRPC carrier, the chain is left as it is: Xray-core opens those
+  connections without the connection's context, and a refused shared
+  connection would stall every flow on it. Under an XHTTP link the connection
+  is refused before anything is dialed unless the freedom the chain ends on
+  allows the link's server, and so through a dedicated freedom fragment
+  outbound that `dialerProxy` names, which this implementation folds into the
+  outbound, unless that freedom's `finalRules` allow the server, for UDP flows
+  as well; Xray-core refuses these only on the dials that carry them
+  ([difference](xray-core-differences.md#vless-reverse-proxy)). UDP does not
+  go through other `dialerProxy` chains here at all.
+- Other outbounds take what routing sends them: another proxy, `blackhole`,
+  `dns`. Without a matching rule the first outbound does; when that is the
+  bridge itself, its server refuses the request, as a user with `reverse` may
+  not proxy forward.
+- A tunnel is a VLESS request with the reverse command, which names no
+  address, over the outbound's whole carrier: every transport and security,
+  VLESS `encryption`, Vision, the TCP masks, `sockopt` and `dialerProxy`. Its
+  header waits 500 ms for a payload, as any VLESS request's does, and then
+  goes alone, Vision padding an empty frame; the carrier is dialed up to five
+  times. Inside it the portal is a Mux.Cool client and the bridge its server.
+  `testpre` is not used and the outbound's `mux` applies only to connections
+  routed to it, as in Xray-core. Through `dialerProxy`, the freedom the chain
+  ends on refuses the tunnel unless its `finalRules` allow the portal's
+  address, as Xray-core's bridge then never connects. Over an XHTTP carrier,
+  and through a folded freedom fragment outbound, the tunnel is refused before
+  it dials unless that freedom allows the portal; over gRPC the chain is left
+  as it is.
+- Two seconds after the start, and every two seconds after that, the bridge
+  opens a tunnel when none is active or the active ones hold more than 16
+  sessions each. A tunnel stops being active when it closes or when the
+  portal's control session asks it to drain, which Xray-core's portal does
+  once more than 256 sessions, its control session included, were opened on it. A draining tunnel finishes its sessions
+  and, like any tunnel, closes once it held none for a whole minute.
+- A core with a bridge starts without an inbound.
+- The legacy `reverse` at the root of the configuration, with `bridges` and
+  `portals`, fails parsing with Xray-core's message: upstream removed it in
+  v26.4.25 for this proxy. The portal's side, a VLESS inbound whose user has
+  `reverse`, is not supported, as no VLESS inbound is.
+
+Security: the portal chooses the destinations; the bridge's routing and
+freedom's final rules decide which it opens, and nothing else does. A freedom
+`allow` rule without conditions opens everything the bridge reaches, its own
+loopback and local network included, to every client of the portal. Route the
+reverse tag explicitly and allow only the services meant to be reached.
+
+Mobile platforms: the tunnel is a long-lived outbound connection.
+
+- On iOS it lives in the Network Extension, which runs in the background while
+  the VPN is connected. A host running the core in its app process loses the
+  tunnel when iOS suspends the app, and the monitor opens a new one once it
+  runs again. On Android the VPN service keeps it; Doze may hold the network
+  back, and the tunnel is replaced once the network returns.
+- A network change usually leaves the tunnel's socket dead without an error,
+  and the bridge writes only in answer to the portal. The loss shows when the
+  carrier reports it, or when nothing crossed the tunnel for the `connIdle` of
+  the outbound user's policy level: 300 seconds by default, while the portal
+  sends a control message every 10 seconds. A `connIdle` of 30 seconds for
+  that level brings the tunnel back sooner. The Hysteria and WireGuard rebind
+  calls do not touch it.
+- While the portal is unreachable the bridge dials up to five times every two
+  seconds or so, as Xray-core does, with no longer backoff.
+
+Differences from Xray-core:
+
+- A tunnel holds at most 512 sessions at once and a bridge at most 16
+  tunnels, draining ones included; a session past the bound is refused with an
+  End that carries the error flag. Xray-core sets no bound.
+- Each destination of a UDP session is a flow of its own, routed and relayed
+  as a SOCKS association's flows are, and the session ends once its flows went
+  idle, after 60 seconds. Xray-core routes the session once, by its target,
+  and sends every datagram through that route to the address it names.
+- With `dns.fakeIp` on, a fake IP in a session's target turns back into its
+  domain, as for every inbound here; Xray-core does so only when sniffing names
+  `fakedns`.
+- A bridge whose outbound cannot be built, such as one with Vision but neither
+  TLS nor REALITY, fails the core's start; Xray-core starts and fails every
+  dial of the tunnel.
+- A frame of more than 8 KiB, metadata that Xray-core's portal never writes, or
+  a session ID used twice on a tunnel closes the tunnel.
 
 ### SOCKS outbound
 
@@ -1764,10 +1989,10 @@ The H3 path uses a protected UDP socket and the same resolved-candidate Happy
 Eyeballs policy as the other outbounds. Its stock TLS 1.3 config ignores
 `tlsSettings.fingerprint` and the configured ALPN payload after the exact
 `["h3"]` branch is selected, then advertises exactly `h3`; that is the same
-separation between QUIC TLS and the TCP uTLS callback. Xray v26.10.21 now
-adds ChromeParrot shaping; Rust does not reproduce that fingerprint. Set
-`quicParams.disableChromeParrot: true` for the explicitly supported contract.
-Omission warns, while explicit false/null fails. `disableGSO` turns off
+separation between QUIC TLS and the TCP uTLS callback. Unless
+`quicParams.disableChromeParrot` is true, the handshake is shaped like
+Chrome's instead, as Xray-core's ChromeParrot shapes it; see
+[ChromeParrot](#chromeparrot). `disableGSO` turns off
 segmentation offload, `brutalDisableLossCompensation` applies to
 `force-brutal`, and `disableStatelessReset`, which only Xray-core's servers
 read, is accepted without effect.
@@ -2610,9 +2835,9 @@ storage's server name and certificate rules, and a keepalive only when
 `quicParams.keepAlivePeriod` or a positive `xmux.hKeepAlivePeriod` asks
 for one, as Xray-core configures quic-go for it. Xray-core shapes that
 connection as Chrome unless `disableChromeParrot` is set; this client's
-QUIC is Quinn's own, as on the other QUIC carriers, which the configuration
-warns about. A storage over HTTP/3 cannot go through another outbound
-(`dialerProxy`).
+QUIC is Quinn's own for now, unlike its Hysteria and XHTTP H3 dials, and the
+configuration warns about it unless `disableChromeParrot` is true. A storage
+over HTTP/3 cannot go through another outbound (`dialerProxy`).
 
 `streamSettings.address` and `port`, which Xray-core reads for every stream
 and only XDRIVE uses, name where every connection to an HTTP storage goes:

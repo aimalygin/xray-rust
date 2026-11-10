@@ -110,7 +110,9 @@ fn hysteria_fm_carries_the_finalmask_and_must_agree_with_obfs() {
         )["outbounds"][0]["streamSettings"]["finalmask"]
             .clone()
     };
-    let expected = json!({"quicParams":{"disableChromeParrot":true},"udp":[salamander, noise]});
+    // No quicParams of its own: the profile dials with ChromeParrot, as an
+    // Xray-core client does.
+    let expected = json!({"udp":[salamander, noise]});
     assert_eq!(finalmask(&format!("fm={}", fm(&mask))), expected);
     assert_eq!(
         finalmask(&format!(
@@ -123,14 +125,14 @@ fn hysteria_fm_carries_the_finalmask_and_must_agree_with_obfs() {
     let quic = json!({"quicParams":{"brutalUp":"50 mbps"},"udp":[salamander]});
     assert_eq!(
         finalmask(&format!("mport=443%2C8443&fm={}", fm(&quic))),
-        json!({"quicParams":{"brutalUp":"50 mbps","disableChromeParrot":true},"udp":[
+        json!({"quicParams":{"brutalUp":"50 mbps"},"udp":[
             salamander,
             {"type":"udphop","settings":{"mode":"intervalLocal,intervalRemote","remotePorts":"443,8443"}}]})
     );
-    assert_eq!(
-        finalmask("fm="),
-        json!({"quicParams":{"disableChromeParrot":true},"udp":[]})
-    );
+    assert_eq!(finalmask("fm="), json!({"udp":[]}));
+    // A link that turns ChromeParrot off keeps it off.
+    let off = json!({"quicParams":{"disableChromeParrot":true},"udp":[]});
+    assert_eq!(finalmask(&format!("fm={}", fm(&off))), off);
     let gecko = json!({"udp":[{"type":"salamander","settings":{"password":"test+pass","packetSize":"100-900"}}]});
     assert_eq!(
         finalmask(&format!(
@@ -175,7 +177,7 @@ fn hysteria_fm_carries_the_finalmask_and_must_agree_with_obfs() {
         json!({"udp":{}}),
         json!({"udp":[{"type":"salamander","settings":{"password":"abc"}}]}),
         json!({"udp":[{"type":"wireguard","settings":{}}]}),
-        json!({"quicParams":{"disableChromeParrot":false}}),
+        json!({"quicParams":{"disableChromeParrot":"false"}}),
         json!({"tcp":[{"type":"fragment","settings":{"packets":"tlshello","length":"1-2"}}]}),
         json!({"udp":[{"type":"udphop","settings":{"remotePorts":"443-445"}}]}),
     ] {

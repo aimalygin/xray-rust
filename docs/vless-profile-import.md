@@ -50,9 +50,9 @@ The imported profile is checked by the normal config parser, so its policies
 apply: cleartext VLESS (no TLS, REALITY or VLESS encryption) imports only for a
 private destination, and REALITY values such as `spx` follow Xray-core. The
 import keeps a profile on which the parser only warns about a REALITY
-fingerprint or HTTPUpgrade `?ed=` early data; XHTTP with `alpn=h3` imports only
-when `fm` sets `quicParams.disableChromeParrot` to `true`, acknowledging that
-QUIC runs without Chrome fingerprint shaping.
+fingerprint or HTTPUpgrade `?ed=` early data. XHTTP with `alpn=h3` dials with
+ChromeParrot, as an Xray-core client does, unless `fm` sets
+`quicParams.disableChromeParrot` to `true`.
 
 ## Differences from the SDK importers
 

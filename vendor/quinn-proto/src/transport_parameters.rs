@@ -110,6 +110,11 @@ macro_rules! make_struct {
             /// This field is initialized only for outgoing `TransportParameters` instances and
             /// is set to `None` for `TransportParameters` received from a peer.
             pub(crate) write_order: Option<[u8; TransportParameterId::SUPPORTED.len()]>,
+
+            /// Serialize as Xray-core's ChromeParrot client does; see
+            /// `crate::chrome_parrot::write_transport_parameters`. Only ever set
+            /// on a client's own parameters.
+            pub(crate) chrome_parrot: bool,
         }
 
         // We deliberately don't implement the `Default` trait, since that would be public, and
@@ -133,6 +138,7 @@ macro_rules! make_struct {
                     preferred_address: None,
                     grease_transport_parameter: None,
                     write_order: None,
+                    chrome_parrot: false,
                 }
             }
         }
@@ -150,6 +156,9 @@ impl TransportParameters {
         server_config: Option<&ServerConfig>,
         rng: &mut impl Rng,
     ) -> Self {
+        if config.chrome_parrot && server_config.is_none() {
+            return Self::chrome_parrot(config, endpoint_config, initial_src_cid);
+        }
         Self {
             initial_src_cid: Some(initial_src_cid),
             initial_max_streams_bidi: config.max_concurrent_bidi_streams,
@@ -186,6 +195,36 @@ impl TransportParameters {
                 order.shuffle(rng);
                 order
             }),
+            ..Self::default()
+        }
+    }
+
+    /// A ChromeParrot client's parameters: those Chrome sends, from `config`.
+    ///
+    /// What Chrome leaves out keeps its default, which is also how this end
+    /// behaves: an ACK delay exponent of 3, a 25 ms maximum ACK delay, active
+    /// migration allowed and two active connection IDs. It advertises neither
+    /// ACK frequency nor the greased QUIC bit, and DATAGRAM frames of 65536
+    /// bytes whenever datagrams can be received.
+    pub(crate) fn chrome_parrot(
+        config: &TransportConfig,
+        endpoint_config: &EndpointConfig,
+        initial_src_cid: ConnectionId,
+    ) -> Self {
+        Self {
+            initial_src_cid: Some(initial_src_cid),
+            initial_max_streams_bidi: config.max_concurrent_bidi_streams,
+            initial_max_streams_uni: config.max_concurrent_uni_streams,
+            initial_max_data: config.receive_window,
+            initial_max_stream_data_bidi_local: config.stream_receive_window,
+            initial_max_stream_data_bidi_remote: config.stream_receive_window,
+            initial_max_stream_data_uni: config.stream_receive_window,
+            max_udp_payload_size: endpoint_config.max_udp_payload_size,
+            max_idle_timeout: config.max_idle_timeout.unwrap_or(VarInt(0)),
+            max_datagram_frame_size: config
+                .datagram_receive_buffer_size
+                .map(|_| VarInt::from_u32(65536)),
+            chrome_parrot: true,
             ..Self::default()
         }
     }
@@ -313,6 +352,14 @@ impl From<UnexpectedEnd> for Error {
 impl TransportParameters {
     /// Encode `TransportParameters` into buffer
     pub fn write<W: BufMut>(&self, w: &mut W) {
+        if self.chrome_parrot {
+            crate::chrome_parrot::write_transport_parameters(
+                self,
+                w,
+                &mut crate::chrome_parrot::fill_random,
+            );
+            return;
+        }
         for idx in self
             .write_order
             .as_ref()

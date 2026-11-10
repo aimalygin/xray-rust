@@ -78,6 +78,7 @@ impl PacketBuilder {
             }
         }
 
+        let chrome_cwnd_packets = conn.chrome_cwnd_packets();
         let space = &mut conn.spaces[space_id];
         let exact_number = match space_id {
             SpaceId::Data => conn.packet_number_filter.allocate(&mut conn.rng, space),
@@ -86,7 +87,17 @@ impl PacketBuilder {
 
         let span = trace_span!("send", space = ?space_id, pn = exact_number).entered();
 
-        let number = PacketNumber::new(exact_number, space.largest_acked_packet.unwrap_or(0));
+        let number = match chrome_cwnd_packets {
+            Some(cwnd_packets) => PacketNumber::with_len(
+                exact_number,
+                crate::chrome_parrot::packet_number_len(
+                    exact_number,
+                    space.largest_acked_packet,
+                    cwnd_packets,
+                ),
+            ),
+            None => PacketNumber::new(exact_number, space.largest_acked_packet.unwrap_or(0)),
+        };
         let header = match space_id {
             SpaceId::Data if space.crypto.is_some() => Header::Short {
                 dst_cid,
@@ -191,6 +202,9 @@ impl PacketBuilder {
         let ack_eliciting = self.ack_eliciting;
         let exact_number = self.exact_number;
         let space_id = self.space;
+        if let Some(sent) = sent.as_ref() {
+            self.chaos_protect(conn, sent, buffer);
+        }
         let (encrypted_size, padded) = self.finish(conn, now, buffer);
         let sent = match sent {
             Some(sent) => sent,
@@ -249,6 +263,55 @@ impl PacketBuilder {
             conn.set_loss_detection_timer(now);
             conn.path.pacing.on_transmit(size);
         }
+    }
+
+    /// Rewrites a ChromeParrot client's Initial packet that carries CRYPTO data
+    /// and padding with quic-go's chaos protection: same size, the ACK first,
+    /// the rest cut up, mixed with PINGs and padding runs, and shuffled.
+    ///
+    /// `sent` keeps the frames as they were written, so a retransmission
+    /// carries them uncut and is shuffled afresh, as in quic-go.
+    fn chaos_protect(&self, conn: &mut Connection, sent: &SentFrames, buffer: &mut Vec<u8>) {
+        if self.space != SpaceId::Initial {
+            return;
+        }
+        let Some(chrome) = conn.chrome.as_mut() else {
+            return;
+        };
+        let padding = self.min_size.saturating_sub(buffer.len());
+        let crypto: Vec<_> = sent
+            .retransmits
+            .get()
+            .map(|retransmits| {
+                retransmits
+                    .crypto
+                    .iter()
+                    .map(|frame| (frame.offset, frame.data.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if padding == 0 || crypto.is_empty() {
+            return;
+        }
+        let payload_start = self.partial_encode.start + self.partial_encode.header_len;
+        let ack = sent.ack.clone().map(|range| buffer[range].to_vec());
+        // A PING is the frame type alone.
+        let others = match sent.ping {
+            true => vec![vec![0x01]],
+            false => Vec::new(),
+        };
+        let mut payload = Vec::with_capacity(self.min_size - payload_start);
+        crate::chrome_parrot::chaos_payload(
+            &mut payload,
+            ack.as_deref(),
+            crypto,
+            others,
+            padding as u64,
+            &mut chrome.rng,
+        );
+        buffer.truncate(payload_start);
+        buffer.extend_from_slice(&payload);
+        debug_assert_eq!(buffer.len(), self.min_size);
     }
 
     /// Encrypt packet, returning the length of the packet and whether padding was added

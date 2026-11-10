@@ -1,0 +1,2337 @@
+{
+ "comment": "VLESS reverse proxy configurations with Xray-core v26.11.9's `xray run -test` verdicts. `xray` is \"ok\" or a substring of its error; `ours` overrides the verdict xray-rust gives, for the reason in `why`; `core` is the error a configuration xray-rust takes still meets when the core starts, for the reason in `why`. scripts/check-reverse-interop.sh rechecks every Xray verdict.",
+ "cases": [
+  {
+   "name": "bridge",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "bridge without routing",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "bridge with email and level",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       },
+       "email": "bridge@example.com",
+       "level": 1
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "sniffing enabled",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in",
+        "sniffing": {
+         "enabled": true,
+         "destOverride": [
+          "http",
+          "tls",
+          "quic"
+         ]
+        }
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "sniffing routeOnly",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in",
+        "sniffing": {
+         "enabled": true,
+         "destOverride": [
+          "tls"
+         ],
+         "routeOnly": true
+        }
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "sniffing metadataOnly",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in",
+        "sniffing": {
+         "enabled": true,
+         "metadataOnly": true
+        }
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "sniffing excluded",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in",
+        "sniffing": {
+         "enabled": true,
+         "destOverride": [
+          "http"
+         ],
+         "domainsExcluded": [
+          "domain:example.com"
+         ],
+         "ipsExcluded": [
+          "10.0.0.0/8"
+         ]
+        }
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "sniffing disabled",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in",
+        "sniffing": {
+         "enabled": false
+        }
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "sniffing null",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in",
+        "sniffing": null
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "sniffing unknown destOverride",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in",
+        "sniffing": {
+         "enabled": true,
+         "destOverride": [
+          "bogus"
+         ]
+        }
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: unknown protocol: bogus"
+  },
+  {
+   "name": "sniffing off with unknown destOverride",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in",
+        "sniffing": {
+         "enabled": false,
+         "destOverride": [
+          "bogus"
+         ]
+        }
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: unknown protocol: bogus"
+  },
+  {
+   "name": "sniffing bad domainsExcluded",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in",
+        "sniffing": {
+         "enabled": true,
+         "domainsExcluded": [
+          "regexp:("
+         ]
+        }
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "error parsing regexp: missing closing ): `(`"
+  },
+  {
+   "name": "sniffing bad ipsExcluded",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in",
+        "sniffing": {
+         "enabled": true,
+         "ipsExcluded": [
+          "not-an-ip"
+         ]
+        }
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "sniffing as string",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in",
+        "sniffing": "on"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field VLessOutboundConfig.reverse.sniffing of type conf.SniffingConfig"
+  },
+  {
+   "name": "reverse null",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": null
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "empty reverse",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {}
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: VLESS reverse: \"tag\" can't be empty"
+  },
+  {
+   "name": "empty tag",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": ""
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: VLESS reverse: \"tag\" can't be empty"
+  },
+  {
+   "name": "null tag",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": null
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: VLESS reverse: \"tag\" can't be empty"
+  },
+  {
+   "name": "numeric tag",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": 7
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "json: cannot unmarshal number into Go struct field VLessOutboundConfig.reverse.tag of type string"
+  },
+  {
+   "name": "reverse as string",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": "r-in"
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field VLessOutboundConfig.reverse of type conf.VLessReverseConfig"
+  },
+  {
+   "name": "reverse as array",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": [
+        {
+         "tag": "r-in"
+        }
+       ]
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "json: cannot unmarshal array into Go struct field VLessOutboundConfig.reverse of type conf.VLessReverseConfig"
+  },
+  {
+   "name": "unknown reverse field",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in",
+        "domain": "reverse.example"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok",
+   "ours": "error",
+   "why": "unknown fields are refused everywhere, where Xray-core's decoder ignores them"
+  },
+  {
+   "name": "vision flow",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       },
+       "flow": "xtls-rprx-vision"
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok",
+   "core": "outbound flow is not supported",
+   "why": "a bridge's outbound is built when the core starts, and Vision needs TLS or REALITY; Xray-core starts and fails every dial of the tunnel instead"
+  },
+  {
+   "name": "vision udp443 flow",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       },
+       "flow": "xtls-rprx-vision-udp443"
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok",
+   "core": "outbound flow is not supported",
+   "why": "a bridge's outbound is built when the core starts, and Vision needs TLS or REALITY; Xray-core starts and fails every dial of the tunnel instead"
+  },
+  {
+   "name": "testpre",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       },
+       "testpre": 2
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "testseed",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       },
+       "testseed": [
+        100,
+        200,
+        300,
+        400
+       ]
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "mux on the same outbound",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      },
+      "mux": {
+       "enabled": true,
+       "concurrency": 8
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "websocket and tls",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      },
+      "streamSettings": {
+       "network": "ws",
+       "security": "tls",
+       "tlsSettings": {
+        "serverName": "portal.example"
+       },
+       "wsSettings": {
+        "path": "/r"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "grpc and tls",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      },
+      "streamSettings": {
+       "network": "grpc",
+       "security": "tls",
+       "tlsSettings": {
+        "serverName": "portal.example"
+       },
+       "grpcSettings": {
+        "serviceName": "r"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "xhttp and tls",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      },
+      "streamSettings": {
+       "network": "xhttp",
+       "security": "tls",
+       "tlsSettings": {
+        "serverName": "portal.example"
+       },
+       "xhttpSettings": {
+        "path": "/r"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "reality and vision",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "192.0.2.10",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       },
+       "flow": "xtls-rprx-vision"
+      },
+      "streamSettings": {
+       "network": "raw",
+       "security": "reality",
+       "realitySettings": {
+        "serverName": "www.example.com",
+        "fingerprint": "chrome",
+        "publicKey": "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM",
+        "shortId": "0123456789abcdef"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "public address without security",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "192.0.2.10",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: vless without TLS or other encryption is prohibited unless the server address is a private IP or domain"
+  },
+  {
+   "name": "private address without security",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "10.0.0.2",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "tunnel through dialerProxy",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      },
+      "streamSettings": {
+       "sockopt": {
+        "dialerProxy": "direct"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "tag shared with an inbound",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "socks-in"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "inbounds": [
+     {
+      "tag": "socks-in",
+      "protocol": "socks",
+      "listen": "127.0.0.1",
+      "port": 1080
+     }
+    ]
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "two bridges",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      }
+     },
+     {
+      "tag": "portal2",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in2"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "vnext user reverse",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "vnext": [
+        {
+         "address": "portal.example",
+         "port": 443,
+         "users": [
+          {
+           "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+           "encryption": "none",
+           "reverse": {
+            "tag": "r-in"
+           }
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "infra/conf: VLESS users: please use simplified outbound's config style to use \"reverse\""
+  },
+  {
+   "name": "vnext user null reverse",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "vnext": [
+        {
+         "address": "portal.example",
+         "port": 443,
+         "users": [
+          {
+           "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+           "encryption": "none",
+           "reverse": null
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "vnext form leaves the flat reverse unread",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "vnext": [
+        {
+         "address": "portal.example",
+         "port": 443,
+         "users": [
+          {
+           "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+           "encryption": "none"
+          }
+         ]
+        }
+       ],
+       "reverse": {
+        "tag": ""
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "vnext form still decodes the flat reverse",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "vnext": [
+        {
+         "address": "portal.example",
+         "port": 443,
+         "users": [
+          {
+           "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+           "encryption": "none"
+          }
+         ]
+        }
+       ],
+       "reverse": "r"
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field VLessOutboundConfig.reverse of type conf.VLessReverseConfig"
+  },
+  {
+   "name": "bad id",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "not-a-uuid-at-all-but-much-longer-than-thirty-bytes",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    }
+   },
+   "xray": "common/uuid: invalid UUID: not-a-uuid-at-all-but-much-longer-than-thirty-bytes"
+  },
+  {
+   "name": "legacy reverse with bridges",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    },
+    "reverse": {
+     "bridges": [
+      {
+       "tag": "bridge",
+       "domain": "reverse.example"
+      }
+     ]
+    }
+   },
+   "xray": "common/errors: The feature \"legacy reverse\" has been removed and migrated to \"VLESS Reverse Proxy\". Please update your config(s) according to release note and documentation."
+  },
+  {
+   "name": "legacy reverse with portals",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    },
+    "reverse": {
+     "portals": [
+      {
+       "tag": "portal-in",
+       "domain": "reverse.example"
+      }
+     ]
+    }
+   },
+   "xray": "common/errors: The feature \"legacy reverse\" has been removed and migrated to \"VLESS Reverse Proxy\". Please update your config(s) according to release note and documentation."
+  },
+  {
+   "name": "empty legacy reverse",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    },
+    "reverse": {}
+   },
+   "xray": "common/errors: The feature \"legacy reverse\" has been removed and migrated to \"VLESS Reverse Proxy\". Please update your config(s) according to release note and documentation."
+  },
+  {
+   "name": "null legacy reverse",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    },
+    "reverse": null
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "legacy reverse as string",
+   "config": {
+    "outbounds": [
+     {
+      "tag": "portal",
+      "protocol": "vless",
+      "settings": {
+       "address": "portal.example",
+       "port": 443,
+       "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+       "encryption": "none",
+       "reverse": {
+        "tag": "r-in"
+       }
+      }
+     },
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ],
+    "routing": {
+     "rules": [
+      {
+       "inboundTag": [
+        "r-in"
+       ],
+       "outboundTag": "direct"
+      }
+     ]
+    },
+    "reverse": "bridge"
+   },
+   "xray": "json: cannot unmarshal string into Go struct field Config.reverse of type conf.ReverseConfig"
+  },
+  {
+   "name": "vless inbound user with reverse",
+   "config": {
+    "inbounds": [
+     {
+      "tag": "vless-in",
+      "protocol": "vless",
+      "listen": "127.0.0.1",
+      "port": 4433,
+      "settings": {
+       "clients": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "reverse": {
+          "tag": "r-out"
+         }
+        }
+       ],
+       "decryption": "none"
+      }
+     }
+    ],
+    "outbounds": [
+     {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+       "finalRules": [
+        {
+         "action": "allow",
+         "ip": [
+          "127.0.0.1"
+         ],
+         "port": "8080"
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "xray": "ok",
+   "ours": "error",
+   "why": "the server side of the reverse proxy, VLESS inbounds among it, is not supported"
+  }
+ ]
+}

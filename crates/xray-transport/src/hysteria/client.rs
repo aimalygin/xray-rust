@@ -402,7 +402,7 @@ impl HysteriaClient {
         auth: HeaderValue,
     ) -> Result<Self, HysteriaError> {
         let tls_config = tls
-            .quic_client_config_for(&config.tls, b"h3")
+            .h3_client_config_for(&config.tls, b"h3", config.quic.chrome_parrot)
             .map_err(|_| HysteriaError::TlsConfiguration)?;
         let mut session = super::carrier::CarrierSession::new(&config.carrier)
             .map_err(|_| HysteriaError::Configuration)?;

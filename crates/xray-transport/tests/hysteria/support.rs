@@ -34,6 +34,8 @@ pub struct Identity {
     pub server: quinn::ServerConfig,
     pub cert_pem: String,
     pub key_pem: String,
+    /// The certificate's SHA-256, for `pinnedPeerCertSha256`
+    pub certificate_sha256: [u8; 32],
 }
 
 pub fn identity() -> Identity {
@@ -67,6 +69,10 @@ pub fn identity() -> Identity {
         server,
         cert_pem: pem("CERTIFICATE", cert.cert.der()),
         key_pem: pem("PRIVATE KEY", &cert.signing_key.serialize_der()),
+        certificate_sha256: sha2::Digest::finalize(
+            <sha2::Sha256 as sha2::Digest>::new_with_prefix(cert.cert.der()),
+        )
+        .into(),
     }
 }
 
@@ -86,6 +92,9 @@ pub struct ReferenceServer {
     pub directory: PathBuf,
     pub address: SocketAddr,
     pub connector: TlsConnector,
+    /// The server certificate's SHA-256: a client that pins it can verify
+    /// with a connector of its own, whose ClientHello is shaped
+    pub certificate_sha256: [u8; 32],
     native: bool,
 }
 
@@ -161,6 +170,7 @@ impl ReferenceServer {
             std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
         }
         let identity = identity();
+        let certificate_sha256 = identity.certificate_sha256;
         std::fs::write(directory.join("cert.pem"), identity.cert_pem).unwrap();
         std::fs::write(directory.join("key.pem"), identity.key_pem).unwrap();
         let reservation = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
@@ -249,6 +259,7 @@ impl ReferenceServer {
             directory,
             address,
             connector: identity.connector,
+            certificate_sha256,
             native,
         };
         let deadline = tokio::time::Instant::now() + DEADLINE;

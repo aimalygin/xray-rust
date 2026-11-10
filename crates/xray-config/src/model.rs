@@ -1777,6 +1777,24 @@ pub struct VlessOutboundSettings {
     pub server: TargetAddr,
     pub port: u16,
     pub users: Vec<VlessUser>,
+    /// `reverse`, which only the simplified form takes: the outbound is then
+    /// the bridge of Xray-core's VLESS reverse proxy.
+    pub reverse: Option<VlessReverseSettings>,
+}
+
+/// The bridge side of Xray-core v26.10.31's VLESS reverse proxy. The
+/// outbound keeps tunnels open to its server, and the server opens
+/// connections back through them, each routed as if an inbound tagged `tag`
+/// had accepted it. Those connections reach only what routing sends them to,
+/// and a freedom outbound refuses them unless its `finalRules` allow.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VlessReverseSettings {
+    /// The inbound tag routing sees on the connections the server opens.
+    pub tag: String,
+    /// The outbound's `email`: the user routing sees on them.
+    pub email: String,
+    /// `sniffing`, as an inbound takes it: `None` unless enabled.
+    pub sniffing: Option<InboundSniffingConfig>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -2215,6 +2233,11 @@ pub struct TcpFragmentSettings {
     pub lengths: Vec<FragmentRange>,
     pub delays_ms: Vec<FragmentRange>,
     pub max_split: FragmentRange,
+    /// The `finalRules` of the dedicated freedom fragment outbound a
+    /// `dialerProxy` named, when the parser folded that freedom into this
+    /// outbound; `None` for any other fragment mask. A connection from a VLESS
+    /// reverse proxy still meets them, as it meets that freedom in Xray-core.
+    pub folded_final_rules: Option<Vec<FreedomFinalRule>>,
 }
 
 /// The writes a fragment mask cuts, as Xray's `packets` selects them.
@@ -2255,6 +2278,10 @@ pub struct QuicParamsSettings {
     pub keep_alive_period_secs: i64,
     pub disable_path_mtu_discovery: bool,
     pub max_incoming_streams: i64,
+    /// `disableChromeParrot`: Xray-core shapes the Hysteria, XHTTP H3 and
+    /// XDRIVE H3 handshakes like Chrome's (quic-go's `ChromeParrot`) unless
+    /// this is true. MASQUE never does.
+    pub disable_chrome_parrot: bool,
     /// quic-go's `Transport.DisableGSO`.
     pub disable_gso: bool,
     /// Only Xray-core's QUIC servers consult it, so it changes nothing here.

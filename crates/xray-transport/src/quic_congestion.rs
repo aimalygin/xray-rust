@@ -426,9 +426,16 @@ impl ControllerSwitch {
     }
 }
 
-/// quic-go's sender before Xray replaces it: Reno, as quinn's NewReno.
+/// quic-go's initial congestion window in packets (`initialCongestionWindow`)
+const QUIC_GO_INITIAL_WINDOW_PACKETS: u64 = 32;
+
+/// quic-go's sender before Xray replaces it: Reno, as quinn's NewReno, from
+/// quic-go's initial window of 32 packets of the initial size. A ChromeParrot
+/// connection's packet number lengths are read off this window.
 fn startup_controller(now: Instant, mtu: u16) -> Box<dyn Controller> {
-    Arc::new(NewRenoConfig::default()).build(now, mtu)
+    let mut reno = NewRenoConfig::default();
+    reno.initial_window(QUIC_GO_INITIAL_WINDOW_PACKETS * u64::from(mtu));
+    Arc::new(reno).build(now, mtu)
 }
 
 /// Builds controllers that start as quic-go's default sender, as an Xray
@@ -926,6 +933,11 @@ mod tests {
         let switch = Arc::new(ControllerSwitch::default());
         let mut controller = switched(&switch);
         let reno = startup_controller(Instant::now(), 1200);
+        assert_eq!(
+            reno.window(),
+            32 * 1200,
+            "quic-go starts Reno at 32 packets"
+        );
         assert_eq!(controller.window(), reno.window());
         assert_eq!(controller.pacing_rate(), None, "Reno paces from its window");
         let now = Instant::now();

@@ -2,7 +2,7 @@
 //! bytes as sudoku clues, with no handshake of its own.
 mod codec;
 pub(crate) mod datagram;
-mod gorand;
+pub(crate) mod gorand;
 pub(crate) mod quic;
 mod stream;
 mod table;
