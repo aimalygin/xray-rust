@@ -8,7 +8,7 @@ Every row below compares normalised shape JSON, in which an extension is a type 
 
 Byte-level agreement is a separate guard, and the one to reach for when a body's contents matter: `rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerprints` compares whole ClientHellos against committed oracle output, masking only what uTLS redraws per connection, and runs in the ordinary `cargo test --workspace` CI job.
 
-What uTLS draws per connection does not show here either. The shape JSON writes every GREASE value as `GREASE`, and for the Chrome profiles whose uTLS spec shuffles its extensions (`hellochrome_106_shuffle` through `hellochrome_155`, and so `chrome`) both sides list their extensions in order of type, since the order is drawn anew for every hello. Where each extension may go is held to uTLS's rule by `utls_shaping`'s own tests.
+What uTLS draws per connection does not show here either. The shape JSON writes every GREASE value as `GREASE`; for the Chrome profiles whose uTLS spec shuffles its extensions (`hellochrome_106_shuffle` through `hellochrome_155`, and so `chrome`) both sides list their extensions in order of type, since the order is drawn anew for every hello; and hellos are drawn until one carries the ECH GREASE length the oracle's does, the first of Chrome's four under its zeroed `crypto/rand`. Where each extension may go is held to uTLS's rule by `utls_shaping`'s own tests, and every ECH length to a raw fixture of its own.
 
 ## Reproduce
 

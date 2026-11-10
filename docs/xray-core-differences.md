@@ -1342,8 +1342,9 @@ in h3's `finish` is what surfaces it for unknown-length uploads.
 
 ## uTLS per-connection draws
 
-uTLS draws two parts of every hello per connection, and so does xray-rust,
-on TLS and REALITY alike (resolved in 0.10.0, against uTLS 20261108164504):
+uTLS draws three parts of every hello per connection, and so does
+xray-rust, on TLS and REALITY alike (resolved in 0.10.0, against uTLS
+20261108164504):
 
 - GREASE values. Each hello reads sixteen bytes of BoringSSL GREASE seeds, as
   uTLS's `ApplyPreset` does, and fills each slot from its own seed: the cipher
@@ -1357,10 +1358,16 @@ on TLS and REALITY alike (resolved in 0.10.0, against uTLS 20261108164504):
   `math/rand` from a `crypto/rand.Int` seed, skipping every swap that would
   move a GREASE extension, padding or pre_shared_key. Other profiles keep
   their fixed order.
+- ECH GREASE payload length. The Chrome profiles carrying ECH GREASE draw
+  one of `BoringGREASEECH`'s four payload lengths, 128, 160, 192 or 224
+  bytes, which makes the extension 186, 218, 250 or 282 bytes long. Chrome
+  120's hello is padded with the shortest and goes unpadded with the others,
+  past BoringSSL's padding window, as uTLS sends it.
 
 Until then every profile sent `0x0a0a` in each GREASE slot (`0x1a1a` for the
-second GREASE extension) and the order of the zero-seed shuffle, so several
-hellos from one client looked alike where real Chrome and Xray-core vary.
+second GREASE extension), the order of the zero-seed shuffle and, on Chrome,
+the shortest ECH length, so several hellos from one client looked alike where
+real Chrome and Xray-core vary.
 The zero draws remain the reference: each spec order shuffled with seed 0 is
 the order of its raw oracle fixture, for all ten profiles, and the byte
 comparisons with those fixtures write every GREASE value as `0x0a0a` and,
@@ -1372,12 +1379,14 @@ extension reaches every other place; `utls_tls_shaping_tests` shows two
 hellos in a row differ in exactly these draws and that each GREASE slot is
 drawn on its own.
 
-One draw uTLS makes per connection is still pinned: the ECH GREASE payload
-length of the Chrome profiles, described in
+The ECH GREASE length is the one draw a byte comparison keeps: each length
+has a raw fixture of its own (`clienthello_shape.go -ech-payload-length`),
+and a hello is held to the fixture of the length it drew; see
 [ECH GREASE](config-compatibility.md#ech-grease).
 `scripts/check-xray-default-fingerprint.py` holds the pinned Xray-core
 binary's own hellos for `""`, `chrome`, `hellochrome_155` and `hellochrome_133`
-to the fixtures with the per-connection draws set aside.
+to the fixtures with the per-connection draws set aside, any of the four ECH
+lengths accepted.
 
 ## Follow-up checks
 

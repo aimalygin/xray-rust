@@ -13,9 +13,7 @@ use rustls::client::{
 use rustls::Error as RustlsError;
 
 use crate::utls_profiles::{profile_for_fingerprint, UtlsClientHelloProfile};
-use crate::utls_shaping::{
-    apply_alpn_override, apply_utls_profile, profile_offers_tls13, HelloDraws,
-};
+use crate::utls_shaping::{apply_utls_profile, profile_offers_tls13, HelloDraws};
 use crate::TransportError;
 
 const ALPN_HTTP11: &str = "http/1.1";
@@ -155,13 +153,16 @@ impl ClientHelloCustomizer for UtlsClientHelloCustomizer {
         context: ClientHelloContext<'_>,
     ) -> Result<Option<ClientHelloPlan>, RustlsError> {
         let draws = HelloDraws::draw(self.profile)?;
-        let mut plan = apply_utls_profile(ClientHelloPlan::new(), self.profile, context, &draws)?;
+        let mut plan = apply_utls_profile(
+            ClientHelloPlan::new(),
+            self.profile,
+            context,
+            &draws,
+            self.alpn_override.as_deref(),
+        )?;
 
         if !profile_offers_tls13(self.profile) {
             plan = plan.with_session_id(parroted_session_id()?);
-        }
-        if let Some(protocols) = &self.alpn_override {
-            plan = apply_alpn_override(plan, self.profile, protocols, &draws)?;
         }
 
         Ok(Some(plan))

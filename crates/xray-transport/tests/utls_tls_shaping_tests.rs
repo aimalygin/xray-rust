@@ -2,7 +2,7 @@
 mod client_hello_draws;
 
 mod utls_tls_shaping_tests {
-    use std::collections::{BTreeSet, HashSet};
+    use std::collections::{BTreeMap, BTreeSet, HashSet};
     use std::net::{Ipv4Addr, SocketAddr};
     use std::sync::Arc;
 
@@ -68,6 +68,19 @@ mod utls_tls_shaping_tests {
     const CLIENTHELLO_SHAPE_ANDROID_WEBSOCKET_ALPN_JSON: &str = include_str!(
         "../../../tests/fixtures/reality/clienthello_shape_android_websocket_alpn.json"
     );
+    /// The same Chrome shape with each of the other three ECH GREASE lengths
+    /// uTLS draws (`-ech-payload-length 160`, `192`, `224`).
+    const CLIENTHELLO_SHAPE_CHROME_WEBSOCKET_ALPN_ECH_JSON: [&str; 3] = [
+        include_str!(
+            "../../../tests/fixtures/reality/clienthello_shape_chrome_websocket_alpn_ech160.json"
+        ),
+        include_str!(
+            "../../../tests/fixtures/reality/clienthello_shape_chrome_websocket_alpn_ech192.json"
+        ),
+        include_str!(
+            "../../../tests/fixtures/reality/clienthello_shape_chrome_websocket_alpn_ech224.json"
+        ),
+    ];
 
     fn config(fingerprint: &str, alpn: &[&str]) -> TlsClientConfig {
         TlsClientConfig {
@@ -223,6 +236,16 @@ mod utls_tls_shaping_tests {
 
     /// `random` and `randomized` name a per-process draw that may be one of
     /// the shuffling Chrome profiles.
+    /// `order` without the padding extension, which BoringSSL adds or leaves
+    /// out by the length of the rest of the hello: Chrome 120's comes and goes
+    /// with its ECH GREASE length and with the server name
+    /// (`hellochrome_120_pads_only_the_hello_boringssl_pads`).
+    fn without_padding(mut order: Vec<String>) -> Vec<String> {
+        let padding = format!("0x{EXT_PADDING:04x}");
+        order.retain(|extension| *extension != padding);
+        order
+    }
+
     fn may_shuffle(fingerprint: &str) -> bool {
         shuffles(fingerprint) || matches!(fingerprint, "random" | "randomized")
     }
@@ -410,12 +433,20 @@ mod utls_tls_shaping_tests {
             fingerprint: String,
             #[serde(default)]
             websocket_alpn: bool,
+            handshake_length: usize,
+            cipher_suites: Vec<String>,
             alpn_protocols: Vec<String>,
             extension_order: Vec<String>,
+            padding_length: Option<usize>,
+            encrypted_client_hello_length: Option<usize>,
         }
 
+        let [ech160, ech192, ech224] = CLIENTHELLO_SHAPE_CHROME_WEBSOCKET_ALPN_ECH_JSON;
         for shape_json in [
             CLIENTHELLO_SHAPE_CHROME_WEBSOCKET_ALPN_JSON,
+            ech160,
+            ech192,
+            ech224,
             CLIENTHELLO_SHAPE_ANDROID_WEBSOCKET_ALPN_JSON,
         ] {
             let shape: WebsocketAlpnShape = serde_json::from_str(shape_json)
@@ -427,8 +458,42 @@ mod utls_tls_shaping_tests {
                  or it is just the plain profile shape and asserts nothing"
             );
 
-            let hello = plain_tls_client_hello_bytes(&config(fingerprint, &["http/1.1"]))
-                .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+            let hello = hello_with_ech_length(
+                fingerprint,
+                &["http/1.1"],
+                shape.encrypted_client_hello_length,
+            );
+
+            // The hello is as long as uTLS's. Padding, where uTLS pads, makes
+            // up the suites the provider filtered and the `supported_versions`
+            // rustls adds to a TLS-1.2-era hello (below); an unpadded hello
+            // differs by exactly those.
+            let padding = client_hello_draws::extension_body(&hello[5..], EXT_PADDING);
+            assert_eq!(
+                padding.is_some(),
+                shape.padding_length.is_some(),
+                "{fingerprint}: the override must pad where uTLS pads"
+            );
+            let supported_versions = format!("0x{EXT_SUPPORTED_VERSIONS:04x}");
+            let filtered = 2 * (shape.cipher_suites.len() - cipher_suites(&hello).len());
+            let added = if shape.extension_order.contains(&supported_versions) {
+                0
+            } else {
+                client_hello_draws::extension_body(&hello[5..], EXT_SUPPORTED_VERSIONS)
+                    .map_or(0, |body| 4 + body.len())
+            };
+            let expected_len = if shape.padding_length.is_some() {
+                shape.handshake_length
+            } else {
+                shape.handshake_length - filtered + added
+            };
+            assert_eq!(
+                hello.len() - 5,
+                expected_len,
+                "{fingerprint} (ECH {:?}): the override's hello must be as long as uTLS's, \
+                 less the filtered suites, plus what rustls adds",
+                shape.encrypted_client_hello_length
+            );
 
             assert_eq!(
                 alpn_protocols(&hello),
@@ -441,7 +506,6 @@ mod utls_tls_shaping_tests {
             // to leave it out, so a TLS-1.2-era shape carries it at the tail
             // and uTLS' own order stays an exact prefix.
             let mut expected = shape.extension_order;
-            let supported_versions = format!("0x{EXT_SUPPORTED_VERSIONS:04x}");
             if !expected.contains(&supported_versions) {
                 expected.push(supported_versions);
             }
@@ -576,18 +640,22 @@ mod utls_tls_shaping_tests {
 
     /// Two hellos compare equal exactly when they have the same *shape*: what
     /// `masked_hello` zeroes is gone, and so is what uTLS draws per hello on
-    /// top, the GREASE values and a shuffled extension order
-    /// (`client_hello_draws`).
+    /// top, the GREASE values, a shuffled extension order, and the ECH GREASE
+    /// payload length with the padding BoringSSL decides from it
+    /// (`client_hello_draws`). The record length, which follows those two, is
+    /// left out with them.
     ///
     /// Comparing raw bytes without this would compare fresh entropy and always
     /// differ; comparing only the extension order would miss a profile swap
-    /// that happened to preserve it.
+    /// that happened to preserve it. Each ECH length is held to a fixture of
+    /// its own byte for byte (`reality_rustls_tests`), and the padding to
+    /// BoringSSL's rule (`utls_shaping`), so taking them out here hides
+    /// nothing those do not check.
     fn shape_signature(hello: &[u8]) -> Vec<u8> {
         let masked = masked_hello(hello);
-        let mut signature = masked[..5].to_vec();
-        signature.extend(client_hello_draws::canonical_client_hello(
-            &masked[5..],
-            true,
+        let mut signature = masked[..3].to_vec();
+        signature.extend(client_hello_draws::without_drawn_lengths(
+            &client_hello_draws::canonical_client_hello(&masked[5..], true),
         ));
         signature
     }
@@ -698,18 +766,16 @@ mod utls_tls_shaping_tests {
     ///
     /// Every modern fingerprint is checked rather than one representative,
     /// because which name exposes a per-connection field moves with the
-    /// profiles. `hellofirefox_120` is what catches it today: its ECH GREASE
-    /// redraws a config id, an X25519 encapsulated key, a payload *and* the HPKE
-    /// AEAD id per hello, so a signature that leaves any of the four alone
-    /// differs between connections, whereas `chrome` cannot expose the AEAD at
-    /// all -- `BoringGREASEECH` declares a single cipher suite
-    /// (`u_ech.go:296`), so an unmasked AEAD id sails past it, which is how the
-    /// AEAD stayed unmasked here until it started failing the `random` tests
-    /// below. Naming either one blinds the guard to the other: `chrome` pins one
-    /// of uTLS's four ECH payload lengths (`ECH_GREASE_BORING`,
-    /// `crates/xray-transport/src/utls_profiles.rs:68`) whose own doc records
-    /// unpinning as intended work, and the day that lands `chrome`'s hello
-    /// varies per connection while `hellofirefox_120`'s still does not.
+    /// profiles. `hellofirefox_120`'s ECH GREASE redraws a config id, an X25519
+    /// encapsulated key, a payload *and* the HPKE AEAD id per hello, so a
+    /// signature that leaves any of the four alone differs between
+    /// connections, whereas `chrome` cannot expose the AEAD at all --
+    /// `BoringGREASEECH` declares a single cipher suite (`u_ech.go`), so an
+    /// unmasked AEAD id sails past it, which is how the AEAD stayed unmasked
+    /// here until it started failing the `random` tests below. `chrome` instead
+    /// draws its ECH payload length per hello, one of uTLS's four
+    /// (`ECH_GREASE_BORING`), which Firefox's scheme of a single length never
+    /// does; so naming either one blinds the guard to the other's field.
     ///
     /// Only a handful of the eleven names carry ECH at all, so a field left
     /// unblanked reaches
@@ -918,6 +984,81 @@ mod utls_tls_shaping_tests {
         }
     }
 
+    /// A plain-TLS hello of `fingerprint` whose ECH GREASE extension is as
+    /// long as `wanted`: hellos are built until one draws that length, as a
+    /// real client draws one of Chrome's four per hello. `None` is met by a
+    /// profile without ECH on the first.
+    fn hello_with_ech_length(fingerprint: &str, alpn: &[&str], wanted: Option<usize>) -> Vec<u8> {
+        for _ in 0..client_hello_draws::ECH_DRAWS {
+            let hello = plain_tls_client_hello_bytes(&config(fingerprint, alpn))
+                .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+            if client_hello_draws::ech_length(&hello[5..]) == wanted {
+                return hello;
+            }
+        }
+        panic!(
+            "{fingerprint}: no hello in {} drew the ECH length {wanted:?}",
+            client_hello_draws::ECH_DRAWS
+        );
+    }
+
+    /// uTLS's `BoringGREASEECH` draws its payload length from four candidates
+    /// for every hello (`u_ech.go`), and so does every hello of a Chrome
+    /// profile carrying it: all four lengths come up, and nothing else. Two
+    /// hundred hellos miss one of the four with probability `4 * (3/4)^200`,
+    /// about `4e-25`.
+    #[test]
+    fn chrome_ech_profiles_draw_each_of_the_four_ech_lengths() {
+        let expected = client_hello_draws::CHROME_ECH_LENGTHS
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        for fingerprint in client_hello_draws::CHROME_ECH_FINGERPRINTS {
+            let drawn = (0..200)
+                .map(|_| {
+                    let hello = plain_tls_client_hello_bytes(&config(fingerprint, &[]))
+                        .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+                    client_hello_draws::ech_length(&hello[5..])
+                        .unwrap_or_else(|| panic!("{fingerprint}: no ECH GREASE extension"))
+                })
+                .collect::<BTreeSet<_>>();
+            assert_eq!(
+                drawn, expected,
+                "{fingerprint} must draw exactly uTLS's four ECH lengths"
+            );
+        }
+    }
+
+    /// BoringSSL pads a hello of 256 to 511 bytes, padding aside, and no
+    /// other. uTLS's Chrome 120 hello is 494 bytes before padding with the
+    /// shortest ECH GREASE length, so it is padded to 512, and 526, 558 and
+    /// 590 with the other three, so it goes unpadded
+    /// (`clienthello_raw_hellochrome_120*.json`). Ours offers six suites
+    /// fewer, the CBC and RSA ones rustls lacks: the padding makes up their
+    /// twelve bytes, and an unpadded hello is twelve bytes shorter.
+    #[test]
+    fn hellochrome_120_pads_only_the_hello_boringssl_pads() {
+        let mut seen = BTreeMap::new();
+        for _ in 0..client_hello_draws::ECH_DRAWS {
+            let record = plain_tls_client_hello_bytes(&config("hellochrome_120", &[]))
+                .expect("hellochrome_120 ClientHello must be produced");
+            let hello = &record[5..];
+            let ech = client_hello_draws::ech_length(hello)
+                .expect("hellochrome_120 carries an ECH GREASE extension");
+            let padding = client_hello_draws::extension_body(hello, EXT_PADDING).map(<[u8]>::len);
+            seen.insert(ech, (hello.len(), padding));
+        }
+
+        assert_eq!(
+            seen,
+            BTreeMap::from([
+                (186, (512, Some(26))),
+                (218, (514, None)),
+                (250, (546, None)),
+                (282, (578, None)),
+            ])
+        );
+    }
+
     fn is_grease(value: u16) -> bool {
         let [high, low] = value.to_be_bytes();
         high == low && high & 0x0f == 0x0a
@@ -978,8 +1119,14 @@ mod utls_tls_shaping_tests {
     /// order where uTLS keeps one, and for the Chrome profiles uTLS shuffles,
     /// a `ShuffleChromeTLSExtensions` draw of its own per hello that keeps the
     /// same extensions and the GREASE ones first and last.
+    ///
+    /// The padding extension is left out of "the same extensions"
+    /// (`without_padding`).
     #[test]
     fn every_fingerprint_orders_its_extensions_as_utls_does() {
+        let extensions = |fingerprint: &str, order: Vec<String>| {
+            comparable_order(fingerprint, without_padding(order))
+        };
         for fingerprint in selectable_fingerprints() {
             for alpn in [&[][..], &["http/1.1"][..]] {
                 let order = || {
@@ -994,8 +1141,8 @@ mod utls_tls_shaping_tests {
                     let next = order();
                     assert_grease_frames(fingerprint, &next);
                     assert_eq!(
-                        comparable_order(fingerprint, next.clone()),
-                        comparable_order(fingerprint, first.clone()),
+                        extensions(fingerprint, next.clone()),
+                        extensions(fingerprint, first.clone()),
                         "{fingerprint} (alpn {alpn:?}): the extensions must not change per connection"
                     );
                     orders.insert(next);
@@ -1126,7 +1273,9 @@ mod utls_tls_shaping_tests {
     /// uTLS keeps a zero-length `SNIExtension` in its list and writes nothing
     /// for it, so the whole shape is the domain shape with that one extension
     /// gone -- which is what this asserts, per fingerprint, against the very
-    /// hello the domain SNI produces.
+    /// hello the domain SNI produces. Padding aside (`without_padding`): the
+    /// shorter hello may fall into BoringSSL's padding window where the other
+    /// did not, as Chrome 120's does with its second ECH GREASE length.
     #[test]
     fn an_ip_literal_sni_shapes_the_hello_without_the_server_name_extension() {
         for fingerprint in selectable_fingerprints() {
@@ -1159,8 +1308,8 @@ mod utls_tls_shaping_tests {
                 let ip_order = extension_order(&ip);
                 assert_grease_frames(fingerprint, &ip_order);
                 assert_eq!(
-                    comparable_order(fingerprint, ip_order),
-                    comparable_order(fingerprint, expected),
+                    comparable_order(fingerprint, without_padding(ip_order)),
+                    comparable_order(fingerprint, without_padding(expected)),
                     "{fingerprint} (alpn {alpn:?}): an IP-literal SNI must drop server_name \
                      and leave every other extension, GREASE included, where it was"
                 );

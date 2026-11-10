@@ -3176,8 +3176,17 @@ whose uTLS spec runs `ShuffleChromeTLSExtensions` — `hellochrome_106_shuffle`
 through `hellochrome_155`, and so `chrome` — the extension order, shuffled
 from the spec's own order with Go's `math/rand` and a fresh seed, the GREASE
 extensions, padding and pre_shared_key staying in place. Other profiles keep
-their fixed order. The ECH GREASE payload length stays pinned (see
-[ECH GREASE](#ech-grease)).
+their fixed order. The Chrome profiles draw their ECH GREASE payload length
+per hello too (see [ECH GREASE](#ech-grease)).
+
+A profile with BoringSSL's padding extension pads as BoringSSL does, and uTLS
+with it (`BoringPaddingStyle`): a hello of 256 to 511 bytes before padding is
+padded to 512, by a single byte when only the extension's header would fit
+below 512, and any other hello goes out without the extension. What decides
+is the length uTLS's own hello has on that connection, with its server name,
+ALPN list and ECH GREASE draw, and with every suite of the profile's cipher
+list: the padding also makes up the suites this build cannot negotiate, so a
+padded hello is exactly as long as uTLS's.
 
 Those 62 are the union of the three maps Xray's `GetFingerprint` consults --
 `PresetFingerprints`, `ModernFingerprints`, `OtherFingerprints` -- less
@@ -3332,36 +3341,37 @@ such spec.
 
 #### ECH GREASE
 
-Six of the profiles carry an `encrypted_client_hello` extension. It is GREASE —
+Seven of the profiles carry an `encrypted_client_hello` extension. It is GREASE —
 a decoy outer hello, not real Encrypted Client Hello — because that is what the
 browsers being imitated send by default, and omitting it would itself be the
 tell. We build the whole structure: outer type, HPKE cipher suite, config id, a
 real X25519 encapsulated key, and a random payload of the right length. The
 config id, key and payload are drawn per connection, as uTLS draws them.
 
-uTLS varies two further fields per connection, and we match one of them:
+uTLS varies two further fields per connection, and so do we:
 
 | Field | uTLS | xray-rust |
 | --- | --- | --- |
 | HPKE AEAD, Firefox profiles | draws AES-128-GCM or ChaCha20-Poly1305 | drawn per connection |
 | HPKE AEAD, Chrome profiles | AES-128-GCM only (`BoringGREASEECH` declares one suite) | fixed, matching |
 | Payload length, Firefox | 223, fixed | fixed, matching |
-| Payload length, Chrome | draws 128, 160, 192 or 224 | **pinned to 128** |
+| Payload length, Chrome | draws 128, 160, 192 or 224 | drawn per connection |
 
-The last row is a known divergence. Real Chrome spreads its ClientHello across
-four lengths — and because the ML-KEM key share already pushes the hello past
-BoringSSL's 512-byte padding target, that spread is visible in the total hello
-length rather than absorbed by padding. We send the shortest every time, so a
-censor watching several connections from one client sees a length distribution
-Chrome does not produce.
+A Chrome hello spreads across four lengths as real Chrome's does: its
+extension is 186, 218, 250 or 282 bytes, and a HelloRetryRequest repeats the
+first flight's. The ML-KEM key share carries the newer Chrome profiles past
+BoringSSL's padding window, so the spread shows in the hello's total length.
+Chrome 120's hello, which has no ML-KEM share, is 494 bytes before padding
+with the shortest length and is padded to 512; with the other three it passes
+511 and goes out unpadded, as BoringSSL and uTLS send it (see
+[TLS ClientHello shaping](#tls-clienthello-shaping)).
 
-It is pinned because both the raw-hello and shape fixtures record one length per
-fingerprint, and the Go oracle that generates them runs under a zeroed
-`crypto/rand`, which always picks the first candidate. Drawing per connection
-would fail those byte-exact comparisons three runs in four. Lifting it means
-teaching `clienthello_shape.go` to force a candidate index and committing a
-fixture per candidate, so the comparison can assert the hello matches one of the
-four uTLS can produce rather than dropping to a weaker check.
+The Go oracle runs under a zeroed `crypto/rand`, which always picks the first
+length, so `clienthello_shape.go -ech-payload-length` forces each of the
+others, after checking that forcing the first gives back uTLS's own draw byte
+for byte. Every Chrome profile carrying ECH has a raw fixture per length,
+Chrome 120's padding included, and a hello is held to the fixture of the
+length it drew, byte for byte.
 
 ### Happy Eyeballs socket option
 
