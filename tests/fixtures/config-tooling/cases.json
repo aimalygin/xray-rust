@@ -3875,14 +3875,64 @@
           "finalmask": {
             "udp": [
               {
-                "type": "noise"
+                "type": "noise",
+                "settings": {
+                  "noise": [
+                    {
+                      "type": "str",
+                      "packet": "synthetic"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "wireguard-finalmask-tcp",
+      "base": "wireguard",
+      "set": {
+        "/outbounds/0/streamSettings": {
+          "finalmask": {
+            "tcp": [
+              {
+                "type": "sudoku",
+                "settings": {
+                  "password": "synthetic"
+                }
               }
             ]
           }
         }
       },
       "accepted": false,
-      "errorPath": "$.outbounds[0].streamSettings.finalmask"
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.tcp"
+    },
+    {
+      "name": "wireguard-finalmask-realm",
+      "base": "wireguard",
+      "set": {
+        "/outbounds/0/streamSettings": {
+          "finalmask": {
+            "udp": [
+              {
+                "type": "realm",
+                "settings": {
+                  "url": "realm://public@realm.example.com/name",
+                  "stunServers": [
+                    "stun.example.com:3478"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp"
     },
     {
       "name": "wireguard-dialer-proxy",

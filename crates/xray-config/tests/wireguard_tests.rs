@@ -271,10 +271,10 @@ fn wireguard_domain_strategy_is_not_read() {
     }
 }
 
-/// `streamSettings` holds only `sockopt`, whose options and domain strategy
-/// WireGuard reads; chaining stays unsupported.
+/// `streamSettings` holds `sockopt`, whose options and domain strategy
+/// WireGuard reads, and UDP masks; chaining stays unsupported.
 #[test]
-fn wireguard_takes_socket_options_and_nothing_else_from_streams() {
+fn wireguard_takes_socket_options_and_udp_masks_from_streams() {
     let mut config = example();
     config["outbounds"][0]["streamSettings"] = json!({"sockopt": {
         "mark": 7, "interface": "eth0", "domainStrategy": "UseIPv6v4", "tcpKeepAliveIdle": 30
@@ -291,6 +291,17 @@ fn wireguard_takes_socket_options_and_nothing_else_from_streams() {
     // An empty dialerProxy chains nothing.
     config["outbounds"][0]["streamSettings"] = json!({"sockopt": {"dialerProxy": ""}});
     assert!(parse_xray_json(&config.to_string()).is_ok());
+    // Xray-core dials the socket through FinalMask.DialUDP.
+    config["outbounds"][0]["streamSettings"] = json!({"finalmask": {"udp": [
+        {"type": "noise", "settings": {"noise": [{"type": "str", "packet": "synthetic"}]}},
+        {"type": "salamander", "settings": {"password": "synthetic"}}
+    ]}});
+    let stream = &parse_xray_json(&config.to_string())
+        .unwrap()
+        .config
+        .outbounds[0]
+        .stream;
+    assert!(stream.udp_noise.is_some() && stream.udp_salamander.is_some());
 
     for (stream, path) in [
         (
@@ -301,9 +312,10 @@ fn wireguard_takes_socket_options_and_nothing_else_from_streams() {
             json!({"security": "tls"}),
             "$.outbounds[0].streamSettings.security",
         ),
+        // It dials no TCP.
         (
-            json!({"finalmask": {"udp": [{"type": "noise"}]}}),
-            "$.outbounds[0].streamSettings.finalmask",
+            json!({"finalmask": {"tcp": [{"type": "sudoku", "settings": {"password": "synthetic"}}]}}),
+            "$.outbounds[0].streamSettings.finalmask.tcp",
         ),
         (
             json!({"sockopt": {"dialerProxy": "socks-in"}}),

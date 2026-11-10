@@ -655,7 +655,7 @@
         "quicParams"
       ],
       "id": "FINALMASK",
-      "notes": "TCP supports one fragment mask, one header-custom mask and one sudoku or xmc mask. Hysteria, mKCP, XHTTP H3 and MASQUE over HTTP/3 support one UDP noise, header-custom, Salamander and sudoku mask; mKCP also any number of mkcp-legacy masks, preserving array order."
+      "notes": "TCP supports one fragment mask, one header-custom mask and one sudoku or xmc mask. Hysteria, mKCP, XHTTP H3, MASQUE over HTTP/3, freedom and WireGuard support one UDP noise, header-custom, Salamander and sudoku mask; mKCP also any number of mkcp-legacy masks, preserving array order. On freedom every UDP flow's socket goes through the masks, which send only to the flow's destination and take replies only from it; on WireGuard the one socket to the one peer does, as Xray-core's FinalMask.DialUDP wraps both."
     },
     {
       "context": "streamSettings.finalmask.udp[]",
@@ -704,7 +704,7 @@
         "packetSize"
       ],
       "id": "SALAMANDER",
-      "notes": "Hysteria, mKCP, XHTTP with exact h3 ALPN and MASQUE over HTTP/3; on mKCP a header mask grouped with mkcp-legacy's, as in Xray-core. Password is 4..=4096 UTF-8 bytes. A packetSize range with a positive upper bound selects Gecko (1 <= from <= to <= 2048), which mKCP refuses for now; padding stops at 1452 bytes."
+      "notes": "Hysteria, mKCP, XHTTP with exact h3 ALPN, MASQUE over HTTP/3, freedom and WireGuard; on mKCP a header mask grouped with mkcp-legacy's, as in Xray-core. Password is 4..=4096 UTF-8 bytes. A packetSize range with a positive upper bound selects Gecko (1 <= from <= to <= 2048), which mKCP refuses for now; padding stops at 1452 bytes."
     },
     {
       "context": "$.outbounds[].settings (freedom)",
@@ -795,7 +795,7 @@
         "padding_max"
       ],
       "id": "SUDOKU_MASK",
-      "notes": "TCP: the last mask, outermost on the wire; UDP: mKCP, Hysteria, XHTTP with exact h3 ALPN and MASQUE over HTTP/3, where the carrier lets the system fragment its datagrams. ascii is entropy (default) or ascii; customTable(s) are 8 characters of 2 x, 2 p and 4 v, ignored in ASCII mode; padding is a percentage range, each end at most 100. A snake_case name applies when its camelCase field is empty or zero. Unknown modes and malformed tables are refused here, where Xray-core fails every dial."
+      "notes": "TCP: the last mask, outermost on the wire; UDP: mKCP, Hysteria, XHTTP with exact h3 ALPN, MASQUE over HTTP/3, freedom and WireGuard, where the carrier lets the system fragment its datagrams. ascii is entropy (default) or ascii; customTable(s) are 8 characters of 2 x, 2 p and 4 v, ignored in ASCII mode; padding is a percentage range, each end at most 100. A snake_case name applies when its camelCase field is empty or zero. Unknown modes and malformed tables are refused here, where Xray-core fails every dial."
     },
     {
       "context": "streamSettings.finalmask.udp[].settings (xdns)",
@@ -805,7 +805,7 @@
         "extraPoll"
       ],
       "id": "XDNS_MASK",
-      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN and MASQUE over HTTP/3; the last UDP mask, never with udphop, nor with sudoku on QUIC. Every datagram rides in the names of DNS queries to the resolvers, which reach the server's domain; polls keep queries waiting there for what it sends back. extraPoll is 0 to 3 polls after each packet and poll. At least one domain name and one resolver address are required."
+      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN, MASQUE over HTTP/3, freedom and WireGuard; the last UDP mask, never with udphop, nor with sudoku on QUIC, freedom or WireGuard. Every datagram rides in the names of DNS queries to the resolvers, which reach the server's domain; polls keep queries waiting there for what it sends back. extraPoll is 0 to 3 polls after each packet and poll. At least one domain name and one resolver address are required."
     },
     {
       "context": "streamSettings.finalmask.udp[].settings.domains[] (xdns)",
@@ -859,7 +859,7 @@
         "ips"
       ],
       "id": "XICMP_MASK",
-      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN and MASQUE over HTTP/3; the last UDP mask, never with udphop, xdns, realm or header-custom, nor with sudoku on QUIC. Every datagram rides in an ICMP echo request to the server, after an 8-byte client id, and comes back in its echo reply. dgram opens unprivileged datagram ICMP sockets; without it they are raw sockets, which need root or CAP_NET_RAW. ips are the server addresses, one drawn per packet; empty sends to the outbound's address, which must then be an IP address, else the core refuses to start. A zoned IPv6 address is refused, where Xray-core drops the zone and reaches nothing."
+      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN, MASQUE over HTTP/3, freedom and WireGuard; the last UDP mask, never with udphop, xdns, realm or header-custom, nor with sudoku on QUIC, freedom or WireGuard. Every datagram rides in an ICMP echo request to the server, after an 8-byte client id, and comes back in its echo reply. dgram opens unprivileged datagram ICMP sockets; without it they are raw sockets, which need root or CAP_NET_RAW. ips are the server addresses, one drawn per packet; empty sends to the outbound's address, which must then be an IP address, else the core refuses to start: on freedom to each flow's destination, on WireGuard to its peer's endpoint. A zoned IPv6 address is refused, where Xray-core drops the zone and reaches nothing."
     },
     {
       "context": "streamSettings.finalmask.tcp[].settings (xmc)",
@@ -890,7 +890,7 @@
         "server"
       ],
       "id": "HEADER_CUSTOM_UDP",
-      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN and MASQUE over HTTP/3, never with udphop. mode is prefix (or empty), every datagram carrying the client's items in front and the server's checked and taken off, or standalone, the client's items sent alone and the server's answer awaited before the first datagram to a peer and five seconds after each answer; an unanswered request goes out again after a second on QUIC carriers. Case-sensitive, as in Xray-core."
+      "notes": "mKCP, Hysteria, XHTTP with exact h3 ALPN, MASQUE over HTTP/3, freedom and WireGuard, never with udphop. mode is prefix (or empty), every datagram carrying the client's items in front and the server's checked and taken off, or standalone, the client's items sent alone and the server's answer awaited before the first datagram to a peer and five seconds after each answer; an unanswered request goes out again after a second on QUIC carriers. Case-sensitive, as in Xray-core."
     },
     {
       "context": "streamSettings.finalmask.udp[].settings.{client,server}[] (header-custom)",
@@ -1466,7 +1466,7 @@
         "remoteDNS"
       ],
       "id": "WIREGUARD",
-      "notes": "1..8 distinct peers, at most 256 total allowed-IP prefixes, up to one local address per family, MTU 1280..1420; userspace TCP and MTU-sized UDP. Optional 32-byte PSK. remoteDNS accepts up to 8 IP literals, default Cloudflare IPv4/IPv6; destination DNS runs through the tunnel with bounded TTL caching, for the families of the local addresses, IPv6 first when there is an IPv6 one. domainStrategy is not read, of any value, as Xray-core v26.10.31 has none. streamSettings may hold only sockopt: its options go on the UDP sockets, and its domainStrategy selects the address of a domain peer endpoint as Xray-core's does. Nonzero reserved bytes, UDP masks and chaining are unsupported."
+      "notes": "1..8 distinct peers, at most 256 total allowed-IP prefixes, up to one local address per family, MTU 1280..1420; userspace TCP and MTU-sized UDP. Optional 32-byte PSK. remoteDNS accepts up to 8 IP literals, default Cloudflare IPv4/IPv6; destination DNS runs through the tunnel with bounded TTL caching, for the families of the local addresses, IPv6 first when there is an IPv6 one. domainStrategy is not read, of any value, as Xray-core v26.10.31 has none. streamSettings may hold sockopt and finalmask.udp: sockopt's options go on the UDP sockets, and its domainStrategy selects the address of a domain peer endpoint as Xray-core's does. UDP masks take one peer and go on its one socket, opened anew with their state at every rebind, as Xray-core dials it to the first peer's endpoint; udphop, realm and mkcp-legacy are refused. Nonzero reserved bytes and chaining are unsupported."
     },
     {
       "context": "$.outbounds[].settings.peers[] (wireguard)",

@@ -224,6 +224,9 @@ impl RoutedDnsQueryTransport {
                 // The query socket takes freedom's socket options, as the
                 // socket Xray-core's freedom dials for it does.
                 let dialer = freedom.dialer(&self.transport_dialer);
+                if freedom.has_udp_masks() {
+                    return exchange_masked_freedom_udp(&freedom, server, query, &dialer).await;
+                }
                 exchange_freedom_udp(server, query, dialer.socket_protector(), true).await
             }
             UdpOutbound::Vless(outbound) if !outbound.udp_uses_mux(&target) => {
@@ -958,6 +961,52 @@ async fn exchange_freedom_udp(
             "short dns udp write",
         ));
     }
+    read_dns_udp_response(DnsUdpReply::Connected(&socket), query, match_question).await
+}
+
+/// A query through a freedom outbound under `finalmask.udp`: its socket
+/// goes through the masks, as the one Xray-core's freedom dials does.
+async fn exchange_masked_freedom_udp(
+    freedom: &crate::outbound::FreedomOutbound,
+    server: SocketAddr,
+    query: &[u8],
+    dialer: &xray_transport::TransportDialer,
+) -> io::Result<Vec<u8>> {
+    let bind_addr = if server.is_ipv4() {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)
+    } else {
+        SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0)
+    };
+    let socket = UdpSocket::bind(bind_addr).await?;
+    protect_udp_socket(&socket, dialer.socket_protector()).map_err(io::Error::other)?;
+    let socket = freedom
+        .udp_socket(socket, server, dialer.socket_protector_arc())
+        .await?;
+    socket.send_to(query, server).await?;
+    read_dns_udp_response(DnsUdpReply::Freedom(&socket), query, true).await
+}
+
+/// Where a UDP query's answer comes from.
+enum DnsUdpReply<'a> {
+    Connected(&'a UdpSocket),
+    Freedom(&'a crate::outbound::FreedomUdpSocket),
+}
+
+impl DnsUdpReply<'_> {
+    async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::Connected(socket) => socket.recv(buf).await,
+            Self::Freedom(socket) => socket.recv_from(buf).await.map(|(len, _)| len),
+        }
+    }
+}
+
+/// The answer to `query`, skipping a bounded number of unrelated ones.
+async fn read_dns_udp_response(
+    socket: DnsUdpReply<'_>,
+    query: &[u8],
+    match_question: bool,
+) -> io::Result<Vec<u8>> {
     let mut response = vec![0_u8; MAX_DNS_WIRE_MESSAGE_SIZE];
     let mut unrelated_responses = 0_usize;
     loop {

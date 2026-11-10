@@ -1796,6 +1796,16 @@ async fn bridge_socks_udp_freedom_flow(
     if protect_udp_socket(&remote_socket, dialer.socket_protector()).is_err() {
         return;
     }
+    // Under `finalmask.udp`, every datagram of the flow, the PROXY header
+    // and the noises included, goes through the masks.
+    let masked = tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = freedom.udp_socket(remote_socket, target_addr, dialer.socket_protector_arc()) => result,
+    };
+    let Ok(remote_socket) = masked else {
+        return;
+    };
     connection.mark_active();
     let traffic = connection.traffic();
     if let Some(version) = freedom.proxy_protocol() {

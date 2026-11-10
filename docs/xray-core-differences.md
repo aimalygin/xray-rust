@@ -855,6 +855,42 @@ AES and noise inside xicmp; XHTTP over HTTP/3 and Hysteria, alone and with
 Salamander inside, before and after a rebind, and MASQUE over HTTP/3 carry
 the same.
 
+## UDP masks on freedom and WireGuard
+
+Freedom's UDP flows and WireGuard's socket take the UDP masks, as
+Xray-core v26.10.31's `FinalMask.DialUDP` wraps every UDP socket it dials.
+They run the QUIC carriers' masks one datagram at a time: noise,
+header-custom, Salamander with Gecko, sudoku, xdns and xicmp, in Xray-core's
+order. Deliberate differences:
+
+- A masked freedom flow takes replies only from the address it sends to.
+  Xray-core's masked socket also takes another sender's datagrams, which
+  most masks cannot unmask anyway.
+- WireGuard's masks take one peer, and a second peer fails the core at
+  start. Xray-core dials its masked socket to the first peer's endpoint and
+  writes every peer's packets to it.
+- udphop and realm are refused on both, since each needs a driver that
+  replaces or introduces the socket, which only the QUIC carriers have here;
+  `mkcp-legacy` is refused, as on every carrier but mKCP. Xray-core applies
+  each of them.
+- Sudoku cannot run under xdns or xicmp: its datagrams exceed what an xdns
+  packet or an echo carries. Xray-core fails each write that does not fit.
+- A datagram under Salamander may exceed 4096 bytes here. Xray-core's header
+  masks, Salamander among them, write at most 4096 bytes a datagram, so its
+  server cannot answer one that large, for example a 1200-byte payload
+  under sudoku inside Salamander.
+
+Evidence: unit tests drive the masked socket against a plain one, noise
+inside and outside Salamander, salted replies, another sender's datagrams
+and unmaskable ones dropped, a datagram longer than the receiver's buffer
+cut, or dropped under Salamander; a TUN flow through freedom runs under
+noise and a header-custom prefix. Live against Xray-core's `tunnel` inbound
+under the same masks, freedom carries UDP under Salamander, noise inside it,
+header-custom, sudoku and sudoku inside Salamander. Against its WireGuard
+inbound, WireGuard carries TCP and UDP under Salamander with noise on
+either side, header-custom and sudoku. Another Salamander password carries
+nothing on either.
+
 ## QUIC BBR profiles
 
 `quicParams.bbrProfile` `conservative` and `aggressive` run a port of
@@ -969,10 +1005,11 @@ differences:
 - A `dialerProxy` inside an XHTTP `downloadSettings` fails parsing. Xray-core
   would carry the download leg through that outbound. Here the leg either
   takes the outbound's own chain, with `penetrate`, or dials directly.
-- WireGuard reads no `streamSettings` field other than `sockopt`, and its
-  other fields, `finalmask` among them, fail parsing, as does a
-  `dialerProxy`. Xray-core ignores the transport settings, masks the UDP with
-  `finalmask`, and carries it through the `dialerProxy` outbound.
+- WireGuard reads no `streamSettings` field other than `sockopt` and
+  `finalmask.udp`, and its other fields, TCP masks and `quicParams` among
+  them, fail parsing, as does a `dialerProxy`. Xray-core ignores the
+  transport settings and the unused masks, and carries the UDP through the
+  `dialerProxy` outbound.
 - A WireGuard peer endpoint that is a domain dials the first address its
   `domainStrategy` keeps. Xray-core picks one of them at random.
 - An option that fails is logged at debug level; Xray-core logs it at info,

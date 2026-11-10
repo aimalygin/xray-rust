@@ -339,8 +339,9 @@ existing profiles. Configured delays intentionally increase handshake latency.
 
 ## v0.8 UDP noise
 
-Hysteria2, [mKCP](#mkcp), XHTTP with exact TLS `alpn: ["h3"]` and MASQUE over
-HTTP/3 accept one FinalMask UDP noise mask, in Xray-core's format:
+Hysteria2, [mKCP](#mkcp), XHTTP with exact TLS `alpn: ["h3"]`, MASQUE over
+HTTP/3, [freedom and WireGuard](#udp-masks-on-freedom-and-wireguard) accept
+one FinalMask UDP noise mask, in Xray-core's format:
 
 ```json
 "finalmask": {"udp": [{"type": "noise", "settings": {
@@ -1036,8 +1037,9 @@ that no rule matches is allowed.
 
 Each item of `noises` is a datagram sent before a UDP flow's first payload,
 after any PROXY protocol header, as Xray-core's freedom sends it. Xray-core
-deprecates `noises` for the FinalMask noise mask and refuses the removed
-`noise` object; so does the parser.
+deprecates `noises` for the FinalMask noise mask, which freedom takes in
+`streamSettings.finalmask.udp` ([UDP masks](#udp-masks-on-freedom-and-wireguard)),
+and refuses the removed `noise` object; so does the parser.
 
 ```json
 "noises": [
@@ -2734,6 +2736,41 @@ carries. A QUIC carrier keeps its path MTU discovery off, as quic-go's is on
 a masked conn. `scripts/check-xicmp-interop.sh` compares the messages with
 Xray-core's own code and, on Linux, runs each carrier against its server.
 
+### UDP masks on freedom and WireGuard
+
+Xray-core dials every UDP socket through `FinalMask.DialUDP`, so its UDP
+masks shape freedom's flows and WireGuard's socket as they shape a QUIC
+carrier. Both take the masks the QUIC carriers do, in Xray-core's order and
+with the same code: noise, `header-custom`, Salamander with Gecko, sudoku,
+xdns and xicmp.
+
+```json
+{"protocol": "wireguard", "settings": {"...": "..."},
+ "streamSettings": {"finalmask": {"udp": [
+   {"type": "noise", "settings": {"noise": [{"rand": "16-32", "delay": 5}]}},
+   {"type": "salamander", "settings": {"password": "synthetic-example-password"}}
+ ]}}}
+```
+
+- Freedom puts every UDP flow's socket under the masks, and the DNS queries
+  routing sends through it. The PROXY protocol header and the `noises` of
+  `settings` go through them too, as in Xray-core. A masked flow sends only
+  to its destination and takes replies only from it. Xray-core's masked
+  socket also takes another sender's datagrams.
+- WireGuard puts its one socket under the masks, which take one peer:
+  Xray-core dials its masked socket to the first peer's endpoint, and a
+  second peer fails the core at start. The socket and the masks' state, the
+  noise already sent included, open anew at every rebind, as Xray-core opens
+  them whenever WireGuard binds again.
+- The datagrams keep the system's fragmentation, without the don't-fragment
+  bit a QUIC carrier sets. Under Salamander one may exceed 4096 bytes, which
+  Xray-core's header masks never write: its server cannot answer one that
+  large.
+- Not supported yet on either: udphop and realm, each of which needs a
+  driver that replaces or introduces the socket, and `mkcp-legacy`, which
+  only mKCP takes here. Sudoku cannot run under xdns or xicmp: its datagrams
+  exceed what an xdns packet or an echo carries.
+
 ### TLS ClientHello shaping
 
 `security: "tls"` sends a uTLS-shaped ClientHello, as Xray-core does on every
@@ -3188,10 +3225,11 @@ Not supported yet:
   fails parsing. Xray-core hands the address and port it finds to the
   `dialerProxy` outbound as its destination. A dedicated freedom fragment
   handler is inlined, not chained, and keeps the strategy.
-- WireGuard reads no `streamSettings` field other than `sockopt`. The others
-  fail parsing, its UDP `finalmask` among them, and so does a `dialerProxy`.
-  Xray-core ignores the transport settings, masks the UDP with `finalmask`,
-  and carries it through the `dialerProxy` outbound.
+- WireGuard reads no `streamSettings` field other than `sockopt` and
+  `finalmask.udp` ([UDP masks](#udp-masks-on-freedom-and-wireguard)). The
+  others fail parsing, TCP masks and `quicParams` among them, and so does a
+  `dialerProxy`. Xray-core ignores the transport settings and the unused
+  masks, and carries the UDP through the `dialerProxy` outbound.
 
 ## Routing
 

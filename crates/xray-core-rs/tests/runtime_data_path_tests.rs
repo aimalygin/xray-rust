@@ -2770,6 +2770,70 @@ async fn tun_udp_client_reaches_echo_target_through_freedom_outbound() {
         .unwrap();
 }
 
+/// A TUN UDP flow through freedom goes under `finalmask.udp`, as Xray-core's
+/// freedom dials it: the noise inside a header-custom prefix, which the
+/// server checks and answers with its own. The reply reaches the client
+/// with the prefix taken off.
+#[tokio::test]
+async fn tun_udp_freedom_flow_runs_under_masks() {
+    timeout(Duration::from_secs(5), async {
+        let server = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let SocketAddr::V4(server_addr) = server.local_addr().unwrap() else {
+            unreachable!("bound to IPv4");
+        };
+        let mut config = runtime_tun_config_with_freedom_outbound();
+        let raw = serde_json::json!({"outbounds": [{"protocol": "freedom", "tag": "direct",
+            "streamSettings": {"finalmask": {"udp": [
+                {"type": "noise", "settings": {"noise": [{"type": "str", "packet": "noise"}]}},
+                {"type": "header-custom", "settings": {"mode": "prefix",
+                    "client": [{"type": "str", "packet": "hello"}],
+                    "server": [{"type": "str", "packet": "world"}]}}]}}}]});
+        config.outbounds = xray_config::parse_xray_json(&raw.to_string())
+            .unwrap()
+            .config
+            .outbounds;
+        let mut core = Core::new(config).unwrap();
+        core.start().await.unwrap();
+
+        let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+        let request = ipv4_udp_packet(
+            client_addr,
+            49154,
+            *server_addr.ip(),
+            server_addr.port(),
+            b"masked tun udp",
+        );
+        core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+        let mut seen = Vec::new();
+        let mut buffer = [0; 256];
+        while seen.len() < 2 {
+            let (n, peer) = server.recv_from(&mut buffer).await.unwrap();
+            let datagram = &buffer[..n];
+            assert!(datagram.starts_with(b"hello"), "{datagram:?}");
+            seen.push(datagram[5..].to_vec());
+            let mut reply = b"world".to_vec();
+            reply.extend_from_slice(&datagram[5..]);
+            server.send_to(&reply, peer).await.unwrap();
+        }
+        assert_eq!(seen, [b"noise".to_vec(), b"masked tun udp".to_vec()]);
+        let reply = poll_tun_outbound_until(core.tun(), |packet| {
+            ipv4_udp_payload(packet).is_some_and(|payload| payload == b"masked tun udp")
+        })
+        .await;
+        assert_ipv4_udp_packet(
+            &reply,
+            *server_addr.ip(),
+            server_addr.port(),
+            client_addr,
+            49154,
+            b"masked tun udp",
+        );
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 async fn tun_udp_inventory_close_and_accounting_share_runtime_state() {
     timeout(Duration::from_secs(3), async {

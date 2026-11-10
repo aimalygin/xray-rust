@@ -11,6 +11,8 @@ struct Owner {
     settings: WireguardOutboundSettings,
     /// `sockopt`, for the UDP socket.
     socket_options: Option<Arc<xray_transport::SocketOptions>>,
+    /// `finalmask.udp`, over the UDP socket.
+    masks: Option<Arc<xray_transport::hysteria::HysteriaCarrierConfig>>,
     /// `sockopt.domainStrategy`, which picks a domain endpoint's address.
     endpoint_strategy: DomainStrategy,
     /// The dialer given and the one made from it with `socket_options`,
@@ -61,9 +63,16 @@ impl WireguardOutbound {
         engine_config(settings)
             .validate()
             .map_err(|_| CoreError::UnsupportedOutboundNetwork)?;
+        // Xray-core dials its masked socket to the first peer's endpoint, so
+        // masks take one peer.
+        let masks = super::direct_udp_masks(&outbound.stream)?;
+        if masks.is_some() && settings.peers.len() != 1 {
+            return Err(CoreError::UnsupportedOutboundNetwork);
+        }
         Ok(Self(Arc::new(Owner {
             settings: settings.clone(),
             socket_options: socket_options::compile(&outbound.stream),
+            masks,
             endpoint_strategy: outbound
                 .stream
                 .socket_options
@@ -170,7 +179,8 @@ impl WireguardOutbound {
             .ok_or(Error::NoRoute)?;
         }
         let generation = self.0.network_generation.load(Ordering::Acquire);
-        let client = Client::start(config, protector.clone()).await?;
+        let client =
+            Client::start_with_masks(config, self.0.masks.clone(), protector.clone()).await?;
         let mut slot = self.0.session.lock().unwrap_or_else(|e| e.into_inner());
         if *self.0.shutdown.borrow() {
             client.close();

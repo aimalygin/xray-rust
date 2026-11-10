@@ -10,6 +10,15 @@ long-term supported release series.
 
 ## Unreleased
 
+- Freedom and WireGuard take FinalMask's UDP masks, as Xray-core v26.10.31's
+  `FinalMask.DialUDP` wraps their sockets: noise, `header-custom`, Salamander
+  with Gecko, sudoku, xdns and xicmp, with the code and order of the QUIC
+  carriers' masks. Freedom puts every UDP flow under them, from SOCKS and
+  TUN, the PROXY header, its `noises` and the DNS queries routed through it
+  included; a masked flow takes replies only from its destination. WireGuard
+  puts its one socket under them, which takes one peer and opens anew with
+  the masks' state at every rebind. udphop and realm are refused on both for
+  now. See [UDP masks on freedom and WireGuard](docs/config-compatibility.md#udp-masks-on-freedom-and-wireguard).
 - The FinalMask `fragment` mask selects whole writes with `packets`, as
   Xray-core v26.10.31 does: empty or absent cuts every write, a number or a
   `from-to` range the writes so numbered, each into raw pieces, every piece

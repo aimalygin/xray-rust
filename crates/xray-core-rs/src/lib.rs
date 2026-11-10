@@ -773,7 +773,19 @@ impl Core {
         }
         ensure_effective_dns_tag(&mut config);
         for outbound in &config.outbounds {
-            outbound::validate_udp_noise(&outbound.stream)?;
+            // Freedom's flows and WireGuard's socket carry plain datagrams,
+            // which their UDP masks shape directly, as Xray-core's
+            // `FinalMask.DialUDP` wraps those sockets; WireGuard checks its
+            // own as it is built below.
+            if matches!(
+                outbound.settings,
+                xray_config::OutboundSettings::Freedom(_)
+                    | xray_config::OutboundSettings::Wireguard(_)
+            ) {
+                outbound::direct_udp_masks(&outbound.stream)?;
+            } else {
+                outbound::validate_udp_noise(&outbound.stream)?;
+            }
             if (outbound.stream.udp_noise.is_some()
                 || outbound.stream.udp_header_custom.is_some()
                 || outbound.stream.udp_sudoku.is_some()
@@ -783,10 +795,8 @@ impl Core {
                 || outbound.stream.udp_salamander.is_some())
                 && matches!(
                     outbound.settings,
-                    xray_config::OutboundSettings::Freedom(_)
-                        | xray_config::OutboundSettings::Blackhole(_)
+                    xray_config::OutboundSettings::Blackhole(_)
                         | xray_config::OutboundSettings::Dns(_)
-                        | xray_config::OutboundSettings::Wireguard(_)
                 )
             {
                 return Err(CoreError::UnsupportedOutboundNetwork);

@@ -159,6 +159,7 @@ async fn idle_carrier_receive_follows_rebind_and_releases_old_sockets() {
                 protection_failed: Arc::new(AtomicBool::new(false)),
                 stop: Stop::new(),
                 carrier: watch::channel(None).0,
+                masks: None,
             };
             let (send, mut receive) = factory
                 .bind(&UdpTransportFactoryParams {
@@ -188,7 +189,7 @@ async fn idle_carrier_receive_follows_rebind_and_releases_old_sockets() {
                 Poll::Ready(())
             })
             .await;
-            factory.rebind().unwrap();
+            factory.rebind().await.unwrap();
             send.send_to(
                 Packet::from_bytes(bytes::BytesMut::from(&b"new socket"[..])),
                 remote.local_addr().unwrap(),

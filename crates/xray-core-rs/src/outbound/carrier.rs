@@ -846,6 +846,53 @@ pub(super) fn quic_salamander(
     })
 }
 
+/// The UDP masks of a socket that carries plain datagrams, freedom's flows
+/// and WireGuard's, as Xray-core's `FinalMask.DialUDP` wraps it: `None`
+/// without masks. udphop and realm need a QUIC carrier.
+pub(crate) fn direct_udp_masks(
+    stream: &StreamSettings,
+) -> Result<Option<Arc<xray_transport::hysteria::HysteriaCarrierConfig>>, CoreError> {
+    if stream.udp_noise.is_none()
+        && stream.udp_header_custom.is_none()
+        && stream.udp_sudoku.is_none()
+        && stream.udp_xdns.is_none()
+        && stream.udp_realm.is_none()
+        && stream.udp_xicmp.is_none()
+        && stream.udp_salamander.is_none()
+    {
+        return Ok(None);
+    }
+    if stream.udp_realm.is_some()
+        || stream.quic_params.as_ref().is_some_and(|quic| {
+            quic.udp_hop.local || quic.udp_hop.remote || quic.udp_hop.remote_once
+        })
+    {
+        return Err(CoreError::UnsupportedOutboundNetwork);
+    }
+    let salamander = stream
+        .udp_salamander
+        .as_ref()
+        .map(quic_salamander)
+        .transpose()?;
+    let masks = xray_transport::hysteria::HysteriaCarrierConfig {
+        salamander_password: salamander.as_ref().map(|s| s.password.clone()),
+        gecko: salamander.and_then(|s| s.gecko),
+        noise: stream
+            .udp_noise
+            .as_ref()
+            .map(super::xhttp::udp_noise_config)
+            .transpose()?,
+        header_custom: stream.udp_header_custom.as_ref().map(quic_header_custom),
+        sudoku: stream.udp_sudoku.as_ref().map(quic_sudoku),
+        xdns: stream.udp_xdns.as_ref().map(xdns_config),
+        xicmp: stream.udp_xicmp.as_ref().map(xicmp_config),
+        ..Default::default()
+    };
+    xray_transport::MaskedUdpSocket::validate(&masks)
+        .map_err(|_| CoreError::UnsupportedOutboundNetwork)?;
+    Ok(Some(Arc::new(masks)))
+}
+
 pub(super) fn fragment_config(
     stream: &StreamSettings,
 ) -> Result<Option<Arc<xray_transport::TcpFragmentConfig>>, CoreError> {
