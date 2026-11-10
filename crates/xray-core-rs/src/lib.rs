@@ -1025,6 +1025,15 @@ impl Core {
         self.outbound_factory().rebind_hysteria()
     }
 
+    /// Asks the live QUIC connections that are not Hysteria's for a fresh
+    /// protected socket after an OS network change: XHTTP, MASQUE and
+    /// XDRIVE's storages over HTTP/3. Streams and tunnels are kept; a
+    /// connection behind a `realm`, `xdns` or `xicmp` mask stays as it is.
+    /// The count is of connections asked, not of paths validated.
+    pub fn rebind_quic(&self) -> u64 {
+        self.transport_dialer.network_changes().notify()
+    }
+
     /// Rebinds live WireGuard carrier transports after an OS network change.
     /// Returns accepted (coalesced) requests, not completed handshakes. Lazy
     /// outbounds remain lazy; current endpoints and inner flows are retained.

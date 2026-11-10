@@ -10,6 +10,15 @@ long-term supported release series.
 
 ## Unreleased
 
+- XHTTP, MASQUE and XDRIVE's storages over HTTP/3 move to a fresh protected
+  socket when the host reports that the OS network changed, and keep their
+  streams and tunnels, as Hysteria and WireGuard already did. Until now such a
+  connection sat out its idle timeout on a socket whose network was gone
+  before the next flow dialed again. `xray_core_rebind_hysteria` carries the
+  request, so hosts need no change: the mobile wrappers already call it on
+  every network change. `Core::rebind_quic` is the Rust entry. Connections
+  behind a `realm`, `xdns` or `xicmp` mask, and mKCP, do not move. Xray-core
+  has no counterpart.
 - Hysteria and XHTTP over HTTP/3 shape their QUIC handshake like Chrome's,
   as Xray-core v26.10.31's default ChromeParrot does, unless
   `finalmask.quicParams.disableChromeParrot` is true. Until now the flag had

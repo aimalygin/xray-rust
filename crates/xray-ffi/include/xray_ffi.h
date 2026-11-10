@@ -396,7 +396,10 @@ XrayStatus xray_core_rebind_wireguard(
  * change. Retains current endpoints, QUIC connection and inner flows; no DNS
  * refresh. accepted is required and counts accepted requests, not completed
  * path validation. Bind/protection failure closes the affected client.
- * Concurrent with data-path calls, but not lifecycle/free. Lazy clients stay lazy. */
+ * Concurrent with data-path calls, but not lifecycle/free. Lazy clients stay lazy.
+ * The same call moves every other live QUIC carrier (XHTTP, MASQUE and XDRIVE
+ * storages over HTTP/3) to a fresh protected socket and counts them too; one
+ * that fails to bind keeps its current socket. */
 XrayStatus xray_core_rebind_hysteria(
     XrayCoreHandle *handle,
     uint64_t *accepted,
