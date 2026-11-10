@@ -403,3 +403,26 @@ async fn a_header_block_past_a_mebibyte_is_refused() {
         HttpParseError::HeadTooLarge
     );
 }
+
+/// Reading keeps a header whose name has a space in it; writing leaves it
+/// out, as Go's `Header.writeSubset` does. Forwarded, `Transfer-Encoding :
+/// chunked` would announce a body this side framed as none.
+#[tokio::test]
+async fn a_header_name_that_is_not_a_token_is_not_forwarded() {
+    let sent = forwarded(
+        "GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding : chunked\r\nProxy-Authorization : Basic eDp5\r\nX-Kept: 1\r\n\r\n",
+    )
+    .await;
+    assert_eq!(
+        sent,
+        "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\nX-Kept: 1\r\n\r\n"
+    );
+    let (_, head, _, _) = response(
+        b"HTTP/1.1 200 OK\r\nContent-Length : 5\r\nX-Kept: 1\r\n\r\n",
+        "GET",
+    )
+    .await
+    .unwrap();
+    assert!(!head.contains("Content-Length :"), "{head}");
+    assert!(head.contains("X-Kept: 1"), "{head}");
+}

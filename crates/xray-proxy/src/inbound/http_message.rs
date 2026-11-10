@@ -81,10 +81,13 @@ impl HttpHeaders {
     }
 
     /// Go's `Header.writeSubset`: every field but `exclude`, by name, each
-    /// value with line breaks turned to spaces and trimmed.
+    /// value with line breaks turned to spaces and trimmed. A name that is
+    /// not a token is left out, as Go leaves it out: reading keeps a name
+    /// with a space in it, and `Transfer-Encoding : chunked` must not reach
+    /// a peer that reads it as the framing this side did not apply.
     fn write_subset(&self, exclude: &[&str], output: &mut Vec<u8>) {
         for (name, values) in self.iter() {
-            if exclude.contains(&name) {
+            if exclude.contains(&name) || !name.bytes().all(is_token_byte) {
                 continue;
             }
             for value in values {
