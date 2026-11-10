@@ -1018,3 +1018,152 @@ async fn xdrive_google_drive_over_http3_through_a_noise_mask() {
     );
     assert!(server.logs().contains(" slots"), "{}", server.logs());
 }
+
+/// A UDP relay to `upstream` that gives each client socket a socket of its
+/// own towards it, as a NAT does, and keeps every client datagram in the
+/// order it came: a storage over HTTP/3 opens a QUIC connection a host,
+/// each from its own socket.
+struct NatRelay {
+    address: SocketAddr,
+    datagrams: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+    tasks: Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+}
+
+impl NatRelay {
+    async fn start(upstream: SocketAddr) -> Self {
+        let front = Arc::new(
+            tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+                .await
+                .unwrap(),
+        );
+        let address = front.local_addr().unwrap();
+        let datagrams = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let tasks = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (recorded, spawned) = (Arc::clone(&datagrams), Arc::clone(&tasks));
+        let task = tokio::spawn(async move {
+            let mut backs = std::collections::HashMap::new();
+            let mut datagram = vec![0; 65_536];
+            while let Ok((len, client)) = front.recv_from(&mut datagram).await {
+                recorded.lock().unwrap().push(datagram[..len].to_vec());
+                if let std::collections::hash_map::Entry::Vacant(entry) = backs.entry(client) {
+                    let back = Arc::new(
+                        tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+                            .await
+                            .unwrap(),
+                    );
+                    back.connect(upstream).await.unwrap();
+                    let (replies, front) = (Arc::clone(&back), Arc::clone(&front));
+                    spawned.lock().unwrap().push(tokio::spawn(async move {
+                        let mut reply = vec![0; 65_536];
+                        while let Ok(len) = replies.recv(&mut reply).await {
+                            let _ = front.send_to(&reply[..len], client).await;
+                        }
+                    }));
+                    entry.insert(back);
+                }
+                let _ = backs[&client].send(&datagram[..len]).await;
+            }
+        });
+        tasks.lock().unwrap().push(task);
+        Self {
+            address,
+            datagrams,
+            tasks,
+        }
+    }
+
+    /// The client datagrams since the last call, one list for each QUIC
+    /// connection, in the order the connections began: the Initial packets
+    /// sent to the destination ID each client flight starts with.
+    fn take_flights(&self) -> Vec<Vec<Vec<u8>>> {
+        use super::chrome_parrot_wire::{decrypt_initial, Frame};
+        let datagrams = std::mem::take(&mut *self.datagrams.lock().unwrap());
+        let mut flights: Vec<(Vec<u8>, Vec<Vec<u8>>)> = Vec::new();
+        for datagram in datagrams {
+            let Ok(initial) = decrypt_initial(&datagram) else {
+                continue;
+            };
+            match flights.iter_mut().find(|(dcid, _)| *dcid == initial.dcid) {
+                Some((_, flight)) => flight.push(datagram),
+                None if initial
+                    .frames
+                    .iter()
+                    .any(|frame| matches!(frame, Frame::Crypto { offset: 0, .. })) =>
+                {
+                    flights.push((initial.dcid.clone(), vec![datagram]));
+                }
+                None => {}
+            }
+        }
+        flights.into_iter().map(|(_, flight)| flight).collect()
+    }
+}
+
+impl Drop for NatRelay {
+    fn drop(&mut self) {
+        for task in self.tasks.lock().unwrap().iter() {
+            task.abort();
+        }
+    }
+}
+
+/// ChromeParrot on storages over HTTP/3, as Xray-core's XDRIVE client sets
+/// it, `!disableChromeParrot` with zero-length connection IDs. Through a
+/// relay in front of the Drive stand-in, Xray-core's own client and then
+/// this one send Chrome's first flight on every QUIC connection by default,
+/// and this one the stock flight with `disableChromeParrot: true`.
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-xdrive-interop.sh"]
+async fn xdrive_google_drive_over_http3_parrots_chrome() {
+    use super::chrome_parrot_wire::{assert_chrome_first_flight, assert_stock_first_flight};
+    let drive = start_drive().await;
+    let server_stream = drive_stream(&drive, json!({}));
+    let session = start_server_with(false, move |_| server_stream).await;
+    let server = &session.server;
+    let (tcp_port, udp_port, _tcp, _udp) = echo_servers().await;
+    let relay = NatRelay::start(SocketAddr::from((Ipv4Addr::LOCALHOST, drive.port))).await;
+    let through_relay = |quic: Option<Value>| {
+        let mut extra = json!({"tlsSettings": {"alpn": ["h3"]}, "port": relay.address.port()});
+        if let Some(quic) = quic {
+            extra["finalmask"] = json!({"quicParams": quic});
+        }
+        drive_stream(&drive, extra)
+    };
+    // Xray-core's own client first: its flights are what the checks hold.
+    let xray = xray_client(client_config_with(&session, through_relay(None))).await;
+    carry(server, || drive.requests(), xray.addr, tcp_port, udp_port).await;
+    drop(xray);
+    let flights = relay.take_flights();
+    assert!(
+        !flights.is_empty(),
+        "Xray-core's client: no QUIC connection"
+    );
+    for flight in &flights {
+        assert_chrome_first_flight(flight, b"h3");
+    }
+    for (quic, chrome_parrot) in [
+        (None, true),
+        (Some(json!({"disableChromeParrot": true})), false),
+    ] {
+        let mut client = core(client_config_with(&session, through_relay(quic.clone()))).await;
+        let proxy = client.inbound_addr(Some("socks-in")).unwrap();
+        carry(server, || drive.requests(), proxy, tcp_port, udp_port).await;
+        client.stop().await.unwrap();
+        let flights = relay.take_flights();
+        // A token from oauth2.googleapis.com, the files from www.googleapis.com.
+        assert!(
+            flights.len() >= 2,
+            "{quic:?}: {} connections",
+            flights.len()
+        );
+        for flight in &flights {
+            if chrome_parrot {
+                assert_chrome_first_flight(flight, b"h3");
+            } else {
+                assert_stock_first_flight(flight);
+            }
+        }
+    }
+    let over_http3 = drive.served(&["HTTP/3.0 PATCH www.googleapis.com /drive/v3/files/"]);
+    assert!(over_http3 > 0, "{}", drive.requests());
+}

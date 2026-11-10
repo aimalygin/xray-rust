@@ -8932,6 +8932,13 @@ mod tests {
                         .h3_quic_config()
                         .chrome_parrot
                 }
+                xray_config::StreamTransport::Xdrive(xdrive) => {
+                    xdrive::http_config(xdrive, &outbound.stream)
+                        .unwrap()
+                        .h3
+                        .expect("XDRIVE over exactly h3")
+                        .chrome_parrot
+                }
                 // outbound::masque's own tests check MASQUE.
                 xray_config::StreamTransport::Masque(_) => continue,
                 other => panic!("{name}: {other:?}"),
