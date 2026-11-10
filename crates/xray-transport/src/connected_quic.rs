@@ -311,6 +311,47 @@ mod tests {
         );
     }
 
+    /// A datagram longer than the receive buffer is dropped, and the receive
+    /// then reports that nothing is left. quinn-udp before 0.5.16 spun at
+    /// full CPU instead (fixed upstream in 462865a6c3). After the cut
+    /// datagram's `MSG_TRUNC`, its Apple loop retried before looking at
+    /// recvmsg's result, and XNU leaves `msg_flags` as they were when
+    /// recvmsg fails. The loop ended only when a datagram that fits arrived.
+    /// This socket and Quinn's own Apple socket both receive through
+    /// `UdpSocketState::recv`.
+    #[test]
+    fn a_datagram_longer_than_the_buffer_does_not_spin_the_receive() {
+        let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let address = receiver.local_addr().unwrap();
+        let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
+        sender.send_to(&[7; 2000], address).unwrap();
+        // Wait until the datagram is queued, without taking it.
+        receiver.peek_from(&mut [0; 1]).unwrap();
+        receiver.set_nonblocking(true).unwrap();
+        let state = udp::UdpSocketState::new((&receiver).into()).unwrap();
+        let (done, outcome) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let receive = || {
+                let mut bytes = [0; 1472];
+                let mut bufs = [IoSliceMut::new(&mut bytes)];
+                let mut meta = [udp::RecvMeta::default()];
+                state
+                    .recv((&receiver).into(), &mut bufs, &mut meta)
+                    .map(|_| bufs[0][..meta[0].len].to_vec())
+            };
+            let after_the_cut = receive().map_err(|error| error.kind());
+            sender.send_to(b"fits", address).unwrap();
+            receiver.set_nonblocking(false).unwrap();
+            let next = receive().map_err(|error| error.kind());
+            let _ = done.send((after_the_cut, next));
+        });
+        let (after_the_cut, next) = outcome
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the receive should return, not spin");
+        assert_eq!(after_the_cut, Err(io::ErrorKind::WouldBlock));
+        assert_eq!(next, Ok(b"fits".to_vec()));
+    }
+
     #[tokio::test]
     async fn connected_ipv4_preserves_payload_ecn_and_dscp() {
         tokio::time::timeout(
