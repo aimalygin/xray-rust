@@ -34,8 +34,9 @@ Hysteria accepts one Salamander mask and the v26.10.21 UDP-hop mask:
 ```
 
 Both masks are optional. UDP-hop must be last: Xray-core reverses the list
-and dials only an outermost UDP-hop, so a mask after it fails every dial with
-`incorrect index`, though `xray run -test` accepts it. XHTTP with exact `h3`
+and dials only an outermost UDP-hop, so a mask after it, a
+[filter](#filter-mask) included, fails every dial with `incorrect index`,
+though `xray run -test` accepts it. XHTTP with exact `h3`
 ALPN accepts the same UDP-hop mask (see the XHTTP H3 section). Its `mode` is
 a comma-separated mix of Xray-core v26.10.31's modes, read as Xray reads
 them: case-insensitive, without trimming, and refusing an empty or unknown
@@ -67,7 +68,7 @@ combining both spellings fails. Profile import emits the new mask form.
 
 Salamander passwords contain 4..4096 UTF-8 bytes and remain redacted/zeroized.
 One noise mask may accompany Salamander, after UDP-hop; unknown and duplicate
-masks fail.
+masks fail, [filters](#filter-mask) aside.
 
 A Salamander `packetSize` with a positive upper bound selects Gecko, as in
 Xray-core and Hysteria 2.9.2+. It is an Xray integer range: a number, or a
@@ -381,7 +382,7 @@ and `maxSplit` 0..4096 (zero means no explicit split limit). Before sending,
 each actual randomized plan must fit 4096 records and ten seconds of total
 delay; exceeding either limit fails the connection. `maxSplit` makes the last
 record contain the remainder, even when it exceeds the configured length.
-Zero lengths, other mask types and unknown fields are rejected. FinalMask
+Zero lengths and unknown fields are rejected. FinalMask
 spells the delay `delay`, not `interval`.
 
 `packets` can also select whole writes, which then go out as raw pieces, as
@@ -2523,7 +2524,8 @@ on mKCP, Hysteria and XHTTP over HTTP/3:
 
 Over TCP the client writes classic sudoku, at least four bytes per byte,
 and reads the server's packed form, four bytes per three. The TCP mask must
-be the last one in `finalmask.tcp`: the `fragment` and `header-custom` masks
+be the last one in `finalmask.tcp`, [filters](#filter-mask) aside: the
+`fragment` and `header-custom` masks
 before it go through it, so the `header-custom` handshake is encoded too.
 On mKCP each datagram is encoded on its own, at least four times its size;
 a legacy mask after it drops mKCP's datagrams past 4096 bytes, as in
@@ -2573,7 +2575,8 @@ the server confirms the profile, they exchange about a second of padding
 that copies the lengths and write boundaries of a real login, then carry the
 proxied bytes in configuration-state custom payload packets of at most
 24 KiB; the client answers the server's keep-alives. The mask must be the
-last one in `finalmask.tcp`, so the `fragment` and `header-custom` masks
+last one in `finalmask.tcp`, [filters](#filter-mask) aside, so the
+`fragment` and `header-custom` masks
 before it run inside the login. REALITY is refused over it: Xray-core's
 REALITY server panics on every connection through xmc.
 `scripts/check-xmc-interop.sh` compares the keys Xray-core derives and runs
@@ -2616,8 +2619,9 @@ it has, after up to a second. A QUIC packet takes several queries; an answer
 carries whole packets, so on QUIC carriers `edns0` must leave room for one,
 and resolvers that cut EDNS to 1232 bytes are too small.
 
-The mask must be the last UDP mask: its client opens its own sockets to the
-resolvers, and Xray-core dials the masks listed after it for nothing. The
+The mask must be the last UDP mask, [filters](#filter-mask) aside: its
+client opens its own sockets to the resolvers, and Xray-core dials the masks
+listed after it for nothing. The
 masks listed before it work inside it. It cannot run with udphop, nor with
 sudoku on QUIC carriers, whose datagrams exceed the 4096 bytes one xdns
 packet takes. Not supported yet: resolver names, DNS over HTTPS and its
@@ -3073,8 +3077,8 @@ attempt names the peer, and a hello is answered. With the rendezvous's
 ten-second wait for the server, an attempt takes up to about 35 seconds,
 which Hysteria's dial deadline allows for.
 
-The mask must be the last UDP mask. Xray-core sends its STUN and punch
-packets through the masks listed after it, which mangle them or, for noise,
+The mask must be the last UDP mask, [filters](#filter-mask) aside.
+Xray-core sends its STUN and punch packets through the masks listed after it, which mangle them or, for noise,
 announce them; list noise before realm. The masks listed before it run on
 the carrier's datagrams inside it. It cannot run with udphop or xdns, which
 send elsewhere, nor with header-custom, whose state Xray-core keys by the
@@ -3136,7 +3140,8 @@ replies with it reach them. On macOS and iOS an IPv4 datagram socket would
 return the IP header, which the client switches off as Go does.
 
 The mask must be the last UDP mask: Xray-core fails every dial with it
-anywhere else. The masks listed before it run inside it. It cannot run with
+anywhere else, even before a [filter](#filter-mask). The masks listed
+before it run inside it. It cannot run with
 udphop, xdns or realm, which send elsewhere, nor with header-custom, whose
 state Xray-core keys by the server's address and port while replies come
 without a port, nor on QUIC with sudoku, whose datagrams exceed what an echo
@@ -3183,6 +3188,55 @@ xdns and xicmp.
   driver that replaces or introduces the socket, and `mkcp-legacy`, which
   only mKCP takes here. Sudoku cannot run under xdns or xicmp: its datagrams
   exceed what an xdns packet or an echo carries.
+
+### filter mask
+
+Xray-core v26.11.9 registers `filter` in both `finalmask.tcp` and
+`finalmask.udp`. A server uses it to drop incoming connections and
+datagrams by their source address; on a client, `WrapConnClient` and
+`WrapPacketConnClient` return the connection unchanged. xray-rust does
+what Xray-core's client does: it reads and validates every filter, on any
+outbound and in either list, then leaves it out, so a carrier with filters
+sends exactly what it sends without them.
+
+```json
+"finalmask": {"tcp": [{"type": "filter", "settings": {
+  "blockedSourceIPs": ["198.51.100.0/24", "!192.0.2.0/24"],
+  "allowedSourceIPs": ["2001:db8::/32"]
+}}]}
+```
+
+- Absent or null `settings` and absent or null lists are empty; settings
+  of another type fail, as Go's decoding fails them. Field names match
+  case-insensitively and unknown fields are ignored, as Go's JSON decoding
+  reads them, where the other masks refuse an unknown field: nothing in a
+  filter changes what a client does. When the object holds a field under
+  several spellings, Go keeps the last one it decodes; this parser, which
+  reads the object without its order, checks each of them.
+- `blockedSourceIPs` and `allowedSourceIPs` hold IP rules as
+  `geodata.ParseIPRules` reads them: an address with an optional prefix
+  length, an IPv4-mapped address counting as IPv4, and their `!` forms;
+  `geoip:code`; and `ext:file:code` or `ext-ip:file:code`. The file of a
+  `geoip:` or `ext:` rule must hold its code in the
+  [geodata](#geodata) directories, as Xray-core's `checkFile` requires,
+  `geoip:private` included: unlike routing's, it is not built in here. A
+  refused rule reports Xray-core's reason, such as
+  `invalid "blockedSourceIPs": illegal ip rule: 10.0.0.0/33: CIDR prefix
+  length 33 exceeds max 32`.
+- Any number of filters may stand anywhere and count toward no limit: the
+  masks that must be last or outermost, sudoku, xmc, xdns and realm, ignore
+  them. udphop and xicmp do not. Xray-core dials either only at the very
+  end of the list: it accepts a filter after one, `xray run -test` included,
+  and then fails every dial with `incorrect index`, so a filter there is
+  refused as any mask there is.
+- XDRIVE over HTTP/3 to Google Drive refuses a UDP filter, as it refuses
+  every UDP mask but noise, with Xray-core's message.
+
+`tests/fixtures/filter/config-verdicts.json` records what the pinned
+`xray run -test` says of each case, rechecked by
+`scripts/check-xray-verdicts.sh`; every case the parser takes builds a core,
+and both lists' filters leave the parsed configuration as it is without
+them.
 
 ### TLS ClientHello shaping
 

@@ -78,6 +78,8 @@ mod tun_admission;
 mod blackhole;
 #[path = "runtime_data_path_tests/dns_use_system.rs"]
 mod dns_use_system;
+#[path = "runtime_data_path_tests/finalmask_filter.rs"]
+mod finalmask_filter;
 #[path = "runtime_data_path_tests/freedom_domain_strategy.rs"]
 mod freedom_domain_strategy;
 #[path = "runtime_data_path_tests/freedom_noises.rs"]

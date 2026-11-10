@@ -219,6 +219,20 @@ async fn xdns_carries_xhttp_h3() {
             .stream
             .udp_xdns
             .clone();
+    // Xray-core's server drops a downlink packet that does not fit the answer
+    // to the query it meets, and an A answer holds at most 764 bytes, short
+    // of a full QUIC packet. QUIC resends it through the polls, whose delay
+    // doubles from half a second, so the echo can stall for over a second
+    // once the upload is handed over. The one-second half-close timers, as
+    // in Xray-core, then close the flow mid-echo: about one run in ten.
+    config.policy.levels.insert(
+        0,
+        xray_config::PolicyLevelConfig {
+            uplink_only: Some(30),
+            downlink_only: Some(30),
+            ..Default::default()
+        },
+    );
     timeout(
         Duration::from_secs(120),
         run_local_xray_xhttp_interop_scenario(xray, config, XhttpMode::StreamOne),

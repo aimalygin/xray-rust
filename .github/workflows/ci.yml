@@ -486,7 +486,7 @@ jobs:
       - name: Verify the XDRIVE client against pinned Xray-core
         run: bash scripts/check-xdrive-interop.sh
 
-      - name: Recheck the freedom finalRules and Mux config verdicts against pinned Xray-core
+      - name: Recheck the freedom finalRules, Mux and FinalMask filter config verdicts against pinned Xray-core
         run: bash scripts/check-xray-verdicts.sh
 
       - name: Hold pinned Xray-core's own ClientHellos to the uTLS fixtures

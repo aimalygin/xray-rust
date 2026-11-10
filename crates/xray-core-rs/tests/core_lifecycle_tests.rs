@@ -496,6 +496,38 @@ async fn masque_profiles_xray_accepts_build_a_core() {
     assert!(built > 50, "only {built} cases built a core");
 }
 
+/// Every FinalMask filter case the configuration takes builds a core, on
+/// every carrier that takes masks and every outbound that dials none:
+/// `tests/fixtures/filter/config-verdicts.json`.
+#[tokio::test]
+async fn filter_cases_the_parser_takes_build_a_core() {
+    use serde_json::{json, Value};
+    let corpus: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/filter/config-verdicts.json"
+    ))
+    .unwrap();
+    let mut mismatches = Vec::new();
+    let mut built = 0;
+    for case in corpus["cases"].as_array().unwrap() {
+        let raw = json!({"outbounds": [case["outbound"]]}).to_string();
+        let Ok(parsed) = xray_config::parse_xray_json(&raw) else {
+            continue;
+        };
+        let refusal = case.get("core").and_then(Value::as_str);
+        match (Core::new(parsed.config), refusal) {
+            (Ok(_), None) => built += 1,
+            (Err(error), Some(expected)) if error.to_string().contains(expected) => {}
+            (Ok(_), Some(expected)) => mismatches.push(format!(
+                "{}: built, expected the core to refuse with {expected:?}",
+                case["name"]
+            )),
+            (Err(error), _) => mismatches.push(format!("{}: {error}", case["name"])),
+        }
+    }
+    assert!(mismatches.is_empty(), "{mismatches:#?}");
+    assert!(built >= 50, "only {built} cases built a core");
+}
+
 /// Every `disableChromeParrot` case Xray-core accepts builds a core here too,
 /// with ChromeParrot on or off: `tests/fixtures/chrome-parrot/config-verdicts.json`.
 #[tokio::test]
