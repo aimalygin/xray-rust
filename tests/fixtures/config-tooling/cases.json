@@ -3374,13 +3374,56 @@
           "port": 443,
           "id": "my-short-id",
           "encryption": "none",
+          "email": "bridge",
           "reverse": {
-            "tag": "portal"
+            "tag": "portal",
+            "sniffing": {
+              "enabled": true,
+              "destOverride": [
+                "http",
+                "tls"
+              ]
+            }
+          }
+        }
+      },
+      "objects": {
+        "VLESS_REVERSE": "/outbounds/0/settings/reverse"
+      },
+      "accepted": true
+    },
+    {
+      "name": "vless-simplified-reverse-empty-tag",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/settings": {
+          "address": "server.example",
+          "port": 443,
+          "id": "my-short-id",
+          "encryption": "none",
+          "reverse": {
+            "tag": ""
           }
         }
       },
       "accepted": false,
-      "errorPath": "$.outbounds[0].settings.reverse"
+      "errorPath": "$.outbounds[0].settings.reverse.tag"
+    },
+    {
+      "name": "legacy-root-reverse",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/reverse": {
+          "bridges": [
+            {
+              "tag": "bridge",
+              "domain": "reverse.example"
+            }
+          ]
+        }
+      },
+      "accepted": false,
+      "errorPath": "$.reverse"
     },
     {
       "name": "vless-testpre",

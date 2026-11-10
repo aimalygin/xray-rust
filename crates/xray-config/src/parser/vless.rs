@@ -1,6 +1,6 @@
 use super::{normalize_xray_address_text, Parser};
 use crate::surface;
-use crate::{TargetAddr, VlessOutboundSettings, VlessUser};
+use crate::{TargetAddr, VlessOutboundSettings, VlessReverseSettings, VlessUser};
 use serde_json::Value;
 use std::net::IpAddr;
 use xray_proxy::vless::DEFAULT_VISION_SEED;
@@ -95,9 +95,11 @@ impl Parser<'_> {
             self.error(port_path, "vless server port must not be 0");
             return None;
         }
-        let users = match form {
+        let (mut users, reverse) = match form {
             VlessForm::Flattened(settings) => {
-                vec![self.parse_vless_user(settings, &user_path, true)?]
+                let reverse = self.parse_vless_reverse(settings, &settings_path);
+                let user = self.parse_vless_user(settings, &user_path, true);
+                (vec![user?], reverse?)
             }
             VlessForm::Vnext { users, .. } => {
                 let parsed: Vec<_> = users
@@ -110,14 +112,58 @@ impl Parser<'_> {
                 if parsed.len() != users.len() {
                     return None;
                 }
-                parsed
+                (parsed, None)
             }
         };
+        if reverse.is_some() {
+            // Xray-core keeps no connections ahead for a reverse outbound.
+            for user in &mut users {
+                user.pre_connections = 0;
+            }
+        }
         Some(VlessOutboundSettings {
             server,
             port,
             users,
+            reverse,
         })
+    }
+
+    /// `reverse` in the simplified form, as Xray-core's
+    /// `VLessReverseConfig.Build` reads it: a tag that is not empty, and
+    /// `sniffing` as an inbound's. `None` inside when there is none; `None`
+    /// outside after an error.
+    fn parse_vless_reverse(
+        &mut self,
+        settings: &Value,
+        settings_path: &str,
+    ) -> Option<Option<VlessReverseSettings>> {
+        // The type was checked with the other simplified-form fields.
+        let Some(reverse) = settings
+            .get("reverse")
+            .filter(|reverse| reverse.is_object())
+        else {
+            return Some(None);
+        };
+        let path = format!("{settings_path}.reverse");
+        self.reject_unknown_fields(reverse, &path, &surface::VLESS_REVERSE);
+        let tag_path = format!("{path}.tag");
+        let tag = self.nullable_string_at(reverse, "tag", tag_path.clone())?;
+        if tag.is_empty() {
+            self.error(tag_path, "VLESS reverse: \"tag\" can't be empty");
+            return None;
+        }
+        let tag = tag.to_owned();
+        let sniffing = self.parse_sniffing(reverse.get("sniffing"), &format!("{path}.sniffing"));
+        let email = self
+            .string_at(settings, "email")
+            .unwrap_or_default()
+            .to_owned();
+        Some(Some(VlessReverseSettings {
+            tag,
+            email,
+            sniffing,
+        }))
     }
 
     fn vless_server_address(&mut self, server: &Value, server_path: &str) -> Option<TargetAddr> {
@@ -250,15 +296,6 @@ impl Parser<'_> {
                 return None;
             }
             self.optional_string_at(user, "security", format!("{user_path}.security"));
-        } else if user
-            .get("reverse")
-            .is_some_and(|reverse| !reverse.is_null())
-        {
-            self.error(
-                format!("{user_path}.reverse"),
-                "VLESS reverse is unsupported",
-            );
-            return None;
         }
 
         let id_path = format!("{user_path}.id");

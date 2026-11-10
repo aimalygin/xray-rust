@@ -110,6 +110,8 @@ impl SocksUdpBudgetExhaustionLog {
 #[derive(Clone)]
 struct SocksUdpFlowContext {
     reply: UdpReply,
+    /// Where a SOCKS or transparent reply goes. A reverse session's client
+    /// is read through [`SocksUdpFlowContext::source`] instead.
     client_addr: SocketAddr,
     /// The address routing sees as the flow's local one: the association's
     /// relay socket, as in Xray-core.
@@ -133,6 +135,12 @@ enum UdpReply {
     Socks(Arc<UdpSocket>),
     #[cfg(target_os = "linux")]
     Transparent(Arc<UdpSocket>),
+    /// A session the portal of a VLESS reverse proxy opened, whose client
+    /// is the portal's when the portal named it.
+    Reverse {
+        session: crate::reverse::Session,
+        source: Option<SocketAddr>,
+    },
 }
 impl SocksUdpFlowContext {
     async fn deliver(&self, source: &Target, payload: &[u8]) -> std::io::Result<()> {
@@ -146,7 +154,35 @@ impl SocksUdpFlowContext {
             UdpReply::Transparent(socket) => {
                 socket.send_to(payload, self.client_addr).await.map(|_| ())
             }
+            UdpReply::Reverse { session, .. } => session.send_datagram(source, payload).await,
         }
+    }
+
+    /// The client routing sees as the flow's source.
+    fn source(&self) -> Option<SocketAddr> {
+        match &self.reply {
+            UdpReply::Reverse { source, .. } => *source,
+            _ => Some(self.client_addr),
+        }
+    }
+
+    /// The client, as access logs name it.
+    fn client_label(&self) -> String {
+        self.source()
+            .map_or_else(|| "unknown".to_owned(), |source| source.to_string())
+    }
+
+    fn is_reverse(&self) -> bool {
+        matches!(self.reply, UdpReply::Reverse { .. })
+    }
+
+    /// The XUDP global ID of the flow to `target`. Xray-core gives a reverse
+    /// session none, as it does every inbound but a few.
+    fn global_id(&self, target: &Target) -> [u8; 8] {
+        if self.is_reverse() {
+            return [0; 8];
+        }
+        socks_udp_flow_global_id(self.client_addr, target)
     }
 }
 
@@ -589,7 +625,7 @@ pub(crate) async fn handle_socks_connect<const SOCKS_REPLY: bool>(
             return;
         }
         if let Some(config) = sniffing_config {
-            let (payload, sniffed) = read_socks_tcp_sniff_payload(
+            let (payload, sniffed) = read_tcp_sniff_payload(
                 &mut inbound,
                 config,
                 &dial_target,
@@ -922,12 +958,17 @@ pub(crate) fn tcp_relay_policy(
     }
 }
 
-async fn read_socks_tcp_sniff_payload(
-    inbound: &mut TcpStream,
+/// Reads a TCP flow's first bytes for sniffing, as Xray-core's dispatcher
+/// waits for them.
+pub(crate) async fn read_tcp_sniff_payload<S>(
+    inbound: &mut S,
     config: &InboundSniffingConfig,
     target: &Target,
     record_attributes: bool,
-) -> (Bytes, crate::sniffing::TcpSniffed) {
+) -> (Bytes, crate::sniffing::TcpSniffed)
+where
+    S: tokio::io::AsyncRead + Unpin,
+{
     let deadline = tokio::time::Instant::now() + SOCKS_TCP_SNIFF_TIMEOUT;
     let mut buffer = Vec::with_capacity(SOCKS_TCP_SNIFF_BUFFER_SIZE);
 
@@ -1141,6 +1182,137 @@ async fn handle_socks_udp_associate(
     while flow_tasks.join_next().await.is_some() {}
 }
 
+/// Relays a UDP session the portal of a VLESS reverse proxy opened. A
+/// datagram goes to the address its frame names, else to the session's
+/// target; each destination is a flow of its own, routed and relayed as a
+/// SOCKS association's flows are, and the replies name their sources. The
+/// session ends when the portal ends it, or once every flow went idle.
+pub(crate) async fn relay_reverse_udp_session(
+    bridge: &crate::reverse::BridgeContext,
+    session: crate::reverse::Session,
+    target: Target,
+    source: Option<SocketAddr>,
+    local: Option<SocketAddr>,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    let context = SocksUdpFlowContext {
+        reply: UdpReply::Reverse {
+            session: session.clone(),
+            source,
+        },
+        // Only read through `source`, which keeps a missing client missing.
+        client_addr: source.unwrap_or(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)),
+        local_addr: local,
+        user: bridge.user().map(InboundUser::from_email),
+        inbound_tag: Some(bridge.reverse.tag.clone()),
+        config: Arc::clone(&bridge.config),
+        outbound_router: Arc::clone(&bridge.router),
+        dns_resolvers: bridge.dns.clone(),
+        transport_dialer: Arc::clone(&bridge.dialer),
+        sniffing: bridge.reverse.sniffing.clone(),
+        runtime_logger: bridge.logger.clone(),
+        connection_registry: Arc::clone(&bridge.registry),
+    };
+    let budgets = SocksUdpBudgets::default();
+    let mut flows = HashMap::<(SocketAddr, Target), SocksUdpFlowEntry>::new();
+    let mut flow_tasks = JoinSet::new();
+    let mut activity_sequence = 0u64;
+    loop {
+        tokio::select! {
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    break;
+                }
+            }
+            joined = flow_tasks.join_next_with_id(), if !flow_tasks.is_empty() => {
+                match joined {
+                    Some(Ok((task_id, flow_key))) => {
+                        remove_socks_udp_flow_by_task_id(&mut flows, task_id, Some(&flow_key));
+                    }
+                    Some(Err(error)) => {
+                        remove_socks_udp_flow_by_task_id(&mut flows, error.id(), None);
+                    }
+                    None => {}
+                }
+                if flow_tasks.is_empty() {
+                    break;
+                }
+            }
+            () = tokio::time::sleep(SOCKS_UDP_FLOW_IDLE_TIMEOUT), if flow_tasks.is_empty() => break,
+            received = session.recv_datagram() => {
+                let Some((address, payload)) = received else {
+                    break;
+                };
+                let destination = address.unwrap_or_else(|| target.clone());
+                if payload.is_empty() || destination.port == 0 {
+                    continue;
+                }
+                let flow_key = (context.client_addr, destination);
+                activity_sequence = activity_sequence.wrapping_add(1);
+                let payload = match flows.get_mut(&flow_key) {
+                    Some(entry) => {
+                        entry.last_activity = activity_sequence;
+                        match entry.sender.try_send(payload) {
+                            Ok(()) => continue,
+                            Err(mpsc::error::TrySendError::Full(_)) => continue,
+                            Err(mpsc::error::TrySendError::Closed(payload)) => {
+                                if let Some(entry) = flows.remove(&flow_key) {
+                                    entry.abort_handle.abort();
+                                }
+                                payload
+                            }
+                        }
+                    }
+                    None => payload,
+                };
+                let Some(SocksUdpFlowPermits {
+                    global: global_permit,
+                    pending_open: pending_open_permit,
+                }) = admit_socks_udp_flow(&mut flows, &budgets, &context.runtime_logger)
+                else {
+                    continue;
+                };
+                let (sender, receiver) = mpsc::channel(SOCKS_UDP_FLOW_QUEUE);
+                if sender.try_send(payload).is_err() {
+                    continue;
+                }
+                let flow_context = context.clone();
+                let destination = flow_key.1.clone();
+                let completion_key = flow_key.clone();
+                let flow_shutdown = shutdown.clone();
+                let abort_handle = flow_tasks.spawn(async move {
+                    bridge_socks_udp_flow(
+                        destination,
+                        flow_context,
+                        receiver,
+                        flow_shutdown,
+                        pending_open_permit,
+                    )
+                    .await;
+                    completion_key
+                });
+                let task_id = abort_handle.id();
+                flows.insert(
+                    flow_key,
+                    SocksUdpFlowEntry {
+                        sender,
+                        abort_handle,
+                        task_id,
+                        last_activity: activity_sequence,
+                        global_permit,
+                    },
+                );
+            }
+        }
+    }
+
+    for (_, entry) in flows.drain() {
+        entry.abort_handle.abort();
+    }
+    flow_tasks.abort_all();
+    while flow_tasks.join_next().await.is_some() {}
+}
+
 struct SocksUdpFlowPermits {
     global: OwnedSemaphorePermit,
     pending_open: OwnedSemaphorePermit,
@@ -1308,7 +1480,7 @@ async fn bridge_socks_udp_flow(
     let route = RouteContext {
         attributes: None,
         inbound_tag: context.inbound_tag.as_deref(),
-        source: Some(context.client_addr),
+        source: context.source(),
         local: context.local_addr,
         user: context.user.as_ref().map(InboundUser::as_str),
         protocol: sniffed_target
@@ -1329,7 +1501,7 @@ async fn bridge_socks_udp_flow(
         Ok(outbound) => outbound,
         Err(error) => {
             if context.runtime_logger.is_enabled() {
-                let source = context.client_addr.to_string();
+                let source = context.client_label();
                 crate::debug_log::log_access_rejected(
                     &context.runtime_logger,
                     &source,
@@ -1378,7 +1550,7 @@ async fn bridge_socks_udp_flow(
         UdpSessionOutbound::Transport(outbound) => outbound,
         UdpSessionOutbound::Dns(outbound) => {
             if context.runtime_logger.is_enabled() {
-                let source = context.client_addr.to_string();
+                let source = context.client_label();
                 crate::debug_log::log_access_accepted(
                     &context.runtime_logger,
                     &source,
@@ -1403,7 +1575,7 @@ async fn bridge_socks_udp_flow(
         }
         UdpSessionOutbound::Blackhole(blackhole) => {
             if context.runtime_logger.is_enabled() {
-                let source = context.client_addr.to_string();
+                let source = context.client_label();
                 crate::debug_log::log_access_accepted(
                     &context.runtime_logger,
                     &source,
@@ -1426,8 +1598,40 @@ async fn bridge_socks_udp_flow(
         }
     };
 
+    // A reverse flow a folded freedom fragment refuses drops its datagrams,
+    // as a refused freedom flow does.
+    if context.is_reverse()
+        && !matches!(
+            outbound
+                .reverse_refused(
+                    &dial_target,
+                    context.dns_resolvers.bootstrap.as_ref(),
+                    context.transport_dialer.as_ref(),
+                )
+                .await,
+            Ok(false)
+        )
+    {
+        drop(pending_open_permit);
+        drop(first_payload);
+        absorb_socks_udp_blackhole_flow(
+            &target,
+            BlackholeOutbound::new(&xray_config::BlackholeResponse::None),
+            &context,
+            from_client,
+            shutdown,
+            connection,
+        )
+        .await;
+        return;
+    }
     match outbound {
         UdpOutbound::Freedom(freedom) => {
+            let freedom = if context.is_reverse() {
+                freedom.for_reverse()
+            } else {
+                freedom
+            };
             let domain_strategy = freedom.udp_domain_strategy(&target);
             // Once Xray-core's freedom redirects, it stops attributing replies
             // to their senders, so they come from the destination the client
@@ -1440,7 +1644,7 @@ async fn bridge_socks_udp_flow(
                 None => (dial_target, client_visible_target),
             };
             if context.runtime_logger.is_enabled() {
-                let source = context.client_addr.to_string();
+                let source = context.client_label();
                 crate::debug_log::log_access_accepted(
                     &context.runtime_logger,
                     &source,
@@ -1465,7 +1669,7 @@ async fn bridge_socks_udp_flow(
         }
         UdpOutbound::Vless(outbound) if !outbound.udp_uses_mux(&dial_target) => {
             if context.runtime_logger.is_enabled() {
-                let source = context.client_addr.to_string();
+                let source = context.client_label();
                 crate::debug_log::log_access_accepted(
                     &context.runtime_logger,
                     &source,
@@ -1812,7 +2016,7 @@ async fn bridge_socks_udp_freedom_flow(
         // Xray-core writes the header as a datagram of its own.
         let header = proxy_protocol::header(
             version,
-            Some(InboundSource::udp(context.client_addr)),
+            context.source().map(InboundSource::udp),
             xray_routing::Network::Udp,
             target_addr,
         );
@@ -1938,7 +2142,7 @@ async fn bridge_socks_udp_vless_flow(
     let (mut remote_reader, mut remote_writer) = tokio::io::split(stream);
     let fallback_source = target.clone();
     let mut sent_xudp_new = false;
-    let global_id = socks_udp_flow_global_id(context.client_addr, &target);
+    let global_id = context.global_id(&target);
     let record_write = |written: Option<usize>, len: usize| match written {
         Some(written) => traffic.record_uplink(written as u64),
         None => crate::outbound::datagram::log_oversize_udp_datagram(

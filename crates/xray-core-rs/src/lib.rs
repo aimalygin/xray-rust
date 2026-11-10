@@ -34,6 +34,7 @@ mod http;
 mod http_forward;
 mod outbound;
 mod policy;
+mod reverse;
 mod runtime_log;
 mod runtime_stats_log;
 mod sniffing;
@@ -884,6 +885,13 @@ impl Core {
             tun_runtime_options.hysteria_stream_limits,
         ));
         let outbound_router = Arc::new(OutboundRouter::from_factory(outbound_factory));
+        // A bridge's outbound is dialed from the start, so its refusals
+        // belong to the start too.
+        for (index, _, _) in reverse::bridges(&config) {
+            if let Some(node) = outbound_router.graph().nodes().get(index) {
+                outbound_router.factory().cached_tcp_outbound(node.id())?;
+            }
+        }
         let shutdown = Shutdown::new();
         let tun_queue_options = tun_runtime_options.tun_queue_options();
         let tun = Arc::new(TunEndpoint::new_with_queue_depths(
@@ -1361,7 +1369,13 @@ impl Core {
             ));
         }
 
-        if bound_listeners.is_empty() && tun_inbounds.is_empty() && tproxy_inbounds.is_empty() {
+        // A VLESS reverse proxy's bridge takes connections as an inbound does.
+        let bridges = reverse::bridges(&self.config);
+        if bound_listeners.is_empty()
+            && tun_inbounds.is_empty()
+            && tproxy_inbounds.is_empty()
+            && bridges.is_empty()
+        {
             return Err(CoreError::NoSupportedInbound);
         }
 
@@ -1433,6 +1447,24 @@ impl Core {
                 context,
                 self.shutdown.subscribe(),
             )));
+        }
+        for (index, settings, level) in bridges {
+            if let Some(context) = reverse::context(
+                index,
+                settings,
+                level,
+                Arc::clone(&config),
+                Arc::clone(&outbound_router),
+                runtime_dns_resolvers.clone(),
+                Arc::clone(&self.transport_dialer),
+                self.runtime_logger.clone(),
+                Arc::clone(&self.connection_registry),
+            ) {
+                tasks.push(tokio::spawn(reverse::run_bridge(
+                    context,
+                    self.shutdown.subscribe(),
+                )));
+            }
         }
         if has_tun_inbound {
             let tun_inbound_tag = tun_inbounds.first().and_then(|(tag, _, _)| tag.clone());

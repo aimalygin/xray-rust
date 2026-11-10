@@ -2029,6 +2029,7 @@ fn rust_vless_outbound(
                 vision_seed: xray_proxy::vless::DEFAULT_VISION_SEED,
                 pre_connections: 0,
             }],
+            reverse: None,
         }),
     }
 }
@@ -3693,6 +3694,9 @@ mod xdns;
 
 #[path = "local_xray_interop_tests/masque.rs"]
 mod masque;
+
+#[path = "local_xray_interop_tests/reverse.rs"]
+mod reverse;
 
 #[path = "../../../tests/support/realm_rendezvous.rs"]
 mod realm_rendezvous;

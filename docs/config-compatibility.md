@@ -621,6 +621,7 @@ exposes an unauthenticated proxy to the network.
 | `dns` | Hosts, string/object servers with managed selection policy, global and per-server `queryStrategy` including `UseSystem`, and `fakeIp` subset |
 | `policy` | Level/system fields are parsed; runtime timeout/buffer behavior is a subset |
 | `log` | Accepted for input compatibility, but runtime file logging is configured through the embedding API |
+| `reverse` | The legacy reverse proxy, refused unless `null` with Xray-core's message: upstream removed it for the [VLESS reverse proxy](#vless-reverse-proxy) |
 | `remarks`, `meta` | Subscription labels, such as those in Remnawave's XRAY_JSON format; `remarks` must be a string and `meta` an object (or null), and both are ignored, as in Xray-core |
 
 Other top-level keys are rejected.
@@ -820,8 +821,9 @@ it), optional `level` and these flow values:
 - `xtls-rprx-vision-udp443`.
 
 `testseed` sets Vision's padding parameters, the first four numbers when there
-are at least four, Xray-core's `[900, 500, 900, 256]` otherwise. `seed` and
-`email` are ignored. VLESS `reverse` is not supported and fails parsing.
+are at least four, Xray-core's `[900, 500, 900, 256]` otherwise. `seed` is
+ignored, and so is `email` except for a reverse proxy. VLESS `reverse` makes
+the outbound the bridge of a [VLESS reverse proxy](#vless-reverse-proxy).
 
 `testpre` keeps carrier connections opened ahead of the requests that take
 them, as Xray-core's VLESS outbound does, at most 64 here:
@@ -1036,6 +1038,8 @@ that no rule matches is allowed.
   drops them.
 - Xray-core's default rules, which block private addresses for connections
   from its server inbounds, do not arise: xray-rust has only client inbounds.
+  Its default for the connections a [VLESS reverse proxy](#vless-reverse-proxy)'s
+  portal opens does: after the rules, every address is blocked.
 
 Each item of `noises` is a datagram sent before a UDP flow's first payload,
 after any PROXY protocol header, as Xray-core's freedom sends it. Xray-core
@@ -1186,6 +1190,127 @@ Differences from Xray-core:
   and, on a loop, recurses until it runs out of stack and exits.
 - The loopback's own `sniffing` is read as an inbound's, but enabling it is
   refused for now; Xray-core sniffs the connection again with it.
+
+### VLESS reverse proxy
+
+A VLESS outbound in the simplified form takes `reverse`, which makes it the
+bridge of Xray-core v26.10.31's VLESS reverse proxy. The bridge keeps tunnels
+open to its server; the server, the portal, opens TCP and UDP connections back
+through them to the services the bridge's routing lets it reach:
+
+```json
+{
+  "outbounds": [
+    {"tag": "portal", "protocol": "vless",
+     "settings": {"address": "portal.example.com", "port": 443,
+       "id": "<uuid>", "encryption": "none", "flow": "xtls-rprx-vision",
+       "email": "home", "reverse": {"tag": "from-portal"}},
+     "streamSettings": {"security": "reality", "realitySettings": {}}},
+    {"tag": "home", "protocol": "freedom",
+     "settings": {"finalRules": [{"action": "allow", "network": "tcp",
+       "ip": ["192.168.1.10"], "port": "22,443"}]}}
+  ],
+  "routing": {"rules": [{"inboundTag": ["from-portal"], "outboundTag": "home"}]}
+}
+```
+
+- `tag` must not be empty. `sniffing` reads as an inbound's `sniffing`. The
+  `vnext` form refuses `reverse`, and unknown fields in it fail parsing.
+- Each connection is routed as if an inbound tagged `tag` had accepted it:
+  `source` and `sourcePort` match the portal's client, `localIP` and
+  `localPort` the address that client reached on the portal, `user` the
+  outbound's `email`, and `protocol` and `attrs` what `reverse.sniffing`
+  finds. Access logs name the portal's client.
+- A freedom outbound refuses these connections unless its `finalRules` allow
+  them, as Xray-core's freedom gives connections from a reverse proxy a final
+  rule that blocks every address: a refused TCP connection is held and
+  discarded as a blocked final rule holds it, a refused UDP flow drops its
+  datagrams. Write an `allow` rule for each service the portal may reach.
+- The freedom a `dialerProxy` chain ends on refuses them too, unless its
+  `finalRules` allow the hop before it: routed to a `vless` outbound with
+  `dialerProxy: "direct"`, a connection opens only when `direct` allows the
+  VLESS server, as Xray-core hands each link of a chain the connection's
+  context. A freedom that itself dials through `dialerProxy` applies no rule.
+  Under a link whose connections other flows share, a `mux` or `testpre` one
+  or a gRPC carrier, the chain is left as it is: Xray-core opens those
+  connections without the connection's context, and a refused shared
+  connection would stall every flow on it. Under an XHTTP link the connection
+  is refused before anything is dialed unless the freedom the chain ends on
+  allows the link's server, and so through a dedicated freedom fragment
+  outbound that `dialerProxy` names, which this implementation folds into the
+  outbound, unless that freedom's `finalRules` allow the server, for UDP flows
+  as well; Xray-core refuses these only on the dials that carry them
+  ([difference](xray-core-differences.md#vless-reverse-proxy)). UDP does not
+  go through other `dialerProxy` chains here at all.
+- Other outbounds take what routing sends them: another proxy, `blackhole`,
+  `dns`. Without a matching rule the first outbound does; when that is the
+  bridge itself, its server refuses the request, as a user with `reverse` may
+  not proxy forward.
+- A tunnel is a VLESS request with the reverse command, which names no
+  address, over the outbound's whole carrier: every transport and security,
+  VLESS `encryption`, Vision, the TCP masks, `sockopt` and `dialerProxy`. Its
+  header waits 500 ms for a payload, as any VLESS request's does, and then
+  goes alone, Vision padding an empty frame; the carrier is dialed up to five
+  times. Inside it the portal is a Mux.Cool client and the bridge its server.
+  `testpre` is not used and the outbound's `mux` applies only to connections
+  routed to it, as in Xray-core. Through `dialerProxy`, the freedom the chain
+  ends on refuses the tunnel unless its `finalRules` allow the portal's
+  address, as Xray-core's bridge then never connects. Over an XHTTP carrier,
+  and through a folded freedom fragment outbound, the tunnel is refused before
+  it dials unless that freedom allows the portal; over gRPC the chain is left
+  as it is.
+- Two seconds after the start, and every two seconds after that, the bridge
+  opens a tunnel when none is active or the active ones hold more than 16
+  sessions each. A tunnel stops being active when it closes or when the
+  portal's control session asks it to drain, which Xray-core's portal does
+  once more than 256 sessions, its control session included, were opened on it. A draining tunnel finishes its sessions
+  and, like any tunnel, closes once it held none for a whole minute.
+- A core with a bridge starts without an inbound.
+- The legacy `reverse` at the root of the configuration, with `bridges` and
+  `portals`, fails parsing with Xray-core's message: upstream removed it in
+  v26.4.25 for this proxy. The portal's side, a VLESS inbound whose user has
+  `reverse`, is not supported, as no VLESS inbound is.
+
+Security: the portal chooses the destinations; the bridge's routing and
+freedom's final rules decide which it opens, and nothing else does. A freedom
+`allow` rule without conditions opens everything the bridge reaches, its own
+loopback and local network included, to every client of the portal. Route the
+reverse tag explicitly and allow only the services meant to be reached.
+
+Mobile platforms: the tunnel is a long-lived outbound connection.
+
+- On iOS it lives in the Network Extension, which runs in the background while
+  the VPN is connected. A host running the core in its app process loses the
+  tunnel when iOS suspends the app, and the monitor opens a new one once it
+  runs again. On Android the VPN service keeps it; Doze may hold the network
+  back, and the tunnel is replaced once the network returns.
+- A network change usually leaves the tunnel's socket dead without an error,
+  and the bridge writes only in answer to the portal. The loss shows when the
+  carrier reports it, or when nothing crossed the tunnel for the `connIdle` of
+  the outbound user's policy level: 300 seconds by default, while the portal
+  sends a control message every 10 seconds. A `connIdle` of 30 seconds for
+  that level brings the tunnel back sooner. The Hysteria and WireGuard rebind
+  calls do not touch it.
+- While the portal is unreachable the bridge dials up to five times every two
+  seconds or so, as Xray-core does, with no longer backoff.
+
+Differences from Xray-core:
+
+- A tunnel holds at most 512 sessions at once and a bridge at most 16
+  tunnels, draining ones included; a session past the bound is refused with an
+  End that carries the error flag. Xray-core sets no bound.
+- Each destination of a UDP session is a flow of its own, routed and relayed
+  as a SOCKS association's flows are, and the session ends once its flows went
+  idle, after 60 seconds. Xray-core routes the session once, by its target,
+  and sends every datagram through that route to the address it names.
+- With `dns.fakeIp` on, a fake IP in a session's target turns back into its
+  domain, as for every inbound here; Xray-core does so only when sniffing names
+  `fakedns`.
+- A bridge whose outbound cannot be built, such as one with Vision but neither
+  TLS nor REALITY, fails the core's start; Xray-core starts and fails every
+  dial of the tunnel.
+- A frame of more than 8 KiB, metadata that Xray-core's portal never writes, or
+  a session ID used twice on a tunnel closes the tunnel.
 
 ### SOCKS outbound
 
