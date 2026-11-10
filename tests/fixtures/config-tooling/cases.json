@@ -4000,12 +4000,21 @@
       "warningPath": "$.outbounds[0].settings.domainStrategy"
     },
     {
-      "name": "quic-unsupported-disableChromeParrot",
+      "name": "quic-chrome-parrot-on",
       "base": "udp-hop-mask-261021",
       "set": {
         "/outbounds/0/streamSettings/finalmask/quicParams/disableChromeParrot": false
       },
-      "accepted": false
+      "accepted": true
+    },
+    {
+      "name": "quic-disableChromeParrot-string",
+      "base": "udp-hop-mask-261021",
+      "set": {
+        "/outbounds/0/streamSettings/finalmask/quicParams/disableChromeParrot": "true"
+      },
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.quicParams.disableChromeParrot"
     },
     {
       "name": "quic-disableGSO",

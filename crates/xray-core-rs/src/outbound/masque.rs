@@ -869,7 +869,8 @@ fn stack_error(error: xray_wireguard::Error) -> MasqueError {
 /// Xray's MASQUE QUIC configuration: `quicParams` with quic-go's defaults
 /// where it is silent, a 30-second idle timeout, the 10-second keepalive or
 /// `xmux.hKeepAlivePeriod`, no incoming streams, 1350-byte first packets,
-/// four-byte connection IDs, and `brutal` as BBR.
+/// four-byte connection IDs, `brutal` as BBR, and never ChromeParrot, which
+/// Xray's MASQUE dial does not set whatever `disableChromeParrot` says.
 fn masque_quic_config(
     stream: &StreamSettings,
     transport: &MasqueSettings,
@@ -905,6 +906,7 @@ fn masque_quic_config(
             _ => None,
         };
     }
+    config.chrome_parrot = false;
     config.max_incoming_bidirectional_streams = 0;
     config.initial_packet_size = Some(INITIAL_PACKET_SIZE);
     config.connection_id_len = Some(QUIC_CONNECTION_ID_LEN);

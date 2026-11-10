@@ -280,7 +280,7 @@ impl ServiceDialer {
         }
         let material = self
             .dialer
-            .h3_dial_material(&crate::ConnectorConfig::Tls(tls))
+            .h3_dial_material(&crate::ConnectorConfig::Tls(tls), quic.chrome_parrot)
             .map_err(transport_error)?;
         let remote_addr = *candidates
             .first()

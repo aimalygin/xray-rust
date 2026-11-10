@@ -329,10 +329,18 @@ pub(super) fn invalid_xhttp_configuration(error: impl ToString) -> CoreError {
 pub(super) fn xhttp_h3_quic_config(
     settings: Option<&QuicParamsSettings>,
 ) -> Result<H3QuicConfig, CoreError> {
+    // Without quicParams Xray dials with ChromeParrot, as with
+    // `disableChromeParrot: false`.
     let Some(settings) = settings else {
-        return Ok(H3QuicConfig::default());
+        return Ok(H3QuicConfig {
+            chrome_parrot: true,
+            ..H3QuicConfig::default()
+        });
     };
-    let mut config = H3QuicConfig::default();
+    let mut config = H3QuicConfig {
+        chrome_parrot: !settings.disable_chrome_parrot,
+        ..H3QuicConfig::default()
+    };
     config.initial_stream_receive_window = quic_u64_or_default(
         "initStreamReceiveWindow",
         settings.init_stream_receive_window,

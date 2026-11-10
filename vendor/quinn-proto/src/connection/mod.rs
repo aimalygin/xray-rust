@@ -15,6 +15,7 @@ use thiserror::Error;
 use tracing::{debug, error, trace, trace_span, warn};
 
 use crate::{
+    chrome_parrot::{self, GoPcg},
     cid_generator::ConnectionIdGenerator,
     cid_queue::CidQueue,
     coding::BufMutExt,
@@ -238,6 +239,9 @@ pub struct Connection {
     stats: ConnectionStats,
     /// QUIC version used for the connection.
     version: u32,
+    /// How a ChromeParrot client shapes its packets, see
+    /// [`TransportConfig::chrome_parrot`]
+    chrome: Option<ChromeState>,
 }
 
 impl Connection {
@@ -271,6 +275,8 @@ impl Connection {
             client_hello: None,
         });
         let mut rng = StdRng::from_seed(rng_seed);
+        let chrome = (side.is_client() && config.chrome_parrot)
+            .then(|| ChromeState::new(config.chrome_parrot_seed));
         let mut this = Self {
             endpoint_config,
             crypto,
@@ -355,7 +361,12 @@ impl Connection {
             rng,
             stats: ConnectionStats::default(),
             version,
+            chrome,
         };
+        if this.chrome.is_some() {
+            // quic-go numbers a ChromeParrot client's first Initial packet 1.
+            this.spaces[SpaceId::Initial].next_packet_number = 1;
+        }
         if path_validated {
             this.on_path_validated();
         }
@@ -460,6 +471,23 @@ impl Connection {
             false => 1,
             true => max_datagrams,
         };
+        // A ChromeParrot client sends one packet per datagram until the handshake
+        // is confirmed, pads each datagram carrying an Initial packet to the
+        // current MTU, and does not clamp its loss probes below the minimum MTU.
+        let chrome_handshake = self.chrome_handshake();
+        let max_datagrams = match chrome_handshake {
+            true => 1,
+            false => max_datagrams,
+        };
+        let initial_padding = match chrome_handshake {
+            true => self.path.current_mtu(),
+            false => MIN_INITIAL_SIZE,
+        };
+        let probe_mtu = match chrome_handshake {
+            true => self.config.min_mtu.max(INITIAL_MTU),
+            false => INITIAL_MTU,
+        };
+        let mut probe_datagram = false;
 
         let mut num_datagrams = 0;
         // Position in `buf` of the first byte of the current UDP datagram. When coalescing QUIC
@@ -659,7 +687,7 @@ impl Connection {
                 // Finish current packet
                 if let Some(mut builder) = builder_storage.take() {
                     if pad_datagram {
-                        builder.pad_to(MIN_INITIAL_SIZE);
+                        builder.pad_to(initial_padding);
                     }
 
                     if num_datagrams > 1 || pad_datagram_to_mtu {
@@ -727,6 +755,7 @@ impl Connection {
                 }
 
                 // Allocate space for another datagram
+                probe_datagram = self.spaces[space_id].loss_probes != 0;
                 let next_datagram_size_limit = match self.spaces[space_id].loss_probes {
                     0 => segment_size,
                     _ => {
@@ -734,7 +763,7 @@ impl Connection {
                         // Clamp the datagram to at most the minimum MTU to ensure that loss probes
                         // can get through and enable recovery even if the path MTU has shrank
                         // unexpectedly.
-                        std::cmp::min(segment_size, usize::from(INITIAL_MTU))
+                        std::cmp::min(segment_size, usize::from(probe_mtu))
                     }
                 };
                 buf_capacity += next_datagram_size_limit;
@@ -801,7 +830,7 @@ impl Connection {
                 ack_eliciting,
                 self,
             )?);
-            coalesce = coalesce && !builder.short_header;
+            coalesce = coalesce && !builder.short_header && !chrome_handshake;
 
             // https://tools.ietf.org/html/draft-ietf-quic-transport-34#section-14.1
             pad_datagram |=
@@ -949,7 +978,7 @@ impl Connection {
         // Finish the last packet
         if let Some(mut builder) = builder_storage {
             if pad_datagram {
-                builder.pad_to(MIN_INITIAL_SIZE);
+                builder.pad_to(initial_padding);
             }
 
             // If this datagram is a loss probe and `segment_size` is larger than `INITIAL_MTU`,
@@ -961,7 +990,19 @@ impl Connection {
                 builder.pad_to(segment_size as u16);
             }
 
+            // The room an Initial packet leaves in its datagram, which quic-go's
+            // ChromeParrot records for every datagram it packs before the
+            // handshake is confirmed, other than a loss probe
+            let initial_room = match builder.space {
+                SpaceId::Initial => builder.min_size.saturating_sub(buf.len()),
+                _ => 0,
+            };
             builder.finish_and_track(now, self, sent_frames, buf);
+            if chrome_handshake && !probe_datagram {
+                if let Some(chrome) = self.chrome.as_mut() {
+                    chrome.last_datagram_padding = initial_room as u64;
+                }
+            }
 
             self.config.qlog_sink.emit_recovery_metrics(
                 self.pto_count,
@@ -3240,6 +3281,7 @@ impl Connection {
             trace!("PING");
             buf.write(frame::FrameType::PING);
             sent.non_retransmits = true;
+            sent.ping = true;
             self.stats.frame_tx.ping += 1;
         }
 
@@ -3253,6 +3295,7 @@ impl Connection {
 
         // ACK
         if space.pending_acks.can_send() {
+            let ack_start = buf.len();
             Self::populate_acks(
                 now,
                 self.receiving_ecn,
@@ -3261,6 +3304,7 @@ impl Connection {
                 buf,
                 &mut self.stats,
             );
+            sent.ack = Some(ack_start..buf.len());
         }
 
         // ACK_FREQUENCY
@@ -3321,7 +3365,43 @@ impl Connection {
         }
 
         // CRYPTO
-        while buf.len() + frame::Crypto::SIZE_BOUND < max_size && !is_0rtt {
+        let mut crypto_done = false;
+        if let Some(chrome) = self.chrome.as_mut() {
+            // The server's Handshake flight is acknowledged in a packet of its
+            // own, and new CRYPTO data follows in the next datagram.
+            if space_id == SpaceId::Handshake
+                && sent.largest_acked.is_some()
+                && !space.pending.crypto.is_empty()
+                && space
+                    .pending
+                    .crypto
+                    .iter()
+                    .all(|frame| frame.offset >= chrome.handshake_crypto_sent)
+            {
+                crypto_done = true;
+            }
+            // The first Initial CRYPTO data, a ClientHello too large for one
+            // packet, goes out head and tail first, the middle later.
+            if space_id == SpaceId::Initial
+                && !chrome.initial_crypto_sent
+                && space
+                    .pending
+                    .crypto
+                    .front()
+                    .is_some_and(|frame| frame.offset == 0)
+            {
+                chrome.initial_crypto_sent = true;
+                crypto_done = Self::chrome_split_client_hello(
+                    chrome,
+                    space,
+                    &mut sent,
+                    buf,
+                    max_size,
+                    &mut self.stats,
+                );
+            }
+        }
+        while !crypto_done && buf.len() + frame::Crypto::SIZE_BOUND < max_size && !is_0rtt {
             let mut frame = match space.pending.crypto.pop_front() {
                 Some(x) => x,
                 None => break,
@@ -3355,6 +3435,11 @@ impl Connection {
             );
             truncated.encode(buf);
             self.stats.frame_tx.crypto += 1;
+            if let (SpaceId::Handshake, Some(chrome)) = (space_id, self.chrome.as_mut()) {
+                chrome.handshake_crypto_sent = chrome
+                    .handshake_crypto_sent
+                    .max(truncated.offset + truncated.data.len() as u64);
+            }
             sent.retransmits.get_or_create().crypto.push_back(truncated);
             if !frame.data.is_empty() {
                 frame.offset += len as u64;
@@ -3676,6 +3761,12 @@ impl Connection {
         Some(packet.payload.to_vec())
     }
 
+    /// The number the next Initial packet will carry
+    #[cfg(test)]
+    pub(crate) fn next_initial_packet_number(&self) -> u64 {
+        self.spaces[SpaceId::Initial].next_packet_number
+    }
+
     /// The number of bytes of packets containing retransmittable frames that have not been
     /// acknowledged or declared lost.
     #[cfg(test)]
@@ -3794,18 +3885,96 @@ impl Connection {
     /// rare. If `pn` is specified, may additionally change unpredictably due to variations in
     /// latency and packet loss.
     fn predict_1rtt_overhead(&self, pn: Option<u64>) -> usize {
-        let pn_len = match pn {
-            Some(pn) => PacketNumber::new(
+        let pn_len = match (pn, self.chrome_cwnd_packets()) {
+            (Some(pn), Some(cwnd_packets)) => chrome_parrot::packet_number_len(
+                pn,
+                self.spaces[SpaceId::Data].largest_acked_packet,
+                cwnd_packets,
+            ),
+            (Some(pn), None) => PacketNumber::new(
                 pn,
                 self.spaces[SpaceId::Data].largest_acked_packet.unwrap_or(0),
             )
             .len(),
             // Upper bound
-            None => 4,
+            (None, _) => 4,
         };
 
         // 1 byte for flags
         1 + self.rem_cids.active().len() + pn_len + self.tag_len_1rtt()
+    }
+
+    /// Whether this is a ChromeParrot client whose handshake is not yet
+    /// confirmed: Initial or Handshake keys are still in use
+    fn chrome_handshake(&self) -> bool {
+        self.chrome.is_some()
+            && (self.spaces[SpaceId::Initial].crypto.is_some()
+                || self.spaces[SpaceId::Handshake].crypto.is_some())
+    }
+
+    /// For a ChromeParrot client, the congestion window in packets that sizes
+    /// packet numbers: in units of the room the last handshake datagram left
+    /// while it is at least 40 bytes, else of the MTU
+    pub(super) fn chrome_cwnd_packets(&self) -> Option<u64> {
+        let chrome = self.chrome.as_ref()?;
+        let unit = match chrome.last_datagram_padding {
+            room if room >= chrome_parrot::MIN_DATAGRAM_ROOM_FOR_SIZING => room,
+            _ => u64::from(self.path.current_mtu()),
+        };
+        Some(self.path.congestion.window() / unit)
+    }
+
+    /// Writes the head and the tail of a ClientHello too large for one
+    /// Initial packet, as quic-go's ChromeParrot lays it out, and leaves the
+    /// middle queued. Returns whether it split the data.
+    fn chrome_split_client_hello(
+        chrome: &mut ChromeState,
+        space: &mut PacketSpace,
+        sent: &mut SentFrames,
+        buf: &mut Vec<u8>,
+        max_size: usize,
+        stats: &mut ConnectionStats,
+    ) -> bool {
+        let mut pending = 0;
+        let contiguous = space.pending.crypto.iter().all(|frame| {
+            let in_order = frame.offset == pending;
+            pending += frame.data.len() as u64;
+            in_order
+        });
+        if !contiguous {
+            return false;
+        }
+        let available = max_size.saturating_sub(buf.len()) as u64;
+        let Some((first, last)) =
+            chrome_parrot::crypto_split(pending, 0, available, &mut chrome.rng)
+        else {
+            return false;
+        };
+        let mut data = BytesMut::with_capacity(pending as usize);
+        for frame in space.pending.crypto.drain(..) {
+            data.extend_from_slice(&frame.data);
+        }
+        let data = data.freeze();
+        let tail_start = pending - last;
+        space.pending.crypto.push_front(frame::Crypto {
+            offset: first,
+            data: data.slice(first as usize..tail_start as usize),
+        });
+        let head = frame::Crypto {
+            offset: 0,
+            data: data.slice(..first as usize),
+        };
+        let tail = frame::Crypto {
+            offset: tail_start,
+            data: data.slice(tail_start as usize..),
+        };
+        for piece in [head, tail] {
+            trace!("CRYPTO: off {} len {}", piece.offset, piece.data.len());
+            piece.encode(buf);
+            stats.frame_tx.crypto += 1;
+            sent.retransmits.get_or_create().crypto.push_back(piece);
+        }
+        true
     }
 
     fn tag_len_1rtt(&self) -> usize {
@@ -4115,6 +4284,36 @@ struct SentFrames {
     /// Whether the packet contains non-retransmittable frames (like datagrams)
     non_retransmits: bool,
     requires_padding: bool,
+    /// Where the packet's ACK frame sits in the send buffer
+    ack: Option<std::ops::Range<usize>>,
+    /// Whether the packet carries a PING frame
+    ping: bool,
+}
+
+/// A ChromeParrot client connection's packet-shaping state
+struct ChromeState {
+    /// quic-go's packet packer generator: the ClientHello split and chaos
+    /// protection draw from it
+    rng: GoPcg,
+    /// The room an Initial packet left in the last datagram packed during the
+    /// handshake; while at least 40 bytes it, not the MTU, converts the
+    /// congestion window into packets for the packet number length
+    last_datagram_padding: u64,
+    /// Whether the first Initial CRYPTO data has been sent
+    initial_crypto_sent: bool,
+    /// The end of the Handshake CRYPTO data sent so far
+    handshake_crypto_sent: u64,
+}
+
+impl ChromeState {
+    fn new(seed: Option<[u8; 16]>) -> Self {
+        Self {
+            rng: seed.map_or_else(GoPcg::from_entropy, GoPcg::new),
+            last_datagram_padding: 0,
+            initial_crypto_sent: false,
+            handshake_crypto_sent: 0,
+        }
+    }
 }
 
 impl SentFrames {

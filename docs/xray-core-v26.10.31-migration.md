@@ -67,15 +67,19 @@ their original source identities.
 
 ## Still out of scope
 
-The v26.10.21 record's stage 2 remains planned separately: MASQUE/WARP,
-Lua for DNS/routing/noise, the newer FinalMask type filter, DNS over HTTPS
-resolvers for xdns and realm's UPnP/NAT-PMP `portMapping`.
-`localOS` and custom Blackhole responses arrived in 0.10.0, and so did the
-mKCP transport with its `mkcp-legacy` masks and the `header-custom`,
-`sudoku`, `xmc`, `xdns`, `realm` and `xicmp` masks, and the bridge side of the
-VLESS reverse proxy (an outbound's `reverse`). Its portal side stays out of
-scope; the legacy root `reverse`, which upstream removed in v26.4.25, fails
-parsing with upstream's message.
+The v26.10.21 record's stage 2 remains planned separately: Lua for
+DNS/routing/noise, the newer FinalMask type filter, DNS over HTTPS resolvers
+for xdns and realm's UPnP/NAT-PMP `portMapping`. `localOS` and custom
+Blackhole responses arrived in 0.10.0, and so did the mKCP transport with its
+`mkcp-legacy` masks, the `header-custom`, `sudoku`, `xmc`, `xdns`, `realm`
+and `xicmp` masks, the MASQUE client with WARP, the XDRIVE client, the bridge
+side of the VLESS reverse proxy (an outbound's `reverse`), and ChromeParrot,
+the Chrome-shaped QUIC handshake Xray-core's Hysteria and XHTTP H3 dialers
+send unless `quicParams.disableChromeParrot` (see
+[ChromeParrot](config-compatibility.md#chromeparrot)); before it,
+`disableChromeParrot: true` was required. The reverse proxy's portal side
+stays out of scope; the legacy root `reverse`, which upstream removed in
+v26.4.25, fails parsing with upstream's message.
 
 ## Evidence
 

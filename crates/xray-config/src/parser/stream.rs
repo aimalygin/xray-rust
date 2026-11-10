@@ -99,21 +99,17 @@ impl Parser<'_> {
         }
         if xdrive_h3 {
             self.validate_xdrive_h3_stream(stream, &transport, quic_params.as_ref(), index);
-        }
-        let chrome_parrot =
-            stream.and_then(|s| s.pointer("/finalmask/quicParams/disableChromeParrot"));
-        // Xray-core's MASQUE dial does not parrot Chrome either.
-        if is_quic && !masque_h3 && chrome_parrot != Some(&Value::Bool(true)) {
-            self.warning(format!("$.outbounds[{index}].streamSettings.finalmask.quicParams.disableChromeParrot"),
-                "QUIC uses native Quinn TLS, without Xray ChromeParrot fingerprint shaping; set disableChromeParrot=true to acknowledge this compatibility limit");
-        }
-        if !is_quic && chrome_parrot.is_some() {
-            self.error(
-                format!(
-                    "$.outbounds[{index}].streamSettings.finalmask.quicParams.disableChromeParrot"
-                ),
-                "disableChromeParrot requires Hysteria or XHTTP with exact h3 ALPN",
-            );
+            // Xray-core's XDRIVE client parrots Chrome over HTTP/3 too; this
+            // one keeps Quinn's own handshake there for now.
+            if quic_params
+                .as_ref()
+                .is_none_or(|quic| !quic.disable_chrome_parrot)
+            {
+                self.warning(
+                    format!("$.outbounds[{index}].streamSettings.finalmask.quicParams.disableChromeParrot"),
+                    "XDRIVE over h3 uses Quinn's own QUIC handshake, without Xray ChromeParrot fingerprint shaping; set disableChromeParrot=true to acknowledge this compatibility limit",
+                );
+            }
         }
         if let StreamTransport::Xhttp(xhttp) = &transport {
             if let Some(download) = &xhttp.download {
@@ -822,12 +818,6 @@ impl Parser<'_> {
             return None;
         }
         self.reject_unknown_fields(quic, &quic_path, &surface::QUIC_PARAMS);
-        if let Some(value) = quic.get("disableChromeParrot") {
-            if value != &Value::Bool(true) {
-                self.error(format!("{quic_path}.disableChromeParrot"),
-                    "only disableChromeParrot=true is supported; ChromeParrot fingerprint shaping is unavailable");
-            }
-        }
 
         // Go's encoding/json treats null for scalar struct fields as their
         // existing zero value. The nullable helpers below preserve that rule.
@@ -965,6 +955,7 @@ impl Parser<'_> {
                 &quic_path,
             )?,
             max_incoming_streams,
+            disable_chrome_parrot: self.quic_bool_at(quic, "disableChromeParrot", &quic_path)?,
             disable_gso: self.quic_bool_at(quic, "disableGSO", &quic_path)?,
             disable_stateless_reset: self.quic_bool_at(
                 quic,

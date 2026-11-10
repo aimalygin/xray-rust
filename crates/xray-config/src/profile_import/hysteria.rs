@@ -138,15 +138,9 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
         .map(|text| final_mask(&text).map(SecretJson))
         .transpose()?;
     if let Some(mask) = &mut mask {
-        // The import acknowledges the missing ChromeParrot shaping, as it does
-        // without `fm`; any other value is left for the parser to refuse.
-        match mask.0.get_mut("quicParams") {
-            None | Some(Value::Null) => mask.0["quicParams"] = json!({"disableChromeParrot":true}),
-            Some(Value::Object(quic)) => {
-                quic.entry("disableChromeParrot").or_insert(json!(true));
-            }
-            Some(_) => {}
-        }
+        // `quicParams` is the link's own: like an Xray-core client, the
+        // profile dials with ChromeParrot unless it says
+        // `disableChromeParrot`.
         match mask.0.get("udp") {
             None | Some(Value::Null) => mask.0["udp"] = json!([]),
             Some(Value::Array(_)) => {}
@@ -184,7 +178,7 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
             "streamSettings":{"network":"hysteria","security":"tls",
                 "tlsSettings":{"serverName":sni.as_deref().map(String::as_str).unwrap_or(&host),"alpn":["h3"]},
                 "hysteriaSettings":{"version":2,"auth":auth.as_str()},
-                "finalmask":{"quicParams":{"disableChromeParrot":true},"udp":[]}}}],
+                "finalmask":{"udp":[]}}}],
         "routing":{"domainStrategy":"AsIs","rules":[]}
     }));
     let has_mask = mask.is_some();

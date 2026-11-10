@@ -496,6 +496,29 @@ async fn masque_profiles_xray_accepts_build_a_core() {
     assert!(built > 50, "only {built} cases built a core");
 }
 
+/// Every `disableChromeParrot` case Xray-core accepts builds a core here too,
+/// with ChromeParrot on or off: `tests/fixtures/chrome-parrot/config-verdicts.json`.
+#[tokio::test]
+async fn chrome_parrot_cases_xray_accepts_build_a_core() {
+    use serde_json::{json, Value};
+    let corpus: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/chrome-parrot/config-verdicts.json"
+    ))
+    .unwrap();
+    let mut built = 0;
+    for case in corpus["cases"].as_array().unwrap() {
+        if case["xray"] != "ok" {
+            continue;
+        }
+        let raw = json!({"outbounds": [case["outbound"]]}).to_string();
+        let parsed = xray_config::parse_xray_json(&raw)
+            .unwrap_or_else(|error| panic!("{}: {error:?}", case["name"]));
+        Core::new(parsed.config).unwrap_or_else(|error| panic!("{}: {error}", case["name"]));
+        built += 1;
+    }
+    assert!(built >= 20, "only {built} cases built a core");
+}
+
 /// An XDRIVE outbound never looks its server address up, as Xray-core's
 /// dial never does: its sessions meet the server in the storage. A flow
 /// through the SOCKS inbound announces a session and stores the VLESS

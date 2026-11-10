@@ -1,0 +1,1004 @@
+{
+ "comment": "disableChromeParrot cases with Xray-core v26.10.31's `xray run -test` verdicts. `xray` is \"ok\" or a substring of its error; `chromeParrot` is whether the dial parrots Chrome (null where no QUIC dial reads it). scripts/check-chrome-parrot-interop.sh rechecks every Xray verdict.",
+ "cases": [
+  {
+   "name": "hysteria without finalmask",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "chrome-parrot-verdict"
+     }
+    }
+   },
+   "chromeParrot": true,
+   "xray": "ok"
+  },
+  {
+   "name": "hysteria finalmask null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "chrome-parrot-verdict"
+     },
+     "finalmask": null
+    }
+   },
+   "chromeParrot": true,
+   "xray": "ok"
+  },
+  {
+   "name": "hysteria quicParams null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "chrome-parrot-verdict"
+     },
+     "finalmask": {
+      "quicParams": null
+     }
+    }
+   },
+   "chromeParrot": true,
+   "xray": "ok"
+  },
+  {
+   "name": "hysteria empty quicParams",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "chrome-parrot-verdict"
+     },
+     "finalmask": {
+      "quicParams": {}
+     }
+    }
+   },
+   "chromeParrot": true,
+   "xray": "ok"
+  },
+  {
+   "name": "hysteria disableChromeParrot true",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "chrome-parrot-verdict"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": true
+      }
+     }
+    }
+   },
+   "chromeParrot": false,
+   "xray": "ok"
+  },
+  {
+   "name": "hysteria disableChromeParrot false",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "chrome-parrot-verdict"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": false
+      }
+     }
+    }
+   },
+   "chromeParrot": true,
+   "xray": "ok"
+  },
+  {
+   "name": "hysteria disableChromeParrot null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "chrome-parrot-verdict"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": null
+      }
+     }
+    }
+   },
+   "chromeParrot": true,
+   "xray": "ok"
+  },
+  {
+   "name": "hysteria disableChromeParrot string",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "chrome-parrot-verdict"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": "true"
+      }
+     }
+    }
+   },
+   "chromeParrot": null,
+   "xray": "json: cannot unmarshal string into Go struct field Config.outbounds.0.streamSettings.finalmask.quicParams.disableChromeParrot of type bool"
+  },
+  {
+   "name": "hysteria disableChromeParrot number",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "chrome-parrot-verdict"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": 1
+      }
+     }
+    }
+   },
+   "chromeParrot": null,
+   "xray": "json: cannot unmarshal number into Go struct field Config.outbounds.0.streamSettings.finalmask.quicParams.disableChromeParrot of type bool"
+  },
+  {
+   "name": "hysteria disableChromeParrot object",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "chrome-parrot-verdict"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": {}
+      }
+     }
+    }
+   },
+   "chromeParrot": null,
+   "xray": "json: cannot unmarshal object into Go struct field Config.outbounds.0.streamSettings.finalmask.quicParams.disableChromeParrot of type bool"
+  },
+  {
+   "name": "hysteria salamander without quicParams",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "chrome-parrot-verdict"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "salamander",
+        "settings": {
+         "password": "chrome-parrot-verdict"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "chromeParrot": true,
+   "xray": "ok"
+  },
+  {
+   "name": "hysteria salamander with disableChromeParrot",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "chrome-parrot-verdict"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": true
+      },
+      "udp": [
+       {
+        "type": "salamander",
+        "settings": {
+         "password": "chrome-parrot-verdict"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "chromeParrot": false,
+   "xray": "ok"
+  },
+  {
+   "name": "hysteria brutal with ChromeParrot",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "chrome-parrot-verdict"
+     },
+     "finalmask": {
+      "quicParams": {
+       "brutalUp": "50 mbps",
+       "brutalDown": "100 mbps"
+      }
+     }
+    }
+   },
+   "chromeParrot": true,
+   "xray": "ok"
+  },
+  {
+   "name": "hysteria window and idle settings with ChromeParrot",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "chrome-parrot-verdict"
+     },
+     "finalmask": {
+      "quicParams": {
+       "initStreamReceiveWindow": 1048576,
+       "maxIdleTimeout": 60,
+       "maxIncomingStreams": 32
+      }
+     }
+    }
+   },
+   "chromeParrot": true,
+   "xray": "ok"
+  },
+  {
+   "name": "xhttp h3 without finalmask",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "xhttp.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xhttp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xhttp.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "xhttpSettings": {
+      "path": "/chrome-parrot"
+     }
+    }
+   },
+   "chromeParrot": true,
+   "xray": "ok"
+  },
+  {
+   "name": "xhttp h3 disableChromeParrot true",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "xhttp.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xhttp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xhttp.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "xhttpSettings": {
+      "path": "/chrome-parrot"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": true
+      }
+     }
+    }
+   },
+   "chromeParrot": false,
+   "xray": "ok"
+  },
+  {
+   "name": "xhttp h3 disableChromeParrot false",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "xhttp.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xhttp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xhttp.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "xhttpSettings": {
+      "path": "/chrome-parrot"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": false
+      }
+     }
+    }
+   },
+   "chromeParrot": true,
+   "xray": "ok"
+  },
+  {
+   "name": "xhttp h3 disableChromeParrot null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "xhttp.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xhttp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xhttp.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "xhttpSettings": {
+      "path": "/chrome-parrot"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": null
+      }
+     }
+    }
+   },
+   "chromeParrot": true,
+   "xray": "ok"
+  },
+  {
+   "name": "xhttp h3 disableChromeParrot string",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "xhttp.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xhttp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xhttp.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "xhttpSettings": {
+      "path": "/chrome-parrot"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": "false"
+      }
+     }
+    }
+   },
+   "chromeParrot": null,
+   "xray": "json: cannot unmarshal string into Go struct field Config.outbounds.0.streamSettings.finalmask.quicParams.disableChromeParrot of type bool"
+  },
+  {
+   "name": "xhttp h3 conservative bbr with ChromeParrot",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "xhttp.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xhttp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xhttp.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "xhttpSettings": {
+      "path": "/chrome-parrot"
+     },
+     "finalmask": {
+      "quicParams": {
+       "bbrProfile": "conservative"
+      }
+     }
+    }
+   },
+   "chromeParrot": true,
+   "xray": "ok"
+  },
+  {
+   "name": "xhttp h3 noise mask with ChromeParrot",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "xhttp.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xhttp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xhttp.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "xhttpSettings": {
+      "path": "/chrome-parrot"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "noise",
+        "settings": {
+         "noise": [
+          {
+           "rand": "10-20"
+          }
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "chromeParrot": true,
+   "xray": "ok"
+  },
+  {
+   "name": "xhttp h2 ignores disableChromeParrot true",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "xhttp.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xhttp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xhttp.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "xhttpSettings": {
+      "path": "/chrome-parrot"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": true
+      }
+     }
+    }
+   },
+   "chromeParrot": null,
+   "xray": "ok"
+  },
+  {
+   "name": "xhttp h2 ignores disableChromeParrot false",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "xhttp.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xhttp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xhttp.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "xhttpSettings": {
+      "path": "/chrome-parrot"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": false
+      }
+     }
+    }
+   },
+   "chromeParrot": null,
+   "xray": "ok"
+  },
+  {
+   "name": "xhttp h2 rejects a string disableChromeParrot",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "xhttp.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xhttp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xhttp.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "xhttpSettings": {
+      "path": "/chrome-parrot"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": "true"
+      }
+     }
+    }
+   },
+   "chromeParrot": null,
+   "xray": "json: cannot unmarshal string into Go struct field Config.outbounds.0.streamSettings.finalmask.quicParams.disableChromeParrot of type bool"
+  },
+  {
+   "name": "tcp tls ignores disableChromeParrot true",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "tcp.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "tcp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "tcp.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": true
+      }
+     }
+    }
+   },
+   "chromeParrot": null,
+   "xray": "ok"
+  },
+  {
+   "name": "tcp tls ignores disableChromeParrot false",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "tcp.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "tcp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "tcp.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": false
+      }
+     }
+    }
+   },
+   "chromeParrot": null,
+   "xray": "ok"
+  },
+  {
+   "name": "masque ignores disableChromeParrot false",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": false
+      }
+     }
+    }
+   },
+   "chromeParrot": false,
+   "xray": "ok"
+  },
+  {
+   "name": "masque ignores disableChromeParrot true",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "quicParams": {
+       "disableChromeParrot": true
+      }
+     }
+    }
+   },
+   "chromeParrot": false,
+   "xray": "ok"
+  }
+ ]
+}

@@ -251,25 +251,26 @@ fn legacy_udp_hop_hint_points_only_quic_carriers_at_the_udphop_mask() {
 }
 
 #[test]
-fn quic_fingerprint_limit_is_explicit_and_transport_switches_parse_as_go_bools() {
+fn chrome_parrot_needs_no_acknowledgement_and_transport_switches_parse_as_go_bools() {
+    // ChromeParrot is Xray's default and ours: a Hysteria outbound without
+    // finalmask parses clean.
     let mut raw = hysteria();
     raw["outbounds"][0]["streamSettings"]
         .as_object_mut()
         .unwrap()
         .remove("finalmask");
     let parsed = parse_xray_json(&raw.to_string()).unwrap();
-    assert!(parsed
-        .diagnostics
-        .iter()
-        .any(|d| d.message.contains("ChromeParrot")));
-    for bad in [Value::Null, json!(false), json!("true")] {
-        let mut invalid = hysteria();
-        invalid["outbounds"][0]["streamSettings"]["finalmask"]["quicParams"]
-            ["disableChromeParrot"] = bad;
-        assert!(parse_xray_json(&invalid.to_string()).is_err());
-    }
+    assert!(
+        !parsed
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("ChromeParrot")),
+        "{:?}",
+        parsed.diagnostics
+    );
     // Go leaves a bool false for null and rejects a string.
     for key in [
+        "disableChromeParrot",
         "disableGSO",
         "disableStatelessReset",
         "brutalDisableLossCompensation",
@@ -292,6 +293,7 @@ fn quic_fingerprint_limit_is_explicit_and_transport_switches_parse_as_go_bools()
                 .as_ref()
                 .unwrap();
             let actual = match key {
+                "disableChromeParrot" => quic.disable_chrome_parrot,
                 "disableGSO" => quic.disable_gso,
                 "disableStatelessReset" => quic.disable_stateless_reset,
                 _ => quic.brutal_disable_loss_compensation,

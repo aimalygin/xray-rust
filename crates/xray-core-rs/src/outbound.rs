@@ -8931,6 +8931,47 @@ mod tests {
         );
     }
 
+    /// `tests/fixtures/chrome-parrot/config-verdicts.json`: every case Xray
+    /// accepts reaches the Hysteria and XHTTP H3 dials with ChromeParrot on
+    /// unless `disableChromeParrot` is true, as Xray dials them.
+    #[test]
+    fn chrome_parrot_verdict_cases_reach_the_quic_dial() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/chrome-parrot/config-verdicts.json"
+        ))
+        .unwrap();
+        let mut checked = 0;
+        for case in fixture["cases"].as_array().unwrap() {
+            let name = case["name"].as_str().unwrap();
+            let Some(expected) = case["chromeParrot"].as_bool() else {
+                continue;
+            };
+            let raw = serde_json::json!({"outbounds":[case["outbound"]]}).to_string();
+            let parsed =
+                xray_config::parse_xray_json(&raw).unwrap_or_else(|e| panic!("{name}: {e:?}"));
+            let outbound = &parsed.config.outbounds[0];
+            let chrome_parrot = match &outbound.stream.transport {
+                xray_config::StreamTransport::Hysteria(_) => {
+                    hysteria::hysteria_quic_config(outbound.stream.quic_params.as_ref())
+                        .unwrap()
+                        .0
+                        .chrome_parrot
+                }
+                xray_config::StreamTransport::Xhttp(_) => {
+                    built_xhttp_transport(outbound)
+                        .h3_quic_config()
+                        .chrome_parrot
+                }
+                // outbound::masque's own tests check MASQUE.
+                xray_config::StreamTransport::Masque(_) => continue,
+                other => panic!("{name}: {other:?}"),
+            };
+            assert_eq!(chrome_parrot, expected, "{name}");
+            checked += 1;
+        }
+        assert!(checked >= 15, "{checked}");
+    }
+
     #[test]
     fn every_supported_quic_parameter_reaches_the_h3_engine() {
         let mut outbound = xhttp_vless(
@@ -8964,6 +9005,7 @@ mod tests {
             keep_alive_period_secs: 11,
             disable_path_mtu_discovery: true,
             max_incoming_streams: 16,
+            disable_chrome_parrot: true,
             disable_gso: true,
             disable_stateless_reset: true,
             brutal_disable_loss_compensation: true,
@@ -8972,6 +9014,7 @@ mod tests {
 
         let built = built_xhttp_transport(&outbound);
         let quic = built.h3_quic_config();
+        assert!(!quic.chrome_parrot, "disableChromeParrot turns it off");
         assert!(quic.disable_gso);
         assert!(quic.brutal_disable_loss_compensation);
         assert_eq!(quic.initial_stream_receive_window, 2_100_000);
