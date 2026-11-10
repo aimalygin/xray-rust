@@ -474,7 +474,12 @@ impl Connection {
         // A ChromeParrot client sends one packet per datagram until the handshake
         // is confirmed, pads each datagram carrying an Initial packet to the
         // current MTU, and does not clamp its loss probes below the minimum MTU.
-        let chrome_handshake = self.chrome_handshake();
+        // A close is packed as stock quinn packs it, every space in one
+        // datagram: one packet per datagram would stop it at the first space
+        // with keys, the last space would never carry its frame, and `close`
+        // would stay set, a new close packet on every poll until the close
+        // timer.
+        let chrome_handshake = self.chrome_handshake() && !self.close;
         let max_datagrams = match chrome_handshake {
             true => 1,
             false => max_datagrams,

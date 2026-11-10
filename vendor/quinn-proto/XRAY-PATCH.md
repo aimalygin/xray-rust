@@ -204,3 +204,14 @@ the packet numbers, and the module's own tests Go's PCG values, the split,
 the chaos sizes, the ACK in front, a cut paid by a budget of exactly one frame
 header and the packet number lengths. The complete 311-test library suite
 passes in the reconstruction.
+
+A connection that is closing packs its packets as stock quinn does, whatever
+the handshake's state: `chrome_handshake` is false while `close` is set. With
+one packet per datagram the close stopped at the first space that had keys;
+the highest space never carried its CONNECTION_CLOSE, so `close` stayed set
+and every `poll_transmit` returned another close packet, as fast as the
+socket took them, until the close timer. Any close before the handshake was
+confirmed did it: a certificate the client refuses, or a dial given up after
+the Finished. `chrome_parrot_close_before_the_handshake_is_confirmed_is_sent_once`
+fails with sixteen datagrams, where it stops counting, when the condition is
+removed. The complete 312-test library suite passes in the reconstruction.
