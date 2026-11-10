@@ -1,6 +1,6 @@
 --- a/src/client.rs
 +++ b/src/client.rs
-@@ -348,6 +348,20 @@
+@@ -348,6 +348,23 @@
      ///
      /// When this gets exhausted, we issue a GOAWAY with `ENHANCE_YOUR_CALM`.
      data_frame_budget: proto::DataFrameBudget,
@@ -18,10 +18,13 @@
 +
 +    /// xray-rust: HPACK representations as Go's encoder picks them.
 +    go_hpack_choices: bool,
++
++    /// xray-rust: request pseudo-headers in the order of Go's client.
++    go_request_pseudo_order: bool,
  }
  
  #[derive(Debug)]
-@@ -375,6 +389,14 @@
+@@ -375,6 +392,14 @@
          Poll::Ready(Ok(()))
      }
  
@@ -36,7 +39,7 @@
      /// Consumes `self`, returning a future that returns `self` back once it is
      /// ready to send a request.
      ///
-@@ -669,6 +691,10 @@
+@@ -669,6 +694,11 @@
              stream_id: 1.into(),
              local_max_error_reset_streams: Some(proto::DEFAULT_LOCAL_RESET_COUNT_MAX),
              data_frame_budget: proto::DataFrameBudget::Auto,
@@ -44,10 +47,11 @@
 +            send_header_table_size_limit: None,
 +            authority_after_method: false,
 +            go_hpack_choices: false,
++            go_request_pseudo_order: false,
          }
      }
  
-@@ -1175,6 +1201,45 @@
+@@ -1175,6 +1205,53 @@
          self
      }
  
@@ -90,10 +94,18 @@
 +        self
 +    }
 +
++    /// Writes request pseudo-headers in the order of Go's `net/http`
++    /// HTTP/2 client: `:authority`, `:method`, `:path`, `:scheme`. It takes
++    /// precedence over `authority_after_method`.
++    pub fn go_request_pseudo_order(&mut self, enabled: bool) -> &mut Self {
++        self.go_request_pseudo_order = enabled;
++        self
++    }
++
      /// Sets the first stream ID to something other than 1.
      #[cfg(feature = "unstable")]
      pub fn initial_stream_id(&mut self, stream_id: u32) -> &mut Self {
-@@ -1349,6 +1414,12 @@
+@@ -1349,6 +1426,13 @@
              codec.set_max_recv_header_list_size(max as usize);
          }
  
@@ -102,11 +114,12 @@
 +        }
 +        codec.set_authority_first(builder.authority_after_method);
 +        codec.set_go_hpack_choices(builder.go_hpack_choices);
++        codec.set_go_pseudo_order(builder.go_request_pseudo_order);
 +
          // Send initial settings frame
          codec
              .buffer(builder.settings.clone().into())
-@@ -1366,6 +1437,7 @@
+@@ -1366,6 +1450,7 @@
                  local_error_reset_streams_max: builder.local_max_error_reset_streams,
                  settings: builder.settings,
                  data_frame_budget: builder.data_frame_budget,
@@ -116,7 +129,7 @@
          let send_request = SendRequest {
 --- a/src/codec/framed_write.rs
 +++ b/src/codec/framed_write.rs
-@@ -343,6 +343,21 @@
+@@ -343,6 +343,26 @@
          self.encoder.hpack.update_max_size(val);
      }
  
@@ -135,12 +148,17 @@
 +        self.encoder.hpack.set_go_choices(enabled);
 +    }
 +
++    /// xray-rust: request pseudo-headers in the order of Go's client.
++    pub fn set_go_pseudo_order(&mut self, enabled: bool) {
++        self.encoder.hpack.set_go_pseudo_order(enabled);
++    }
++
      /// Retrieve the last data frame that has been sent
      pub fn take_last_data_frame(&mut self) -> Option<frame::Data<B>> {
          self.encoder.last_data_frame.take()
 --- a/src/codec/mod.rs
 +++ b/src/codec/mod.rs
-@@ -95,6 +95,21 @@
+@@ -95,6 +95,26 @@
          self.framed_write().set_header_table_size(val)
      }
  
@@ -159,22 +177,47 @@
 +        self.framed_write().set_go_hpack_choices(enabled)
 +    }
 +
++    /// xray-rust: request pseudo-headers in the order of Go's client.
++    pub fn set_go_pseudo_order(&mut self, enabled: bool) {
++        self.framed_write().set_go_pseudo_order(enabled)
++    }
++
      /// Set the decoder header table size size.
      pub fn set_recv_header_table_size(&mut self, val: usize) {
          self.inner.set_header_table_size(val)
 --- a/src/frame/headers.rs
 +++ b/src/frame/headers.rs
-@@ -82,6 +82,9 @@
+@@ -82,6 +82,13 @@
      /// Pseudo headers
      pseudo: Option<Pseudo>,
  
 +    /// xray-rust: `:authority` right after `:method`.
 +    authority_first: bool,
 +
++    /// xray-rust: `:authority`, `:method`, `:path`, `:scheme`, as Go's
++    /// client writes a request.
++    go_order: bool,
++
      /// Header fields
      fields: header::IntoIter<HeaderValue>,
  }
-@@ -721,6 +724,12 @@
+@@ -717,10 +724,28 @@
+         use crate::hpack::Header::*;
+ 
+         if let Some(ref mut pseudo) = self.pseudo {
++            if self.go_order {
++                if let Some(authority) = pseudo.authority.take() {
++                    return Some(Authority(authority));
++                }
++                if let Some(method) = pseudo.method.take() {
++                    return Some(Method(method));
++                }
++                if let Some(path) = pseudo.path.take() {
++                    return Some(Path(path));
++                }
++            }
++
+             if let Some(method) = pseudo.method.take() {
                  return Some(Method(method));
              }
  
@@ -187,15 +230,16 @@
              if let Some(scheme) = pseudo.scheme.take() {
                  return Some(Scheme(scheme));
              }
-@@ -994,6 +1003,7 @@
+@@ -994,6 +1019,8 @@
          hpack.clear();
          let headers = Iter {
              pseudo: Some(self.pseudo),
 +            authority_first: encoder.authority_first(),
++            go_order: encoder.go_pseudo_order(),
              fields: self.fields.into_iter(),
          };
  
-@@ -1103,6 +1113,39 @@
+@@ -1103,6 +1130,63 @@
      fn huff_decode(src: &[u8]) -> BytesMut {
          let mut buf = BytesMut::new();
          huffman::decode(src, &mut buf).unwrap()
@@ -232,12 +276,36 @@
 +            pseudo_names(false),
 +            [":method", ":scheme", ":authority", ":path", ":protocol"]
 +        );
++    }
++
++    #[test]
++    fn go_pseudo_order_is_authority_method_path_scheme() {
++        let mut encoder = Encoder::default();
++        encoder.set_authority_first(true);
++        encoder.set_go_pseudo_order(true);
++        let pseudo = Pseudo::request(
++            Method::PUT,
++            Uri::from_static("https://bucket.example/key?x=1"),
++            None,
++        );
++        let mut dst = BytesMut::new();
++        Headers::new(StreamId::from(1), pseudo, HeaderMap::new())
++            .encode(&mut encoder, &mut (&mut dst).limit(1024));
++        let mut decoder = crate::hpack::Decoder::new(4096);
++        let mut names = Vec::new();
++        decoder
++            .decode(&mut Cursor::new(&mut dst.split_off(frame::HEADER_LEN)), |header| {
++                names.push(String::from_utf8_lossy(header.name().as_slice()).into_owned());
++                ControlFlow::Continue(())
++            })
++            .unwrap();
++        assert_eq!(names, [":authority", ":method", ":path", ":scheme"]);
      }
  
      #[test]
 --- a/src/hpack/encoder.rs
 +++ b/src/hpack/encoder.rs
-@@ -18,6 +18,12 @@
+@@ -18,6 +18,16 @@
      /// across frames instead of being allocated and freed per frame. See
      /// `take_scratch` / `return_scratch`.
      scratch: BytesMut,
@@ -247,15 +315,20 @@
 +    /// xray-rust: whether representations are picked as Go's `hpack`
 +    /// encoder picks them.
 +    go_choices: bool,
++    /// xray-rust: whether request pseudo-headers take the order of Go's
++    /// `net/http` HTTP/2 client: `:authority`, `:method`, `:path`,
++    /// `:scheme`.
++    go_pseudo_order: bool,
  }
  
  #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-@@ -35,11 +41,15 @@
+@@ -35,11 +45,16 @@
              max_allowed_size: DEFAULT_MAX_ALLOWED_SIZE,
              size_update: None,
              scratch: BytesMut::new(),
 +            authority_first: false,
 +            go_choices: false,
++            go_pseudo_order: false,
          }
      }
  
@@ -268,7 +341,7 @@
          self.max_allowed_size = max;
  
          if self.table.max_size() > max {
-@@ -47,6 +57,34 @@
+@@ -47,6 +62,48 @@
          }
      }
  
@@ -283,11 +356,25 @@
 +        self.authority_first
 +    }
 +
++    /// xray-rust: writes request pseudo-headers in the order of Go's
++    /// `net/http` HTTP/2 client, `:authority`, `:method`, `:path`,
++    /// `:scheme`; it takes precedence over `set_authority_first`.
++    pub(crate) fn set_go_pseudo_order(&mut self, enabled: bool) {
++        self.go_pseudo_order = enabled;
++    }
++
++    /// xray-rust: whether request pseudo-headers take Go's order.
++    pub(crate) fn go_pseudo_order(&self) -> bool {
++        self.go_pseudo_order
++    }
++
 +    /// xray-rust: picks representations as Go's `hpack.Encoder` does: a
-+    /// string in Huffman code only when that is shorter, and a name's last
-+    /// static table entry, where upstream takes its first.
++    /// string in Huffman code only when that is shorter, a name's last
++    /// static table entry, where upstream takes its first, and a field
++    /// indexed whenever it fits the table.
 +    pub(crate) fn set_go_choices(&mut self, enabled: bool) {
 +        self.go_choices = enabled;
++        self.table.set_go_indexing(enabled);
 +    }
 +
 +    /// The static index a name is referenced by: Go's `byName` keeps a
@@ -303,7 +390,7 @@
      /// Takes the reusable buffer for one header-block encode.
      ///
      /// The buffer is returned by `return_scratch` once the encoded block has
-@@ -160,7 +198,13 @@
+@@ -160,7 +217,13 @@
              Index::Name(idx, _) => {
                  let header = self.table.resolve(index);
  
@@ -318,7 +405,7 @@
              }
              Index::Inserted(_) => {
                  let header = self.table.resolve(index);
-@@ -169,16 +213,16 @@
+@@ -169,16 +232,16 @@
  
                  dst.put_u8(0b0100_0000);
  
@@ -339,7 +426,7 @@
              }
              Index::NotIndexed(_) => {
                  let header = self.table.resolve(index);
-@@ -187,6 +231,7 @@
+@@ -187,6 +250,7 @@
                      header.name().as_slice(),
                      header.value_slice(),
                      header.is_sensitive(),
@@ -347,7 +434,7 @@
                      dst,
                  );
              }
-@@ -206,7 +251,13 @@
+@@ -206,7 +270,13 @@
              | Index::InsertedValue(..) => {
                  let idx = self.table.resolve_idx(last);
  
@@ -362,7 +449,7 @@
              }
              Index::NotIndexed(_) => {
                  let last = self.table.resolve(last);
-@@ -215,6 +266,7 @@
+@@ -215,6 +285,7 @@
                      last.name().as_slice(),
                      value.as_ref(),
                      value.is_sensitive(),
@@ -370,7 +457,7 @@
                      dst,
                  );
              }
-@@ -232,28 +284,36 @@
+@@ -232,28 +303,36 @@
      encode_int(val, 5, 0b0010_0000, dst)
  }
  
@@ -413,7 +500,7 @@
      if !val.is_empty() {
          let idx = position(dst);
  
-@@ -265,6 +325,13 @@
+@@ -265,6 +344,13 @@
  
          let huff_len = position(dst) - (idx + 1);
  
@@ -427,7 +514,7 @@
          if encode_int_one_byte(huff_len, 7) {
              // Write the string head
              dst[idx] = 0x80 | huff_len as u8;
-@@ -749,6 +816,57 @@
+@@ -749,6 +835,87 @@
      #[ignore]
      fn test_evicted_overflow() {
          // Not sure what the best way to do this is.
@@ -482,9 +569,102 @@
 +        upstream.set_max_allowed_size(0);
 +        let res = encode(&mut upstream, vec![method("CONNECT")]);
 +        assert_eq!([0x20, 0x02, 0x80 | 7], res[..3]);
++    }
++
++    #[test]
++    fn go_choices_index_every_field_that_fits() {
++        use crate::hpack::BytesStr;
++
++        let mut encoder = Encoder::default();
++        encoder.set_go_choices(true);
++        let first = encode(
++            &mut encoder,
++            vec![
++                Header::Path(BytesStr::from_static("/v1/object")),
++                header("authorization", "Bearer t"),
++                header("content-length", "4"),
++            ],
++        );
++        // `:path` with incremental indexing by its last static entry, then
++        // `authorization` (23) and `content-length` (28), as Go writes them.
++        assert_eq!(0x45, first[0]);
++        let auth = 1 + 1 + usize::from(first[1] & 0x7f);
++        assert_eq!(0x40 | 23, first[auth]);
++        let length = auth + 1 + 1 + usize::from(first[auth + 1] & 0x7f);
++        assert_eq!(0x40 | 28, first[length]);
++        // The same `:path` again is the oldest dynamic entry: 62 + 2.
++        let again = encode(&mut encoder, vec![Header::Path(BytesStr::from_static("/v1/object"))]);
++        assert_eq!([0x80 | 64], again[..]);
++        // Upstream never indexes `:path`.
++        let mut upstream = Encoder::default();
++        let path = encode(&mut upstream, vec![Header::Path(BytesStr::from_static("/v1/object"))]);
++        assert_eq!(0x04, path[0]);
      }
  
      fn encode(e: &mut Encoder, hdrs: Vec<Header<Option<HeaderName>>>) -> BytesMut {
+--- a/src/hpack/table.rs
++++ b/src/hpack/table.rs
+@@ -18,6 +18,9 @@
+     // Size is in bytes
+     size: usize,
+     max_size: usize,
++    /// xray-rust: index as Go's `hpack.Encoder` does, every field that fits
++    /// the table.
++    go_indexing: bool,
+ }
+ 
+ #[derive(Debug)]
+@@ -81,6 +84,7 @@
+                 inserted: 0,
+                 size: 0,
+                 max_size,
++                go_indexing: false,
+             }
+         } else {
+             let capacity = cmp::max(to_raw_capacity(capacity).next_power_of_two(), 8);
+@@ -92,10 +96,19 @@
+                 inserted: 0,
+                 size: 0,
+                 max_size,
++                go_indexing: false,
+             }
+         }
+     }
+ 
++    /// xray-rust: indexes as Go's `hpack.Encoder` does: a field goes into the
++    /// table whenever it fits, `:path`, `authorization` and the other names
++    /// upstream never indexes included, where upstream also skips one larger
++    /// than three quarters of the table.
++    pub(crate) fn set_go_indexing(&mut self, enabled: bool) {
++        self.go_indexing = enabled;
++    }
++
+     #[inline]
+     pub fn capacity(&self) -> usize {
+         usable_capacity(self.indices.len())
+@@ -136,7 +149,7 @@
+         let statik = index_static(&header);
+ 
+         // Don't index certain headers. This logic is borrowed from nghttp2.
+-        if header.skip_value_index() {
++        if header.skip_value_index() && !self.go_indexing {
+             // Right now, if this is true, the header name is always in the
+             // static table. At some point in the future, this might not be true
+             // and this logic will need to be updated.
+@@ -150,7 +163,12 @@
+         }
+ 
+         // Don't index large headers
+-        if header.len() * 4 > self.max_size * 3 {
++        let large = if self.go_indexing {
++            header.len() > self.max_size
++        } else {
++            header.len() * 4 > self.max_size * 3
++        };
++        if large {
+             return Index::new(statik, header);
+         }
+ 
 --- a/src/lib.rs
 +++ b/src/lib.rs
 @@ -132,7 +132,7 @@

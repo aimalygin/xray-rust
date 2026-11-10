@@ -10,8 +10,8 @@
 //!
 //! Under the masks the socket stays a plain one, connected to the peer,
 //! with none of Quinn's UDP state: that sets the don't-fragment bit,
-//! coalesces datagrams under GRO, and, in quinn-udp before 0.5.16, spins on
-//! Apple systems once a datagram outgrows the receiver's buffer.
+//! coalesces datagrams under GRO, and on Apple systems drops a datagram
+//! longer than the receiver's buffer instead of cutting it.
 use std::{
     fmt,
     future::{poll_fn, Future},

@@ -91,7 +91,12 @@ impl Parser<'_> {
             self.validate_stream_settings_compatibility(stream, index);
         }
         self.validate_unconsumed_transport_settings(stream, stream_network, index);
-        let transport = self.parse_stream_transport(stream, stream_network, xdrive_h3, index)?;
+        let mut transport =
+            self.parse_stream_transport(stream, stream_network, xdrive_h3, index)?;
+        let fronting = self.parse_stream_fronting(stream, stream_network, index)?;
+        if let StreamTransport::Xdrive(settings) = &mut transport {
+            settings.fronting = fronting;
+        }
         if xdrive_h3 {
             self.validate_xdrive_h3_stream(stream, &transport, quic_params.as_ref(), index);
         }
@@ -331,7 +336,7 @@ impl Parser<'_> {
             if salamander.is_some() && !udp_carrier {
                 self.error(
                     &path,
-                    "Salamander requires Hysteria, mKCP, XHTTP with exact h3 ALPN, MASQUE over HTTP/3, freedom or WireGuard",
+                    "Salamander requires Hysteria, mKCP, XHTTP with exact h3 ALPN, MASQUE over HTTP/3, XDRIVE with exact h3 ALPN, freedom or WireGuard",
                 );
             }
             if stream_network == StreamNetwork::Kcp

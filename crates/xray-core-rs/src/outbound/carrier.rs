@@ -280,7 +280,7 @@ fn build_transport_layer(
             return Err(CoreError::UnsupportedOutboundNetwork)
         }
         StreamTransport::Xdrive(xdrive) => {
-            TransportLayer::Xdrive(super::xdrive::build_xdrive_transport(xdrive)?)
+            TransportLayer::Xdrive(super::xdrive::build_xdrive_transport(xdrive, stream)?)
         }
         StreamTransport::WebSocket(websocket) => TransportLayer::WebSocket(WebSocketConfig {
             path: websocket.path.clone(),

@@ -4,7 +4,7 @@
 //! capsules. Its `proxy/masque` client runs a userspace TCP/IP stack over
 //! each tunnel, which `xray-core-rs` supplies.
 mod capsule;
-mod h2;
+pub(crate) mod h2;
 mod h3;
 mod packet;
 mod request;

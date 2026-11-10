@@ -1316,8 +1316,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "google-drive deprecated name",
@@ -1346,8 +1345,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "google-drive two secrets",
@@ -1483,8 +1481,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "google-drive null secret",
@@ -1513,8 +1510,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "google-drive secret number",
@@ -1596,8 +1592,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "deprecated name two secrets",
@@ -1678,8 +1673,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "template"
+   "xray": "ok"
   },
   {
    "name": "template missing",
@@ -1736,8 +1730,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "template"
+   "xray": "ok"
   },
   {
    "name": "template string",
@@ -1766,8 +1759,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "template"
+   "xray": "ok"
   },
   {
    "name": "template number",
@@ -1796,8 +1788,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "template"
+   "xray": "ok"
   },
   {
    "name": "template empty object",
@@ -1826,8 +1817,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "template"
+   "xray": "ok"
   },
   {
    "name": "template array",
@@ -1859,8 +1849,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "template"
+   "xray": "ok"
   },
   {
    "name": "template without secrets",
@@ -1909,8 +1898,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "template"
+   "xray": "ok"
   },
   {
    "name": "s3 path style",
@@ -1943,8 +1931,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 missing block",
@@ -2098,8 +2085,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 endpoint with path prefix",
@@ -2132,8 +2118,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 endpoint escaped path",
@@ -2166,8 +2151,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 endpoint upper scheme",
@@ -2200,8 +2184,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 endpoint ftp",
@@ -2564,8 +2547,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 endpoint opaque",
@@ -2730,8 +2712,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 region empty",
@@ -2764,8 +2745,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 region null",
@@ -2798,8 +2778,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 region slash",
@@ -2997,8 +2976,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 bucket empty",
@@ -3229,8 +3207,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 path style false dns",
@@ -3264,8 +3241,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 path style true",
@@ -3299,8 +3275,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 path style null",
@@ -3334,8 +3309,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 path style string",
@@ -3471,8 +3445,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 virtual hosted leading zero ipv4",
@@ -3506,8 +3479,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 virtual hosted upper bucket",
@@ -3710,8 +3682,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 folder two trailing slashes",
@@ -3942,8 +3913,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 three secrets",
@@ -3977,8 +3947,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 empty token",
@@ -4012,8 +3981,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 one secret",
@@ -4278,8 +4246,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "s3 secret newline",
@@ -4380,8 +4347,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "s3"
+   "xray": "ok"
   },
   {
    "name": "xmux null",
@@ -4656,8 +4622,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "encryption none",
@@ -5550,8 +5515,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "drive h3 noise upper",
@@ -5601,8 +5565,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "drive h3 salamander",
@@ -5958,7 +5921,7 @@
        {
         "type": "salamander",
         "settings": {
-         "password": "p"
+         "password": "salamander-password"
         }
        }
       ]
@@ -5968,8 +5931,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "ours": "error"
+   "xray": "ok"
   },
   {
    "name": "template h3 header-custom",
@@ -6054,8 +6016,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "template"
+   "xray": "ok"
   },
   {
    "name": "drive h2 noise",
@@ -6142,8 +6103,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "drive h3 empty finalmask",
@@ -6180,8 +6140,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "drive h3 bbr",
@@ -6223,8 +6182,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "drive h3 reno",
@@ -6265,8 +6223,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "drive h3 brutal",
@@ -6422,8 +6379,7 @@
      "enabled": true
     }
    },
-   "xray": "ok",
-   "core": "google-drive"
+   "xray": "ok"
   },
   {
    "name": "local h3 windows",
@@ -6570,6 +6526,507 @@
     },
     "mux": {
      "enabled": true
+    }
+   },
+   "xray": "ok",
+   "ours": "error"
+  },
+  {
+   "name": "fronting address and port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder",
+      "service": "template",
+      "secrets": [
+       "user",
+       "pass"
+      ],
+      "template": {
+       "flatten": true,
+       "auth": {
+        "type": "basic",
+        "username": "{secret0}",
+        "password": "{secret1}"
+       },
+       "put": {
+        "method": "PUT",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "get": {
+        "method": "GET",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "delete": {
+        "method": "DELETE",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "list": {
+        "method": "PROPFIND",
+        "url": "https://dav.example/{folder}/",
+        "namesRegex": "<d:href>/folder/([^<]+)</d:href>"
+       }
+      }
+     },
+     "address": "127.0.0.1",
+     "port": 8443
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "fronting domain address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "xdrive/sessions-root",
+      "service": "s3",
+      "secrets": [
+       "AKIDEXAMPLE",
+       "example-secret-key"
+      ],
+      "s3": {
+       "endpoint": "https://s3.example",
+       "region": "us-west-2",
+       "bucket": "xdrive-bucket"
+      }
+     },
+     "address": "front.example"
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "fronting port alone",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "port": 8443
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "fronting null address and port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "address": null,
+     "port": null
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "fronting bracketed ipv6",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder",
+      "service": "template",
+      "secrets": [
+       "user",
+       "pass"
+      ],
+      "template": {
+       "flatten": true,
+       "auth": {
+        "type": "basic",
+        "username": "{secret0}",
+        "password": "{secret1}"
+       },
+       "put": {
+        "method": "PUT",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "get": {
+        "method": "GET",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "delete": {
+        "method": "DELETE",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "list": {
+        "method": "PROPFIND",
+        "url": "https://dav.example/{folder}/",
+        "namesRegex": "<d:href>/folder/([^<]+)</d:href>"
+       }
+      }
+     },
+     "address": "[::1]",
+     "port": 443
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "fronting empty address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder",
+      "service": "template",
+      "secrets": [
+       "user",
+       "pass"
+      ],
+      "template": {
+       "flatten": true,
+       "auth": {
+        "type": "basic",
+        "username": "{secret0}",
+        "password": "{secret1}"
+       },
+       "put": {
+        "method": "PUT",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "get": {
+        "method": "GET",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "delete": {
+        "method": "DELETE",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "list": {
+        "method": "PROPFIND",
+        "url": "https://dav.example/{folder}/",
+        "namesRegex": "<d:href>/folder/([^<]+)</d:href>"
+       }
+      }
+     },
+     "address": ""
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "fronting spaced address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder",
+      "service": "template",
+      "secrets": [
+       "user",
+       "pass"
+      ],
+      "template": {
+       "flatten": true,
+       "auth": {
+        "type": "basic",
+        "username": "{secret0}",
+        "password": "{secret1}"
+       },
+       "put": {
+        "method": "PUT",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "get": {
+        "method": "GET",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "delete": {
+        "method": "DELETE",
+        "url": "https://dav.example/{folder}/{name}"
+       },
+       "list": {
+        "method": "PROPFIND",
+        "url": "https://dav.example/{folder}/",
+        "namesRegex": "<d:href>/folder/([^<]+)</d:href>"
+       }
+      }
+     },
+     "address": " front.example "
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "fronting number address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "address": 5
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number into Go value of type string"
+  },
+  {
+   "name": "fronting object address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "address": {
+      "host": "x"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal object into Go value of type string"
+  },
+  {
+   "name": "fronting port too large",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "port": 65536
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number 65536 into Go struct field Config.outbounds.0.streamSettings.port of type uint16"
+  },
+  {
+   "name": "fronting negative port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "port": -1
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number -1 into Go struct field Config.outbounds.0.streamSettings.port of type uint16"
+  },
+  {
+   "name": "fronting string port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "port": "443"
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field Config.outbounds.0.streamSettings.port of type uint16"
+  },
+  {
+   "name": "fronting fractional port",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "port": 1.5
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "json: cannot unmarshal number 1.5 into Go struct field Config.outbounds.0.streamSettings.port of type uint16"
+  },
+  {
+   "name": "fronting env address",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "/tmp/xray-rust-xdrive-verdicts",
+      "service": "local"
+     },
+     "address": "env:XRAY_RUST_XDRIVE_FRONT"
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok",
+   "ours": "error"
+  },
+  {
+   "name": "address under raw",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "none"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "address": "192.0.2.4",
+     "port": 80
     }
    },
    "xray": "ok",

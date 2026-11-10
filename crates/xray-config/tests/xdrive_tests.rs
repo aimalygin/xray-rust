@@ -2,8 +2,8 @@
 //! v26.10.31 reads them.
 use serde_json::{json, Value};
 use xray_config::{
-    parse_xray_json, xdrive_default_xmux, DiagnosticSeverity, StreamTransport, XdriveService,
-    XdriveSettings, XhttpRange,
+    parse_xray_json, xdrive_default_xmux, DiagnosticSeverity, StreamTransport, TargetAddr,
+    XdriveService, XdriveSettings, XhttpRange,
 };
 
 const ENCRYPTION: &str =
@@ -264,4 +264,21 @@ fn refusals_name_xrays_reasons() {
         "finalmask": {"udp": [{"type": "salamander", "settings": {"password": "p"}}]}});
     assert!(joined(errors(outbound(drive, h3)))
         .contains(r#"the only "udp" mask that works is "noise", not "salamander""#));
+}
+
+#[test]
+fn fronting_takes_the_streams_address_and_port() {
+    let fronting = |stream: Value| {
+        settings_with(json!({"service": "local", "remoteFolder": "/f"}), stream).fronting
+    };
+    assert_eq!(
+        fronting(json!({"address": " [::1] ", "port": 8443})),
+        Some((TargetAddr::Ip("::1".parse().unwrap()), 8443))
+    );
+    assert_eq!(
+        fronting(json!({"address": "front.example"})),
+        Some((TargetAddr::Domain("front.example".to_owned()), 0))
+    );
+    assert_eq!(fronting(json!({"port": 8443})), None);
+    assert_eq!(fronting(json!({"address": null, "port": null})), None);
 }

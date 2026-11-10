@@ -19,6 +19,15 @@ long-term supported release series.
   puts its one socket under them, which takes one peer and opens anew with
   the masks' state at every rebind. udphop and realm are refused on both for
   now. See [UDP masks on freedom and WireGuard](docs/config-compatibility.md#udp-masks-on-freedom-and-wireguard).
+- quinn-udp 0.5.16. On macOS and iOS, a datagram longer than the 1,472-byte
+  receive buffer no longer makes a QUIC carrier spin at full CPU:
+  - The carriers are Hysteria, XHTTP over HTTP/3, MASQUE over HTTP/3 and DoQ.
+    Salamander reads into its own buffer and was not affected.
+  - quinn-udp 0.5.15 retried recvmsg after the cut datagram until a datagram
+    that fits arrived.
+  - On macOS the socket is connected, so only the server or a host on the path
+    could cause it. On iOS anyone who could reach the client's port could.
+  - Linux and Android were not affected. 0.9.0 was.
 - The FinalMask `fragment` mask selects whole writes with `packets`, as
   Xray-core v26.10.31 does: empty or absent cuts every write, a number or a
   `from-to` range the writes so numbered, each into raw pieces, every piece
@@ -46,20 +55,57 @@ long-term supported release series.
   and `.err` marks, the writer's coalescing of a growing buffer for up to
   eight flush ticks and the reader's polling, hole timeout and deletes. The
   `local` service keeps the objects as files in `remoteFolder`, so a client
-  and Xray-core's server meet in a shared folder. See
+  and Xray-core's server meet in a shared folder; `s3` keeps them in a
+  bucket and `template` in any HTTP storage a JSON template describes. See
   [XDRIVE](docs/config-compatibility.md#xdrive).
   - `xdriveSettings` is read as Xray-core reads it, all four services and
     every field; the outbound must be VLESS with `encryption`, without
     `flow` or `testpre`, with Mux on for TCP and UDP. The server address is
     never looked up.
-  - `google-drive`, `template` and `s3` are read and checked as Xray-core
-    does, `s3` with its endpoint, region, bucket, folder and secret rules,
-    but refused when the core starts for now.
+  - The HTTP storages are reached as Xray-core's Go client reaches them:
+    the stream's TLS, or a Chrome hello without it, HTTP/2 or HTTP/1.1 by
+    ALPN with Go's settings, flow-control windows, pseudo-header order and
+    headers, Chrome's `fetch` headers, transparent gzip, a 60-second stall
+    timeout, one connection a host until it answers over HTTP/1.1, XMUX
+    reuse with the HTTP/2 keepalive of `hKeepAlivePeriod`, and
+    `streamSettings.address` and `port`, now read for XDRIVE, as the place
+    every connection goes.
+  - `s3`: path-style or virtual-hosted requests signed with SigV4 and a
+    session token, listings with delimiter and continuation, deletes of an
+    object and what lies under it, eight tries with backoff and
+    `Retry-After`, redirects taken as answers.
+  - `template`: put, get, delete and list requests from the template with
+    `{folder}`, `{name}`, `{prefix}`, `{data}`, `{secretN}` and `{token}`,
+    auth `none`, `static`, `oauth2` (a cached token, fetched again on 401)
+    or `basic`, two-step operations through `hrefPath`, flat names,
+    listings read with Go's `regexp`, retries by status or by a 403's
+    reason, and redirects followed as Go's `http.Client` follows them.
+  - `google-drive`: files in a Drive folder by id over Drive's v3 API, an
+    access token from the refresh token, small objects in descriptions and
+    larger ones as media, ids remembered by name for every session, and
+    retries after Drive's rate limits; a session goes in rings of two to
+    eight slots each way with a watermark, frames of `XDRVSL01` with the
+    segment inline up to 14 KiB or in the body, segments growing from 14 KiB
+    after eight full ones, a burst at once, and slots reused only once the
+    reader took what they held.
+  - Over `alpn` exactly `["h3"]` a storage is reached over HTTP/3, its QUIC
+    connections set up as XHTTP's are, with the stream's `quicParams` and
+    UDP masks, Salamander among them; Xray-core's ChromeParrot is not there
+    yet.
   - Deliberate differences: a writer waits once twice `concurrency`
     segments are not yet stored, where Xray-core keeps cutting; no
     `xdriveSettings` and an empty `local` folder fail when the core starts,
     where Xray-core fails every dial; a stream dropped without shutdown
-    stores its end mark in the background for up to two minutes.
+    stores its end mark in the background for up to two minutes; one
+    outbound's storage is shared by its sessions only, not with other
+    outbounds that name the same one; a template's or Drive's answer is
+    read up to 64 MiB; `{name}` and the like are replaced in a fixed order,
+    HTTP/2 headers written in one and Drive listings taken in name order,
+    where Go's map order varies; HTTP/3 request headers come in the vendored
+    `h3`'s order and a storage over HTTP/3 cannot go through another
+    outbound.
+  - The vendored `h2` gains `go_request_pseudo_order`, the request
+    pseudo-header order of Go's `net/http`.
 - The `masque` outbound and `masque` transport connect to a MASQUE proxy as
   Xray-core v26.10.31's client does: one CONNECT-IP tunnel (RFC 9484) over
   HTTP/3 or HTTP/2, with Basic authorization from `user` and `pass`, the addresses the
