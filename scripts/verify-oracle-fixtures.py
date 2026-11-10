@@ -386,8 +386,9 @@ def clienthello_shape_flags(document: Any) -> list[str]:
     """Read `clienthello_shape.go`'s own flags back out of its output.
 
     `-check` regenerates the shape from these, so a fixture checked with the
-    wrong ones reports a mismatch that means nothing. `websocket_alpn` carries
-    `omitempty`, so its absence is the `false` the oracle defaults to.
+    wrong ones reports a mismatch that means nothing. `websocket_alpn` and
+    `ech_payload_length` carry `omitempty`, so their absence is the `false`
+    and the `0` (uTLS's own draw) the oracle defaults to.
     """
     flags = [
         "-fingerprint",
@@ -397,6 +398,11 @@ def clienthello_shape_flags(document: Any) -> list[str]:
     ]
     if document.get("websocket_alpn"):
         flags.append("-websocket-alpn")
+    if "ech_payload_length" in document:
+        length = document["ech_payload_length"]
+        if isinstance(length, bool) or not isinstance(length, int) or length <= 0:
+            raise ValueError(f"`ech_payload_length` must be a positive integer, got {length!r}")
+        flags.extend(["-ech-payload-length", str(length)])
     return flags
 
 

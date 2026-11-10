@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 
 	utls "github.com/refraction-networking/utls"
 )
@@ -37,6 +38,15 @@ var serverName = "example.com"
 // one shape the per-fingerprint oracle never sees -- is read off the reference
 // implementation.
 var websocketALPN = false
+
+// echPayloadLength forces the payload length a GREASE ECH extension draws.
+// uTLS picks one of `CandidatePayloadLens` per hello with
+// `rand.Int(rand.Reader, len)`, which the zeroed crypto/rand below always
+// answers with the first; `-ech-payload-length` names another, so a fixture
+// can be made for each length a real hello may carry. Zero leaves uTLS's own
+// draw, and every committed fixture without the flag keeps checking out
+// unchanged.
+var echPayloadLength = 0
 
 const (
 	clientHelloHandshakeType = byte(0x01)
@@ -84,6 +94,7 @@ type clientHelloShape struct {
 	UTLSID                           string            `json:"utls_id"`
 	ServerName                       string            `json:"server_name"`
 	WebsocketALPN                    bool              `json:"websocket_alpn,omitempty"`
+	ECHPayloadLength                 int               `json:"ech_payload_length,omitempty"`
 	HandshakeLength                  int               `json:"handshake_length"`
 	LegacyVersion                    string            `json:"legacy_version"`
 	CipherSuites                     []string          `json:"cipher_suites"`
@@ -106,10 +117,11 @@ type clientHelloShape struct {
 }
 
 type rawClientHelloOutput struct {
-	Fingerprint    string `json:"fingerprint"`
-	UTLSID         string `json:"utls_id"`
-	ServerName     string `json:"server_name"`
-	ClientHelloHex string `json:"client_hello_hex"`
+	Fingerprint      string `json:"fingerprint"`
+	UTLSID           string `json:"utls_id"`
+	ServerName       string `json:"server_name"`
+	ECHPayloadLength int    `json:"ech_payload_length,omitempty"`
+	ClientHelloHex   string `json:"client_hello_hex"`
 }
 
 type extensionShape struct {
@@ -134,9 +146,12 @@ func main() {
 	sni := flag.String("server-name", serverName, "SNI to shape around; an IP literal suppresses the server_name extension")
 	websocket := flag.Bool("websocket-alpn", websocketALPN,
 		"rebuild the hello with ALPN forced to http/1.1, as UConn.WebsocketHandshakeContext does")
+	echLength := flag.Int("ech-payload-length", echPayloadLength,
+		"force the GREASE ECH payload length to this one of the extension's candidates; 0 keeps uTLS's draw")
 	flag.Parse()
 	serverName = *sni
 	websocketALPN = *websocket
+	echPayloadLength = *echLength
 
 	if *rawOutput {
 		raw, utlsID, err := buildRawClientHello(*fingerprint)
@@ -145,10 +160,11 @@ func main() {
 			os.Exit(1)
 		}
 		generated, err := json.MarshalIndent(rawClientHelloOutput{
-			Fingerprint:    *fingerprint,
-			UTLSID:         utlsID,
-			ServerName:     serverName,
-			ClientHelloHex: hex.EncodeToString(raw),
+			Fingerprint:      *fingerprint,
+			UTLSID:           utlsID,
+			ServerName:       serverName,
+			ECHPayloadLength: echPayloadLength,
+			ClientHelloHex:   hex.EncodeToString(raw),
 		}, "", "  ")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "marshal raw ClientHello: %v\n", err)
@@ -209,7 +225,66 @@ func buildRawClientHello(fingerprint string) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	if echPayloadLength == 0 {
+		return buildHello(id, 0)
+	}
 
+	// Forcing a length must change nothing else. Forcing the first candidate
+	// has to give back, byte for byte, the hello uTLS draws by itself under
+	// the zeroed crypto/rand, or the forced fixtures are not uTLS's hellos.
+	drawn, _, err := buildHello(id, 0)
+	if err != nil {
+		return nil, "", err
+	}
+	first, err := firstECHPayloadLength(id)
+	if err != nil {
+		return nil, "", err
+	}
+	forcedFirst, _, err := buildHello(id, first)
+	if err != nil {
+		return nil, "", err
+	}
+	if !bytes.Equal(drawn, forcedFirst) {
+		return nil, "", fmt.Errorf("forcing the ECH payload length to its first candidate %d changes the hello uTLS draws", first)
+	}
+	return buildHello(id, echPayloadLength)
+}
+
+// firstECHPayloadLength is the candidate the zeroed crypto/rand draws.
+func firstECHPayloadLength(id utls.ClientHelloID) (int, error) {
+	spec, err := utls.UTLSIdToSpec(id)
+	if err != nil {
+		return 0, err
+	}
+	extension, err := greaseECH(&spec)
+	if err != nil {
+		return 0, err
+	}
+	return int(extension.CandidatePayloadLens[0]), nil
+}
+
+// greaseECH is the spec's GREASE ECH extension, which a forced payload length
+// needs and which carries more than one candidate in every spec that has it.
+func greaseECH(spec *utls.ClientHelloSpec) (*utls.GREASEEncryptedClientHelloExtension, error) {
+	for _, extension := range spec.Extensions {
+		if ech, ok := extension.(*utls.GREASEEncryptedClientHelloExtension); ok {
+			if len(ech.CandidatePayloadLens) == 0 {
+				return nil, errors.New("the GREASE ECH extension declares no payload length candidates")
+			}
+			return ech, nil
+		}
+	}
+	return nil, errors.New("the fingerprint has no GREASE ECH extension to force a payload length on")
+}
+
+// buildHello builds the hello under a zeroed crypto/rand. With a nonzero
+// echLength it applies the fingerprint's spec with the GREASE ECH extension
+// left one candidate, echLength, which must be one of its own: exactly the
+// hello uTLS sends when its `rand.Int` picks that candidate's index.
+// `UClient` with the ID does nothing else -- `applyPresetByID` is
+// `UTLSIdToSpec` then `ApplyPreset` -- and `ClientHelloID` steers nothing in
+// building a Chrome hello besides the spec.
+func buildHello(id utls.ClientHelloID, echLength int) ([]byte, string, error) {
 	previousRand := cryptoRand.Reader
 	cryptoRand.Reader = zeroReader{}
 	defer func() { cryptoRand.Reader = previousRand }()
@@ -223,7 +298,27 @@ func buildRawClientHello(fingerprint string) ([]byte, string, error) {
 		Rand:         &deterministicReader{},
 		OmitEmptyPsk: true,
 	}
-	uConn := utls.UClient(clientConn, config, id)
+	var uConn *utls.UConn
+	if echLength == 0 {
+		uConn = utls.UClient(clientConn, config, id)
+	} else {
+		spec, err := utls.UTLSIdToSpec(id)
+		if err != nil {
+			return nil, "", err
+		}
+		extension, err := greaseECH(&spec)
+		if err != nil {
+			return nil, "", err
+		}
+		if !slices.Contains(extension.CandidatePayloadLens, uint16(echLength)) {
+			return nil, "", fmt.Errorf("ECH payload length %d is not one of the candidates %v", echLength, extension.CandidatePayloadLens)
+		}
+		extension.CandidatePayloadLens = []uint16{uint16(echLength)}
+		uConn = utls.UClient(clientConn, config, utls.HelloCustom)
+		if err := uConn.ApplyPreset(&spec); err != nil {
+			return nil, "", err
+		}
+	}
 	if err := uConn.BuildHandshakeState(); err != nil {
 		return nil, "", err
 	}
@@ -467,6 +562,7 @@ func parseClientHelloShape(fingerprint string, utlsID string, raw []byte) (clien
 		UTLSID:             utlsID,
 		ServerName:         serverName,
 		WebsocketALPN:      websocketALPN,
+		ECHPayloadLength:   echPayloadLength,
 		HandshakeLength:    len(raw),
 		LegacyVersion:      formatU16(uint16(legacyVersion)),
 		CipherSuites:       formatU16s(cipherSuites),
