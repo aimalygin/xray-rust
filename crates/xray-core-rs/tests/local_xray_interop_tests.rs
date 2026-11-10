@@ -517,6 +517,7 @@ fn selected_reality_interop_fingerprints() -> Vec<String> {
 
     [
         "chrome",
+        "hellochrome_155",
         "hellochrome_133",
         "hellofirefox_148",
         "hellosafari_26_3",

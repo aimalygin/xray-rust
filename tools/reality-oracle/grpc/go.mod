@@ -1,11 +1,7 @@
 // A module of its own, deliberately, for the reason the masquerade oracle next
-// door is one, and for a second reason of its own. The root module pins
-// golang.org/x/crypto at v0.36.0, and uTLS compiled against a different
-// x/crypto emits different ClientHello bytes -- enough to break the committed
-// tests/fixtures/reality/clienthello_chrome_auto.json. Both requirements below
-// move it: adding google.golang.org/grpc v1.82.1 to the root module selects
-// a newer x/crypto through its own graph, and xray-core requires v0.54.0
-// outright. Keeping this oracle out of the root module keeps the two
+// door is one: the root module holds exactly the uTLS graph Xray-core builds
+// its ClientHellos with, and both requirements below would move it through
+// their own graphs. Keeping this oracle out of the root module keeps the two
 // dependency graphs from colliding.
 //
 // Separate from the masquerade module as well as from the root one, because

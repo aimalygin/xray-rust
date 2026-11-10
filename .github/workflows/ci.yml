@@ -486,6 +486,9 @@ jobs:
       - name: Recheck the freedom finalRules and Mux config verdicts against pinned Xray-core
         run: bash scripts/check-xray-verdicts.sh
 
+      - name: Hold pinned Xray-core's own ClientHellos to the uTLS fixtures
+        run: bash scripts/check-xray-default-fingerprint.sh
+
       # Keep this step last: it shows how much room the steps above leave.
       - name: Report disk use
         if: always()

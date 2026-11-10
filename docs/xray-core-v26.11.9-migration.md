@@ -11,6 +11,25 @@ keep their original source identities.
 
 ## Changes that affect the Rust client
 
+- **Chrome 155 is the default fingerprint** (#7135, then official uTLS
+  20261108164504). `chrome`, `hellochrome_auto` and an empty `fingerprint`
+  are uTLS's `HelloChrome_Auto`, which is now `HelloChrome_155`; the new name
+  `hellochrome_155` joins `ModernFingerprints`, so `random` draws from twelve
+  names. Chrome 155 is Chrome 133's hello with GREASE and ML-DSA 44/65/87
+  ahead of the signature algorithms and a `trust_anchors` extension (`0xca34`)
+  with 28 fixed Chrome Root Store trust anchor IDs. xray-rust sends the same
+  hello (a new profile; `trust_anchors` byte for byte), keeps Chrome 133
+  under `hellochrome_133` with a raw fixture of its own, and holds the pinned
+  binary's own hellos for `""`, `chrome`, `hellochrome_155` and
+  `hellochrome_133` to the fixtures in the `go-oracles` job
+  (`scripts/check-xray-default-fingerprint.sh`). See
+  [TLS ClientHello shaping](config-compatibility.md#tls-clienthello-shaping).
+  The uTLS oracle module now builds with Xray-core's own graph (x/crypto
+  0.58.0) and `godebug cryptocustomrand=1`: with the `go 1.27` directive that
+  uTLS requires, Go would otherwise ignore the oracle's deterministic reader
+  in `crypto/ecdh`. ECH GREASE keys now come from `crypto/hpke`, which reads no
+  injected randomness, so the oracles pin that key to the zero-key point the
+  fixtures always held.
 - **Freedom `finalRules`** (#7329, `infra/conf/freedom.go`). `blockDelay` is
   renamed `delay`; the old name still works, with a deprecation warning, and
   takes the place of `delay` when both are set. A new `logLevel` (`none`,
@@ -49,6 +68,8 @@ keep their original source identities.
 - The `log.loglevel` field is now spelled `logLevel` in Xray-core's struct
   tag. Go matches JSON keys without case, so both spellings keep working, as
   they do here.
+- REALITY 20261108101329 bounds the server's probe of its target and lets it
+  probe without a server name; nothing changes for a client.
 - Not applicable: geodata downloads of `.dat.gz` for XTLS/Xray-rules-dat
   (#7334; xray-rust downloads no geodata), closing an inbound added at run
   time that fails to start (#7223; no API adds inbounds here), Windows TUN and
@@ -71,6 +92,16 @@ from those 0.10.0 has since brought.
 Local evidence on macOS arm64 (Rust 1.96.0, Go 1.27.3), against a clean
 checkout of the target built with Go 1.27.3:
 
+- Chrome 155: `scripts/verify-oracle-fixtures.sh` reproduces all 35 fixtures
+  (20 REALITY, 3 new or moved: the three `chrome` ones and
+  `clienthello_raw_hellochrome_133.json`), identically when the oracles run as
+  linux/amd64; `scripts/check-xray-default-fingerprint.sh` finds the pinned
+  binary sending the fixtures' shapes for `""`, `chrome`, `hellochrome_155`
+  and `hellochrome_133`. Live REALITY Vision against the v26.11.9 server
+  passes with `chrome`, `hellochrome_155`, `hellochrome_133`, Firefox 148,
+  Safari 26.3, Chrome 131, `random` and `randomized`, and the full VLESS
+  encryption matrix (168 TLS and REALITY profiles on the default fingerprint)
+  and the v0.8 carrier matrix pass.
 - Go-oracle fixtures (`scripts/verify-oracle-fixtures.sh`): 34 checked, 21
   reproduced exactly, 8 apart from the date-seeded browser-version draw, and
   the 5 gRPC fixtures after their recorded module versions moved; none failed.

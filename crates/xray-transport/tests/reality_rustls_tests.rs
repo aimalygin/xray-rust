@@ -444,6 +444,10 @@ const RISKY_FINGERPRINT_RAW_ORACLES: &[(&str, &str)] = &[
         include_str!("../../../tests/fixtures/reality/clienthello_raw_chrome.json"),
     ),
     (
+        "hellochrome_133",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_133.json"),
+    ),
+    (
         "helloios_13",
         include_str!("../../../tests/fixtures/reality/clienthello_raw_helloios_13.json"),
     ),

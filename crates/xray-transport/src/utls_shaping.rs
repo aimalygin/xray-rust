@@ -53,6 +53,9 @@ const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
 const EXT_PSK_KEY_EXCHANGE_MODES: u16 = 0x002d;
 const EXT_KEY_SHARE: u16 = 0x0033;
 const EXT_ENCRYPTED_CLIENT_HELLO: u16 = 0xfe0d;
+/// `trust_anchors`, draft-ietf-tls-trust-anchor-ids (uTLS's
+/// `utlsExtensionTrustAnchors`).
+const EXT_TRUST_ANCHORS: u16 = 0xca34;
 const EXT_RENEGOTIATION_INFO: u16 = 0xff01;
 const GROUP_X25519: u16 = 0x001d;
 const GROUP_SECP256R1: u16 = 0x0017;
@@ -506,6 +509,14 @@ fn extension_payloads(
             encrypted_client_hello_payload(&grease)?,
         )?);
     }
+    if !profile.trust_anchor_ids.is_empty() {
+        push_exact_or_raw_extension(
+            &mut exact_extensions,
+            &mut raw_extensions,
+            EXT_TRUST_ANCHORS,
+            trust_anchors_payload(profile.trust_anchor_ids)?,
+        )?;
+    }
     for application_settings in profile.application_settings {
         push_exact_or_raw_extension(
             &mut exact_extensions,
@@ -522,6 +533,7 @@ fn extension_payloads(
             || extension.extension_type == EXT_CERTIFICATE_COMPRESSION
             || extension.extension_type == EXT_RECORD_SIZE_LIMIT
             || extension.extension_type == EXT_ENCRYPTED_CLIENT_HELLO
+            || extension.extension_type == EXT_TRUST_ANCHORS && !profile.trust_anchor_ids.is_empty()
             || profile
                 .application_settings
                 .iter()
@@ -730,6 +742,30 @@ fn certificate_compression_payload(algorithms: &[u16]) -> Result<Vec<u8>, Rustls
     payload.push(byte_len);
     for algorithm in algorithms {
         payload.extend_from_slice(&algorithm.to_be_bytes());
+    }
+    Ok(payload)
+}
+
+/// uTLS's `TrustAnchorsExtension` body: the IDs, each behind a one-byte
+/// length, behind a two-byte length of them all.
+fn trust_anchors_payload(ids: &[&[u8]]) -> Result<Vec<u8>, RustlsError> {
+    let list_len = ids.iter().try_fold(0usize, |total, id| {
+        let id_len = u8::try_from(id.len())
+            .ok()
+            .filter(|len| *len > 0)
+            .ok_or_else(|| RustlsError::General("a trust anchor ID takes 1 to 255 bytes".into()))?;
+        total
+            .checked_add(1 + usize::from(id_len))
+            .ok_or_else(|| RustlsError::General("trust_anchors payload is too large".into()))
+    })?;
+    let list_len = u16::try_from(list_len).map_err(|_| {
+        RustlsError::General("trust_anchors payload cannot exceed 65535 bytes".into())
+    })?;
+    let mut payload = Vec::with_capacity(2 + usize::from(list_len));
+    payload.extend_from_slice(&list_len.to_be_bytes());
+    for id in ids {
+        payload.push(id.len() as u8);
+        payload.extend_from_slice(id);
     }
     Ok(payload)
 }
@@ -945,5 +981,18 @@ mod tests {
             encrypted_client_hello_payload(&too_short).is_err(),
             "a 57-byte body cannot hold the 42-byte outer header and a 16-byte AEAD tag"
         );
+    }
+
+    /// uTLS's `TrustAnchorsExtension.Read`: a two-byte length of the list,
+    /// then each ID behind its one-byte length.
+    #[test]
+    fn trust_anchors_are_written_as_utls_writes_them() {
+        assert_eq!(
+            super::trust_anchors_payload(&[&[0x82, 0xdf], &[0x07]]).unwrap(),
+            [0x00, 0x05, 0x02, 0x82, 0xdf, 0x01, 0x07]
+        );
+        assert_eq!(super::trust_anchors_payload(&[]).unwrap(), [0x00, 0x00]);
+        assert!(super::trust_anchors_payload(&[&[]]).is_err());
+        assert!(super::trust_anchors_payload(&[&[0; 256]]).is_err());
     }
 }
