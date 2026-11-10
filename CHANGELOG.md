@@ -42,6 +42,14 @@ long-term supported release series.
   gets a single byte. Chrome 120's hello now goes unpadded with the three
   longer ECH lengths, as does any padded profile's behind a long server name.
   See [ECH GREASE](docs/config-compatibility.md#ech-grease).
+- A uTLS-shaped hello answers a HelloRetryRequest as uTLS does. The second
+  ClientHello carries the requested group's key share alone, where it kept
+  the GREASE share beside it and was refused with `illegal_parameter` by
+  OpenSSL and Go servers; a cookie goes anywhere but the last two places,
+  where the second ClientHello could not be built at all; and the padding
+  follows the second ClientHello's own length. It takes a server sharing no
+  key share group with the profile, or one sending a cookie, to ask for a
+  retry. See [TLS ClientHello shaping](docs/config-compatibility.md#tls-clienthello-shaping).
 - XDRIVE on Google Drive follows Xray-core v26.11.9: rings as deep as
   `concurrency` (64 by default, at most 256) with spare rings made ahead,
   sessions announced after their first segment with that segment inline,
