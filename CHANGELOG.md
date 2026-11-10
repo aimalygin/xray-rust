@@ -104,6 +104,16 @@ long-term supported release series.
   neither family, the gap between two networks, leaves the lookup unanswered
   instead of answering it empty. The empty answer stayed in the DNS cache for
   30 seconds after the routes were back.
+- The FinalMask `filter` mask is accepted in `finalmask.tcp` and
+  `finalmask.udp` of any outbound, any number of times and anywhere, as
+  Xray-core v26.11.9's client accepts it. Its `blockedSourceIPs` and
+  `allowedSourceIPs` are validated as `Filter.Build` validates them,
+  `geoip:` and `ext:` rules against the geodata files, and the mask is then
+  ignored: Xray-core filters only a server's incoming connections, and its
+  client passes every connection through. Profiles carrying a filter, which
+  failed to parse, now load, and a carrier with filters sends what it sends
+  without them. A filter after udphop or xicmp is refused, where Xray-core
+  fails every dial. See [filter mask](docs/config-compatibility.md#filter-mask).
 - Freedom and WireGuard take FinalMask's UDP masks, as Xray-core v26.10.31's
   `FinalMask.DialUDP` wraps their sockets: noise, `header-custom`, Salamander
   with Gecko, sudoku, xdns and xicmp, with the code and order of the QUIC

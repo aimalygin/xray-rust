@@ -1,5 +1,6 @@
 mod blackhole;
 mod dns;
+mod filter;
 mod fragment;
 mod freedom;
 use xray_proxy::go_url;

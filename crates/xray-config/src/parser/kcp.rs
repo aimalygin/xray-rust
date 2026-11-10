@@ -117,7 +117,9 @@ impl Parser<'_> {
     }
 
     /// The `finalmask.udp` masks an mKCP stream applies, in array order.
-    /// Masks of other types are reported by `parse_udp_noise`.
+    /// Masks of other types are reported by `parse_udp_noise`. A filter
+    /// applies nothing: between two header masks it splits Xray-core's
+    /// group in two, which writes and reads the same bytes as one group.
     pub(super) fn parse_kcp_masks(&mut self, stream: Option<&Value>, index: usize) -> Vec<KcpMask> {
         let Some(masks) = stream
             .and_then(|stream| stream.pointer("/finalmask/udp"))

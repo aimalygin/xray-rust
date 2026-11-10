@@ -1,0 +1,5074 @@
+{
+ "comment": "FinalMask filter cases with what `xray run -test` of Xray-core v26.11.9 says of each: \"ok\" or a substring of its error. A client validates a filter and then ignores it, as Xray-core's does. \"ours\" records a deliberate difference of the parser, for the reason in \"why\"; \"core\" a refusal of the core when it is built. The geodata cases assume no geoip.dat beside the binary or in Xray-core's asset directories. Rechecked by scripts/check-config-verdicts.py in scripts/check-xray-verdicts.sh.",
+ "cases": [
+  {
+   "name": "raw tls tcp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "raw tls udp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "reality tcp and udp filters",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "reality",
+     "realitySettings": {
+      "serverName": "www.example.com",
+      "fingerprint": "chrome",
+      "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+      "shortId": "02030405"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ],
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "ws tcp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "ws",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "wsSettings": {
+      "path": "/ws"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "grpc tcp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "grpc",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "grpcSettings": {
+      "serviceName": "svc"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "xhttp tcp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xhttp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "xhttpSettings": {
+      "path": "/p"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "xhttp download stream filters",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xhttp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "xhttpSettings": {
+      "path": "/p",
+      "downloadSettings": {
+       "address": "download.example",
+       "port": 443,
+       "network": "xhttp",
+       "security": "tls",
+       "tlsSettings": {
+        "serverName": "download.example"
+       },
+       "xhttpSettings": {
+        "path": "/p"
+       },
+       "finalmask": {
+        "tcp": [
+         {
+          "type": "filter",
+          "settings": {
+           "blockedSourceIPs": [
+            "10.0.0.0/8",
+            "!192.168.0.0/16"
+           ],
+           "allowedSourceIPs": [
+            "2001:db8::/32"
+           ]
+          }
+         }
+        ],
+        "udp": [
+         {
+          "type": "filter",
+          "settings": {
+           "blockedSourceIPs": [
+            "10.0.0.0/8",
+            "!192.168.0.0/16"
+           ],
+           "allowedSourceIPs": [
+            "2001:db8::/32"
+           ]
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "xhttp h3 udp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xhttp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "xhttpSettings": {
+      "path": "/p"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "xhttp h3 tcp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "xhttp",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "xhttpSettings": {
+      "path": "/p"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "hysteria udp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "filter-verdict"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "hysteria tcp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "filter-verdict"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "hysteria filters around salamander and noise",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "filter-verdict"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter"
+       },
+       {
+        "type": "salamander",
+        "settings": {
+         "password": "filter-verdict"
+        }
+       },
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       },
+       {
+        "type": "noise",
+        "settings": {
+         "noise": [
+          {
+           "rand": "16-32"
+          }
+         ]
+        }
+       },
+       {
+        "type": "filter"
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "mkcp udp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "10.0.0.9",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "kcp",
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "mkcp tcp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "10.0.0.9",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "kcp",
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "mkcp filter between mkcp-legacy masks",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "10.0.0.9",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "kcp",
+     "finalmask": {
+      "udp": [
+       {
+        "type": "mkcp-legacy",
+        "settings": {
+         "header": "srtp"
+        }
+       },
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       },
+       {
+        "type": "mkcp-legacy",
+        "settings": {
+         "value": "seed"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "masque h3 udp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "masque h2 tcp and udp filters",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "masque",
+    "settings": {
+     "address": "masque.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "masque",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "masque.example",
+      "alpn": [
+       "h2"
+      ]
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ],
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "xdrive google drive h3 tcp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "xdrive google drive h3 udp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "address": "127.0.0.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "mlkem768x25519plus.native.0rtt.XKbaq1BuzJKKKPxZbwgRpn-gYQbnhrYketgezASCL1I"
+    },
+    "streamSettings": {
+     "network": "xdrive",
+     "xdriveSettings": {
+      "remoteFolder": "folder-id",
+      "service": "google-drive",
+      "secrets": [
+       "client-id",
+       "client-secret",
+       "refresh-token"
+      ]
+     },
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "xdrive.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "infra/conf: XDRIVE: over h3 to Google Drive the only \"udp\" mask that works is \"noise\", not \"filter\""
+  },
+  {
+   "name": "trojan tcp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "trojan",
+    "settings": {
+     "servers": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "password": "filter-verdict"
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "vmess tcp and udp filters",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vmess",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "security": "auto"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "ws",
+     "wsSettings": {
+      "path": "/ws"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ],
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "socks tcp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "socks",
+    "settings": {
+     "servers": [
+      {
+       "address": "10.0.0.9",
+       "port": 1080
+      }
+     ]
+    },
+    "streamSettings": {
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "freedom tcp and udp filters",
+   "outbound": {
+    "tag": "direct",
+    "protocol": "freedom",
+    "streamSettings": {
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ],
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "freedom filters around noise",
+   "outbound": {
+    "tag": "direct",
+    "protocol": "freedom",
+    "streamSettings": {
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       },
+       {
+        "type": "noise",
+        "settings": {
+         "noise": [
+          {
+           "rand": "16-32"
+          }
+         ]
+        }
+       },
+       {
+        "type": "filter"
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "wireguard udp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "wireguard",
+    "settings": {
+     "secretKey": "4242424242424242424242424242424242424242424242424242424242424242",
+     "address": [
+      "10.44.0.2/32"
+     ],
+     "mtu": 1420,
+     "peers": [
+      {
+       "publicKey": "5353535353535353535353535353535353535353535353535353535353535353",
+       "endpoint": "server.example:51820",
+       "allowedIPs": [
+        "0.0.0.0/0"
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "wireguard tcp filter",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "wireguard",
+    "settings": {
+     "secretKey": "4242424242424242424242424242424242424242424242424242424242424242",
+     "address": [
+      "10.44.0.2/32"
+     ],
+     "mtu": 1420,
+     "peers": [
+      {
+       "publicKey": "5353535353535353535353535353535353535353535353535353535353535353",
+       "endpoint": "server.example:51820",
+       "allowedIPs": [
+        "0.0.0.0/0"
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "blackhole tcp and udp filters",
+   "outbound": {
+    "tag": "block",
+    "protocol": "blackhole",
+    "streamSettings": {
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ],
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "dns tcp and udp filters",
+   "outbound": {
+    "tag": "dns-out",
+    "protocol": "dns",
+    "streamSettings": {
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ],
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "tcp three filters",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       },
+       {
+        "type": "filter"
+       },
+       {
+        "type": "filter",
+        "settings": null
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp twelve filters",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "filter-verdict"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter"
+       },
+       {
+        "type": "filter"
+       },
+       {
+        "type": "filter"
+       },
+       {
+        "type": "filter"
+       },
+       {
+        "type": "filter"
+       },
+       {
+        "type": "filter"
+       },
+       {
+        "type": "filter"
+       },
+       {
+        "type": "filter"
+       },
+       {
+        "type": "filter"
+       },
+       {
+        "type": "filter"
+       },
+       {
+        "type": "filter"
+       },
+       {
+        "type": "filter"
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "tcp filter after sudoku",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "sudoku",
+        "settings": {
+         "password": "filter-verdict"
+        }
+       },
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "tcp filter before sudoku",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       },
+       {
+        "type": "sudoku",
+        "settings": {
+         "password": "filter-verdict"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "tcp filters around fragment and header-custom",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter"
+       },
+       {
+        "type": "fragment",
+        "settings": {
+         "packets": "tlshello",
+         "length": "100-200",
+         "delay": "1-2"
+        }
+       },
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       },
+       {
+        "type": "header-custom",
+        "settings": {
+         "clients": [
+          [
+           {
+            "type": "str",
+            "packet": "hello"
+           }
+          ]
+         ]
+        }
+       },
+       {
+        "type": "filter"
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp filter before udphop",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "filter-verdict"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       },
+       {
+        "type": "udphop",
+        "settings": {
+         "mode": "intervalLocal",
+         "remotePorts": "443,8443"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp filter after udphop",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "filter-verdict"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "udphop",
+        "settings": {
+         "mode": "intervalLocal",
+         "remotePorts": "443,8443"
+        }
+       },
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "ours": "error",
+   "why": "Xray-core accepts it and fails every dial with `incorrect index: 1 *udphop.Config` (checked live): its check counts a filter's place like any mask's.",
+   "xray": "ok"
+  },
+  {
+   "name": "udp filter after xicmp",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "filter-verdict"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "xicmp",
+        "settings": {
+         "dgram": true,
+         "ips": [
+          "192.0.2.1"
+         ]
+        }
+       },
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "ours": "error",
+   "why": "Xray-core accepts it and fails every dial with `incorrect index: 1 *xicmp.Config` (checked live): its check counts a filter's place like any mask's.",
+   "xray": "ok"
+  },
+  {
+   "name": "udp filter after xdns",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "filter-verdict"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "xdns",
+        "settings": {
+         "domains": [
+          {
+           "names": [
+            "t.example.com"
+           ]
+          }
+         ],
+         "resolvers": [
+          {
+           "addrs": [
+            "192.0.2.53"
+           ]
+          }
+         ]
+        }
+       },
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp filter after realm",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "10.0.0.9",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "kcp",
+     "finalmask": {
+      "udp": [
+       {
+        "type": "realm",
+        "settings": {
+         "url": "realm://token@rendezvous.example/name",
+         "stunServers": [
+          "stun.example.net:3478"
+         ]
+        }
+       },
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8",
+          "!192.168.0.0/16"
+         ],
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "settings empty",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {}
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "settings null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": null
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "settings absent",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter"
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "udp settings null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "filter-verdict"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter",
+        "settings": null
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "settings number",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": 5
+       }
+      ]
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal number into Go value of type conf.Filter"
+  },
+  {
+   "name": "settings string",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": "x"
+       }
+      ]
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go value of type conf.Filter"
+  },
+  {
+   "name": "settings array",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": []
+       }
+      ]
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal array into Go value of type conf.Filter"
+  },
+  {
+   "name": "settings bool",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": true
+       }
+      ]
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal bool into Go value of type conf.Filter"
+  },
+  {
+   "name": "udp settings array",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "filter-verdict"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter",
+        "settings": []
+       }
+      ]
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal array into Go value of type conf.Filter"
+  },
+  {
+   "name": "type upper case",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "FILTER",
+        "settings": {}
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "type mixed case udp",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "filter-verdict"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "Filter",
+        "settings": {}
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "type trailing space",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter ",
+        "settings": {}
+       }
+      ]
+     }
+    }
+   },
+   "xray": "infra/conf: unknown config id: filter"
+  },
+  {
+   "name": "lists empty",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [],
+         "allowedSourceIPs": []
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "lists null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": null,
+         "allowedSourceIPs": null
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "blocked list a string",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": "10.0.0.0/8"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field Filter.blockedSourceIPs of type []string"
+  },
+  {
+   "name": "blocked list a object",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": {}
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal object into Go struct field Filter.blockedSourceIPs of type []string"
+  },
+  {
+   "name": "blocked list a number",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": 1
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal number into Go struct field Filter.blockedSourceIPs of type []string"
+  },
+  {
+   "name": "allowed item a number",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "allowedSourceIPs": [
+          1
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "json: cannot unmarshal number into Filter.allowedSourceIPs.0 of type string"
+  },
+  {
+   "name": "allowed item null",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "allowedSourceIPs": [
+          null
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "both lists invalid",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "x"
+         ],
+         "allowedSourceIPs": [
+          "y"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "udp blocked rule invalid",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "hysteria",
+    "settings": {
+     "version": 2,
+     "address": "hysteria.example",
+     "port": 443
+    },
+    "streamSettings": {
+     "network": "hysteria",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "hysteria.example",
+      "alpn": [
+       "h3"
+      ]
+     },
+     "hysteriaSettings": {
+      "version": 2,
+      "auth": "filter-verdict"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/33"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: CIDR prefix length 33 exceeds max 32"
+  },
+  {
+   "name": "udp allowed rule invalid on raw",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "udp": [
+       {
+        "type": "filter",
+        "settings": {
+         "allowedSourceIPs": [
+          "example.com"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "blocked rule \"10.0.0.0/\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "blocked rule \"10.0.0.0/08\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/08"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "blocked rule \"::ffff:c000:201/24\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "::ffff:c000:201/24"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "blocked rule \"[2001:db8::]/32\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "[2001:db8::]/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "blocked rule \" 192.0.2.1\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          " 192.0.2.1"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "blocked rule \"192.0.2.1 \"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "192.0.2.1 "
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "blocked rule \" 192.0.2.1/24\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          " 192.0.2.1/24"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "blocked rule \"::\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "::"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "blocked rule \"0.0.0.0/0\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "0.0.0.0/0"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "blocked rule \"!!203.0.113.7\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "!!203.0.113.7"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "blocked rule \"::0.0.0.1/128\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "::0.0.0.1/128"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "blocked rule \"10.0.0.0/33\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/33"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: CIDR prefix length 33 exceeds max 32"
+  },
+  {
+   "name": "blocked rule \"2001:db8::/129\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "2001:db8::/129"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: CIDR prefix length 129 exceeds max 128"
+  },
+  {
+   "name": "blocked rule \"::ffff:c000:201/96\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "::ffff:c000:201/96"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: CIDR prefix length 96 exceeds max 32"
+  },
+  {
+   "name": "blocked rule \"10.0.0.0/4294967295\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/4294967295"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: CIDR prefix length 4294967295 exceeds max 32"
+  },
+  {
+   "name": "blocked rule \"10.0.0.0/4294967296\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/4294967296"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "strconv.ParseUint: parsing \"4294967296\": value out of range"
+  },
+  {
+   "name": "blocked rule \"10.0.0.0/+8\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/+8"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "strconv.ParseUint: parsing \"+8\": invalid syntax"
+  },
+  {
+   "name": "blocked rule \"10.0.0.0/abc\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/abc"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "strconv.ParseUint: parsing \"abc\": invalid syntax"
+  },
+  {
+   "name": "blocked rule \"192.0.2.1/ 24\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "192.0.2.1/ 24"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "strconv.ParseUint: parsing \" 24\": invalid syntax"
+  },
+  {
+   "name": "blocked rule \"192.0.2.1/32/5\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "192.0.2.1/32/5"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "strconv.ParseUint: parsing \"32/5\": invalid syntax"
+  },
+  {
+   "name": "blocked rule \"\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          ""
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "blocked rule \"!\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "!"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "blocked rule \"example.com\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "example.com"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "blocked rule \"[2001:db8::/32]\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "[2001:db8::/32]"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "blocked rule \"fe80::1%eth0\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "fe80::1%eth0"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "blocked rule \"192.0.02.1\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "192.0.02.1"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "blocked rule \"192.0.2\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "192.0.2"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "blocked rule \"GEOIP:cn\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "GEOIP:cn"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "blocked rule \"geoip:cn\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "geoip:cn"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "no such file or directory"
+  },
+  {
+   "name": "blocked rule \"geoip:private\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "geoip:private"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "no such file or directory"
+  },
+  {
+   "name": "blocked rule \"!geoip:private\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "!geoip:private"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "no such file or directory"
+  },
+  {
+   "name": "blocked rule \"geoip:\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "geoip:"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: empty code"
+  },
+  {
+   "name": "blocked rule \"geoip:!\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "geoip:!"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: empty code"
+  },
+  {
+   "name": "blocked rule \"ext:xray-rust-missing.dat:cn\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "ext:xray-rust-missing.dat:cn"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "no such file or directory"
+  },
+  {
+   "name": "blocked rule \"ext-ip:xray-rust-missing.dat:cn\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "ext-ip:xray-rust-missing.dat:cn"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "no such file or directory"
+  },
+  {
+   "name": "blocked rule \"ext:geoip.dat\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "ext:geoip.dat"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: syntax error"
+  },
+  {
+   "name": "blocked rule \"ext::us\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "ext::us"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: empty file"
+  },
+  {
+   "name": "blocked rule \"ext:f.dat:\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "ext:f.dat:"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: empty code"
+  },
+  {
+   "name": "blocked rule \"ext:f.dat:!\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "ext:f.dat:!"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: empty code"
+  },
+  {
+   "name": "blocked rule \"ext:../geoip.dat:cn\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "ext:../geoip.dat:cn"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "asset path must stay in asset directory"
+  },
+  {
+   "name": "blocked rule \"ext:\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "ext:"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: syntax error"
+  },
+  {
+   "name": "blocked rule \"ext-ip:\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "ext-ip:"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: syntax error"
+  },
+  {
+   "name": "blocked rule \"ext-domain:f.dat:cn\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "ext-domain:f.dat:cn"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "allowed rule \"2001:db8::/32\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "allowedSourceIPs": [
+          "2001:db8::/32"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "allowed rule \"10.0.0.0/33\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "allowedSourceIPs": [
+          "10.0.0.0/33"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: CIDR prefix length 33 exceeds max 32"
+  },
+  {
+   "name": "allowed rule \"geoip:private\"",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "allowedSourceIPs": [
+          "geoip:private"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "no such file or directory"
+  },
+  {
+   "name": "unknown field",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "comment": "server side"
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "unknown field beside a list",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8"
+         ],
+         "extra": 1
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "snake case name is unknown",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blocked_source_ips": [
+          "x"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "pascal case name",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "BlockedSourceIPs": [
+          "x"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "lower case name",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "allowedsourceips": [
+          "x"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "upper case name",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "ALLOWEDSOURCEIPS": [
+          "10.0.0.0/33"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: CIDR prefix length 33 exceeds max 32"
+  },
+  {
+   "name": "Ips spelling",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "allowedSourceIps": [
+          "x"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "kelvin sign name",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blocKedSourceIPs": [
+          "x"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  },
+  {
+   "name": "valid pascal case name",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "BlockedSourceIPs": [
+          "10.0.0.0/8"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "valid spelling last",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "x"
+         ],
+         "BlockedSourceIPs": [
+          "10.0.0.0/8"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "ours": "error",
+   "why": "Go keeps the last spelling it decodes, here the valid one; the parser reads the object without its order and checks every spelling.",
+   "xray": "ok"
+  },
+  {
+   "name": "invalid spelling last",
+   "outbound": {
+    "tag": "proxy",
+    "protocol": "vless",
+    "settings": {
+     "vnext": [
+      {
+       "address": "server.example",
+       "port": 443,
+       "users": [
+        {
+         "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+         "encryption": "none"
+        }
+       ]
+      }
+     ]
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "server.example"
+     },
+     "finalmask": {
+      "tcp": [
+       {
+        "type": "filter",
+        "settings": {
+         "blockedSourceIPs": [
+          "10.0.0.0/8"
+         ],
+         "BlockedSourceIPs": [
+          "x"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "xray": "common/geodata: unsupported address family"
+  }
+ ]
+}

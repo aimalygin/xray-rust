@@ -19,8 +19,8 @@ impl Parser<'_> {
         let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp[{i}]");
         // The client opens its own resolver sockets and never uses the one
         // under it, so Xray-core dials the masks listed after it for
-        // nothing.
-        if i + 1 != masks.len() {
+        // nothing. A filter there wraps nothing anyway.
+        if masks[i + 1..].iter().any(|mask| !filter::is_filter(mask)) {
             self.error(
                 &path,
                 "xdns must be the last UDP mask: Xray-core dials the masks listed after it and never uses them",

@@ -25,7 +25,9 @@ impl Parser<'_> {
     /// `sudoku` or `xmc` mask. The fragment and `header-custom` may stand
     /// together only with the fragment first: Xray-core fragments just the
     /// first write through it, which after `header-custom` is the handshake
-    /// rather than the TLS ClientHello.
+    /// rather than the TLS ClientHello. Any number of filters may stand
+    /// anywhere: Xray-core's client wraps nothing in them, and no TCP mask
+    /// has to be outermost there.
     pub(super) fn parse_tcp_masks(&mut self, stream: Option<&Value>, index: usize) -> TcpMasks {
         let mut found = TcpMasks::default();
         let Some(raw) = stream
@@ -49,6 +51,11 @@ impl Parser<'_> {
             self.reject_unknown_fields(mask, &mask_path, &surface::TCP_MASK_ENTRY);
             let settings = mask.get("settings").unwrap_or(&Value::Null);
             let kind = mask.get("type").and_then(Value::as_str).map(go_lowercase);
+            let settings_path = format!("{mask_path}.settings");
+            if kind.as_deref() == Some("filter") {
+                self.validate_filter_mask(Some(settings), &settings_path);
+                continue;
+            }
             // Sudoku and xmc transform every byte the masks before them
             // write, so either goes last here, outermost on the wire.
             let last = match (&sudoku, &xmc) {
@@ -60,7 +67,6 @@ impl Parser<'_> {
                 self.error(&mask_path, format!("{last} must be the last TCP mask here"));
                 continue;
             }
-            let settings_path = format!("{mask_path}.settings");
             match kind.as_deref() {
                 Some("sudoku") => sudoku = Some(self.parse_sudoku(settings, &settings_path)),
                 Some("xmc") => xmc = Some(self.parse_xmc(settings, &settings_path)),
