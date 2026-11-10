@@ -10,6 +10,30 @@ long-term supported release series.
 
 ## Unreleased
 
+- Hardening of the transports and parsers added since 0.9.0 against a
+  hostile or broken peer:
+  - mKCP: a datagram too short for the masks inside an `mkcp-legacy` AES
+    mask is dropped; it used to panic the connection's driver, which left
+    the stream hanging. A repeated data segment is acknowledged again in its
+    place instead of growing the ack list, and every ack flush, without
+    bound as Xray-core's does.
+  - xmc: reading stops while more than 64 KiB of keep-alive answers wait for
+    the carrier, so a server that sends keep-alives and reads nothing no
+    longer grows the client's memory.
+  - realm: one attempt punches at most 64 addresses. Xray-core punches every
+    address the rendezvous lists, ten times a second for ten seconds.
+  - MASQUE: the control capsules waiting for the request stream are bounded
+    at 256 KiB as well as at Xray-core's 128 capsules, and the error for a
+    `user` with a colon no longer quotes the value.
+  - HTTP inbound: a header block of a request, or of a response it forwards,
+    stops at 1 MiB (Go's `http.DefaultMaxHeaderBytes`) instead of being read
+    for as long as the peer sends headers.
+  - VLESS reverse: a tunnel whose portal lets more than 2,048 session Ends
+    wait unread fails instead of queueing them without bound.
+- DNS: a server's `queryStrategy: "UseSystem"` while the system routes
+  neither family, the gap between two networks, leaves the lookup unanswered
+  instead of answering it empty. The empty answer stayed in the DNS cache for
+  30 seconds after the routes were back.
 - Hysteria and XHTTP over HTTP/3 shape their QUIC handshake like Chrome's,
   as Xray-core v26.10.31's default ChromeParrot does, unless
   `finalmask.quicParams.disableChromeParrot` is true. Until now the flag had

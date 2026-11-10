@@ -430,6 +430,16 @@ Evidence, against Xray-core v26.10.31:
   needed, ours 53 to 74. The protocol is the same; when acks are read
   relative to flushes differs.
 
+Deliberate differences, both against a peer that misbehaves:
+
+- A repeated data segment is acknowledged again in its place in the ack
+  list. Xray-core's `AckList.Add` lists the number once more each time, and
+  entries leave only when the peer's `sending_next` passes them, so one
+  repeated segment grows the list, and with it every ack flush, without
+  bound; with the `original` or a header mask alone that needs no secret.
+- A datagram that an `mkcp-legacy` AES mask opens to less than the masks
+  inside it reserve is dropped before they read it.
+
 ## header-custom TCP
 
 The `header-custom` TCP mask is read and run as Xray-core v26.10.31's
@@ -705,6 +715,12 @@ checks, PEM and base64 rules, point validation, address rules, the
 certificate's validity and serial, the draft datagram setting, the
 Cloudflare protocol and request) fail the tests when mutated.
 
+Deliberate difference: the control capsules that wait for the request
+stream are bounded at 256 KiB as well as at Xray-core's 128. The answer to
+an ADDRESS_REQUEST is as large as the request, so a proxy that grants the
+stream no credit and keeps asking would otherwise have the client hold 128
+answers of about 200 KiB each.
+
 ## XDRIVE
 
 The `xdrive` transport runs Xray-core v26.10.31's XDRIVE client with all
@@ -907,6 +923,12 @@ packets with their salt, padding and SHA-256 mask. Deliberate differences:
 - A peer address with a named IPv6 zone does not parse, which loses the
   whole list, as any address Go cannot parse does there.
 
+Deliberate difference: one attempt punches the first 64 candidates, in the
+order above. Xray-core punches every address the rendezvous lists, a hello
+of up to 1,057 bytes to each ten times a second for ten seconds, so a
+rendezvous, or anyone who can answer for one reached over plain HTTP, picks
+where that traffic goes and how much of it there is.
+
 Evidence: `tools/realm-oracle` records `Realm.Build`'s verdicts on 77 URLs,
 23 STUN servers and 29 settings, 720 STUN answers read by
 `parseSTUNBindingResponse`, 138 punch packets read by `DecodePunchPacket`,
@@ -1033,6 +1055,10 @@ allows the relay or the portal (`scripts/check-reverse-interop.sh`). Unit
 tests and the portal written here refuse sessions, UDP flows and the tunnel
 through a folded freedom fragment until it allows the server.
 
+Deliberate difference: the bridge fails a tunnel once 2,048 session Ends
+wait for a portal that reads none of them, rather than queueing one for
+every frame of a session it does not hold.
+
 ## QUIC BBR profiles
 
 `quicParams.bbrProfile` `conservative` and `aggressive` run a port of
@@ -1106,6 +1132,11 @@ Evidence: live against Xray-core v26.10.31 with a recording DNS server and
 server's `UseIP`) ask for the same record types in both cores. That holds
 on macOS, which routes both families, and in a Linux container without IPv6,
 where `UseSystem` asks for `A` alone.
+
+Deliberate difference: when the system routes neither family, a server with
+its own `UseSystem` leaves the lookup unanswered. Xray-core returns an empty
+response there and keeps no record of it; here an empty answer would be
+cached for 30 seconds, past the moment the routes are back.
 
 ## DNS hosts `"#N"` RCODE answers
 
