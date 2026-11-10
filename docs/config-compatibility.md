@@ -3188,6 +3188,21 @@ ALPN list and ECH GREASE draw, and with every suite of the profile's cipher
 list: the padding also makes up the suites this build cannot negotiate, so a
 padded hello is exactly as long as uTLS's.
 
+A HelloRetryRequest is not answered as uTLS answers it, since the plan for
+a hello is built once per connection and shaped-rustls reuses it for the
+second flight:
+
+- The second ClientHello keeps the GREASE key share, and any raw one the
+  profile plans, next to the share the server asked for. RFC 8446 forbids
+  that, and OpenSSL and Go's `crypto/tls` refuse it with `illegal_parameter`.
+- A cookie in the HelloRetryRequest stops the second ClientHello from being
+  built at all, where uTLS inserts it at a random position.
+- The padding keeps the first flight's target, where uTLS works it out again.
+
+It takes a server that shares no key share group with the profile (neither
+X25519 nor X25519MLKEM768, for the Chrome profiles), or one that sends a
+cookie, to get there. The fix belongs in shaped-rustls.
+
 Those 62 are the union of the three maps Xray's `GetFingerprint` consults --
 `PresetFingerprints`, `ModernFingerprints`, `OtherFingerprints` -- less
 `unsafe`, described below, and `hellogolang`.
