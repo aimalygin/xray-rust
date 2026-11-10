@@ -4147,10 +4147,21 @@ async fn exchange_udp_freedom(
     // The socket takes freedom's socket options, as Xray-core's does.
     let dialer = freedom.dialer(&context.transport_dialer);
     protect_udp_socket(&socket, dialer.socket_protector())?;
-    socket.connect(upstream).await?;
+    // Under `finalmask.udp` the query goes through the masks, as every UDP
+    // flow through freedom does.
+    let socket = if freedom.has_udp_masks() {
+        ProxiedQuerySocket::Freedom(
+            freedom
+                .udp_socket(socket, upstream, dialer.socket_protector_arc())
+                .await?,
+        )
+    } else {
+        socket.connect(upstream).await?;
+        ProxiedQuerySocket::Connected(socket)
+    };
     context.tun.record_udp_remote_open(false);
     *failure_phase = DnsUdpFailurePhase::Write;
-    let written = socket.send(query).await?;
+    let written = socket.send(query, upstream).await?;
     if written != query.len() {
         return Err(
             std::io::Error::new(std::io::ErrorKind::WriteZero, "short DNS UDP write").into(),
@@ -4178,6 +4189,29 @@ async fn exchange_udp_freedom(
         return Ok(DnsUpstreamResponse::Payload(Bytes::copy_from_slice(
             &buffer[..read],
         )));
+    }
+}
+
+/// The socket a query proxied through freedom goes out on: connected to the
+/// upstream, or freedom's under its masks.
+enum ProxiedQuerySocket {
+    Connected(UdpSocket),
+    Freedom(crate::outbound::FreedomUdpSocket),
+}
+
+impl ProxiedQuerySocket {
+    async fn send(&self, query: &[u8], upstream: SocketAddr) -> std::io::Result<usize> {
+        match self {
+            Self::Connected(socket) => socket.send(query).await,
+            Self::Freedom(socket) => socket.send_to(query, upstream).await,
+        }
+    }
+
+    async fn recv(&self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Connected(socket) => socket.recv(buffer).await,
+            Self::Freedom(socket) => socket.recv_from(buffer).await.map(|(read, _)| read),
+        }
     }
 }
 

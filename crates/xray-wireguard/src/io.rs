@@ -29,8 +29,21 @@ pub(crate) struct Factory {
     pub(crate) protection_failed: Arc<AtomicBool>,
     pub(crate) stop: Stop,
     pub(crate) carrier: watch::Sender<Option<Arc<Sockets>>>,
+    /// `finalmask.udp`, which takes one socket to the one peer.
+    pub(crate) masks: Option<Masks>,
 }
-pub(crate) type Sockets = [Option<Arc<UdpSocket>>; 2];
+/// A published carrier: a socket per enabled family, or one socket under
+/// `finalmask.udp` to the one peer.
+pub(crate) enum Sockets {
+    Plain([Option<Arc<UdpSocket>>; 2]),
+    Masked(Arc<xray_transport::MaskedUdpSocket>),
+}
+/// `finalmask.udp` and the peer endpoint its socket is opened for.
+#[derive(Clone)]
+pub(crate) struct Masks {
+    pub(crate) config: Arc<xray_transport::hysteria::HysteriaCarrierConfig>,
+    pub(crate) peer: SocketAddr,
+}
 
 #[derive(Clone)]
 pub(crate) struct Udp {
@@ -44,64 +57,93 @@ pub(crate) struct Udp {
 impl Factory {
     /// Publish a complete, protected socket set in one step. The engine and its
     /// sessions keep running; the receive half drains one retired set briefly.
-    pub(crate) fn rebind(&self) -> io::Result<()> {
+    pub(crate) async fn rebind(&self) -> io::Result<()> {
         if self.stop.is_closed() {
             return Err(closed());
         }
-        let mut sockets = [None, None];
-        for (index, enabled) in [self.ipv4, self.ipv6].into_iter().enumerate() {
-            if !enabled {
-                continue;
+        let sockets = match &self.masks {
+            // Xray-core opens its masked socket anew, the masks' state with
+            // it, whenever WireGuard binds again.
+            Some(masks) => {
+                let socket = self.socket(masks.peer.is_ipv6())?;
+                let masked = tokio::select! { biased;
+                    _ = self.stop.cancelled() => return Err(closed()),
+                    result = xray_transport::MaskedUdpSocket::connect(
+                        socket,
+                        masks.peer,
+                        &masks.config,
+                        self.protector.clone(),
+                    ) => result?,
+                };
+                Sockets::Masked(Arc::new(masked))
             }
-            let bind = if index == 1 {
-                SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0))
-            } else {
-                SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0))
-            };
-            let socket = socket2::Socket::new(
-                socket2::Domain::for_address(bind),
-                socket2::Type::DGRAM,
-                Some(socket2::Protocol::UDP),
-            )?;
-            if index == 1 {
-                socket.set_only_v6(true)?;
+            None => {
+                // If the second protection fails, the first socket is also
+                // dropped.
+                let mut sockets = [None, None];
+                for (index, enabled) in [self.ipv4, self.ipv6].into_iter().enumerate() {
+                    if enabled {
+                        sockets[index] =
+                            Some(Arc::new(UdpSocket::from_std(self.socket(index == 1)?)?));
+                    }
+                }
+                Sockets::Plain(sockets)
             }
-            // Concurrent inner TCP windows can arrive in one carrier burst.
-            // A small system UDP queue loses those packets before the bounded
-            // engine sees them, producing long TCP retransmission tails. This
-            // matches both pinned wireguard-go socket-buffer requests. It is
-            // kernel storage per enabled family, not part of process RSS;
-            // the OS may clamp or reject the request under its own limits.
-            let _ = socket.set_recv_buffer_size(7 * 1024 * 1024);
-            let _ = socket.set_send_buffer_size(7 * 1024 * 1024);
-            socket.bind(&bind.into())?;
-            let socket: std::net::UdpSocket = socket.into();
-            // Protect every socket before the factory publishes either half.
-            // If the second protection fails, the first socket is also dropped.
-            xray_transport::protect_std_udp_socket(&socket, self.protector.as_deref()).map_err(
-                |_| {
-                    self.protection_failed.store(true, Ordering::Release);
-                    io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        "WireGuard socket protection failed",
-                    )
-                },
-            )?;
-            if self.stop.is_closed() {
-                return Err(closed());
-            }
-            socket.set_nonblocking(true)?;
-            sockets[index] = Some(Arc::new(UdpSocket::from_std(socket)?));
+        };
+        if self.stop.is_closed() {
+            return Err(closed());
         }
         self.carrier.send_replace(Some(Arc::new(sockets)));
         Ok(())
+    }
+
+    /// A protected, nonblocking socket of one family.
+    fn socket(&self, ipv6: bool) -> io::Result<std::net::UdpSocket> {
+        let bind = if ipv6 {
+            SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0))
+        } else {
+            SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0))
+        };
+        let socket = socket2::Socket::new(
+            socket2::Domain::for_address(bind),
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )?;
+        if ipv6 {
+            socket.set_only_v6(true)?;
+        }
+        // Concurrent inner TCP windows can arrive in one carrier burst.
+        // A small system UDP queue loses those packets before the bounded
+        // engine sees them, producing long TCP retransmission tails. This
+        // matches both pinned wireguard-go socket-buffer requests. It is
+        // kernel storage per enabled family, not part of process RSS;
+        // the OS may clamp or reject the request under its own limits.
+        let _ = socket.set_recv_buffer_size(7 * 1024 * 1024);
+        let _ = socket.set_send_buffer_size(7 * 1024 * 1024);
+        socket.bind(&bind.into())?;
+        let socket: std::net::UdpSocket = socket.into();
+        // Protect every socket before the factory publishes either half.
+        xray_transport::protect_std_udp_socket(&socket, self.protector.as_deref()).map_err(
+            |_| {
+                self.protection_failed.store(true, Ordering::Release);
+                io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "WireGuard socket protection failed",
+                )
+            },
+        )?;
+        if self.stop.is_closed() {
+            return Err(closed());
+        }
+        socket.set_nonblocking(true)?;
+        Ok(socket)
     }
 }
 impl UdpTransportFactory for Factory {
     type Send = Udp;
     type Recv = Udp;
     async fn bind(&mut self, _: &UdpTransportFactoryParams) -> io::Result<(Udp, Udp)> {
-        self.rebind()?;
+        self.rebind().await?;
         let udp = Udp {
             carrier: self.carrier.subscribe(),
             next: 0,
@@ -128,14 +170,30 @@ impl UdpSend for Udp {
             return Err(closed());
         }
         let sockets = self.carrier.borrow().as_ref().ok_or_else(closed)?.clone();
-        let socket = sockets[usize::from(destination.is_ipv6())]
-            .as_ref()
-            .ok_or_else(|| {
-                io::Error::new(
+        let socket = match &*sockets {
+            Sockets::Plain(sockets) => sockets[usize::from(destination.is_ipv6())]
+                .as_ref()
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::AddrNotAvailable,
+                        "WireGuard endpoint family unavailable",
+                    )
+                })?,
+            // The masks were opened for the one peer's endpoint, which the
+            // masked socket reports every reply from.
+            Sockets::Masked(socket) if socket.peer() == destination => {
+                return tokio::select! { biased;
+                    _ = self.stop.cancelled() => Err(closed()),
+                    result = socket.send(&packet) => result,
+                };
+            }
+            Sockets::Masked(_) => {
+                return Err(io::Error::new(
                     io::ErrorKind::AddrNotAvailable,
-                    "WireGuard endpoint family unavailable",
-                )
-            })?;
+                    "WireGuard masks carry one peer",
+                ))
+            }
+        };
         match socket.try_send_to(&packet, destination) {
             Ok(n) if n == packet.len() => return Ok(()),
             Ok(_) => {
@@ -199,6 +257,15 @@ impl UdpRecv for Udp {
                     // Prefer the new carrier; alternate family priority. Old
                     // packets still pass the engine's authentication/replay checks.
                     for sockets in std::iter::once(&sockets).chain(self.previous.as_ref().map(|(sockets, _)| sockets)) {
+                        let sockets = match &**sockets {
+                            Sockets::Plain(sockets) => sockets,
+                            Sockets::Masked(socket) => {
+                                if let std::task::Poll::Ready(result) = socket.poll_recv(cx, &mut packet) {
+                                    return std::task::Poll::Ready(result);
+                                }
+                                continue;
+                            }
+                        };
                         for offset in 0..2 {
                             let index = (self.next + offset) % 2;
                             if let Some(socket) = &sockets[index] {
@@ -355,7 +422,8 @@ mod udp_ready_send_tests {
     async fn sender() -> (watch::Sender<Option<Arc<Sockets>>>, Udp, Arc<UdpSocket>) {
         let local = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
         local.writable().await.unwrap();
-        let (carrier, receive) = watch::channel(Some(Arc::new([Some(local.clone()), None])));
+        let (carrier, receive) =
+            watch::channel(Some(Arc::new(Sockets::Plain([Some(local.clone()), None]))));
         let udp = Udp {
             carrier: receive,
             next: 0,
@@ -383,7 +451,7 @@ mod udp_ready_send_tests {
             assert_eq!(source, first.local_addr().unwrap());
             let second = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
             second.writable().await.unwrap();
-            carrier.send_replace(Some(Arc::new([Some(second.clone()), None])));
+            carrier.send_replace(Some(Arc::new(Sockets::Plain([Some(second.clone()), None]))));
             udp.send_to(packet(b"b"), b.local_addr().unwrap())
                 .await
                 .unwrap();

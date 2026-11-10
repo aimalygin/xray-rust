@@ -471,35 +471,9 @@ pub(crate) fn wrap(
     config: &HysteriaCarrierConfig,
     session: &CarrierSession,
 ) -> io::Result<Arc<dyn AsyncUdpSocket>> {
-    // The xicmp client carries every datagram; the socket goes unused,
-    // where Xray-core dials none.
-    if config.xicmp.is_some() {
-        let client = session.xicmp.clone().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotConnected, "the xicmp client is not open")
-        })?;
+    if let Some(tunnel) = tunnel(config, session, wire_peer)? {
         drop(socket);
-        return wrap_masks(
-            crate::xicmp::quic::socket(client, wire_peer),
-            logical_peer,
-            wire_peer,
-            config,
-            session,
-        );
-    }
-    // The xdns client carries every datagram; the socket goes unused, as
-    // the one Xray-core dials under xdns does.
-    if config.xdns.is_some() {
-        let client = session.xdns.clone().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotConnected, "the xdns client is not open")
-        })?;
-        drop(socket);
-        return wrap_masks(
-            crate::xdns::quic::socket(client, wire_peer),
-            logical_peer,
-            wire_peer,
-            config,
-            session,
-        );
+        return wrap_masks(tunnel, logical_peer, wire_peer, config, session);
     }
     // Quinn sets the don't-fragment bit as it wraps the socket; sudoku's
     // datagrams need it clear again, through a clone of the socket.
@@ -527,8 +501,31 @@ pub(crate) fn wrap(
     wrap_masks(socket, logical_peer, wire_peer, config, session)
 }
 
+/// The client that carries every datagram when the masks name xicmp or
+/// xdns. The UDP socket then goes unused: Xray-core dials none under
+/// xicmp, and the one it dials under xdns stays idle.
+pub(crate) fn tunnel(
+    config: &HysteriaCarrierConfig,
+    session: &CarrierSession,
+    wire_peer: SocketAddr,
+) -> io::Result<Option<Arc<dyn AsyncUdpSocket>>> {
+    if config.xicmp.is_some() {
+        let client = session.xicmp.clone().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotConnected, "the xicmp client is not open")
+        })?;
+        return Ok(Some(crate::xicmp::quic::socket(client, wire_peer)));
+    }
+    if config.xdns.is_some() {
+        let client = session.xdns.clone().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotConnected, "the xdns client is not open")
+        })?;
+        return Ok(Some(crate::xdns::quic::socket(client, wire_peer)));
+    }
+    Ok(None)
+}
+
 /// The masks over the carrier's socket, built from the wire inwards.
-fn wrap_masks(
+pub(crate) fn wrap_masks(
     mut socket: Arc<dyn AsyncUdpSocket>,
     logical_peer: SocketAddr,
     wire_peer: SocketAddr,

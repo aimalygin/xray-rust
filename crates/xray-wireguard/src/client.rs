@@ -143,7 +143,24 @@ impl Client {
         config: Config,
         protector: Option<Arc<dyn SocketProtector>>,
     ) -> Result<Self, Error> {
+        Self::start_with_masks(config, None, protector).await
+    }
+
+    /// [`Self::start`] with `finalmask.udp` over the socket. Xray-core's
+    /// client dials its masked socket to the first peer's endpoint, so masks
+    /// take one peer.
+    pub async fn start_with_masks(
+        config: Config,
+        masks: Option<Arc<xray_transport::hysteria::HysteriaCarrierConfig>>,
+        protector: Option<Arc<dyn SocketProtector>>,
+    ) -> Result<Self, Error> {
         config.validate()?;
+        if let Some(masks) = &masks {
+            if config.peers.len() != 1 || xray_transport::MaskedUdpSocket::validate(masks).is_err()
+            {
+                return Err(Error::Configuration);
+            }
+        }
         let stop = Stop::new();
         // If creation is cancelled or fails, every injected I/O boundary is cancelled.
         let mut guard = StartGuard(Some(stop.clone()));
@@ -184,6 +201,10 @@ impl Client {
             stop: stop.clone(),
             protection_failed: protection_failed.clone(),
             carrier: watch::channel(None).0,
+            masks: masks.map(|config_masks| transport::Masks {
+                config: config_masks,
+                peer: config.peers[0].endpoint,
+            }),
         };
         let mut limits = gotatun::device::DeviceLimits::mobile();
         // Keep queue storage bounded while allowing larger batches to cross
@@ -240,7 +261,7 @@ impl Client {
                     _ = device.wait() => break,
                     _ = rebind_request.wake.notified() => {
                         rebind_request.pending.store(false, Ordering::Release);
-                        if task_stop.is_closed() || carrier.rebind().is_err() {
+                        if task_stop.is_closed() || carrier.rebind().await.is_err() {
                             break;
                         }
                     },

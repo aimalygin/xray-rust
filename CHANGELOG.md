@@ -104,6 +104,15 @@ long-term supported release series.
   neither family, the gap between two networks, leaves the lookup unanswered
   instead of answering it empty. The empty answer stayed in the DNS cache for
   30 seconds after the routes were back.
+- Freedom and WireGuard take FinalMask's UDP masks, as Xray-core v26.10.31's
+  `FinalMask.DialUDP` wraps their sockets: noise, `header-custom`, Salamander
+  with Gecko, sudoku, xdns and xicmp, with the code and order of the QUIC
+  carriers' masks. Freedom puts every UDP flow under them, from SOCKS and
+  TUN, the PROXY header, its `noises` and the DNS queries routed through it
+  included; a masked flow takes replies only from its destination. WireGuard
+  puts its one socket under them, which takes one peer and opens anew with
+  the masks' state at every rebind. udphop and realm are refused on both for
+  now. See [UDP masks on freedom and WireGuard](docs/config-compatibility.md#udp-masks-on-freedom-and-wireguard).
 - Hysteria, XHTTP over HTTP/3 and XDRIVE's storages over HTTP/3 shape their
   QUIC handshake like Chrome's, as Xray-core v26.10.31's default ChromeParrot
   does, unless

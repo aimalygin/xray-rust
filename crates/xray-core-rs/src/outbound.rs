@@ -39,7 +39,10 @@ pub(crate) mod socket_options;
 pub(crate) mod xdrive;
 mod xhttp;
 mod xudp;
+pub(crate) use carrier::direct_udp_masks;
 use carrier::StreamCarrier;
+mod freedom_udp;
+pub(crate) use freedom_udp::FreedomUdpSocket;
 
 use xhttp::*;
 
@@ -380,6 +383,9 @@ pub struct FreedomOutbound {
     final_rules: Option<Arc<[FreedomFinalRule]>>,
     /// Present only when there are noises.
     noises: Option<Arc<[xray_config::FreedomNoise]>>,
+    /// `finalmask.udp`, over every UDP flow's socket; present only when
+    /// there are masks.
+    udp_masks: Option<Arc<xray_transport::hysteria::HysteriaCarrierConfig>>,
 }
 
 #[derive(Debug, Clone)]
@@ -814,13 +820,16 @@ impl FreedomOutbound {
         Ok(Self {
             fragment: carrier::fragment_config(stream)?,
             happy_eyeballs: happy_eyeballs_config(stream),
-            ..Self::for_udp(settings, stream)
+            ..Self::for_udp(settings, stream)?
         })
     }
 
     /// UDP reads neither the fragment mask nor Happy Eyeballs.
-    fn for_udp(settings: &FreedomOutboundSettings, stream: &StreamSettings) -> Self {
-        Self {
+    fn for_udp(
+        settings: &FreedomOutboundSettings,
+        stream: &StreamSettings,
+    ) -> Result<Self, CoreError> {
+        Ok(Self {
             fragment: None,
             happy_eyeballs: None,
             socket_options: socket_options::compile(stream),
@@ -831,7 +840,32 @@ impl FreedomOutbound {
             final_rules: (!settings.final_rules.is_empty())
                 .then(|| settings.final_rules.as_slice().into()),
             noises: (!settings.noises.is_empty()).then(|| settings.noises.as_slice().into()),
-        }
+            udp_masks: carrier::direct_udp_masks(stream)?,
+        })
+    }
+
+    /// The socket of a UDP flow to `target`: `socket`, bound and protected,
+    /// under `finalmask.udp` when there are masks, as Xray-core's freedom
+    /// dials every flow through `FinalMask.DialUDP`. The xdns and xicmp
+    /// clients the masks name open through `protector`.
+    pub(crate) async fn udp_socket(
+        &self,
+        socket: tokio::net::UdpSocket,
+        target: SocketAddr,
+        protector: Option<Arc<dyn xray_transport::SocketProtector>>,
+    ) -> io::Result<FreedomUdpSocket> {
+        let Some(masks) = &self.udp_masks else {
+            return Ok(FreedomUdpSocket::Plain(socket));
+        };
+        let socket = socket.into_std()?;
+        xray_transport::MaskedUdpSocket::connect(socket, target, masks, protector)
+            .await
+            .map(FreedomUdpSocket::Masked)
+    }
+
+    /// Whether `finalmask.udp` shapes this outbound's UDP flows.
+    pub(crate) fn has_udp_masks(&self) -> bool {
+        self.udp_masks.is_some()
     }
 
     /// Sends `noises` before a UDP flow's first datagram, as Xray-core's
@@ -841,7 +875,7 @@ impl FreedomOutbound {
     /// to port 53, as there. Returns the bytes sent.
     pub(crate) async fn send_udp_noises(
         &self,
-        socket: &tokio::net::UdpSocket,
+        socket: &FreedomUdpSocket,
         target: SocketAddr,
     ) -> io::Result<u64> {
         let Some(noises) = self.noises.as_deref() else {
@@ -4089,10 +4123,9 @@ impl OutboundFactory {
                 if outbound.stream.security != StreamSecurity::None {
                     return Err(CachedOutboundError::UnsupportedOutboundSecurity);
                 }
-                Ok(UdpOutbound::Freedom(FreedomOutbound::for_udp(
-                    settings,
-                    &outbound.stream,
-                )))
+                FreedomOutbound::for_udp(settings, &outbound.stream)
+                    .map(UdpOutbound::Freedom)
+                    .map_err(|_| CachedOutboundError::UnsupportedOutboundNetwork)
             }
             OutboundSettings::Vless(_) => {
                 if outbound.stream.network != Network::Tcp {
@@ -4234,10 +4267,7 @@ fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreErro
             if outbound.stream.security != StreamSecurity::None {
                 return Err(CoreError::UnsupportedOutboundSecurity);
             }
-            Ok(UdpOutbound::Freedom(FreedomOutbound::for_udp(
-                settings,
-                &outbound.stream,
-            )))
+            FreedomOutbound::for_udp(settings, &outbound.stream).map(UdpOutbound::Freedom)
         }
         OutboundSettings::Vless(_) => {
             if outbound.stream.network != Network::Tcp {
@@ -7374,9 +7404,11 @@ mod tests {
         let sink = tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
             .await
             .unwrap();
-        let socket = tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
-            .await
-            .unwrap();
+        let socket = FreedomUdpSocket::Plain(
+            tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+                .await
+                .unwrap(),
+        );
         let target = sink.local_addr().unwrap();
 
         let sent = freedom(FreedomRedirect::default())

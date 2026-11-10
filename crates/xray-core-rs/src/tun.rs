@@ -5051,6 +5051,32 @@ async fn bridge_udp_freedom_flow(
             .await;
         return;
     }
+    // Under `finalmask.udp`, every datagram of the flow, the PROXY header
+    // and the noises included, goes through the masks.
+    let masked = tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = freedom.udp_socket(socket, target_addr, dialer.socket_protector_arc()) => result,
+    };
+    let socket = match masked {
+        Ok(socket) => socket,
+        Err(_) => {
+            if context.runtime_logger.is_enabled() {
+                crate::debug_log::log_access_rejected(
+                    &context.runtime_logger,
+                    "tun",
+                    &target,
+                    "udp masks failed to open",
+                );
+            }
+            context.tun.record_udp_open_error();
+            let _ = context
+                .stack_tx
+                .send(StackEvent::UdpClosed { key, generation })
+                .await;
+            return;
+        }
+    };
     if let Some(version) = freedom.proxy_protocol() {
         // Xray-core writes the header as a datagram of its own.
         let header = proxy_protocol::header(
@@ -5141,7 +5167,7 @@ async fn bridge_udp_freedom_flow_loop<T>(
     generation: u64,
     target: Target,
     target_addr: SocketAddr,
-    socket: UdpSocket,
+    socket: crate::outbound::FreedomUdpSocket,
     rules: &[xray_config::FreedomFinalRule],
     context: TunRuntimeContext,
     mut from_stack: UdpIngress,

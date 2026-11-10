@@ -667,4 +667,6 @@ pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+mod udp_mask;
+pub use udp_mask::MaskedUdpSocket;
 pub mod udp_noise;

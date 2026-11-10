@@ -629,3 +629,47 @@ async fn xdrive_profiles_xray_accepts_build_a_core() {
     assert!(mismatches.is_empty(), "{mismatches:#?}");
     assert!(built >= 75, "only {built} cases built a core");
 }
+
+/// Freedom and WireGuard take UDP masks, as Xray-core's `FinalMask.DialUDP`
+/// wraps their sockets. WireGuard's take one peer: a second fails the start.
+#[test]
+fn freedom_and_one_peer_wireguard_build_a_core_under_udp_masks() {
+    use serde_json::json;
+    let masks = json!([
+        {"type": "noise", "settings": {"noise": [{"type": "str", "packet": "synthetic"}]}},
+        {"type": "salamander", "settings": {"password": "synthetic-salamander"}}
+    ]);
+    let peer = |public: &str, port: u16| {
+        json!({"publicKey": public, "endpoint": format!("127.0.0.1:{port}"),
+            "allowedIPs": ["0.0.0.0/0"]})
+    };
+    let wireguard = |peers: serde_json::Value| {
+        json!({"outbounds": [{"protocol": "wireguard", "tag": "proxy",
+            "settings": {"secretKey": "42".repeat(32), "address": ["10.44.0.2/32"],
+                "mtu": 1420, "peers": peers},
+            "streamSettings": {"finalmask": {"udp": masks}}}]})
+    };
+    let core = |config: serde_json::Value| {
+        xray_core_rs::Core::new(
+            xray_config::parse_xray_json(&config.to_string())
+                .unwrap()
+                .config,
+        )
+    };
+    let freedom = json!({"outbounds": [{"protocol": "freedom", "tag": "direct",
+        "streamSettings": {"finalmask": {"udp": masks}}}]});
+    assert!(core(freedom).is_ok());
+    let one = json!([peer(&"53".repeat(32), 51820)]);
+    assert!(core(wireguard(one)).is_ok());
+    let two = json!([peer(&"53".repeat(32), 51820), peer(&"54".repeat(32), 51821)]);
+    let mut unmasked = wireguard(two.clone());
+    unmasked["outbounds"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("streamSettings");
+    assert!(core(unmasked).is_ok(), "two peers build without masks");
+    assert!(matches!(
+        core(wireguard(two)),
+        Err(xray_core_rs::CoreError::UnsupportedOutboundNetwork)
+    ));
+}

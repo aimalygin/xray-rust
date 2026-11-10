@@ -73,7 +73,10 @@ fn malformed_and_unbounded_noise_is_rejected() {
 #[test]
 fn exact_h3_only_and_no_change_when_absent() {
     let mut p = profile(json!({"noise":[{"rand":16}]}));
-    p["outbounds"][0] = json!({"protocol":"freedom", "streamSettings":{"network":"xhttp","security":"tls","tlsSettings":{"serverName":"example.com","alpn":["h3"]},"finalmask":p["outbounds"][0]["streamSettings"]["finalmask"]}});
+    // A proxy over XHTTP: freedom takes UDP masks on any network.
+    p["outbounds"][0] = json!({"protocol":"vless",
+        "settings":{"address":"example.com","port":443,"id":"27848739-7e62-4138-9fd3-098a63964b6b","encryption":"none"},
+        "streamSettings":{"network":"xhttp","security":"tls","tlsSettings":{"serverName":"example.com","alpn":["h3"]},"finalmask":p["outbounds"][0]["streamSettings"]["finalmask"]}});
     assert!(parse_xray_json(&p.to_string()).is_ok());
     p["outbounds"][0]["streamSettings"]["tlsSettings"]["alpn"] = json!(["h2"]);
     assert!(parse_xray_json(&p.to_string()).is_err());

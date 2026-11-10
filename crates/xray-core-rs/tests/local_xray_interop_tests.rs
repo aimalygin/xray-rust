@@ -3829,6 +3829,9 @@ mod sudoku;
 #[path = "local_xray_interop_tests/salamander.rs"]
 mod salamander;
 
+#[path = "local_xray_interop_tests/direct_udp_masks.rs"]
+mod direct_udp_masks;
+
 #[path = "local_xray_interop_tests/xmc.rs"]
 mod xmc;
 

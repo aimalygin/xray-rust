@@ -113,9 +113,21 @@ impl Parser<'_> {
             }
         }
 
+        // Freedom's flows and WireGuard's socket carry plain datagrams,
+        // which Xray-core's `FinalMask.DialUDP` masks as it masks a QUIC
+        // carrier's.
+        let direct_udp = matches!(
+            outbound
+                .get("protocol")
+                .and_then(Value::as_str)
+                .map(str::to_ascii_lowercase)
+                .as_deref(),
+            Some("freedom" | "direct" | "wireguard")
+        );
         let udp_carrier = matches!(stream_network, StreamNetwork::Hysteria | StreamNetwork::Kcp)
             || masque_h3
             || xdrive_h3
+            || direct_udp
             || stream_network == StreamNetwork::Xhttp
                 && matches!(&security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]);
         if udp_noise.is_some() && !udp_carrier {
@@ -162,11 +174,17 @@ impl Parser<'_> {
                 self.error(&path, "an xdns UDP mask cannot be combined with udphop");
             }
             // One xdns packet takes 4096 bytes; sudoku's datagram is four
-            // times a QUIC packet of at least 1200.
+            // times a QUIC packet of at least 1200, or a WireGuard packet.
             if is_quic && udp_sudoku.is_some() {
                 self.error(
                     &path,
                     "a sudoku UDP mask cannot run under xdns on QUIC: its datagrams exceed the 4096 bytes an xdns packet takes",
+                );
+            }
+            if direct_udp && udp_sudoku.is_some() {
+                self.error(
+                    &path,
+                    "a sudoku UDP mask cannot run under xdns on freedom or WireGuard: its datagrams exceed the 4096 bytes an xdns packet takes",
                 );
             }
         }
@@ -188,6 +206,14 @@ impl Parser<'_> {
                 self.error(
                     &path,
                     "a realm UDP mask requires mKCP, Hysteria or XHTTP with exact h3 ALPN",
+                );
+            }
+            // Its rendezvous introduces the socket first, which only the
+            // QUIC carriers and mKCP do here.
+            if direct_udp {
+                self.error(
+                    &path,
+                    "a realm UDP mask is not supported on freedom or WireGuard yet",
                 );
             }
             // Each must be the last mask, and each sends somewhere else than
@@ -251,11 +277,17 @@ impl Parser<'_> {
                 );
             }
             // An echo carries at most 4080 bytes; sudoku's datagram is four
-            // times a QUIC packet of at least 1200.
+            // times a QUIC packet of at least 1200, or a WireGuard packet.
             if is_quic && udp_sudoku.is_some() {
                 self.error(
                     &path,
                     "a sudoku UDP mask cannot run under xicmp on QUIC: its datagrams exceed the 4080 bytes an echo carries",
+                );
+            }
+            if direct_udp && udp_sudoku.is_some() {
+                self.error(
+                    &path,
+                    "a sudoku UDP mask cannot run under xicmp on freedom or WireGuard: its datagrams exceed the 4080 bytes an echo carries",
                 );
             }
         }
@@ -289,7 +321,7 @@ impl Parser<'_> {
             if salamander.is_some() && !udp_carrier {
                 self.error(
                     &path,
-                    "Salamander requires Hysteria, mKCP, XHTTP with exact h3 ALPN, MASQUE over HTTP/3 or XDRIVE with exact h3 ALPN",
+                    "Salamander requires Hysteria, mKCP, XHTTP with exact h3 ALPN, MASQUE over HTTP/3, XDRIVE with exact h3 ALPN, freedom or WireGuard",
                 );
             }
             if stream_network == StreamNetwork::Kcp

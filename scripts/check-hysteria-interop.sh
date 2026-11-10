@@ -51,3 +51,9 @@ env -u NATIVE_HYSTERIA_BINARY XRAY_HYSTERIA_BINARY="$TEST_ROOT/xray" \
 XRAY_CORE_CHECKOUT="$CHECKOUT" XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" \
   cargo test --locked -p xray-core-rs --test local_xray_interop_tests salamander:: \
     -- --ignored --nocapture --test-threads=1
+
+# The UDP masks on freedom's flows and WireGuard's socket, against Xray's
+# tunnel and WireGuard inbounds under the same masks.
+XRAY_CORE_CHECKOUT="$CHECKOUT" XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" \
+  cargo test --locked -p xray-core-rs --test local_xray_interop_tests direct_udp_masks:: \
+    -- --ignored --nocapture --test-threads=1
