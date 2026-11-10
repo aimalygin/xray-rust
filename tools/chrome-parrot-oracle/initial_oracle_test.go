@@ -145,7 +145,7 @@ func TestXrayRustChromeParrotOracle(t *testing.T) {
 		t.Skip("CHROME_PARROT_ORACLE_OUT is not set")
 	}
 	fixture := oracleFixture{
-		XrayCore:   "a4a3dff5b20c2faae567b742c172c7b95e75c083",
+		XrayCore:   "676eaf66f8f05d4d558ee7a74b4736623d3feeb9",
 		QuicGo:     "github.com/apernet/quic-go v0.61.1-0.20260806010916-184d081eef3e",
 		ServerName: oracleServerName,
 	}

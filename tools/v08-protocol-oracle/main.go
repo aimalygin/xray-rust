@@ -106,7 +106,7 @@ func main() {
 	encoder.SetIndent("", "  ")
 	encoder.SetEscapeHTML(false)
 	must(encoder.Encode(map[string]any{
-		"xrayCoreCommit":  "a4a3dff5b20c2faae567b742c172c7b95e75c083",
+		"xrayCoreCommit":  "676eaf66f8f05d4d558ee7a74b4736623d3feeb9",
 		"vmess":           vmessFixtures(),
 		"mux":             muxFixtures(),
 		"shadowsocks2022": ss2022Fixtures(),

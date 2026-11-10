@@ -99,17 +99,6 @@ impl Parser<'_> {
         }
         if xdrive_h3 {
             self.validate_xdrive_h3_stream(stream, &transport, quic_params.as_ref(), index);
-            // Xray-core's XDRIVE client parrots Chrome over HTTP/3 too; this
-            // one keeps Quinn's own handshake there for now.
-            if quic_params
-                .as_ref()
-                .is_none_or(|quic| !quic.disable_chrome_parrot)
-            {
-                self.warning(
-                    format!("$.outbounds[{index}].streamSettings.finalmask.quicParams.disableChromeParrot"),
-                    "XDRIVE over h3 uses Quinn's own QUIC handshake, without Xray ChromeParrot fingerprint shaping; set disableChromeParrot=true to acknowledge this compatibility limit",
-                );
-            }
         }
         if let StreamTransport::Xhttp(xhttp) = &transport {
             if let Some(download) = &xhttp.download {

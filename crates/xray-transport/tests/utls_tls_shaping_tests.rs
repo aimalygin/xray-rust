@@ -1,5 +1,8 @@
+#[path = "support/client_hello_draws.rs"]
+mod client_hello_draws;
+
 mod utls_tls_shaping_tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet, HashSet};
     use std::net::{Ipv4Addr, SocketAddr};
     use std::sync::Arc;
 
@@ -14,7 +17,12 @@ mod utls_tls_shaping_tests {
         plain_tls_client_hello_bytes, TlsClientConfig, TlsConnector, TransportError,
     };
 
+    use crate::client_hello_draws::{self, shuffles};
+
     const EXT_SERVER_NAME: u16 = 0x0000;
+    const EXT_SUPPORTED_GROUPS: u16 = 0x000a;
+    const EXT_PADDING: u16 = 0x0015;
+    const EXT_SIGNATURE_ALGORITHMS: u16 = 0x000d;
     const EXT_ALPN: u16 = 0x0010;
     const EXT_CERTIFICATE_COMPRESSION: u16 = 0x001b;
     const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
@@ -22,7 +30,6 @@ mod utls_tls_shaping_tests {
     const EXT_ENCRYPTED_CLIENT_HELLO: u16 = 0xfe0d;
     const GROUP_X25519: u16 = 0x001d;
     const GROUP_SECP256R1: u16 = 0x0017;
-    const CHROME_GREASE_CIPHER: u16 = 0x0a0a;
     const CHROME_PROVIDER_SUPPORTED_CIPHERS: &[u16] = &[
         0x0a0a, 0x1301, 0x1302, 0x1303, 0xc02b, 0xc02f, 0xc02c, 0xc030, 0xcca9, 0xcca8,
     ];
@@ -61,6 +68,19 @@ mod utls_tls_shaping_tests {
     const CLIENTHELLO_SHAPE_ANDROID_WEBSOCKET_ALPN_JSON: &str = include_str!(
         "../../../tests/fixtures/reality/clienthello_shape_android_websocket_alpn.json"
     );
+    /// The same Chrome shape with each of the other three ECH GREASE lengths
+    /// uTLS draws (`-ech-payload-length 160`, `192`, `224`).
+    const CLIENTHELLO_SHAPE_CHROME_WEBSOCKET_ALPN_ECH_JSON: [&str; 3] = [
+        include_str!(
+            "../../../tests/fixtures/reality/clienthello_shape_chrome_websocket_alpn_ech160.json"
+        ),
+        include_str!(
+            "../../../tests/fixtures/reality/clienthello_shape_chrome_websocket_alpn_ech192.json"
+        ),
+        include_str!(
+            "../../../tests/fixtures/reality/clienthello_shape_chrome_websocket_alpn_ech224.json"
+        ),
+    ];
 
     fn config(fingerprint: &str, alpn: &[&str]) -> TlsClientConfig {
         TlsClientConfig {
@@ -194,6 +214,62 @@ mod utls_tls_shaping_tests {
             .collect()
     }
 
+    /// The cipher suites with the GREASE value uTLS draws per hello written as
+    /// `0x0a0a`.
+    fn canonical_cipher_suites(hello: &[u8]) -> Vec<u16> {
+        cipher_suites(hello)
+            .into_iter()
+            .map(|suite| if is_grease(suite) { 0x0a0a } else { suite })
+            .collect()
+    }
+
+    /// The extension order as uTLS fixes it for the fingerprint: the order
+    /// itself for a profile that keeps one, the extensions sorted for one
+    /// that shuffles them per hello (whose GREASE extensions stay first and
+    /// last but for padding, which `assert_grease_frames` checks).
+    fn comparable_order(fingerprint: &str, mut order: Vec<String>) -> Vec<String> {
+        if may_shuffle(fingerprint) {
+            order.sort();
+        }
+        order
+    }
+
+    /// `random` and `randomized` name a per-process draw that may be one of
+    /// the shuffling Chrome profiles.
+    /// `order` without the padding extension, which BoringSSL adds or leaves
+    /// out by the length of the rest of the hello: Chrome 120's comes and goes
+    /// with its ECH GREASE length and with the server name
+    /// (`hellochrome_120_pads_only_the_hello_boringssl_pads`).
+    fn without_padding(mut order: Vec<String>) -> Vec<String> {
+        let padding = format!("0x{EXT_PADDING:04x}");
+        order.retain(|extension| *extension != padding);
+        order
+    }
+
+    fn may_shuffle(fingerprint: &str) -> bool {
+        shuffles(fingerprint) || matches!(fingerprint, "random" | "randomized")
+    }
+
+    fn assert_grease_frames(fingerprint: &str, order: &[String]) {
+        if shuffles(fingerprint) {
+            let padding = format!("0x{EXT_PADDING:04x}");
+            let before_padding = match order.split_last() {
+                Some((last, rest)) if *last == padding => rest,
+                _ => order,
+            };
+            assert_eq!(
+                order.first().map(String::as_str),
+                Some("GREASE"),
+                "{fingerprint}"
+            );
+            assert_eq!(
+                before_padding.last().map(String::as_str),
+                Some("GREASE"),
+                "{fingerprint}"
+            );
+        }
+    }
+
     fn provider_cipher_suites(versions: &[ProtocolVersion]) -> BTreeSet<u16> {
         rustls::crypto::aws_lc_rs::default_provider()
             .cipher_suites
@@ -208,9 +284,11 @@ mod utls_tls_shaping_tests {
         let hello = plain_tls_client_hello_bytes(&config("chrome", &[]))
             .expect("chrome ClientHello must be produced");
 
-        assert_eq!(
-            cipher_suites(&hello).first().copied(),
-            Some(CHROME_GREASE_CIPHER),
+        assert!(
+            cipher_suites(&hello)
+                .first()
+                .copied()
+                .is_some_and(is_grease),
             "a shaped Chrome hello leads with a GREASE cipher suite"
         );
     }
@@ -221,7 +299,7 @@ mod utls_tls_shaping_tests {
             .expect("chrome ClientHello must be produced");
 
         assert_eq!(
-            cipher_suites(&hello),
+            canonical_cipher_suites(&hello),
             CHROME_PROVIDER_SUPPORTED_CIPHERS,
             "filtering must preserve the profile order and its leading GREASE slot"
         );
@@ -355,12 +433,20 @@ mod utls_tls_shaping_tests {
             fingerprint: String,
             #[serde(default)]
             websocket_alpn: bool,
+            handshake_length: usize,
+            cipher_suites: Vec<String>,
             alpn_protocols: Vec<String>,
             extension_order: Vec<String>,
+            padding_length: Option<usize>,
+            encrypted_client_hello_length: Option<usize>,
         }
 
+        let [ech160, ech192, ech224] = CLIENTHELLO_SHAPE_CHROME_WEBSOCKET_ALPN_ECH_JSON;
         for shape_json in [
             CLIENTHELLO_SHAPE_CHROME_WEBSOCKET_ALPN_JSON,
+            ech160,
+            ech192,
+            ech224,
             CLIENTHELLO_SHAPE_ANDROID_WEBSOCKET_ALPN_JSON,
         ] {
             let shape: WebsocketAlpnShape = serde_json::from_str(shape_json)
@@ -372,8 +458,42 @@ mod utls_tls_shaping_tests {
                  or it is just the plain profile shape and asserts nothing"
             );
 
-            let hello = plain_tls_client_hello_bytes(&config(fingerprint, &["http/1.1"]))
-                .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+            let hello = hello_with_ech_length(
+                fingerprint,
+                &["http/1.1"],
+                shape.encrypted_client_hello_length,
+            );
+
+            // The hello is as long as uTLS's. Padding, where uTLS pads, makes
+            // up the suites the provider filtered and the `supported_versions`
+            // rustls adds to a TLS-1.2-era hello (below); an unpadded hello
+            // differs by exactly those.
+            let padding = client_hello_draws::extension_body(&hello[5..], EXT_PADDING);
+            assert_eq!(
+                padding.is_some(),
+                shape.padding_length.is_some(),
+                "{fingerprint}: the override must pad where uTLS pads"
+            );
+            let supported_versions = format!("0x{EXT_SUPPORTED_VERSIONS:04x}");
+            let filtered = 2 * (shape.cipher_suites.len() - cipher_suites(&hello).len());
+            let added = if shape.extension_order.contains(&supported_versions) {
+                0
+            } else {
+                client_hello_draws::extension_body(&hello[5..], EXT_SUPPORTED_VERSIONS)
+                    .map_or(0, |body| 4 + body.len())
+            };
+            let expected_len = if shape.padding_length.is_some() {
+                shape.handshake_length
+            } else {
+                shape.handshake_length - filtered + added
+            };
+            assert_eq!(
+                hello.len() - 5,
+                expected_len,
+                "{fingerprint} (ECH {:?}): the override's hello must be as long as uTLS's, \
+                 less the filtered suites, plus what rustls adds",
+                shape.encrypted_client_hello_length
+            );
 
             assert_eq!(
                 alpn_protocols(&hello),
@@ -386,14 +506,15 @@ mod utls_tls_shaping_tests {
             // to leave it out, so a TLS-1.2-era shape carries it at the tail
             // and uTLS' own order stays an exact prefix.
             let mut expected = shape.extension_order;
-            let supported_versions = format!("0x{EXT_SUPPORTED_VERSIONS:04x}");
             if !expected.contains(&supported_versions) {
                 expected.push(supported_versions);
             }
 
+            let order = extension_order(&hello);
+            assert_grease_frames(fingerprint, &order);
             assert_eq!(
-                extension_order(&hello),
-                expected,
+                comparable_order(fingerprint, order),
+                comparable_order(fingerprint, expected),
                 "{fingerprint}: the override must leave the extension order where uTLS puts it, \
                  an appended ALPN included"
             );
@@ -412,9 +533,11 @@ mod utls_tls_shaping_tests {
         })
         .expect("unshaped ClientHello must be produced");
 
-        assert_ne!(
-            cipher_suites(&hello).first().copied(),
-            Some(CHROME_GREASE_CIPHER),
+        assert!(
+            !cipher_suites(&hello)
+                .first()
+                .copied()
+                .is_some_and(is_grease),
             "the unsafe sentinel must leave rustls' own hello alone"
         );
     }
@@ -515,15 +638,33 @@ mod utls_tls_shaping_tests {
         assert!(!hello.is_empty());
     }
 
-    /// Rewrites every field a fresh handshake regenerates -- the hello random,
-    /// the legacy session id, each key share's key exchange, and ECH GREASE's
-    /// AEAD id, config id, encapsulated key and payload -- to zero, so two
-    /// hellos compare equal exactly when they have the same *shape*.
+    /// Two hellos compare equal exactly when they have the same *shape*: what
+    /// `masked_hello` zeroes is gone, and so is what uTLS draws per hello on
+    /// top, the GREASE values, a shuffled extension order, and the ECH GREASE
+    /// payload length with the padding BoringSSL decides from it
+    /// (`client_hello_draws`). The record length, which follows those two, is
+    /// left out with them.
     ///
     /// Comparing raw bytes without this would compare fresh entropy and always
     /// differ; comparing only the extension order would miss a profile swap
-    /// that happened to preserve it.
+    /// that happened to preserve it. Each ECH length is held to a fixture of
+    /// its own byte for byte (`reality_rustls_tests`), and the padding to
+    /// BoringSSL's rule (`utls_shaping`), so taking them out here hides
+    /// nothing those do not check.
     fn shape_signature(hello: &[u8]) -> Vec<u8> {
+        let masked = masked_hello(hello);
+        let mut signature = masked[..3].to_vec();
+        signature.extend(client_hello_draws::without_drawn_lengths(
+            &client_hello_draws::canonical_client_hello(&masked[5..], true),
+        ));
+        signature
+    }
+
+    /// Rewrites every field a fresh handshake regenerates -- the hello random,
+    /// the legacy session id, each key share's key exchange, and ECH GREASE's
+    /// AEAD id, config id, encapsulated key and payload -- to zero, leaving the
+    /// GREASE values and the extension order as the hello drew them.
+    fn masked_hello(hello: &[u8]) -> Vec<u8> {
         let mut hello = hello.to_vec();
         let mut cursor = 5 + 4 + 2;
 
@@ -625,18 +766,16 @@ mod utls_tls_shaping_tests {
     ///
     /// Every modern fingerprint is checked rather than one representative,
     /// because which name exposes a per-connection field moves with the
-    /// profiles. `hellofirefox_120` is what catches it today: its ECH GREASE
-    /// redraws a config id, an X25519 encapsulated key, a payload *and* the HPKE
-    /// AEAD id per hello, so a signature that leaves any of the four alone
-    /// differs between connections, whereas `chrome` cannot expose the AEAD at
-    /// all -- `BoringGREASEECH` declares a single cipher suite
-    /// (`u_ech.go:296`), so an unmasked AEAD id sails past it, which is how the
-    /// AEAD stayed unmasked here until it started failing the `random` tests
-    /// below. Naming either one blinds the guard to the other: `chrome` pins one
-    /// of uTLS's four ECH payload lengths (`ECH_GREASE_BORING`,
-    /// `crates/xray-transport/src/utls_profiles.rs:68`) whose own doc records
-    /// unpinning as intended work, and the day that lands `chrome`'s hello
-    /// varies per connection while `hellofirefox_120`'s still does not.
+    /// profiles. `hellofirefox_120`'s ECH GREASE redraws a config id, an X25519
+    /// encapsulated key, a payload *and* the HPKE AEAD id per hello, so a
+    /// signature that leaves any of the four alone differs between
+    /// connections, whereas `chrome` cannot expose the AEAD at all --
+    /// `BoringGREASEECH` declares a single cipher suite (`u_ech.go`), so an
+    /// unmasked AEAD id sails past it, which is how the AEAD stayed unmasked
+    /// here until it started failing the `random` tests below. `chrome` instead
+    /// draws its ECH payload length per hello, one of uTLS's four
+    /// (`ECH_GREASE_BORING`), which Firefox's scheme of a single length never
+    /// does; so naming either one blinds the guard to the other's field.
     ///
     /// Only a handful of the eleven names carry ECH at all, so a field left
     /// unblanked reaches
@@ -845,6 +984,81 @@ mod utls_tls_shaping_tests {
         }
     }
 
+    /// A plain-TLS hello of `fingerprint` whose ECH GREASE extension is as
+    /// long as `wanted`: hellos are built until one draws that length, as a
+    /// real client draws one of Chrome's four per hello. `None` is met by a
+    /// profile without ECH on the first.
+    fn hello_with_ech_length(fingerprint: &str, alpn: &[&str], wanted: Option<usize>) -> Vec<u8> {
+        for _ in 0..client_hello_draws::ECH_DRAWS {
+            let hello = plain_tls_client_hello_bytes(&config(fingerprint, alpn))
+                .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+            if client_hello_draws::ech_length(&hello[5..]) == wanted {
+                return hello;
+            }
+        }
+        panic!(
+            "{fingerprint}: no hello in {} drew the ECH length {wanted:?}",
+            client_hello_draws::ECH_DRAWS
+        );
+    }
+
+    /// uTLS's `BoringGREASEECH` draws its payload length from four candidates
+    /// for every hello (`u_ech.go`), and so does every hello of a Chrome
+    /// profile carrying it: all four lengths come up, and nothing else. Two
+    /// hundred hellos miss one of the four with probability `4 * (3/4)^200`,
+    /// about `4e-25`.
+    #[test]
+    fn chrome_ech_profiles_draw_each_of_the_four_ech_lengths() {
+        let expected = client_hello_draws::CHROME_ECH_LENGTHS
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        for fingerprint in client_hello_draws::CHROME_ECH_FINGERPRINTS {
+            let drawn = (0..200)
+                .map(|_| {
+                    let hello = plain_tls_client_hello_bytes(&config(fingerprint, &[]))
+                        .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+                    client_hello_draws::ech_length(&hello[5..])
+                        .unwrap_or_else(|| panic!("{fingerprint}: no ECH GREASE extension"))
+                })
+                .collect::<BTreeSet<_>>();
+            assert_eq!(
+                drawn, expected,
+                "{fingerprint} must draw exactly uTLS's four ECH lengths"
+            );
+        }
+    }
+
+    /// BoringSSL pads a hello of 256 to 511 bytes, padding aside, and no
+    /// other. uTLS's Chrome 120 hello is 494 bytes before padding with the
+    /// shortest ECH GREASE length, so it is padded to 512, and 526, 558 and
+    /// 590 with the other three, so it goes unpadded
+    /// (`clienthello_raw_hellochrome_120*.json`). Ours offers six suites
+    /// fewer, the CBC and RSA ones rustls lacks: the padding makes up their
+    /// twelve bytes, and an unpadded hello is twelve bytes shorter.
+    #[test]
+    fn hellochrome_120_pads_only_the_hello_boringssl_pads() {
+        let mut seen = BTreeMap::new();
+        for _ in 0..client_hello_draws::ECH_DRAWS {
+            let record = plain_tls_client_hello_bytes(&config("hellochrome_120", &[]))
+                .expect("hellochrome_120 ClientHello must be produced");
+            let hello = &record[5..];
+            let ech = client_hello_draws::ech_length(hello)
+                .expect("hellochrome_120 carries an ECH GREASE extension");
+            let padding = client_hello_draws::extension_body(hello, EXT_PADDING).map(<[u8]>::len);
+            seen.insert(ech, (hello.len(), padding));
+        }
+
+        assert_eq!(
+            seen,
+            BTreeMap::from([
+                (186, (512, Some(26))),
+                (218, (514, None)),
+                (250, (546, None)),
+                (282, (578, None)),
+            ])
+        );
+    }
+
     fn is_grease(value: u16) -> bool {
         let [high, low] = value.to_be_bytes();
         high == low && high & 0x0f == 0x0a
@@ -900,27 +1114,150 @@ mod utls_tls_shaping_tests {
         }
     }
 
-    /// A ClientHello whose extension order is reshuffled per connection is
-    /// itself a fingerprint: no real client does that. rustls randomizes the
-    /// order of any extension it was not given an explicit position for, so
-    /// every profile has to pin one.
+    /// rustls orders any extension it was not given a place for at random,
+    /// which no real client does, so every profile pins its order: one fixed
+    /// order where uTLS keeps one, and for the Chrome profiles uTLS shuffles,
+    /// a `ShuffleChromeTLSExtensions` draw of its own per hello that keeps the
+    /// same extensions and the GREASE ones first and last.
+    ///
+    /// The padding extension is left out of "the same extensions"
+    /// (`without_padding`).
     #[test]
-    fn every_fingerprint_emits_a_stable_extension_order() {
+    fn every_fingerprint_orders_its_extensions_as_utls_does() {
+        let extensions = |fingerprint: &str, order: Vec<String>| {
+            comparable_order(fingerprint, without_padding(order))
+        };
         for fingerprint in selectable_fingerprints() {
             for alpn in [&[][..], &["http/1.1"][..]] {
-                let first = plain_tls_client_hello_bytes(&config(fingerprint, alpn))
-                    .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+                let order = || {
+                    extension_order(
+                        &plain_tls_client_hello_bytes(&config(fingerprint, alpn))
+                            .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}")),
+                    )
+                };
+                let first = order();
+                let mut orders = HashSet::from([first.clone()]);
                 for _ in 0..8 {
-                    let next = plain_tls_client_hello_bytes(&config(fingerprint, alpn))
-                        .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"));
+                    let next = order();
+                    assert_grease_frames(fingerprint, &next);
                     assert_eq!(
-                        extension_order(&next),
-                        extension_order(&first),
-                        "{fingerprint} (alpn {alpn:?}): extension order must not vary per connection"
+                        extensions(fingerprint, next.clone()),
+                        extensions(fingerprint, first.clone()),
+                        "{fingerprint} (alpn {alpn:?}): the extensions must not change per connection"
+                    );
+                    orders.insert(next);
+                }
+                if !matches!(fingerprint, "random" | "randomized") {
+                    assert_eq!(
+                        orders.len() > 1,
+                        shuffles(fingerprint),
+                        "{fingerprint} (alpn {alpn:?}): {} orders in nine hellos",
+                        orders.len()
                     );
                 }
             }
         }
+    }
+
+    /// What a fixed draw would send the same every time differs between two
+    /// hellos in a row: with the per-connection fields masked, only the GREASE
+    /// values and the extension order are left to tell them apart, and they
+    /// do, while the shape stays one.
+    #[test]
+    fn two_chrome_hellos_in_a_row_differ_in_what_utls_draws() {
+        for fingerprint in ["chrome", "hellochrome_133", "hellochrome_120"] {
+            let hello = || {
+                plain_tls_client_hello_bytes(&config(fingerprint, &[]))
+                    .unwrap_or_else(|error| panic!("{fingerprint}: ClientHello: {error}"))
+            };
+            let (first, second) = (hello(), hello());
+            assert_ne!(masked_hello(&first), masked_hello(&second), "{fingerprint}");
+            assert_ne!(
+                extension_order(&first),
+                extension_order(&second),
+                "{fingerprint}"
+            );
+            assert_eq!(
+                shape_signature(&first),
+                shape_signature(&second),
+                "{fingerprint}"
+            );
+        }
+    }
+
+    /// uTLS's GREASE slots, each drawn per hello: the cipher, the group that
+    /// supported_groups and the GREASE key share both carry, supported_versions,
+    /// signature_algorithms (Chrome 155) and the two extensions, which never
+    /// agree, the first empty and the second one zero byte. Any two slots
+    /// drawn on their own agree in 64 hellos with odds of 16^-64.
+    #[test]
+    fn chrome_grease_slots_are_drawn_as_utls_draws_them() {
+        let mut slots = vec![HashSet::new(); 6];
+        let mut apart = HashSet::new();
+        for _ in 0..64 {
+            let hello = plain_tls_client_hello_bytes(&config("chrome", &[]))
+                .expect("chrome ClientHello must be produced");
+            let cipher = cipher_suites(&hello)[0];
+            let group = u16_list(extension_payload(&hello, EXT_SUPPORTED_GROUPS).unwrap(), 2)[0];
+            let key_share = {
+                let payload = extension_payload(&hello, EXT_KEY_SHARE).unwrap();
+                assert_eq!(
+                    &payload[4..7],
+                    &[0, 1, 0],
+                    "a GREASE share is one zero byte"
+                );
+                u16::from_be_bytes([payload[2], payload[3]])
+            };
+            let version = supported_versions(&hello).unwrap()[0];
+            let signature_algorithm = u16_list(
+                extension_payload(&hello, EXT_SIGNATURE_ALGORITHMS).unwrap(),
+                2,
+            )[0];
+            let (first, last) = grease_extensions(&hello);
+            let values = [cipher, group, version, signature_algorithm, first.0, last.0];
+            for (slot, value) in values.into_iter().enumerate() {
+                assert!(is_grease(value), "slot {slot}: {value:#06x}");
+                slots[slot].insert(value);
+                for (other, other_value) in values.into_iter().enumerate() {
+                    if value != other_value {
+                        apart.insert((slot, other));
+                    }
+                }
+            }
+            assert_eq!(
+                key_share, group,
+                "the GREASE key share takes the group slot"
+            );
+            assert_ne!(first.0, last.0, "the two GREASE extensions differ");
+            assert_eq!((first.1, last.1), (0, 1), "GREASE extension bodies");
+        }
+        for (slot, values) in slots.iter().enumerate() {
+            assert!(
+                values.len() >= 8,
+                "slot {slot} took {} values",
+                values.len()
+            );
+        }
+        assert_eq!(apart.len(), 6 * 5, "every slot is drawn on its own");
+    }
+
+    /// The u16s of a list behind a `prefix`-byte length.
+    fn u16_list(payload: &[u8], prefix: usize) -> Vec<u16> {
+        payload[prefix..]
+            .chunks_exact(2)
+            .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+            .collect()
+    }
+
+    /// The first and the last extension, each as its type and body length.
+    fn grease_extensions(hello: &[u8]) -> ((u16, usize), (u16, usize)) {
+        let types = client_hello_draws::extension_types(&hello[5..]);
+        let first = *types.first().unwrap();
+        let last = *types.last().unwrap();
+        (
+            (first, extension_payload(hello, first).unwrap().len()),
+            (last, extension_payload(hello, last).unwrap().len()),
+        )
     }
 
     /// RFC 6066 forbids SNI for an IP address, so rustls omits the extension
@@ -936,7 +1273,9 @@ mod utls_tls_shaping_tests {
     /// uTLS keeps a zero-length `SNIExtension` in its list and writes nothing
     /// for it, so the whole shape is the domain shape with that one extension
     /// gone -- which is what this asserts, per fingerprint, against the very
-    /// hello the domain SNI produces.
+    /// hello the domain SNI produces. Padding aside (`without_padding`): the
+    /// shorter hello may fall into BoringSSL's padding window where the other
+    /// did not, as Chrome 120's does with its second ECH GREASE length.
     #[test]
     fn an_ip_literal_sni_shapes_the_hello_without_the_server_name_extension() {
         for fingerprint in selectable_fingerprints() {
@@ -966,9 +1305,11 @@ mod utls_tls_shaping_tests {
                     });
                 expected.remove(position);
 
+                let ip_order = extension_order(&ip);
+                assert_grease_frames(fingerprint, &ip_order);
                 assert_eq!(
-                    extension_order(&ip),
-                    expected,
+                    comparable_order(fingerprint, without_padding(ip_order)),
+                    comparable_order(fingerprint, without_padding(expected)),
                     "{fingerprint} (alpn {alpn:?}): an IP-literal SNI must drop server_name \
                      and leave every other extension, GREASE included, where it was"
                 );
@@ -1066,9 +1407,8 @@ mod utls_tls_shaping_tests {
             plain_tls_client_hello_bytes(&config).expect("chrome ClientHello must be produced");
 
         for (dial, hello) in &dialed {
-            assert_eq!(
-                cipher_suites(hello).first().copied(),
-                Some(CHROME_GREASE_CIPHER),
+            assert!(
+                cipher_suites(hello).first().copied().is_some_and(is_grease),
                 "{dial} dial: the hello on the wire must be shaped"
             );
             assert_eq!(
@@ -1084,14 +1424,16 @@ mod utls_tls_shaping_tests {
             // built from this very config carries that oracle coverage onto the
             // wire instead of restating a fraction of it.
             assert_eq!(
-                cipher_suites(hello),
-                cipher_suites(&synthesized),
+                canonical_cipher_suites(hello),
+                canonical_cipher_suites(&synthesized),
                 "{dial} dial: the wire cipher suites must be the shaped ones"
             );
+            let order = extension_order(hello);
+            assert_grease_frames("chrome", &order);
             assert_eq!(
-                extension_order(hello),
-                extension_order(&synthesized),
-                "{dial} dial: the wire extension order must be the shaped one"
+                comparable_order("chrome", order),
+                comparable_order("chrome", extension_order(&synthesized)),
+                "{dial} dial: the wire extensions must be the shaped ones"
             );
         }
     }

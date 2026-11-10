@@ -1347,12 +1347,13 @@ impl Parser<'_> {
         let mut numbers = [0i16; 2];
         for (slot, key) in numbers.iter_mut().zip(["concurrency", "xudpConcurrency"]) {
             if let Some(value) = mux.get(key) {
-                if let Some(n) = value.as_i64().filter(|n| (-32768..=64).contains(n)) {
-                    *slot = n as i16;
+                // Xray-core decodes both into an int16.
+                if let Some(n) = value.as_i64().and_then(|n| i16::try_from(n).ok()) {
+                    *slot = n;
                 } else {
                     self.error(
                         format!("{mux_path}.{key}"),
-                        "Mux concurrency must be an integer between -32768 and 64",
+                        "Mux concurrency must be an integer between -32768 and 32767",
                     );
                 }
             }
@@ -1392,7 +1393,7 @@ impl Parser<'_> {
             );
         }
         Some(crate::MuxSettings {
-            concurrency: if numbers[0] == 0 { 8 } else { numbers[0] },
+            concurrency: crate::mux_tcp_concurrency(numbers[0]),
             xudp_concurrency: numbers[1],
             udp443,
         })

@@ -1,9 +1,9 @@
 {
   "fingerprint": "chrome",
-  "utls_id": "Chrome-133",
+  "utls_id": "Chrome-155",
   "server_name": "example.com",
   "websocket_alpn": true,
-  "handshake_length": 1713,
+  "handshake_length": 1911,
   "legacy_version": "0x0303",
   "cipher_suites": [
     "GREASE",
@@ -28,21 +28,22 @@
   ],
   "extension_order": [
     "GREASE",
-    "0xfe0d",
-    "0x002d",
-    "0x44cd",
-    "0x000d",
     "0x002b",
-    "0x0023",
-    "0x0033",
-    "0x0000",
     "0x0005",
+    "0x0023",
+    "0xff01",
+    "0x0012",
+    "0x001b",
+    "0xca34",
+    "0x002d",
+    "0x0000",
+    "0x000d",
     "0x0010",
     "0x0017",
-    "0xff01",
+    "0xfe0d",
     "0x000b",
-    "0x001b",
-    "0x0012",
+    "0x44cd",
+    "0x0033",
     "0x000a",
     "GREASE"
   ],
@@ -52,7 +53,31 @@
       "length": 0
     },
     {
-      "type": "0xfe0d",
+      "type": "0x002b",
+      "length": 7
+    },
+    {
+      "type": "0x0005",
+      "length": 5
+    },
+    {
+      "type": "0x0023",
+      "length": 0
+    },
+    {
+      "type": "0xff01",
+      "length": 1
+    },
+    {
+      "type": "0x0012",
+      "length": 0
+    },
+    {
+      "type": "0x001b",
+      "length": 3
+    },
+    {
+      "type": "0xca34",
       "length": 186
     },
     {
@@ -60,32 +85,12 @@
       "length": 2
     },
     {
-      "type": "0x44cd",
-      "length": 5
-    },
-    {
-      "type": "0x000d",
-      "length": 18
-    },
-    {
-      "type": "0x002b",
-      "length": 7
-    },
-    {
-      "type": "0x0023",
-      "length": 0
-    },
-    {
-      "type": "0x0033",
-      "length": 1263
-    },
-    {
       "type": "0x0000",
       "length": 16
     },
     {
-      "type": "0x0005",
-      "length": 5
+      "type": "0x000d",
+      "length": 26
     },
     {
       "type": "0x0010",
@@ -96,20 +101,20 @@
       "length": 0
     },
     {
-      "type": "0xff01",
-      "length": 1
+      "type": "0xfe0d",
+      "length": 186
     },
     {
       "type": "0x000b",
       "length": 2
     },
     {
-      "type": "0x001b",
-      "length": 3
+      "type": "0x44cd",
+      "length": 5
     },
     {
-      "type": "0x0012",
-      "length": 0
+      "type": "0x0033",
+      "length": 1263
     },
     {
       "type": "0x000a",
@@ -136,6 +141,10 @@
     "0x00"
   ],
   "signature_algorithms": [
+    "GREASE",
+    "0x0904",
+    "0x0905",
+    "0x0906",
     "0x0403",
     "0x0804",
     "0x0401",

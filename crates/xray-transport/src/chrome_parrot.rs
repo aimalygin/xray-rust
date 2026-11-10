@@ -25,8 +25,8 @@ use rustls::client::{
 };
 use rustls::{CertificateCompressionAlgorithm, CipherSuite, Error as RustlsError, NamedGroup};
 
-use crate::sudoku::gorand::GoRand;
-use crate::utls_profiles::{UtlsEchGrease, HPKE_AEAD_AES_128_GCM};
+use crate::sudoku::gorand::{crypto_rand_int63, GoRand};
+use crate::utls_profiles::ECH_GREASE_BORING;
 use crate::utls_shaping::{
     application_settings_payload, encrypted_client_hello_payload, push_exact_or_raw_extension,
     signature_algorithms_payload,
@@ -103,14 +103,6 @@ const SIGNATURE_ALGORITHMS: [u16; 9] = [
     0x0201, // rsa_pkcs1_sha1
 ];
 
-/// `BoringGREASEECH`: one cipher suite and a payload of 128, 160, 192 or 224
-/// bytes plus the AEAD tag, drawn per connection; these are the resulting
-/// extension body lengths.
-const ECH_GREASE: UtlsEchGrease = UtlsEchGrease {
-    aead_ids: &[HPKE_AEAD_AES_128_GCM],
-    lengths: &[186, 218, 250, 282],
-};
-
 /// The ClientHello quic-go's ChromeParrot sends through uTLS.
 ///
 /// No GREASE value anywhere; TLS 1.3 alone; suites AES-128-GCM, AES-256-GCM
@@ -138,16 +130,6 @@ struct HelloDraws {
     encrypted_client_hello: Vec<u8>,
 }
 
-/// `crypto/rand.Int(crypto/rand.Reader, math.MaxInt64)`: eight bytes with the
-/// top bit cleared, read again in the one case the value is not below the
-/// bound
-fn int63(bytes: [u8; 8]) -> Option<i64> {
-    let mut bytes = bytes;
-    bytes[0] &= 0x7f;
-    let value = i64::from_be_bytes(bytes);
-    (value < i64::MAX).then_some(value)
-}
-
 /// `ShuffleChromeTLSExtensions` for a spec without GREASE, padding or
 /// pre-shared key extensions: a plain shuffle with
 /// `rand.New(rand.NewSource(seed))`
@@ -161,7 +143,7 @@ impl ChromeQuicHello {
     fn shuffle_seed(&self) -> Result<i64, RustlsError> {
         #[cfg(test)]
         if let Some(draws) = &self.draws {
-            return int63(draws.shuffle_seed)
+            return crypto_rand_int63(draws.shuffle_seed)
                 .ok_or_else(|| RustlsError::General("a seed uTLS would redraw".into()));
         }
         loop {
@@ -169,7 +151,7 @@ impl ChromeQuicHello {
             OsRng.try_fill_bytes(&mut bytes).map_err(|error| {
                 RustlsError::General(format!("the extension order needs randomness: {error}"))
             })?;
-            if let Some(seed) = int63(bytes) {
+            if let Some(seed) = crypto_rand_int63(bytes) {
                 return Ok(seed);
             }
         }
@@ -180,7 +162,7 @@ impl ChromeQuicHello {
         if let Some(draws) = &self.draws {
             return Ok(draws.encrypted_client_hello.clone());
         }
-        encrypted_client_hello_payload(&ECH_GREASE)
+        encrypted_client_hello_payload(&ECH_GREASE_BORING)
     }
 }
 
@@ -453,9 +435,9 @@ mod tests {
 
     #[test]
     fn int63_is_go_crypto_rand_int() {
-        assert_eq!(int63([0xff; 8]), None);
+        assert_eq!(crypto_rand_int63([0xff; 8]), None);
         assert_eq!(
-            int63([0xe2, 0xe2, 0x30, 0xe1, 0xee, 0x63, 0x5a, 0xcc]),
+            crypto_rand_int63([0xe2, 0xe2, 0x30, 0xe1, 0xee, 0x63, 0x5a, 0xcc]),
             Some(0x62e2_30e1_ee63_5acc)
         );
     }

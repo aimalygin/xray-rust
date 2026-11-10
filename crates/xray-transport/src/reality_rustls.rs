@@ -31,7 +31,7 @@ use crate::{
     reality_connector::{RealityClientHelloRequest, RealityTlsSession, RealityTlsSessionProvider},
     reality_spider::{spider, RealitySpider},
     utls_profiles::{reality_profile_for_fingerprint, UtlsClientHelloProfile},
-    utls_shaping::{apply_utls_profile, retain_profile_certificate_decompressors},
+    utls_shaping::{apply_utls_profile, retain_profile_certificate_decompressors, HelloDraws},
     BoxedTransportStream, CapturedStream, PenetratingTlsStream, ServerReadLog, TransportError,
 };
 
@@ -302,7 +302,13 @@ impl ClientHelloCustomizer for RustlsRealityClientHelloCustomizer {
             .with_session_id(session_id)
             .with_fixed_x25519(FixedX25519KeyShare::new(self.local_x25519_private_key));
 
-        plan = apply_utls_profile(plan, self.profile, context)?;
+        plan = apply_utls_profile(
+            plan,
+            self.profile,
+            context,
+            &HelloDraws::draw(self.profile)?,
+            None,
+        )?;
 
         if let Some(capture) = &self.capture {
             plan = plan.with_capture(capture.clone());

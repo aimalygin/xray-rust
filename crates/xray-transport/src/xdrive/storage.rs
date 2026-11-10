@@ -1,4 +1,4 @@
-//! What a session needs of the storage it lives in: Xray-core v26.10.31's
+//! What a session needs of the storage it lives in: Xray-core v26.11.9's
 //! `Storage` interface.
 
 use std::fmt;
@@ -13,13 +13,16 @@ pub(crate) enum StorageError {
     NotFound,
     /// Anything else, as the storage describes it.
     Failed(String),
+    /// `authError`: the storage refused the credentials themselves, which no
+    /// retry changes.
+    Auth(String),
 }
 
 impl fmt::Display for StorageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotFound => f.write_str("object not found"),
-            Self::Failed(message) => f.write_str(message),
+            Self::Failed(message) | Self::Auth(message) => f.write_str(message),
         }
     }
 }

@@ -203,7 +203,7 @@ impl Reference {
                 );
                 if std::fs::read_to_string(reference.directory.join("log"))
                     .unwrap()
-                    .contains("core: Xray 26.10.31 started")
+                    .contains("core: Xray 26.11.9 started")
                 {
                     break;
                 }

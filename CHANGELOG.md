@@ -10,6 +10,50 @@ long-term supported release series.
 
 ## Unreleased
 
+- Compatibility reference moved to Xray-core v26.11.9
+  (`676eaf66f8f05d4d558ee7a74b4736623d3feeb9`, Go 1.27.3): CI, interop
+  guards, oracle modules, fixtures and the benchmark harness pin it. See the
+  [migration record](docs/xray-core-v26.11.9-migration.md).
+- Freedom `finalRules` read `delay` and `logLevel` as Xray-core v26.11.9
+  does. `blockDelay` still works with a deprecation warning and wins over
+  `delay`; `logLevel` is `none`, `debug`, `info`, `warning` or `error`, is
+  checked, and writes nothing here, since xray-rust logs no blocked
+  connection. An allow rule with a delay or a level is refused, as upstream
+  now refuses it. See [Freedom outbound](docs/config-compatibility.md#freedom-outbound).
+- `chrome`, `hellochrome_auto` and an empty `fingerprint` send Chrome 155,
+  Xray-core v26.11.9's default: Chrome 133's hello with GREASE and ML-DSA
+  44/65/87 signature algorithms and a `trust_anchors` extension carrying 28
+  Chrome Root Store trust anchor IDs. `hellochrome_155` is a new name and joins
+  `random`'s draw; `hellochrome_133` keeps Chrome 133. See
+  [TLS ClientHello shaping](docs/config-compatibility.md#tls-clienthello-shaping).
+- Every uTLS-shaped hello, on TLS and REALITY, draws its GREASE values per
+  connection as uTLS does, one per slot, and the Chrome profiles whose uTLS
+  spec shuffles its extensions (`hellochrome_106_shuffle` through
+  `hellochrome_155`, and so `chrome`) draw their extension order per
+  connection too, GREASE, padding and pre_shared_key staying in place. Until
+  now each profile sent `0x0a0a` in every GREASE slot and one fixed order.
+  See [uTLS per-connection draws](docs/xray-core-differences.md#utls-per-connection-draws).
+- The Chrome profiles with ECH GREASE (`chrome`, `hellochrome_120`,
+  `hellochrome_120_pq`, `hellochrome_131`, `hellochrome_133` and
+  `hellochrome_155`) draw its payload length per connection as uTLS does, 128,
+  160, 192 or 224 bytes, instead of always 128. Padded profiles now pad as
+  BoringSSL does: a hello past 511 bytes before padding goes out without the
+  padding extension instead of with an empty one, and one of 508 to 511 bytes
+  gets a single byte. Chrome 120's hello now goes unpadded with the three
+  longer ECH lengths, as does any padded profile's behind a long server name.
+  See [ECH GREASE](docs/config-compatibility.md#ech-grease).
+- XDRIVE on Google Drive follows Xray-core v26.11.9: rings as deep as
+  `concurrency` (64 by default, at most 256) with spare rings made ahead,
+  sessions announced after their first segment with that segment inline,
+  read-ahead and hedged reads, and on the Drive side a shared token fetch
+  with background refresh and backoff, a stop on refused OAuth credentials,
+  a cooldown after throttling, a reserved lane for watermarks and the head,
+  per-try timeouts that retire stalled connections and a 32 MiB answer cap.
+  It still meets v26.10.31's server. See [XDRIVE](docs/config-compatibility.md#xdrive).
+- Mux runs every TCP `concurrency` from zero up to 128 as 128 children per
+  parent, keeps a larger one, and lets a parent hand out 1024 children over
+  its life, as Xray-core v26.11.9 does; both concurrencies take any 16-bit
+  value instead of at most 64.
 - Freedom and WireGuard take FinalMask's UDP masks, as Xray-core v26.10.31's
   `FinalMask.DialUDP` wraps their sockets: noise, `header-custom`, Salamander
   with Gecko, sudoku, xdns and xicmp, with the code and order of the QUIC
@@ -19,8 +63,9 @@ long-term supported release series.
   puts its one socket under them, which takes one peer and opens anew with
   the masks' state at every rebind. udphop and realm are refused on both for
   now. See [UDP masks on freedom and WireGuard](docs/config-compatibility.md#udp-masks-on-freedom-and-wireguard).
-- Hysteria and XHTTP over HTTP/3 shape their QUIC handshake like Chrome's,
-  as Xray-core v26.10.31's default ChromeParrot does, unless
+- Hysteria, XHTTP over HTTP/3 and XDRIVE's storages over HTTP/3 shape their
+  QUIC handshake like Chrome's, as Xray-core v26.10.31's default ChromeParrot
+  does, unless
   `finalmask.quicParams.disableChromeParrot` is true. Until now the flag had
   to be true: without it parsing warned, `false` failed, and profile imports
   set it. It is now read as Xray reads it, a Go `bool` with `null` for false,
@@ -42,9 +87,7 @@ long-term supported release series.
     advertises 65,536-byte DATAGRAM frames, as Xray's client then does.
   - The congestion controller that runs before Xray's switch starts at
     quic-go's 32-packet window instead of 12,000 bytes.
-  - MASQUE never parrots Chrome, as in Xray-core. XDRIVE's storages over
-    HTTP/3 keep Quinn's own handshake for now; without
-    `disableChromeParrot: true` the configuration still warns there.
+  - MASQUE never parrots Chrome, as in Xray-core.
   - `H3QuicConfig::chrome_parrot` turns it on for any HTTP/3 client, with the
     TLS configuration `TlsConnector::h3_client_config_for` builds for it.
 - A VLESS outbound with `reverse` is the bridge of Xray-core v26.10.31's
@@ -153,8 +196,8 @@ long-term supported release series.
     reader took what they held.
   - Over `alpn` exactly `["h3"]` a storage is reached over HTTP/3, its QUIC
     connections set up as XHTTP's are, with the stream's `quicParams` and
-    UDP masks, Salamander among them; Xray-core's ChromeParrot is not there
-    yet.
+    UDP masks, Salamander among them, and ChromeParrot unless
+    `disableChromeParrot` is true, as in Xray-core.
   - Deliberate differences: a writer waits once twice `concurrency`
     segments are not yet stored, where Xray-core keeps cutting; no
     `xdriveSettings` and an empty `local` folder fail when the core starts,

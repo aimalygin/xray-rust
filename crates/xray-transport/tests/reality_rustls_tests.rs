@@ -4,10 +4,14 @@ use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSec
 use xray_transport::{
     reality::{
         prepare_reality_handshake, validate_reality_client_hello_metadata, RealityHandshakeInput,
+        RealityPreparedClientHello,
     },
     reality_connector::{RealityClientHelloRequest, RealityTlsSessionProvider},
     RustlsRealityTlsSessionProvider,
 };
+
+#[path = "support/client_hello_draws.rs"]
+mod client_hello_draws;
 
 const TLS_GROUP_X25519: u16 = 0x001d;
 const TLS_GROUP_SECP256R1: u16 = 0x0017;
@@ -399,26 +403,13 @@ fn rustls_reality_provider_matches_utls_xray_fingerprints_in_order() {
             continue;
         }
 
-        let mut expected = utls_client_hello_shape_from_oracle(fingerprint);
-        apply_provider_cipher_filter(&mut expected);
-        let session = provider
-            .create_session(RealityClientHelloRequest {
-                server_name: "example.com",
-                fingerprint,
-            })
-            .unwrap_or_else(|error| {
-                panic!("{fingerprint}: REALITY session should be created: {error}")
-            });
-        let prepared = session
-            .prepared_client_hello()
-            .unwrap_or_else(|error| panic!("{fingerprint}: prepared ClientHello: {error}"));
-        let actual = parse_client_hello_shape(
+        let mut expected = without_drawn_order(
             fingerprint,
-            &expected.utls_id,
-            "example.com",
-            &prepared.raw_client_hello,
-        )
-        .unwrap_or_else(|error| panic!("{fingerprint}: rustls ClientHello shape: {error}"));
+            utls_client_hello_shape_from_oracle(fingerprint),
+        );
+        apply_provider_cipher_filter(&mut expected);
+        let actual = rustls_client_hello_shape(&provider, fingerprint, &expected)
+            .unwrap_or_else(|error| panic!("{fingerprint}: {error}"));
 
         assert_eq!(actual, expected, "{fingerprint}");
     }
@@ -433,6 +424,13 @@ fn rustls_reality_provider_matches_utls_xray_fingerprints_in_order() {
 /// spent from before v0.1.1 until this table existed emitting a zero-length
 /// `enc` -- a body no ECH parser accepts -- at exactly the promised 186 bytes.
 ///
+/// Chrome's ECH GREASE draws one of four payload lengths per hello, and each
+/// Chrome profile carrying it has a fixture per length (`-ech-payload-length`
+/// forces each in `clienthello_shape.go`; without it uTLS's own draw takes the
+/// first). A hello is held to the fixture of the length it drew, byte for
+/// byte, which covers BoringSSL's padding too: Chrome 120's hello is padded
+/// with the shortest length and left unpadded with the other three.
+///
 /// Reading committed fixtures rather than spawning `go run` is what lets these
 /// tests run in the plain `cargo test --workspace` CI job instead of sitting
 /// behind `#[ignore]`. The fixtures are held to the real thing from the other
@@ -444,12 +442,90 @@ const RISKY_FINGERPRINT_RAW_ORACLES: &[(&str, &str)] = &[
         include_str!("../../../tests/fixtures/reality/clienthello_raw_chrome.json"),
     ),
     (
+        "chrome",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_chrome_ech160.json"),
+    ),
+    (
+        "chrome",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_chrome_ech192.json"),
+    ),
+    (
+        "chrome",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_chrome_ech224.json"),
+    ),
+    (
+        "hellochrome_133",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_133.json"),
+    ),
+    (
+        "hellochrome_133",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_133_ech160.json"),
+    ),
+    (
+        "hellochrome_133",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_133_ech192.json"),
+    ),
+    (
+        "hellochrome_133",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_133_ech224.json"),
+    ),
+    (
         "helloios_13",
         include_str!("../../../tests/fixtures/reality/clienthello_raw_helloios_13.json"),
     ),
     (
         "hellochrome_120_pq",
         include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_120_pq.json"),
+    ),
+    (
+        "hellochrome_120_pq",
+        include_str!(
+            "../../../tests/fixtures/reality/clienthello_raw_hellochrome_120_pq_ech160.json"
+        ),
+    ),
+    (
+        "hellochrome_120_pq",
+        include_str!(
+            "../../../tests/fixtures/reality/clienthello_raw_hellochrome_120_pq_ech192.json"
+        ),
+    ),
+    (
+        "hellochrome_120_pq",
+        include_str!(
+            "../../../tests/fixtures/reality/clienthello_raw_hellochrome_120_pq_ech224.json"
+        ),
+    ),
+    (
+        "hellochrome_120",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_120.json"),
+    ),
+    (
+        "hellochrome_120",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_120_ech160.json"),
+    ),
+    (
+        "hellochrome_120",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_120_ech192.json"),
+    ),
+    (
+        "hellochrome_120",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_120_ech224.json"),
+    ),
+    (
+        "hellochrome_131",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_131.json"),
+    ),
+    (
+        "hellochrome_131",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_131_ech160.json"),
+    ),
+    (
+        "hellochrome_131",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_131_ech192.json"),
+    ),
+    (
+        "hellochrome_131",
+        include_str!("../../../tests/fixtures/reality/clienthello_raw_hellochrome_131_ech224.json"),
     ),
     (
         "hello360_11_0",
@@ -492,6 +568,25 @@ fn rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerp
     for (fingerprint, oracle) in RISKY_FINGERPRINT_RAW_ORACLES {
         let fingerprint = *fingerprint;
         let expected = utls_client_hello_raw_from_fixture(fingerprint, oracle);
+        let expected_raw = decode_hex(&expected.client_hello_hex)
+            .unwrap_or_else(|error| panic!("{fingerprint}: Go raw hex decode: {error}"));
+        let prepared = prepared_client_hello_like(&provider, fingerprint, &expected_raw);
+
+        assert_masked_client_hello_eq(fingerprint, &prepared.raw_client_hello, &expected_raw);
+    }
+}
+
+/// A prepared REALITY hello of `fingerprint` whose ECH GREASE extension is
+/// as long as `expected`'s: hellos are prepared until one draws that length,
+/// as a real client draws one of Chrome's four per hello. One without ECH, or
+/// with a scheme of one length, is the first hello prepared.
+fn prepared_client_hello_like(
+    provider: &RustlsRealityTlsSessionProvider,
+    fingerprint: &str,
+    expected: &[u8],
+) -> RealityPreparedClientHello {
+    let wanted = client_hello_draws::ech_length(expected);
+    for _ in 0..client_hello_draws::ECH_DRAWS {
         let session = provider
             .create_session(RealityClientHelloRequest {
                 server_name: "example.com",
@@ -503,11 +598,14 @@ fn rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerp
         let prepared = session
             .prepared_client_hello()
             .unwrap_or_else(|error| panic!("{fingerprint}: prepared ClientHello: {error}"));
-
-        let expected_raw = decode_hex(&expected.client_hello_hex)
-            .unwrap_or_else(|error| panic!("{fingerprint}: Go raw hex decode: {error}"));
-        assert_masked_client_hello_eq(fingerprint, &prepared.raw_client_hello, &expected_raw);
+        if client_hello_draws::ech_length(&prepared.raw_client_hello) == wanted {
+            return prepared;
+        }
     }
+    panic!(
+        "{fingerprint}: no hello in {} drew the ECH length {wanted:?} of its fixture",
+        client_hello_draws::ECH_DRAWS
+    );
 }
 
 #[test]
@@ -520,17 +618,8 @@ fn rustls_reality_provider_final_reality_clienthello_matches_utls_oracle_for_ris
         let expected = utls_client_hello_raw_from_fixture(fingerprint, oracle);
         let expected_raw = decode_hex(&expected.client_hello_hex)
             .unwrap_or_else(|error| panic!("{fingerprint}: Go raw hex decode: {error}"));
-        let session = provider
-            .create_session(RealityClientHelloRequest {
-                server_name: "example.com",
-                fingerprint,
-            })
-            .unwrap_or_else(|error| {
-                panic!("{fingerprint}: REALITY session should be created: {error}")
-            });
-        let prepared_client_hello = session
-            .prepared_client_hello()
-            .unwrap_or_else(|error| panic!("{fingerprint}: prepared ClientHello: {error}"));
+        let prepared_client_hello =
+            prepared_client_hello_like(&provider, fingerprint, &expected_raw);
         let prepared_handshake = prepare_reality_handshake(RealityHandshakeInput {
             version: [0, 0, 1],
             unix_time: 1_700_000_000,
@@ -682,7 +771,13 @@ fn decode_hex(input: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+/// Compares a hello with the oracle's after taking out what uTLS draws per
+/// connection: GREASE values, and for a profile that shuffles, the extension
+/// order (`client_hello_draws`). Everything else stays byte-exact.
 fn assert_masked_client_hello_eq(fingerprint: &str, actual: &[u8], expected: &[u8]) {
+    let shuffles = client_hello_draws::shuffles(fingerprint);
+    let actual = &client_hello_draws::canonical_client_hello(actual, shuffles);
+    let expected = &client_hello_draws::canonical_client_hello(expected, shuffles);
     let actual_ciphers = raw_client_hello_cipher_suites(actual)
         .unwrap_or_else(|error| panic!("{fingerprint}: parse actual cipher suites: {error}"));
     let expected_ciphers = raw_client_hello_cipher_suites(expected)
@@ -1225,7 +1320,8 @@ fn collect_fingerprint_parity_results() -> Vec<FingerprintParityResult> {
     xray_utls::XRAY_UTLS_FINGERPRINTS
         .iter()
         .map(|&fingerprint| {
-            let expected = try_utls_client_hello_shape_from_oracle(fingerprint).map(|mut shape| {
+            let expected = try_utls_client_hello_shape_from_oracle(fingerprint).map(|shape| {
+                let mut shape = without_drawn_order(fingerprint, shape);
                 apply_provider_cipher_filter(&mut shape);
                 shape
             });
@@ -1241,10 +1337,8 @@ fn collect_fingerprint_parity_results() -> Vec<FingerprintParityResult> {
                 )
             } else {
                 match &expected {
-                Ok(expected) => {
-                    rustls_client_hello_shape(&provider, fingerprint, expected.utls_id.as_str())
-                }
-                Err(error) => Err(format!("skipped because oracle failed: {error}")),
+                    Ok(expected) => rustls_client_hello_shape(&provider, fingerprint, expected),
+                    Err(error) => Err(format!("skipped because oracle failed: {error}")),
                 }
             };
 
@@ -1257,28 +1351,58 @@ fn collect_fingerprint_parity_results() -> Vec<FingerprintParityResult> {
         .collect()
 }
 
+/// The shape of a REALITY hello of `fingerprint` to compare with `expected`,
+/// the oracle's: hellos are prepared until one draws the ECH GREASE length
+/// the oracle's carries, which a zeroed `crypto/rand` makes the first of
+/// Chrome's four.
 fn rustls_client_hello_shape(
     provider: &RustlsRealityTlsSessionProvider,
     fingerprint: &str,
-    utls_id: &str,
+    expected: &ClientHelloShape,
 ) -> Result<ClientHelloShape, String> {
-    let session = provider
-        .create_session(RealityClientHelloRequest {
-            server_name: "example.com",
+    for _ in 0..client_hello_draws::ECH_DRAWS {
+        let session = provider
+            .create_session(RealityClientHelloRequest {
+                server_name: "example.com",
+                fingerprint,
+            })
+            .map_err(|error| format!("REALITY session should be created: {error}"))?;
+        let prepared = session
+            .prepared_client_hello()
+            .map_err(|error| format!("prepared ClientHello: {error}"))?;
+        let shape = parse_client_hello_shape(
             fingerprint,
-        })
-        .map_err(|error| format!("REALITY session should be created: {error}"))?;
-    let prepared = session
-        .prepared_client_hello()
-        .map_err(|error| format!("prepared ClientHello: {error}"))?;
+            &expected.utls_id,
+            "example.com",
+            &prepared.raw_client_hello,
+        )
+        .map(|shape| without_drawn_order(fingerprint, shape))
+        .map_err(|error| format!("rustls ClientHello shape: {error}"))?;
+        if shape.encrypted_client_hello_length == expected.encrypted_client_hello_length {
+            return Ok(shape);
+        }
+    }
+    Err(format!(
+        "no hello in {} drew the oracle's ECH length {:?}",
+        client_hello_draws::ECH_DRAWS,
+        expected.encrypted_client_hello_length
+    ))
+}
 
-    parse_client_hello_shape(
-        fingerprint,
-        utls_id,
-        "example.com",
-        &prepared.raw_client_hello,
-    )
-    .map_err(|error| format!("rustls ClientHello shape: {error}"))
+/// `shape` without the extension order uTLS draws per connection when
+/// `fingerprint`'s spec shuffles: its extensions in order of type, the two
+/// GREASE extensions, which never move, keeping theirs. A shape already writes
+/// every GREASE value as `GREASE`. The raw comparisons take the same draws out
+/// in `assert_masked_client_hello_eq`; where each extension may go is held to
+/// uTLS's rule in `utls_shaping`'s own tests.
+fn without_drawn_order(fingerprint: &str, mut shape: ClientHelloShape) -> ClientHelloShape {
+    if client_hello_draws::shuffles(fingerprint) {
+        shape.extension_order.sort();
+        shape
+            .extensions
+            .sort_by(|left, right| left.r#type.cmp(&right.r#type));
+    }
+    shape
 }
 
 fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> String {
@@ -1323,6 +1447,11 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     writeln!(
         report,
         "Byte-level agreement is a separate guard, and the one to reach for when a body's contents matter: `rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerprints` compares whole ClientHellos against committed oracle output, masking only what uTLS redraws per connection, and runs in the ordinary `cargo test --workspace` CI job.\n"
+    )
+    .unwrap();
+    writeln!(
+        report,
+        "What uTLS draws per connection does not show here either. The shape JSON writes every GREASE value as `GREASE`; for the Chrome profiles whose uTLS spec shuffles its extensions (`hellochrome_106_shuffle` through `hellochrome_155`, and so `chrome`) both sides list their extensions in order of type, since the order is drawn anew for every hello; and hellos are drawn until one carries the ECH GREASE length the oracle's does, the first of Chrome's four under its zeroed `crypto/rand`. Where each extension may go is held to uTLS's rule by `utls_shaping`'s own tests, and every ECH length to a raw fixture of its own.\n"
     )
     .unwrap();
     writeln!(report, "## Reproduce\n").unwrap();

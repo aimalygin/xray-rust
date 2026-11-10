@@ -29,7 +29,7 @@ use super::storage::{Entry, Storage, StorageError};
 /// Xray-core's `flatSeparator`.
 pub(crate) const FLAT_SEPARATOR: &str = "~";
 /// Xray-core's `driveMaxInflight`, the default concurrency.
-const DEFAULT_CONCURRENCY: usize = 32;
+const DEFAULT_CONCURRENCY: usize = super::drive::MAX_INFLIGHT;
 /// Xray-core's `maxTemplateConcurrency`.
 const MAX_CONCURRENCY: usize = 256;
 /// A template answer is read whole by Xray-core; here at most this much.
@@ -715,7 +715,7 @@ mod tests {
     fn templates_decode_as_go_decodes_them() {
         let template = StorageTemplate::parse(DAV).unwrap();
         assert!(template.flatten);
-        assert_eq!(template.concurrency, 32);
+        assert_eq!(template.concurrency, 64);
         assert_eq!(template.auth.kind, "basic");
         assert_eq!(template.list.method, "PROPFIND");
         // Field names fold case, as Go's do.

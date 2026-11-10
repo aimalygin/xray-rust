@@ -1,4 +1,4 @@
-// Records how Xray-core v26.10.31 reads masqueSettings.warp: its private
+// Records how Xray-core v26.11.9 reads masqueSettings.warp: its private
 // key, public key and addresses, through infra/conf's parseWarpPrivateKey,
 // parseWarpPublicKey and parseWarpAddress. Keys come from a seeded
 // generator, so a fresh run matches tests/fixtures/masque/warp-config-vectors.json

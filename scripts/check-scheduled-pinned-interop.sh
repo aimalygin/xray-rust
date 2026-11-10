@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly EXPECTED_XRAY_CORE_REVISION="a4a3dff5b20c2faae567b742c172c7b95e75c083"
+readonly EXPECTED_XRAY_CORE_REVISION="676eaf66f8f05d4d558ee7a74b4736623d3feeb9"
 
 if [[ -z "${XRAY_CORE_CHECKOUT:-}" ]]; then
   echo "XRAY_CORE_CHECKOUT must point at the pinned Xray-core checkout" >&2

@@ -88,13 +88,31 @@ fn rings_are_spelled_as_go_marshals_them() {
             slots: vec!["c".to_owned()],
             watermark: "w2".to_owned(),
         },
+        first: None,
     };
     let json = ring.to_json();
     assert_eq!(
         json,
         r#"{"u":{"s":["a","b\"\u003c"],"w":"w1"},"d":{"s":["c"],"w":"w2"}}"#
     );
-    assert_eq!(Ring::from_json(json.as_bytes()), Some(ring));
+    assert_eq!(Ring::from_json(json.as_bytes()), Some(ring.clone()));
+    // Since v26.11.9 a client may announce its first segment with the ring,
+    // as standard base64 after the tables; an empty one is left out.
+    let with_first = Ring {
+        first: Some(Bytes::from_static(b"\x00hi\xff")),
+        ..ring.clone()
+    };
+    let json = with_first.to_json();
+    assert_eq!(
+        json,
+        r#"{"u":{"s":["a","b\"\u003c"],"w":"w1"},"d":{"s":["c"],"w":"w2"},"first":"AGhp/w=="}"#
+    );
+    assert_eq!(Ring::from_json(json.as_bytes()), Some(with_first));
+    let empty = Ring {
+        first: Some(Bytes::new()),
+        ..ring.clone()
+    };
+    assert_eq!(empty.to_json(), ring.to_json());
     assert!(Ring::from_json(br#"{"U":{"S":["a"],"W":"w"},"D":{"s":["c"],"w":"x"}}"#).is_some());
     assert!(Ring::from_json(br#"{"u":{"s":[],"w":"w"},"d":{"s":["c"],"w":"x"}}"#).is_none());
     assert!(Ring::from_json(br#"{"u":{"s":["a"],"w":""},"d":{"s":["c"],"w":"x"}}"#).is_none());
@@ -102,8 +120,9 @@ fn rings_are_spelled_as_go_marshals_them() {
 }
 
 #[tokio::test]
-async fn rings_take_two_to_eight_slots_a_way() {
-    for (concurrency, depth) in [(1, 2), (2, 2), (8, 8), (64, 8)] {
+async fn rings_are_as_deep_as_the_concurrency() {
+    // Since v26.11.9 the depth follows the concurrency up to its cap of 256.
+    for (concurrency, depth) in [(1, 2), (2, 2), (8, 8), (100, 100), (1000, 256)] {
         let store = Arc::new(MemorySlots::default());
         let dyn_store: Arc<dyn SlotStore> = store.clone();
         let ring = make_ring(&dyn_store, "abc", &params(concurrency))
@@ -243,31 +262,261 @@ async fn a_segment_the_writer_cannot_store_fails_the_reader() {
     assert!(client.write_all(b"more").await.is_err());
 }
 
-#[tokio::test]
-async fn full_segments_double_after_eight_in_a_row() {
-    let (store, mut client, mut server, ring) = session(8).await;
-    // Ten full inline segments, then the size ramps to twice the limit.
-    let total = 10 * SLOT_INLINE_LIMIT + 2 * SLOT_INLINE_LIMIT;
-    let data = vec![7u8; total];
-    for chunk in data.chunks(SLOT_INLINE_LIMIT) {
-        client.write_all(chunk).await.unwrap();
-    }
-    assert_eq!(read_exactly(&mut server, total).await.len(), total);
-    let sizes: Vec<u32> = store
+fn bodies(store: &MemorySlots, ring: &Ring) -> usize {
+    store
         .sets
         .lock()
         .unwrap()
         .iter()
-        .filter(|(id, _, _)| ring.up.slots.contains(id))
-        .filter_map(|(_, d, _)| SlotFrame::decode(d))
-        .map(|f| f.size)
-        .collect();
-    let limit = SLOT_INLINE_LIMIT as u32;
-    assert_eq!(&sizes[..8], &[limit; 8]);
-    assert!(
-        sizes[8..].iter().any(|&size| size == 2 * limit),
-        "{sizes:?}"
+        .filter(|(id, _, body)| *body && ring.up.slots.contains(id))
+        .count()
+}
+
+/// `TestSlotBurstSplitsInline`, `TestSlotLargeBurstInline` and
+/// `TestSlotBurstInlineWaves`: a burst that twice the write slots take in
+/// inline segments goes inline, segment by segment; a larger one does not.
+#[tokio::test]
+async fn bursts_the_write_slots_take_go_inline() {
+    for (concurrency, size, media) in [
+        (8, 90 << 10, false),
+        (16, 10 * SLOT_INLINE_LIMIT, false),
+        (16, 20 * SLOT_INLINE_LIMIT, false),
+        (16, 30 * SLOT_INLINE_LIMIT, true),
+    ] {
+        let (store, mut client, mut server, ring) = session(concurrency).await;
+        let payload: Vec<u8> = (0..size).map(|i| (i * 7 + 3) as u8).collect();
+        let writer = tokio::spawn(async move {
+            client.write_all(&payload).await.unwrap();
+            client
+        });
+        let got = read_exactly(&mut server, size).await;
+        assert!(got.iter().enumerate().all(|(i, b)| *b == (i * 7 + 3) as u8));
+        let _client = writer.await.unwrap();
+        assert_eq!(
+            bodies(&store, &ring) > 0,
+            media,
+            "{size} bytes over {concurrency} slots"
+        );
+    }
+}
+
+/// A store that counts the slot writes under way at once.
+#[derive(Debug, Default)]
+struct Counting {
+    inner: MemorySlots,
+    now: std::sync::atomic::AtomicUsize,
+    peak: std::sync::atomic::AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl SlotStore for Counting {
+    async fn make_slot(&self, name: &str) -> Result<String, super::storage::StorageError> {
+        self.inner.make_slot(name).await
+    }
+    async fn set_slot(
+        &self,
+        id: &str,
+        description: &str,
+        body: Option<Bytes>,
+    ) -> Result<(), super::storage::StorageError> {
+        use std::sync::atomic::Ordering;
+        let now = self.now.fetch_add(1, Ordering::SeqCst) + 1;
+        self.peak.fetch_max(now, Ordering::SeqCst);
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        let set = self.inner.set_slot(id, description, body).await;
+        self.now.fetch_sub(1, Ordering::SeqCst);
+        set
+    }
+    async fn read_description(&self, id: &str) -> Result<String, super::storage::StorageError> {
+        self.inner.read_description(id).await
+    }
+    async fn read_body(&self, id: &str) -> Result<Bytes, super::storage::StorageError> {
+        self.inner.read_body(id).await
+    }
+}
+
+/// `TestSlotWriteInflightCap`: a deep ring still has at most twelve
+/// segments on their way.
+#[tokio::test]
+async fn at_most_twelve_segments_are_written_at_once() {
+    let store = Arc::new(Counting::default());
+    let dyn_store: Arc<dyn SlotStore> = store.clone();
+    let p = params(48);
+    let ring = make_ring(&dyn_store, "s", &p).await.unwrap();
+    let mut client = XdriveStream::slots(
+        Arc::clone(&dyn_store),
+        ring.up.clone(),
+        ring.down.clone(),
+        p,
     );
+    let mut server = XdriveStream::slots(dyn_store, ring.down.clone(), ring.up.clone(), p);
+    let size = 60 * SLOT_INLINE_LIMIT;
+    let writer = tokio::spawn(async move {
+        for _ in 0..60 {
+            client.write_all(&[9; SLOT_INLINE_LIMIT]).await.unwrap();
+        }
+        client
+    });
+    assert_eq!(read_exactly(&mut server, size).await.len(), size);
+    let _client = writer.await.unwrap();
+    let peak = store.peak.load(std::sync::atomic::Ordering::SeqCst);
+    // The reader's watermark writes count too: at most one at a time.
+    assert!(peak <= 12 + 1, "{peak} slot writes at once");
+    assert!(peak > 2, "the writes overlapped: {peak}");
+}
+
+/// The first segment reaches the announcement as it is cut, and still goes
+/// to slot 0 for a server that does not read it there.
+#[tokio::test]
+async fn the_first_segment_is_handed_to_the_announcement() {
+    let store = Arc::new(MemorySlots::default());
+    let dyn_store: Arc<dyn SlotStore> = store.clone();
+    let p = params(2);
+    let ring = make_ring(&dyn_store, "s", &p).await.unwrap();
+    let (mut client, announcer) = XdriveStream::slots_announced(
+        Arc::clone(&dyn_store),
+        ring.up.clone(),
+        ring.down.clone(),
+        p,
+    );
+    client.write_all(b"first bytes").await.unwrap();
+    let first = timeout(Duration::from_secs(5), announcer.first)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.as_ref(), b"first bytes");
+    let mut server = XdriveStream::slots(dyn_store, ring.down.clone(), ring.up.clone(), p);
+    assert_eq!(read_exactly(&mut server, 11).await, b"first bytes");
+    let slot0 = store.slots.lock().unwrap()[&ring.up.slots[0]].0.clone();
+    assert_eq!(SlotFrame::decode(&slot0).unwrap().seq, 0);
+}
+
+/// An announcement that failed fails the session's reads and writes.
+#[tokio::test]
+async fn a_failed_announcement_fails_the_session() {
+    let store = Arc::new(MemorySlots::default());
+    let dyn_store: Arc<dyn SlotStore> = store.clone();
+    let p = params(2);
+    let ring = make_ring(&dyn_store, "s", &p).await.unwrap();
+    let (mut client, announcer) =
+        XdriveStream::slots_announced(dyn_store, ring.up.clone(), ring.down.clone(), p);
+    announcer.fail("failed to announce session s > refused".to_owned());
+    let mut buf = [0; 8];
+    let read = timeout(Duration::from_secs(5), client.read(&mut buf))
+        .await
+        .unwrap();
+    assert!(read
+        .unwrap_err()
+        .to_string()
+        .contains("failed to announce session s"));
+    assert!(client.write_all(b"x").await.is_err());
+}
+
+/// A slot whose description does not decode fails the session after a
+/// minute; an empty one is idle and does not.
+#[tokio::test(start_paused = true)]
+async fn an_invalid_frame_fails_after_a_minute_and_an_empty_slot_never() {
+    for (description, fails) in [("not a frame", true), ("", false)] {
+        let store = Arc::new(MemorySlots::default());
+        let dyn_store: Arc<dyn SlotStore> = store.clone();
+        let p = params(2);
+        let ring = make_ring(&dyn_store, "s", &p).await.unwrap();
+        dyn_store
+            .set_slot(&ring.up.slots[0], description, None)
+            .await
+            .unwrap();
+        let mut server = XdriveStream::slots(dyn_store, ring.down.clone(), ring.up.clone(), p);
+        let mut buf = [0; 8];
+        let read = timeout(Duration::from_secs(90), server.read(&mut buf)).await;
+        match (read, fails) {
+            (Ok(Err(error)), true) => {
+                assert!(
+                    error.to_string().contains("holds an invalid frame"),
+                    "{error}"
+                )
+            }
+            (Err(_), false) => {}
+            (other, _) => panic!("{description:?}: {other:?}"),
+        }
+    }
+}
+
+/// A store whose first body read of each slot never answers.
+#[derive(Debug, Default)]
+struct SlowBodies {
+    inner: MemorySlots,
+    reads: std::sync::atomic::AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl SlotStore for SlowBodies {
+    async fn make_slot(&self, name: &str) -> Result<String, super::storage::StorageError> {
+        self.inner.make_slot(name).await
+    }
+    async fn set_slot(
+        &self,
+        id: &str,
+        description: &str,
+        body: Option<Bytes>,
+    ) -> Result<(), super::storage::StorageError> {
+        self.inner.set_slot(id, description, body).await
+    }
+    async fn read_description(&self, id: &str) -> Result<String, super::storage::StorageError> {
+        self.inner.read_description(id).await
+    }
+    async fn read_body(&self, id: &str) -> Result<Bytes, super::storage::StorageError> {
+        if self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+            std::future::pending::<()>().await;
+        }
+        self.inner.read_body(id).await
+    }
+}
+
+/// `TestSlotBodyHedge`: a body read that has not answered after two seconds
+/// gets a second request, which answers.
+#[tokio::test(start_paused = true)]
+async fn a_slow_body_read_is_hedged() {
+    let store = Arc::new(SlowBodies::default());
+    let dyn_store: Arc<dyn SlotStore> = store.clone();
+    let p = params(2);
+    let ring = make_ring(&dyn_store, "s", &p).await.unwrap();
+    let body = Bytes::from(vec![5u8; 40 << 10]);
+    let frame = SlotFrame::new(0, SLOT_MEDIA, &body);
+    dyn_store
+        .set_slot(&ring.up.slots[0], &frame.encode(), Some(body.clone()))
+        .await
+        .unwrap();
+    let mut server = XdriveStream::slots(dyn_store, ring.down.clone(), ring.up.clone(), p);
+    let started = tokio::time::Instant::now();
+    assert_eq!(read_exactly(&mut server, body.len()).await, body);
+    assert!(started.elapsed() >= Duration::from_secs(2));
+    assert_eq!(store.reads.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+/// A slot whose body never checks out against its frame fails the session
+/// after a minute.
+#[tokio::test(start_paused = true)]
+async fn a_body_that_never_checks_out_fails_after_a_minute() {
+    let store = Arc::new(MemorySlots::default());
+    let dyn_store: Arc<dyn SlotStore> = store.clone();
+    let p = params(2);
+    let ring = make_ring(&dyn_store, "s", &p).await.unwrap();
+    let frame = SlotFrame::new(0, SLOT_MEDIA, &Bytes::from(vec![1u8; 20 << 10]));
+    dyn_store
+        .set_slot(
+            &ring.up.slots[0],
+            &frame.encode(),
+            Some(Bytes::from(vec![2u8; 20 << 10])),
+        )
+        .await
+        .unwrap();
+    let mut server = XdriveStream::slots(dyn_store, ring.down.clone(), ring.up.clone(), p);
+    let mut buf = [0; 8];
+    let error = timeout(Duration::from_secs(90), server.read(&mut buf))
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert!(error.to_string().contains("has no usable body"), "{error}");
 }
 
 #[tokio::test]

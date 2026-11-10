@@ -1,7 +1,7 @@
 //! Xray-core's ChromeParrot first flight, byte for byte.
 //!
 //! `tests/fixtures/chrome-parrot/initials.json` holds what Xray-core
-//! v26.10.31's own Hysteria dialer sent with its default ChromeParrot QUIC
+//! v26.11.9's own Hysteria dialer sent with its default ChromeParrot QUIC
 //! stack, under a deterministic `crypto/rand`, together with every random read
 //! behind it (`tools/chrome-parrot-oracle`; `scripts/check-chrome-parrot-interop.sh`
 //! regenerates it and points `XRAY_CHROME_PARROT_INITIALS` at the fresh copy).

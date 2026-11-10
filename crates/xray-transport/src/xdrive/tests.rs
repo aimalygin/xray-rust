@@ -530,3 +530,119 @@ fn storages_keep_alive_as_xmux_says() {
     assert_eq!(keep_alive_for(20), Some(Duration::from_secs(20)));
     assert_eq!(keep_alive_for(-1), None);
 }
+
+/// A storage that keeps what was put.
+#[derive(Debug, Default)]
+struct Puts(std::sync::Mutex<Vec<(String, Bytes)>>);
+
+#[async_trait::async_trait]
+impl Storage for Puts {
+    async fn put(&self, name: &str, data: Bytes) -> Result<(), StorageError> {
+        self.0.lock().unwrap().push((name.to_owned(), data));
+        Ok(())
+    }
+    async fn get(&self, _: &str) -> Result<Bytes, StorageError> {
+        Err(StorageError::NotFound)
+    }
+    async fn delete(&self, _: &str) -> Result<(), StorageError> {
+        Ok(())
+    }
+    async fn list(&self, _: &str) -> Result<Vec<super::storage::Entry>, StorageError> {
+        Ok(Vec::new())
+    }
+}
+
+/// `TestSlotFirstAnnouncement` and `TestSlotFirstAnnouncementTooLarge`: a
+/// session is announced with its first segment inline when the
+/// announcement stays within 12000 bytes, and without it otherwise or when
+/// nothing was written in 25 ms.
+#[tokio::test]
+async fn sessions_in_slots_are_announced_with_their_first_segment() {
+    use super::slots::memory::MemorySlots;
+    use super::slots::{make_ring, SlotStore};
+    use tokio::io::AsyncWriteExt;
+    for (written, inline) in [(Some(100usize), true), (Some(9000), false), (None, false)] {
+        let slots: Arc<dyn SlotStore> = Arc::new(MemorySlots::default());
+        let params = super::params::Params::from_tuning(&super::XdriveTuning {
+            concurrency: 2,
+            flush_interval_ms: 1,
+            ..super::XdriveTuning::default()
+        });
+        let ring = make_ring(&slots, "s", &params).await.unwrap();
+        let (mut stream, announcer) = super::stream::XdriveStream::slots_announced(
+            slots,
+            ring.up.clone(),
+            ring.down.clone(),
+            params,
+        );
+        if let Some(size) = written {
+            stream.write_all(&vec![7u8; size]).await.unwrap();
+        }
+        let puts = Arc::new(Puts::default());
+        super::announce(
+            Arc::clone(&puts) as Arc<dyn Storage>,
+            "s".to_owned(),
+            ring.clone(),
+            announcer,
+        )
+        .await;
+        let puts = puts.0.lock().unwrap();
+        let (name, body) = &puts[0];
+        assert!(
+            name.starts_with("sessions/") && name.ends_with("-s"),
+            "{name}"
+        );
+        let announced = super::slots::Ring::from_json(body).unwrap();
+        assert_eq!(
+            (announced.up.clone(), announced.down.clone()),
+            (ring.up.clone(), ring.down.clone())
+        );
+        assert_eq!(
+            announced.first.is_some(),
+            inline,
+            "{written:?} bytes: {}",
+            String::from_utf8_lossy(body)
+        );
+        if inline {
+            assert_eq!(announced.first.unwrap().len(), written.unwrap());
+        }
+    }
+}
+
+/// Google Drive's spare rings are made with the slot path's numbers: 64 slots
+/// a way when the configuration leaves `concurrency` at zero.
+#[test]
+fn drive_spares_take_the_slot_paths_numbers() {
+    let transport = XdriveTransport::new(XdriveConfig {
+        storage: XdriveStorageConfig::GoogleDrive {
+            folder: "folder".to_owned(),
+            secrets: ["a", "b", "c"]
+                .map(|s| zeroize::Zeroizing::new(s.to_owned()))
+                .to_vec(),
+            http: XdriveHttpConfig {
+                tls: crate::TlsClientConfig {
+                    server_name: String::new(),
+                    allow_insecure: false,
+                    pinned_peer_cert_sha256: Vec::new(),
+                    verify_peer_cert_by_name: Vec::new(),
+                    alpn: Vec::new(),
+                    fingerprint: None,
+                },
+                fronting: None,
+                xmux: crate::stream::XhttpXmuxPolicy::default(),
+                keep_alive: None,
+                h3: None,
+            },
+        },
+        tuning: XdriveTuning::default(),
+    });
+    assert_eq!(transport.slot_params.concurrency, 64);
+    assert_eq!(transport.spares.as_ref().unwrap().params().concurrency, 64);
+    let local = XdriveTransport::new(XdriveConfig {
+        storage: XdriveStorageConfig::Local {
+            folder: "/tmp".to_owned(),
+        },
+        tuning: XdriveTuning::default(),
+    });
+    assert!(local.spares.is_none());
+}

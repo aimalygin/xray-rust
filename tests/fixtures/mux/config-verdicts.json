@@ -1,0 +1,272 @@
+{
+ "comment": "Mux cases with what `xray run -test` of Xray-core v26.11.9 says of each: \"ok\" or a substring of its error. Rechecked by scripts/check-config-verdicts.py in scripts/check-xray-verdicts.sh.",
+ "cases": [
+  {
+   "name": "enabled-defaults",
+   "outbound": {
+    "protocol": "vless",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "none"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "example.com"
+     }
+    },
+    "mux": {
+     "enabled": true
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "concurrency-1",
+   "outbound": {
+    "protocol": "vless",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "none"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "example.com"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "concurrency": 1
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "concurrency-128",
+   "outbound": {
+    "protocol": "vless",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "none"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "example.com"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "concurrency": 128
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "concurrency-129",
+   "outbound": {
+    "protocol": "vless",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "none"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "example.com"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "concurrency": 129
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "concurrency-int16-max",
+   "outbound": {
+    "protocol": "vless",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "none"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "example.com"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "concurrency": 32767,
+     "xudpConcurrency": 32767
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "concurrency-int16-min",
+   "outbound": {
+    "protocol": "vless",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "none"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "example.com"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "concurrency": -32768,
+     "xudpConcurrency": -32768
+    }
+   },
+   "xray": "ok"
+  },
+  {
+   "name": "concurrency-over-int16",
+   "outbound": {
+    "protocol": "vless",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "none"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "example.com"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "concurrency": 32768
+    }
+   },
+   "xray": "json: cannot unmarshal number 32768 into Go struct field Config.outbounds.0.mux.concurrency of type int16"
+  },
+  {
+   "name": "xudp-over-int16",
+   "outbound": {
+    "protocol": "vless",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "none"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "example.com"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "xudpConcurrency": 32768
+    }
+   },
+   "xray": "json: cannot unmarshal number 32768 into Go struct field Config.outbounds.0.mux.xudpConcurrency of type int16"
+  },
+  {
+   "name": "concurrency-under-int16",
+   "outbound": {
+    "protocol": "vless",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "none"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "example.com"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "concurrency": -32769
+    }
+   },
+   "xray": "json: cannot unmarshal number -32769 into Go struct field Config.outbounds.0.mux.concurrency of type int16"
+  },
+  {
+   "name": "concurrency-string",
+   "outbound": {
+    "protocol": "vless",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "none"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "example.com"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "concurrency": "8"
+    }
+   },
+   "xray": "json: cannot unmarshal string into Go struct field Config.outbounds.0.mux.concurrency of type int16"
+  },
+  {
+   "name": "xudp-200-allow",
+   "outbound": {
+    "protocol": "vless",
+    "settings": {
+     "address": "192.0.2.1",
+     "port": 443,
+     "id": "27848739-7e62-4138-9fd3-098a63964b6b",
+     "encryption": "none"
+    },
+    "streamSettings": {
+     "network": "raw",
+     "security": "tls",
+     "tlsSettings": {
+      "serverName": "example.com"
+     }
+    },
+    "mux": {
+     "enabled": true,
+     "concurrency": 8,
+     "xudpConcurrency": 200,
+     "xudpProxyUDP443": "allow"
+    }
+   },
+   "xray": "ok"
+  }
+ ]
+}

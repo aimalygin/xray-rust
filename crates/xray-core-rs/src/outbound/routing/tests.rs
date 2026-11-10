@@ -102,7 +102,7 @@ async fn domain_strategy_matches_pinned_go_routing_oracle() {
     assert_eq!(fixture["schemaVersion"], 1);
     assert_eq!(
         fixture["xrayCoreCommit"],
-        "a4a3dff5b20c2faae567b742c172c7b95e75c083"
+        "676eaf66f8f05d4d558ee7a74b4736623d3feeb9"
     );
     let cases = fixture["cases"].as_array().unwrap();
     assert!(!cases.is_empty());

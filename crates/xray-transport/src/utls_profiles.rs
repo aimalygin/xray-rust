@@ -35,6 +35,18 @@ pub(crate) struct UtlsClientHelloProfile {
     pub extensions: &'static [UtlsExtension],
     pub padding_length: Option<usize>,
     pub encrypted_client_hello: Option<UtlsEchGrease>,
+    /// The trust anchor IDs of a `trust_anchors` extension
+    /// (draft-ietf-tls-trust-anchor-ids), sent as they are: uTLS writes the
+    /// same fixed list into every hello of the profile. Empty for a profile
+    /// without the extension.
+    pub trust_anchor_ids: &'static [&'static [u8]],
+    /// For a profile whose uTLS spec runs `ShuffleChromeTLSExtensions`, the
+    /// spec's extensions in the order it lists them, before the shuffle uTLS
+    /// draws anew for every hello. `extensions` then holds the order of the
+    /// zero-seed draw the oracle fixtures record, and the two GREASE
+    /// extensions, padding and pre_shared_key stay where the spec has them.
+    /// Empty for a profile whose order is fixed.
+    pub unshuffled_extensions: &'static [u16],
 }
 
 /// What a profile's ECH GREASE extension draws from, per connection.
@@ -51,23 +63,22 @@ pub(crate) struct UtlsEchGrease {
     pub lengths: &'static [usize],
 }
 
-/// `BoringGREASEECH`, the scheme BoringSSL — and so Chrome — uses by default.
+/// `BoringGREASEECH`, the scheme BoringSSL — and so Chrome — uses by default,
+/// on TCP for the Chrome profiles and on QUIC for ChromeParrot alike.
 ///
 /// One cipher suite, so the AEAD really is fixed here: AES-128-GCM is what
 /// Chrome always sends, not a simplification on our part.
 ///
-/// uTLS draws the payload length from `{128, 160, 192, 224}`, which is
-/// `{186, 218, 250, 282}` once the tag and the outer header are added. We pin
-/// the first: both the raw-hello and the shape fixtures record one length per
-/// fingerprint, so a per-connection draw would fail those byte-exact
-/// comparisons three runs in four. Unpinning it means teaching
-/// `clienthello_shape.go` to force a candidate index and committing a fixture
-/// per candidate, so the guard can assert the hello matches one of the four
-/// uTLS can produce. Until then this is a known divergence, recorded in
-/// `docs/config-compatibility.md`.
+/// uTLS draws the payload length from `{128, 160, 192, 224}` for every hello,
+/// which is `{186, 218, 250, 282}` once the tag and the outer header are added,
+/// and so does every hello here (`HelloDraws`). The oracle fixtures are made
+/// one per candidate: `clienthello_shape.go -ech-payload-length` forces each
+/// in turn, and the byte-exact comparisons hold a hello of each length to its
+/// own fixture. The longer three push Chrome 120's hello past BoringSSL's
+/// padding window, which `utls_shaping` follows as uTLS does.
 pub(crate) const ECH_GREASE_BORING: UtlsEchGrease = UtlsEchGrease {
     aead_ids: &[HPKE_AEAD_AES_128_GCM],
-    lengths: &[186],
+    lengths: &[186, 218, 250, 282],
 };
 
 /// Firefox's own GREASE scheme (`u_parrots.go`).
@@ -104,6 +115,213 @@ pub(crate) struct UtlsExtension {
 
 const GREASE: u16 = 0x0a0a;
 const GREASE_SECOND: u16 = 0x1a1a;
+
+// The extensions of uTLS's Chrome specs that run `ShuffleChromeTLSExtensions`,
+// in the order `u_parrots.go` (a13c59ffe98b) lists them; see
+// `UtlsClientHelloProfile::unshuffled_extensions`.
+const CHROME_106_SHUFFLE_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    GREASE_SECOND,
+    0x0015,
+];
+const CHROME_115_PQ_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    GREASE_SECOND,
+    0x0015,
+];
+const CHROME_120_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    0xfe0d,
+    GREASE_SECOND,
+    0x0015,
+];
+const CHROME_120_PQ_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    0xfe0d,
+    GREASE_SECOND,
+];
+const CHROME_131_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    0xfe0d,
+    GREASE_SECOND,
+];
+const CHROME_133_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x44cd,
+    0xfe0d,
+    GREASE_SECOND,
+];
+const CHROME_155_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x44cd,
+    0xca34,
+    0xfe0d,
+    GREASE_SECOND,
+];
+const CHROME_112_PSK_SHUF_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    GREASE_SECOND,
+    0x0029,
+];
+const CHROME_114_PADDING_PSK_SHUF_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    GREASE_SECOND,
+    0x0015,
+    0x0029,
+];
+const CHROME_115_PQ_PSK_SPEC: &[u16] = &[
+    GREASE,
+    0x0000,
+    0x0017,
+    0xff01,
+    0x000a,
+    0x000b,
+    0x0023,
+    0x0010,
+    0x0005,
+    0x000d,
+    0x0012,
+    0x0033,
+    0x002d,
+    0x002b,
+    0x001b,
+    0x4469,
+    GREASE_SECOND,
+    0x0029,
+];
 
 const PROFILE_0_CIPHERS: &[u16] = &[
     0x0a0a, 0x1301, 0x1302, 0x1303, 0xc02b, 0xc02f, 0xc02c, 0xc030, 0xcca9, 0xcca8, 0xc013, 0xc014,
@@ -224,6 +442,8 @@ const PROFILE_0: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_0_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: Some(ECH_GREASE_BORING),
+    trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_133_SPEC,
 };
 
 const PROFILE_1_CIPHERS: &[u16] = &[
@@ -329,6 +549,8 @@ const PROFILE_1: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_1_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: Some(ECH_GREASE_FIREFOX),
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_2_CIPHERS: &[u16] = &[
@@ -434,6 +656,8 @@ const PROFILE_2: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_2_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_3_CIPHERS: &[u16] = &[
@@ -536,6 +760,8 @@ const PROFILE_3: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_3_EXTENSIONS,
     padding_length: Some(190),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_4_CIPHERS: &[u16] = &[
@@ -595,6 +821,8 @@ const PROFILE_4: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_4_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_5_CIPHERS: &[u16] = &[
@@ -704,6 +932,8 @@ const PROFILE_5: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_5_EXTENSIONS,
     padding_length: Some(209),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_6_CIPHERS: &[u16] = &[
@@ -776,6 +1006,8 @@ const PROFILE_6: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_6_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_7_CIPHERS: &[u16] = &[
@@ -893,6 +1125,8 @@ const PROFILE_7: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_7_EXTENSIONS,
     padding_length: Some(200),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_8_CIPHERS: &[u16] = &[
@@ -982,6 +1216,8 @@ const PROFILE_8: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_8_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_9_CIPHERS: &[u16] = &[
@@ -1044,6 +1280,8 @@ const PROFILE_9: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_9_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_10_CIPHERS: &[u16] = &[
@@ -1145,6 +1383,8 @@ const PROFILE_10: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_10_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: Some(ECH_GREASE_FIREFOX),
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_11_CIPHERS: &[u16] = &[
@@ -1266,6 +1506,8 @@ const PROFILE_11: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_11_EXTENSIONS,
     padding_length: Some(14),
     encrypted_client_hello: Some(ECH_GREASE_BORING),
+    trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_120_SPEC,
 };
 
 const PROFILE_12_CIPHERS: &[u16] = &[
@@ -1387,6 +1629,8 @@ const PROFILE_12: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_12_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: Some(ECH_GREASE_BORING),
+    trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_131_SPEC,
 };
 
 const PROFILE_13_CIPHERS: &[u16] = &[
@@ -1475,6 +1719,8 @@ const PROFILE_13: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_13_EXTENSIONS,
     padding_length: Some(210),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_14_CIPHERS: &[u16] = &[
@@ -1592,6 +1838,8 @@ const PROFILE_14: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_14_EXTENSIONS,
     padding_length: Some(204),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_15_CIPHERS: &[u16] = &[
@@ -1705,6 +1953,8 @@ const PROFILE_15: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_15_EXTENSIONS,
     padding_length: Some(201),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_16_CIPHERS: &[u16] = &[
@@ -1771,6 +2021,8 @@ const PROFILE_16: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_16_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_17_CIPHERS: &[u16] = &[
@@ -1839,6 +2091,8 @@ const PROFILE_17: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_17_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_18_CIPHERS: &[u16] = &[
@@ -1907,6 +2161,8 @@ const PROFILE_18: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_18_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_19_CIPHERS: &[u16] = &[
@@ -2004,6 +2260,8 @@ const PROFILE_19: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_19_EXTENSIONS,
     padding_length: Some(147),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_20_CIPHERS: &[u16] = &[
@@ -2101,6 +2359,8 @@ const PROFILE_20: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_20_EXTENSIONS,
     padding_length: Some(147),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_21_CIPHERS: &[u16] = &[
@@ -2202,6 +2462,8 @@ const PROFILE_21: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_21_EXTENSIONS,
     padding_length: Some(133),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_22_CIPHERS: &[u16] = &[
@@ -2303,6 +2565,8 @@ const PROFILE_22: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_22_EXTENSIONS,
     padding_length: Some(148),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_23_CIPHERS: &[u16] = &[
@@ -2404,6 +2668,8 @@ const PROFILE_23: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_23_EXTENSIONS,
     padding_length: Some(139),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_24_CIPHERS: &[u16] = &[
@@ -2488,6 +2754,8 @@ const PROFILE_24: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_24_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_25_CIPHERS: &[u16] = &[
@@ -2572,6 +2840,8 @@ const PROFILE_25: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_25_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_26_CIPHERS: &[u16] = &[
@@ -2685,6 +2955,8 @@ const PROFILE_26: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_26_EXTENSIONS,
     padding_length: Some(201),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_27_CIPHERS: &[u16] = &[
@@ -2794,6 +3066,8 @@ const PROFILE_27: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_27_EXTENSIONS,
     padding_length: Some(205),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_28_CIPHERS: &[u16] = &[
@@ -2903,6 +3177,8 @@ const PROFILE_28: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_28_EXTENSIONS,
     padding_length: Some(209),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_29_CIPHERS: &[u16] = &[
@@ -3012,6 +3288,8 @@ const PROFILE_29: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_29_EXTENSIONS,
     padding_length: Some(209),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_30_CIPHERS: &[u16] = &[
@@ -3129,6 +3407,8 @@ const PROFILE_30: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_30_EXTENSIONS,
     padding_length: Some(200),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_31_CIPHERS: &[u16] = &[
@@ -3246,6 +3526,8 @@ const PROFILE_31: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_31_EXTENSIONS,
     padding_length: Some(204),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_32_CIPHERS: &[u16] = &[
@@ -3363,6 +3645,8 @@ const PROFILE_32: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_32_EXTENSIONS,
     padding_length: Some(204),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_33_CIPHERS: &[u16] = &[
@@ -3480,6 +3764,8 @@ const PROFILE_33: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_33_EXTENSIONS,
     padding_length: Some(204),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_106_SHUFFLE_SPEC,
 };
 
 const PROFILE_34_CIPHERS: &[u16] = &[
@@ -3560,6 +3846,8 @@ const PROFILE_34: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_34_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_35_CIPHERS: &[u16] = &[
@@ -3640,6 +3928,8 @@ const PROFILE_35: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_35_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_36_CIPHERS: &[u16] = &[
@@ -3745,6 +4035,8 @@ const PROFILE_36: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_36_EXTENSIONS,
     padding_length: Some(195),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_37_CIPHERS: &[u16] = &[
@@ -3858,6 +4150,8 @@ const PROFILE_37: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_37_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
 };
 
 const PROFILE_38_CIPHERS: &[u16] = &[
@@ -3971,6 +4265,8 @@ const PROFILE_38: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_38_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_112_PSK_SHUF_SPEC,
 };
 
 const PROFILE_39_CIPHERS: &[u16] = &[
@@ -4088,6 +4384,8 @@ const PROFILE_39: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_39_EXTENSIONS,
     padding_length: Some(204),
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_114_PADDING_PSK_SHUF_SPEC,
 };
 
 const PROFILE_40_CIPHERS: &[u16] = &[
@@ -4205,6 +4503,8 @@ const PROFILE_40: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_40_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_115_PQ_SPEC,
 };
 
 const PROFILE_41_CIPHERS: &[u16] = &[
@@ -4322,6 +4622,8 @@ const PROFILE_41: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_41_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_115_PQ_PSK_SPEC,
 };
 
 const PROFILE_42_CIPHERS: &[u16] = &[
@@ -4443,6 +4745,8 @@ const PROFILE_42: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_42_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: Some(ECH_GREASE_BORING),
+    trust_anchor_ids: &[],
+    unshuffled_extensions: CHROME_120_PQ_SPEC,
 };
 
 // Xray's `randomizednoalpn` preset: `HelloRandomizedNoALPN` under the weights
@@ -4535,6 +4839,133 @@ const PROFILE_43: UtlsClientHelloProfile = UtlsClientHelloProfile {
     extensions: PROFILE_43_EXTENSIONS,
     padding_length: None,
     encrypted_client_hello: None,
+    trust_anchor_ids: &[],
+    unshuffled_extensions: &[],
+};
+
+// Chrome 155 (`HelloChrome_155`), the profile `chrome` names since Xray-core
+// v26.11.9: Chrome 133's, with GREASE and ML-DSA 44, 65 and 87 ahead of the
+// signature algorithms and a `trust_anchors` extension carrying the snapshot
+// of the Chrome Root Store IDs in uTLS's `u_chrome155.go`. The order is the
+// one uTLS's Chrome shuffle gives under the oracle's zeroed `crypto/rand`,
+// as for every other Chrome profile here.
+const PROFILE_44_SIGALGS: &[u16] = &[
+    GREASE, 0x0904, 0x0905, 0x0906, 0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
+];
+const PROFILE_44_TRUST_ANCHORS: &[&[u8]] = &[
+    &[0x82, 0xdf, 0x13, 0x02, 0x01],
+    &[0x82, 0xdf, 0x13, 0x02, 0x06],
+    &[0x82, 0xdf, 0x13, 0x02, 0x0d],
+    &[0x82, 0xdf, 0x13, 0x02, 0x0e],
+    &[0x82, 0xdf, 0x13, 0x02, 0x0f],
+    &[0x82, 0xdf, 0x13, 0x02, 0x12],
+    &[0x82, 0xdf, 0x13, 0x02, 0x13],
+    &[0x82, 0xdf, 0x13, 0x02, 0x14],
+    &[0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x07],
+    &[0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x08],
+    &[0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x09],
+    &[0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x0a],
+    &[0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x0b],
+    &[0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x0c],
+    &[0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x0d],
+    &[0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x12],
+    &[0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01, 0x13],
+    &[0xd6, 0x79, 0x09, 0x01],
+    &[0xd6, 0x79, 0x09, 0x04],
+    &[0xd6, 0x79, 0x09, 0x05],
+    &[0xd6, 0x79, 0x09, 0x06],
+    &[0xd6, 0x79, 0x09, 0x07],
+    &[0xd6, 0x79, 0x09, 0x08],
+    &[0xd6, 0x79, 0x09, 0x0a],
+    &[0xd6, 0x79, 0x09, 0x0b],
+    &[0xd6, 0x79, 0x09, 0x0c],
+    &[0xd6, 0x79, 0x09, 0x0d],
+    &[0xd6, 0x79, 0x09, 0x0f],
+];
+const PROFILE_44_EXTENSIONS: &[UtlsExtension] = &[
+    UtlsExtension {
+        extension_type: GREASE,
+        payload_len: 0,
+    },
+    UtlsExtension {
+        extension_type: 0x002b,
+        payload_len: 7,
+    },
+    UtlsExtension {
+        extension_type: 0x0005,
+        payload_len: 5,
+    },
+    UtlsExtension {
+        extension_type: 0x0023,
+        payload_len: 0,
+    },
+    UtlsExtension {
+        extension_type: 0xff01,
+        payload_len: 1,
+    },
+    UtlsExtension {
+        extension_type: 0x0012,
+        payload_len: 0,
+    },
+    UtlsExtension {
+        extension_type: 0x001b,
+        payload_len: 3,
+    },
+    UtlsExtension {
+        extension_type: 0xca34,
+        payload_len: 186,
+    },
+    UtlsExtension {
+        extension_type: 0x002d,
+        payload_len: 2,
+    },
+    UtlsExtension {
+        extension_type: 0x0000,
+        payload_len: 16,
+    },
+    UtlsExtension {
+        extension_type: 0x000d,
+        payload_len: 26,
+    },
+    UtlsExtension {
+        extension_type: 0x0010,
+        payload_len: 14,
+    },
+    UtlsExtension {
+        extension_type: 0x0017,
+        payload_len: 0,
+    },
+    UtlsExtension {
+        extension_type: 0xfe0d,
+        payload_len: 186,
+    },
+    UtlsExtension {
+        extension_type: 0x000b,
+        payload_len: 2,
+    },
+    UtlsExtension {
+        extension_type: 0x44cd,
+        payload_len: 5,
+    },
+    UtlsExtension {
+        extension_type: 0x0033,
+        payload_len: 1263,
+    },
+    UtlsExtension {
+        extension_type: 0x000a,
+        payload_len: 12,
+    },
+    UtlsExtension {
+        extension_type: GREASE_SECOND,
+        payload_len: 1,
+    },
+];
+const PROFILE_44: UtlsClientHelloProfile = UtlsClientHelloProfile {
+    signature_algorithms: PROFILE_44_SIGALGS,
+    extensions: PROFILE_44_EXTENSIONS,
+    trust_anchor_ids: PROFILE_44_TRUST_ANCHORS,
+    unshuffled_extensions: CHROME_155_SPEC,
+    ..PROFILE_0
 };
 
 /// Resolves a fingerprint name to the ClientHello shape it stands for.
@@ -4619,8 +5050,8 @@ pub fn draw_modern_fingerprint() -> &'static str {
 
 /// Maps 64 bits of entropy onto the name table.
 ///
-/// Multiply-shift rather than `% len`: 11 divides neither 2^64 nor any power of
-/// two, so a modulo would make the first names likelier than the last. This
+/// Multiply-shift rather than `% len`: 12 has the factor 3, which divides no
+/// power of two, so a modulo would make the first names likelier than the last. This
 /// keeps the skew under `len / 2^64` -- around 6e-19 -- and, unlike the
 /// rejection sampling an exactly-uniform draw needs, it cannot loop.
 fn modern_fingerprint_at(entropy: u64) -> &'static str {
@@ -4631,8 +5062,9 @@ fn modern_fingerprint_at(entropy: u64) -> &'static str {
 
 fn named_profile(fingerprint: &str) -> Option<&'static UtlsClientHelloProfile> {
     match fingerprint {
-        "chrome" => Some(&PROFILE_0),
-        "hellochrome_auto" => Some(&PROFILE_0),
+        "chrome" => Some(&PROFILE_44),
+        "hellochrome_auto" => Some(&PROFILE_44),
+        "hellochrome_155" => Some(&PROFILE_44),
         "hellochrome_133" => Some(&PROFILE_0),
         "firefox" => Some(&PROFILE_1),
         "hellofirefox_auto" => Some(&PROFILE_1),
@@ -4695,5 +5127,99 @@ fn named_profile(fingerprint: &str) -> Option<&'static UtlsClientHelloProfile> {
         "hellochrome_115_pq_psk" => Some(&PROFILE_41),
         "hellochrome_120_pq" => Some(&PROFILE_42),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Whether `a` is the shape `b` is: consts have no stable address, so
+    /// the comparison is by what the profiles hold.
+    fn same(a: Option<&UtlsClientHelloProfile>, b: &UtlsClientHelloProfile) -> bool {
+        let extensions = |p: &UtlsClientHelloProfile| {
+            p.extensions
+                .iter()
+                .map(|e| (e.extension_type, e.payload_len))
+                .collect::<Vec<_>>()
+        };
+        a.is_some_and(|a| {
+            a.signature_algorithms == b.signature_algorithms
+                && a.trust_anchor_ids == b.trust_anchor_ids
+                && a.cipher_suites == b.cipher_suites
+                && extensions(a) == extensions(b)
+        })
+    }
+
+    /// Xray-core v26.11.9: `chrome`, `hellochrome_auto` and the new
+    /// `hellochrome_155` are Chrome 155; `hellochrome_133` keeps Chrome 133.
+    #[test]
+    fn chrome_names_resolve_as_xray_core_v26_11_9_resolves_them() {
+        for name in ["chrome", "hellochrome_auto", "hellochrome_155"] {
+            assert!(same(profile_for_fingerprint(name), &PROFILE_44), "{name}");
+            assert!(
+                same(reality_profile_for_fingerprint(name), &PROFILE_44),
+                "{name}"
+            );
+        }
+        assert!(same(profile_for_fingerprint("hellochrome_133"), &PROFILE_0));
+        assert!(same(
+            reality_profile_for_fingerprint("hellochrome_133"),
+            &PROFILE_0
+        ));
+    }
+
+    /// Chrome 155 is Chrome 133 with GREASE and ML-DSA ahead of its signature
+    /// algorithms and a `trust_anchors` extension; nothing else differs.
+    #[test]
+    fn chrome_155_is_chrome_133_with_its_three_changes() {
+        let (old, new) = (&PROFILE_0, &PROFILE_44);
+        assert_eq!(new.cipher_suites, old.cipher_suites);
+        assert_eq!(new.supported_groups, old.supported_groups);
+        assert_eq!(new.supported_versions, old.supported_versions);
+        assert_eq!(new.alpn_protocols, old.alpn_protocols);
+        assert_eq!(
+            new.certificate_compression_algorithms,
+            old.certificate_compression_algorithms
+        );
+        assert_eq!(new.padding_length, old.padding_length);
+        assert_eq!(
+            new.key_shares
+                .iter()
+                .map(|share| (share.group, share.key_exchange_len))
+                .collect::<Vec<_>>(),
+            old.key_shares
+                .iter()
+                .map(|share| (share.group, share.key_exchange_len))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            new.signature_algorithms[..4],
+            [GREASE, 0x0904, 0x0905, 0x0906]
+        );
+        assert_eq!(new.signature_algorithms[4..], *old.signature_algorithms);
+        let types = |profile: &UtlsClientHelloProfile| {
+            let mut types = profile
+                .extensions
+                .iter()
+                .map(|extension| extension.extension_type)
+                .collect::<Vec<_>>();
+            types.sort_unstable();
+            types
+        };
+        let mut expected = types(old);
+        expected.push(0xca34);
+        expected.sort_unstable();
+        assert_eq!(types(new), expected);
+        assert!(old.trust_anchor_ids.is_empty());
+        assert_eq!(new.trust_anchor_ids.len(), 28);
+        assert_eq!(
+            new.trust_anchor_ids
+                .iter()
+                .map(|id| 1 + id.len())
+                .sum::<usize>()
+                + 2,
+            186
+        );
     }
 }

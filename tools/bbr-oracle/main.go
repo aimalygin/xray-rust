@@ -643,7 +643,7 @@ func main() {
 		},
 	}
 	out := trace{
-		Source: "Xray-core v26.10.31 transport/internet/hysteria/congestion/bbr, driven by tools/bbr-oracle",
+		Source: "Xray-core v26.11.9 transport/internet/hysteria/congestion/bbr, driven by tools/bbr-oracle",
 		Steps:  stepFormat,
 		State:  strings.Join(stateFields, ","),
 	}

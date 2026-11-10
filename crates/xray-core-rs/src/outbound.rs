@@ -931,7 +931,8 @@ impl FreedomOutbound {
     }
 
     /// Xray-core's `defaultBlockAllRule`, which follows freedom's own final
-    /// rules for connections from a VLESS reverse proxy.
+    /// rules for connections from a VLESS reverse proxy and, since v26.11.9,
+    /// logs at warning.
     fn reverse_rule() -> FreedomFinalRule {
         FreedomFinalRule {
             action: xray_config::FreedomRuleAction::Block,
@@ -939,6 +940,7 @@ impl FreedomOutbound {
             port_ranges: None,
             ip_matchers: None,
             block_delay: None,
+            log_level: xray_config::FreedomRuleLogLevel::Warning,
         }
     }
 
@@ -8960,6 +8962,13 @@ mod tests {
                 xray_config::StreamTransport::Xhttp(_) => {
                     built_xhttp_transport(outbound)
                         .h3_quic_config()
+                        .chrome_parrot
+                }
+                xray_config::StreamTransport::Xdrive(xdrive) => {
+                    xdrive::http_config(xdrive, &outbound.stream)
+                        .unwrap()
+                        .h3
+                        .expect("XDRIVE over exactly h3")
                         .chrome_parrot
                 }
                 // outbound::masque's own tests check MASQUE.
