@@ -289,6 +289,22 @@ With ChromeParrot on, a dial:
   the handshake is confirmed every datagram carries one packet: the Initial
   ACK alone and padded, then a Handshake ACK apart from the Finished.
 
+Two consequences, the same as with Xray's own client:
+
+- Many parallel XHTTP H3 downloads cost memory. The 6 MiB and 15 MiB windows
+  apply on constrained devices too, and a reader that falls behind lets the
+  server fill them: with 32 parallel downloads the client's peak memory grew
+  by about 30–40 MiB in a Linux measurement, while 8 or fewer, and Hysteria,
+  showed no difference. `disableChromeParrot: true` brings back the previous
+  windows (on XHTTP H3, 2 and 3 MiB to start, held there on a constrained
+  host).
+- Hysteria loses large UDP replies from Xray-core v26.5.9 … v26.7.28 servers.
+  Their quic-go fork (`6c6cc9bcb716`) drops every fragment of a UDP reply it
+  has to split once the client advertises 65,536-byte DATAGRAM frames, so a
+  4 KiB reply never arrives, while TCP and small datagrams work. Xray-core's
+  own client meets the same. Update the server to v26.9.9 or newer, or set
+  `disableChromeParrot: true`. Servers v26.1.31 … v26.4.25 were not checked.
+
 `tools/chrome-parrot-oracle` runs Xray-core's own Hysteria dialer under a
 deterministic `crypto/rand` and records its first four Initial datagrams,
 the first flight and its retransmission, with every random read behind them.
