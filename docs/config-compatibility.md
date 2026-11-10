@@ -848,6 +848,11 @@ server does:
   (`1xx`) head goes on as it came. A response that does not come or does not
   parse gets Xray's `503 Service Unavailable`, as does a request routed to a
   DNS outbound; a blackhole's reply is the response.
+- A request head, and a response head it forwards, holds at most 1 MiB of
+  header lines, Go's `http.DefaultMaxHeaderBytes`; a longer one is read as a
+  malformed head. Xray-core reads a head of any size. A header whose name is
+  not a token, such as `Transfer-Encoding : chunked`, is not forwarded, as
+  Go's `Header.writeSubset` leaves it out.
 - A request that names no host, such as `GET / HTTP/1.1`, gets Xray's
   `400 Bad Request` with `Connection: close` and `Proxy-Connection: close`.
 - Chunked bodies are decoded and chunked again. Go merges chunks whose
