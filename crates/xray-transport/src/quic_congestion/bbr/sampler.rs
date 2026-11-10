@@ -747,4 +747,18 @@ mod tests {
         assert_eq!(extra, 3000 + 500 - 1000);
         assert_eq!(tracker.get(), 2500);
     }
+
+    /// The first ACK after two idle minutes at 100 Mbit/s: far fewer bytes
+    /// than the bandwidth would have delivered, so the epoch restarts and
+    /// nothing counts as extra. Go's wrapped product made it a gigabyte.
+    #[test]
+    fn an_ack_after_a_long_idle_restarts_the_aggregation_epoch() {
+        let mut tracker = MaxAckHeightTracker::new(10);
+        assert_eq!(tracker.update(100_000_000, false, 1, T, 1200), 0);
+        assert_eq!(
+            tracker.update(100_000_000, false, 2, T + 120_000 * MS, 1200),
+            0
+        );
+        assert_eq!(tracker.get(), 0);
+    }
 }

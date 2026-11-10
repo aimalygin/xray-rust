@@ -3477,6 +3477,42 @@ fn chrome_parrot_handshake_packs_one_packet_per_datagram() {
     assert_eq!(frames(&decrypted[2]), ["CRYPTO"], "the Finished alone");
 }
 
+/// A ChromeParrot client that closes before its handshake is confirmed sends
+/// the close once. One packet per datagram used to stop the close at the
+/// first space that had keys, so the last space never got its frame, the
+/// connection never counted the close as sent, and every poll made another
+/// close packet until the close timer ran out.
+#[test]
+fn chrome_parrot_close_before_the_handshake_is_confirmed_is_sent_once() {
+    let _guard = subscribe();
+    let mut pair = Pair::default();
+    let mut transport = TransportConfig::default();
+    transport.chrome_parrot(true).initial_mtu(1250).min_mtu(1250);
+    let mut config = client_config();
+    config.transport_config(Arc::new(transport));
+    let ch = pair.begin_connect(config);
+    // The ClientHello and the server's flight, then the client's Finished:
+    // the client holds Handshake and 1-RTT keys and has not yet seen
+    // HANDSHAKE_DONE.
+    pair.drive_client();
+    pair.drive_server();
+    pair.drive_client();
+
+    let now = pair.time;
+    let client = pair.client_conn_mut(ch);
+    client.close(now, VarInt::from_u32(0), Bytes::new());
+    let mut buf = Vec::with_capacity(2048);
+    let mut datagrams = 0;
+    while datagrams < 16 && client.poll_transmit(now, 10, &mut buf).is_some() {
+        buf.clear();
+        datagrams += 1;
+    }
+    assert!(
+        (1..=2).contains(&datagrams),
+        "{datagrams} close datagrams for one close"
+    );
+}
+
 /// A ChromeParrot client numbers its first Initial packet 1, as quic-go's
 /// ChromeParrot does; a stock one starts at 0.
 #[test]
