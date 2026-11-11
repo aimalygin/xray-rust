@@ -493,7 +493,11 @@ mod tests {
         });
         client.write_all(b"request").await.unwrap();
         let mut received = Vec::new();
-        client.read_to_end(&mut received).await.unwrap();
+        // The download has to end while the upload is still open.
+        tokio::time::timeout(Duration::from_secs(30), client.read_to_end(&mut received))
+            .await
+            .expect("the server's close reaches the client")
+            .unwrap();
         client.shutdown().await.unwrap();
         server.await.unwrap();
         let copied = relay.await.unwrap().unwrap();
