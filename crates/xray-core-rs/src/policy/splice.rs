@@ -23,15 +23,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::task::{ready, Context, Poll};
 
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Interest, ReadBuf};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, Interest, ReadBuf};
 use tokio::net::tcp::WriteHalf;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use xray_transport::{BoxedTransportStream, RawRead};
 
+use super::relay_buffer::{RelayBuffer, PROCESS_POOL};
 use super::{
     copy_direction_with_counter, relay_until_done_or_idle, CopyActivity, RelayTimeouts,
-    INITIAL_COPY_BUFFER_SIZE, MAX_COPY_BUFFER_SIZE, MIN_COPY_BUFFER_SIZE,
+    MAX_COPY_BUFFER_SIZE, MIN_COPY_BUFFER_SIZE,
 };
 use crate::connection::ConnectionTraffic;
 
@@ -197,11 +198,11 @@ async fn copy_download(
     };
 
     // Until the stream settles on its socket or on decoding to the end, read
-    // it as the copying path does. What it decoded before its socket took
-    // over leaves through these reads, ahead of anything spliced. The inbound
-    // is a socket, so a write needs no flush.
+    // it as the copying path does, into the same kind of buffer. What it
+    // decoded before its socket took over leaves through these reads, ahead
+    // of anything spliced. The inbound is a socket, so a write needs no flush.
     let buffer_cap = buffer_size.clamp(MIN_COPY_BUFFER_SIZE, MAX_COPY_BUFFER_SIZE);
-    let mut buffer = vec![0; buffer_cap.min(INITIAL_COPY_BUFFER_SIZE)];
+    let mut buffer = RelayBuffer::new(buffer_cap, &PROCESS_POOL);
     loop {
         match outbound.source() {
             Source::Socket => break,
@@ -211,17 +212,15 @@ async fn copy_download(
             }
             Source::Undecided => {}
         }
-        let len = reader.read(&mut buffer).await?;
+        let len = poll_fn(|cx| buffer.poll_read(cx, Pin::new(&mut reader))).await?;
         if len == 0 {
             inbound.shutdown().await?;
             return Ok(delivered.total);
         }
-        inbound.write_all(&buffer[..len]).await?;
-        if len == buffer.len() && buffer.len() < buffer_cap {
-            buffer.resize((buffer.len() * 2).min(buffer_cap), 0);
-        }
+        inbound.write_all(buffer.filled(len)).await?;
         delivered.add(len);
     }
+    // The socket takes over: what the process lent goes back to it.
     drop(buffer);
 
     // No pipe to be had: copy.
@@ -686,7 +685,8 @@ mod tests {
         client.read_exact(&mut received).await.unwrap();
         assert!(received == raw, "download differs");
         let read = raw.len() as u64 - spliced();
-        assert!(read <= INITIAL_COPY_BUFFER_SIZE as u64, "{read} bytes read");
+        let one_read = crate::policy::INITIAL_COPY_BUFFER_SIZE as u64;
+        assert!(read <= one_read, "{read} bytes read");
         relay.abort();
     }
 

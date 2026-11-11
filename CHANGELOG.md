@@ -10,6 +10,26 @@ long-term supported release series.
 
 ## Unreleased
 
+- A TCP connection relayed from a SOCKS, HTTP or transparent-proxy inbound,
+  or for a reverse session, no longer keeps the memory a transfer needed for
+  as long as it stays open. Each direction used to grow a buffer of its own up
+  to `bufferSize` (128 KiB by default) and keep it until the connection
+  closed. It now keeps 4 KiB and reads past that into a buffer the process
+  lends, which it gives back whenever no data is waiting. Read sizes are
+  unchanged. On macOS, 512 connections held open after each moved 4 MiB in
+  both directions take 16 MiB instead of 150 MiB, and 13 MiB instead of 21 MiB
+  after an 8 KiB exchange; throughput and latency measured the same. A
+  `bufferSize` above 128 KiB still gives each direction its own buffer. TUN
+  flows use other buffers and are unchanged. See
+  [Policy](docs/config-compatibility.md#policy).
+- The crawl a REALITY client runs when its server answers with a real
+  certificate is now limited across the process: four at once, two on a
+  phone. A connection answered that way while that many are running is closed
+  instead of crawled and fails with the same error. Until now every such dial
+  left a connection held for up to 120 s, so a network that redirected the
+  server's address to the real site, or a profile its server no longer
+  matched, could exhaust a VPN extension's memory and descriptors. See
+  [REALITY real-certificate crawl](docs/xray-core-differences.md#reality-real-certificate-crawl).
 - Compatibility reference moved to Xray-core v26.11.9
   (`676eaf66f8f05d4d558ee7a74b4736623d3feeb9`, Go 1.27.3): CI, interop
   guards, oracle modules, fixtures and the benchmark harness pin it. See the
