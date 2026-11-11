@@ -10,6 +10,14 @@ long-term supported release series.
 
 ## Unreleased
 
+- The crawl a REALITY client runs when its server answers with a real
+  certificate is now limited across the process: four at once, two on a
+  phone. A connection answered that way while that many are running is closed
+  instead of crawled and fails with the same error. Until now every such dial
+  left a connection held for up to 120 s, so a network that redirected the
+  server's address to the real site, or a profile its server no longer
+  matched, could exhaust a VPN extension's memory and descriptors. See
+  [REALITY real-certificate crawl](docs/xray-core-differences.md#reality-real-certificate-crawl).
 - Compatibility reference moved to Xray-core v26.11.9
   (`676eaf66f8f05d4d558ee7a74b4736623d3feeb9`, Go 1.27.3): CI, interop
   guards, oracle modules, fixtures and the benchmark harness pin it. See the

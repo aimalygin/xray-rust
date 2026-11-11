@@ -1394,7 +1394,15 @@ v26.10.31 lines 101-140 and 207-298). xray-rust does the same:
 It is bounded where Go is not: `c` and `t` are capped at 32, the padding at
 16 KiB, each delay at 30 s, a scanned response body at 1 MiB, the remembered
 paths at 256 per server name, and the crawl's connection, which Go never
-closes itself, is closed after 120 s. The HTTP/2 client is the `h2` crate set
+closes itself, is closed after 120 s. The process runs at most four crawls at
+once, two on a phone (the constrained memory class): a connection answered
+with a real certificate while that many are running is closed instead of
+crawled, and still fails with the same error after `r` milliseconds. Whoever
+stands between the client and its server can answer every dial with the real
+site, as can a server the profile no longer matches, so without this each
+dial would leave a connection held for those 120 s.
+
+The HTTP/2 client is the `h2` crate set
 to Go's transport window and header-list defaults, so its frames are close to,
 not byte-identical with, `golang.org/x/net/http2`. As in Xray-core, an empty
 `spiderX` is crawled as `/` and any other value without a leading slash is a
