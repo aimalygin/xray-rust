@@ -114,6 +114,11 @@ impl TransportStream for HeldHeader {
         Pin::new(&mut *self.get_mut().inner).poll_read_direct(cx, output)
     }
 
+    #[cfg(target_os = "linux")]
+    fn raw_read_direct(&mut self) -> xray_transport::RawRead<'_> {
+        self.inner.raw_read_direct()
+    }
+
     fn poll_write_direct(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -235,6 +240,15 @@ impl<S: TransportStream> TransportStream for FirstPayloadDeadline<S> {
         let this = self.get_mut();
         ready!(this.poll_expired(cx))?;
         Pin::new(&mut this.inner).poll_read_direct(cx, output)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn raw_read(&mut self) -> xray_transport::RawRead<'_> {
+        // Reads drive the deadline and the flush that follows it.
+        if self.deadline.is_some() || self.flushing {
+            return xray_transport::RawRead::NotYet;
+        }
+        self.inner.raw_read()
     }
 
     fn poll_write_direct(

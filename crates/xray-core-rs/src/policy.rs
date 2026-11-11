@@ -9,7 +9,11 @@ use xray_config::CoreConfig;
 
 use crate::connection::ConnectionTraffic;
 
+#[cfg(target_os = "linux")]
+mod splice;
 mod split_relay;
+#[cfg(target_os = "linux")]
+pub(crate) use splice::copy_bidirectional_with_splice;
 pub(crate) use split_relay::copy_split_with_idle_timeout;
 
 const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -194,7 +198,7 @@ where
 {
     let (mut a_read, mut a_write) = split(a);
     let (mut b_read, mut b_write) = split(b);
-    let (activity_tx, mut activity_rx) = mpsc::channel(1);
+    let (activity_tx, activity_rx) = mpsc::channel(1);
     let a_to_b = copy_direction_with_counter(
         &mut a_read,
         &mut b_write,
@@ -209,6 +213,17 @@ where
         buffer_size,
         traffic.map(|traffic| &traffic.downlink_bytes),
     );
+    relay_until_done_or_idle(a_to_b, b_to_a, activity_rx, timeouts).await
+}
+
+/// Runs the two directions of a relay to their ends under its inactivity
+/// bounds. Each direction reports what it moved on `activity_rx`.
+async fn relay_until_done_or_idle(
+    a_to_b: impl std::future::Future<Output = io::Result<u64>>,
+    b_to_a: impl std::future::Future<Output = io::Result<u64>>,
+    mut activity_rx: mpsc::Receiver<()>,
+    timeouts: RelayTimeouts,
+) -> io::Result<(u64, u64)> {
     tokio::pin!(a_to_b, b_to_a);
     let mut a_to_b_result = None;
     let mut b_to_a_result = None;

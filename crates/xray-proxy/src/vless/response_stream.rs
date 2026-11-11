@@ -159,6 +159,14 @@ where
         Pin::new(&mut this.inner).poll_read_direct(cx, output)
     }
 
+    #[cfg(target_os = "linux")]
+    fn raw_read_direct(&mut self) -> super::RawRead<'_> {
+        if self.state != ResponseHeaderState::Done {
+            return super::RawRead::NotYet;
+        }
+        self.inner.raw_read_direct()
+    }
+
     fn poll_write_direct(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

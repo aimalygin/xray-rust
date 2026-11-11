@@ -20,6 +20,24 @@ const TLS_HANDSHAKE_TYPE_CLIENT_HELLO: u8 = 0x01;
 const TLS_HANDSHAKE_TYPE_SERVER_HELLO: u8 = 0x02;
 const TLS_AES_128_CCM_8_SHA256: u16 = 0x1305;
 
+/// Whether the bytes a stream has yet to return are a TCP socket's, unchanged.
+///
+/// A relay asks before each read. Once a stream answers [`RawRead::Socket`]
+/// the relay may stop reading the stream and move the socket's bytes itself,
+/// which on Linux it does in the kernel with `splice(2)`. The answer is
+/// therefore a promise: nothing is buffered above the socket, and every later
+/// read would have done nothing but hand the socket's bytes over.
+#[cfg(target_os = "linux")]
+pub enum RawRead<'a> {
+    /// The stream decodes what it reads, and always will.
+    Never,
+    /// Bytes are still buffered above the socket, or the stream has not
+    /// switched to it yet. Read once more, then ask again.
+    NotYet,
+    /// Everything left to read is still in this socket.
+    Socket(&'a tokio::net::TcpStream),
+}
+
 pub trait VisionStreamIo: AsyncRead + AsyncWrite + Unpin {
     /// Notify the transport that direct mode can never engage on this stream,
     /// so any record-boundary read alignment kept for a lossless direct-mode
@@ -31,6 +49,14 @@ pub trait VisionStreamIo: AsyncRead + AsyncWrite + Unpin {
         cx: &mut Context<'_>,
         output: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>>;
+
+    /// What [`poll_read_direct`](Self::poll_read_direct) reads from, when
+    /// that is a bare TCP socket. Asking commits the stream to direct reads,
+    /// as the first `poll_read_direct` does.
+    #[cfg(target_os = "linux")]
+    fn raw_read_direct(&mut self) -> RawRead<'_> {
+        RawRead::Never
+    }
 
     fn poll_write_direct(
         self: Pin<&mut Self>,
@@ -293,6 +319,24 @@ where
         Ok(true)
     }
 
+    /// Whether the rest of the download is the carrier's socket: true once
+    /// the peer sent `Direct` and everything decoded before it was read.
+    #[cfg(target_os = "linux")]
+    pub fn raw_read(&mut self) -> RawRead<'_> {
+        if !self.decoded_read.is_empty() {
+            return RawRead::NotYet;
+        }
+        if self.direct_read_mode {
+            return self.inner.raw_read_direct();
+        }
+        if self.padding_read_mode {
+            RawRead::NotYet
+        } else {
+            // `End`: the carrier's own session keeps decoding to the last byte.
+            RawRead::Never
+        }
+    }
+
     fn poll_drain_pending(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         while !self.pending_write.is_empty() {
             let written =
@@ -518,5 +562,48 @@ mod tests {
         stream.read_to_end(&mut output).await.unwrap();
 
         assert_eq!(output, b"paddedraw");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn raw_read_waits_for_decoded_bytes_and_never_follows_end() {
+        let mut padding = VisionPadding::new(USER_ID, [0, 0, 0, 0]);
+        let end = padding
+            .pad(BytesMut::from(&b"padded"[..]), VisionCommand::End, 0)
+            .unwrap();
+        let mut stream =
+            VisionStream::new(std::io::Cursor::new(end.to_vec()), USER_ID, [0, 0, 0, 0]);
+        let mut output = [0; 3];
+
+        // Still padding: the peer may yet send `Direct`.
+        assert!(matches!(stream.raw_read(), RawRead::NotYet));
+        stream.read_exact(&mut output).await.unwrap();
+        // `End` arrived, but half of its payload is still to be read.
+        assert!(matches!(stream.raw_read(), RawRead::NotYet));
+        stream.read_exact(&mut output).await.unwrap();
+        assert!(matches!(stream.raw_read(), RawRead::Never));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn raw_read_after_direct_is_the_carriers_answer() {
+        let mut padding = VisionPadding::new(USER_ID, [0, 0, 0, 0]);
+        let direct = padding
+            .pad(BytesMut::from(&b"padded"[..]), VisionCommand::Direct, 0)
+            .unwrap();
+        let mut stream = VisionStream::new(
+            std::io::Cursor::new([direct.to_vec(), b"raw".to_vec()].concat()),
+            USER_ID,
+            [0, 0, 0, 0],
+        );
+        let mut output = [0; 9];
+
+        stream.read_exact(&mut output[..6]).await.unwrap();
+        // "raw" followed the block into the stream's own buffer.
+        assert!(matches!(stream.raw_read(), RawRead::NotYet));
+        stream.read_exact(&mut output[6..]).await.unwrap();
+        assert_eq!(&output, b"paddedraw");
+        // A cursor is no socket, and says so as any carrier does by default.
+        assert!(matches!(stream.raw_read(), RawRead::Never));
     }
 }
