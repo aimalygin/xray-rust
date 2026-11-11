@@ -93,6 +93,16 @@ racing initial authentication are retained. Endpoints and DNS pins are unchanged
 this is not DNS64/NAT64 rebootstrap or Android network-callback integration.
 Calls share the WireGuard method's lifecycle and pointer ownership rules.
 
+The same call reaches every other live QUIC carrier of the core: XHTTP, MASQUE
+and XDRIVE's storages over HTTP/3 take a fresh protected socket towards the
+same peer and keep their streams and tunnels, and the count includes them. No
+ABI or wrapper change comes with it: a host that reports network changes for
+Hysteria already reports them for these. A connection behind a `realm`, `xdns`
+or `xicmp` mask does not move (a realm socket needs a new introduction, the
+other two carry nothing over UDP), and neither does mKCP, whose server tells
+sessions apart by the client's address. A carrier that cannot bind or protect
+its new socket keeps the old one.
+
 The development 0.8 Kotlin adapter now exposes both `rebindHysteria()` and
 `rebindWireGuard()`, using the same version/capability gates and shared-call
 lifecycle protection as Swift. Android hosts own `ConnectivityManager` registration,

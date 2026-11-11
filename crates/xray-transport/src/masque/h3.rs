@@ -14,7 +14,8 @@ use super::warp::MasqueWarp;
 use super::MIN_PACKET_SIZE;
 use crate::stream::H3QuicConfig;
 use crate::stream::{
-    connect_quic_transport_with_datagrams, hop_udp_carrier, H3ConnectConfig, H3Error,
+    connect_quic_transport_with_datagrams, move_udp_carrier, CarrierSocket, H3ConnectConfig,
+    H3Error,
 };
 use crate::{SocketProtector, TlsClientConfig, TlsConnector, TransportError};
 use std::net::SocketAddr;
@@ -44,6 +45,9 @@ pub struct MasqueH3Config {
     pub warp: Option<MasqueWarp>,
     /// What a `realm` mask in `quic` takes from the dial, as XHTTP H3's.
     pub realm: Option<crate::realm::RealmEnv>,
+    /// The tunnel takes a fresh socket whenever these report that the OS
+    /// network changed.
+    pub network_changes: Option<crate::NetworkChanges>,
 }
 
 impl std::fmt::Debug for MasqueH3Config {
@@ -80,10 +84,11 @@ pub async fn dial_h3(
         socket_protector: config.socket_protector.clone(),
         quic: config.quic.clone(),
         realm: config.realm.clone(),
+        network_changes: None,
     };
     let carrier = connect.quic.hop_carrier();
     let protector = connect.socket_protector.clone();
-    let (endpoint, connection, diagnostics, wire_peer) = connect_quic_transport_with_datagrams(
+    let (endpoint, connection, _, wire_peer) = connect_quic_transport_with_datagrams(
         connect,
         b"h3",
         Some((
@@ -98,15 +103,15 @@ pub async fn dial_h3(
     .await
     .map_err(dial_error)?;
     let mut tasks = Vec::new();
-    if diagnostics.udp_hop {
-        tasks.push(tokio::spawn(hop_udp_carrier(
-            endpoint.clone(),
-            connection.clone(),
-            carrier,
-            protector,
-            wire_peer,
-        )));
-    }
+    tasks.extend(move_udp_carrier(
+        &endpoint,
+        &connection,
+        carrier,
+        protector,
+        wire_peer,
+        CarrierSocket::Datagrams,
+        config.network_changes.as_ref(),
+    ));
     let close = |connection: &quinn::Connection| {
         connection.close(quinn::VarInt::from_u32(0x100), b"");
     };

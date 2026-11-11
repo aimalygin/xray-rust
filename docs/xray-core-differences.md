@@ -1522,6 +1522,26 @@ binary's own hellos for `""`, `chrome`, `hellochrome_155` and `hellochrome_133`
 to the fixtures with the per-connection draws set aside, any of the four ECH
 lengths accepted.
 
+## QUIC carriers and a change of network
+
+When the host reports that the OS network changed, XHTTP, MASQUE and
+XDRIVE's storages over HTTP/3 take a fresh protected socket towards the same
+peer and keep their streams and tunnels; QUIC validates the new path. This
+is a deliberate addition: Xray-core keeps the socket whose network is gone,
+and the connection sits out its idle timeout before the next flow dials
+again. Hysteria and WireGuard moved already, each through its own call; the
+others follow the request `xray_core_rebind_hysteria` carries, which the
+mobile wrappers make on every network change ([details](ffi.md#hysteria-network-changes)).
+
+Not moved: a connection behind a `realm` mask, whose socket was introduced
+to the server and would need a new introduction; one behind `xdns` or
+`xicmp`, which carry nothing over the UDP socket; and mKCP, whose server
+tells sessions apart by the client's address.
+
+Evidence: `xhttp_h3_takes_a_fresh_socket_when_the_network_changes` moves a
+live connection to a new local port through a relay that counts its sources,
+with the socket protected again and a request before and after.
+
 ## Follow-up checks
 
 - [x] Integrate the #87 review follow-up, including both relay-address fixes,

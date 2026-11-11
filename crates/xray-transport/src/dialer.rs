@@ -32,6 +32,7 @@ pub struct TransportDialer {
     /// What most dialers leave unset, behind one pointer: every open future
     /// holds dialers.
     replaced: Option<Arc<Replaced>>,
+    network_changes: crate::NetworkChanges,
 }
 
 /// What [`TransportDialer::with_route_probe`],
@@ -54,6 +55,7 @@ pub(crate) struct H3DialMaterial {
     pub(crate) server_name: String,
     pub(crate) tls_config: Arc<rustls::ClientConfig>,
     pub(crate) socket_protector: Option<Arc<dyn SocketProtector>>,
+    pub(crate) network_changes: crate::NetworkChanges,
 }
 
 impl fmt::Debug for TransportDialer {
@@ -114,6 +116,7 @@ impl TransportDialer {
             resolved_tcp_connector: None,
             tcp_fragment: None,
             replaced: None,
+            network_changes: crate::NetworkChanges::default(),
         })
     }
 
@@ -129,6 +132,7 @@ impl TransportDialer {
             resolved_tcp_connector: None,
             tcp_fragment: None,
             replaced: None,
+            network_changes: crate::NetworkChanges::default(),
         }
     }
 
@@ -179,6 +183,13 @@ impl TransportDialer {
             tls: self.tls.clone(),
             protector: self.socket_protector.clone(),
         }
+    }
+
+    /// The signal this dialer's QUIC connections follow to a fresh socket
+    /// when the OS network changes. Every dialer made from this one shares
+    /// it, so one [`crate::NetworkChanges::notify`] reaches them all.
+    pub fn network_changes(&self) -> &crate::NetworkChanges {
+        &self.network_changes
     }
 
     pub fn with_reality_engine(mut self, reality: Arc<dyn RealityTlsEngine>) -> Self {
@@ -376,6 +387,7 @@ impl TransportDialer {
                 server_name: tls.server_name.clone(),
                 tls_config: self.tls.h3_client_config_for(tls, b"h3", chrome_parrot)?,
                 socket_protector: self.socket_protector.clone(),
+                network_changes: self.network_changes.clone(),
             }),
             ConnectorConfig::Tcp => Err(TransportError::UnsupportedHttp3Security("TCP")),
             ConnectorConfig::Reality(_) => Err(TransportError::UnsupportedHttp3Security("REALITY")),

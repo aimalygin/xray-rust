@@ -108,6 +108,7 @@ async fn pair_with_options(
         socket_protector,
         quic: H3QuicConfig::default(),
         realm: None,
+        network_changes: None,
     })
     .await
     .expect("connect HTTP/3 client");
@@ -327,6 +328,7 @@ fn h3_network_dial(
                 socket_protector: None,
                 quic: H3QuicConfig::default(),
                 realm: None,
+                network_changes: None,
             })
             .await
         })
@@ -374,6 +376,7 @@ async fn each_congestion_choice_runs_its_controller_after_the_handshake() {
                 ..H3QuicConfig::default()
             },
             realm: None,
+            network_changes: None,
         })
         .await
         .expect("connect HTTP/3 client");
@@ -758,6 +761,7 @@ async fn slow_path_uploads_buffer_only_their_share_of_the_send_budget() {
         socket_protector: None,
         quic: H3QuicConfig::default(),
         realm: None,
+        network_changes: None,
     })
     .await
     .expect("connect HTTP/3 client through the delay relay");
@@ -826,6 +830,7 @@ async fn slow_path_uploads_buffer_only_their_share_of_the_send_budget() {
                 socket_protector: None,
                 quic: H3QuicConfig::default(),
                 realm: None,
+                network_changes: None,
             })
             .await
             .expect("connect HTTP/3 client through its delay relay");
@@ -917,6 +922,7 @@ async fn credit_after_a_fast_download(quic: H3QuicConfig) -> usize {
         socket_protector: None,
         quic,
         realm: None,
+        network_changes: None,
     })
     .await
     .expect("connect HTTP/3 client through the delay relay");
@@ -1078,6 +1084,7 @@ async fn credit_ahead_of_readers(reader: BudgetReader) -> usize {
             socket_protector: None,
             quic: H3QuicConfig::default(),
             realm: None,
+            network_changes: None,
         })
     }))
     .await;
@@ -1158,6 +1165,7 @@ async fn small_data_frames_wait_in_the_stream_window() {
             ..H3QuicConfig::default()
         },
         realm: None,
+        network_changes: None,
     })
     .await
     .expect("connect HTTP/3 client");
@@ -2453,6 +2461,7 @@ async fn xhttp_h3_hops_to_a_different_port_each_interval_on_one_connection() {
                 ..H3QuicConfig::default()
             },
             realm: None,
+            network_changes: None,
         })
         .await
         .expect("connect through a hop port");
@@ -2542,6 +2551,7 @@ async fn xhttp_h3_local_hop_keeps_the_servers_address() {
                 ..H3QuicConfig::default()
             },
             realm: None,
+            network_changes: None,
         })
         .await
         .expect("connect to the server's address");
@@ -2562,6 +2572,64 @@ async fn xhttp_h3_local_hop_keeps_the_servers_address() {
     })
     .await
     .expect("bounded local hop scenario");
+}
+
+/// A change of the OS network: the connection takes a fresh protected
+/// socket towards the same server and its requests go on, with no mask and
+/// no hop configured. Without the signal it never moves.
+#[tokio::test]
+async fn xhttp_h3_takes_a_fresh_socket_when_the_network_changes() {
+    timeout(Duration::from_secs(30), async {
+        let (client_tls, server_addr, server) = server_with_options(None).await;
+        let front = HopRelay::start(server_addr).await;
+        let protector = Arc::new(RecordingProtector::default());
+        let protector_dyn: Arc<dyn SocketProtector> = protector.clone();
+        let changes = xray_transport::NetworkChanges::default();
+        assert_eq!(changes.notify(), 0, "nothing follows the changes yet");
+        let client = connect_h3(H3ConnectConfig {
+            remote_addr: front.address,
+            server_name: "localhost".to_owned(),
+            tls_config: client_tls,
+            socket_protector: Some(protector_dyn),
+            quic: H3QuicConfig::default(),
+            realm: None,
+            network_changes: Some(changes.clone()),
+        })
+        .await
+        .expect("connect to the server");
+        hop_exchange(&client, &server, 0).await;
+        let before = client.local_addr().unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(
+            client.local_addr().unwrap(),
+            before,
+            "no hop without a change"
+        );
+
+        assert_eq!(changes.notify(), 1);
+        timeout(Duration::from_secs(8), async {
+            while client.local_addr().unwrap() == before {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("the change moves the carrier to a fresh socket");
+        hop_exchange(&client, &server, 1).await;
+        assert!(client.is_live());
+        assert_eq!(front.sources.load(Ordering::SeqCst), 2);
+        assert_eq!(protector.calls.load(Ordering::SeqCst), 2);
+
+        drop(client);
+        timeout(Duration::from_secs(5), async {
+            while changes.notify() != 0 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("a dropped connection stops following the changes");
+    })
+    .await
+    .expect("bounded network change scenario");
 }
 
 /// Xray's `perConnRemote` alone: the connection goes to a random one of the
@@ -2595,6 +2663,7 @@ async fn xhttp_h3_per_connection_remote_draws_once_and_never_hops() {
                 ..H3QuicConfig::default()
             },
             realm: None,
+            network_changes: None,
         })
         .await
         .expect("connect through a drawn port");
@@ -2765,6 +2834,7 @@ async fn invalid_sni_precedes_socket_protection_and_protection_failure_stops_can
         socket_protector: Some(recording.clone()),
         quic: H3QuicConfig::default(),
         realm: None,
+        network_changes: None,
     })
     .await
     .expect_err("invalid SNI must fail before UDP bind/protection");
@@ -2791,6 +2861,7 @@ async fn invalid_sni_precedes_socket_protection_and_protection_failure_stops_can
             socket_protector: Some(failing.clone()),
             quic: H3QuicConfig::default(),
             realm: None,
+            network_changes: None,
         },
         &[server_addr, server_addr],
         Some(&policy),

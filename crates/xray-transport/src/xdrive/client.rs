@@ -293,6 +293,7 @@ impl ServiceDialer {
             socket_protector: material.socket_protector,
             quic: quic.clone(),
             realm,
+            network_changes: Some(material.network_changes),
         };
         let dial = crate::stream::xhttp::connect_h3_candidates(config, &candidates, None);
         tokio::time::timeout(STALL_TIMEOUT, dial)

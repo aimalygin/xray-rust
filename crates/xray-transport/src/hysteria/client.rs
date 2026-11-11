@@ -432,6 +432,8 @@ impl HysteriaClient {
                 socket_protector: tls.socket_protector_arc(),
                 quic: config.quic.clone(),
                 realm: config.realm.clone(),
+                // The client rebinds its own endpoint.
+                network_changes: None,
             },
             b"h3",
             Some((
