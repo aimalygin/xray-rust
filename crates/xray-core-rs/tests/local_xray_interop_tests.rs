@@ -4275,6 +4275,88 @@ async fn udp_hop_xhttp_h3_keeps_a_flow_across_hops_to_xray() {
     .expect("bounded XHTTP H3 UDP-hop interop");
 }
 
+/// A change of the OS network, as the host reports it through
+/// `xray_core_rebind_hysteria`: the XHTTP H3 connection takes a fresh socket
+/// towards Xray-core's own server and the flow on it goes on. ChromeParrot
+/// stays on, as by default, so the client's connection ID is the zero-length
+/// one quic-go's server has to migrate without. The relay gives every client
+/// source its own upstream socket, so Xray sees each change as a new path.
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary"]
+async fn xhttp_h3_chrome_parrot_keeps_a_flow_across_network_changes() {
+    timeout(Duration::from_secs(90), async {
+        let xray = timeout(
+            Duration::from_secs(60),
+            start_xray_vless_server(
+                &resolve_xray_checkout(),
+                XrayVlessServerConfig {
+                    security: XrayInboundSecurity::Tls,
+                    transport: XrayInboundTransport::Xhttp {
+                        path: XHTTP_PATH,
+                        mode: "stream-one",
+                        tls_alpn: Some("h3"),
+                    },
+                    flow: None,
+                },
+            ),
+        )
+        .await
+        .expect("start XHTTP H3 Xray server timeout");
+        let relay = UdpHopRelay::start(xray.addr).await;
+        let rust_config = rust_xhttp_core_config(
+            relay.address,
+            StreamSecurity::Tls(TlsSettings {
+                server_name: Some(TLS_SERVER_NAME.to_owned()),
+                fingerprint: Some("chrome".to_owned()),
+                allow_insecure: true,
+                pinned_peer_cert_sha256: Vec::new(),
+                verify_peer_cert_by_name: Vec::new(),
+                alpn: vec!["h3".to_owned()],
+            }),
+            XhttpMode::StreamOne,
+        );
+        let mut core = Core::new(rust_config).expect("create Rust XHTTP core");
+        core.start().await.expect("start Rust XHTTP core");
+        let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+        let (echo_addr, _echo) = spawn_echo_server().await;
+        let mut client = open_socks_flow(&xray, socks_addr, echo_addr).await;
+
+        // One flow on one QUIC connection: data before any change, then
+        // after each of two.
+        for round in 0_u8..3 {
+            if round > 0 {
+                assert_eq!(
+                    core.rebind_quic(),
+                    1,
+                    "the one XHTTP H3 connection follows the change"
+                );
+                // The connection's own task takes the socket; let it run
+                // before the round's data, which then leaves from the new one.
+                sleep(Duration::from_millis(200)).await;
+            }
+            let payload = bulk_interop_payload(32 * 1024 + usize::from(round));
+            let mut echoed = vec![0; payload.len()];
+            client.write_all(&payload).await.unwrap();
+            if let Err(error) =
+                timeout(Duration::from_secs(15), client.read_exact(&mut echoed)).await
+            {
+                eprintln!("{}", xray.logs());
+                panic!("echo after {round} network changes timed out: {error}");
+            }
+            assert_eq!(echoed, payload, "round {round}");
+            assert_eq!(
+                relay.sources.load(Ordering::SeqCst),
+                usize::from(round) + 1,
+                "each change moves the connection to one fresh socket"
+            );
+        }
+        drop(client);
+        core.stop().await.unwrap();
+    })
+    .await
+    .expect("bounded XHTTP H3 network change interop");
+}
+
 /// Every `bbrProfile` with each congestion mode XHTTP H3 runs, through Xray's
 /// own server: the controller replaces quic-go's startup Reno after the
 /// handshake, and a megabyte echoes back intact.

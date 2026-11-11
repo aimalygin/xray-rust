@@ -1540,7 +1540,13 @@ tells sessions apart by the client's address.
 
 Evidence: `xhttp_h3_takes_a_fresh_socket_when_the_network_changes` moves a
 live connection to a new local port through a relay that counts its sources,
-with the socket protected again and a request before and after.
+with the socket protected again and a request before and after. Against
+Xray-core's own XHTTP H3 server, `xhttp_h3_chrome_parrot_keeps_a_flow_across_network_changes`
+(in `scripts/check-chrome-parrot-interop.sh`) keeps one flow alive across two
+changes. Each change goes through a fresh socket that the relay hands Xray as
+a new path. ChromeParrot is on, so quic-go's server migrates a client whose
+connection ID is zero-length. MASQUE's datagram socket takes the same task
+but has no test of its own.
 
 ## Follow-up checks
 
