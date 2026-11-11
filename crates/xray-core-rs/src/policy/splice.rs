@@ -13,14 +13,21 @@
 //! as activity and reaches the counters at once, so `connIdle`, the two
 //! half-close timeouts and the connection's traffic stay what they are on the
 //! copying path.
+//!
+//! Xray-core's `xray.buf.splice` environment flag (`XRAY_BUF_SPLICE`) turns
+//! it off: unset, `auto` and `enable` splice, anything else copies. Xray-core
+//! reads the flag for its freedom outbound alone and splices Vision's direct
+//! download whatever it says; here it stops both, so one switch takes the
+//! kernel path out of a process that must not use it.
 
+use std::ffi::OsStr;
 use std::fs::File;
 use std::future::poll_fn;
 use std::io::{self, IoSlice, Read};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 use std::task::{ready, Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, Interest, ReadBuf};
@@ -45,6 +52,33 @@ const PIPE_CAPACITY: usize = 1024 * 1024;
 /// of pipes for one user) a process without `CAP_SYS_RESOURCE` gets pipes of
 /// two pages, which would move a packet or two with each pair of calls.
 const MIN_PIPE_CAPACITY: libc::c_int = 64 * 1024;
+
+/// Xray-core's `UseFreedomSplice` flag and the name `NormalizeEnvName` gives
+/// it; `EnvFlag.GetValue` looks the first up, then the second.
+const SPLICE_FLAGS: [&str; 2] = ["xray.buf.splice", "XRAY_BUF_SPLICE"];
+
+/// Whether this process splices: Xray-core's `reloadEnvSettings` on the first
+/// of [`SPLICE_FLAGS`] that is set, read once.
+fn splice_enabled() -> bool {
+    #[cfg(test)]
+    if let Some(forced) = tests::SPLICE_FLAG.with(std::cell::Cell::get) {
+        return forced;
+    }
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        let value = SPLICE_FLAGS.iter().find_map(std::env::var_os);
+        splice_flag_enables(value.as_deref())
+    })
+}
+
+/// `reloadEnvSettings`: an unset flag, `auto` and `enable` splice; any other
+/// value, the empty one included, does not.
+fn splice_flag_enables(value: Option<&OsStr>) -> bool {
+    match value {
+        None => true,
+        Some(value) => value == "auto" || value == "enable",
+    }
+}
 
 /// [`copy_bidirectional_with_idle_timeout_and_traffic`] for a TCP inbound,
 /// with the download spliced for as long as the outbound reads a bare socket.
@@ -91,6 +125,9 @@ impl<'a> SharedStream<'a> {
     }
 
     fn source(&self) -> Source {
+        if !splice_enabled() {
+            return Source::Decoded;
+        }
         match self.lock().raw_read() {
             RawRead::Never => Source::Decoded,
             RawRead::NotYet => Source::Undecided,
@@ -410,6 +447,9 @@ mod tests {
         static SPLICES_ALLOWED: Cell<Option<usize>> = const { Cell::new(None) };
         /// The size a new pipe reports on this thread, in place of its own.
         pub(super) static PIPE_CAPACITY_SEEN: Cell<Option<libc::c_int>> = const { Cell::new(None) };
+        /// What the splice flag says on this thread, in place of the
+        /// environment.
+        pub(super) static SPLICE_FLAG: Cell<Option<bool>> = const { Cell::new(None) };
     }
 
     pub(super) fn before_splice() -> io::Result<()> {
@@ -578,6 +618,41 @@ mod tests {
         PIPE_CAPACITY_SEEN.with(|seen| seen.set(None));
         assert!(received == response, "download differs");
         assert_eq!(copied, (7, response.len() as u64));
+        assert_eq!(spliced(), 0);
+    }
+
+    /// Xray-core's `reloadEnvSettings`: only an unset flag, `auto` and
+    /// `enable` splice, compared as they are.
+    #[test]
+    fn the_splice_flag_reads_as_xray_cores() {
+        assert!(splice_flag_enables(None));
+        for value in ["auto", "enable"] {
+            assert!(splice_flag_enables(Some(OsStr::new(value))), "{value}");
+        }
+        for value in ["", "disable", "0", "false", "Enable", "AUTO", " enable"] {
+            assert!(!splice_flag_enables(Some(OsStr::new(value))), "{value:?}");
+        }
+        assert_eq!(SPLICE_FLAGS, ["xray.buf.splice", "XRAY_BUF_SPLICE"]);
+    }
+
+    /// With the flag off a bare socket's download is copied like any other
+    /// stream's, whole and counted.
+    #[tokio::test]
+    async fn download_is_copied_with_the_splice_flag_off() {
+        SPLICE_FLAG.with(|flag| flag.set(Some(false)));
+        let (outbound, server) = tcp_pair().await;
+        let response = pattern(1024 * 1024 + 11);
+
+        let (received, copied, traffic) =
+            exchange(Box::new(outbound), server, response.clone()).await;
+
+        SPLICE_FLAG.with(|flag| flag.set(None));
+        assert!(received == response, "download differs");
+        assert_eq!(copied, (7, response.len() as u64));
+        assert_eq!(
+            traffic.downlink_bytes.load(Ordering::Relaxed),
+            response.len() as u64
+        );
         assert_eq!(spliced(), 0);
     }
 
