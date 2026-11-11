@@ -202,11 +202,40 @@ async fn http_carrier_every_transport_and_security_tcp() {
     every_transport_and_security("http", false).await;
 }
 
+/// The oracle whose `origin` serves the REALITY target: the one the check
+/// script built, or a fresh build in the pinned checkout, kept in `dir`.
+/// `check-rc-interop.sh` runs every ignored test and builds no oracle.
+fn encryption_oracle(checkout: &Path, dir: &TempDir) -> std::ffi::OsString {
+    env::var_os("XRAY_VLESS_ENCRYPTION_ORACLE").unwrap_or_else(|| {
+        let source = fs::canonicalize(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tools/vless-encryption-oracle/main.go"),
+        )
+        .unwrap();
+        let binary = dir
+            .path
+            .join(format!("encryption-oracle{}", env::consts::EXE_SUFFIX));
+        let output = Command::new("go")
+            .args(["build", "-mod=readonly", "-o"])
+            .arg(&binary)
+            .arg(&source)
+            .current_dir(checkout)
+            .output()
+            .expect("start go build for the encryption oracle");
+        assert!(
+            output.status.success(),
+            "building the encryption oracle failed: {output:?}"
+        );
+        binary.into_os_string()
+    })
+}
+
 /// Runs `protocol`'s outbound against its inbound over each transport and
 /// security, with a UDP association too when `datagram`.
 async fn every_transport_and_security(protocol: &str, datagram: bool) {
     let checkout = resolve_xray_checkout();
-    let origin_binary = env::var_os("XRAY_VLESS_ENCRYPTION_ORACLE").unwrap();
+    let build_dir = create_temp_dir("xray-rust-proxy-carriers-oracle");
+    let origin_binary = encryption_oracle(&checkout, &build_dir);
     let (_origin, origin) = json_process(&origin_binary, &["origin"]);
     let xhttp = |path: &str, mode: &str| {
         json!({"path":path,"mode":mode,"xPaddingBytes":64,"scMaxEachPostBytes":4096,

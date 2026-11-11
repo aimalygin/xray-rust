@@ -43,6 +43,10 @@ env \
 
 # The encryption/download/v0.8 carrier suites require extra local oracle processes and run
 # in the blocking go-oracles job through their dedicated guarded scripts.
+# A test that needs a smaller helper builds it from this checkout when its
+# own script has not: the WARP stand-in (check-masque-interop.sh) and the
+# proxy carriers' REALITY origin (check-v08-carrier-interop.sh).
+# scripts/tests/interop-gate-helpers.py holds this gate to that.
 # Keep the tag gate representative but bounded: hybrid REALITY browser profiles,
 # reduced burst concurrency, and an XHTTP slice spanning all modes plus
 # H1/H2/H3. The ignored suite still exercises every supported stream family.
