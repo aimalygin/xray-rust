@@ -45,18 +45,33 @@ private final class ProtocolDeviceProbe: ObservableObject {
         let udpRepeats: Int?
         let redactionMarker: String?
         let invalidImports: [InvalidImport]?
+        /// Links imported on their own, one per profile-import transition.
+        let imports: [LinkImport]?
         var trafficHost: String { probeHost ?? "v07-probe.test" }
     }
     private struct Profile: Decodable {
         let format: String
         let label: String?
         let expectFakeDNS: Bool?
-        let text: String
+        /// Absent when the case has no share link: only its JSON is used.
+        let text: String?
         let configJSON: String
         let serverAddress: String
         /// False for outbounds without a UDP relay (HTTP CONNECT): UDP checks
         /// then require that no datagram is answered instead of an echo.
         let udp: Bool?
+        /// Waited after every connect. The reverse bridge opens its first
+        /// tunnel two seconds after the core starts.
+        let settleSeconds: Double?
+        /// IPv4 and IPv6 datagram sizes, when the default 1392 and 1372 bytes
+        /// exceed what the outbound carries (a MASQUE tunnel's 1280-byte packets).
+        let udpPayloadBytes: [Int]?
+    }
+    private struct LinkImport: Decodable {
+        let transition: String
+        let format: String
+        let text: String
+        let serverAddress: String
     }
     private struct InvalidImport: Decodable {
         let scenario: String
@@ -77,6 +92,8 @@ private final class ProtocolDeviceProbe: ObservableObject {
     private var label = "setup"
     private var udpExpected = true
     private var expectsFakeDNS = false
+    private var settleSeconds = 0.0
+    private var udpPayloadBytes = [1392, 1372]
 
     func run(update: (String) -> Void) async {
         if ProcessInfo.processInfo.environment["XRAY_STARTUP_PROBE_DEVICE_CHECK"] == "1" {
@@ -92,7 +109,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
             let size = try input.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
             guard (1...524_288).contains(size) else { throw Failure.configuration }
             let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: input))
-            guard (1...10).contains(fixture.cases.count), fixture.tcpPort > 0, fixture.udpPort > 0 else {
+            guard (1...16).contains(fixture.cases.count), fixture.tcpPort > 0, fixture.udpPort > 0 else {
                 throw Failure.configuration
             }
             let labels = fixture.trafficHost.split(separator: ".", omittingEmptySubsequences: false)
@@ -103,19 +120,25 @@ private final class ProtocolDeviceProbe: ObservableObject {
             let info = XrayCore.ffiInfo
             emit(["event": "abi", "major": info.version.major, "minor": info.version.minor])
             try invalidImports(fixture)
+            try linkImports(fixture)
             try await cleanup()
             for item in fixture.cases {
                 label = item.label ?? item.format
                 udpExpected = item.udp ?? true
                 expectsFakeDNS = item.expectFakeDNS ?? false
+                settleSeconds = item.settleSeconds ?? 0
+                udpPayloadBytes = item.udpPayloadBytes ?? [1392, 1372]
+                guard (0...30).contains(settleSeconds), udpPayloadBytes.count == 2,
+                      udpPayloadBytes.allSatisfy({ (1...4096).contains($0) }) else { throw Failure.configuration }
                 update("\(label): import and VPN startup")
-                // Exercise the actual Swift -> FFI -> Rust import on the device.
-                if item.format == "vless" {
-                    _ = try XrayVlessURLImporter.profile(from: item.text)
-                } else if let format = XrayProfileFormat(rawValue: item.format) {
-                    _ = try XrayProfileImporter.profile(from: item.text, format: format)
-                } else { throw Failure.configuration }
-                emit(["event": "import", "result": "passed"])
+                if let text = item.text {
+                    // Exercise the actual Swift -> FFI -> Rust import on the device.
+                    _ = try Self.importedServerAddress(text, format: item.format)
+                    emit(["event": "import", "result": "passed"])
+                } else {
+                    // No share link exists for this case; its JSON is the profile.
+                    emit(["event": "import", "result": "not-applicable"])
+                }
                 let profile = XrayClientProfile(
                     name: Self.managerName,
                     providerBundleIdentifier: XrayClientProfile.defaultProviderBundleIdentifier(
@@ -141,7 +164,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
                 for cycle in 1...3 {
                     update("\(label): TCP, UDP and DNS — cycle \(cycle)/3")
                     let started = Date()
-                    try await controller.start(profile: profile)
+                    try await start(profile)
                     emit(["event": "connected", "cycle": cycle,
                           "seconds": Date().timeIntervalSince(started)])
                     try await traffic(fixture)
@@ -176,6 +199,35 @@ private final class ProtocolDeviceProbe: ObservableObject {
         update(passed ? "Checks passed. Test VPN removed." : "A check failed. See the device report.")
     }
 
+    /// VLESS links go through the SDK's own importer, every other format
+    /// through Swift -> FFI -> Rust.
+    private static func importedServerAddress(_ text: String, format: String) throws -> String {
+        if format == "vless" { return try XrayVlessURLImporter.profile(from: text).serverAddress }
+        guard let format = XrayProfileFormat(rawValue: format) else { throw Failure.configuration }
+        return try XrayProfileImporter.profile(from: text, format: format).serverAddress
+    }
+
+    private func start(_ profile: XrayClientProfile) async throws {
+        try await controller.start(profile: profile)
+        if settleSeconds > 0 { try await Task.sleep(nanoseconds: UInt64(settleSeconds * 1_000_000_000)) }
+    }
+
+    /// Each link kind must import and name the server it was written for.
+    /// Nothing connects with these profiles.
+    private func linkImports(_ fixture: Fixture) throws {
+        guard let inputs = fixture.imports, !inputs.isEmpty else { return }
+        guard inputs.count <= 8 else { throw Failure.configuration }
+        for input in inputs {
+            label = input.transition
+            guard try Self.importedServerAddress(input.text, format: input.format) == input.serverAddress else {
+                throw Failure.mismatch
+            }
+            emit(["event": "link-import", "transition": input.transition, "format": input.format,
+                  "result": "passed"])
+        }
+        label = "setup"
+    }
+
     /// Malformed links must be rejected, and neither the error nor its
     /// description may echo the fixture's marker (a stand-in credential).
     private func invalidImports(_ fixture: Fixture) throws {
@@ -186,9 +238,11 @@ private final class ProtocolDeviceProbe: ObservableObject {
         for input in inputs {
             label = input.scenario
             guard input.text.contains(marker),
-                  let format = XrayProfileFormat(rawValue: input.format) else { throw Failure.configuration }
+                  input.format == "vless" || XrayProfileFormat(rawValue: input.format) != nil else {
+                throw Failure.configuration
+            }
             var rejected = false
-            do { _ = try XrayProfileImporter.profile(from: input.text, format: format) }
+            do { _ = try Self.importedServerAddress(input.text, format: input.format) }
             catch {
                 rejected = true
                 guard !String(reflecting: error).contains(marker),
@@ -207,7 +261,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
         let repeats = fixture.udpRepeats ?? 2
         guard (1...16).contains(sizes.count), (1...3).contains(repeats),
               sizes.allSatisfy({ (1...4096).contains($0) }) else { throw Failure.configuration }
-        try await controller.start(profile: profile)
+        try await start(profile)
         try await sample(cycle: 0, stage: "udp-sweep-start")
         var failures = 0
         for host in ["198.51.100.7", "2001:db8::7"] {
@@ -274,7 +328,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
             guard settled == .disconnected || settled == .invalid else { throw Failure.shutdown }
             emit(["event": "startup-cancelled", "cycle": cycle, "result": "passed",
                   "seconds": ProcessInfo.processInfo.systemUptime - cancelledAt])
-            try await controller.start(profile: profile)
+            try await start(profile)
             try await traffic(fixture)
             try await sample(cycle: cycle, stage: "after-cancel-restart")
             try await controller.stop()
@@ -283,7 +337,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
         for cycle in 1...5 {
             update("\(label): быстрый перезапуск — \(cycle)/5")
             let start = ProcessInfo.processInfo.systemUptime
-            try await controller.start(profile: profile)
+            try await start(profile)
             try await traffic(fixture)
             try await sample(cycle: cycle, stage: "rapid-restart")
             try await controller.stop()
@@ -297,7 +351,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
                            update: (String) -> Void) async throws {
         let seconds = fixture.loadSeconds ?? 20
         guard (5...60).contains(seconds) else { throw Failure.configuration }
-        try await controller.start(profile: profile)
+        try await start(profile)
         try await traffic(fixture)
         try await verifyConnectionClosure(cycle: 0, allowEmpty: true)
         try await Task.sleep(nanoseconds: 5_000_000_000)
@@ -372,7 +426,11 @@ private final class ProtocolDeviceProbe: ObservableObject {
         if item.format == "wireguard" {
             let endpoint = ((settings["peers"] as? [[String: Any]])?.first?["endpoint"] as? String) ?? ""
             port = endpoint.split(separator: ":").last.flatMap { UInt16($0) }
-        } else { port = (settings["port"] as? NSNumber).flatMap { UInt16(exactly: $0.intValue) } }
+        } else {
+            // The flat form, or VLESS's older "vnext" list.
+            let server = (settings["vnext"] as? [[String: Any]])?.first ?? settings
+            port = (server["port"] as? NSNumber).flatMap { UInt16(exactly: $0.intValue) }
+        }
         guard let port, port > 0 else { throw Failure.configuration }
         let signals = XrayDeviceProbeSignals { [weak self] in self?.emit($0) }
         signals.start(host: item.serverAddress, port: port)
@@ -382,7 +440,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
             signals.carrier == "wifi" && signals.carrierRoute == "wifi" && signals.active
                 && ProcessInfo.processInfo.systemUptime - signals.carrierRouteChangedAt >= 3
         }
-        try await controller.start(profile: profile)
+        try await start(profile)
         emit(["event": "connected", "cycle": 1])
         guard let initial = try await controller.runtimeStats() else { throw Failure.missingStats }
         try await recover(fixture, stage: "wifi-baseline", since: signals.carrierRouteChangedAt)
@@ -497,7 +555,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
             emit(["event": "tcp", "host": host, "bytes": payload.count, "result": "passed",
                   "exchangeSeconds": ProcessInfo.processInfo.systemUptime - exchangeStarted])
         }
-        for (host, count) in [("198.51.100.7", 1392), ("2001:db8::7", 1372)] {
+        for (host, count) in [("198.51.100.7", udpPayloadBytes[0]), ("2001:db8::7", udpPayloadBytes[1])] {
             let payload = Data((0..<count).map { UInt8($0 % 251) })
             let started = ProcessInfo.processInfo.systemUptime
             // Evidence transition ids; the v0.9 profile names HTTP's refusals.

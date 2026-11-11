@@ -53,8 +53,10 @@ V010_LABELS = {
 GROUPS = {"v08": V08_PROTOCOLS, "v09": V09_PROTOCOLS, "v010": V010_FULL, "smoke-v010": V010_SMOKE}
 MASQUE_PATH = "/masque/{target}/{ipproto}/"
 XDRIVE_TUNING = {"flushIntervalMs": 5, "pollIntervalMs": 5, "maxPollIntervalMs": 50, "sessionTtlSeconds": 30}
-# Fixtures that pick their own cases name the host services those need.
+# Fixtures that pick their own cases name the host services those need, and
+# say when they write one case, which may then take an explicit port.
 SERVICES = None
+SINGLE_CASE = False
 
 
 def openssl(*args):
@@ -428,6 +430,56 @@ def v010_case(fmt, bind, carrier_port, reserve, pin, certificates, services):
     raise ValueError(f"unsupported client fixture protocol: {fmt}")
 
 
+def link_imports(bind, pin):
+    """One link of each kind profile import gained since 0.9.0.
+
+    Nothing dials them: the harnesses import each and compare the server
+    address. The fresh credentials belong to no server.
+    """
+    user, name = str(uuid.uuid4()), "v010-probe.test"
+    query = lambda **fields: urlencode(fields, quote_via=quote)
+    rows = [
+        # TLS over WebSocket, which the SDK importers read since 0.10.
+        ("vless-link", "vless", f"vless://{user}@{bind}:443?" + query(
+            type="ws", security="tls", sni=name, host=name, path="/device-check")),
+        # Remnawave's Trojan gRPC link always names its mode; "pcs" pins the leaf.
+        ("trojan-link", "trojan", f"trojan://{secrets.token_urlsafe(24)}@{bind}:443?" + query(
+            type="grpc", security="tls", sni=name, serviceName="device-check", mode="gun", pcs=pin)),
+        ("vmess-link", "vmess", f"vmess://{user}@{bind}:443?" + query(
+            type="ws", security="tls", sni=name, host=name, path="/device-check", encryption="auto")),
+        # A pin lets a link reach a server with a self-signed certificate.
+        ("hysteria2-link", "hysteria2", f"hy2://{secrets.token_urlsafe(24)}@{bind}:443?" + query(
+            sni=name, pinSHA256=pin)),
+    ]
+    return [{"transition": transition, "format": fmt, "text": text, "serverAddress": bind}
+            for transition, fmt, text in rows]
+
+
+def invalid_link_imports():
+    """A malformed link of each v0.10 kind; none may echo the marker."""
+    marker, user = REDACTION_MARKER, "11111111-1111-4111-8111-111111111111"
+    rows = [
+        # Certificate checks cannot be turned off from a link.
+        ("vless-link", "vless", f"vless://{user}@127.0.0.1:443?type=ws&security=tls&allowInsecure=1&path=%2F{marker}"),
+        ("trojan-link", "trojan", f"trojan://{marker}@127.0.0.1:443?type=grpc&security=tls&mode=stream"),
+        # TLS cannot send an empty ALPN.
+        ("vmess-link", "vmess", f"vmess://{user}@127.0.0.1:443?type=ws&security=tls&alpn=&path=%2F{marker}"),
+        # "insecure" needs a pin next to it.
+        ("hysteria2-link", "hysteria2", f"hy2://{marker}@127.0.0.1:443?sni=v010-probe.test&insecure=1"),
+    ]
+    return [{"scenario": scenario, "format": fmt, "text": text} for scenario, fmt, text in rows]
+
+
+def remnawave_profile(case):
+    """The case as a Remnawave XRAY_JSON profile: the panel's own root label
+    and object, and the TLS field it writes, which 0.9.0 refused to parse."""
+    config = json.loads(case["configJSON"])
+    config = {"remarks": "v0.10 device fixture", "meta": {"serverDescription": "device fixture"}, **config}
+    config["outbounds"][0]["streamSettings"]["tlsSettings"]["enableSessionResumption"] = False
+    return {"format": "config", "label": "remnawave-json", "udp": True,
+            "serverAddress": case["serverAddress"], "configJSON": json.dumps(config)}
+
+
 def write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, port, mode, probe_host, services=None):
     """New client fixtures retain the existing device harness envelope.
 
@@ -440,7 +492,8 @@ def write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, po
             "-nodes", "-days", "1", "-subj", "/CN=v08-probe.test",
             "-keyout", str(root / "tls.key"), "-out", str(root / "tls.crt"))
     pin = hashlib.sha256(openssl("x509", "-in", str(root / "tls.crt"), "-outform", "DER")).hexdigest()
-    selected = GROUPS.get(protocol, (protocol,))
+    # import-v010 runs one Trojan server, reached with a Remnawave profile.
+    selected = ("trojan",) if protocol == "import-v010" else GROUPS.get(protocol, (protocol,))
     certificates = [{"certificateFile": str(root / "tls.crt"), "keyFile": str(root / "tls.key")}]
     inbounds, cases, ports, server_rules = [], [], set(), []
     proxied = [{"type": "field", "domain": [f"full:{probe_host}"], "outboundTag": "proxy"},
@@ -541,6 +594,10 @@ def write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, po
               "routing": {"rules": [*server_rules, {"type": "field", "ip": ["198.51.100.0/24", "2001:db8::/32"], "outboundTag": "echo"}]}}
     envelope = {"cases": cases, "tcpPort": tcp_port, "udpPort": udp_port, "mode": mode, "probeHost": probe_host}
     invalid = invalid_imports(selected)
+    if protocol == "import-v010":
+        envelope["cases"] = [remnawave_profile(cases[0])]
+        envelope["imports"] = link_imports(bind, pin)
+        invalid = invalid_link_imports()
     if invalid:
         envelope.update(redactionMarker=REDACTION_MARKER, invalidImports=invalid)
     (root / "server.json").write_text(json.dumps(server, indent=2) + "\n")
@@ -874,7 +931,7 @@ def main():
     parser.add_argument("--output", required=True, type=Path, help="new private directory")
     parser.add_argument("--seconds", type=int, default=600, help="maximum fixture lifetime (1..1800)")
     parser.add_argument("--protocol", choices=("both", "wireguard", "hysteria2", "v08", *V08_PROTOCOLS, "v09", *V09_PROTOCOLS,
-                                               "v010", "smoke-v010", *V010_PROTOCOLS), default="both")
+                                               "v010", "smoke-v010", "import-v010", *V010_PROTOCOLS), default="both")
     parser.add_argument("--port", type=int, help="explicit carrier port; requires a single protocol")
     parser.add_argument("--mode", choices=("smoke", "transitions", "lock-wake", "transitions-reset", "lifecycle", "resources", "udp-sweep"), default="smoke")
     parser.add_argument("--reference-sha256", help="expected binary SHA-256, instead of a clean Go VCS stamp check")
@@ -888,7 +945,8 @@ def main():
     address = ipaddress.IPv4Address(args.bind)
     if address.is_unspecified or address.is_multicast or not 1 <= args.seconds <= 1800:
         parser.error("use a specific unicast IPv4 address and 1..1800 seconds")
-    if args.port is not None and (args.protocol in ("both", *GROUPS) or not 1 <= args.port <= 65535):
+    several = args.protocol in ("both", "import-v010", *GROUPS) and not SINGLE_CASE
+    if args.port is not None and (several or not 1 <= args.port <= 65535):
         parser.error("an explicit port requires one protocol and a port in 1..65535")
     if args.reference_sha256 and (len(args.reference_sha256) != 64 or any(c not in "0123456789abcdef" for c in args.reference_sha256)):
         parser.error("reference SHA-256 must be 64 lowercase hex characters")

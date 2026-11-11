@@ -16,6 +16,8 @@ internal data class DeviceGateStatus(
         private const val HAS_PROFILE = "has-profile"
         private const val RUNTIME_GENERATION = "runtime-generation"
         private const val FATAL_TUN_ERRORS = "fatal-tun-errors"
+        private const val NETWORK_REBINDS = "network-rebinds"
+        private const val NETWORK_CHANGE_ERRORS = "network-change-errors"
 
         fun read(context: Context): DeviceGateStatus {
             val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
@@ -58,11 +60,27 @@ internal data class DeviceGateStatus(
             return next
         }
 
+        /** Rebind requests the SDK made after an underlying-network change. */
+        fun incrementNetworkRebinds(context: Context): Long = increment(context, NETWORK_REBINDS)
+
+        /** Network changes the SDK could not turn into a rebind request. */
+        fun incrementNetworkChangeErrors(context: Context): Long =
+            increment(context, NETWORK_CHANGE_ERRORS)
+
+        private fun increment(context: Context, key: String): Long {
+            val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            val next = preferences.getLong(key, 0) + 1
+            preferences.edit().putLong(key, next).apply()
+            return next
+        }
+
         fun resetCounters(context: Context) {
             context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
                 .edit()
                 .putLong(RUNTIME_GENERATION, 0)
                 .putLong(FATAL_TUN_ERRORS, 0)
+                .putLong(NETWORK_REBINDS, 0)
+                .putLong(NETWORK_CHANGE_ERRORS, 0)
                 .apply()
         }
     }

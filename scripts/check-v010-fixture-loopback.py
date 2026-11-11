@@ -24,8 +24,12 @@ loopback.SUITES = {
     "v010": ("run-v07-apple-protocol-fixture.py", ["--protocol", "v010"]),
     "smoke-v010": ("run-v07-apple-protocol-fixture.py", ["--protocol", "smoke-v010"]),
     "xicmp": ("run-v07-apple-protocol-fixture.py", ["--protocol", "xicmp"]),
+    "import-v010": ("run-v07-apple-protocol-fixture.py", ["--protocol", "import-v010"]),
+    "legacy-v010": ("run-v08-apple-acceptance-fixture.py", ["--suite", "legacy-v010"]),
+    "xhttp-h3-v010": ("run-v08-apple-acceptance-fixture.py", ["--suite", "xhttp-h3-v010"]),
 }
-loopback.WARMUP_SUITES = ()
+# REALITY's first decoy handshake, as in run-v07-performance.py.
+loopback.WARMUP_SUITES = ("legacy-v010",)
 loopback.KEPT = {"server.log", "xdrive-standin.log"}
 # The datagrams the Apple probe sends, unless a case names smaller ones.
 loopback.UDP_PAYLOADS = (1392, 1372)
