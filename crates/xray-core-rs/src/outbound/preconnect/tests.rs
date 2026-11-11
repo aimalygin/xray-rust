@@ -10,6 +10,8 @@ struct Fake {
     failures: AtomicUsize,
     opened: AtomicUsize,
     peers: Mutex<Vec<DuplexStream>>,
+    /// The streams requests took, open for as long as the test runs.
+    taken: Mutex<Vec<BoxedTransportStream>>,
     gone: AtomicBool,
 }
 
@@ -70,8 +72,9 @@ async fn take(pool: &PreConnections, fake: &Arc<Fake>, port: u16) -> Result<u8, 
     let mut stream = pool.take(spec(port), || opener).await?;
     let mut number = [0];
     stream.read_exact(&mut number).await.unwrap();
-    // Keep the stream open, as a request using it would.
-    std::mem::forget(stream);
+    // Keep the stream open, as a request using it would. The fake holds it
+    // rather than `mem::forget`, so the test frees it when it ends.
+    fake.taken.lock().unwrap().push(stream);
     Ok(number[0])
 }
 
