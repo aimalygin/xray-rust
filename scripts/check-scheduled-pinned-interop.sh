@@ -42,6 +42,9 @@ env \
   go -C "$XRAY_CORE_CHECKOUT" build -o "$xray_core_binary" ./main
 
 # The carrier tests need the same local oracles as check-v08-carrier-interop.sh.
+# The WARP stand-in of check-masque-interop.sh is built by its tests, from
+# this checkout; scripts/tests/interop-gate-helpers.py holds this gate to
+# every helper its tests read with no fallback.
 for oracle in download encryption; do
   case "$oracle" in
     download) sources=("$repository_root/tools/xhttp-download-oracle/main.go" "$repository_root/tools/xhttp-download-oracle/bridge.go") ;;
