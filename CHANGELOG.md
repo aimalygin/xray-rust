@@ -10,6 +10,18 @@ long-term supported release series.
 
 ## Unreleased
 
+- A TCP connection relayed from a SOCKS, HTTP or transparent-proxy inbound,
+  or for a reverse session, no longer keeps the memory a transfer needed for
+  as long as it stays open. Each direction used to grow a buffer of its own up
+  to `bufferSize` (128 KiB by default) and keep it until the connection
+  closed. It now keeps 4 KiB and reads past that into a buffer the process
+  lends, which it gives back whenever no data is waiting. Read sizes are
+  unchanged. On macOS, 512 connections held open after each moved 4 MiB in
+  both directions take 16 MiB instead of 150 MiB, and 13 MiB instead of 21 MiB
+  after an 8 KiB exchange; throughput and latency measured the same. A
+  `bufferSize` above 128 KiB still gives each direction its own buffer. TUN
+  flows use other buffers and are unchanged. See
+  [Policy](docs/config-compatibility.md#policy).
 - The crawl a REALITY client runs when its server answers with a real
   certificate is now limited across the process: four at once, two on a
   phone. A connection answered that way while that many are running is closed
