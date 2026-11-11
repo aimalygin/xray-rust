@@ -547,7 +547,7 @@ impl RustlsRealityTlsSession {
         mldsa65_verify: Option<Vec<u8>>,
     ) -> Result<BoxedTransportStream, TransportError>
     where
-        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,
+        S: crate::Carrier + 'static,
     {
         let profile = reality_profile_for_fingerprint(&self.fingerprint).ok_or_else(|| {
             TransportError::TlsConfig(format!(

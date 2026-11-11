@@ -14,6 +14,36 @@ const TLS_READ_CHUNK_LIMIT: usize = 8 * 1024;
 
 pub(crate) type ServerReadLog = Arc<Mutex<Option<Vec<u8>>>>;
 
+/// What a penetrating TLS session runs over: REALITY's own socket, or the
+/// carrier the dialer produced.
+pub(crate) trait Carrier: AsyncRead + AsyncWrite + Send + Unpin {
+    /// Whether the carrier's reads are a bare TCP socket's.
+    #[cfg(target_os = "linux")]
+    fn raw_read(&mut self) -> crate::RawRead<'_>;
+}
+
+impl Carrier for TcpStream {
+    #[cfg(target_os = "linux")]
+    fn raw_read(&mut self) -> crate::RawRead<'_> {
+        crate::RawRead::Socket(self)
+    }
+}
+
+impl Carrier for crate::BoxedTransportStream {
+    #[cfg(target_os = "linux")]
+    fn raw_read(&mut self) -> crate::RawRead<'_> {
+        TransportStream::raw_read(&mut **self)
+    }
+}
+
+impl Carrier for crate::fragment::FragmentStream {
+    // Its reads also drive the fragments it still owes the peer.
+    #[cfg(target_os = "linux")]
+    fn raw_read(&mut self) -> crate::RawRead<'_> {
+        crate::RawRead::Never
+    }
+}
+
 /// The carrier under a TLS session that Vision may unwrap into direct mode.
 ///
 /// REALITY captures its own TCP socket; plain TLS captures whatever carrier
@@ -392,12 +422,32 @@ where
 
 impl<S> TransportStream for PenetratingTlsStream<S>
 where
-    S: AsyncRead + AsyncWrite + Send + Unpin,
+    S: Carrier,
 {
     fn release_record_alignment(&mut self) {
         if let PenetratingTlsState::Tls(Some(stream)) = &mut self.state {
             let (captured, _) = stream.as_mut().get_mut();
             captured.release_record_alignment();
+        }
+    }
+
+    /// The carrier's socket, once the plaintext the session had already
+    /// decrypted when the read side went direct has been read. The session
+    /// stays for the write side, which Vision switches on its own.
+    #[cfg(target_os = "linux")]
+    fn raw_read_direct(&mut self) -> crate::RawRead<'_> {
+        if self.ensure_read_direct().is_err() {
+            // The next direct read reports the failure.
+            return crate::RawRead::NotYet;
+        }
+        match &mut self.state {
+            // Going direct released the record alignment and the read log,
+            // so the captured stream passes its carrier's reads through.
+            PenetratingTlsState::ReadDirect {
+                stream,
+                pending_plaintext,
+            } if pending_plaintext.is_empty() => stream.as_mut().get_mut().0.stream.raw_read(),
+            _ => crate::RawRead::NotYet,
         }
     }
 
@@ -688,6 +738,52 @@ mod tests {
             .expect("read buffered plaintext and raw bytes");
 
         assert_eq!(&direct, b"bufferedraw");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn raw_read_direct_offers_the_socket_once_decrypted_plaintext_is_read() {
+        let (mut client, mut server) = connect_test_stream().await;
+        assert!(matches!(client.raw_read(), crate::RawRead::Never));
+
+        server
+            .write_all(b"tlsbuffered")
+            .await
+            .expect("write TLS plaintext");
+        server.flush().await.expect("flush TLS plaintext");
+        let mut tls_prefix = [0; 3];
+        client
+            .read_exact(&mut tls_prefix)
+            .await
+            .expect("read TLS prefix");
+
+        // The session already decrypted the rest of that record.
+        assert!(matches!(client.raw_read_direct(), crate::RawRead::NotYet));
+        let mut buffered = [0; 8];
+        read_direct_exact(&mut client, &mut buffered)
+            .await
+            .expect("read buffered plaintext");
+        assert_eq!(&buffered, b"buffered");
+
+        let (mut raw_server, _) = server.into_inner();
+        raw_server
+            .write_all(b"raw")
+            .await
+            .expect("write raw response");
+        let crate::RawRead::Socket(socket) = client.raw_read_direct() else {
+            panic!("a drained direct read is the carrier's socket");
+        };
+        let mut raw = [0; 3];
+        let mut read = 0;
+        while read < raw.len() {
+            socket.readable().await.expect("socket readable");
+            match socket.try_read(&mut raw[read..]) {
+                Ok(len) => read += len,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                Err(error) => panic!("read raw bytes: {error}"),
+            }
+        }
+        assert_eq!(&raw, b"raw");
     }
 
     #[tokio::test]

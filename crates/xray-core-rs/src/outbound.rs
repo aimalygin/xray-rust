@@ -233,6 +233,11 @@ impl VisionStreamIo for VisionTransportStream {
         Pin::new(&mut *self.get_mut().inner).poll_read_direct(cx, output)
     }
 
+    #[cfg(target_os = "linux")]
+    fn raw_read_direct(&mut self) -> xray_transport::RawRead<'_> {
+        self.inner.raw_read_direct()
+    }
+
     fn poll_write_direct(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -295,6 +300,11 @@ impl TransportStream for VisionOutboundStream {
         output: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         AsyncRead::poll_read(self, cx, output)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn raw_read(&mut self) -> xray_transport::RawRead<'_> {
+        self.inner.raw_read()
     }
 
     fn poll_write_direct(
@@ -4885,18 +4895,11 @@ fn held_request_stream(
     let mut stream: BoxedTransportStream = Box::new(HeldHeader::new(stream, &header));
 
     if flow.uses_vision() {
-        let stream = VlessResponseStream::new(VisionTransportStream::new(stream));
-        let stream = VisionStream::new(
+        return Ok(vision_stream(
             stream,
             *outbound.user().id.as_bytes(),
             outbound.user().vision_seed,
-        );
-        // On timeout Xray-core pads an empty frame to hide the bare header.
-        return Ok(Box::new(FirstPayloadDeadline::new(
-            VisionOutboundStream::new(stream),
-            VLESS_FIRST_PAYLOAD_WAIT,
-            |stream| stream.inner.queue_empty_padding_frame(),
-        )));
+        ));
     }
 
     // Without Vision there is no direct mode, so the transport never needs
@@ -4908,6 +4911,31 @@ fn held_request_stream(
         VLESS_FIRST_PAYLOAD_WAIT,
         flush_header_alone,
     )))
+}
+
+/// A held request under Vision, as a TCP relay reads and writes it.
+fn vision_stream(
+    stream: BoxedTransportStream,
+    user_id: [u8; 16],
+    seed: [u32; 4],
+) -> BoxedTransportStream {
+    let stream = VlessResponseStream::new(VisionTransportStream::new(stream));
+    let stream = VisionStream::new(stream, user_id, seed);
+    // On timeout Xray-core pads an empty frame to hide the bare header.
+    Box::new(FirstPayloadDeadline::new(
+        VisionOutboundStream::new(stream),
+        VLESS_FIRST_PAYLOAD_WAIT,
+        |stream| stream.inner.queue_empty_padding_frame(),
+    ))
+}
+
+/// The stream a Vision request gets over `carrier`, with no request header.
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) fn vision_stream_for_tests(
+    carrier: BoxedTransportStream,
+    user_id: [u8; 16],
+) -> BoxedTransportStream {
+    vision_stream(Box::new(HeldHeader::new(carrier, &[])), user_id, [0; 4])
 }
 
 pub async fn open_vless_udp_stream_with_resolver_and_dialer(

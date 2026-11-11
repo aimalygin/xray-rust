@@ -69,7 +69,7 @@ pub use dns::{
 pub use happy_eyeballs::{connect_tcp_dual_stack, connect_tcp_happy_eyeballs, HappyEyeballsConfig};
 pub use memory_class::{memory_class, set_memory_class, MemoryClass};
 pub use network_change::NetworkChanges;
-pub(crate) use penetrating_tls::{CapturedStream, PenetratingTlsStream, ServerReadLog};
+pub(crate) use penetrating_tls::{CapturedStream, Carrier, PenetratingTlsStream, ServerReadLog};
 pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};
 pub use reality_runtime::{
     RealityHandshakeContextProvider, RealityRuntimeEngine, SystemRealityHandshakeContextProvider,
@@ -221,6 +221,9 @@ pub enum TransportError {
     RealityTlsCompletionUnsupported,
 }
 
+#[cfg(target_os = "linux")]
+pub use xray_proxy::vless::RawRead;
+
 pub type ParallelRead = Box<dyn AsyncRead + Send + Unpin>;
 pub type ParallelWrite = Box<dyn AsyncWrite + Send + Unpin>;
 
@@ -259,6 +262,23 @@ pub trait TransportStream: AsyncRead + AsyncWrite + Send + Unpin {
         output: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>>;
 
+    /// Whether what `poll_read` has yet to return is a TCP socket's bytes
+    /// unchanged, so that a relay may move them in the kernel instead. Only
+    /// a stream that reads a bare socket, or one that has become such a
+    /// stream for good, answers anything but [`RawRead::Never`].
+    #[cfg(target_os = "linux")]
+    fn raw_read(&mut self) -> RawRead<'_> {
+        RawRead::Never
+    }
+
+    /// [`raw_read`](Self::raw_read) for what `poll_read_direct` returns.
+    /// Asking commits the stream to direct reads, as the first
+    /// `poll_read_direct` does.
+    #[cfg(target_os = "linux")]
+    fn raw_read_direct(&mut self) -> RawRead<'_> {
+        RawRead::Never
+    }
+
     fn poll_write_direct(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -278,6 +298,16 @@ impl TransportStream for TcpStream {
     fn into_io_halves(self: Box<Self>) -> (ParallelRead, ParallelWrite) {
         let (read, write) = (*self).into_split();
         (Box::new(read), Box::new(write))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn raw_read(&mut self) -> RawRead<'_> {
+        RawRead::Socket(self)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn raw_read_direct(&mut self) -> RawRead<'_> {
+        RawRead::Socket(self)
     }
 
     fn poll_read_direct(

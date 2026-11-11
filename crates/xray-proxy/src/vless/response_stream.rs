@@ -159,6 +159,14 @@ where
         Pin::new(&mut this.inner).poll_read_direct(cx, output)
     }
 
+    #[cfg(target_os = "linux")]
+    fn raw_read_direct(&mut self) -> super::RawRead<'_> {
+        if self.state != ResponseHeaderState::Done {
+            return super::RawRead::NotYet;
+        }
+        self.inner.raw_read_direct()
+    }
+
     fn poll_write_direct(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -173,5 +181,84 @@ where
 
     fn poll_shutdown_direct(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.get_mut().inner).poll_shutdown_direct(cx)
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
+    use super::super::RawRead;
+    use super::*;
+
+    /// A carrier whose direct reads are its socket's.
+    struct Socket(TcpStream);
+
+    impl AsyncRead for Socket {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            output: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            Pin::new(&mut self.0).poll_read(cx, output)
+        }
+    }
+
+    impl AsyncWrite for Socket {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            input: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Pin::new(&mut self.0).poll_write(cx, input)
+        }
+
+        fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Pin::new(&mut self.0).poll_flush(cx)
+        }
+
+        fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Pin::new(&mut self.0).poll_shutdown(cx)
+        }
+    }
+
+    impl VisionStreamIo for Socket {
+        fn poll_read_direct(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            output: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            self.poll_read(cx, output)
+        }
+
+        fn raw_read_direct(&mut self) -> RawRead<'_> {
+            RawRead::Socket(&self.0)
+        }
+
+        fn poll_write_direct(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            input: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            self.poll_write(cx, input)
+        }
+    }
+
+    #[tokio::test]
+    async fn raw_read_direct_is_the_socket_only_past_the_response_header() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let connect = TcpStream::connect(listener.local_addr().unwrap());
+        let (client, server) = tokio::join!(connect, listener.accept());
+        let mut server = server.unwrap().0;
+        let mut stream = VlessResponseStream::new(Socket(client.unwrap()));
+
+        // Version 0, three bytes of addons, then the payload.
+        server.write_all(&[0, 3, 9, 9, 9, b'x']).await.unwrap();
+        assert!(matches!(stream.raw_read_direct(), RawRead::NotYet));
+        let mut payload = [0; 1];
+        stream.read_exact(&mut payload).await.unwrap();
+        assert_eq!(&payload, b"x");
+        assert!(matches!(stream.raw_read_direct(), RawRead::Socket(_)));
     }
 }

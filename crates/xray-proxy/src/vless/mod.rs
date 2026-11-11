@@ -13,5 +13,7 @@ pub use vision::{
     unpad_vision_block, UnpaddedVisionBlock, VisionCommand, VisionError, VisionPadding,
     DEFAULT_VISION_SEED,
 };
+#[cfg(target_os = "linux")]
+pub use vision_stream::RawRead;
 pub use vision_stream::{VisionStream, VisionStreamIo};
 pub use wire::{encode_request_header, VlessCommand, VlessRequest, WireError};

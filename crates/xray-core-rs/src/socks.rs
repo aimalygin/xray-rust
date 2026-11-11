@@ -38,14 +38,20 @@ use crate::{
     dns_outbound_runtime::{DnsOutboundRuntime, FakeIpTargetProvenance},
     open_vless_udp_stream_with_resolver_and_dialer,
     policy::{
-        accept_error_wants_backoff, copy_bidirectional_with_idle_timeout_and_traffic,
-        effective_policy_for_level, AcceptBackoff, EffectivePolicy, RelayTimeouts,
+        accept_error_wants_backoff, effective_policy_for_level, AcceptBackoff, EffectivePolicy,
+        RelayTimeouts,
     },
     runtime_log::{monotonic_millis, LogThrottle},
     udp_ingress::{sniff_udp_flow, UdpIngress},
     ConnectionRegistry, OutboundRouter, RuntimeLogger, TcpOutbound, UdpOutbound, VlessTcpOutbound,
     VlessUdpFraming,
 };
+
+// On Linux the download of a TCP relay leaves user space where it can.
+#[cfg(not(target_os = "linux"))]
+use crate::policy::copy_bidirectional_with_idle_timeout_and_traffic as relay_tcp;
+#[cfg(target_os = "linux")]
+use crate::policy::copy_bidirectional_with_splice as relay_tcp;
 
 const SOCKS_UDP_BUFFER_SIZE: usize = 65_536;
 const SOCKS_DNS_UDP_PATH_PAYLOAD_CAP: usize = 65_245;
@@ -861,7 +867,7 @@ pub(crate) async fn handle_socks_connect<const SOCKS_REPLY: bool>(
     }
 
     let copied = tokio::select! {
-        result = copy_bidirectional_with_idle_timeout_and_traffic(
+        result = relay_tcp(
             &mut inbound,
             &mut outbound_stream,
             relay_timeouts,
