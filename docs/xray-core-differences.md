@@ -1545,8 +1545,11 @@ Xray-core's own XHTTP H3 server, `xhttp_h3_chrome_parrot_keeps_a_flow_across_net
 (in `scripts/check-chrome-parrot-interop.sh`) keeps one flow alive across two
 changes. Each change goes through a fresh socket that the relay hands Xray as
 a new path. ChromeParrot is on, so quic-go's server migrates a client whose
-connection ID is zero-length. MASQUE's datagram socket takes the same task
-but has no test of its own.
+connection ID is zero-length. Against Xray-core's own MASQUE server,
+`masque::masque_h3_keeps_a_flow_across_network_changes` (in
+`scripts/check-masque-interop.sh`) keeps a TCP flow through the tunnel alive
+across two changes. Each change moves the socket that carries the tunnel's
+QUIC datagrams.
 
 ## Follow-up checks
 

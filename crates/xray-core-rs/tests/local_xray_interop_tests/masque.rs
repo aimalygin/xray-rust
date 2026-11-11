@@ -394,6 +394,60 @@ async fn masque_h2_runs_over_a_utls_fingerprint() {
     carries_tcp_and_udp_of_both_families("h2", json!({"fingerprint": "chrome"})).await;
 }
 
+/// A change of the OS network, as the host reports it through
+/// `xray_core_rebind_hysteria`: the tunnel over HTTP/3 moves to a fresh
+/// socket, the one its QUIC datagrams and so its IP packets travel on, and a
+/// TCP flow through the tunnel goes on against Xray-core's own server. The
+/// relay gives every client source its own upstream socket, so Xray sees
+/// each change as a new path.
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-masque-interop.sh"]
+async fn masque_h3_keeps_a_flow_across_network_changes() {
+    let checkout = resolve_xray_checkout();
+    let server = start_server(&checkout, "h3", |_| {}).await;
+    let relay = UdpHopRelay::start(server.addr).await;
+    let (tcp_port, _udp_port, _tcp, _udp) = echo_servers().await;
+    let mut config = client_config(&server, "h3", credentials());
+    config["outbounds"][0]["settings"]["port"] = json!(relay.address.port());
+    let core = core(config).await;
+    let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+    let (mut stream, _) = socks(proxy, 1, ECHO_V4, tcp_port).await.unwrap();
+    let mut greeting = [0; 8];
+    stream.read_exact(&mut greeting).await.unwrap();
+    assert_eq!(&greeting, b"greeting");
+
+    // One flow in one tunnel: data before any change, then after each of two.
+    for round in 0_u8..3 {
+        if round > 0 {
+            assert_eq!(
+                core.rebind_quic(),
+                1,
+                "the one MASQUE tunnel follows the change"
+            );
+            // The tunnel's own task takes the socket; let it run before the
+            // round's data, which then leaves from the new one.
+            sleep(Duration::from_millis(200)).await;
+        }
+        let payload: Vec<u8> = (0..32 * 1024 + u32::from(round))
+            .map(|n| (n * 197 + 31) as u8)
+            .collect();
+        let mut echoed = vec![0; payload.len()];
+        stream.write_all(&payload).await.unwrap();
+        let read = timeout(Duration::from_secs(15), stream.read_exact(&mut echoed)).await;
+        assert!(
+            matches!(read, Ok(Ok(_))),
+            "echo after {round} network changes: {read:?}; {}",
+            server.logs()
+        );
+        assert!(echoed == payload, "round {round}: the echo differs");
+        assert_eq!(
+            relay.sources.load(Ordering::SeqCst),
+            usize::from(round) + 1,
+            "each change moves the tunnel to one fresh socket"
+        );
+    }
+}
+
 async fn carries_tcp_and_udp_of_both_families(alpn: &str, tls: Value) {
     let checkout = resolve_xray_checkout();
     let server = start_server(&checkout, alpn, |_| {}).await;
