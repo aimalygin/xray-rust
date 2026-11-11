@@ -1229,6 +1229,13 @@ data class XrayTunStats(
     val tcpRemoteReadBytes: Long = 0,
     /** UDP datagrams dropped because their outbound path carries less (ABI 1.16). */
     val udpOversizeDatagrams: Long = 0,
+    /**
+     * Times the core's read loop over a TUN file descriptor stopped because the descriptor is
+     * gone. Above zero, that session moves no more packets.
+     */
+    val tunFdReadLoopExits: Long = 0,
+    /** The same for the write loop. */
+    val tunFdWriteLoopExits: Long = 0,
 ) {
     /**
      * Live payload bytes sent towards remotes by all TUN flows, TCP plus UDP, whichever outbound
@@ -1246,7 +1253,7 @@ data class XrayTunStats(
         get() = tcpRemoteReadBytes + udpRemoteReadBytes
 }
 
-internal const val NATIVE_TUN_STATS_VALUE_COUNT = 22
+internal const val NATIVE_TUN_STATS_VALUE_COUNT = 24
 
 /** Decodes the `XrayTunStats` carrier returned by the JNI bridge; new values are appended. */
 internal fun tunStatsFromNative(values: LongArray): XrayTunStats {
@@ -1276,6 +1283,8 @@ internal fun tunStatsFromNative(values: LongArray): XrayTunStats {
         tcpRemoteWrittenBytes = values[19],
         tcpRemoteReadBytes = values[20],
         udpOversizeDatagrams = values[21],
+        tunFdReadLoopExits = values[22],
+        tunFdWriteLoopExits = values[23],
     )
 }
 

@@ -500,6 +500,27 @@ fn bandwidth_arithmetic_matches_go() {
     );
 }
 
+/// The bytes a bandwidth delivers over an idle period: 100 Mbit/s for two
+/// minutes is 1.5 GB, where Go's wrapped product gives a negative count
+/// that keeps the ack-aggregation epoch open.
+#[test]
+fn expected_bytes_over_a_long_interval_do_not_wrap() {
+    let bandwidth: Bandwidth = 100_000_000;
+    let idle = 120 * SECOND;
+    assert!(
+        (bandwidth as ByteCount).wrapping_mul(idle) < 0,
+        "Go's wraps"
+    );
+    assert_eq!(
+        bytes_from_bandwidth_and_time_delta(bandwidth, idle),
+        1_500_000_000
+    );
+    assert_eq!(
+        bytes_from_bandwidth_and_time_delta(Bandwidth::MAX, Nanos::MAX),
+        ByteCount::MAX
+    );
+}
+
 #[test]
 fn the_pacer_rate_has_a_floor_and_follows_the_initial_window_before_a_sample() {
     let mut sender = BbrSender::new(START, 1200, BbrProfile::Aggressive);

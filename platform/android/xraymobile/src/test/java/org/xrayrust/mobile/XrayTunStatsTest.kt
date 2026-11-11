@@ -17,6 +17,8 @@ class XrayTunStatsTest {
         assertEquals(20L, stats.tcpRemoteWrittenBytes)
         assertEquals(21L, stats.tcpRemoteReadBytes)
         assertEquals(22L, stats.udpOversizeDatagrams)
+        assertEquals(23L, stats.tunFdReadLoopExits)
+        assertEquals(24L, stats.tunFdWriteLoopExits)
     }
 
     @Test

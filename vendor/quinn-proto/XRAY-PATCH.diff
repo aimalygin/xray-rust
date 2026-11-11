@@ -1,3 +1,4 @@
+diff --color -ruN a/src/chrome_parrot.rs b/src/chrome_parrot.rs
 --- a/src/chrome_parrot.rs
 +++ b/src/chrome_parrot.rs
 @@ -0,0 +1,655 @@
@@ -656,6 +657,7 @@
 +        }
 +    }
 +}
+diff --color -ruN a/src/config/transport.rs b/src/config/transport.rs
 --- a/src/config/transport.rs
 +++ b/src/config/transport.rs
 @@ -47,7 +47,10 @@
@@ -761,6 +763,7 @@
              // congestion_controller_factory not debug
              .field("enable_segmentation_offload", enable_segmentation_offload);
          if cfg!(feature = "qlog") {
+diff --color -ruN a/src/congestion/bbr/bw_estimation.rs b/src/congestion/bbr/bw_estimation.rs
 --- a/src/congestion/bbr/bw_estimation.rs
 +++ b/src/congestion/bbr/bw_estimation.rs
 @@ -1,78 +1,191 @@
@@ -1246,6 +1249,7 @@
 +        );
      }
  }
+diff --color -ruN a/src/congestion/bbr/mod.rs b/src/congestion/bbr/mod.rs
 --- a/src/congestion/bbr/mod.rs
 +++ b/src/congestion/bbr/mod.rs
 @@ -5,13 +5,13 @@
@@ -1822,6 +1826,7 @@
 +        );
 +    }
 +}
+diff --color -ruN a/src/congestion.rs b/src/congestion.rs
 --- a/src/congestion.rs
 +++ b/src/congestion.rs
 @@ -1,7 +1,7 @@
@@ -1956,6 +1961,7 @@
  
      /// Retrieve implementation-specific metrics used to populate `qlog` traces when they are enabled
      fn metrics(&self) -> ControllerMetrics {
+diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
 --- a/src/connection/mod.rs
 +++ b/src/connection/mod.rs
 @@ -10,14 +10,12 @@
@@ -2017,14 +2023,19 @@
          if path_validated {
              this.on_path_validated();
          }
-@@ -460,6 +471,23 @@
+@@ -460,6 +471,28 @@
              false => 1,
              true => max_datagrams,
          };
 +        // A ChromeParrot client sends one packet per datagram until the handshake
 +        // is confirmed, pads each datagram carrying an Initial packet to the
 +        // current MTU, and does not clamp its loss probes below the minimum MTU.
-+        let chrome_handshake = self.chrome_handshake();
++        // A close is packed as stock quinn packs it, every space in one
++        // datagram: one packet per datagram would stop it at the first space
++        // with keys, the last space would never carry its frame, and `close`
++        // would stay set, a new close packet on every poll until the close
++        // timer.
++        let chrome_handshake = self.chrome_handshake() && !self.close;
 +        let max_datagrams = match chrome_handshake {
 +            true => 1,
 +            false => max_datagrams,
@@ -2041,7 +2052,7 @@
  
          let mut num_datagrams = 0;
          // Position in `buf` of the first byte of the current UDP datagram. When coalescing QUIC
-@@ -549,6 +577,16 @@
+@@ -549,6 +582,16 @@
              }
  
              pad_datagram_to_mtu |= space_id == SpaceId::Data && self.config.pad_to_mtu;
@@ -2058,7 +2069,7 @@
  
              // Can we append more data into the current buffer?
              // It is not safe to assume that `buf.len()` is the end of the data,
-@@ -604,36 +642,52 @@
+@@ -604,36 +647,52 @@
  
                      let bytes_to_send = segment_size as u64 + untracked_bytes;
                      if self.path.in_flight.bytes + bytes_to_send >= self.path.congestion.window() {
@@ -2124,7 +2135,7 @@
                      }
  
                      if num_datagrams > 1 || pad_datagram_to_mtu {
-@@ -701,6 +755,7 @@
+@@ -701,6 +760,7 @@
                  }
  
                  // Allocate space for another datagram
@@ -2132,7 +2143,7 @@
                  let next_datagram_size_limit = match self.spaces[space_id].loss_probes {
                      0 => segment_size,
                      _ => {
-@@ -708,7 +763,7 @@
+@@ -708,7 +768,7 @@
                          // Clamp the datagram to at most the minimum MTU to ensure that loss probes
                          // can get through and enable recovery even if the path MTU has shrank
                          // unexpectedly.
@@ -2141,7 +2152,7 @@
                      }
                  };
                  buf_capacity += next_datagram_size_limit;
-@@ -775,7 +830,7 @@
+@@ -775,7 +835,7 @@
                  ack_eliciting,
                  self,
              )?);
@@ -2150,7 +2161,7 @@
  
              // https://tools.ietf.org/html/draft-ietf-quic-transport-34#section-14.1
              pad_datagram |=
-@@ -847,7 +902,7 @@
+@@ -847,7 +907,7 @@
  
              // Send an off-path PATH_RESPONSE. Prioritized over on-path data to ensure that path
              // validation can occur while the link is saturated.
@@ -2159,7 +2170,7 @@
                  if let Some((token, remote)) = self.path_responses.pop_off_path(self.path.remote) {
                      // `unwrap` guaranteed to succeed because `builder_storage` was populated just
                      // above.
-@@ -877,8 +932,20 @@
+@@ -877,8 +937,20 @@
                  }
              }
  
@@ -2182,7 +2193,7 @@
  
              // ACK-only packets should only be sent when explicitly allowed. If we write them due to
              // any other reason, there is a bug which leads to one component announcing write
-@@ -911,7 +978,7 @@
+@@ -911,7 +983,7 @@
          // Finish the last packet
          if let Some(mut builder) = builder_storage {
              if pad_datagram {
@@ -2191,7 +2202,7 @@
              }
  
              // If this datagram is a loss probe and `segment_size` is larger than `INITIAL_MTU`,
-@@ -923,11 +990,19 @@
+@@ -923,11 +995,19 @@
                  builder.pad_to(segment_size as u16);
              }
  
@@ -2215,7 +2226,7 @@
  
              self.config.qlog_sink.emit_recovery_metrics(
                  self.pto_count,
-@@ -1429,6 +1504,16 @@
+@@ -1429,6 +1509,16 @@
          }
      }
  
@@ -2232,7 +2243,7 @@
      fn on_ack_received(
          &mut self,
          now: Instant,
-@@ -1467,6 +1552,7 @@
+@@ -1467,6 +1557,7 @@
              return Ok(());
          }
  
@@ -2240,7 +2251,7 @@
          let mut ack_eliciting_acked = false;
          for packet in newly_acked.elts() {
              if let Some(info) = self.spaces[space].take(packet) {
-@@ -1495,13 +1581,6 @@
+@@ -1495,13 +1586,6 @@
              }
          }
  
@@ -2254,7 +2265,7 @@
          if new_largest && ack_eliciting_acked {
              let ack_delay = if space != SpaceId::Data {
                  Duration::from_micros(0)
-@@ -1513,14 +1592,31 @@
+@@ -1513,14 +1597,31 @@
              };
              let rtt = now.saturating_duration_since(self.spaces[space].largest_acked_packet_sent);
              self.path.rtt.update(ack_delay, rtt);
@@ -2286,7 +2297,7 @@
  
          if self.peer_completed_address_validation() {
              self.pto_count = 0;
-@@ -1582,12 +1678,13 @@
+@@ -1582,12 +1683,13 @@
          if info.ack_eliciting && self.path.challenge.is_none() {
              // Only pass ACKs to the congestion controller if we are not validating the current
              // path, so as to ignore any ACKs from older paths still coming in.
@@ -2301,7 +2312,7 @@
              );
          }
  
-@@ -1622,7 +1719,11 @@
+@@ -1622,7 +1724,11 @@
      fn on_loss_detection_timeout(&mut self, now: Instant) {
          if let Some((_, pn_space)) = self.loss_time_and_space() {
              // Time threshold loss Detection
@@ -2313,7 +2324,7 @@
              self.set_loss_detection_timer(now);
              return;
          }
-@@ -1666,6 +1767,7 @@
+@@ -1666,6 +1772,7 @@
          let largest_acked_packet = self.spaces[pn_space].largest_acked_packet.unwrap();
          let packet_threshold = self.config.packet_threshold as u64;
          let mut size_of_lost_packets = 0u64;
@@ -2321,7 +2332,7 @@
  
          // InPersistentCongestion: Determine if all packets in the time period before the newest
          // lost packet, including the edges, are marked lost. PTO computation must always
-@@ -1697,6 +1799,7 @@
+@@ -1697,6 +1804,7 @@
                  } else {
                      lost_packets.push(packet);
                      size_of_lost_packets += info.size as u64;
@@ -2329,7 +2340,7 @@
                      if info.ack_eliciting && due_to_ack {
                          match persistent_congestion_start {
                              // Two ACK-eliciting packets lost more than congestion_period apart, with no
-@@ -1737,7 +1840,8 @@
+@@ -1737,7 +1845,8 @@
              self.stats.path.lost_bytes += size_of_lost_packets;
              trace!(
                  "packets lost: {:?}, bytes lost: {}",
@@ -2339,7 +2350,7 @@
              );
  
              for &packet in &lost_packets {
-@@ -1751,6 +1855,13 @@
+@@ -1751,6 +1860,13 @@
                      self.orig_rem_cid,
                  );
                  self.remove_in_flight(&info);
@@ -2353,7 +2364,7 @@
                  for frame in info.stream_frames {
                      self.streams.retransmit(frame);
                  }
-@@ -1773,6 +1884,11 @@
+@@ -1773,6 +1889,11 @@
  
              if lost_ack_eliciting {
                  self.stats.path.congestion_events += 1;
@@ -2365,7 +2376,7 @@
                  self.path.congestion.on_congestion_event(
                      now,
                      largest_lost_sent,
-@@ -1786,6 +1902,11 @@
+@@ -1786,6 +1907,11 @@
          if let Some(packet) = lost_mtu_probe {
              let info = self.spaces[SpaceId::Data].take(packet).unwrap(); // safe: lost_mtu_probe is omitted from lost_packets, and therefore must not have been removed yet
              self.remove_in_flight(&info);
@@ -2377,7 +2388,7 @@
              self.path.mtud.on_probe_lost();
              self.stats.path.lost_plpmtud_probes += 1;
          }
-@@ -3160,6 +3281,7 @@
+@@ -3160,6 +3286,7 @@
              trace!("PING");
              buf.write(frame::FrameType::PING);
              sent.non_retransmits = true;
@@ -2385,7 +2396,7 @@
              self.stats.frame_tx.ping += 1;
          }
  
-@@ -3173,6 +3295,7 @@
+@@ -3173,6 +3300,7 @@
  
          // ACK
          if space.pending_acks.can_send() {
@@ -2393,7 +2404,7 @@
              Self::populate_acks(
                  now,
                  self.receiving_ecn,
-@@ -3181,6 +3304,7 @@
+@@ -3181,6 +3309,7 @@
                  buf,
                  &mut self.stats,
              );
@@ -2401,7 +2412,7 @@
          }
  
          // ACK_FREQUENCY
-@@ -3241,7 +3365,43 @@
+@@ -3241,7 +3370,43 @@
          }
  
          // CRYPTO
@@ -2446,7 +2457,7 @@
              let mut frame = match space.pending.crypto.pop_front() {
                  Some(x) => x,
                  None => break,
-@@ -3275,6 +3435,11 @@
+@@ -3275,6 +3440,11 @@
              );
              truncated.encode(buf);
              self.stats.frame_tx.crypto += 1;
@@ -2458,7 +2469,7 @@
              sent.retransmits.get_or_create().crypto.push_back(truncated);
              if !frame.data.is_empty() {
                  frame.offset += len as u64;
-@@ -3596,6 +3761,12 @@
+@@ -3596,6 +3766,12 @@
          Some(packet.payload.to_vec())
      }
  
@@ -2471,7 +2482,7 @@
      /// The number of bytes of packets containing retransmittable frames that have not been
      /// acknowledged or declared lost.
      #[cfg(test)]
-@@ -3714,20 +3885,98 @@
+@@ -3714,20 +3890,98 @@
      /// rare. If `pn` is specified, may additionally change unpredictably due to variations in
      /// latency and packet loss.
      fn predict_1rtt_overhead(&self, pn: Option<u64>) -> usize {
@@ -2573,7 +2584,7 @@
      fn tag_len_1rtt(&self) -> usize {
          let key = match self.spaces[SpaceId::Data].crypto.as_ref() {
              Some(crypto) => Some(&*crypto.packet.local),
-@@ -4035,6 +4284,36 @@
+@@ -4035,6 +4289,36 @@
      /// Whether the packet contains non-retransmittable frames (like datagrams)
      non_retransmits: bool,
      requires_padding: bool,
@@ -2610,6 +2621,7 @@
  }
  
  impl SentFrames {
+diff --color -ruN a/src/connection/pacing.rs b/src/connection/pacing.rs
 --- a/src/connection/pacing.rs
 +++ b/src/connection/pacing.rs
 @@ -15,6 +15,7 @@
@@ -2867,6 +2879,7 @@
 +        assert!(p.capacity <= 256 * 1000);
      }
  }
+diff --color -ruN a/src/connection/packet_builder.rs b/src/connection/packet_builder.rs
 --- a/src/connection/packet_builder.rs
 +++ b/src/connection/packet_builder.rs
 @@ -2,12 +2,12 @@
@@ -3014,6 +3027,7 @@
      }
  
      /// Encrypt packet, returning the length of the packet and whether padding was added
+diff --color -ruN a/src/connection/paths.rs b/src/connection/paths.rs
 --- a/src/connection/paths.rs
 +++ b/src/connection/paths.rs
 @@ -7,7 +7,7 @@
@@ -3037,6 +3051,7 @@
      fn new(initial_rtt: Duration) -> Self {
          Self {
              latest: initial_rtt,
+diff --color -ruN a/src/connection/spaces.rs b/src/connection/spaces.rs
 --- a/src/connection/spaces.rs
 +++ b/src/connection/spaces.rs
 @@ -11,8 +11,8 @@
@@ -3059,6 +3074,7 @@
      /// [`PathData::generation`](super::PathData::generation) of the path on which this packet was sent
      pub(super) path_generation: u64,
      /// The time the packet was sent.
+diff --color -ruN a/src/connection/streams/mod.rs b/src/connection/streams/mod.rs
 --- a/src/connection/streams/mod.rs
 +++ b/src/connection/streams/mod.rs
 @@ -138,7 +138,7 @@
@@ -3070,6 +3086,7 @@
  
          let (read_credits, stop_sending) = stream.stop()?;
          if stop_sending.should_transmit() {
+diff --color -ruN a/src/connection/streams/recv.rs b/src/connection/streams/recv.rs
 --- a/src/connection/streams/recv.rs
 +++ b/src/connection/streams/recv.rs
 @@ -110,7 +110,11 @@
@@ -3096,6 +3113,7 @@
                  true => return Err(ReadableError::ClosedStream),
                  false => entry.remove().unwrap().into_inner(), // this can't fail due to the previous get_or_insert_with
              };
+diff --color -ruN a/src/connection/streams/state.rs b/src/connection/streams/state.rs
 --- a/src/connection/streams/state.rs
 +++ b/src/connection/streams/state.rs
 @@ -129,6 +129,9 @@
@@ -3262,6 +3280,7 @@
      }
  
      #[test]
+diff --color -ruN a/src/lib.rs b/src/lib.rs
 --- a/src/lib.rs
 +++ b/src/lib.rs
 @@ -26,6 +26,9 @@
@@ -3274,6 +3293,7 @@
  mod cid_queue;
  pub mod coding;
  mod constant_time;
+diff --color -ruN a/src/packet.rs b/src/packet.rs
 --- a/src/packet.rs
 +++ b/src/packet.rs
 @@ -702,6 +702,17 @@
@@ -3294,6 +3314,7 @@
      pub(crate) fn len(self) -> usize {
          use PacketNumber::*;
          match self {
+diff --color -ruN a/src/tests/congestion_sent.rs b/src/tests/congestion_sent.rs
 --- a/src/tests/congestion_sent.rs
 +++ b/src/tests/congestion_sent.rs
 @@ -0,0 +1,653 @@
@@ -3950,6 +3971,7 @@
 +        "lost probes stay out of the counted congestion losses"
 +    );
 +}
+diff --color -ruN a/src/tests/mod.rs b/src/tests/mod.rs
 --- a/src/tests/mod.rs
 +++ b/src/tests/mod.rs
 @@ -18,19 +18,19 @@
@@ -3994,7 +4016,7 @@
      let mut active_cid_num = CidQueue::LEN as u64;
      active_cid_num = active_cid_num.min(LOC_CID_COUNT);
  
-@@ -3398,3 +3398,102 @@
+@@ -3398,3 +3398,138 @@
      let mut pair = Pair::new(Arc::new(EndpointConfig::default()), server_config);
      pair.connect();
  }
@@ -4077,6 +4099,42 @@
 +    assert_eq!(frames(&decrypted[2]), ["CRYPTO"], "the Finished alone");
 +}
 +
++/// A ChromeParrot client that closes before its handshake is confirmed sends
++/// the close once. One packet per datagram used to stop the close at the
++/// first space that had keys, so the last space never got its frame, the
++/// connection never counted the close as sent, and every poll made another
++/// close packet until the close timer ran out.
++#[test]
++fn chrome_parrot_close_before_the_handshake_is_confirmed_is_sent_once() {
++    let _guard = subscribe();
++    let mut pair = Pair::default();
++    let mut transport = TransportConfig::default();
++    transport.chrome_parrot(true).initial_mtu(1250).min_mtu(1250);
++    let mut config = client_config();
++    config.transport_config(Arc::new(transport));
++    let ch = pair.begin_connect(config);
++    // The ClientHello and the server's flight, then the client's Finished:
++    // the client holds Handshake and 1-RTT keys and has not yet seen
++    // HANDSHAKE_DONE.
++    pair.drive_client();
++    pair.drive_server();
++    pair.drive_client();
++
++    let now = pair.time;
++    let client = pair.client_conn_mut(ch);
++    client.close(now, VarInt::from_u32(0), Bytes::new());
++    let mut buf = Vec::with_capacity(2048);
++    let mut datagrams = 0;
++    while datagrams < 16 && client.poll_transmit(now, 10, &mut buf).is_some() {
++        buf.clear();
++        datagrams += 1;
++    }
++    assert!(
++        (1..=2).contains(&datagrams),
++        "{datagrams} close datagrams for one close"
++    );
++}
++
 +/// A ChromeParrot client numbers its first Initial packet 1, as quic-go's
 +/// ChromeParrot does; a stock one starts at 0.
 +#[test]
@@ -4097,6 +4155,7 @@
 +}
 +
 +mod congestion_sent;
+diff --color -ruN a/src/tests/util.rs b/src/tests/util.rs
 --- a/src/tests/util.rs
 +++ b/src/tests/util.rs
 @@ -42,6 +42,8 @@
@@ -4124,6 +4183,7 @@
              let packet_size = packet_size(&packet, &buffer);
              if packet_size > self.mtu {
                  info!(packet_size, "dropping packet (max size exceeded)");
+diff --color -ruN a/src/transport_parameters.rs b/src/transport_parameters.rs
 --- a/src/transport_parameters.rs
 +++ b/src/transport_parameters.rs
 @@ -110,6 +110,11 @@

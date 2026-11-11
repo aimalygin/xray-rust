@@ -123,6 +123,35 @@ long-term supported release series.
   puts its one socket under them, which takes one peer and opens anew with
   the masks' state at every rebind. udphop and realm are refused on both for
   now. See [UDP masks on freedom and WireGuard](docs/config-compatibility.md#udp-masks-on-freedom-and-wireguard).
+- A ChromeParrot connection that closes before its handshake is confirmed
+  sends its CONNECTION_CLOSE once. One packet per datagram stopped the close
+  at the first packet space with keys, the connection never counted it as
+  sent, and it made a new close packet on every poll, as fast as the socket
+  took them, until the close timer: after a certificate the client refused,
+  or a dial given up after the Finished. Found in XHTTP over HTTP/3 and
+  Hysteria, which parrot Chrome by default.
+- Xray's BBR (`conservative` and `aggressive`): the bytes a bandwidth should
+  have delivered over an interval no longer wrap past 2^63, which 100 Mbit/s
+  reaches after 92 idle seconds. The wrapped, negative count kept the
+  ack-aggregation epoch open on the first ACK after the idle and took the
+  cap off the congestion window. Xray-core's product wraps.
+- A TUN session over a file descriptor no longer dies without the host
+  hearing of it:
+  - A packet the device refuses stops holding the write queue. A raw-IP
+    packet that is neither IPv4 nor IPv6, or any write that fails with
+    `EINVAL` or `EMSGSIZE`, was retried with backoff for ever while every
+    packet behind it waited; it is now dropped and counted in
+    `outbound_dropped_packets`.
+  - Android: `XrayVpnService` on the default file-descriptor backend calls
+    `onXrayTunnelFatalError` when the core's read or write loop gives up on
+    the descriptor. Only the packet-pump backend reported a dead tunnel
+    until now, so the app kept showing a tunnel that moved no packets.
+    `XrayTunStats` gains `tunFdReadLoopExits` and `tunFdWriteLoopExits`.
+    A shutdown step that throws during that teardown no longer swallows the
+    callback.
+  - A TUN TCP flow whose client sends a few bytes and closes while the
+    sniffer still waits for more keeps those bytes for the destination. The
+    flow was closed and the bytes dropped without an error.
 - Hysteria, XHTTP over HTTP/3 and XDRIVE's storages over HTTP/3 shape their
   QUIC handshake like Chrome's, as Xray-core v26.10.31's default ChromeParrot
   does, unless

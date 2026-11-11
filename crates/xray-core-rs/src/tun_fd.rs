@@ -196,6 +196,16 @@ mod platform {
         }
     }
 
+    /// Classifies a failed write of one packet. `EINVAL` and `EMSGSIZE` are
+    /// the kernel refusing that packet, not the descriptor: it would refuse
+    /// it again, and the packets queued behind it would wait for ever.
+    fn write_io_disposition(error: &io::Error) -> TunFdIoDisposition {
+        match error.raw_os_error() {
+            Some(libc::EINVAL) | Some(libc::EMSGSIZE) => TunFdIoDisposition::DropPacket,
+            _ => io_disposition(error),
+        }
+    }
+
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum TunFdLoopAction {
         Continue,
@@ -276,10 +286,9 @@ mod platform {
     /// loops, which are the only ones that know which direction gave up.
     fn observe_io_failure(
         tun: &TunEndpoint,
-        error: &io::Error,
+        disposition: TunFdIoDisposition,
         consecutive_errors: &mut u32,
     ) -> TunFdLoopAction {
-        let disposition = io_disposition(error);
         if disposition == TunFdIoDisposition::Retry {
             tun.record_tun_fd_transient_io_error();
         }
@@ -316,7 +325,8 @@ mod platform {
                             consecutive_errors = 0;
                         }
                         Err(err) => {
-                            match observe_io_failure(&tun, &err, &mut consecutive_errors) {
+                            let disposition = io_disposition(&err);
+                            match observe_io_failure(&tun, disposition, &mut consecutive_errors) {
                                 TunFdLoopAction::Continue => {}
                                 TunFdLoopAction::BackOff => {
                                     tokio::time::sleep(retry_backoff(consecutive_errors)).await;
@@ -438,8 +448,8 @@ mod platform {
                     return TunFdLoopAction::Continue;
                 }
 
-                let disposition = io_disposition(&error);
-                let action = observe_io_failure(tun, &error, consecutive_errors);
+                let disposition = write_io_disposition(&error);
+                let action = observe_io_failure(tun, disposition, consecutive_errors);
                 if disposition == TunFdIoDisposition::DropPacket {
                     tun.record_tun_fd_outbound_drops(1);
                     *next_packet += 1;
@@ -621,24 +631,24 @@ mod platform {
 
     impl<'a> EncodedPacket<'a> {
         fn new(packet_format: TunFdPacketFormat, packet: &'a [u8]) -> io::Result<Self> {
+            // Checked for both formats: a raw-IP device refuses anything else
+            // with `EINVAL`, which says nothing about the descriptor.
+            let family = match packet.first().map(|byte| byte >> 4) {
+                Some(4) => libc::AF_INET,
+                Some(6) => libc::AF_INET6,
+                _ => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "tun packet is not IPv4 or IPv6",
+                    ))
+                }
+            };
             match packet_format {
                 TunFdPacketFormat::RawIp => Ok(Self::RawIp(packet)),
-                TunFdPacketFormat::DarwinUtun => {
-                    let family = match packet.first().map(|byte| byte >> 4) {
-                        Some(4) => libc::AF_INET,
-                        Some(6) => libc::AF_INET6,
-                        _ => {
-                            return Err(io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                "tun packet is not IPv4 or IPv6",
-                            ))
-                        }
-                    };
-                    Ok(Self::DarwinUtun {
-                        header: [0, 0, 0, family as u8],
-                        payload: packet,
-                    })
-                }
+                TunFdPacketFormat::DarwinUtun => Ok(Self::DarwinUtun {
+                    header: [0, 0, 0, family as u8],
+                    payload: packet,
+                }),
             }
         }
 
@@ -1072,13 +1082,69 @@ mod platform {
         #[test]
         fn an_unencodable_packet_is_dropped_not_retried() {
             let malformed = [0x00, 0x00, 0x00, 0x00];
-            // `EncodedPacket` is not `Debug`, so `expect_err` is unavailable here.
-            let error = match EncodedPacket::new(TunFdPacketFormat::DarwinUtun, &malformed) {
-                Ok(_) => panic!("a packet with no IP version must not encode"),
-                Err(error) => error,
-            };
+            for format in [TunFdPacketFormat::DarwinUtun, TunFdPacketFormat::RawIp] {
+                for packet in [&malformed[..], &[][..]] {
+                    // `EncodedPacket` is not `Debug`, so `expect_err` is unavailable here.
+                    let error = match EncodedPacket::new(format, packet) {
+                        Ok(_) => panic!("a packet with no IP version must not encode"),
+                        Err(error) => error,
+                    };
+                    assert_eq!(io_disposition(&error), TunFdIoDisposition::DropPacket);
+                }
+            }
+        }
 
-            assert_eq!(io_disposition(&error), TunFdIoDisposition::DropPacket);
+        /// The kernel refusing one packet is not the descriptor failing: on a
+        /// write it is dropped, where a retry would hold every packet behind
+        /// it for ever. A read that fails the same way is still retried.
+        #[test]
+        fn a_packet_the_kernel_refuses_is_dropped_on_write_alone() {
+            for errno in [libc::EINVAL, libc::EMSGSIZE] {
+                let error = io::Error::from_raw_os_error(errno);
+                assert_eq!(write_io_disposition(&error), TunFdIoDisposition::DropPacket);
+                assert_eq!(io_disposition(&error), TunFdIoDisposition::Retry);
+            }
+            for errno in [libc::ENOBUFS, libc::EIO] {
+                let error = io::Error::from_raw_os_error(errno);
+                assert_eq!(write_io_disposition(&error), TunFdIoDisposition::Retry);
+            }
+            let closed = io::Error::from_raw_os_error(libc::EBADF);
+            assert_eq!(write_io_disposition(&closed), TunFdIoDisposition::Fatal);
+        }
+
+        #[tokio::test]
+        async fn a_refused_packet_does_not_hold_the_packets_behind_it() {
+            let tun = test_tun_endpoint();
+            let batch = test_packet_batch();
+            let mut writer = ScriptedPacketBatchWriter::new([
+                ScriptedBatchWrite::Fail(PacketBatchWriteError::new(
+                    1,
+                    io::Error::from_raw_os_error(libc::EINVAL),
+                )),
+                ScriptedBatchWrite::Complete,
+            ]);
+            let mut next_packet = 0;
+            let mut written_packets_in_batch = 0;
+            let mut consecutive_errors = 0;
+            for _ in 0..2 {
+                assert_eq!(
+                    write_pending_packet_batch(
+                        &mut writer,
+                        &tun,
+                        TunFdPacketFormat::RawIp,
+                        &batch,
+                        &mut next_packet,
+                        &mut written_packets_in_batch,
+                        &mut consecutive_errors,
+                    )
+                    .await,
+                    TunFdLoopAction::Continue
+                );
+            }
+            assert_eq!(writer.written, vec![batch[0].clone(), batch[2].clone()]);
+            let stats = tun.stats().await;
+            assert_eq!(stats.tun_fd_transient_io_errors, 0);
+            assert_eq!(stats.outbound_dropped_packets, 1);
         }
 
         #[tokio::test]
