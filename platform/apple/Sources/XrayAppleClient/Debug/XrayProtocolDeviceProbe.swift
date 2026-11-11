@@ -164,7 +164,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
                 for cycle in 1...3 {
                     update("\(label): TCP, UDP and DNS — cycle \(cycle)/3")
                     let started = Date()
-                    try await start(profile)
+                    try await startAndSettle(profile)
                     emit(["event": "connected", "cycle": cycle,
                           "seconds": Date().timeIntervalSince(started)])
                     try await traffic(fixture)
@@ -207,7 +207,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
         return try XrayProfileImporter.profile(from: text, format: format).serverAddress
     }
 
-    private func start(_ profile: XrayClientProfile) async throws {
+    private func startAndSettle(_ profile: XrayClientProfile) async throws {
         try await controller.start(profile: profile)
         if settleSeconds > 0 { try await Task.sleep(nanoseconds: UInt64(settleSeconds * 1_000_000_000)) }
     }
@@ -261,7 +261,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
         let repeats = fixture.udpRepeats ?? 2
         guard (1...16).contains(sizes.count), (1...3).contains(repeats),
               sizes.allSatisfy({ (1...4096).contains($0) }) else { throw Failure.configuration }
-        try await start(profile)
+        try await startAndSettle(profile)
         try await sample(cycle: 0, stage: "udp-sweep-start")
         var failures = 0
         for host in ["198.51.100.7", "2001:db8::7"] {
@@ -328,7 +328,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
             guard settled == .disconnected || settled == .invalid else { throw Failure.shutdown }
             emit(["event": "startup-cancelled", "cycle": cycle, "result": "passed",
                   "seconds": ProcessInfo.processInfo.systemUptime - cancelledAt])
-            try await start(profile)
+            try await startAndSettle(profile)
             try await traffic(fixture)
             try await sample(cycle: cycle, stage: "after-cancel-restart")
             try await controller.stop()
@@ -337,7 +337,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
         for cycle in 1...5 {
             update("\(label): быстрый перезапуск — \(cycle)/5")
             let start = ProcessInfo.processInfo.systemUptime
-            try await start(profile)
+            try await startAndSettle(profile)
             try await traffic(fixture)
             try await sample(cycle: cycle, stage: "rapid-restart")
             try await controller.stop()
@@ -351,7 +351,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
                            update: (String) -> Void) async throws {
         let seconds = fixture.loadSeconds ?? 20
         guard (5...60).contains(seconds) else { throw Failure.configuration }
-        try await start(profile)
+        try await startAndSettle(profile)
         try await traffic(fixture)
         try await verifyConnectionClosure(cycle: 0, allowEmpty: true)
         try await Task.sleep(nanoseconds: 5_000_000_000)
@@ -440,7 +440,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
             signals.carrier == "wifi" && signals.carrierRoute == "wifi" && signals.active
                 && ProcessInfo.processInfo.systemUptime - signals.carrierRouteChangedAt >= 3
         }
-        try await start(profile)
+        try await startAndSettle(profile)
         emit(["event": "connected", "cycle": 1])
         guard let initial = try await controller.runtimeStats() else { throw Failure.missingStats }
         try await recover(fixture, stage: "wifi-baseline", since: signals.carrierRouteChangedAt)
