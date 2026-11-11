@@ -1522,6 +1522,35 @@ binary's own hellos for `""`, `chrome`, `hellochrome_155` and `hellochrome_133`
 to the fixtures with the per-connection draws set aside, any of the four ECH
 lengths accepted.
 
+## QUIC carriers and a change of network
+
+When the host reports that the OS network changed, XHTTP, MASQUE and
+XDRIVE's storages over HTTP/3 take a fresh protected socket towards the same
+peer and keep their streams and tunnels; QUIC validates the new path. This
+is a deliberate addition: Xray-core keeps the socket whose network is gone,
+and the connection sits out its idle timeout before the next flow dials
+again. Hysteria and WireGuard moved already, each through its own call; the
+others follow the request `xray_core_rebind_hysteria` carries, which the
+mobile wrappers make on every network change ([details](ffi.md#hysteria-network-changes)).
+
+Not moved: a connection behind a `realm` mask, whose socket was introduced
+to the server and would need a new introduction; one behind `xdns` or
+`xicmp`, which carry nothing over the UDP socket; and mKCP, whose server
+tells sessions apart by the client's address.
+
+Evidence: `xhttp_h3_takes_a_fresh_socket_when_the_network_changes` moves a
+live connection to a new local port through a relay that counts its sources,
+with the socket protected again and a request before and after. Against
+Xray-core's own XHTTP H3 server, `xhttp_h3_chrome_parrot_keeps_a_flow_across_network_changes`
+(in `scripts/check-chrome-parrot-interop.sh`) keeps one flow alive across two
+changes. Each change goes through a fresh socket that the relay hands Xray as
+a new path. ChromeParrot is on, so quic-go's server migrates a client whose
+connection ID is zero-length. Against Xray-core's own MASQUE server,
+`masque::masque_h3_keeps_a_flow_across_network_changes` (in
+`scripts/check-masque-interop.sh`) keeps a TCP flow through the tunnel alive
+across two changes. Each change moves the socket that carries the tunnel's
+QUIC datagrams.
+
 ## Follow-up checks
 
 - [x] Integrate the #87 review follow-up, including both relay-address fixes,

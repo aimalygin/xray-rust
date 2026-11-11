@@ -487,6 +487,7 @@ impl MasqueOutbound {
                         // A realm introduction counts toward the ten seconds,
                         // as it runs under the context of Xray's dial.
                         realm: quic.udp_realm.as_ref().map(|_| dialer.realm_env()),
+                        network_changes: Some(dialer.network_changes().clone()),
                     },
                     dialer.tls_connector(),
                 )

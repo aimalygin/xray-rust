@@ -1592,9 +1592,11 @@ pub unsafe extern "C" fn xray_core_rebind_wireguard(
     }
 }
 
-/// Queues a carrier socket rebind for live Hysteria clients (ABI 1.7).
-/// Endpoint addresses and QUIC/inner flows are retained. The returned count is
-/// accepted coalesced requests, not successful binds or path validation.
+/// Queues a carrier socket rebind for live Hysteria clients (ABI 1.7) and for
+/// every other live QUIC carrier: XHTTP, MASQUE and XDRIVE's storages over
+/// HTTP/3. Endpoint addresses and QUIC/inner flows are retained. The returned
+/// count is accepted coalesced requests, not successful binds or path
+/// validation.
 ///
 /// # Safety
 /// `handle` must be null or live; `accepted` must be null or writable. May run
@@ -1621,7 +1623,10 @@ pub unsafe extern "C" fn xray_core_rebind_hysteria(
                 Ok(core) => core,
                 Err(status) => return status,
             };
-            *accepted = core.rebind_hysteria();
+            // The host reports one event, a changed network, and every QUIC
+            // carrier takes it; the name is from when Hysteria's was the
+            // only one that could.
+            *accepted = core.rebind_hysteria() + core.rebind_quic();
             XrayStatus::Ok
         })
     }
