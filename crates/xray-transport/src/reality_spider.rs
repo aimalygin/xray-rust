@@ -11,12 +11,16 @@
 //! the TLS stream and the caller only gets an error.
 //!
 //! Go leaves the crawl unbounded. Here it is capped: request counts,
-//! padding, delays, response bodies, remembered paths and the lifetime of the
-//! connection all have limits (see the constants below).
+//! padding, delays, response bodies, remembered paths, the lifetime of the
+//! connection and the crawls the process runs at once all have limits (see
+//! the constants below).
 
 use std::{
     collections::HashMap,
-    sync::{LazyLock, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, LazyLock, Mutex,
+    },
     time::Duration,
 };
 
@@ -27,7 +31,10 @@ use rand::Rng;
 use regex::bytes::Regex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 
-use crate::stream::{apply_masquerade, HeaderMap};
+use crate::{
+    memory_class::{memory_class, MemoryClass},
+    stream::{apply_masquerade, HeaderMap},
+};
 
 /// How long the crawl may hold the connection, idle time included. Go keeps
 /// it open until the server closes it.
@@ -44,6 +51,14 @@ const MAX_SPIDER_BODY: usize = 1024 * 1024;
 /// Paths remembered per server name. Go's process-wide map grows without
 /// limit.
 const MAX_SPIDER_PATHS: usize = 256;
+/// Crawls the process runs at once, by memory class. Go crawls and holds
+/// every connection answered with a real certificate. Whoever stands between
+/// the client and its server can answer every dial that way, and so can a
+/// server the profile no longer matches; without a limit each dial would
+/// leave a connection held for [`SPIDER_LIFETIME`] and a response body being
+/// read. A connection past the limit is closed instead.
+const MAX_CONCURRENT_SPIDERS: usize = 4;
+const MAX_CONCURRENT_SPIDERS_CONSTRAINED: usize = 2;
 
 /// `golang.org/x/net/http2` Transport defaults: a 4 MiB stream window, a
 /// connection window raised by 1 GiB and a 10 MiB header list limit.
@@ -59,6 +74,37 @@ static HREF: LazyLock<Regex> =
 /// like Go's package-level `maps`.
 static SPIDER_PATHS: LazyLock<Mutex<HashMap<String, Vec<String>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// The crawls running in the process.
+static ACTIVE_SPIDERS: LazyLock<Arc<AtomicUsize>> = LazyLock::new(|| Arc::new(AtomicUsize::new(0)));
+
+fn max_concurrent_spiders(class: MemoryClass) -> usize {
+    match class {
+        MemoryClass::Standard => MAX_CONCURRENT_SPIDERS,
+        MemoryClass::Constrained => MAX_CONCURRENT_SPIDERS_CONSTRAINED,
+    }
+}
+
+/// One crawl's place among those running, given back when it is dropped.
+struct SpiderSlot(Arc<AtomicUsize>);
+
+impl SpiderSlot {
+    /// A place among `active` while fewer than `limit` are taken.
+    fn take(active: &Arc<AtomicUsize>, limit: usize) -> Option<Self> {
+        active
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |taken| {
+                (taken < limit).then_some(taken + 1)
+            })
+            .ok()
+            .map(|_| Self(Arc::clone(active)))
+    }
+}
+
+impl Drop for SpiderSlot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 
 /// `spiderX` split the way Xray-core's config loader splits it
 /// (`infra/conf/transport_security.go` lines 214-242): the `p`, `c`, `t`,
@@ -139,20 +185,52 @@ fn rand_between(from: i64, to: i64) -> i64 {
 }
 
 /// Starts the crawl in the background and waits the configured `r` delay, as
-/// Go does before it returns "processed invalid connection".
+/// Go does before it returns "processed invalid connection". While the
+/// process already runs as many crawls as it may, the connection is closed
+/// instead of crawled.
 pub(crate) async fn spider<S>(stream: S, server_name: &str, spider: &RealitySpider)
 where
     S: AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
-    tokio::spawn(crawl_bounded(
+    spider_within(
+        &ACTIVE_SPIDERS,
+        max_concurrent_spiders(memory_class()),
         stream,
-        server_name.to_owned(),
-        spider.clone(),
-    ));
+        server_name,
+        spider,
+    )
+    .await;
+}
+
+/// [`spider`] counting its crawls in `active`, at most `limit` at once.
+async fn spider_within<S>(
+    active: &Arc<AtomicUsize>,
+    limit: usize,
+    stream: S,
+    server_name: &str,
+    spider: &RealitySpider,
+) where
+    S: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+{
+    match SpiderSlot::take(active, limit) {
+        Some(slot) => {
+            tokio::spawn(crawl_bounded(
+                stream,
+                server_name.to_owned(),
+                spider.clone(),
+                slot,
+            ));
+        }
+        // Closed as a client without the crawl closes it: nothing is read
+        // from it and nothing of it is kept.
+        None => drop(stream),
+    }
     tokio::time::sleep(spider.delay(8)).await;
 }
 
-async fn crawl_bounded<S>(stream: S, server_name: String, spider: RealitySpider)
+/// The crawl, for at most [`SPIDER_LIFETIME`]. Its slot is free again once
+/// it ends, however it ends.
+async fn crawl_bounded<S>(stream: S, server_name: String, spider: RealitySpider, _slot: SpiderSlot)
 where
     S: AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
@@ -392,5 +470,109 @@ mod tests {
         assert_eq!(with_path("/", "/next?x=y"), "/next%3Fx=y");
         assert_eq!(with_path("/", "/a b%20/ü"), "/a%20b%2520/%C3%BC");
         assert_eq!(with_path("/?q", "home"), "/home?q");
+    }
+
+    /// A connection to a peer that never answers: the crawl sends its
+    /// preface and first request and then waits.
+    fn silent_peer() -> (tokio::io::DuplexStream, tokio::io::DuplexStream) {
+        tokio::io::duplex(64 * 1024)
+    }
+
+    async fn within_five_seconds<T>(what: &str, future: impl std::future::Future<Output = T>) -> T {
+        tokio::time::timeout(Duration::from_secs(5), future)
+            .await
+            .unwrap_or_else(|_| panic!("{what} did not happen in time"))
+    }
+
+    #[tokio::test]
+    async fn a_connection_past_the_limit_is_closed_instead_of_crawled() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let spider = RealitySpider::parse("/");
+        let (crawled, mut crawled_peer) = silent_peer();
+        spider_within(&active, 1, crawled, "limit.example.com", &spider).await;
+        assert_eq!(active.load(Ordering::Acquire), 1);
+
+        let (refused, mut refused_peer) = silent_peer();
+        spider_within(&active, 1, refused, "limit.example.com", &spider).await;
+        assert_eq!(
+            active.load(Ordering::Acquire),
+            1,
+            "the refused one holds no slot"
+        );
+
+        // The refused connection ends without a byte; the crawled one opens
+        // HTTP/2.
+        let mut byte = [0u8; 1];
+        let read =
+            within_five_seconds("the refused connection's end", refused_peer.read(&mut byte))
+                .await
+                .expect("read");
+        assert_eq!(read, 0);
+        let mut preface = [0u8; 24];
+        within_five_seconds("the crawl's preface", crawled_peer.read_exact(&mut preface))
+            .await
+            .expect("preface");
+        assert_eq!(&preface, b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
+
+        // The slot comes back when the crawl's connection ends, and the next
+        // connection is crawled again.
+        drop(crawled_peer);
+        within_five_seconds("the slot's release", async {
+            while active.load(Ordering::Acquire) != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        let (next, mut next_peer) = silent_peer();
+        spider_within(&active, 1, next, "limit.example.com", &spider).await;
+        assert_eq!(active.load(Ordering::Acquire), 1);
+        within_five_seconds(
+            "the next crawl's preface",
+            next_peer.read_exact(&mut preface),
+        )
+        .await
+        .expect("preface");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_crawl_gives_its_slot_back_when_its_lifetime_ends() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let (stream, _peer) = silent_peer();
+        spider_within(
+            &active,
+            1,
+            stream,
+            "lifetime.example.com",
+            &RealitySpider::parse("/"),
+        )
+        .await;
+
+        tokio::time::sleep(SPIDER_LIFETIME - Duration::from_secs(1)).await;
+        assert_eq!(active.load(Ordering::Acquire), 1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert_eq!(active.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn a_constrained_process_runs_fewer_crawls_at_once() {
+        assert_eq!(max_concurrent_spiders(MemoryClass::Standard), 4);
+        assert_eq!(max_concurrent_spiders(MemoryClass::Constrained), 2);
+    }
+
+    #[test]
+    fn slots_stop_at_the_limit_and_each_comes_back() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let mut slots: Vec<_> = (0..3)
+            .map(|_| SpiderSlot::take(&active, 3).expect("a free slot"))
+            .collect();
+        assert!(SpiderSlot::take(&active, 3).is_none());
+        assert_eq!(active.load(Ordering::Acquire), 3);
+
+        slots.pop();
+        assert_eq!(active.load(Ordering::Acquire), 2);
+        slots.push(SpiderSlot::take(&active, 3).expect("the slot given back"));
+        assert!(SpiderSlot::take(&active, 3).is_none());
+        drop(slots);
+        assert_eq!(active.load(Ordering::Acquire), 0);
     }
 }

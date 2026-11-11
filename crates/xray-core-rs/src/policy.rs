@@ -1,7 +1,7 @@
 use std::io;
 use std::time::Duration;
 
-use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{split, AsyncRead, AsyncWrite, AsyncWriteExt};
 #[cfg(test)]
 use tokio::io::{ReadHalf, WriteHalf};
 use tokio::sync::mpsc;
@@ -9,6 +9,7 @@ use xray_config::CoreConfig;
 
 use crate::connection::ConnectionTraffic;
 
+mod relay_buffer;
 mod split_relay;
 pub(crate) use split_relay::copy_split_with_idle_timeout;
 
@@ -283,16 +284,17 @@ where
 {
     let mut total = 0u64;
     let mut unflushed = 0usize;
-    // Start small so idle/chatty connections stay cheap; double toward the cap
-    // only while reads keep filling the buffer (bulk transfers).
+    // Start small so idle/chatty connections stay cheap; reads double toward
+    // the cap only while they keep filling (bulk transfers), in a buffer the
+    // process lends for as long as data keeps coming (`relay_buffer`).
     let buffer_cap = buffer_size.clamp(MIN_COPY_BUFFER_SIZE, MAX_COPY_BUFFER_SIZE);
-    let mut buffer = vec![0; buffer_cap.min(INITIAL_COPY_BUFFER_SIZE)];
+    let mut buffer = relay_buffer::RelayBuffer::new(buffer_cap, &relay_buffer::PROCESS_POOL);
     let flush_deadline = tokio::time::sleep(COPY_FLUSH_INTERVAL);
     tokio::pin!(flush_deadline);
 
     loop {
         tokio::select! {
-            read = reader.read(&mut buffer) => {
+            read = std::future::poll_fn(|cx| buffer.poll_read(cx, std::pin::Pin::new(&mut *reader))) => {
                 let len = read?;
                 if len == 0 {
                     if unflushed > 0 {
@@ -302,10 +304,7 @@ where
                     return Ok(total);
                 }
 
-                writer.write_all(&buffer[..len]).await?;
-                if len == buffer.len() && buffer.len() < buffer_cap {
-                    buffer.resize((buffer.len() * 2).min(buffer_cap), 0);
-                }
+                writer.write_all(buffer.filled(len)).await?;
                 total = total.saturating_add(len as u64);
                 if let Some(counter) = counter {
                     counter.fetch_add(len as u64, std::sync::atomic::Ordering::Relaxed);

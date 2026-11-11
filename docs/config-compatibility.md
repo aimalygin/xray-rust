@@ -4556,6 +4556,17 @@ the inbound and outbound level values. TUN TCP applies `downlinkOnly` after
 the app finished sending and closes the flow when the server finished sending.
 Missing values default to Xray-core's `connIdle` 300 s and `uplinkOnly` and
 `downlinkOnly` 1 s.
+
+`bufferSize` is the most one read of a SOCKS or HTTP relay takes, in KiB:
+128 KiB when absent, never less than 1 KiB or more than 1 MiB. A direction
+starts at 4 KiB and doubles while its reads fill. Up to 128 KiB, the memory
+past those first 4 KiB is lent by the process and given back whenever the
+direction finds nothing to read, so a connection that is open but quiet does
+not keep it. The process keeps up to 64 such buffers free, 16 on a phone (the
+constrained memory class), and each worker thread one more. A larger
+`bufferSize` gives each direction a buffer of its own that grows the same way
+and stays until the connection closes. TUN TCP flows do not use this buffer.
+
 System statistics flags are modeled for config compatibility, but this is not
 the Xray statistics service.
 
