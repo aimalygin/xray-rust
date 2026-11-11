@@ -48,6 +48,13 @@ class ReleaseRecordTests(unittest.TestCase):
                     result = subprocess.run(base + ["--tag", tag], capture_output=True, text=True)
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn("only a stable release tag", result.stderr)
+            # A two-digit minor is a stable tag: the refusal that follows is
+            # about the tag's object, which this checkout does not have yet.
+            for tag in ("v0.10.0", "v0.10.12"):
+                with self.subTest(tag=tag):
+                    result = subprocess.run(base + ["--tag", tag], capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotIn("only a stable release tag", result.stderr)
             self.assertFalse(out.exists())
 
 
