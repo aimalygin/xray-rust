@@ -20,6 +20,13 @@ pub(super) trait Controller {
 
     fn on_ack(&mut self, now: Instant, len: usize, in_flight: usize, rtt: &RttEstimator) {}
 
+    /// Fired instead of `on_ack` for an ACK of new data that arrives while a
+    /// loss found by duplicate ACKs is being repaired and does not cover what
+    /// had been sent when the loss was found (RFC 6582 partial ACK).
+    fn on_partial_ack(&mut self, now: Instant, len: usize, in_flight: usize, rtt: &RttEstimator) {
+        self.on_ack(now, len, in_flight, rtt)
+    }
+
     /// Fired on each duplicate ack received, after `on_loss` has been called.
     fn on_dup_ack(&mut self, now: Instant, len: usize, in_flight: usize) {}
 

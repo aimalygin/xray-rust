@@ -111,6 +111,22 @@ impl Controller for Reno {
         self.cwnd = self.cwnd.saturating_add(inc).min(self.rwnd).max(self.mss);
     }
 
+    fn on_partial_ack(&mut self, now: Instant, len: usize, in_flight: usize, rtt: &RttEstimator) {
+        if !self.in_fast_recovery {
+            return self.on_ack(now, len, in_flight, rtt);
+        }
+        // RFC 6582 section 3.2 step 5: the loss event is not over. Take what
+        // was acknowledged off the inflated window, and give one segment
+        // back for the retransmission that follows.
+        let returned = if len >= self.mss { self.mss } else { 0 };
+        self.cwnd = self
+            .cwnd
+            .saturating_sub(len)
+            .saturating_add(returned)
+            .min(self.rwnd)
+            .max(self.mss);
+    }
+
     fn on_dup_ack(&mut self, _now: Instant, len: usize, _in_flight: usize) {
         if self.in_fast_recovery {
             self.cwnd = self.cwnd.saturating_add(len).min(self.rwnd).max(self.mss);
@@ -276,6 +292,51 @@ mod test {
         assert_eq!(reno.window(), 8 * MSS);
         ack(&mut reno, MSS, Instant::from_millis(3));
         assert_eq!(reno.window(), 8 * MSS);
+    }
+
+    #[test]
+    fn partial_ack_deflates_the_window_and_stays_in_fast_recovery() {
+        let mut reno = Reno::new();
+        reno.set_mss(MSS);
+        reno.cwnd = 32 * MSS;
+        reno.on_loss(Instant::from_millis(0), 32 * MSS);
+        assert_eq!((reno.ssthresh, reno.cwnd), (16 * MSS, 19 * MSS));
+        for _ in 0..5 {
+            reno.on_dup_ack(Instant::from_millis(1), MSS, 32 * MSS);
+        }
+        assert_eq!(reno.cwnd, 24 * MSS);
+
+        // Four segments acknowledged, one given back for the retransmission.
+        reno.on_partial_ack(Instant::from_millis(2), 4 * MSS, 28 * MSS, &rtte());
+        assert_eq!(reno.cwnd, 21 * MSS);
+        assert!(reno.in_fast_recovery);
+
+        // Less than a segment gives nothing back.
+        reno.on_partial_ack(Instant::from_millis(3), MSS / 2, 28 * MSS, &rtte());
+        assert_eq!(reno.cwnd, 21 * MSS - MSS / 2);
+
+        // The same loss event does not halve the window twice.
+        reno.on_loss(Instant::from_millis(4), 28 * MSS);
+        assert_eq!((reno.ssthresh, reno.cwnd), (16 * MSS, 21 * MSS - MSS / 2));
+
+        // The window never falls below one segment.
+        reno.on_partial_ack(Instant::from_millis(5), 100 * MSS, 0, &rtte());
+        assert_eq!(reno.cwnd, MSS);
+        assert!(reno.in_fast_recovery);
+
+        // The ACK of the whole flight ends the recovery at the halved window.
+        reno.on_ack(Instant::from_millis(6), MSS, 0, &rtte());
+        assert_eq!(reno.cwnd, 16 * MSS);
+        assert!(!reno.in_fast_recovery);
+    }
+
+    #[test]
+    fn partial_ack_outside_fast_recovery_is_an_ordinary_ack() {
+        let mut reno = Reno::new();
+        reno.set_mss(MSS);
+        reno.cwnd = 4 * MSS;
+        reno.on_partial_ack(Instant::from_millis(0), MSS, 3 * MSS, &rtte());
+        assert_eq!(reno.cwnd, 5 * MSS);
     }
 
     #[test]

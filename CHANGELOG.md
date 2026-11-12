@@ -10,6 +10,26 @@ long-term supported release series.
 
 ## Unreleased
 
+- A TCP flow through a MASQUE or WireGuard outbound recovers from a burst
+  loss without waiting for its retransmission timer. The userspace TCP/IP
+  stack resent one segment when the peer had repeated an ACK three times and
+  left every other segment of the same burst to the timer, which waited at
+  least a second. It now resends the next missing segment with each ACK that
+  stops short of what was sent (NewReno, RFC 6582), reads the peer's
+  selective ACKs for a loss that repeated ACKs do not show, a retransmission
+  lost in its turn among them, and halves its window once for a burst
+  instead of once for each segment found missing. Where the peer has nothing
+  to say, a flight lost whole or at its end, the timer still decides. Over
+  MASQUE it now fires 200 ms past the round trip, as Linux's does, instead
+  of the second of RFC 6298; over WireGuard it keeps the second. TCP that
+  enters through the TUN interface is terminated by other sockets, which
+  take neither change. Xray-core's MASQUE server drops what a burst leaves
+  beyond 32 queued packets, so an upload through it paid that second over
+  and over. On a loopback one 64 MiB upload took 5 to 8 s and takes 0.25 s
+  (Xray-core's own client: 0.4 s); eight parallel 256 KiB uploads took
+  1.0 s and take 0.02 s, or about 0.2 s in the runs where a flow loses a
+  whole flight (Xray-core: 0.03 s). WireGuard times on a loopback are
+  unchanged: nothing is dropped on that path.
 - A TCP flow through a MASQUE or WireGuard outbound no longer stops for good
   while it uploads. Two faults in the userspace TCP/IP stack could strand it.
   The stack went to sleep when its queue of outgoing packets was full, and
@@ -19,8 +39,7 @@ long-term supported release series.
   next free slot, which left a flow with unacknowledged data and no timer;
   this one could strand a WireGuard flow as well. Against Xray-core's MASQUE
   server on a loopback, eight parallel uploads used to hang in a large share
-  of runs. They complete now, though a burst the server drops still costs a
-  flow a one-second retransmission timeout.
+  of runs. They complete now.
 - Linux: the download of a connection from a SOCKS, HTTP or transparent
   inbound is moved in the kernel with `splice(2)` once the outbound reads a
   bare TCP socket: a freedom outbound from its first byte, and VLESS Vision

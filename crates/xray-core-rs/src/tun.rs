@@ -5645,6 +5645,8 @@ fn add_tcp_listener(
     socket.set_nagle_enabled(false);
     // This socket terminates the host's local TUN link. Keep its existing
     // policy explicit when WireGuard enables smoltcp's Internet TCP features.
+    // It asks for neither the loss recovery nor the shorter retransmission
+    // timer that the WireGuard and MASQUE stacks set on their sockets.
     socket.set_congestion_control(tcp::CongestionControl::None);
     if socket.listen(endpoint).is_ok() {
         listeners.insert(
@@ -7865,6 +7867,19 @@ mod tests {
 
         budget.record_pending_upload_dequeue(1);
         assert_eq!(budget.per_flow_limit(), NORMAL_TCP_REMOTE_PENDING_LIMIT);
+    }
+
+    #[test]
+    fn tcp_listener_socket_keeps_the_local_link_policy() {
+        let endpoint = IpEndpoint::new(IpAddress::Ipv4(Ipv4Addr::new(203, 0, 113, 7)), 443);
+        let mut sockets = SocketSet::new(Vec::new());
+        let mut listeners = HashMap::new();
+        add_tcp_listener(&mut sockets, &mut listeners, endpoint, 1500);
+        let socket = sockets.get::<tcp::Socket>(listeners.get(&endpoint).unwrap().handle);
+        // The tunnels' stacks turn these on for a lossy path; the host's
+        // own link keeps what it had.
+        assert_eq!(socket.congestion_control(), tcp::CongestionControl::None);
+        assert!(!socket.loss_recovery());
     }
 
     #[tokio::test]
