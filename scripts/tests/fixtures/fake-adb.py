@@ -3,6 +3,10 @@
 
 Emulates the Device Gate and Device Probe status preferences. HTTP outbounds
 fail every UDP probe unless FAKE_ADB_HTTP_UDP=leak. Records every argv.
+Wi-Fi follows ``svc wifi``: each real change under a running VPN counts one rebind
+request unless FAKE_ADB_REBIND=none, restarts the runtime with
+FAKE_ADB_REBIND=restart, and with FAKE_ADB_CELLULAR=dead no probe passes while
+Wi-Fi is off.
 """
 import json
 import os
@@ -18,7 +22,18 @@ state["argv"].append(args)
 output = ""
 if args[0] == "shell":
     command = shlex.split(args[1])
-    if command[:1] == ["run-as"]:
+    if command[:2] == ["svc", "wifi"]:
+        host, changed = state["host"], state.get("wifi", True) != (command[2] == "enable")
+        state["wifi"] = command[2] == "enable"
+        if changed and host["state"] == "running" and os.environ.get("FAKE_ADB_REBIND") != "none":
+            host["network-rebinds"] = host.get("network-rebinds", 0) + 1
+        if changed and host["state"] == "running" and os.environ.get("FAKE_ADB_REBIND") == "restart":
+            host["runtime-generation"] = host.get("runtime-generation", 0) + 1
+    elif command[:4] == ["settings", "get", "global", "wifi_on"]:
+        output = "1\n" if state.get("wifi", True) else "0\n"
+    elif command[:3] == ["cmd", "wifi", "status"]:
+        output = 'Wifi is enabled\nWifi is connected to "fixture"\n' if state.get("wifi", True) else "Wifi is disabled\n"
+    elif command[:1] == ["run-as"]:
         package, action = command[1], command[2:]
         if action[:2] == ["sh", "-c"]:
             state["pending"][action[2].split("/")[-1]] = sys.stdin.read()
@@ -53,6 +68,7 @@ if args[0] == "shell":
                 host.update(detail="config-profile-ready", state="stopped")
             elif name == "connect":
                 host["state"] = "running"
+                host["runtime-generation"] = host.get("runtime-generation", 0) + 1
             elif name in ("disconnect", "rapid-stop"):
                 host["state"] = "stopped"
         else:
@@ -61,8 +77,12 @@ if args[0] == "shell":
                               "udp-passed": 0, "udp-failed": 0})
             elif name == "start":
                 refused = state.get("protocol") == "http" and os.environ.get("FAKE_ADB_HTTP_UDP") != "leak"
-                probe.update({"running": True, "http-passed": 3,
-                              "udp-passed": 0 if refused else 3, "udp-failed": 3 if refused else 0})
+                if not state.get("wifi", True) and os.environ.get("FAKE_ADB_CELLULAR") == "dead":
+                    probe.update({"running": True, "http-passed": 0, "http-failed": 3,
+                                  "udp-passed": 0, "udp-failed": 3})
+                else:
+                    probe.update({"running": True, "http-passed": 3,
+                                  "udp-passed": 0 if refused else 3, "udp-failed": 3 if refused else 0})
             elif name == "stop":
                 probe["running"] = False
 state_path.write_text(json.dumps(state))

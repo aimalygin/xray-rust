@@ -16,6 +16,8 @@ import android.system.OsConstants
 import android.util.Log
 import org.json.JSONObject
 import org.xrayrust.mobile.XrayCoreException
+import org.xrayrust.mobile.XrayNetworkRebindResult
+import org.xrayrust.mobile.XrayRebindRequestResult
 import org.xrayrust.mobile.XrayTunBackend
 import org.xrayrust.mobile.XrayTunRuntimeProfile
 import org.xrayrust.mobile.XrayTunStats
@@ -117,6 +119,36 @@ class DeviceGateVpnService : XrayVpnService() {
         )
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    // Device runs change the network under a running session, so this host
+    // opts in to the SDK's coordinator, as an app that wants its QUIC and
+    // WireGuard carriers moved to the new network does. The status counters
+    // let the driver tell a requested rebind from a recovery by redial.
+    override fun networkChangeRebindEnabled(): Boolean = true
+
+    override fun onXrayNetworkRebind(result: XrayNetworkRebindResult) {
+        val count = DeviceGateStatus.incrementNetworkRebinds(this)
+        Log.i(
+            LOG_TAG,
+            "XRAY_ANDROID_NETWORK state=rebind-requested count=$count " +
+                "generation=${result.sessionGeneration} hysteria=${describe(result.hysteria)} " +
+                "wireGuard=${describe(result.wireGuard)}",
+        )
+    }
+
+    // The error's class only: its message may quote the core.
+    private fun describe(result: XrayRebindRequestResult): String = when (result) {
+        is XrayRebindRequestResult.Accepted -> "accepted:${result.requests}"
+        is XrayRebindRequestResult.Failed -> "failed:${result.error.javaClass.simpleName}"
+    }
+
+    override fun onXrayNetworkChangeError(error: Exception) {
+        val count = DeviceGateStatus.incrementNetworkChangeErrors(this)
+        Log.e(
+            LOG_TAG,
+            "XRAY_ANDROID_NETWORK state=change-error count=$count kind=${error.javaClass.simpleName}",
+        )
     }
 
     override fun onDestroy() {

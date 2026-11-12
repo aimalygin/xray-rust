@@ -14,6 +14,17 @@ the envelope's ``invalidImports`` must be rejected with the stored profile
 ciphertext unchanged, the plaintext removed and the marker absent from the
 host's log (the 0.8 controls script, generalized).
 
+v0.10 envelopes add three things. A case without ``text`` has no share link
+and is imported as canonical JSON only; ``settleSeconds`` is waited after each
+connect (the reverse bridge opens its tunnel two seconds after it starts).
+``imports`` are links imported on their own after the matrix, one per profile
+import transition. ``--network-change`` adds the Wi-Fi/cellular step to every
+case: with the VPN running it turns Wi-Fi off over adb (``svc wifi disable``),
+requires traffic to recover while Wi-Fi is off, turns it back on, requires
+recovery again, and requires the same runtime generation and at least one
+rebind request reported by the Device Gate. It needs adb over USB, a SIM with
+data, and a fixture the phone reaches from both networks.
+
 Before the first case it grants both apps POST_NOTIFICATIONS and waits until
 the fixture's envelope is ``--warmup-seconds`` old (10 by default), which the
 first REALITY probe needs. Links and configs reach the device through stdin
@@ -41,6 +52,12 @@ def traffic_transitions(target, udp_expected):
     if target == "domain":
         return ["domain-destination", "routed-dns"]
     return [f"{target}-tcp", f"{target}-udp" + ("" if udp_expected else "-refused")]
+
+
+def network_transitions(case_id):
+    """What the Wi-Fi/cellular step evidences: the protocol's own transition,
+    and for XHTTP over HTTP/3 the legacy-regression id of the v0.10 profile."""
+    return ["wifi-cellular-wifi", *(["xhttp-h3-network-change"] if case_id == "xhttp-h3" else [])]
 
 
 class Device:
@@ -154,6 +171,74 @@ class Device:
         return value
 
 
+def set_wifi(device, enabled):
+    """Turns Wi-Fi off or on and waits until the system says it is so."""
+    device.shell("svc", "wifi", "enable" if enabled else "disable")
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        on = device.shell("settings", "get", "global", "wifi_on", check=False).strip() not in ("", "0")
+        if not enabled and not on:
+            return
+        if enabled and on and "Wifi is connected" in device.shell("cmd", "wifi", "status", check=False):
+            return
+        time.sleep(1)
+    raise RuntimeError("Wi-Fi did not " + ("reconnect" if enabled else "turn off"))
+
+
+def recover(device, envelope, udp_expected, identity, stage):
+    """Traffic must pass again within 90 s of the change, retried meanwhile."""
+    started, retries = time.monotonic(), 0
+    while True:
+        try:
+            status = device.traffic(envelope, "ipv4", udp_expected, 2)
+            break
+        except RuntimeError:
+            if time.monotonic() - started >= 90:
+                raise
+            retries += 1
+            device.emit("recovery-retry", **identity, stage=stage, attempt=retries)
+            time.sleep(1)
+    device.emit("transition-recovered", **identity, stage=stage, retries=retries,
+                seconds=round(time.monotonic() - started, 1), transitions=network_transitions(identity["case"]),
+                status=status)
+
+
+def network_change(device, envelope, identity, udp_expected):
+    """Wi-Fi to cellular and back under a running VPN, driven over adb.
+
+    Traffic that passes while Wi-Fi is off left by another network. The same
+    runtime generation shows the VPN was not restarted, and the Device Gate's
+    counter shows the SDK asked the core to rebind its carriers.
+    """
+    counter = lambda status, key: int(status.get(key, 0))
+    before = device.status(device.host)
+    try:
+        set_wifi(device, False)
+        recover(device, envelope, udp_expected, identity, "cellular")
+        set_wifi(device, True)
+        recover(device, envelope, udp_expected, identity, "wifi")
+    finally:
+        # Never leave the phone without Wi-Fi, whatever failed.
+        device.shell("svc", "wifi", "enable", check=False)
+    after = device.status(device.host)
+    rebinds = counter(after, "network-rebinds") - counter(before, "network-rebinds")
+    errors = counter(after, "network-change-errors") - counter(before, "network-change-errors")
+    device.emit("network-change", **identity, transitions=network_transitions(identity["case"]),
+                rebindRequests=rebinds, changeErrors=errors, status=after)
+    if after.get("state") != "running" or after.get("runtime-generation") != before.get("runtime-generation"):
+        raise RuntimeError("the VPN restarted during the network change")
+    if rebinds < 1 or errors:
+        raise RuntimeError(f"the Device Gate reported {rebinds} rebind requests and {errors} errors")
+
+
+def link_imports(device, envelope):
+    """Each link kind imports on its own; nothing connects with it."""
+    device.stop()
+    for item in envelope.get("imports", []):
+        device.install(item, link=True)
+        device.emit("link-import", transition=item["transition"], format=item["format"], passed=True)
+
+
 def invalid_imports(device, envelope):
     marker = envelope["redactionMarker"]
     device.stop()
@@ -178,25 +263,30 @@ def invalid_imports(device, envelope):
             raise RuntimeError("invalid import/redaction control failed")
 
 
-def run_case(device, envelope, case, backend):
+def run_case(device, envelope, case, backend, change_network=False):
     identity = {"case": case.get("caseId", case.get("label", case["format"])), "backend": backend}
     udp_expected = case.get("udp", True)
     udp = "echo" if udp_expected else "refused"
+    settle = case.get("settleSeconds", 0)
     device.emit("case-start", **identity, udp=udp)
     device.stop()
     device.command(device.host, "reset")
-    if case["format"] != "wireguard":
+    if case.get("text") and case["format"] != "wireguard":
         device.install(case, link=True)
         device.emit("share-link-import", **identity, passed=True)
     else:
         device.emit("share-link-import-not-supported", **identity,
-                    scope="devicehost automation accepts URI schemes; canonical JSON follows")
+                    scope="devicehost automation accepts URI schemes; canonical JSON follows"
+                    if case.get("text") else "the case has no share link; canonical JSON follows")
     device.install(case, link=False)
     device.emit("running", **identity, status=device.start(backend))
+    time.sleep(settle)
     for target in ("ipv4", "ipv6", "domain"):
         device.emit("traffic", **identity, target=target, udp=udp,
                     transitions=traffic_transitions(target, udp_expected),
                     status=device.traffic(envelope, target, udp_expected))
+    if change_network:
+        network_change(device, envelope, identity, udp_expected)
     device.command(device.host, "close-connections")
     device.emit("close-recovery", **identity, udp=udp, status=device.traffic(envelope, "ipv4", udp_expected, 2))
     device.stop()
@@ -206,6 +296,7 @@ def run_case(device, envelope, case, backend):
     if device.status(device.host).get("state") != "stopped":
         raise RuntimeError("rapid stop left the VPN running")
     device.start(backend)
+    time.sleep(settle)
     device.emit("cancel-start-recovery", **identity, udp=udp,
                 status=device.traffic(envelope, "ipv4", udp_expected, 2))
     device.stop()
@@ -220,7 +311,14 @@ def main():
     parser.add_argument("--case", action="append", help="limit to these caseIds, in fixture order")
     parser.add_argument("--warmup-seconds", type=float, default=10,
                         help="minimum age of the fixture's v07-probe.json before the first case")
+    parser.add_argument("--backend", action="append", choices=BACKENDS, help="limit to these TUN backends")
+    parser.add_argument("--network-change", action="store_true",
+                        help="add the Wi-Fi/cellular step to every case; needs adb over USB and a WAN fixture")
     args = parser.parse_args()
+    serial = os.environ["ANDROID_SERIAL"]
+    if args.network_change and (":" in serial or "_adb-tls-connect" in serial):
+        parser.error("--network-change turns Wi-Fi off: connect adb over USB, not over the network")
+    backends = [backend for backend in BACKENDS if backend in (args.backend or BACKENDS)]
     os.umask(0o077)
     envelope = json.loads(args.fixture.read_text())
     cases = [case for case in envelope["cases"]
@@ -228,18 +326,18 @@ def main():
     if args.case and len(cases) != len(set(args.case)):
         parser.error("unknown or duplicate --case")
     args.work_dir.mkdir(parents=True, exist_ok=False)
-    device = Device(os.environ["ANDROID_SERIAL"], os.environ.get("ADB", "adb"), args.package_suffix,
-                    args.work_dir / "events.jsonl")
+    device = Device(serial, os.environ.get("ADB", "adb"), args.package_suffix, args.work_dir / "events.jsonl")
     device.grant_notifications()
     # REALITY's first decoy handshake is slow: a matrix started right after
     # the fixture is ready times out the first vless-reality probe.
     warmup = max(0.0, args.fixture.stat().st_mtime + args.warmup_seconds - time.time())
     time.sleep(warmup)
-    device.emit("matrix-start", caseCount=len(cases), backends=list(BACKENDS), warmupSeconds=round(warmup, 1))
+    device.emit("matrix-start", caseCount=len(cases), backends=backends, warmupSeconds=round(warmup, 1),
+                networkChange=args.network_change)
     for case in cases:
-        for backend in BACKENDS:
+        for backend in backends:
             try:
-                run_case(device, envelope, case, backend)
+                run_case(device, envelope, case, backend, args.network_change)
             except Exception as error:
                 device.emit("case-fail", case=case.get("caseId", case["format"]), backend=backend,
                             error=str(error))
@@ -254,6 +352,9 @@ def main():
                     "logcat", "-d", "-v", "epoch", "-s", "XrayDeviceGate:I", "XrayDeviceProbe:I", "*:S",
                     check=False))
     device.emit("matrix-pass")
+    if envelope.get("imports"):
+        link_imports(device, envelope)
+        device.emit("link-imports-complete")
     if envelope.get("invalidImports"):
         invalid_imports(device, envelope)
         device.emit("controls-complete")

@@ -181,10 +181,11 @@ after the SDK publishes, since it pins the published SDK.
 ## Remaining work, in order
 
 1. ~~Add the `v010` evidence profile and map 0.10.x to it.~~ This change.
-2. Extend the device fixtures and Debug harnesses to every scenario of the
-   profile, with a host loopback check per new case, and describe collection
-   in `docs/v010-release-evidence.md`. In progress in the pull request stacked
-   on this one.
+2. ~~Extend the device fixtures and Debug harnesses to every scenario of the
+   profile, with a host loopback check per new case.~~ Done; see
+   [v0.10 evidence collection](v010-release-evidence.md). Still missing there:
+   the `v010` performance comparison suite and the collector for the
+   comparison against 0.9.0.
 3. Pre-release fixes on `main`, then the release commit: workspace version
    0.10.0, dated changelog section, regenerated configuration contract. That
    commit is the candidate.

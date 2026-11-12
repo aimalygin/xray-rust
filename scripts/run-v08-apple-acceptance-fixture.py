@@ -6,6 +6,8 @@ The REALITY decoy uses a TLS handshake with www.google.com:443; application
 traffic is restricted to local synthetic echo/DNS targets by server routing.
 --suite ciphers-v09 covers every classic Shadowsocks AEAD method; --suite
 legacy-v09 combines the nine v0.9 legacy-regression protocols in one fixture.
+--suite legacy-v010 adds SOCKS, HTTP and classic Shadowsocks AEAD to them, and
+--suite xhttp-h3-v010 is XHTTP over HTTP/3 alone, on --port for a WAN host.
 """
 import argparse
 import base64
@@ -75,7 +77,10 @@ def write_ciphers(root, bind, tcp_port, udp_port, dns_port, **kwargs):
     save(root, server, envelope)
 
 
-def write_legacy(root, bind, tcp_port, udp_port, dns_port, **kwargs):
+def write_legacy(root, bind, tcp_port, udp_port, dns_port, only=None, **kwargs):
+    """VLESS over REALITY and over XHTTP on each HTTP version; ``only`` keeps
+    one of them, on the explicit port when there is one."""
+    explicit = kwargs.get("port") if only else None
     original(root, bind, tcp_port, udp_port, dns_port, **{**kwargs, "protocol": "trojan", "port": None})
     server = json.loads((root / "server.json").read_text())
     envelope = json.loads((root / "v07-probe.json").read_text())
@@ -86,7 +91,9 @@ def write_legacy(root, bind, tcp_port, udp_port, dns_port, **kwargs):
     used = set()
     for name, alpn, mode in [("vless-reality", None, None), ("xhttp-h1", "http/1.1", "packet-up"),
                              ("xhttp-h2", "h2", "stream-up"), ("xhttp-h3", "h3", "stream-one")]:
-        port, user = reserve(bind, used), str(uuid.uuid4())
+        if only not in (None, name):
+            continue
+        port, user = explicit or reserve(bind, used), str(uuid.uuid4())
         client_user = {"id": user, "encryption": "none"}
         server_user = {"id": user}
         query = {"encryption": "none"}
@@ -156,15 +163,20 @@ def write_legacy_v09(root, bind, tcp_port, udp_port, dns_port, **kwargs):
     one runs, so two of them can be handed the same free port. The parts are
     then generated again until no carrier port repeats.
     """
+    write_legacy_set(lambda *a, **kw: legacy_v09_parts(*a, **kw), LEGACY_V09,
+                     root, bind, tcp_port, udp_port, dns_port, **kwargs)
+
+
+def write_legacy_set(parts, expected, root, bind, tcp_port, udp_port, dns_port, **kwargs):
     for _ in range(16):
-        server, cases = legacy_v09_parts(root, bind, tcp_port, udp_port, dns_port, **kwargs)
+        server, cases = parts(root, bind, tcp_port, udp_port, dns_port, **kwargs)
         ports = [inbound["port"] for inbound in server["inbounds"]]
         if len(set(ports)) == len(ports):
             break
     else:
         raise RuntimeError("legacy generators allocated the same carrier port twice")
     labels = [case["label"] for case in cases]
-    if sorted(labels) != sorted(LEGACY_V09):
+    if sorted(labels) != sorted(expected):
         raise RuntimeError(f"unexpected legacy-regression cases: {labels}")
     save(root, server, {"cases": cases, "tcpPort": tcp_port, "udpPort": udp_port,
                         "mode": kwargs.get("mode", "smoke"), "probeHost": kwargs.get("probe_host", "v07-probe.test")})
@@ -176,8 +188,12 @@ LEGACY_V09 = ("vless-reality", "xhttp-h1", "xhttp-h2", "xhttp-h3", "hysteria2", 
 
 def legacy_v09_parts(root, bind, tcp_port, udp_port, dns_port, **kwargs):
     """One run of the three legacy generators, each in a fresh parts/<name>."""
+    return legacy_parts(LEGACY_V09_PARTS, root, bind, tcp_port, udp_port, dns_port, **kwargs)
+
+
+def legacy_parts(parts, root, bind, tcp_port, udp_port, dns_port, **kwargs):
     server, cases = None, []
-    for name, protocol in LEGACY_V09_PARTS:
+    for name, protocol in parts:
         part = root / "parts" / name
         shutil.rmtree(part, ignore_errors=True)
         part.mkdir(parents=True, mode=0o700)
@@ -199,6 +215,37 @@ def legacy_v09_parts(root, bind, tcp_port, udp_port, dns_port, **kwargs):
     return server, cases
 
 
+LEGACY_V010_PARTS = [*LEGACY_V09_PARTS, ("v09", "v09")]
+# The v0.9 protocols under their legacy-regression transition names. The
+# profile has one "http"; the plain case is the one 0.9.0's regression ran.
+LEGACY_V010_RELABEL = {"socks:password": "socks", "http:plain": "http",
+                       "shadowsocks-aead:" + fixture.SHADOWSOCKS_AEAD_METHOD: "shadowsocks-aead"}
+LEGACY_V010 = (*LEGACY_V09, *LEGACY_V010_RELABEL.values())
+
+
+def legacy_v010_parts(root, bind, tcp_port, udp_port, dns_port, **kwargs):
+    server, cases = legacy_parts(LEGACY_V010_PARTS, root, bind, tcp_port, udp_port, dns_port, **kwargs)
+    dropped = {json.loads(case["configJSON"])["outbounds"][0]["settings"]["port"]
+               for case in cases if case["label"] == "http:tls"}
+    server["inbounds"] = [inbound for inbound in server["inbounds"] if inbound["port"] not in dropped]
+    cases = [case for case in cases if case["label"] != "http:tls"]
+    for case in cases:
+        case["label"] = LEGACY_V010_RELABEL.get(case["label"], case["label"])
+    return server, cases
+
+
+def write_legacy_v010(root, bind, tcp_port, udp_port, dns_port, **kwargs):
+    """The twelve v0.10 legacy-regression protocols in one fixture: every
+    protocol 0.9.0 shipped. Hysteria2 and XHTTP H3 keep ChromeParrot, their
+    default since 0.10: nothing here sets ``disableChromeParrot``."""
+    write_legacy_set(legacy_v010_parts, LEGACY_V010, root, bind, tcp_port, udp_port, dns_port, **kwargs)
+
+
+def write_xhttp_h3(root, bind, tcp_port, udp_port, dns_port, **kwargs):
+    """XHTTP over HTTP/3 alone, for the network-change run on a WAN host."""
+    write_legacy(root, bind, tcp_port, udp_port, dns_port, only="xhttp-h3", **kwargs)
+
+
 def save(root, server, envelope):
     (root / "server.json").write_text(json.dumps(server, indent=2) + "\n")
     (root / "v07-probe.json").write_text(json.dumps(envelope, indent=2) + "\n")
@@ -206,9 +253,12 @@ def save(root, server, envelope):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--suite", choices=("ciphers", "legacy", "ciphers-v09", "legacy-v09"), default="ciphers")
+    parser.add_argument("--suite", choices=("ciphers", "legacy", "ciphers-v09", "legacy-v09", "legacy-v010",
+                                            "xhttp-h3-v010"), default="ciphers")
     args, remaining = parser.parse_known_args()
     sys.argv = [sys.argv[0], *remaining]
     fixture.write_fixtures = {"ciphers": write_ciphers, "legacy": write_legacy,
-                              "ciphers-v09": write_ciphers_v09, "legacy-v09": write_legacy_v09}[args.suite]
+                              "ciphers-v09": write_ciphers_v09, "legacy-v09": write_legacy_v09,
+                              "legacy-v010": write_legacy_v010, "xhttp-h3-v010": write_xhttp_h3}[args.suite]
+    fixture.SINGLE_CASE = args.suite == "xhttp-h3-v010"
     fixture.main()
