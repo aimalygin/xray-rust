@@ -11849,7 +11849,9 @@ mod testpre_tests {
             assert_eq!(&header[1..], uuid::Uuid::parse_str(ID).unwrap().as_bytes());
 
             // Without a frame the header leaves alone once Xray-core's wait
-            // is over, driven by the relay's read.
+            // is over, driven by the relay's read. The wait starts when the
+            // stream is built, so it is measured from before the open.
+            let opened = tokio::time::Instant::now();
             let open = open_vless_command_stream(
                 &outbound,
                 flow,
@@ -11864,7 +11866,6 @@ mod testpre_tests {
                 .await
                 .unwrap()
                 .unwrap();
-            let opened = tokio::time::Instant::now();
             tokio::select! {
                 read = stream.read(&mut byte) => panic!("{command:?}: {read:?}"),
                 received = tokio::time::timeout(wait, connection.read_exact(&mut header)) => {

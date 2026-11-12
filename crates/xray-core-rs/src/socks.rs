@@ -1054,15 +1054,22 @@ where
 /// Where the `UDP ASSOCIATE` relay binds, so where the reply sends the client:
 /// the inbound's `ip` when set, else the control connection's local IP, as in
 /// Xray-core. An IPv4 client of a dual-stack listener gets that IP in its IPv4
-/// form, which it can reach.
+/// form, which it can reach. A link-local control address keeps its interface:
+/// without the scope the relay could not bind there.
 fn socks_udp_relay_bind(
     configured: Option<IpAddr>,
     control_local: Option<SocketAddr>,
 ) -> SocketAddr {
-    let ip = configured
-        .or_else(|| control_local.map(|local| local.ip().to_canonical()))
-        .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    SocketAddr::new(ip, 0)
+    if let Some(ip) = configured {
+        return SocketAddr::new(ip, 0);
+    }
+    match control_local {
+        Some(SocketAddr::V6(local)) if local.ip().to_canonical().is_ipv6() => SocketAddr::V6(
+            std::net::SocketAddrV6::new(*local.ip(), 0, 0, local.scope_id()),
+        ),
+        Some(local) => SocketAddr::new(local.ip().to_canonical(), 0),
+        None => SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
+    }
 }
 
 #[expect(
@@ -2961,6 +2968,14 @@ mod tests {
         assert_eq!(
             socks_udp_relay_bind(None, None),
             SocketAddr::from((Ipv4Addr::LOCALHOST, 0))
+        );
+
+        // A link-local control address binds only on its interface.
+        let link_local = Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1);
+        let control = std::net::SocketAddrV6::new(link_local, 1080, 0, 4);
+        assert_eq!(
+            socks_udp_relay_bind(None, Some(SocketAddr::V6(control))),
+            SocketAddr::V6(std::net::SocketAddrV6::new(link_local, 0, 0, 4))
         );
 
         // Its datagrams come from its IPv4 address, which the lock admits.
