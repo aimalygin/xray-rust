@@ -10,6 +10,21 @@ long-term supported release series.
 
 ## Unreleased
 
+- A SOCKS inbound gives a client its `handshake` timeout once, from the
+  moment it connects. A client that sent its first byte just before the
+  timeout used to get a second full timeout for the rest of the handshake,
+  so a slow or stalled client could hold the connection for nearly twice as
+  long; SOCKS 4 and HTTP on the SOCKS port had the same gap. Xray-core waits
+  for the first byte without any limit; see
+  [the differences](docs/xray-core-differences.md#socks-inbound-handshake-deadline).
+- `UDP ASSOCIATE` on a SOCKS inbound that listens on `::` with
+  `allowUnauthenticatedLan` now works for IPv4 clients. The relay was bound
+  to `::1` for them and the reply sent them there, where an IPv4 client
+  cannot reach it. Like Xray-core, the relay now binds the IP the client
+  connected to, in its IPv4 form for an IPv4 client, and a LAN client of a
+  `0.0.0.0` listener gets a relay on the LAN address instead of on
+  `127.0.0.1`. A password-protected association also admits such a client's
+  datagrams, which come from its IPv4 address.
 - A TCP flow through a MASQUE or WireGuard outbound no longer stops for good
   while it uploads. Two faults in the userspace TCP/IP stack could strand it.
   The stack went to sleep when its queue of outgoing packets was full, and

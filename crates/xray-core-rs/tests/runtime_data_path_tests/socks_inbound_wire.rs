@@ -223,6 +223,42 @@ async fn the_handshake_has_one_deadline() {
 }
 
 #[tokio::test]
+async fn the_wait_for_the_first_byte_counts_against_the_deadline() {
+    let mut core = start("{}", r#", "policy": {"levels": {"0": {"handshake": 1}}}"#).await;
+    let addr = core.inbound_addr(Some("socks-in")).unwrap();
+    // SOCKS 5, SOCKS 4 and HTTP on the same port: the first byte comes at
+    // 0.9 s and nothing after it, so the inbound closes at 1 s, not 1.9 s.
+    // The clock is real: paused, it runs ahead while loopback packets are
+    // still on their way. The window leaves a loaded runner room on both
+    // sides.
+    let mut clients = JoinSet::new();
+    for first in [5, 4, b'G'] {
+        clients.spawn(async move {
+            let mut client = TcpStream::connect(addr).await.unwrap();
+            let connected = TokioInstant::now();
+            sleep(Duration::from_millis(900)).await;
+            client.write_all(&[first]).await.unwrap();
+            let mut received = Vec::new();
+            let read = timeout(Duration::from_secs(5), client.read_to_end(&mut received))
+                .await
+                .expect("the inbound closes the connection");
+            if let Err(error) = read {
+                assert_eq!(error.kind(), ErrorKind::ConnectionReset, "{error}");
+            }
+            (first, connected.elapsed())
+        });
+    }
+    while let Some(joined) = clients.join_next().await {
+        let (first, closed) = joined.unwrap();
+        assert!(
+            (Duration::from_millis(900)..Duration::from_millis(1500)).contains(&closed),
+            "first byte {first}: closed after {closed:?}"
+        );
+    }
+    core.stop().await.unwrap();
+}
+
+#[tokio::test]
 async fn udp_datagrams_without_a_payload_are_dropped() {
     let sink = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let sink_addr = sink.local_addr().unwrap();
