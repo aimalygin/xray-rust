@@ -952,6 +952,14 @@ impl Connection {
                 self.populate_packet(now, space_id, buf, builder.max_size, builder.exact_number)
             };
 
+            // A ChromeParrot Handshake ACK goes alone while new CRYPTO data
+            // waits for the next datagram, so the data that was pending is no
+            // guide to what this packet carries: an ACK alone elicits none.
+            if chrome_handshake && space_id == SpaceId::Handshake && sent.is_ack_only(&self.streams)
+            {
+                builder.ack_eliciting = false;
+            }
+
             // ACK-only packets should only be sent when explicitly allowed. If we write them due to
             // any other reason, there is a bug which leads to one component announcing write
             // readiness while not writing any data. This degrades performance. The condition is
@@ -1907,7 +1915,7 @@ impl Connection {
         if let Some(packet) = lost_mtu_probe {
             let info = self.spaces[SpaceId::Data].take(packet).unwrap(); // safe: lost_mtu_probe is omitted from lost_packets, and therefore must not have been removed yet
             self.remove_in_flight(&info);
-            self.path.congestion.on_packet_lost_with_token(
+            self.path.congestion.on_mtu_probe_lost_with_token(
                 now,
                 info.size.into(),
                 info.delivery_token,
