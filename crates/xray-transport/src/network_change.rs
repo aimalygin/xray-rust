@@ -26,6 +26,12 @@ impl NetworkChanges {
         self.0.receiver_count() as u64
     }
 
+    /// How many changes were reported so far. For whoever drops what it
+    /// dialed before a change, where a follower keeps and moves it.
+    pub(crate) fn generation(&self) -> u64 {
+        *self.0.borrow()
+    }
+
     pub(crate) fn follow(&self) -> watch::Receiver<u64> {
         self.0.subscribe()
     }

@@ -1039,7 +1039,9 @@ impl Core {
     /// protected socket after an OS network change: XHTTP, MASQUE and
     /// XDRIVE's storages over HTTP/3. Streams and tunnels are kept; a
     /// connection behind a `realm`, `xdns` or `xicmp` mask stays as it is.
-    /// The count is of connections asked, not of paths validated.
+    /// The count is of connections asked, not of paths validated. The kept
+    /// DNS-over-HTTPS and DNS-over-QUIC connections are not asked or counted:
+    /// they are dropped, and the next query dials on the new network.
     pub fn rebind_quic(&self) -> u64 {
         self.transport_dialer.network_changes().notify()
     }

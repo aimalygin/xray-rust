@@ -15,8 +15,9 @@ use xray_proxy::vless::{
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr};
 use xray_transport::{
-    dns_response_matches_query, exchange_dns_https_h2, exchange_dns_quic_candidates,
-    protect_udp_socket, BoxedTransportStream, ConnectorConfig, DnsQueryDispatch, DnsQueryMetadata,
+    dns_response_matches_query, exchange_dns_https_pooled, exchange_dns_quic_candidates,
+    protect_udp_socket, BoxedTransportStream, ConnectorConfig, DnsConnectionKey,
+    DnsConnectionPools, DnsConnectionRoute, DnsHttpsDialer, DnsQueryDispatch, DnsQueryMetadata,
     DnsQueryTransport, DnsQueryTransportKind, DnsResolver, HappyEyeballsConfig, NameServer,
     TlsClientConfig, TlsConnector, TransportDialer,
 };
@@ -24,7 +25,8 @@ use xray_transport::{
 use crate::dns_outbound_runtime::DnsDirectExecutor;
 use crate::outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_udp_stream_with_resolver_and_dialer,
-    DnsHappyEyeballsMode, DnsOutbound, TcpOutbound, UdpOutbound, VlessUdpFraming,
+    DnsHappyEyeballsMode, DnsOutbound, SelectedTcpOutbound, TcpOutbound, UdpOutbound,
+    VlessUdpFraming,
 };
 use crate::OutboundRouter;
 
@@ -62,6 +64,62 @@ pub(crate) struct RoutedDnsQueryTransport {
     direct_executor: Arc<DnsDirectExecutor>,
     operation_permits: Arc<Semaphore>,
     tls_connector: Result<Arc<TlsConnector>, String>,
+    /// The DoH and DoQ connections kept between queries. They follow the
+    /// dialer's network changes and close with this transport.
+    connections: DnsConnectionPools,
+}
+
+/// The way one DNS TCP stream leaves, chosen once so that the connection
+/// kept for it and its dial agree.
+enum DnsTcpRoute {
+    /// Past configured routing, to the bootstrap-resolved server.
+    Local,
+    /// Through a `dns` outbound that takes the query.
+    Dns(DnsOutbound),
+    /// Through the outbound that routing picked.
+    Outbound(SelectedTcpOutbound),
+}
+
+impl DnsTcpRoute {
+    fn connection_route(&self, inbound_tag: Option<&str>) -> DnsConnectionRoute {
+        let (outbound_tag, dns_outbound) = match self {
+            Self::Local => return DnsConnectionRoute::Local,
+            Self::Dns(outbound) => (None, Some(outbound.runtime_identity())),
+            Self::Outbound(selected) => (selected.tag.clone(), None),
+        };
+        DnsConnectionRoute::Routed {
+            inbound_tag: inbound_tag.map(str::to_owned),
+            outbound_tag,
+            dns_outbound,
+        }
+    }
+}
+
+/// Dials the stream of a routed or local DNS-over-HTTPS connection.
+struct RoutedDnsHttpsDialer<'a> {
+    transport: &'a RoutedDnsQueryTransport,
+    server: &'a NameServer,
+    route: &'a DnsTcpRoute,
+    tls_connector: &'a TlsConnector,
+}
+
+#[async_trait]
+impl DnsHttpsDialer for RoutedDnsHttpsDialer<'_> {
+    async fn dial(
+        &self,
+        _failed: &[SocketAddr],
+    ) -> io::Result<(BoxedTransportStream, Option<SocketAddr>)> {
+        let stream = self
+            .transport
+            .open_tcp_route(self.server, self.route)
+            .await?;
+        let stream = self
+            .tls_connector
+            .connect_stream(stream, &dns_https_tls_client_config(self.server))
+            .await
+            .map_err(io::Error::other)?;
+        Ok((stream, None))
+    }
 }
 
 impl RoutedDnsQueryTransport {
@@ -99,6 +157,7 @@ impl RoutedDnsQueryTransport {
         Self {
             outbound_router,
             bootstrap_resolver,
+            connections: DnsConnectionPools::new(transport_dialer.network_changes().clone()),
             transport_dialer,
             forbidden_servers: forbidden_servers.into(),
             direct_executor,
@@ -355,15 +414,21 @@ impl RoutedDnsQueryTransport {
                 "DNS-over-HTTPS exchange is missing its request path",
             )
         })?;
-        let stream = self.open_tcp_stream(server, metadata).await?;
         let tls_connector = self.tls_connector.as_deref().map_err(|message| {
             io::Error::other(format!("DNS TLS connector unavailable: {message}"))
         })?;
-        let stream = tls_connector
-            .connect_stream(stream, &dns_https_tls_client_config(server))
-            .await
-            .map_err(io::Error::other)?;
-        exchange_dns_https_h2(stream, server, https_path, query).await
+        let route = self.select_tcp_route(server, metadata)?;
+        let key = DnsConnectionKey {
+            server: server.clone(),
+            route: route.connection_route(metadata.inbound_tag),
+        };
+        let dialer = RoutedDnsHttpsDialer {
+            transport: self,
+            server,
+            route: &route,
+            tls_connector,
+        };
+        exchange_dns_https_pooled(&self.connections, &key, &dialer, https_path, query).await
     }
 
     async fn exchange_quic(
@@ -383,6 +448,7 @@ impl RoutedDnsQueryTransport {
         })?;
         let candidates = self.resolved_servers(server).await?;
         exchange_dns_quic_candidates(
+            &self.connections,
             server,
             &candidates,
             query,
@@ -397,12 +463,19 @@ impl RoutedDnsQueryTransport {
         server: &NameServer,
         metadata: DnsQueryMetadata<'_>,
     ) -> io::Result<BoxedTransportStream> {
-        let target = self.target(server, RoutingNetwork::Tcp);
+        let route = self.select_tcp_route(server, metadata)?;
+        self.open_tcp_route(server, &route).await
+    }
+
+    fn select_tcp_route(
+        &self,
+        server: &NameServer,
+        metadata: DnsQueryMetadata<'_>,
+    ) -> io::Result<DnsTcpRoute> {
         if metadata.dispatch == DnsQueryDispatch::Local {
-            let candidates = self.resolved_servers(server).await?;
-            return open_local_dns_tcp_stream(self.transport_dialer.as_ref(), &target, &candidates)
-                .await;
+            return Ok(DnsTcpRoute::Local);
         }
+        let target = self.target(server, RoutingNetwork::Tcp);
         // Keep routed TCP name-server selection non-recursive for the same
         // SkipDNSResolve reason as the UDP path above.
         if let Some(outbound) = self
@@ -413,26 +486,49 @@ impl RoutedDnsQueryTransport {
             if !self.outbound_router.is_dns_client_tag(metadata.inbound_tag) {
                 return Err(untrusted_dns_outbound_error());
             }
-            let session = DirectDnsTcpSession::open(
-                &target,
-                &outbound,
-                self.bootstrap_resolver.as_ref(),
-                self.transport_dialer.as_ref(),
-                self.forbidden_servers.as_ref(),
-            )
-            .await?;
-            return Ok(session.into_stream());
+            return Ok(DnsTcpRoute::Dns(outbound));
         }
-        let selected = self
-            .outbound_router
+        self.outbound_router
             .select_tcp_outbound_for_session_with_tag(
                 &xray_config::RouteContext::inbound(metadata.inbound_tag),
                 &target,
-                false,
+                true,
             )
-            .map_err(io::Error::other)?;
+            .map(DnsTcpRoute::Outbound)
+            .map_err(io::Error::other)
+    }
 
-        Ok(match selected.outbound {
+    async fn open_tcp_route(
+        &self,
+        server: &NameServer,
+        route: &DnsTcpRoute,
+    ) -> io::Result<BoxedTransportStream> {
+        let target = self.target(server, RoutingNetwork::Tcp);
+        let selected = match route {
+            DnsTcpRoute::Local => {
+                let candidates = self.resolved_servers(server).await?;
+                return open_local_dns_tcp_stream(
+                    self.transport_dialer.as_ref(),
+                    &target,
+                    &candidates,
+                )
+                .await;
+            }
+            DnsTcpRoute::Dns(outbound) => {
+                let session = DirectDnsTcpSession::open(
+                    &target,
+                    outbound,
+                    self.bootstrap_resolver.as_ref(),
+                    self.transport_dialer.as_ref(),
+                    self.forbidden_servers.as_ref(),
+                )
+                .await?;
+                return Ok(session.into_stream());
+            }
+            DnsTcpRoute::Outbound(selected) => selected,
+        };
+
+        Ok(match &selected.outbound {
             outbound @ TcpOutbound::Freedom(_) => {
                 let candidates = self.resolved_servers(server).await?;
                 open_routed_freedom_dns_tcp_stream(
@@ -459,7 +555,7 @@ impl RoutedDnsQueryTransport {
                     ));
                 }
                 open_tcp_stream_with_resolver_and_dialer(
-                    &outbound,
+                    outbound,
                     &target,
                     self.bootstrap_resolver.as_ref(),
                     self.transport_dialer.as_ref(),
@@ -484,7 +580,7 @@ impl RoutedDnsQueryTransport {
                     ));
                 }
                 open_tcp_stream_with_resolver_and_dialer(
-                    &outbound,
+                    outbound,
                     &target,
                     self.bootstrap_resolver.as_ref(),
                     self.transport_dialer.as_ref(),
@@ -3369,6 +3465,158 @@ mod tests {
         assert_eq!(response, expected_response);
         assert_eq!(bootstrap.calls.load(Ordering::Relaxed), 1);
         assert_eq!(protector.calls.load(Ordering::Relaxed), 1);
+        // The connection is kept for the next query until the transport goes.
+        drop(transport);
         server.await.expect("join managed DNS-over-HTTPS server");
+    }
+
+    /// Serves DNS over HTTPS on every connection it accepts and counts them.
+    async fn spawn_counting_dns_https_server(
+        server_config: Arc<rustls::ServerConfig>,
+    ) -> (SocketAddr, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind DNS HTTPS test server");
+        let address = listener.local_addr().expect("read DNS HTTPS test address");
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&accepted);
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                counter.fetch_add(1, Ordering::Relaxed);
+                let acceptor = TlsAcceptor::from(Arc::clone(&server_config));
+                tokio::spawn(async move {
+                    let Ok(stream) = acceptor.accept(stream).await else {
+                        return;
+                    };
+                    let Ok(mut connection) = h2::server::handshake(stream).await else {
+                        return;
+                    };
+                    while let Some(Ok((request, mut respond))) = connection.accept().await {
+                        tokio::spawn(async move {
+                            let mut body = request.into_body();
+                            let mut query = BytesMut::new();
+                            while let Some(Ok(chunk)) = body.data().await {
+                                query.extend_from_slice(&chunk);
+                                let _ = body.flow_control().release_capacity(chunk.len());
+                            }
+                            let headers = Response::builder()
+                                .status(200)
+                                .header(header::CONTENT_TYPE, "application/dns-message")
+                                .body(())
+                                .unwrap();
+                            if let Ok(mut send) = respond.send_response(headers, false) {
+                                let _ = send.send_data(Bytes::from(dns_response(&query)), true);
+                            }
+                        });
+                    }
+                });
+            }
+        });
+        (address, accepted)
+    }
+
+    #[tokio::test]
+    async fn managed_dns_over_https_reuses_one_connection_per_server_and_route() {
+        let server_domain = "pooled-doh.test";
+        let (client_config, server_config) = dns_https_tls_configs(server_domain);
+        let (server_addr, accepted) = spawn_counting_dns_https_server(server_config).await;
+        let bootstrap = Arc::new(CandidateBootstrapResolver {
+            expected_domain: server_domain,
+            expected_port: server_addr.port(),
+            candidates: vec![server_addr],
+            calls: AtomicUsize::new(0),
+        });
+        let protector = Arc::new(CountingSocketProtector::default());
+        let dialer = Arc::new(
+            TransportDialer::system_with_socket_protector(Some(protector.clone()))
+                .expect("build protected DNS-over-HTTPS dialer"),
+        );
+        let config = Arc::new(CoreConfig {
+            inbounds: Vec::new(),
+            outbounds: vec![OutboundConfig {
+                mux: None,
+                tag: Some("direct".to_owned()),
+                proxy_settings: None,
+                stream: StreamSettings {
+                    network: Network::Tcp,
+                    transport: StreamTransport::Raw,
+                    security: StreamSecurity::None,
+                    quic_params: None,
+                    tcp_fragment: None,
+                    tcp_header_custom: None,
+                    udp_header_custom: None,
+                    tcp_sudoku: None,
+                    tcp_xmc: None,
+                    udp_xdns: None,
+                    udp_realm: None,
+                    udp_xicmp: None,
+                    udp_salamander: None,
+                    udp_sudoku: None,
+                    udp_noise: None,
+                    socket_options: None,
+                },
+                settings: OutboundSettings::Freedom(Default::default()),
+            }],
+            default_outbound_tag: Some("direct".to_owned()),
+            routing: RoutingConfig::default(),
+            observatory: None,
+            dns: DnsConfig::default(),
+            policy: PolicyConfig::default(),
+        });
+        let transport = RoutedDnsQueryTransport::new(
+            Arc::new(OutboundRouter::new(config)),
+            bootstrap.clone(),
+            Arc::clone(&dialer),
+            Vec::new(),
+        )
+        .with_tls_connector(Arc::new(TlsConnector::with_pinned_client_config(
+            client_config,
+        )));
+        let server = NameServer::Domain {
+            domain: server_domain.to_owned(),
+            port: server_addr.port(),
+        };
+        let exchange = |id: u16, metadata: DnsQueryMetadata<'static>| {
+            let (transport, server) = (&transport, &server);
+            async move {
+                let query = dns_query(id, "answer-over-pooled-doh.test");
+                let response = timeout(
+                    Duration::from_secs(5),
+                    transport.exchange(
+                        server,
+                        DnsQueryTransportKind::Https,
+                        metadata.with_https_path("/dns-query"),
+                        &query,
+                    ),
+                )
+                .await
+                .expect("managed DNS-over-HTTPS exchange should not stall")
+                .expect("managed DNS-over-HTTPS exchange should succeed");
+                assert_eq!(response, dns_response(&query));
+            }
+        };
+        let routed = DnsQueryMetadata::new(Some("managed-dns"));
+
+        exchange(1, routed).await;
+        exchange(2, routed).await;
+        tokio::join!(exchange(3, routed), exchange(4, routed));
+        assert_eq!(accepted.load(Ordering::Relaxed), 1);
+        assert_eq!(protector.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(transport.connections.https_connections(), 1);
+
+        // Another inbound tag may be routed elsewhere, and a local query
+        // leaves past routing: neither rides the routed connection.
+        exchange(5, DnsQueryMetadata::new(Some("other-inbound"))).await;
+        exchange(6, DnsQueryMetadata::local(Some("managed-dns"))).await;
+        exchange(7, DnsQueryMetadata::local(Some("managed-dns"))).await;
+        assert_eq!(accepted.load(Ordering::Relaxed), 3);
+        assert_eq!(protector.calls.load(Ordering::Relaxed), 3);
+
+        // A network change costs no rebind request and retires them all.
+        assert_eq!(dialer.network_changes().notify(), 0);
+        exchange(8, routed).await;
+        exchange(9, routed).await;
+        assert_eq!(accepted.load(Ordering::Relaxed), 4);
+        assert_eq!(protector.calls.load(Ordering::Relaxed), 4);
     }
 }
