@@ -46,6 +46,7 @@ enum class XrayFfiCapability(val mask: Long) {
     HttpProfileImport(1L shl 27),
     OutboundProbeCancel(1L shl 28),
     TunMtu(1L shl 29),
+    VlessProfileImport(1L shl 30),
 }
 
 /** Concurrent flows per Hysteria outbound; all inbounds share one bounded session. */

@@ -18,6 +18,12 @@ enum class XrayProfileFormat(
     Wireguard("wireguard", XrayFfiCapability.WireguardOutbound),
     Socks("socks", XrayFfiCapability.SocksProfileImport, 13),
     Http("http", XrayFfiCapability.HttpProfileImport, 14),
+
+    /**
+     * `vless://` links through the core importer, which follows Xray-core. [XrayVlessUrlImporter]
+     * is a separate parser with its own accepted set; the two can disagree on the same link.
+     */
+    Vless("vless", XrayFfiCapability.VlessProfileImport, 17),
 }
 
 fun XrayFfiInfo.supportsProfileImport(format: XrayProfileFormat): Boolean =

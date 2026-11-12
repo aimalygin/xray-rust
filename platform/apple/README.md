@@ -72,6 +72,12 @@ links. Use `XrayCore.ffiInfo.supportsProfileImport(.http)` before importing.
 HTTPS retains certificate/name verification; explicit DNS servers use TCP.
 See the [HTTP import contract](../../docs/http-profile-import.md).
 
+Development ABI 1.17 also accepts `.vless`: `vless://` links through the shared
+Rust importer, which follows Xray-core. Check
+`XrayCore.ffiInfo.supportsProfileImport(.vless)` before importing. It is a
+different parser from `XrayVlessURLImporter` and accepts a different set of
+links; see the [VLESS import contract](../../docs/vless-profile-import.md).
+
 `XrayProfileImporter.profile(from:format:)` accepts `.socks` for `socks://` and
 `socks5://` in development ABI 1.13. Check
 `XrayCore.ffiInfo.supportsProfileImport(.socks)` before use and follow the

@@ -1,10 +1,13 @@
 # VLESS share-link import
 
 The development Rust import API and the C ABI accept `vless://` share links as
-format `vless`. The Swift and Kotlin SDKs still import VLESS links with their
-own `XrayVlessURLImporter`/`XrayVlessUrlImporter`; switching them to this core
-importer is a follow-up. Use the header and native library built from the same
-revision; this change does not publish SDK binaries.
+format `vless`. The Swift and Kotlin SDKs reach it through
+`XrayProfileImporter` as `XrayProfileFormat.vless` and
+`XrayProfileFormat.Vless`; check `supportsProfileImport` first. Their own
+`XrayVlessURLImporter`/`XrayVlessUrlImporter` remain separate parsers that
+accept a [different set of links](#differences-from-the-sdk-importers). Use
+the header and native library built from the same revision; this change does
+not publish SDK binaries.
 
 The C request is `{"format":"vless","text":"vless://<uuid>@server.example:443?..."}`.
 It requires ABI major 1, minor >=17, `PROFILE_IMPORT` (bit 18) and

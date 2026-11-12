@@ -490,6 +490,7 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(core.contains("requireCapability(XrayFfiCapability.OutboundProbe)"));
     assert!(core.contains("OutboundProbeCancel(1L shl 28)"));
     assert!(core.contains("TunMtu(1L shl 29)"));
+    assert!(core.contains("VlessProfileImport(1L shl 30)"));
     assert!(core.contains("fun supportedTunMtu(requested: Int): Int"));
     assert!(core.contains("requireFeature(16, XrayFfiCapability.TunMtu)"));
     assert!(jni.contains("xray_core_set_tun_mtu(native->core, static_cast<uint32_t>(mtu), &error)"));

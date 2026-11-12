@@ -45,6 +45,42 @@ final class XrayProfileImporterTests: XCTestCase {
         }
     }
 
+    func testVlessImportRequiresItsOwnCapabilityAndMinorBeforeNative() throws {
+        XCTAssertEqual(XrayFFICapabilities.vlessProfileImport.rawValue, 1 << 30)
+        XCTAssertEqual(XrayProfileFormat.vless.rawValue, "vless")
+        let caps: XrayFFICapabilities = [.profileImport, .vlessProfileImport]
+        XCTAssertTrue(XrayFFIInfo(version: .init(major: 1, minor: 17), capabilities: caps).supportsProfileImport(.vless))
+        for info in [
+            XrayFFIInfo(version: .init(major: 1, minor: 16), capabilities: caps),
+            XrayFFIInfo(version: .init(major: 2, minor: 17), capabilities: caps),
+            XrayFFIInfo(version: .init(major: 1, minor: 17), capabilities: [.profileImport]),
+            XrayFFIInfo(version: .init(major: 1, minor: 17), capabilities: [.vlessProfileImport]),
+        ] {
+            XCTAssertThrowsError(try XrayProfileImporter.importProfile(text: "secret", format: .vless,
+                name: nil, dnsServers: [], info: info, nativeImport: { _ in
+                    XCTFail("unavailable VLESS import invoked native code"); return Data()
+                })) { XCTAssertEqual($0 as? XrayProfileImportError, .unavailable) }
+        }
+    }
+
+    func testNativeVlessImportPreservesIDAndPassesMobilePreflight() throws {
+        let profile = try XrayProfileImporter.profile(from: "vless://00112233-4455-6677-8899-aabbccddeeff@vless.example:443?type=ws&security=tls&sni=vless.example&path=%2Fvless#Test%20%E2%9C%93", format: .vless)
+        XCTAssertEqual(profile.name, "Test ✓")
+        XCTAssertEqual(profile.serverAddress, "vless.example")
+        XCTAssertTrue(XrayCore.ffiInfo.supportsProfileImport(.vless))
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(profile.configJSON.utf8)) as? [String: Any])
+        let outbound = try XCTUnwrap((root["outbounds"] as? [[String: Any]])?.first)
+        XCTAssertEqual(outbound["protocol"] as? String, "vless")
+        XCTAssertTrue(profile.configJSON.contains("00112233-4455-6677-8899-aabbccddeeff"))
+        XCTAssertFalse(String(reflecting: profile).contains("00112233"))
+        try XrayMobileDNSPreflight.validate(profile.configJSON)
+        _ = try XrayCore(configJSON: profile.configJSON)
+        // 31 bytes name no ID, so the core refuses the link; its error must not quote it.
+        XCTAssertThrowsError(try XrayProfileImporter.profile(
+            from: "vless://secret-secret-secret-secret-sec@vless.example:443?security=tls", format: .vless
+        )) { XCTAssertFalse(String(reflecting: $0).contains("secret")) }
+    }
+
     func testSocksImportRequiresItsOwnCapabilityAndMinorBeforeNative() throws {
         let caps: XrayFFICapabilities = [.profileImport, .socksProfileImport]
         XCTAssertTrue(XrayFFIInfo(version: .init(major: 1, minor: 13), capabilities: caps).supportsProfileImport(.socks))
