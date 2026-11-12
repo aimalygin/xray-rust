@@ -4046,8 +4046,21 @@ TLS and derive SNI/verification identity from the configured domain or IP
 literal. DoH negotiates HTTP/2 and sends bounded RFC 8484 POST messages; an
 omitted path becomes `/`, while a query-only suffix is attached to that path.
 DoQ uses a protected provider-local UDP socket, QUIC v1, exact ALPN `doq`, and
-one RFC 9250 bidirectional stream per connection and query. Routed DoQ and DoQ
-connection pooling are not implemented. TCP/TLS/DoQ URLs are authority-only.
+one RFC 9250 bidirectional stream per query. Routed DoQ is not implemented.
+DoH and DoQ keep their connection between queries. A DoH server has one
+HTTP/2 connection per route: one for `https+local://`, and for `https://` one
+per inbound tag and outbound that routing picks; queries at the same time are
+parallel streams of it. A DoQ server has one QUIC connection. A connection is
+dropped when a query fails on it, when the server closes it, after 300 seconds
+without a query for DoH (with Xray-core's 45-second PING while nothing is
+read) and 30 seconds for DoQ, and when the host reports an OS network change
+with `rebind_quic`; the next query dials a new one. A query that a kept
+connection drops before answering goes once more on a fresh one. A Core keeps
+at most 8 connections of each kind and closes the least recently used to make
+room; first queries at the same time wait for one dial. The differences from
+Xray-core are listed in
+[xray-core-differences.md](xray-core-differences.md#dns-over-https-and-quic-connection-reuse).
+TCP/TLS/DoQ URLs are authority-only.
 HTTPS permits an ASCII path/query but rejects
 userinfo, fragments, backslashes, whitespace/control characters, scoped or
 unbracketed IPv6, and zero ports. In an object entry, the port embedded in the
