@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Compare three frozen full clients on the v0.8 or v0.9 protocol profiles.
+"""Compare frozen full clients on the v0.8, v0.9 or v0.10 protocol profiles.
 
 Common SOCKS ingress and Xray server; no TUN route changes. Compile beforehand.
 Fresh clients, a fresh common server/key set per case/repeat, rotating order.
 All failures, raw byte checks, startup CPU and cleanup results are retained.
 ``--suite v09`` measures SOCKS (password auth), HTTP CONNECT (Basic auth,
 plain and TLS) and classic Shadowsocks AEAD; HTTP has no UDP case.
+``--suite v010`` measures VLESS over mKCP and MASQUE over HTTP/3 against the
+pinned Xray-core client alone: sing-box implements neither carrier.
 """
 import argparse
 import base64
 import contextlib
 import copy
+import hashlib
 import importlib.util
 import json
 import os
@@ -50,8 +53,14 @@ V09_PROFILES = {"socks-auth": ("socks", None),
                 "ss-aes256gcm": ("shadowsocks", "aes-256-gcm"),
                 "ss-chacha20": ("shadowsocks", "chacha20-poly1305"),
                 "ss-xchacha20": ("shadowsocks", "xchacha20-poly1305")}
-SUITES = {"v08": PROFILES, "v09": V09_PROFILES}
-ALL_PROFILES = {**PROFILES, **V09_PROFILES}
+# The two carriers 0.10 adds, as the device fixture configures them.
+V010_PROFILES = {"mkcp-vless": ("mkcp", None), "masque-h3": ("masque", None)}
+SUITES = {"v08": PROFILES, "v09": V09_PROFILES, "v010": V010_PROFILES}
+ALL_PROFILES = {**PROFILES, **V09_PROFILES, **V010_PROFILES}
+# The clients a suite measures, in their base order.
+SUITE_CLIENTS = {"v08": ("candidate", "xray", "singbox"), "v09": ("candidate", "xray", "singbox"),
+                 "v010": ("candidate", "xray")}
+SINGBOX = "56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778"
 # Release-evidence measurement id prefix -> the profiles it summarizes.
 MEASUREMENT_GROUPS = {
     "v08": {"trojan": ["trojan-tls"],
@@ -59,7 +68,23 @@ MEASUREMENT_GROUPS = {
             "vmess": ["vmess-aes128", "vmess-chacha20", "vmess-auto"]},
     "v09": {"socks": ["socks-auth"], "http": ["http-basic", "http-basic-tls"],
             "shadowsocks-aead": ["ss-aes128gcm", "ss-aes256gcm", "ss-chacha20", "ss-xchacha20"]},
+    "v010": {"mkcp": ["mkcp-vless"], "masque": ["masque-h3"]},
 }
+# Work per flow where the carrier, not the machine, sets the pace: 64 KiB
+# writes for bulk traffic, round trips for latency. mKCP's default capacity
+# holds a flow to a few MiB/s and its 50 ms interval holds a round trip near
+# 100 ms on any host; MASQUE moves every flow through one user-space IP
+# stack. The usual 256 MiB and 1000 round trips would outlast the driver's
+# 120 seconds.
+CARRIER_WORK = {"mkcp": {"bulk": 512, "latency": 200}, "masque": {"bulk": 1024}}
+
+
+def iterations(profile, traffic, smoke):
+    latency = traffic in ("tcp-latency", "udp")
+    if smoke:
+        return 10 if latency else 4
+    work = CARRIER_WORK.get(ALL_PROFILES[profile][0], {})
+    return work.get("latency", 1000) if latency else work.get("bulk", 4096)
 
 
 def cases(profiles, smoke=False):
@@ -67,7 +92,7 @@ def cases(profiles, smoke=False):
     return [{"id": f"{name}-socks-{traffic}-{count}", "profile": name, "path": "socks",
              "traffic": traffic, "connections": count,
              "payload_size": 1200 if traffic == "udp" else 1024 if traffic == "tcp-latency" else 65536,
-             "iterations": (10 if smoke else 1000) if traffic in ("tcp-latency", "udp") else (4 if smoke else 4096)}
+             "iterations": iterations(name, traffic, smoke)}
             for name in profiles for count in (1, 8)
             for traffic in ("upload", "download", "full-duplex", "tcp-latency", "udp")
             if not (traffic == "udp" and ALL_PROFILES[name][0] == "http")]
@@ -82,22 +107,43 @@ def select_cases(available, requested):
             if requested is None or case["id"] in requested]
 
 
-def tls(directory, stream, server_stream):
-    """Chrome-shaped TLS pinned to a fresh loopback certificate (Trojan, HTTPS)."""
+def certificate(directory, name):
+    """A fresh loopback certificate for ``name``: its files and its pin."""
     cert, key = directory / "tls.crt", directory / "tls.key"
     subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-                    "-days", "1", "-subj", "/CN=v08-benchmark.test", "-keyout", str(key),
+                    "-days", "1", "-subj", "/CN=" + name, "-keyout", str(key),
                     "-out", str(cert)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     der = subprocess.check_output(["openssl", "x509", "-in", str(cert), "-outform", "DER"])
-    import hashlib
+    return [{"certificateFile": str(cert), "keyFile": str(key)}], hashlib.sha256(der).hexdigest()
+
+
+def tls(directory, stream, server_stream):
+    """Chrome-shaped TLS pinned to a fresh loopback certificate (Trojan, HTTPS)."""
+    certificates, pin = certificate(directory, "v08-benchmark.test")
     stream.update(security="tls", tlsSettings={"serverName": "v08-benchmark.test",
-        "fingerprint": "chrome", "alpn": ["http/1.1"], "pinnedPeerCertSha256": hashlib.sha256(der).hexdigest()})
-    server_stream.update(security="tls", tlsSettings={"alpn": ["http/1.1"],
-        "certificates": [{"certificateFile": str(cert), "keyFile": str(key)}]})
+        "fingerprint": "chrome", "alpn": ["http/1.1"], "pinnedPeerCertSha256": pin})
+    server_stream.update(security="tls", tlsSettings={"alpn": ["http/1.1"], "certificates": certificates})
+
+
+def carrier_configs(carrier, directory, port):
+    """The device fixture's own v0.10 case, on the loopback.
+
+    The comparison and the device runs then measure one profile: plain VLESS
+    over mKCP with Xray-core's default capacities, and MASQUE over HTTP/3
+    with Basic authentication and a pinned certificate.
+    """
+    certificates, pin = certificate(directory, "v08-probe.test") if carrier == "masque" else (None, None)
+    case = device.v010_case(carrier, "127.0.0.1", port, None, pin, certificates, None)
+    client = {"log": {"loglevel": "error"}, "outbounds": case["outbounds"]}
+    server = {"log": {"loglevel": "error"}, "inbounds": case["inbounds"],
+              "outbounds": [{"protocol": "freedom", "settings": {"finalRules": [{"action": "allow"}]}}]}
+    return client, server
 
 
 def configs(profile, directory, port):
     protocol, method = ALL_PROFILES[profile]
+    if profile in V010_PROFILES:
+        return carrier_configs(protocol, directory, port)
     settings = {"address": "127.0.0.1", "port": port}
     stream = {"network": "raw"}
     server_stream = {"network": "raw"}
@@ -216,11 +262,14 @@ def main():
         os.environ.pop(variable, None)
     os.umask(0o077)
     inputs = json.loads(a.inputs.read_text())
-    paths = {k: Path(inputs[k]["path"]).resolve(strict=True) for k in ("candidate", "xray", "singbox", "harness")}
+    clients = SUITE_CLIENTS[a.suite]
+    if not set(clients) <= set(inputs):
+        raise ValueError(f"the {a.suite} suite measures {', '.join(clients)}; the inputs lack one of them")
+    paths = {k: Path(inputs[k]["path"]).resolve(strict=True) for k in (*clients, "harness")}
     for name, path in paths.items():
         if bench.sha(path) != inputs[name]["sha256"]:
             raise ValueError("binary changed: " + name)
-    if inputs["xray"]["commit"] != device.REFERENCE or inputs["singbox"]["commit"] != "56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778":
+    if inputs["xray"]["commit"] != device.REFERENCE or ("singbox" in clients and inputs["singbox"]["commit"] != SINGBOX):
         raise ValueError("reference source pin changed")
     device.verify_reference(paths["xray"])
     if followup.inventory(paths.values()) or ambient()["compiler_load_detected"]:
@@ -229,12 +278,12 @@ def main():
     out.mkdir(parents=True, exist_ok=False)
     launcher = ROOT / "scripts/v08-reference-client.py"
     launchers = {}
-    for mode in ("xray", "singbox"):
+    for mode in clients[1:]:
         target = out / (mode + "-client")
         shutil.copyfile(launcher, target)
         target.chmod(0o700)
         bench.save(Path(str(target) + ".json"), {"mode": mode, "suite": a.suite,
-                   "binaries": {k: str(paths[k]) for k in ("xray", "singbox")}})
+                   "binaries": {k: str(paths[k]) for k in clients[1:]}})
         launchers[mode] = target
     files = [*paths.values(), a.inputs.resolve(), Path(__file__).resolve(), launcher,
              Path(bench.__file__), Path(followup.__file__), Path(device.__file__)]
@@ -245,7 +294,7 @@ def main():
     selected = [case for _, case in indexed_cases]
     manifest = {"schema_version": 1, "suite": a.suite, "smoke": a.smoke, "diagnostic": False,
         "repeats": 1 if a.smoke else a.repeats, "cases": selected, "warmup": True,
-        "versions": {k: {"binary": str(paths[k]), "engine_sha256": inputs[k]["sha256"]} for k in ("candidate", "xray", "singbox")},
+        "versions": {k: {"binary": str(paths[k]), "engine_sha256": inputs[k]["sha256"]} for k in clients},
         "binary_builds": inputs, "file_hashes": hashes, "reference_commit": bench.REFERENCE,
         "source_commit": bench.command(["git", "rev-parse", "HEAD"], ROOT),
         "source_patch_sha256": bench.sha(out / "source.patch"), "platform": platform.platform(),
@@ -253,16 +302,18 @@ def main():
         "fixture_policy": "fresh common Xray server and keys per case/repeat; fresh clients in rotating order",
         "worker_policy": "stock defaults; inherited Go/Tokio worker and GC overrides cleared",
         "bulk_setup": "one verified client preface byte before server READY; excluded from payload count and transfer window for all clients",
-        "scope": ("SOCKS TCP/UDP; no TUN comparison, transport extensions, Mux, AEAD-2017 or physical-device claims"
-                  if a.suite == "v08" else
-                  "SOCKS ingress; SOCKS/HTTP(S)/Shadowsocks AEAD-2017 outbounds; HTTP without UDP; "
-                  "no TUN comparison, Mux or physical-device claims"),
+        "scope": {"v08": "SOCKS TCP/UDP; no TUN comparison, transport extensions, Mux, AEAD-2017 or physical-device claims",
+                  "v09": "SOCKS ingress; SOCKS/HTTP(S)/Shadowsocks AEAD-2017 outbounds; HTTP without UDP; "
+                         "no TUN comparison, Mux or physical-device claims",
+                  "v010": "SOCKS ingress; VLESS over mKCP at Xray-core's default capacities and MASQUE over HTTP/3; "
+                          "pinned Xray-core client only (sing-box has neither carrier); "
+                          "no TUN comparison, masks, Mux or physical-device claims"}[a.suite],
         "measurement_groups": MEASUREMENT_GROUPS[a.suite],
         "started_unix": time.time(), "runs": []}
     bench.save(out / "manifest.json", manifest)
     for index, case in indexed_cases:
         for repeat in range(1, manifest["repeats"] + 1):
-            order = ["candidate", "xray", "singbox"]
+            order = list(clients)
             offset = (index + repeat - 1) % len(order)
             order = order[offset:] + order[:offset]
             if repeat % 2 == 0:

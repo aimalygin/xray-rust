@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare pinned full clients for the synthetic v0.8/v0.9 SOCKS comparison.
+"""Prepare pinned full clients for the synthetic v0.8/v0.9/v0.10 SOCKS comparison.
 
 Preparation happens before the measured binary is spawned. No Python/OpenSSL
 process, native-library adapter or config translator is included in client CPU.
@@ -20,18 +20,46 @@ CIPHERS = ("auto", "aes-128-gcm", "chacha20-poly1305")
 AEAD_METHODS = {"aes-128-gcm": "aes-128-gcm", "aes-256-gcm": "aes-256-gcm",
                 "chacha20-poly1305": "chacha20-ietf-poly1305",
                 "xchacha20-poly1305": "xchacha20-ietf-poly1305"}
-SUITE_PROTOCOLS = {"v08": ("trojan", "shadowsocks", "vmess"), "v09": ("socks", "http", "shadowsocks")}
+SUITE_PROTOCOLS = {"v08": ("trojan", "shadowsocks", "vmess"), "v09": ("socks", "http", "shadowsocks"),
+                   "v010": ("vless", "masque")}
+# v0.10 measures two carriers, each under the one protocol that rides it here.
+V010_CARRIERS = {"vless": "kcp", "masque": "masque"}
+
+
+def pinned(stream, cert):
+    """The outbound's TLS settings, verified against the fixture's certificate."""
+    tls = stream.get("tlsSettings", {})
+    if stream.get("security") != "tls" or tls.get("allowInsecure"):
+        raise ValueError("verified TLS required")
+    der = subprocess.check_output(["openssl", "x509", "-in", str(cert), "-outform", "DER"])
+    if hashlib.sha256(der).hexdigest() != tls.get("pinnedPeerCertSha256"):
+        raise ValueError("fixture certificate does not match the measured pin")
+    return tls
 
 
 def verified_tls(stream, cert):
-    tls = stream.get("tlsSettings", {})
-    if (stream.get("security") != "tls" or tls.get("allowInsecure")
-            or tls.get("fingerprint") != "chrome"):
+    if stream.get("tlsSettings", {}).get("fingerprint") != "chrome":
         raise ValueError("verified Chrome-shaped TLS required")
-    der = subprocess.check_output(["openssl", "x509", "-in", str(cert), "-outform", "DER"])
-    if hashlib.sha256(der).hexdigest() != tls["pinnedPeerCertSha256"]:
-        raise ValueError("fixture certificate does not match the measured pin")
-    return tls
+    return pinned(stream, cert)
+
+
+def carrier_client(config, mode, cert):
+    """A v0.10 carrier profile goes to Xray-core as it is, once it is the plain one."""
+    outbound, = config["outbounds"]
+    settings, stream = outbound["settings"], outbound["streamSettings"]
+    if mode != "xray":
+        raise ValueError("sing-box implements neither mKCP nor MASQUE")
+    if stream.get("finalmask") or stream.get("sockopt"):
+        raise ValueError("the carrier comparison adds no mask and no socket option")
+    if outbound["protocol"] == "vless":
+        if (settings.get("flow") or settings.get("encryption") != "none" or settings.get("reverse")
+                or stream.get("security", "none") != "none" or stream.get("kcpSettings")):
+            raise ValueError("plain VLESS over mKCP at its default capacities required")
+    else:
+        pinned(stream, cert)
+        if stream["tlsSettings"].get("alpn") != ["h3"] or not stream.get("masqueSettings", {}).get("pass"):
+            raise ValueError("authenticated MASQUE over HTTP/3 required")
+    return config, ["run", "-config"], "xray"
 
 
 def singbox_tls(tls, cert):
@@ -49,13 +77,16 @@ def translate(config, mode, cert, suite="v08"):
     settings = outbound["settings"]
     stream = outbound["streamSettings"]
     protocol = outbound["protocol"]
+    carrier = V010_CARRIERS.get(protocol) if suite == "v010" else "raw"
     if (mode not in ("xray", "singbox") or inbound.get("protocol") != "socks"
             or inbound.get("listen") != "127.0.0.1"
             or settings.get("address") != "127.0.0.1"
-            or stream.get("network") != "raw" or outbound.get("mux")):
-        raise ValueError("only the synthetic loopback/raw SOCKS comparison is supported")
+            or carrier is None or stream.get("network") != carrier or outbound.get("mux")):
+        raise ValueError("only the synthetic loopback SOCKS comparison on the suite's own carrier is supported")
     if protocol not in SUITE_PROTOCOLS.get(suite, ()):
         raise ValueError("unsupported comparison protocol")
+    if suite == "v010":
+        return carrier_client(config, mode, cert)
     if protocol == "shadowsocks" and settings.get("method") not in (METHODS if suite == "v08" else AEAD_METHODS):
         raise ValueError("SS2022 method required" if suite == "v08" else "Shadowsocks AEAD-2017 method required")
     if protocol == "vmess" and (settings.get("security") not in CIPHERS
