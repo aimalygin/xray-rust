@@ -576,3 +576,38 @@ fn records_are_shuffled_by_weight_within_each_priority() {
     sort_by_priority_weight(&mut records, |_| 9);
     assert_eq!(records[0].target, "a");
 }
+
+/// A phone without `/etc/resolv.conf` skips both lookups at once rather than
+/// asking loopback nameservers, and the dial goes on as configured.
+#[tokio::test]
+async fn a_phone_without_a_resolver_configuration_skips_the_lookups() {
+    let resolver = SystemRecordResolver {
+        skips_without_config: true,
+        ..SystemRecordResolver::with_config("/nonexistent/xray-rust/resolv.conf", None)
+    };
+    let srv = tokio::time::timeout(
+        Duration::from_secs(1),
+        resolver.lookup_srv("xray", "tcp", "example.com"),
+    )
+    .await
+    .expect("skipped without waiting for a nameserver");
+    assert_eq!(srv.unwrap_err().kind(), io::ErrorKind::NotFound);
+    let txt = tokio::time::timeout(Duration::from_secs(1), resolver.lookup_txt("example.com"))
+        .await
+        .expect("skipped without waiting for a nameserver");
+    assert_eq!(txt.unwrap_err().kind(), io::ErrorKind::NotFound);
+}
+
+/// Elsewhere a missing file still means Go's loopback nameservers.
+#[test]
+fn only_phones_skip_without_a_resolver_configuration() {
+    let resolver = SystemRecordResolver::with_config("/nonexistent/xray-rust/resolv.conf", None);
+    assert_eq!(
+        resolver.skips_without_config,
+        cfg!(any(
+            target_os = "android",
+            target_os = "ios",
+            target_os = "tvos"
+        ))
+    );
+}

@@ -10,6 +10,12 @@ long-term supported release series.
 
 ## Unreleased
 
+- Android, iOS and tvOS: an outbound with an SRV or TXT `addressPortStrategy`
+  dials its configured server at once when the device has no
+  `/etc/resolv.conf`, and the log says so once. Each dial used to ask
+  loopback nameservers, as Go does, that no phone runs, and fall back only
+  after they failed. See
+  [Socket options](docs/xray-core-differences.md#socket-options).
 - A TCP flow through a MASQUE or WireGuard outbound recovers from a burst
   loss without waiting for its retransmission timer. The userspace TCP/IP
   stack resent one segment when the peer had repeated an ACK three times and

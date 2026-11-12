@@ -5,13 +5,16 @@
 //! included: it reads `/etc/resolv.conf` and asks those nameservers over UDP,
 //! then over TCP when an answer is truncated. The platform's resolver is
 //! never asked. Without the file, as on Android, Go asks `127.0.0.1:53` and
-//! `[::1]:53`. This module follows Go 1.27's `net` package.
+//! `[::1]:53`. This module follows Go 1.27's `net` package, except that on
+//! Android, iOS and tvOS a missing file skips the lookup, with one warning,
+//! instead of asking loopback nameservers no phone runs; the dial goes on
+//! with the configured server, as Go's failed lookup leaves it.
 use std::{
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6},
     path::PathBuf,
     sync::{
-        atomic::{AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
     },
     time::Duration,
@@ -61,6 +64,9 @@ pub trait RecordResolver: Send + Sync {
 pub struct SystemRecordResolver {
     config: PathBuf,
     protector: Option<Arc<dyn SocketProtector>>,
+    /// Whether a missing `config` skips the lookup rather than falling back
+    /// to Go's loopback nameservers.
+    skips_without_config: bool,
 }
 
 impl std::fmt::Debug for SystemRecordResolver {
@@ -85,7 +91,26 @@ impl SystemRecordResolver {
         Self {
             config: config.into(),
             protector,
+            skips_without_config: cfg!(any(
+                target_os = "android",
+                target_os = "ios",
+                target_os = "tvos"
+            )),
         }
+    }
+
+    /// The configuration to ask, or a failed lookup on a phone without one.
+    fn read_config(&self) -> io::Result<ResolvConf> {
+        if self.skips_without_config && !self.config.exists() {
+            if !WARNED_WITHOUT_CONFIG.swap(true, Ordering::Relaxed) {
+                tracing::warn!(
+                    config = %self.config.display(),
+                    "no resolver configuration: addressPortStrategy SRV and TXT lookups are skipped and servers are dialled as configured"
+                );
+            }
+            return Err(no_such_host());
+        }
+        Ok(ResolvConf::read(&self.config))
     }
 
     /// Go's `lookup`: each name of the search list in turn, until one has
@@ -217,15 +242,18 @@ impl RecordResolver for SystemRecordResolver {
         proto: &str,
         name: &str,
     ) -> io::Result<Vec<SrvRecord>> {
-        let conf = ResolvConf::read(&self.config);
+        let conf = self.read_config()?;
         self.srv(&conf, service, proto, name).await
     }
 
     async fn lookup_txt(&self, name: &str) -> io::Result<Vec<String>> {
-        let conf = ResolvConf::read(&self.config);
+        let conf = self.read_config()?;
         self.txt(&conf, name).await
     }
 }
+
+/// Whether a phone without a resolver configuration has said so once.
+static WARNED_WITHOUT_CONFIG: AtomicBool = AtomicBool::new(false);
 
 /// Go's `soffset`, the next first server under `options rotate`.
 static ROTATION: AtomicU32 = AtomicU32::new(0);
