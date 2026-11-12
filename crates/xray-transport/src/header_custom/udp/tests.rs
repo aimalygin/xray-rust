@@ -161,6 +161,39 @@ fn invalid_or_oversized_headers_and_size_changes_do_not_panic() {
     ));
 }
 
+/// Xray-core's `matchUDPItems` holds a reused value to the state the last
+/// write left. Once another datagram has gone out, a reply to the one before
+/// it no longer matches: a mask that reuses a value drawn per datagram
+/// carries one datagram for one, not a stream of them either way.
+#[test]
+fn a_reply_reusing_a_drawn_value_matches_only_the_latest_write() {
+    let mut mask = UdpHeader::new(Arc::new(HeaderCustomUdpConfig {
+        standalone: false,
+        client: vec![CustomItem {
+            rand: 8,
+            capture: "token".into(),
+            ..item()
+        }],
+        server: vec![CustomItem {
+            reuse: "token".into(),
+            ..item()
+        }],
+    }))
+    .unwrap();
+    let now = Instant::now();
+    let mut token = |payload: &[u8]| match mask.write(payload, None, peer(), now) {
+        Write::Packet(datagram) => datagram[..8].to_vec(),
+        _ => panic!("the prefix was not written"),
+    };
+    let (earlier, latest) = (token(b"first"), token(b"second"));
+    assert_ne!(earlier, latest);
+    let reply = |token: &[u8]| [token, b"reply"].concat();
+    assert!(mask.read(&reply(&earlier), peer(), now).is_none());
+    assert_eq!(mask.read(&reply(&latest), peer(), now), Some(8));
+    // The reply keeps the token: a second reply to the same datagram passes.
+    assert_eq!(mask.read(&reply(&latest), peer(), now), Some(8));
+}
+
 #[test]
 fn random_replies_capture_actual_bytes_and_write_fallback_survives_expiry() {
     let mut mask = UdpHeader::new(Arc::new(HeaderCustomUdpConfig {

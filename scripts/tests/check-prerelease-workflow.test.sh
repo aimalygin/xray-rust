@@ -240,6 +240,31 @@ grep -Fxq "    if: github.event_name == 'push' && startsWith(github.ref, 'refs/t
 grep -Fq 'bash scripts/check-release-evidence.sh' <<<"$(job_body release-evidence)" || \
   die "release boundary does not revalidate candidate or promotion evidence"
 
+# The release-evidence job finds its inputs by the profile the selector
+# prints: the workflow file, the artifact and the archive inside it. A minor
+# version whose profile has no such workflow would fail only at its tag.
+evidence_job="$(job_body release-evidence)"
+grep -Fq '/actions/workflows/$EVIDENCE_PROFILE-release-evidence.yml/runs' <<<"$evidence_job" || \
+  die "release boundary does not look up the profile's evidence workflow"
+grep -Fxq '            --name "$EVIDENCE_PROFILE-release-evidence-$CANDIDATE_COMMIT" \' <<<"$evidence_job" || \
+  die "release boundary does not download the profile's evidence artifact"
+grep -Fxq '          archive="$RUNNER_TEMP/release-evidence/$EVIDENCE_PROFILE-release-evidence.zip"' <<<"$evidence_job" || \
+  die "release boundary does not revalidate the profile's evidence archive"
+for release in 0.6.0:v06 0.7.0:v07 0.8.1:v08 0.9.0:v09 0.10.0:v010; do
+  profile="$(bash "$WORKSPACE_ROOT/scripts/release-evidence-profile.sh" "v${release%%:*}")"
+  [[ "$profile" == "${release##*:}" ]] || die "v${release%%:*} selects evidence profile $profile"
+  evidence_workflow="$WORKSPACE_ROOT/.github/workflows/$profile-release-evidence.yml"
+  [[ -f "$evidence_workflow" ]] || die "evidence profile $profile has no workflow"
+  grep -Fxq "          name: $profile-release-evidence-\${{ github.sha }}" "$evidence_workflow" || \
+    die "$profile evidence workflow does not publish the artifact a tag downloads"
+  grep -Fxq "            \${{ runner.temp }}/$profile-release-evidence.zip" "$evidence_workflow" || \
+    die "$profile evidence workflow does not keep the archive a tag revalidates"
+  grep -Fq "scripts/check-$profile-release-evidence." "$evidence_workflow" || \
+    die "$profile evidence workflow does not run its own policy"
+  grep -Fq "  $profile) " "$WORKSPACE_ROOT/scripts/check-release-evidence.sh" || \
+    die "release boundary has no policy for evidence profile $profile"
+done
+
 # A stable tag skips exactly the gates its candidate run proved, and only
 # after its own history scan and evidence pass does it bind to that run.
 stable_tag_skip="    if: github.event_name != 'push' || github.ref_type != 'tag' || contains(github.ref_name, '-rc.')"

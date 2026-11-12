@@ -9,4 +9,5 @@ case "$profile" in
   v07) python3 "$ROOT/scripts/check-v07-release-evidence.py" "$@" ;;
   v08) python3 "$ROOT/scripts/check-v08-release-evidence.py" "$@" ;;
   v09) python3 "$ROOT/scripts/check-v09-release-evidence.py" "$@" ;;
+  v010) python3 "$ROOT/scripts/check-v010-release-evidence.py" "$@" ;;
 esac

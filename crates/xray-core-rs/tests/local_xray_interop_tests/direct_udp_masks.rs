@@ -23,10 +23,24 @@ fn noise() -> Value {
         {"rand": "16-32", "delay": 1}]}})
 }
 
+/// A prefix whose server side reuses the token the client draws afresh for
+/// each datagram. Xray-core's `matchUDPItems` holds the reused token to the
+/// one in the client's latest datagram, and the client's state forgets it
+/// five seconds after the last datagram it sent or took: the mask carries
+/// an exchange of one datagram for one, as a UDP echo is.
 fn header_custom() -> Value {
     json!({"type": "header-custom", "settings": {"mode": "prefix",
         "client": [{"rand": 8, "capture": "token"}, {"type": "str", "packet": "hello"}],
         "server": [{"reuse": "token"}, {"transform": {"op": "be16", "args": [{"u64": 443}]}}]}})
+}
+
+/// A prefix whose server side reuses nothing of the client's, so a
+/// datagram's prefix matches whatever was sent since: it carries a stream of
+/// datagrams either way, as a TCP flow inside WireGuard is.
+fn header_custom_without_reuse() -> Value {
+    json!({"type": "header-custom", "settings": {"mode": "prefix",
+        "client": [{"rand": 8}, {"type": "str", "packet": "hello"}],
+        "server": [{"rand": 8}, {"transform": {"op": "be16", "args": [{"u64": 443}]}}]}})
 }
 
 /// The client's request goes alone and holds the first datagram until the
@@ -278,33 +292,52 @@ fn wireguard_client(port: u16, masks: &Value) -> Value {
 /// WireGuard under each mask set carries TCP and UDP through Xray-core's
 /// WireGuard inbound under the same masks, noise on either side of
 /// Salamander included. Another password carries nothing.
+///
+/// The prefix that reuses the client's token carries UDP alone. A TCP flow
+/// answers the server while the server's datagrams are on their way, and
+/// each answer draws a new token, so those datagrams no longer match:
+/// Xray-core's own WireGuard client drops them there as this one does. Once
+/// the client has only acknowledgements left, nothing it sends renews the
+/// token, and the flow stands until WireGuard retries its handshake fifteen
+/// seconds later, when it may stall again. That is the mask's rule on both
+/// ends, not a fault in either; `header_custom` has the rule.
 #[tokio::test]
 #[ignore = "requires a pinned Xray-core; run check-hysteria-interop.sh"]
 async fn wireguard_runs_under_masks() {
     let (tcp_port, udp_port, _tcp, _udp) = echo_servers().await;
     let password = "synthetic-salamander";
-    for (case, client, server) in [
+    for (case, client, server, tcp) in [
         (
             "noise inside salamander",
             json!([noise(), salamander(password)]),
             json!([salamander(password)]),
+            true,
         ),
         (
             "noise outside salamander",
             json!([salamander(password), noise()]),
             json!([salamander(password)]),
+            true,
         ),
         (
             "header-custom",
+            json!([header_custom_without_reuse()]),
+            json!([header_custom_without_reuse()]),
+            true,
+        ),
+        (
+            "header-custom reusing the client's token",
             json!([header_custom()]),
             json!([header_custom()]),
+            false,
         ),
         (
             "header-custom standalone",
             json!([standalone()]),
             json!([standalone()]),
+            true,
         ),
-        ("sudoku", json!([sudoku()]), json!([sudoku()])),
+        ("sudoku", json!([sudoku()]), json!([sudoku()]), true),
     ] {
         eprintln!("WireGuard {case}");
         let port = allocate_loopback_udp_port();
@@ -312,7 +345,9 @@ async fn wireguard_runs_under_masks() {
         let core = core(wireguard_client(port, &client)).await;
         let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
         let result = timeout(Duration::from_secs(60), async {
-            tcp_echo(socks_addr, INNER_TARGET, tcp_port).await?;
+            if tcp {
+                tcp_echo(socks_addr, INNER_TARGET, tcp_port).await?;
+            }
             udp_echo(socks_addr, INNER_TARGET, udp_port).await
         })
         .await;

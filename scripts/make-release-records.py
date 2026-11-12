@@ -50,7 +50,7 @@ def report_archive(commit, report_dir):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--tag", required=True, help="annotated stable tag, e.g. v0.9.1")
+    parser.add_argument("--tag", required=True, help="annotated stable tag, e.g. v0.10.0")
     parser.add_argument("--report-commit", required=True,
                         help="main commit with the owner decisions, evidence record and report")
     parser.add_argument("--report-dir", required=True, help="docs/device-results/<YYYY-MM-DD-name>")

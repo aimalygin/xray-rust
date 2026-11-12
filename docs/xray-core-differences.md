@@ -1559,6 +1559,39 @@ connection ID is zero-length. Against Xray-core's own MASQUE server,
 across two changes. Each change moves the socket that carries the tunnel's
 QUIC datagrams.
 
+## Linux splice
+
+On Linux, a connection from a SOCKS, HTTP or transparent inbound has its
+download moved with `splice(2)` through a pipe once what the outbound has
+yet to deliver is a bare TCP socket's bytes: a freedom outbound from its
+first byte, and VLESS Vision after its download switches to direct mode.
+Xray-core's `proxy.CopyRawConnIfExist` moves the same two cases. Upload is
+copied, as in Xray-core; TUN flows, encrypted streams and other platforms
+never splice. Differences:
+
+- Idle timers and counters. Xray-core parks its idle timers for 24 hours
+  while it splices and adds the transfer to its counters when the copy ends.
+  Here every spliced chunk counts as activity and reaches the connection's
+  counters at once, so `connIdle`, the half-close timeouts and live traffic
+  statistics stay what they are on the copying path.
+- The switch. `xray.buf.splice` (or `XRAY_BUF_SPLICE`) is read as Xray-core
+  reads it: unset, `auto` and `enable` splice, any other value copies. It is
+  read once per process. Xray-core applies it to freedom alone and splices
+  Vision's direct download whatever it says; here it turns both off.
+- Pipes. A pipe is asked to grow to 1 MiB, Go's `maxSpliceSize`. Without
+  `CAP_SYS_RESOURCE` the kernel grows about 62 such pipes per user
+  (`fs.pipe-user-pages-soft`), then refuses growth and later hands out
+  two-page pipes. A connection whose pipe holds less than 64 KiB copies
+  instead, as does one whose `splice` the kernel refuses (`EINVAL`,
+  `ENOSYS`, `EPERM`, `EOPNOTSUPP`).
+
+Measured on a loopback in Docker (aarch64, medians of five runs) against
+Xray-core v26.11.9: a saturated single download ran 1.9 to 2.4 times faster
+than copying, with 50 to 66% less client CPU per byte, about level with
+Xray-core. Known limits: at a paced 10 Gbit/s splicing costs the whole
+machine more than copying (as it does for Xray-core); a real network
+interface, x86-64 and a freedom outbound with `fragment` were not measured.
+
 ## Follow-up checks
 
 - [x] Integrate the #87 review follow-up, including both relay-address fixes,

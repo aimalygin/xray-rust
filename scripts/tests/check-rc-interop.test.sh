@@ -208,4 +208,27 @@ if [[ -s "$MISMATCH_CARGO_LOG" ]]; then
   exit 104
 fi
 
+# This gate runs every ignored interop test and no pull request runs it:
+# hold it to the helper binaries those tests cannot run without.
+HELPER_GUARD="$WORKSPACE_ROOT/scripts/tests/interop-gate-helpers.py"
+python3 "$HELPER_GUARD" "$SCRIPT_UNDER_TEST"
+
+# The guard itself reports a module whose helper the gate neither exports
+# nor skips.
+mkdir -p "$TEST_ROOT/helper-guard/local_xray_interop_tests"
+: >"$TEST_ROOT/helper-guard/local_xray_interop_tests.rs"
+printf '%s\n' \
+  'let binary = env::var_os("XRAY_SYNTHETIC_HELPER")' \
+  '    .expect("built by its own script");' \
+  >"$TEST_ROOT/helper-guard/local_xray_interop_tests/synthetic.rs"
+if python3 "$HELPER_GUARD" "$SCRIPT_UNDER_TEST" "$TEST_ROOT/helper-guard" \
+  2>"$TEST_ROOT/helper-guard.log"; then
+  echo 'interop helper guard accepted a helper the RC gate never provides' >&2
+  exit 105
+fi
+if ! grep -Fq 'synthetic requires XRAY_SYNTHETIC_HELPER' "$TEST_ROOT/helper-guard.log"; then
+  echo 'interop helper guard did not name the missing helper' >&2
+  exit 106
+fi
+
 echo 'RC interop sanitizes hostile revision overrides and uses an explicit freshly built release binary'

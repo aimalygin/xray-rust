@@ -517,4 +517,8 @@ if [[ -s "$DIRTY_CARGO_LOG" ]]; then
   exit 111
 fi
 
+# This gate runs every ignored interop test and no pull request runs it:
+# hold it to the helper binaries those tests cannot run without.
+python3 "$WORKSPACE_ROOT/scripts/tests/interop-gate-helpers.py" "$SCRIPT_UNDER_TEST"
+
 echo 'scheduled pinned interop is broad, hermetic, and resource-bounded'
