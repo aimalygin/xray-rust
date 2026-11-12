@@ -576,3 +576,171 @@ fn records_are_shuffled_by_weight_within_each_priority() {
     sort_by_priority_weight(&mut records, |_| 9);
     assert_eq!(records[0].target, "a");
 }
+
+/// A phone without `/etc/resolv.conf` skips both lookups at once rather than
+/// asking loopback nameservers, and the dial goes on as configured.
+#[tokio::test]
+async fn a_phone_without_a_resolver_configuration_skips_the_lookups() {
+    let resolver = SystemRecordResolver {
+        skips_without_config: true,
+        ..SystemRecordResolver::with_config("/nonexistent/xray-rust/resolv.conf", None)
+    };
+    let srv = tokio::time::timeout(
+        Duration::from_secs(1),
+        resolver.lookup_srv("xray", "tcp", "example.com"),
+    )
+    .await
+    .expect("skipped without waiting for a nameserver");
+    assert_eq!(srv.unwrap_err().kind(), io::ErrorKind::NotFound);
+    let txt = tokio::time::timeout(Duration::from_secs(1), resolver.lookup_txt("example.com"))
+        .await
+        .expect("skipped without waiting for a nameserver");
+    assert_eq!(txt.unwrap_err().kind(), io::ErrorKind::NotFound);
+}
+
+/// Elsewhere a missing file still means Go's loopback nameservers.
+#[test]
+fn only_phones_skip_without_a_resolver_configuration() {
+    let resolver = SystemRecordResolver::with_config("/nonexistent/xray-rust/resolv.conf", None);
+    assert_eq!(
+        resolver.skips_without_config,
+        cfg!(any(
+            target_os = "android",
+            target_os = "ios",
+            target_os = "tvos"
+        ))
+    );
+}
+
+/// Exchanges with the test server directly, as a core's query transport
+/// would through its routing, and remembers the transports asked.
+#[derive(Default)]
+struct DirectTransport {
+    kinds: Mutex<Vec<DnsQueryTransportKind>>,
+}
+
+#[async_trait]
+impl DnsQueryTransport for DirectTransport {
+    async fn exchange(
+        &self,
+        server: &NameServer,
+        transport: DnsQueryTransportKind,
+        _metadata: DnsQueryMetadata<'_>,
+        query: &[u8],
+    ) -> io::Result<Vec<u8>> {
+        self.kinds.lock().unwrap().push(transport);
+        let NameServer::Socket(address) = server else {
+            return Err(io::Error::other("the test transport asks addresses only"));
+        };
+        match transport {
+            DnsQueryTransportKind::Udp => exchange_direct_udp(*address, query, None).await,
+            DnsQueryTransportKind::Tcp => {
+                exchange_direct_tcp_candidates(&[*address], query, None).await
+            }
+            _ => Err(io::Error::other(
+                "the test transport speaks UDP and TCP only",
+            )),
+        }
+    }
+}
+
+fn record_server(address: SocketAddr) -> RecordServer {
+    RecordServer {
+        server: NameServer::Socket(address),
+        transport: DnsQueryTransportKind::Udp,
+        local: false,
+        tag: Some("dns".to_owned()),
+        https_path: None,
+    }
+}
+
+/// The dns.servers resolver a phone without `/etc/resolv.conf` asks: SRV and
+/// TXT come back from the first server that answers, a truncated answer is
+/// asked again over TCP, and a server that fails is passed over.
+#[tokio::test]
+async fn a_phone_without_a_resolver_configuration_asks_its_dns_servers() {
+    let server = server(|name, kind| match (name, kind) {
+        ("_xray._tcp.example.com", TYPE_SRV) => Some(Reply {
+            truncate_udp: true,
+            ..Reply::answers(vec![srv(1, 0, 8443, "redirected.example.")])
+        }),
+        ("example.com", TYPE_TXT) => Some(Reply::answers(vec![txt(&["other.example:9443"])])),
+        _ => Some(Reply::rcode(3)),
+    })
+    .await;
+    let transport = Arc::new(DirectTransport::default());
+    let slot = Arc::new(RecordResolverSlot::default());
+    // Nothing listens on the first server's port: it fails and is passed over.
+    let dead = UdpSocket::bind("127.0.0.1:0")
+        .await
+        .unwrap()
+        .local_addr()
+        .unwrap();
+    slot.set(Some(Arc::new(ConfiguredRecordResolver {
+        timeout: Duration::from_millis(300),
+        ..ConfiguredRecordResolver::new(
+            vec![record_server(dead), record_server(server.address)],
+            transport.clone(),
+        )
+    })));
+    let resolver = SystemRecordResolver {
+        skips_without_config: true,
+        ..SystemRecordResolver::with_config("/nonexistent/xray-rust/resolv.conf", None)
+            .with_unconfigured_resolver(Some(slot))
+    };
+
+    let srv = tokio::time::timeout(
+        Duration::from_secs(5),
+        resolver.lookup_srv("xray", "tcp", "example.com"),
+    )
+    .await
+    .expect("SRV lookup in time")
+    .unwrap();
+    assert_eq!(srv, [record("redirected.example", 8443, 1, 0)]);
+    let txt = tokio::time::timeout(Duration::from_secs(5), resolver.lookup_txt("example.com"))
+        .await
+        .expect("TXT lookup in time")
+        .unwrap();
+    assert_eq!(txt, ["other.example:9443"]);
+    let missing = tokio::time::timeout(Duration::from_secs(5), resolver.lookup_txt("gone.example"))
+        .await
+        .expect("NXDOMAIN in time");
+    assert_eq!(missing.unwrap_err().kind(), io::ErrorKind::NotFound);
+    assert!(transport
+        .kinds
+        .lock()
+        .unwrap()
+        .contains(&DnsQueryTransportKind::Tcp));
+}
+
+/// With a configuration, even a phone asks Go's nameservers, never the slot.
+#[tokio::test]
+async fn a_resolver_configuration_keeps_gos_nameservers() {
+    let server = server(|_, _| Some(Reply::answers(vec![txt(&["from.conf:1"])]))).await;
+    let config = std::env::temp_dir().join(format!("xray-rust-resolv-{}.conf", std::process::id()));
+    std::fs::write(&config, format!("nameserver {}\n", server.address.ip())).unwrap();
+    let slot = Arc::new(RecordResolverSlot::default());
+    let transport = Arc::new(DirectTransport::default());
+    slot.set(Some(Arc::new(ConfiguredRecordResolver::new(
+        Vec::new(),
+        transport.clone(),
+    ))));
+    let resolver = SystemRecordResolver {
+        skips_without_config: true,
+        ..SystemRecordResolver::with_config(&config, None).with_unconfigured_resolver(Some(slot))
+    };
+    // The test server listens on another port than Go's 53, so ask it
+    // through the parsed configuration with its port put back.
+    let mut conf = match resolver.source().unwrap() {
+        Source::Conf(conf) => conf,
+        Source::Configured(_) => panic!("a configuration must be read"),
+    };
+    std::fs::remove_file(&config).unwrap();
+    conf.servers = vec![server.address];
+    let txt = tokio::time::timeout(Duration::from_secs(5), resolver.txt(&conf, "example.com"))
+        .await
+        .expect("TXT lookup in time")
+        .unwrap();
+    assert_eq!(txt, ["from.conf:1"]);
+    assert!(transport.kinds.lock().unwrap().is_empty());
+}

@@ -44,6 +44,7 @@ pub struct TransportDialer {
 struct Replaced {
     route_probe: Option<Arc<dyn RouteProbe>>,
     record_resolver: Option<Arc<dyn RecordResolver>>,
+    unconfigured_records: Option<Arc<crate::RecordResolverSlot>>,
     tcp_header_custom: Option<Arc<crate::header_custom::HeaderCustomTcpConfig>>,
     tcp_sudoku: Option<Arc<crate::sudoku::SudokuConfig>>,
     tcp_xmc: Option<Arc<crate::xmc::XmcConfig>>,
@@ -144,6 +145,18 @@ impl TransportDialer {
         self
     }
 
+    /// Where Go's resolver has no configuration on a phone, asks the resolver
+    /// `slot` holds for `addressPortStrategy` lookups instead of skipping
+    /// them.
+    pub fn with_unconfigured_record_resolver(
+        mut self,
+        slot: Arc<crate::RecordResolverSlot>,
+    ) -> Self {
+        Arc::make_mut(self.replaced.get_or_insert_with(Default::default)).unconfigured_records =
+            Some(slot);
+        self
+    }
+
     /// The resolver for `addressPortStrategy` lookups: the one set with
     /// [`Self::with_record_resolver`], else Go's behind this dialer's
     /// protector, the outbound's `sockopt` included: a `mark` or an
@@ -156,7 +169,14 @@ impl TransportDialer {
             .and_then(|replaced| replaced.record_resolver.as_ref())
         {
             Some(resolver) => Arc::clone(resolver),
-            None => Arc::new(SystemRecordResolver::new(self.socket_protector.clone())),
+            None => Arc::new(
+                SystemRecordResolver::new(self.socket_protector.clone())
+                    .with_unconfigured_resolver(
+                        self.replaced
+                            .as_ref()
+                            .and_then(|replaced| replaced.unconfigured_records.clone()),
+                    ),
+            ),
         }
     }
 
