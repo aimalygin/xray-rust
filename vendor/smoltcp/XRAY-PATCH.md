@@ -97,3 +97,19 @@ range after draining readable bytes, hole completion, and subsequent reuse.
 The unsafe queue-only variant fails the reassembly test. The focused full
 default-feature suite passed 685 tests; final selected-feature reconstruction
 tests and workload-specific memory measurements are recorded separately.
+
+## A fast retransmit survives a device without a transmit slot
+
+Upstream clears `pending_fast_retransmit` while it builds the segment, before
+`emit`. A device with no transmit slot refuses that segment, and nothing
+brings it back: the retransmit timer went idle when the fast retransmit was
+taken up, the whole flight is outstanding, and the halved congestion window
+admits no new data whose transmission would start the timer again. The socket
+then reports `PollAt::Ingress` with data in flight, and waits for a peer that
+has nothing more to say. The flag is now cleared only after `emit` succeeds.
+Until then the socket keeps reporting `PollAt::Now`, the segment leaves with
+the next slot, and sending it starts the retransmit timer as upstream does.
+The bounded adapters hit this under upload: a MASQUE flow through Xray-core's
+server, which drops bursts of tunnel packets, stopped for good. A wire test
+refuses the emit of a fast retransmit and checks that it is still owed and
+then sent; it fails before the fix.
