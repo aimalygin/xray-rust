@@ -327,12 +327,18 @@ impl Controller for XrayBbr {
         });
     }
 
+    /// A lost MTU probe is left out of the event. quic-go lists it for the
+    /// sender, which then enters recovery as for any loss; a probe larger
+    /// than the path carries is lost by design and says nothing of
+    /// congestion (RFC 9000, section 14.4). The sampler drops the probe's
+    /// record with the packets around it.
+    fn on_mtu_probe_lost_with_token(&mut self, _now: Instant, _bytes: u64, _token: u64) {}
+
     fn on_congestion_event_end(&mut self, now: Instant, prior_in_flight: u64) {
         if self.acked.is_empty() && self.lost.is_empty() {
             return;
         }
-        // quic-go lists both in packet-number order; quinn reports a lost MTU
-        // probe after the other losses.
+        // quic-go lists both in packet-number order.
         self.acked.sort_by_key(|packet| packet.packet_number);
         self.lost.sort_by_key(|packet| packet.packet_number);
         let time = self.time(now);
@@ -438,6 +444,18 @@ fn startup_controller(now: Instant, mtu: u16) -> Box<dyn Controller> {
     Arc::new(reno).build(now, mtu)
 }
 
+/// quic-go's default sender for a connection that keeps it: Xray's
+/// `congestion: reno`. quinn's own NewReno starts at 10 packets, which is a
+/// slower start than Xray's and gives a ChromeParrot handshake other packet
+/// number lengths.
+pub(crate) struct RenoFactory;
+
+impl ControllerFactory for RenoFactory {
+    fn build(self: Arc<Self>, now: Instant, current_mtu: u16) -> Box<dyn Controller> {
+        startup_controller(now, current_mtu)
+    }
+}
+
 /// Builds controllers that start as quic-go's default sender, as an Xray
 /// connection does, and switch once [`ControllerSwitch::install`] names the
 /// replacement: after the handshake on XHTTP, after authentication on
@@ -454,6 +472,7 @@ impl ControllerFactory for SwitchedFactory {
             mtu: current_mtu,
             min_rtt: None,
             smoothed_rtt: None,
+            sent_packets: 0,
         };
         controller.settle(now);
         Box::new(controller)
@@ -461,7 +480,7 @@ impl ControllerFactory for SwitchedFactory {
 }
 
 /// Marks a token as a packet sent before the switch; the rest of it is the
-/// packet number.
+/// packet's place among all the connection sent.
 const SENT_BEFORE_SWITCH: u64 = 1 << 63;
 
 /// The replacement and the kind it is, which says how it reads tokens.
@@ -471,9 +490,20 @@ struct Replacement {
 }
 
 impl Replacement {
-    /// The token the replacement reads for a packet: its own, the packet
-    /// number for Xray's BBR when sent before the switch, or `None` for
-    /// quinn's untokened path.
+    /// The number the replacement knows a sent packet by. Xray's BBR keys
+    /// its samples, rounds and recovery by one number per packet, and QUIC
+    /// numbers each packet space from zero: it gets the packet's place among
+    /// all the connection sent. The others get the packet number.
+    fn number(&self, sequence: u64, packet_number: u64) -> u64 {
+        match self.installed {
+            Installed::XrayBbr(_) => sequence,
+            Installed::QuinnBbr | Installed::Brutal(_) => packet_number,
+        }
+    }
+
+    /// The token the replacement reads for a packet: its own, the packet's
+    /// place among all sent for Xray's BBR when sent before the switch, or
+    /// `None` for quinn's untokened path.
     fn token(&self, token: u64) -> Option<u64> {
         if token & SENT_BEFORE_SWITCH == 0 {
             return Some(token);
@@ -488,8 +518,12 @@ impl Replacement {
 /// quic-go's default sender until the switch, then a fresh replacement that,
 /// like Xray's, starts without the old one's history but with the
 /// connection's RTT statistics, which quic-go hands it. Packets sent before
-/// the switch carry their packet number as token, so Xray's BBR can tell
-/// them from its own when they are acknowledged or lost, as quic-go's does.
+/// the switch carry their place among all sent as token, so Xray's BBR can
+/// tell them from its own when they are acknowledged or lost, as quic-go's
+/// does. quic-go hands its sender packet numbers, which repeat between the
+/// Initial, Handshake and 1-RTT spaces: an acknowledged Handshake packet
+/// then closes the sample of the 1-RTT packet with its number. Here every
+/// packet has a number of its own, in the order sent.
 struct Switched {
     startup: Box<dyn Controller>,
     replacement: Option<Replacement>,
@@ -500,9 +534,18 @@ struct Switched {
     min_rtt: Option<Duration>,
     /// The path's latest smoothed RTT.
     smoothed_rtt: Option<Duration>,
+    /// How many packets the connection sent, in every packet number space.
+    sent_packets: u64,
 }
 
 impl Switched {
+    /// The place of the packet being sent among all the connection sent.
+    fn next_sequence(&mut self) -> u64 {
+        let sequence = self.sent_packets;
+        self.sent_packets += 1;
+        sequence
+    }
+
     fn settle(&mut self, now: Instant) {
         if self.replacement.is_some() {
             return;
@@ -562,12 +605,13 @@ impl Controller for Switched {
         in_flight: u64,
         app_limited: bool,
     ) -> u64 {
+        let sequence = self.next_sequence();
         self.settle(now);
         match &mut self.replacement {
             Some(replacement) => replacement.controller.on_sent_with_in_flight(
                 now,
                 bytes,
-                last_packet_number,
+                replacement.number(sequence, last_packet_number),
                 in_flight,
                 app_limited,
             ),
@@ -579,7 +623,7 @@ impl Controller for Switched {
                     in_flight,
                     app_limited,
                 );
-                SENT_BEFORE_SWITCH | last_packet_number
+                SENT_BEFORE_SWITCH | sequence
             }
         }
     }
@@ -591,8 +635,19 @@ impl Controller for Switched {
         packet_number: u64,
         in_flight: u64,
     ) {
-        self.active(now)
-            .on_sent_not_ack_eliciting(now, bytes, packet_number, in_flight);
+        let sequence = self.next_sequence();
+        self.settle(now);
+        match &mut self.replacement {
+            Some(replacement) => replacement.controller.on_sent_not_ack_eliciting(
+                now,
+                bytes,
+                replacement.number(sequence, packet_number),
+                in_flight,
+            ),
+            None => self
+                .startup
+                .on_sent_not_ack_eliciting(now, bytes, packet_number, in_flight),
+        }
     }
 
     fn on_ack_with_token(
@@ -672,6 +727,20 @@ impl Controller for Switched {
         }
     }
 
+    fn on_mtu_probe_lost_with_token(&mut self, now: Instant, bytes: u64, token: u64) {
+        self.settle(now);
+        match &mut self.replacement {
+            Some(replacement) => {
+                if let Some(token) = replacement.token(token) {
+                    replacement
+                        .controller
+                        .on_mtu_probe_lost_with_token(now, bytes, token);
+                }
+            }
+            None => self.startup.on_mtu_probe_lost_with_token(now, bytes, token),
+        }
+    }
+
     fn on_congestion_event_end(&mut self, now: Instant, prior_in_flight: u64) {
         self.active(now)
             .on_congestion_event_end(now, prior_in_flight);
@@ -716,6 +785,7 @@ impl Controller for Switched {
             mtu: self.mtu,
             min_rtt: self.min_rtt,
             smoothed_rtt: self.smoothed_rtt,
+            sent_packets: self.sent_packets,
         })
     }
 
@@ -942,7 +1012,10 @@ mod tests {
         assert_eq!(controller.pacing_rate(), None, "Reno paces from its window");
         let now = Instant::now();
         let token = controller.on_sent_with_in_flight(now, 1200, 7, 0, false);
-        assert_eq!(token, SENT_BEFORE_SWITCH | 7);
+        assert_eq!(
+            token, SENT_BEFORE_SWITCH,
+            "the connection's first packet, whatever its number"
+        );
 
         switch.install(Installed::Brutal(BrutalRate {
             bytes_per_second: MIB,
@@ -984,11 +1057,11 @@ mod tests {
     fn xray_bbr_events(switch: &Arc<ControllerSwitch>) -> (Box<dyn Controller>, Instant) {
         let now = Instant::now();
         let mut controller = switched(switch);
-        // Sent before the switch: packet 3.
+        // Sent before the switch: packet 3, the connection's first.
         let early = controller.on_sent_with_in_flight(now, 1000, 3, 0, false);
         switch.install(Installed::XrayBbr(BbrProfile::Aggressive));
         let late = controller.on_sent_with_in_flight(now, 1100, 4, 1000, false);
-        assert_eq!((early, late), (SENT_BEFORE_SWITCH | 3, 4));
+        assert_eq!((early, late), (SENT_BEFORE_SWITCH, 1));
         let later = now + Duration::from_millis(30);
         controller.on_packet_lost_with_token(later, 1000, early);
         controller.on_packet_lost_with_token(later, 1100, late);
@@ -996,7 +1069,7 @@ mod tests {
     }
 
     #[test]
-    fn xray_bbr_reads_the_packet_number_of_packets_sent_before_the_switch() {
+    fn xray_bbr_reads_the_place_of_packets_sent_before_the_switch() {
         let switch = Arc::new(ControllerSwitch::default());
         let (controller, _) = xray_bbr_events(&switch);
         let controller = downcast(controller);
@@ -1012,15 +1085,126 @@ mod tests {
             bbr.lost,
             [
                 LostPacket {
-                    packet_number: 3,
+                    packet_number: 0,
                     bytes_lost: 1000
                 },
                 LostPacket {
-                    packet_number: 4,
+                    packet_number: 1,
                     bytes_lost: 1100
                 }
             ]
         );
+    }
+
+    fn xray_bbr(controller: Box<dyn Controller>) -> Box<XrayBbr> {
+        let replacement = downcast(controller).replacement.unwrap();
+        replacement
+            .controller
+            .into_any()
+            .downcast::<XrayBbr>()
+            .ok()
+            .unwrap()
+    }
+
+    /// QUIC numbers the Initial, Handshake and 1-RTT spaces from zero each.
+    /// The client's Finished, Handshake packet 1, is acknowledged or lost
+    /// after 1-RTT packets 0 to 2 went out: handed to the sender by packet
+    /// number, as quic-go hands it, that would be taken for 1-RTT packet 1
+    /// and counted as its delivery or its loss.
+    #[test]
+    fn xray_bbr_tells_packets_of_different_spaces_apart() {
+        let now = Instant::now();
+        let switch = Arc::new(ControllerSwitch::default());
+        let mut controller = switched(&switch);
+        let finished = controller.on_sent_with_in_flight(now, 97, 1, 0, false);
+        switch.install(Installed::XrayBbr(BbrProfile::Conservative));
+        let data: Vec<u64> = (0..3)
+            .map(|packet_number| {
+                controller.on_sent_with_in_flight(now, 1200, packet_number, 0, false)
+            })
+            .collect();
+        // A Handshake ACK after the switch, then 1-RTT packet 3.
+        controller.on_sent_not_ack_eliciting(now, 50, 2, 3600);
+        let last = controller.on_sent_with_in_flight(now, 1200, 3, 3600, false);
+        assert_eq!(finished, SENT_BEFORE_SWITCH);
+        assert_eq!((data, last), (vec![1, 2, 3], 5));
+
+        // What the sender is told of each when it is acknowledged or lost.
+        let later = now + Duration::from_millis(30);
+        controller.on_packet_lost_with_token(later, 97, finished);
+        controller.on_packet_lost_with_token(later, 1200, 2);
+        assert_eq!(
+            xray_bbr(controller).lost,
+            [
+                LostPacket {
+                    packet_number: 0,
+                    bytes_lost: 97
+                },
+                LostPacket {
+                    packet_number: 2,
+                    bytes_lost: 1200
+                }
+            ]
+        );
+    }
+
+    /// quinn's BBR and Brutal still get packet numbers: quinn's BBR ends its
+    /// rounds on the largest acknowledged one.
+    #[test]
+    fn other_replacements_keep_packet_numbers() {
+        let replacement = |installed| Replacement {
+            installed,
+            controller: startup_controller(Instant::now(), 1200),
+        };
+        let brutal = Installed::Brutal(BrutalRate {
+            bytes_per_second: MIB,
+            disable_loss_compensation: false,
+        });
+        assert_eq!(replacement(Installed::QuinnBbr).number(9, 4), 4);
+        assert_eq!(replacement(brutal).number(9, 4), 4);
+        let bbr = Installed::XrayBbr(BbrProfile::Aggressive);
+        assert_eq!(replacement(bbr).number(9, 4), 9);
+    }
+
+    /// A lost MTU probe is no sign of congestion: the sender is not told of
+    /// it, directly or through the switch, and keeps its window, where an
+    /// ordinary loss is listed for the event.
+    #[test]
+    fn xray_bbr_leaves_a_lost_mtu_probe_out_of_the_event() {
+        let now = Instant::now();
+        let switch = Arc::new(ControllerSwitch::default());
+        switch.install(Installed::XrayBbr(BbrProfile::Conservative));
+        let mut controller = switched(&switch);
+        let tokens: Vec<u64> = (0..4)
+            .map(|packet_number| {
+                controller.on_sent_with_in_flight(now, 1200, packet_number, 0, false)
+            })
+            .collect();
+        let probe = controller.on_sent_with_in_flight(now, 1400, 4, 4800, false);
+        let window = controller.window();
+        let later = now + Duration::from_millis(30);
+
+        controller.on_mtu_probe_lost_with_token(later, 1400, probe);
+        controller.on_congestion_event_end(later, 6200);
+        assert_eq!(controller.window(), window);
+        let mut bbr = xray_bbr(controller);
+        assert_eq!(bbr.lost, []);
+
+        bbr.on_packet_lost_with_token(later, 1200, tokens[3]);
+        assert_eq!(bbr.lost.len(), 1);
+    }
+
+    #[test]
+    fn reno_starts_at_quic_gos_window() {
+        let now = Instant::now();
+        let reno = Arc::new(RenoFactory).build(now, 1200);
+        assert_eq!(reno.window(), 32 * 1200);
+        assert_eq!(
+            reno.window(),
+            switched(&Arc::new(ControllerSwitch::default())).window(),
+            "the sender every other Xray connection starts with"
+        );
+        assert_eq!(controller_name(reno), "new-reno");
     }
 
     #[test]

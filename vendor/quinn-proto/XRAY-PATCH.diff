@@ -1898,7 +1898,7 @@ diff --color -ruN a/src/congestion.rs b/src/congestion.rs
      /// Packets are acked in batches, all with the same `now` argument. This indicates one of those batches has completed.
      #[allow(unused_variables)]
      fn on_end_acks(
-@@ -45,6 +86,49 @@
+@@ -45,6 +86,62 @@
      ) {
      }
  
@@ -1928,12 +1928,25 @@ diff --color -ruN a/src/congestion.rs b/src/congestion.rs
 +    /// One ack-eliciting packet was declared lost, with the token recorded
 +    /// when it was sent.
 +    ///
-+    /// Unlike `on_packets_lost`, lost MTU probes are included, as quic-go
-+    /// reports them to its controller. Called before the
++    /// Unlike `on_packets_lost`, lost MTU probes are included by default, as
++    /// quic-go reports them to its controller: see
++    /// `on_mtu_probe_lost_with_token`. Called before the
 +    /// `on_congestion_event_end` of the ACK or loss timeout that found it.
 +    /// The default ignores it.
 +    #[allow(unused_variables)]
 +    fn on_packet_lost_with_token(&mut self, now: Instant, bytes: u64, token: u64) {}
++
++    /// One MTU probe was declared lost, with the token recorded when it was
++    /// sent.
++    ///
++    /// A probe larger than the path carries is lost by design, and RFC 9000
++    /// section 14.4 keeps such a loss out of the congestion response. The
++    /// default reports it through `on_packet_lost_with_token`, as quic-go
++    /// lists it for its controller; a controller that reacts to every loss
++    /// it is told of overrides this.
++    fn on_mtu_probe_lost_with_token(&mut self, now: Instant, bytes: u64, token: u64) {
++        self.on_packet_lost_with_token(now, bytes, token);
++    }
 +
 +    /// The processing of one ACK frame that acknowledged new packets, or of
 +    /// one loss-detection timeout, finished.
@@ -1948,7 +1961,7 @@ diff --color -ruN a/src/congestion.rs b/src/congestion.rs
      /// Packets were deemed lost or marked congested
      ///
      /// `in_persistent_congestion` indicates whether all packets sent within the persistent
-@@ -64,6 +148,12 @@
+@@ -64,6 +161,12 @@
  
      /// Number of ack-eliciting bytes that may be in flight
      fn window(&self) -> u64;
@@ -2170,7 +2183,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
                  if let Some((token, remote)) = self.path_responses.pop_off_path(self.path.remote) {
                      // `unwrap` guaranteed to succeed because `builder_storage` was populated just
                      // above.
-@@ -877,8 +937,20 @@
+@@ -877,9 +937,29 @@
                  }
              }
  
@@ -2191,9 +2204,18 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
 +                self.populate_packet(now, space_id, buf, builder.max_size, builder.exact_number)
 +            };
  
++            // A ChromeParrot Handshake ACK goes alone while new CRYPTO data
++            // waits for the next datagram, so the data that was pending is no
++            // guide to what this packet carries: an ACK alone elicits none.
++            if chrome_handshake && space_id == SpaceId::Handshake && sent.is_ack_only(&self.streams)
++            {
++                builder.ack_eliciting = false;
++            }
++
              // ACK-only packets should only be sent when explicitly allowed. If we write them due to
              // any other reason, there is a bug which leads to one component announcing write
-@@ -911,7 +983,7 @@
+             // readiness while not writing any data. This degrades performance. The condition is
+@@ -911,7 +991,7 @@
          // Finish the last packet
          if let Some(mut builder) = builder_storage {
              if pad_datagram {
@@ -2202,7 +2224,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
              }
  
              // If this datagram is a loss probe and `segment_size` is larger than `INITIAL_MTU`,
-@@ -923,11 +995,19 @@
+@@ -923,11 +1003,19 @@
                  builder.pad_to(segment_size as u16);
              }
  
@@ -2226,7 +2248,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
  
              self.config.qlog_sink.emit_recovery_metrics(
                  self.pto_count,
-@@ -1429,6 +1509,16 @@
+@@ -1429,6 +1517,16 @@
          }
      }
  
@@ -2243,7 +2265,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
      fn on_ack_received(
          &mut self,
          now: Instant,
-@@ -1467,6 +1557,7 @@
+@@ -1467,6 +1565,7 @@
              return Ok(());
          }
  
@@ -2251,7 +2273,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
          let mut ack_eliciting_acked = false;
          for packet in newly_acked.elts() {
              if let Some(info) = self.spaces[space].take(packet) {
-@@ -1495,13 +1586,6 @@
+@@ -1495,13 +1594,6 @@
              }
          }
  
@@ -2265,7 +2287,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
          if new_largest && ack_eliciting_acked {
              let ack_delay = if space != SpaceId::Data {
                  Duration::from_micros(0)
-@@ -1513,14 +1597,31 @@
+@@ -1513,14 +1605,31 @@
              };
              let rtt = now.saturating_duration_since(self.spaces[space].largest_acked_packet_sent);
              self.path.rtt.update(ack_delay, rtt);
@@ -2297,7 +2319,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
  
          if self.peer_completed_address_validation() {
              self.pto_count = 0;
-@@ -1582,12 +1683,13 @@
+@@ -1582,12 +1691,13 @@
          if info.ack_eliciting && self.path.challenge.is_none() {
              // Only pass ACKs to the congestion controller if we are not validating the current
              // path, so as to ignore any ACKs from older paths still coming in.
@@ -2312,7 +2334,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
              );
          }
  
-@@ -1622,7 +1724,11 @@
+@@ -1622,7 +1732,11 @@
      fn on_loss_detection_timeout(&mut self, now: Instant) {
          if let Some((_, pn_space)) = self.loss_time_and_space() {
              // Time threshold loss Detection
@@ -2324,7 +2346,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
              self.set_loss_detection_timer(now);
              return;
          }
-@@ -1666,6 +1772,7 @@
+@@ -1666,6 +1780,7 @@
          let largest_acked_packet = self.spaces[pn_space].largest_acked_packet.unwrap();
          let packet_threshold = self.config.packet_threshold as u64;
          let mut size_of_lost_packets = 0u64;
@@ -2332,7 +2354,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
  
          // InPersistentCongestion: Determine if all packets in the time period before the newest
          // lost packet, including the edges, are marked lost. PTO computation must always
-@@ -1697,6 +1804,7 @@
+@@ -1697,6 +1812,7 @@
                  } else {
                      lost_packets.push(packet);
                      size_of_lost_packets += info.size as u64;
@@ -2340,7 +2362,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
                      if info.ack_eliciting && due_to_ack {
                          match persistent_congestion_start {
                              // Two ACK-eliciting packets lost more than congestion_period apart, with no
-@@ -1737,7 +1845,8 @@
+@@ -1737,7 +1853,8 @@
              self.stats.path.lost_bytes += size_of_lost_packets;
              trace!(
                  "packets lost: {:?}, bytes lost: {}",
@@ -2350,7 +2372,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
              );
  
              for &packet in &lost_packets {
-@@ -1751,6 +1860,13 @@
+@@ -1751,6 +1868,13 @@
                      self.orig_rem_cid,
                  );
                  self.remove_in_flight(&info);
@@ -2364,7 +2386,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
                  for frame in info.stream_frames {
                      self.streams.retransmit(frame);
                  }
-@@ -1773,6 +1889,11 @@
+@@ -1773,6 +1897,11 @@
  
              if lost_ack_eliciting {
                  self.stats.path.congestion_events += 1;
@@ -2376,11 +2398,11 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
                  self.path.congestion.on_congestion_event(
                      now,
                      largest_lost_sent,
-@@ -1786,6 +1907,11 @@
+@@ -1786,6 +1915,11 @@
          if let Some(packet) = lost_mtu_probe {
              let info = self.spaces[SpaceId::Data].take(packet).unwrap(); // safe: lost_mtu_probe is omitted from lost_packets, and therefore must not have been removed yet
              self.remove_in_flight(&info);
-+            self.path.congestion.on_packet_lost_with_token(
++            self.path.congestion.on_mtu_probe_lost_with_token(
 +                now,
 +                info.size.into(),
 +                info.delivery_token,
@@ -2388,7 +2410,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
              self.path.mtud.on_probe_lost();
              self.stats.path.lost_plpmtud_probes += 1;
          }
-@@ -3160,6 +3286,7 @@
+@@ -3160,6 +3294,7 @@
              trace!("PING");
              buf.write(frame::FrameType::PING);
              sent.non_retransmits = true;
@@ -2396,7 +2418,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
              self.stats.frame_tx.ping += 1;
          }
  
-@@ -3173,6 +3300,7 @@
+@@ -3173,6 +3308,7 @@
  
          // ACK
          if space.pending_acks.can_send() {
@@ -2404,7 +2426,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
              Self::populate_acks(
                  now,
                  self.receiving_ecn,
-@@ -3181,6 +3309,7 @@
+@@ -3181,6 +3317,7 @@
                  buf,
                  &mut self.stats,
              );
@@ -2412,7 +2434,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
          }
  
          // ACK_FREQUENCY
-@@ -3241,7 +3370,43 @@
+@@ -3241,7 +3378,43 @@
          }
  
          // CRYPTO
@@ -2457,7 +2479,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
              let mut frame = match space.pending.crypto.pop_front() {
                  Some(x) => x,
                  None => break,
-@@ -3275,6 +3440,11 @@
+@@ -3275,6 +3448,11 @@
              );
              truncated.encode(buf);
              self.stats.frame_tx.crypto += 1;
@@ -2469,7 +2491,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
              sent.retransmits.get_or_create().crypto.push_back(truncated);
              if !frame.data.is_empty() {
                  frame.offset += len as u64;
-@@ -3596,6 +3766,12 @@
+@@ -3596,6 +3774,12 @@
          Some(packet.payload.to_vec())
      }
  
@@ -2482,7 +2504,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
      /// The number of bytes of packets containing retransmittable frames that have not been
      /// acknowledged or declared lost.
      #[cfg(test)]
-@@ -3714,20 +3890,98 @@
+@@ -3714,20 +3898,98 @@
      /// rare. If `pn` is specified, may additionally change unpredictably due to variations in
      /// latency and packet loss.
      fn predict_1rtt_overhead(&self, pn: Option<u64>) -> usize {
@@ -2584,7 +2606,7 @@ diff --color -ruN a/src/connection/mod.rs b/src/connection/mod.rs
      fn tag_len_1rtt(&self) -> usize {
          let key = match self.spaces[SpaceId::Data].crypto.as_ref() {
              Some(crypto) => Some(&*crypto.packet.local),
-@@ -4035,6 +4289,36 @@
+@@ -4035,6 +4297,36 @@
      /// Whether the packet contains non-retransmittable frames (like datagrams)
      non_retransmits: bool,
      requires_padding: bool,
@@ -3317,7 +3339,7 @@ diff --color -ruN a/src/packet.rs b/src/packet.rs
 diff --color -ruN a/src/tests/congestion_sent.rs b/src/tests/congestion_sent.rs
 --- a/src/tests/congestion_sent.rs
 +++ b/src/tests/congestion_sent.rs
-@@ -0,0 +1,653 @@
+@@ -0,0 +1,697 @@
 +use super::*;
 +use crate::congestion::{Controller, ControllerFactory, CubicConfig};
 +use crate::connection::RttEstimator;
@@ -3777,6 +3799,7 @@ diff --color -ruN a/src/tests/congestion_sent.rs b/src/tests/congestion_sent.rs
 +    events: Vec<RecordedEvent>,
 +    not_ack_eliciting: u64,
 +    counted_losses: (u64, u64),
++    lost_probes: usize,
 +}
 +
 +struct EventRecorder(Arc<Mutex<EventLog>>);
@@ -3837,6 +3860,10 @@ diff --color -ruN a/src/tests/congestion_sent.rs b/src/tests/congestion_sent.rs
 +        let mut log = self.log.lock().unwrap();
 +        assert_eq!(log.sent.get(&token), Some(&bytes));
 +        log.lost.push((token, bytes));
++    }
++    fn on_mtu_probe_lost_with_token(&mut self, now: Instant, bytes: u64, token: u64) {
++        self.log.lock().unwrap().lost_probes += 1;
++        self.on_packet_lost_with_token(now, bytes, token);
 +    }
 +    fn on_packets_lost(&mut self, _now: Instant, packets: u64, bytes: u64) {
 +        let mut log = self.log.lock().unwrap();
@@ -3967,8 +3994,47 @@ diff --color -ruN a/src/tests/congestion_sent.rs b/src/tests/congestion_sent.rs
 +        .collect();
 +    assert!(!probes.is_empty(), "oversized probes are lost on this path");
 +    assert_eq!(
++        log.lost_probes,
++        probes.len(),
++        "each through the callback that tells a probe from other losses"
++    );
++    assert_eq!(
 +        log.counted_losses.1, 0,
 +        "lost probes stay out of the counted congestion losses"
++    );
++}
++
++/// A ChromeParrot client acknowledges the server's Handshake flight in a
++/// packet of its own while its Finished waits for the next datagram. That
++/// packet carries an ACK frame alone, so it is reported and tracked as one
++/// that elicits no acknowledgement: it used to count as in flight and arm the
++/// loss timer, because the Finished was still pending when it was built.
++#[test]
++fn chrome_parrot_handshake_ack_alone_is_not_ack_eliciting() {
++    let log = Arc::new(Mutex::new(EventLog::default()));
++    let mut transport = TransportConfig::default();
++    transport
++        .chrome_parrot(true)
++        .initial_mtu(1250)
++        .min_mtu(1250)
++        .mtu_discovery_config(None)
++        .congestion_controller_factory(Arc::new(EventRecorder(log.clone())));
++    let mut config = client_config();
++    config.transport_config(Arc::new(transport));
++    let mut pair = Pair::default();
++    pair.connect_with(config);
++
++    // The ClientHello, the Initial ACK, the Handshake ACK and the Finished,
++    // one packet per datagram.
++    let datagrams = &pair.client_datagrams;
++    assert!(datagrams[2][0] & 0xb0 == 0xa0 && datagrams[3][0] & 0xb0 == 0xa0);
++    assert!(datagrams[2].len() < datagrams[3].len());
++    let log = log.lock().unwrap();
++    let sent: Vec<u64> = log.sent.values().copied().collect();
++    assert_eq!(
++        sent[..2],
++        [datagrams[0].len() as u64, datagrams[3].len() as u64],
++        "the second ack-eliciting packet is the Finished, not the ACK before it"
 +    );
 +}
 diff --color -ruN a/src/tests/mod.rs b/src/tests/mod.rs

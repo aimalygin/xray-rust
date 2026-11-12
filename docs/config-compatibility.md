@@ -193,8 +193,9 @@ As in Xray, the controller takes over from quic-go's default sender, Reno,
 only once the connection is up: on XHTTP H3 right after the handshake, and on
 Hysteria after the server's authentication reply, which also decides whether
 Brutal runs instead. Until then the connection runs Quinn's NewReno.
-`force-brutal` switches at the same points, and `reno` keeps NewReno. Quinn's
-BBR for `standard` runs from the first packet.
+`force-brutal` switches at the same points, and `reno` keeps NewReno, started
+like the others at quic-go's 32 datagrams of the initial size. Quinn's BBR for
+`standard` runs from the first packet.
 
 What differs from Xray, deliberately:
 

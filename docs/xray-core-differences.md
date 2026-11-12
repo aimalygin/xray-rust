@@ -1168,7 +1168,22 @@ Quinn's NewReno, as Xray's runs quic-go's Reno. Deliberate differences:
 - Quinn lowers the datagram size after detecting a black hole. Xray's sender
   panics if asked to; the port scales its windows down.
 - Quinn's startup NewReno starts at quic-go's 32 datagrams of the initial
-  size but follows Quinn's Reno rules.
+  size but follows Quinn's Reno rules. `congestion: reno` keeps that sender.
+- The sender knows each packet by its place among all the connection sent,
+  not by its packet number. quic-go hands its sender packet numbers, and QUIC
+  numbers the Initial, Handshake and 1-RTT spaces from zero each: when the
+  acknowledgement of the client's Finished, Handshake packet 1, arrives after
+  the switch, the sender takes it for 1-RTT packet 1: it counts that packet's
+  bytes as delivered and closes a delivery sample from its send time, before
+  the packet itself is acknowledged. The numbers of 1-RTT packets keep their
+  order, so rounds and recovery end
+  where they would; only a comparison with the sender's initial zero can
+  move, by one packet in the first round.
+- A lost MTU probe is not listed for the sender. The apernet quic-go fork
+  lists it in `OnCongestionEventEx`, though it keeps it from its own
+  senders, and Xray's BBR then enters recovery for a probe that was larger
+  than the path carries: a loss by design, which RFC 9000 section 14.4
+  keeps out of the congestion response.
 - The bytes a bandwidth should deliver over an interval
   (`bytesFromBandwidthAndTimeDelta`) are computed in 128 bits. Xray-core's
   int64 product wraps once bandwidth times interval passes 2^63, which
@@ -1200,6 +1215,10 @@ ClientHello customizer sends uTLS's Chrome QUIC spec. Differences:
   ClientHello, as under a fingerprint; the packet shaping still applies.
 - After the handshake, packet number lengths follow the running congestion
   controller's window, which differs from Xray's where the controller does.
+- After a Retry the whole ClientHello is queued again from its start and
+  goes out in order. quic-go resends the CRYPTO frames it first wrote, the
+  head and the tail of a ClientHello too large for one Initial before its
+  middle. Nothing is lost or counted twice either way.
 - Not ChromeParrot's own: quic-go shuffles every packet's frames and starts
   its loss timer from a 100 ms RTT estimate (Quinn 333 ms), and
   `disableChromeParrot: true` gives Quinn's handshake rather than quic-go's.

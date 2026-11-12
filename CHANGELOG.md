@@ -16,6 +16,19 @@ long-term supported release series.
   own, so over TLS or REALITY the first record had a fixed, header-only
   size. With no frame within 500 ms the header goes alone, Vision padding
   it with an empty frame, as for TCP.
+- QUIC loss and congestion accounting for Hysteria and XHTTP H3, four
+  corrections. A ChromeParrot client's lone Handshake ACK no longer counts as
+  a packet in flight that awaits an acknowledgement: it took room in the
+  congestion window and armed the loss timer, though an ACK elicits none.
+  `congestion: reno` starts at quic-go's window of 32 datagrams instead of
+  Quinn's 10, so it starts as fast as Xray-core and a ChromeParrot handshake
+  under it picks Xray-core's packet number lengths. With `bbrProfile`
+  `conservative` or `aggressive`, the sender no longer confuses packets of
+  different packet number spaces: the acknowledgement of the client's
+  Finished used to close the delivery sample of the 1-RTT packet with the
+  same number. And a lost MTU probe no longer puts that sender into
+  recovery: a probe larger than the path carries is lost by design. Xray-core
+  does the last two itself; both are listed as deliberate differences.
 - A TCP flow through a MASQUE or WireGuard outbound recovers from a burst
   loss without waiting for its retransmission timer. The userspace TCP/IP
   stack resent one segment when the peer had repeated an ACK three times and

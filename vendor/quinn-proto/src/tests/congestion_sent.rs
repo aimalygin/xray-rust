@@ -457,6 +457,7 @@ struct EventLog {
     events: Vec<RecordedEvent>,
     not_ack_eliciting: u64,
     counted_losses: (u64, u64),
+    lost_probes: usize,
 }
 
 struct EventRecorder(Arc<Mutex<EventLog>>);
@@ -517,6 +518,10 @@ impl Controller for EventController {
         let mut log = self.log.lock().unwrap();
         assert_eq!(log.sent.get(&token), Some(&bytes));
         log.lost.push((token, bytes));
+    }
+    fn on_mtu_probe_lost_with_token(&mut self, now: Instant, bytes: u64, token: u64) {
+        self.log.lock().unwrap().lost_probes += 1;
+        self.on_packet_lost_with_token(now, bytes, token);
     }
     fn on_packets_lost(&mut self, _now: Instant, packets: u64, bytes: u64) {
         let mut log = self.log.lock().unwrap();
@@ -647,7 +652,46 @@ fn lost_mtu_probes_are_reported_per_packet_only() {
         .collect();
     assert!(!probes.is_empty(), "oversized probes are lost on this path");
     assert_eq!(
+        log.lost_probes,
+        probes.len(),
+        "each through the callback that tells a probe from other losses"
+    );
+    assert_eq!(
         log.counted_losses.1, 0,
         "lost probes stay out of the counted congestion losses"
+    );
+}
+
+/// A ChromeParrot client acknowledges the server's Handshake flight in a
+/// packet of its own while its Finished waits for the next datagram. That
+/// packet carries an ACK frame alone, so it is reported and tracked as one
+/// that elicits no acknowledgement: it used to count as in flight and arm the
+/// loss timer, because the Finished was still pending when it was built.
+#[test]
+fn chrome_parrot_handshake_ack_alone_is_not_ack_eliciting() {
+    let log = Arc::new(Mutex::new(EventLog::default()));
+    let mut transport = TransportConfig::default();
+    transport
+        .chrome_parrot(true)
+        .initial_mtu(1250)
+        .min_mtu(1250)
+        .mtu_discovery_config(None)
+        .congestion_controller_factory(Arc::new(EventRecorder(log.clone())));
+    let mut config = client_config();
+    config.transport_config(Arc::new(transport));
+    let mut pair = Pair::default();
+    pair.connect_with(config);
+
+    // The ClientHello, the Initial ACK, the Handshake ACK and the Finished,
+    // one packet per datagram.
+    let datagrams = &pair.client_datagrams;
+    assert!(datagrams[2][0] & 0xb0 == 0xa0 && datagrams[3][0] & 0xb0 == 0xa0);
+    assert!(datagrams[2].len() < datagrams[3].len());
+    let log = log.lock().unwrap();
+    let sent: Vec<u64> = log.sent.values().copied().collect();
+    assert_eq!(
+        sent[..2],
+        [datagrams[0].len() as u64, datagrams[3].len() as u64],
+        "the second ack-eliciting packet is the Finished, not the ACK before it"
     );
 }
