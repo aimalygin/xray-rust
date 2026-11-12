@@ -61,7 +61,13 @@ internal sealed interface XrayTunnelStartAdmission {
         val displacedQueuedStart: Boolean,
     ) : XrayTunnelStartAdmission
 
-    /** A session is running or stopping, or the same request is already starting. */
+    /**
+     * A session is stopping; the stop that completes it schedules the queued launch.
+     * [displacedQueuedStart] reports an older queued start that will never run.
+     */
+    data class AwaitingStop(val displacedQueuedStart: Boolean) : XrayTunnelStartAdmission
+
+    /** A session is running, or the same request is already starting or queued. */
     data object Rejected : XrayTunnelStartAdmission
 }
 
@@ -75,7 +81,7 @@ internal class XrayTunnelStateMachine<Session> {
     private val lock = Object()
     private var state: State<Session> = State.Stopped
 
-    // Only while an attempt that has been asked to stop is still releasing.
+    // Only while an attempt that has been asked to stop is still releasing, or a session is stopping.
     private var queuedStart: QueuedStart? = null
 
     fun beginStart(): StartToken? = synchronized(lock) {
@@ -104,7 +110,7 @@ internal class XrayTunnelStateMachine<Session> {
                 StartToken(request).also { state = State.Starting(it) },
             )
             is State.Starting -> current.token
-            is State.Stopping -> current.failedStartToken
+            is State.Stopping -> current.failedStartToken ?: return queueAfterStopLocked(request, launch)
             is State.Running -> null
         } ?: return XrayTunnelStartAdmission.Rejected
         if (current is State.Starting && request != null && request == pendingRequest(starting)) {
@@ -114,6 +120,13 @@ internal class XrayTunnelStateMachine<Session> {
         val displaced = queuedStart != null
         queuedStart = QueuedStart(StartToken(request), launch)
         return XrayTunnelStartAdmission.Queued(cancelled = starting, displacedQueuedStart = displaced)
+    }
+
+    private fun queueAfterStopLocked(request: Any?, launch: (StartToken) -> Unit): XrayTunnelStartAdmission {
+        if (request != null && request == queuedStart?.token?.request) return XrayTunnelStartAdmission.Rejected
+        val displaced = queuedStart != null
+        queuedStart = QueuedStart(StartToken(request), launch)
+        return XrayTunnelStartAdmission.AwaitingStop(displacedQueuedStart = displaced)
     }
 
     // The request that will run unless stopped: the queued replacement, else the live attempt.
@@ -189,7 +202,7 @@ internal class XrayTunnelStateMachine<Session> {
             is State.Stopping -> {
                 val failedStartToken = current.failedStartToken
                 if (failedStartToken == null) {
-                    XrayTunnelStopAction.None
+                    if (queuedStart == null) XrayTunnelStopAction.None else cancelStart()
                 } else {
                     failedStartToken.stopRequested = true
                     cancelStart()
@@ -225,11 +238,16 @@ internal class XrayTunnelStateMachine<Session> {
         }
     }
 
-    fun completeStop() {
-        synchronized(lock) {
-            state = State.Stopped
-            lock.notifyAll()
-        }
+    /**
+     * Ends a session stop. Returns the start queued while it stopped, now Starting, which the caller
+     * must run last.
+     */
+    fun completeStop(): (() -> Unit)? = synchronized(lock) {
+        val next = queuedStart
+        queuedStart = null
+        state = next?.let { State.Starting(it.token) } ?: State.Stopped
+        lock.notifyAll()
+        next?.let { queued -> { queued.launch(queued.token) } }
     }
 
     private sealed interface State<out Session> {
@@ -404,18 +422,40 @@ internal class XrayStartupProbePreflight<Core : Closeable>(
     }
 }
 
+/**
+ * Stops [failedSession] if it is still the running one, then calls [onStopped] with what [shutdown]
+ * threw, if anything. A start queued while it stopped is launched after [onStopped].
+ */
 internal fun <Session> teardownFailedXraySession(
     lifecycle: XrayTunnelStateMachine<Session>,
     failedSession: Session,
+    onStopped: (shutdownFailure: Throwable?) -> Unit = {},
     shutdown: (Session) -> Unit,
 ): Boolean {
     val session = lifecycle.takeSessionForFailure(failedSession) ?: return false
+    val shutdownFailure = runCatching { shutdown(session) }.exceptionOrNull()
+    val next = lifecycle.completeStop()
     try {
-        shutdown(session)
+        onStopped(shutdownFailure)
     } finally {
-        lifecycle.completeStop()
+        next?.invoke()
     }
     return true
+}
+
+/**
+ * Fences the started callback against a stop. Once [awaitDelivery] returns after the lifecycle left
+ * Running, no started callback of that session is running or still to come. A callback that calls
+ * [awaitDelivery] on its own thread does not wait for itself.
+ */
+internal class XrayStartedNotice<Session>(private val lifecycle: XrayTunnelStateMachine<Session>) {
+    private val lock = Any()
+
+    fun deliver(session: Session, onStarted: () -> Unit, onCancelled: () -> Unit) = synchronized(lock) {
+        if (lifecycle.isRunningSession(session)) onStarted() else onCancelled()
+    }
+
+    fun awaitDelivery() = synchronized(lock) { Unit }
 }
 
 internal fun joinXrayPumpThreadUninterruptibly(thread: Thread?) {
@@ -526,6 +566,7 @@ open class XrayVpnService : VpnService() {
         lifecycle = lifecycle,
         executor = startExecutor,
     )
+    private val startedNotice = XrayStartedNotice(lifecycle)
     private val startupProbePreflight = XrayStartupProbePreflight<XrayCore>(
         lifecycle = lifecycle,
         preflight = XrayCore::preflightStartupProbe,
@@ -602,9 +643,11 @@ open class XrayVpnService : VpnService() {
      * Every accepted call ends in exactly one of [onXrayTunnelStarted], [onXrayTunnelStartFailed]
      * or [onXrayTunnelStartCancelled]. A call while an earlier start with different arguments is
      * still in flight replaces it: the earlier attempt is cancelled and reports
-     * [onXrayTunnelStartCancelled], and this one begins once its cleanup has finished. A call with
-     * the same arguments as the start in flight, or while a session is running or stopping, is
-     * ignored. Failure to schedule the worker of a start that did not replace another one is thrown
+     * [onXrayTunnelStartCancelled], and this one begins once its cleanup has finished. A call while
+     * a session is stopping, after [stopXrayTunnel] or a packet-pump failure, begins once that stop
+     * has finished; a later such call replaces it, and the replaced one reports
+     * [onXrayTunnelStartCancelled]. A call with the same arguments as the start in flight or
+     * queued, or while a session is running, is ignored. Failure to schedule the worker of a start that did not replace another one is thrown
      * here. The callbacks carry no attempt identity, and those of different attempts can arrive
      * on different threads and interleave.
      */
@@ -627,6 +670,8 @@ open class XrayVpnService : VpnService() {
                     throw error
                 }
             }
+            is XrayTunnelStartAdmission.AwaitingStop ->
+                if (admission.displacedQueuedStart) notifyXrayTunnelStartCancelled()
             is XrayTunnelStartAdmission.Queued -> {
                 // Before the cancel below, which can launch this start on the calling thread.
                 if (admission.displacedQueuedStart) notifyXrayTunnelStartCancelled()
@@ -667,9 +712,11 @@ open class XrayVpnService : VpnService() {
 
     private fun deliverStartOutcome(outcome: XrayTunnelStartOutcome) {
         when (outcome) {
-            is XrayTunnelStartOutcome.Started ->
-                if (lifecycle.isRunningSession(outcome.session)) notifyXrayTunnelStarted()
-                else notifyXrayTunnelStartCancelled()
+            is XrayTunnelStartOutcome.Started -> startedNotice.deliver(
+                session = outcome.session,
+                onStarted = ::notifyXrayTunnelStarted,
+                onCancelled = ::notifyXrayTunnelStartCancelled,
+            )
             is XrayTunnelStartOutcome.Failed ->
                 if (Thread.currentThread().isInterrupted) notifyXrayTunnelStartCancelled()
                 else notifyXrayTunnelStartFailed(outcome.error)
@@ -823,6 +870,12 @@ open class XrayVpnService : VpnService() {
         }
     }
 
+    /**
+     * Stops the running session or cancels the start in flight, along with a start queued behind
+     * either. Stopping a session blocks until the core has stopped, since its tasks over the
+     * borrowed descriptor must end before the descriptor closes. Once this returns, that session
+     * calls no [onXrayTunnelStarted]: this waits for one already running.
+     */
     open fun stopXrayTunnel() {
         when (val action = lifecycle.requestStop()) {
             XrayTunnelStopAction.None -> Unit
@@ -833,16 +886,20 @@ open class XrayVpnService : VpnService() {
             }
             is XrayTunnelStopAction.StopSession -> {
                 startCoordinator.cancelActiveStart()
+                startedNotice.awaitDelivery()
                 try {
                     action.session.shutdown()
                 } finally {
-                    lifecycle.completeStop()
+                    lifecycle.completeStop()?.invoke()
                 }
             }
         }
     }
 
-    /** Called on the asynchronous start worker after the running session is published. */
+    /**
+     * Called on the asynchronous start worker after the running session is published.
+     * [stopXrayTunnel] waits for it, so it must not wait for a thread that is stopping the tunnel.
+     */
     protected open fun onXrayTunnelStarted() = Unit
 
     /** Called on the asynchronous start worker when startup fails without cancellation. */
@@ -1100,16 +1157,16 @@ open class XrayVpnService : VpnService() {
     private fun handlePacketPumpFailure(session: TunnelSession, error: Throwable) {
         // A shutdown step that throws has still taken the session and left it stopped, so the
         // host hears of the failure all the same, with what the shutdown threw attached.
-        val stopped = runCatching {
-            teardownFailedXraySession(lifecycle, session) { it.shutdown() }
-        }.getOrElse { failure ->
-            error.addSuppressed(failure)
-            true
-        }
-        if (stopped) {
-            fatalTunErrors.incrementAndGet()
-            runCatching { onXrayTunnelFatalError(error) }
-        }
+        teardownFailedXraySession(
+            lifecycle = lifecycle,
+            failedSession = session,
+            onStopped = { shutdownFailure ->
+                shutdownFailure?.let(error::addSuppressed)
+                fatalTunErrors.incrementAndGet()
+                runCatching { onXrayTunnelFatalError(error) }
+            },
+            shutdown = { it.shutdown() },
+        )
     }
 
     private class TunnelSession(

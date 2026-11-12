@@ -76,6 +76,23 @@ long-term supported release series.
   it, and so is an address outside loopback unless `allowUnauthenticatedLan`
   is set; see
   [the differences](docs/xray-core-differences.md#socks-inbound-ip).
+- iOS and macOS: the packet tunnel provider cancels the tunnel with
+  `XrayPacketTunnelProviderError.tunFileDescriptorStopped` when the core's read
+  or write loop gives up on the borrowed utun descriptor. Nothing watched
+  those loops, so the system went on showing a connected VPN that moved no
+  packets. Android has done the same since its file-descriptor watch; the
+  provider reads the loop counters every two seconds on that backend only,
+  and a stop or newer start that comes first wins. A start that arrives while
+  an earlier DNS bootstrap lookup still holds the bootstrap worker now runs as
+  soon as that lookup returns, if its own five-second deadline allows. It used
+  to wait out the deadline without running and fail with
+  `dnsBootstrapTimedOut`.
+- Android: `startXrayTunnel` while a session is stopping, after
+  `stopXrayTunnel` or a packet-pump or descriptor failure, starts once the stop
+  has finished. It was dropped without any callback, so a host that restarted
+  the tunnel at that moment waited forever. `stopXrayTunnel` now waits for an
+  `onXrayTunnelStarted` already running, and that callback no longer arrives
+  after the stop returned.
 - A TCP flow through a MASQUE or WireGuard outbound no longer stops for good
   while it uploads. Two faults in the userspace TCP/IP stack could strand it.
   The stack went to sleep when its queue of outgoing packets was full, and
