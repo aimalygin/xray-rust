@@ -183,9 +183,9 @@ after the SDK publishes, since it pins the published SDK.
 1. ~~Add the `v010` evidence profile and map 0.10.x to it.~~ This change.
 2. ~~Extend the device fixtures and Debug harnesses to every scenario of the
    profile, with a host loopback check per new case.~~ Done; see
-   [v0.10 evidence collection](v010-release-evidence.md). Still missing there:
-   the `v010` performance comparison suite and the collector for the
-   comparison against 0.9.0.
+   [v0.10 evidence collection](v010-release-evidence.md). The `v010`
+   performance comparison suite and the collector for the comparison against
+   0.9.0 followed in their own change; the same page has their commands.
 3. Pre-release fixes on `main`, then the release commit: workspace version
    0.10.0, dated changelog section, regenerated configuration contract. That
    commit is the candidate.
@@ -194,7 +194,9 @@ after the SDK publishes, since it pins the published SDK.
    profile, pass SDK CI.
 6. The owner's decisions on the proposals above, then the device and host
    campaign on the candidate: Apple and Android runs, the gate's performance
-   measurements, the comparison against 0.9.0, the archive, and
+   measurements (`run-v08-protocol-comparison.py --suite v010` for mKCP and
+   MASQUE), the comparison against 0.9.0
+   (`run-v010-release-comparison.py`), the archive, and
    `v010-release-evidence.yml` on the candidate.
 7. Publish the evidence on `main`, tag, publish the core release, the SDK and
    then the KMP library, and resolve the packages from clean consumers.
