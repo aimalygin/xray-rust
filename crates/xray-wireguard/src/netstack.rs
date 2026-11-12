@@ -200,6 +200,65 @@ mod tests {
         .unwrap();
     }
 
+    /// The reader of `outgoing` is a plain channel receiver that tells the
+    /// stack nothing. A stack that filled the queue, and holds an incoming
+    /// packet it could not take a reply slot for, has to notice the drain
+    /// itself: MASQUE uploads hung here, with the queue empty again and the
+    /// stack still asleep.
+    #[tokio::test]
+    async fn a_stack_that_filled_its_transmit_queue_resumes_once_it_drains() {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            let (stack, mut packets) =
+                Netstack::start(vec!["10.66.0.2".parse().unwrap()], 1280).unwrap();
+            let remote: SocketAddr = "192.0.2.10:5353".parse().unwrap();
+            let session = stack.open_udp(remote).await.unwrap();
+            session.send(b"first").await.unwrap();
+            let first = packets.outgoing.recv().await.unwrap();
+            let ip = Ipv4Packet::new_checked(&first[..]).unwrap();
+            let port = UdpPacket::new_checked(ip.payload()).unwrap().src_port();
+
+            // Nobody reads the queue: it fills, and datagrams stay behind.
+            for _ in 0..IP_PACKET_QUEUE + 4 {
+                session.send(b"ping").await.unwrap();
+            }
+            while packets.outgoing.len() < IP_PACKET_QUEUE {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            // The stack takes the reply off its queue and can do no more
+            // with it, then goes to sleep.
+            let reply = udp_v4(
+                (Ipv4Address::new(192, 0, 2, 10), 5353),
+                (Ipv4Address::new(10, 66, 0, 2), port),
+                b"pong",
+            );
+            packets.incoming.send(reply).await.unwrap();
+            while packets.incoming.capacity() < packets.incoming.max_capacity() {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+
+            for _ in 0..IP_PACKET_QUEUE {
+                packets.outgoing.recv().await.unwrap();
+            }
+            let pong = tokio::time::timeout(Duration::from_secs(3), session.recv())
+                .await
+                .expect("the stack stayed asleep after its transmit queue drained");
+            assert_eq!(&pong.unwrap()[..], b"pong");
+            // What stayed behind follows.
+            let late = tokio::time::timeout(Duration::from_secs(3), packets.outgoing.recv())
+                .await
+                .expect("the datagrams left behind never followed");
+            let ip = Ipv4Packet::new_checked(&late.as_ref().unwrap()[..]).unwrap();
+            assert_eq!(
+                UdpPacket::new_checked(ip.payload()).unwrap().payload(),
+                b"ping"
+            );
+            stack.shutdown().await;
+        })
+        .await
+        .unwrap();
+    }
+
     #[tokio::test]
     async fn only_families_with_a_local_address_are_reachable() {
         let (stack, _packets) = Netstack::start(vec!["10.66.0.2".parse().unwrap()], 1280).unwrap();

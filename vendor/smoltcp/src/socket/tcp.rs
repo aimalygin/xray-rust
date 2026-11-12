@@ -2656,6 +2656,9 @@ impl<'a> Socket<'a> {
             self.hop_limit.unwrap_or(64),
         );
 
+        // Whether this segment is the pending fast retransmit.
+        let mut fast_retransmit = false;
+
         // Construct the basic TCP representation, an empty ACK packet.
         // We'll adjust this to be more specific as needed.
         let mut repr = TcpRepr {
@@ -2738,7 +2741,9 @@ impl<'a> Socket<'a> {
                     repr.seq_number = self.local_seq_no;
                     repr.payload = self.tx_buffer.get_allocated(0, size);
 
-                    self.pending_fast_retransmit = false;
+                    // Still owed until the device takes the segment: see
+                    // after `emit` below.
+                    fast_retransmit = true;
 
                     0
                 } else {
@@ -2891,6 +2896,15 @@ impl<'a> Socket<'a> {
         // for sure will not be successfully transmitted.
         ip_repr.set_payload_len(repr.buffer_len());
         emit(cx, packet_meta, (ip_repr, repr))?;
+
+        // A device with no transmit slot refuses the segment above. The
+        // retransmit timer is idle by then, and the halved congestion window
+        // admits no new data that would start it again, so a fast retransmit
+        // forgotten before `emit` would leave the flight unanswered for
+        // good. It stays pending, and `poll_at` says `Now`, until it leaves.
+        if fast_retransmit {
+            self.pending_fast_retransmit = false;
+        }
 
         // We've sent something, whether useful data or a keep-alive packet, so rewind
         // the keep-alive timer.
@@ -7304,6 +7318,55 @@ mod test {
             ack_number: Some(LOCAL_SEQ + 1 + (3 * 5)),
             ..SEND_TEMPL
         });
+    }
+
+    #[test]
+    fn test_fast_retransmit_survives_a_device_without_a_transmit_slot() {
+        let mut s = socket_established();
+        s.remote_mss = 3;
+
+        send!(s, time 0, TcpRepr {
+            seq_number: REMOTE_SEQ + 1,
+            ack_number: Some(LOCAL_SEQ + 1),
+            ..SEND_TEMPL
+        });
+
+        // Everything queued goes out; the first segment is lost.
+        s.send_slice(b"aaaBBBcccDDD").unwrap();
+        for (index, payload) in [b"aaa", b"BBB", b"ccc", b"DDD"].into_iter().enumerate() {
+            recv!(s, time 1000 + 5 * index as i64, Ok(TcpRepr {
+                seq_number: LOCAL_SEQ + 1 + 3 * index,
+                ack_number: Some(REMOTE_SEQ + 1),
+                payload:    &payload[..],
+                ..RECV_TEMPL
+            }));
+        }
+        for time in [1050, 1055, 1060] {
+            send!(s, time time, TcpRepr {
+                seq_number: REMOTE_SEQ + 1,
+                ack_number: Some(LOCAL_SEQ + 1),
+                ..SEND_TEMPL
+            });
+        }
+
+        // The device has no transmit slot when the fast retransmit comes up.
+        s.cx.set_now(Instant::from_millis(1100));
+        let refused: Result<(), ()> = s.socket.dispatch(&mut s.cx, |_, _, _| Err(()));
+        assert_eq!(refused, Err(()));
+
+        // Nothing else would move this socket: the whole flight is out, no
+        // new data fits the window, and the retransmit timer is idle. The
+        // retransmission is still owed, and leaves with the next slot.
+        assert!(!s.timer.is_retransmit());
+        assert_eq!(s.socket.poll_at(&mut s.cx), PollAt::Now);
+        recv!(s, time 1105, Ok(TcpRepr {
+            seq_number: LOCAL_SEQ + 1,
+            ack_number: Some(REMOTE_SEQ + 1),
+            payload:    &b"aaa"[..],
+            ..RECV_TEMPL
+        }));
+        assert!(s.timer.is_retransmit());
+        recv_nothing!(s, time 1110);
     }
 
     #[test]

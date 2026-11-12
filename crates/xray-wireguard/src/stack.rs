@@ -210,8 +210,16 @@ impl<P: IpPacket> Stack<P> {
         }
     }
     pub(crate) async fn run(mut self, stop: Stop) {
+        let tx = self.device.tx.clone();
         loop {
-            let mut delay = if self.device.tx.capacity() == 0 {
+            // A full transmit queue stops everything that needs a packet
+            // slot: egress, and ingress too, which takes a slot for its
+            // reply before it reads. Nothing else then wakes the loop: no
+            // timer is set, and a held incoming packet keeps the incoming
+            // queue unpolled. So the loop waits for a slot itself instead of
+            // counting on whoever drains the queue to say so.
+            let full = tx.capacity() == 0;
+            let mut delay = if full {
                 None
             } else {
                 self.interface
@@ -232,6 +240,11 @@ impl<P: IpPacket> Stack<P> {
             let wake = self.wake.clone();
             tokio::select! { biased;
                 _ = stop.cancelled() => return,
+                // Ahead of `drive`, which could not use a slot this wait holds.
+                slot = tx.reserve(), if full => match slot {
+                    Ok(slot) => drop(slot),
+                    Err(_) => return,
+                },
                 result = poll_fn(|cx| self.drive(cx)) => if !result { return; },
                 _ = wake.notified() => {},
                 _ = async { match delay { Some(d) => tokio::time::sleep(d).await, None => std::future::pending().await } } => {},

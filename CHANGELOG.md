@@ -10,6 +10,17 @@ long-term supported release series.
 
 ## Unreleased
 
+- A TCP flow through a MASQUE or WireGuard outbound no longer stops for good
+  while it uploads. Two faults in the userspace TCP/IP stack could strand it.
+  The stack went to sleep when its queue of outgoing packets was full, and
+  only WireGuard's engine told it when the queue had drained: over MASQUE it
+  slept on with the queue empty and packets waiting to be read. And a fast
+  retransmit that met a full queue was forgotten instead of sent with the
+  next free slot, which left a flow with unacknowledged data and no timer;
+  this one could strand a WireGuard flow as well. Against Xray-core's MASQUE
+  server on a loopback, eight parallel uploads used to hang in a large share
+  of runs. They complete now, though a burst the server drops still costs a
+  flow a one-second retransmission timeout.
 - Linux: the download of a connection from a SOCKS, HTTP or transparent
   inbound is moved in the kernel with `splice(2)` once the outbound reads a
   bare TCP socket: a freedom outbound from its first byte, and VLESS Vision
