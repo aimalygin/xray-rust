@@ -25,6 +25,18 @@ long-term supported release series.
   `0.0.0.0` listener gets a relay on the LAN address instead of on
   `127.0.0.1`. A password-protected association also admits such a client's
   datagrams, which come from its IPv4 address.
+- Another local process can no longer push a SOCKS client's UDP flows out
+  of its association. Without a password, any sender's datagrams opened
+  flows in it, and 128 targets were enough to evict the client's own. The
+  association is now pinned as in Xray-core: to the endpoint the client
+  declared, or to its TCP connection's IP and the port of its first
+  datagram, and datagrams from anyone else are dropped.
+- The SOCKS inbound's `ip` setting takes effect: the `UDP ASSOCIATE` relay
+  binds that address and the reply names it, as in Xray-core. It was
+  accepted and ignored before. A domain is refused, since Xray-core fails on
+  it, and so is an address outside loopback unless `allowUnauthenticatedLan`
+  is set; see
+  [the differences](docs/xray-core-differences.md#socks-inbound-ip).
 - A TCP flow through a MASQUE or WireGuard outbound no longer stops for good
   while it uploads. Two faults in the userspace TCP/IP stack could strand it.
   The stack went to sleep when its queue of outgoing packets was full, and

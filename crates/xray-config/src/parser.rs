@@ -742,6 +742,18 @@ impl Parser<'_> {
                 );
             }
         }
+        if let InboundProtocol::Socks(crate::SocksInboundSettings {
+            udp_address: Some(address),
+            ..
+        }) = &protocol
+        {
+            if !address.is_loopback() && !allow_unauthenticated_lan {
+                self.error(
+                    format!("$.inbounds[{index}].settings.ip"),
+                    "a SOCKS UDP relay outside loopback needs settings.allowUnauthenticatedLan=true, as the listen address does",
+                );
+            }
+        }
         if matches!(listen.as_str(), "0.0.0.0" | "::") {
             self.warning(
                 format!("$.inbounds[{index}].listen"),

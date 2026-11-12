@@ -174,6 +174,23 @@ the timeout from the start of its wait, as in Xray-core. The test
 sends the first byte of each protocol 0.9 s into a one-second timeout and
 expects the close at one second, not 1.9 s.
 
+## SOCKS inbound `ip`
+
+`ip` binds the `UDP ASSOCIATE` relay and is the address the reply names, as
+Xray-core's `proxy/socks/protocol.go` uses it. Two inputs Xray-core accepts
+are refused when the config loads:
+
+- A domain. Xray-core reads `ip` as an IP or a domain, and a domain makes the
+  first `UDP ASSOCIATE` call `IP()` on a domain address, which panics.
+- An IP outside loopback, `0.0.0.0` included, unless the inbound sets
+  `allowUnauthenticatedLan`. On a loopback listener such a relay would expose
+  the UDP side of the proxy to the network, which the listen address rule
+  exists to prevent.
+
+The parser test `parses_socks_inbound_udp_relay_ip` covers both refusals,
+and `the_ip_setting_names_the_udp_relay` an IPv6 control connection answered
+with the configured IPv4 relay.
+
 ## SOCKS outbound: supported subset and evidence
 
 The [parser contract](config-compatibility.md#socks-outbound) records the exact

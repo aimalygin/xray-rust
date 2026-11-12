@@ -920,6 +920,9 @@ pub struct SocksInboundSettings {
     /// `REP = 0x07`, as Xray-core does for `"udp": false`. The parser keeps an
     /// absent `udp` enabled, unlike Xray-core, which reads it as false.
     pub udp: bool,
+    /// `ip`: where the `UDP ASSOCIATE` relay binds and where its reply sends
+    /// the client. When unset, the local IP of the client's TCP connection.
+    pub udp_address: Option<std::net::IpAddr>,
 }
 
 impl Default for SocksInboundSettings {
@@ -929,6 +932,7 @@ impl Default for SocksInboundSettings {
         Self {
             auth: xray_proxy::inbound::SocksInboundAuth::NoAuth,
             udp: true,
+            udp_address: None,
         }
     }
 }
