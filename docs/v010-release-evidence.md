@@ -281,15 +281,140 @@ must return to the app after unlocking.
 
 ## Performance
 
-Not built in this change:
+Two collectors, both run from the candidate's checkout on one quiet machine.
+Neither starts while a compiler runs, and both stop at the first failed run,
+keeping what they measured.
 
-- `run-v08-protocol-comparison.py` has no `v010` suite. The gate's `mkcp-` and
-  `masque-` measurements need mKCP and MASQUE profiles for the candidate and
-  the pinned Xray-core client; sing-box implements neither.
-- Nothing assembles the `release-comparison` artifact. It needs a build of the
-  `v0.9.0` tag next to the candidate (`build-isolated-release.py` makes one),
-  five paired repeats of each legacy protocol's throughput, latency and
-  memory, and a writer for the JSON the checker reads.
+### Builds
+
+Every Rust binary is a `build-isolated-release.py` build: a fresh export of
+one commit, an empty target directory, no inherited flags. `$C` is a campaign
+directory outside version control.
+
+```sh
+python3 scripts/build-isolated-release.py --rev v0.9.0 --name baseline --campaign "$C"
+python3 scripts/build-isolated-release.py --rev <candidate> --name candidate --campaign "$C"
+python3 scripts/build-isolated-release.py --rev <candidate> --name harness --campaign "$C" \
+    --package xray-bench --binary xray-bench
+```
+
+`baseline` is the published `v0.9.0` tag, which the comparison against 0.9.0
+needs; `harness` is the candidate's traffic driver. On an Apple M-series Mac
+the three builds took about four minutes and left 56 MiB in `$C`.
+
+The reference client and server is the pinned Xray-core v26.11.9. The
+preparer takes only a CGO-disabled Go 1.27.3 build that names the exact
+commit and a clean tree:
+
+```sh
+CGO_ENABLED=0 go -C <pinned Xray-core checkout> build -o "$C/xray" ./main
+```
+
+### mKCP and MASQUE against Xray-core
+
+The gate's `mkcp-` and `masque-` measurements come from the `v010` suite of
+`run-v08-protocol-comparison.py`:
+
+```sh
+python3 scripts/prepare-v08-protocol-comparison.py --root "$C/comparison" \
+    --candidate "$C/bin/candidate" --candidate-build "$C/build/candidate.json" \
+    --harness "$C/bin/harness" --harness-build "$C/build/harness.json" --xray "$C/xray"
+python3 scripts/run-v08-protocol-comparison.py --suite v010 \
+    --inputs "$C/comparison/inputs.json" --output "$C/v010"
+```
+
+Without `--singbox` the preparer writes inputs that hold no sing-box client.
+The `v010` suite needs none: sing-box implements neither carrier, so the suite
+measures the candidate against Xray-core's own client, over a common Xray-core
+server. The `v08` and `v09` suites refuse such inputs.
+
+The suite has two profiles, each the device fixture's own case on the
+loopback:
+
+| Profile | What it is | Measurement prefix |
+| --- | --- | --- |
+| `mkcp-vless` | plain VLESS over mKCP at Xray-core's default capacities | `mkcp` |
+| `masque-h3` | MASQUE over HTTP/3, Basic authentication, pinned certificate | `masque` |
+
+Each runs the usual ten cases: upload, download, full-duplex, TCP latency and
+UDP, on one flow and on eight. The work per flow is smaller than the other
+suites' where the carrier sets the pace: mKCP moves 32 MiB and makes 200
+round trips, MASQUE moves 64 MiB. mKCP's default capacity holds a flow to a
+few MiB/s and its 50 ms interval holds a round trip near 100 ms for either
+client, so its throughput and latency ratios show parity at that limit, not
+headroom above it.
+
+The manifest's `measurement_groups` maps `mkcp` and `masque` to their
+profiles. Five rotating-order repeats become `<prefix>-throughput` (% of
+paired Xray-core, at least), `-latency` (% of paired Xray-core p95, at most)
+and `-memory` (MiB, at most) the way the 0.9.0 campaign's
+`summarize_protocols_v09.py` computed them.
+`run-v08-comparison-blocks.py` still collects the `v08` profiles only.
+
+### The comparison against 0.9.0
+
+```sh
+python3 scripts/run-v010-release-comparison.py --campaign "$C" \
+    --reference "$C/xray" --output "$C/release-comparison"
+```
+
+It checks that `baseline` is the revision and tree the checker names and that
+every build is an isolated one, then runs five repeats. Each repeat starts a
+fresh Xray-core server with fresh keys, carrying the twelve `legacy-v010`
+cases, and runs both builds on one SOCKS flow per protocol, full-duplex bulk
+and TCP latency, in alternating order: 240 runs. Throughput is the bulk run's
+MiB/s, latency the latency run's p95, memory the larger sampled peak RSS of
+the two runs.
+
+`release-comparison.json` in the output directory is the archive's
+`release-comparison` artifact. Each verdict is computed by the checker's own
+function from the checker's budgets; the collector holds no threshold, so a
+budget the owner changes is changed in one place. It validates the document
+before writing it and prints the rows that are a `regression`: the release's
+`known-limitations` must name each by its id.
+
+`--smoke`, `--protocol` and fewer than five `--repeats` are diagnostics. They
+write `diagnostic-comparison.json`, never the artifact.
+
+REALITY's decoy handshake needs `www.google.com:443` reachable from the host,
+as in the device fixture; each repeat waits eight seconds for it.
+
+### What was run for this change
+
+On macOS arm64 on 2026-11-11, with isolated builds of `main` at `0c0664fe`
+and of `v0.9.0`. None of it is release evidence.
+
+| Run | Result |
+| --- | --- |
+| `run-v010-release-comparison.py --smoke --repeats 5` | 240 of 240 runs in 7 minutes; the checker accepts the document once its regressions are named |
+| The same at full size, `--repeats 1` | 48 of 48 runs in 3 minutes; the slowest took 34 seconds (`xhttp-h1` latency) |
+| `--suite v010 --smoke`, three attempts | none completed: 31, 8 and 35 runs passed before a candidate run stalled |
+| `--suite v010` at full size, mKCP: three cases, three repeats | 18 of 18 runs, 14 to 22 seconds each, the two clients level |
+| `--suite v010` at full size, MASQUE: two cases, three repeats | download on eight flows 6 of 6; full-duplex on one flow 3 of 3 for Xray-core, 1 of 3 for the candidate |
+
+Xray-core's client served as the peer on both carriers: every one of the 20
+cases passed for it, and none of its runs failed.
+
+The candidate stalled in some runs. Each time its flows had opened, it then
+moved nothing, and the driver gave up after its 120 seconds:
+
+- **MASQUE, traffic that uploads.** At full size on one flow, two of three
+  full-duplex runs stalled and the third moved 13.5 MiB/s against Xray-core's
+  175. At smoke size on eight flows, full-duplex stalled in two runs of two
+  and upload in one of four. Downloads never stalled and were faster than
+  Xray-core's: 248 against 166 MiB/s on eight flows.
+- **mKCP, UDP on one flow.** One smoke run of three stalled. The driver waits
+  for each echo and does not resend, so one lost datagram ends a run. The
+  eight-flow runs at full size passed three times of three.
+
+Until the MASQUE stall is fixed the `v010` suite does not pass, and the
+gate's `masque-throughput` would not hold at these numbers. The suite keeps
+every failed run and reports it; it does not retry one.
+
+The single full-size repeat of the comparison against 0.9.0 is one sample a
+side, not a verdict. It showed throughput within 5% of 0.9.0 on all twelve
+protocols, p95 latency between 90% and 113% of it, and sampled peak memory 3
+to 20% above it on eleven.
 
 ## What is not device coverage
 
@@ -310,6 +435,7 @@ Not built in this change:
    the `--network-change` runs for `mkcp`, `masque` and `xhttp-h3` against a
    WAN host, and the cancellation and resource runs.
 5. Shared scenarios, as in 0.9.0.
-6. Performance, once the two collectors above exist.
+6. Performance: the builds, the `v010` suite and the comparison against 0.9.0
+   above, five repeats each, on the candidate in a quiet window.
 7. Map the results into a schema-5 archive and validate it with
    `check-v010-release-evidence.py` and `v010-release-evidence.yml`.
