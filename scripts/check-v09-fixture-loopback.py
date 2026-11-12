@@ -31,6 +31,14 @@ SUITES = {
     "ciphers-v09": ("run-v08-apple-acceptance-fixture.py", ["--suite", "ciphers-v09"]),
     "legacy-v09": ("run-v08-apple-acceptance-fixture.py", ["--suite", "legacy-v09"]),
 }
+# REALITY's first decoy handshake, as in run-v07-performance.py.
+WARMUP_SUITES = ("legacy-v09",)
+# What a stopped fixture may leave behind: logs without credentials.
+KEPT = {"server.log"}
+# Arguments handed on to the fixture, for checks built on this one.
+FIXTURE_ARGUMENTS = []
+# UDP payload bytes to the IPv4 and the IPv6 target, unless a case names its own.
+UDP_PAYLOADS = (1200, 1200)
 
 
 class CheckFailure(Exception):
@@ -152,11 +160,14 @@ def check_case(case, envelope, client_binary, work):
         child = subprocess.Popen([str(client_binary), "run", "-config", str(path)], stdout=log, stderr=log)
         try:
             wait_listening(ingress, child)
+            # What the device harnesses wait after connecting, when a case asks.
+            time.sleep(case.get("settleSeconds", 0))
             for kind, host in [("ipv4-tcp", "198.51.100.7"), ("ipv6-tcp", "2001:db8::7")]:
                 tcp_echo(ingress, host, envelope["tcpPort"])
                 rows.append(kind)
-            for kind, host in [("ipv4-udp", "198.51.100.7"), ("ipv6-udp", "2001:db8::7")]:
-                payload = secrets.token_bytes(1200)
+            sizes = case.get("udpPayloadBytes", UDP_PAYLOADS)
+            for (kind, host), size in zip([("ipv4-udp", "198.51.100.7"), ("ipv6-udp", "2001:db8::7")], sizes):
+                payload = secrets.token_bytes(size)
                 reply = udp_exchange(ingress, host, envelope["udpPort"], payload,
                                      5 if case.get("udp", True) else 2)
                 if case.get("udp", True):
@@ -201,7 +212,7 @@ def main():
     script, extra = SUITES[args.suite]
     command = [sys.executable, str(ROOT / "scripts" / script), *extra, "--bind", "127.0.0.1",
                "--reference-binary", str(args.reference_binary), "--output", str(work / "fixture"),
-               "--seconds", "600"]
+               "--seconds", "600", *FIXTURE_ARGUMENTS]
     if args.reference_sha256:
         command += ["--reference-sha256", args.reference_sha256]
     fixture = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -210,8 +221,8 @@ def main():
         line = fixture.stdout.readline()
         if not line.startswith("Fixture ready: "):
             raise CheckFailure("fixture did not start: " + line.strip())
-        if args.suite == "legacy-v09":
-            time.sleep(8)  # REALITY's first decoy handshake, as in run-v07-performance.py
+        if args.suite in WARMUP_SUITES:
+            time.sleep(8)
         envelope = json.loads(Path(line.removeprefix("Fixture ready: ").strip()).read_text())
         for case in envelope["cases"]:
             try:
@@ -228,7 +239,7 @@ def main():
         except subprocess.TimeoutExpired:
             fixture.kill()
             fixture.wait()
-    leftovers = sorted(p.name for p in (work / "fixture").iterdir() if p.name != "server.log")
+    leftovers = sorted(p.name for p in (work / "fixture").iterdir() if p.name not in KEPT)
     summary = {"suite": args.suite, "cases": len(results), "failed": sum(r["result"] != "passed" for r in results),
                "fixtureSecretsRemoved": not leftovers, "scope": "host loopback through SOCKS ingress; not device evidence"}
     (work / "results.json").write_text(json.dumps({"summary": summary, "results": results}, indent=2) + "\n")

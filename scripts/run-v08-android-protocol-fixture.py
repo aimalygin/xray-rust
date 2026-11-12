@@ -110,11 +110,19 @@ def reserve_port(bind, used):
     raise RuntimeError("no available fixture port")
 
 
+# v0.10 selections of the base fixture. A single carrier may take --port, for
+# the Wi-Fi/cellular run against a WAN host.
+V010_SELECTIONS = ("v010", "smoke-v010", "import-v010", *fixture.V010_PROTOCOLS)
+
+
 def write_fixtures(root, bind, tcp_port, udp_port, dns_port, **kwargs):
     if kwargs.get("protocol") == "v09" and kwargs.get("port") is None:
         return write_v09(root, bind, tcp_port, udp_port, dns_port, **kwargs)
+    if kwargs.get("protocol") in V010_SELECTIONS:
+        return write_v010(root, bind, tcp_port, udp_port, dns_port, **kwargs)
     if kwargs.get("protocol") != "v08" or kwargs.get("port") is not None:
-        raise ValueError("Android fixture requires --protocol v08 or v09 without --port")
+        raise ValueError("Android fixture requires --protocol v08, v09 or a v0.10 selection, "
+                         "and takes --port only with one v0.10 carrier")
     original_write(root, bind, tcp_port, udp_port, dns_port, **kwargs)
     server = json.loads((root / "server.json").read_text())
     envelope = json.loads((root / "v07-probe.json").read_text())
@@ -185,15 +193,29 @@ def write_v09(root, bind, tcp_port, udp_port, dns_port, **kwargs):
     (root / "v07-probe.json").write_text(json.dumps(envelope, indent=2) + "\n")
 
 
+def write_v010(root, bind, tcp_port, udp_port, dns_port, **kwargs):
+    """The base fixture's v0.10 cases; caseId is the label, ``mkcp-vless`` or
+    ``vless-reverse-bridge``. None has a share link: the driver imports the
+    canonical JSON only. import-v010 adds link rows the driver imports alone."""
+    if kwargs.get("port") is not None and kwargs["protocol"] not in fixture.V010_PROTOCOLS:
+        raise ValueError("an explicit port requires one v0.10 carrier")
+    original_write(root, bind, tcp_port, udp_port, dns_port, **kwargs)
+    envelope = json.loads((root / "v07-probe.json").read_text())
+    for case in envelope["cases"]:
+        case["caseId"] = case["label"].replace(":", "-")
+    (root / "v07-probe.json").write_text(json.dumps(envelope, indent=2) + "\n")
+
+
 def write_regression(root, bind, tcp_port, udp_port, dns_port, *, suite, **kwargs):
-    if kwargs.get("port") is not None:
+    if kwargs.get("port") is not None and suite != "xhttp-h3-v010":
         raise ValueError("regression suites require dynamically allocated fixture ports")
-    if suite in ("legacy", "legacy-v09"):
+    if suite in ("legacy", "legacy-v09", "legacy-v010", "xhttp-h3-v010"):
         spec = importlib.util.spec_from_file_location(
             "android_legacy_fixture", ROOT / "scripts/run-v08-apple-acceptance-fixture.py")
         legacy = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(legacy)
-        writer = legacy.write_legacy if suite == "legacy" else legacy.write_legacy_v09
+        writer = {"legacy": legacy.write_legacy, "legacy-v09": legacy.write_legacy_v09,
+                  "legacy-v010": legacy.write_legacy_v010, "xhttp-h3-v010": legacy.write_xhttp_h3}[suite]
         writer(root, bind, tcp_port, udp_port, dns_port, **kwargs)
     else:
         original_write(root, bind, tcp_port, udp_port, dns_port, **{**kwargs, "protocol": "both"})
@@ -205,7 +227,8 @@ def write_regression(root, bind, tcp_port, udp_port, dns_port, *, suite, **kwarg
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--suite", choices=("v08", "v09", "legacy", "legacy-v09", "v07"), default="v08")
+    parser.add_argument("--suite", choices=("v08", "v09", "v010", "legacy", "legacy-v09", "legacy-v010",
+                                            "xhttp-h3-v010", "v07"), default="v08")
     parser.add_argument("--udp-delay-seconds", type=int, choices=(0, 3), default=0,
                         help="delay a nonce-matched reply to test cancellation during UDP receive")
     args, remaining = parser.parse_known_args()
@@ -213,6 +236,7 @@ if __name__ == "__main__":
     fixture.Echo = Oracle
     Oracle.delay_seconds = args.udp_delay_seconds
     fixture.tcp_echo = http_probe
-    fixture.write_fixtures = (write_fixtures if args.suite in ("v08", "v09") else
+    fixture.write_fixtures = (write_fixtures if args.suite in ("v08", "v09", "v010") else
                               lambda *a, **kw: write_regression(*a, suite=args.suite, **kw))
+    fixture.SINGLE_CASE = args.suite == "xhttp-h3-v010"
     fixture.main()

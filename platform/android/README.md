@@ -589,11 +589,32 @@ malformed links holding a non-secret marker for the redaction controls.
 envelope on both backends and honours these expectations; see
 [v0.9 evidence collection](../../docs/v09-release-evidence.md).
 
+For v0.10, `--suite v010` takes the base fixture's selections: `--protocol
+v010` (mKCP and MASQUE over HTTP/3), `smoke-v010` (the masks, XDRIVE and the
+VLESS reverse bridge), `xicmp` alone, or `import-v010`. `caseId` is the label,
+such as `mkcp-vless`, `xdrive-s3` or `vless-reverse-bridge`. None of these
+cases has a share link, so the driver imports their canonical JSON only. One
+carrier may take `--port`, for the Wi-Fi/cellular run against a WAN host.
+`import-v010` adds `imports`, links the driver imports on their own. See
+[v0.10 evidence collection](../../docs/v010-release-evidence.md).
+
+`devicehost` opts in to the SDK's network-change coordinator
+(`networkChangeRebindEnabled()`), so its manifest declares
+`ACCESS_NETWORK_STATE`. Each rebind request and each coordinator error is
+logged as `XRAY_ANDROID_NETWORK` with the result's kind only, and counted in
+the status preferences as `network-rebinds` and `network-change-errors`. The
+driver's `--network-change` step reads those counters: with the VPN running
+it turns Wi-Fi off over adb, requires traffic to recover while it is off,
+turns it on again, and requires the same runtime generation and at least one
+rebind request. It needs adb over USB.
+
 For legacy regression, select `--suite legacy` (VLESS/REALITY and XHTTP
-H1/H2/H3), `--suite v07` (WireGuard and Hysteria2), or `--suite legacy-v09`,
+H1/H2/H3), `--suite v07` (WireGuard and Hysteria2), `--suite legacy-v09`,
 which holds all nine v0.9 legacy protocols, Trojan, SS2022 and VMess included,
-with `caseId` equal to the evidence transition id. These suites require
-dynamically allocated ports. `/v08-hold/NUMBER` withholds an HTTP response for
+or `--suite legacy-v010`, which adds SOCKS, HTTP and classic Shadowsocks AEAD
+to them, with `caseId` equal to the evidence transition id. These suites
+require dynamically allocated ports; `--suite xhttp-h3-v010` is XHTTP over
+HTTP/3 alone and takes `--port`. `/v08-hold/NUMBER` withholds an HTTP response for
 up to twenty seconds and records peer EOF separately from the fixture timeout.
 `--udp-delay-seconds 3` submits the same nonce-checked UDP response after three
 seconds, so an active receive can be cancelled before the response. Run a

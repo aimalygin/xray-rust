@@ -7,6 +7,9 @@ verify upstream provenance. Creates a new private directory containing ephemeral
 credentials; removes those credentials when stopped. Never changes host routes.
 --protocol v09 serves SOCKS5 (password, UDP), HTTP CONNECT (Basic, plain and
 TLS) and classic Shadowsocks AEAD; see docs/v09-release-evidence.md.
+--protocol v010 serves mKCP and MASQUE, smoke-v010 the masks, XDRIVE and the
+VLESS reverse bridge, and import-v010 the new link kinds; xicmp runs alone and
+needs raw ICMP sockets. See docs/v010-release-evidence.md.
 """
 
 import argparse
@@ -23,15 +26,37 @@ import signal
 import socket
 import struct
 import subprocess
+import sys
 import uuid
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 
+ROOT = Path(__file__).resolve().parents[1]
 REFERENCE = "676eaf66f8f05d4d558ee7a74b4736623d3feeb9"
 V08_PROTOCOLS = ("trojan", "shadowsocks2022", "vmess")
 V09_PROTOCOLS = ("socks", "http", "https", "shadowsocks-aead")
 SHADOWSOCKS_AEAD_METHOD = "aes-256-gcm"
 REDACTION_MARKER = "NONSECRET-V09-IMPORT-CONTROL"
+# v0.10: the carriers that take the full transition set, the LAN smoke set, and
+# xicmp, whose Xray-core server reads raw ICMP sockets and so runs alone.
+V010_FULL = ("mkcp", "masque")
+V010_SMOKE = ("xdns", "realm", "sudoku", "xmc", "header-custom", "xdrive", "vless-reverse")
+V010_PRIVILEGED = ("xicmp",)
+V010_PROTOCOLS = (*V010_FULL, *V010_SMOKE, *V010_PRIVILEGED)
+# Case labels, "scenario:variant". The variant names the carrier each mask
+# rides; docs/v010-release-evidence.md says why.
+V010_LABELS = {
+    "mkcp": "mkcp:vless", "masque": "masque:h3", "xdns": "xdns:mkcp", "xicmp": "xicmp:mkcp",
+    "realm": "realm:mkcp", "sudoku": "sudoku:tcp", "xmc": "xmc:tcp",
+    "header-custom": "header-custom:tcp", "xdrive": "xdrive:s3", "vless-reverse": "vless-reverse:bridge",
+}
+GROUPS = {"v08": V08_PROTOCOLS, "v09": V09_PROTOCOLS, "v010": V010_FULL, "smoke-v010": V010_SMOKE}
+MASQUE_PATH = "/masque/{target}/{ipproto}/"
+XDRIVE_TUNING = {"flushIntervalMs": 5, "pollIntervalMs": 5, "maxPollIntervalMs": 50, "sessionTtlSeconds": 30}
+# Fixtures that pick their own cases name the host services those need, and
+# say when they write one case, which may then take an explicit port.
+SERVICES = None
+SINGLE_CASE = False
 
 
 def openssl(*args):
@@ -159,11 +184,12 @@ def loopback_outbound():
         "redirect": "127.0.0.1:0", "finalRules": [{"action": "allow", "ip": ["127.0.0.0/8"]}]}}
 
 
-def write_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol="both", port=None, mode="smoke", probe_host="v07-probe.test", direct_targets=False):
+def write_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol="both", port=None, mode="smoke", probe_host="v07-probe.test", direct_targets=False, services=None):
     if direct_targets and protocol not in ("both", "wireguard", "hysteria2"):
         raise ValueError("direct targets require WireGuard or Hysteria")
-    if protocol in ("v08", "v09", *V08_PROTOCOLS, *V09_PROTOCOLS):
-        return write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, port, mode, probe_host)
+    if protocol in (*GROUPS, "import-v010", *V08_PROTOCOLS, *V09_PROTOCOLS, *V010_PROTOCOLS):
+        return write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, port, mode, probe_host,
+                                     services)
     def save(name, value):
         (root / name).write_text(json.dumps(value, indent=2) + "\n")
 
@@ -275,33 +301,225 @@ def invalid_imports(selected):
     return [{"scenario": name, "format": rows[name][0], "text": rows[name][1]} for name in wanted]
 
 
-def write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, port, mode, probe_host):
+def reserve_carrier(bind, ports):
+    """A port free for both TCP and UDP on ``bind`` that no case took yet."""
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind((bind, 0))
+            candidate = sock.getsockname()[1]
+        if candidate not in ports:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+                udp.bind((bind, candidate))
+            ports.add(candidate)
+            return candidate
+
+
+def v010_case(fmt, bind, carrier_port, reserve, pin, certificates, services):
+    """Server inbounds and client outbounds of one v0.10 case.
+
+    Returns ``inbounds``, ``outbounds`` (the first is tagged ``proxy``) and,
+    for the reverse bridge, routing rules that go before the fixture's own on
+    either side. No v0.10 case has a share link: the harnesses take the
+    canonical JSON, as they do for WireGuard on Android.
+    """
+    user = str(uuid.uuid4())
+
+    def vless_inbound(stream, port=carrier_port, client=None, tag=None):
+        inbound = {"listen": bind, "port": port, "protocol": "vless", "settings": {
+            "clients": [client or {"id": user}], "decryption": "none"}, "streamSettings": stream}
+        return {**inbound, "tag": tag} if tag else inbound
+
+    def vless_outbound(stream, port=carrier_port, tag="proxy", **settings):
+        # The flat form: the Apple probe reads the carrier port from it.
+        return {"tag": tag, "protocol": "vless", "settings": {
+            "address": bind, "port": port, "id": user, "encryption": "none", **settings},
+            "streamSettings": stream}
+
+    def masked(network, kind, client, server=None):
+        """The same carrier on both sides under one mask, each with its settings."""
+        masks = lambda settings: {"network": network, "finalmask": {kind: [settings]}}
+        return {"inbounds": [vless_inbound(masks(server or client))], "outbounds": [vless_outbound(masks(client))]}
+
+    if fmt == "mkcp":
+        return {"inbounds": [vless_inbound({"network": "kcp"})], "outbounds": [vless_outbound({"network": "kcp"})]}
+    if fmt == "masque":
+        name, password = "v010-" + secrets.token_hex(6), secrets.token_urlsafe(24)
+        return {"inbounds": [{"listen": bind, "port": carrier_port, "protocol": "masque", "settings": {
+                    "users": [{"email": name, "pass": password}], "address": ["10.77.0.1/24", "fd77::1/64"]},
+                    "streamSettings": {"network": "masque", "security": "tls", "tlsSettings": {
+                        "alpn": ["h3"], "certificates": certificates}, "masqueSettings": {"path": MASQUE_PATH}}}],
+                "outbounds": [{"tag": "proxy", "protocol": "masque", "settings": {"address": bind, "port": carrier_port},
+                    "streamSettings": {"network": "masque", "security": "tls", "tlsSettings": {
+                        "serverName": "v08-probe.test", "alpn": ["h3"], "pinnedPeerCertSha256": pin},
+                        "masqueSettings": {"path": MASQUE_PATH, "user": name, "pass": password}}}],
+                # The tunnel's stack carries 1280-byte packets and does not
+                # fragment: the largest datagram of each family that fits.
+                "udpPayloadBytes": [1252, 1232]}
+    if fmt == "xdns":
+        # The inbound answers as the zone's own DNS server, so the client's
+        # "resolver" is the inbound itself: no recursive resolver on a LAN.
+        zone = {"names": ["t.v010-probe.test"], "edns0": 4096}
+        return masked("kcp", "udp",
+                      {"type": "xdns", "settings": {"domains": [{**zone, "types": [1, 5, 16, 28]}],
+                                                    "resolvers": [{"addrs": [f"{bind}:{carrier_port}"]}]}},
+                      {"type": "xdns", "settings": {"domains": [zone]}})
+    if fmt == "xicmp":
+        # Datagram ICMP sockets on the device; Xray-core's server reads raw ones.
+        return masked("kcp", "udp", {"type": "xicmp", "settings": {"dgram": True, "ips": [bind]}},
+                      {"type": "xicmp", "settings": {"dgram": False}})
+    if fmt == "realm":
+        realm = {"type": "realm", "settings": {"url": services["realm"]["url"],
+                                                "stunServers": [services["realm"]["stun"]], "ipMode": "v4"}}
+        built = masked("kcp", "udp", realm)
+        # A port nothing listens on: the client reaches the server only at the
+        # address the rendezvous introduces, never at the outbound's own.
+        built["outbounds"][0]["settings"]["port"] = reserve()
+        return built
+    if fmt == "sudoku":
+        return masked("raw", "tcp", {"type": "sudoku", "settings": {
+            "password": secrets.token_urlsafe(24), "customTables": ["xppvvvvx", "vvxpvxpv"],
+            "paddingMin": 5, "paddingMax": 25}})
+    if fmt == "xmc":
+        # Synthetic profiles: the mask compares them, nothing signs them.
+        profiles = [{"username": name, "uuid": str(uuid.uuid4()),
+                     "texturesValue": f"synthetic-textures-of-{name}",
+                     "texturesSignature": f"synthetic-signature-of-{name}"} for name in ("Steve", "Alex_2")]
+        return masked("raw", "tcp", {"type": "xmc", "settings": {
+            "hostname": "mc.v010-probe.test", "password": secrets.token_urlsafe(24), "profiles": profiles}})
+    if fmt == "header-custom":
+        # Two rounds; each side reads its own address, so the port the client
+        # dialed is the port the server listens on.
+        handshake = lambda port: {"type": "header-custom", "settings": {
+            "clients": [[{"type": "str", "packet": "HELLO"}, {"rand": 8, "randRange": "65-90", "capture": "nonce"},
+                         {"transform": {"op": "be16", "args": [{"metadata": port}]}}],
+                        [{"delay": "10-20", "transform": {"op": "le32", "args": [{"u64": 123456}]}}]],
+            "servers": [[{"reuse": "nonce"}, {"type": "str", "packet": "OK"}]]}}
+        return masked("raw", "tcp", handshake("remote_port"), handshake("local_port"))
+    if fmt == "xdrive":
+        # Both ends meet in the stand-in's bucket on the fixture host; neither
+        # connects to the other, and the inbound's port binds no socket.
+        storage = services["xdrive"]
+        stream = {"network": "xdrive", "xdriveSettings": {
+            **XDRIVE_TUNING, "service": "s3", "remoteFolder": "sessions/fixture",
+            "secrets": [storage["access"], storage["secret"]],
+            "s3": {"endpoint": storage["endpoint"], "region": storage["region"], "bucket": storage["bucket"],
+                   "pathStyle": True}}}
+        inbound = vless_inbound(stream)
+        inbound["settings"]["decryption"] = storage["decryption"]
+        outbound = vless_outbound(stream, encryption=storage["encryption"])
+        outbound["mux"] = {"enabled": True, "concurrency": 8, "xudpConcurrency": 8, "xudpProxyUDP443": "allow"}
+        return {"inbounds": [inbound], "outbounds": [outbound]}
+    if fmt == "vless-reverse":
+        # The device is the bridge. Its own probe traffic enters the portal as
+        # an ordinary VLESS client ("proxy"), comes back down the reverse
+        # tunnel and leaves through the device's freedom, which the redirect
+        # points at the fixture's echo and DNS listeners on the LAN address.
+        entry_port, entry_user = reserve(), str(uuid.uuid4())
+        raw = {"network": "raw"}
+        return {"inbounds": [vless_inbound(raw, tag="reverse-portal", client={"id": user, "reverse": {"tag": "r-out"}}),
+                             vless_inbound(raw, port=entry_port, tag="reverse-entry", client={"id": entry_user})],
+                "serverRules": [{"type": "field", "inboundTag": ["reverse-entry"], "outboundTag": "r-out"}],
+                "outbounds": [vless_outbound(raw, port=entry_port, id=entry_user),
+                              vless_outbound(raw, tag="portal", email="bridge@v010-probe.test",
+                                             reverse={"tag": "from-portal"}),
+                              {"tag": "home", "protocol": "freedom", "settings": {
+                                  "redirect": f"{bind}:0", "finalRules": [{"action": "allow", "ip": [bind]}]}}],
+                "clientRules": [{"type": "field", "inboundTag": ["from-portal"], "outboundTag": "home"}],
+                # The bridge opens its first tunnel two seconds after it starts.
+                "settleSeconds": 5}
+    raise ValueError(f"unsupported client fixture protocol: {fmt}")
+
+
+def link_imports(bind, pin):
+    """One link of each kind profile import gained since 0.9.0.
+
+    Nothing dials them: the harnesses import each and compare the server
+    address. The fresh credentials belong to no server.
+    """
+    user, name = str(uuid.uuid4()), "v010-probe.test"
+    query = lambda **fields: urlencode(fields, quote_via=quote)
+    rows = [
+        # TLS over WebSocket, which the SDK importers read since 0.10.
+        ("vless-link", "vless", f"vless://{user}@{bind}:443?" + query(
+            type="ws", security="tls", sni=name, host=name, path="/device-check")),
+        # Remnawave's Trojan gRPC link always names its mode; "pcs" pins the leaf.
+        ("trojan-link", "trojan", f"trojan://{secrets.token_urlsafe(24)}@{bind}:443?" + query(
+            type="grpc", security="tls", sni=name, serviceName="device-check", mode="gun", pcs=pin)),
+        ("vmess-link", "vmess", f"vmess://{user}@{bind}:443?" + query(
+            type="ws", security="tls", sni=name, host=name, path="/device-check", encryption="auto")),
+        # A pin lets a link reach a server with a self-signed certificate.
+        ("hysteria2-link", "hysteria2", f"hy2://{secrets.token_urlsafe(24)}@{bind}:443?" + query(
+            sni=name, pinSHA256=pin)),
+    ]
+    return [{"transition": transition, "format": fmt, "text": text, "serverAddress": bind}
+            for transition, fmt, text in rows]
+
+
+def invalid_link_imports():
+    """A malformed link of each v0.10 kind; none may echo the marker."""
+    marker, user = REDACTION_MARKER, "11111111-1111-4111-8111-111111111111"
+    rows = [
+        # Certificate checks cannot be turned off from a link.
+        ("vless-link", "vless", f"vless://{user}@127.0.0.1:443?type=ws&security=tls&allowInsecure=1&path=%2F{marker}"),
+        ("trojan-link", "trojan", f"trojan://{marker}@127.0.0.1:443?type=grpc&security=tls&mode=stream"),
+        # TLS cannot send an empty ALPN.
+        ("vmess-link", "vmess", f"vmess://{user}@127.0.0.1:443?type=ws&security=tls&alpn=&path=%2F{marker}"),
+        # "insecure" needs a pin next to it.
+        ("hysteria2-link", "hysteria2", f"hy2://{marker}@127.0.0.1:443?sni=v010-probe.test&insecure=1"),
+    ]
+    return [{"scenario": scenario, "format": fmt, "text": text} for scenario, fmt, text in rows]
+
+
+def remnawave_profile(case):
+    """The case as a Remnawave XRAY_JSON profile: the panel's own root label
+    and object, and the TLS field it writes, which 0.9.0 refused to parse."""
+    config = json.loads(case["configJSON"])
+    config = {"remarks": "v0.10 device fixture", "meta": {"serverDescription": "device fixture"}, **config}
+    config["outbounds"][0]["streamSettings"]["tlsSettings"]["enableSessionResumption"] = False
+    return {"format": "config", "label": "remnawave-json", "udp": True,
+            "serverAddress": case["serverAddress"], "configJSON": json.dumps(config)}
+
+
+def write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, port, mode, probe_host, services=None):
     """New client fixtures retain the existing device harness envelope.
 
     v0.9 cases carry a scenario-prefixed label (``scenario:variant``) and a
     ``udp`` expectation: HTTP CONNECT has no UDP relay, so its UDP checks are
-    fail-closed negative controls and its DNS resolves over TCP.
+    fail-closed negative controls and its DNS resolves over TCP. v0.10 cases
+    have a label and canonical JSON but no ``text``: none has a share link.
     """
     openssl("req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
             "-nodes", "-days", "1", "-subj", "/CN=v08-probe.test",
             "-keyout", str(root / "tls.key"), "-out", str(root / "tls.crt"))
     pin = hashlib.sha256(openssl("x509", "-in", str(root / "tls.crt"), "-outform", "DER")).hexdigest()
-    selected = {"v08": V08_PROTOCOLS, "v09": V09_PROTOCOLS}.get(protocol, (protocol,))
+    # import-v010 runs one Trojan server, reached with a Remnawave profile.
+    selected = ("trojan",) if protocol == "import-v010" else GROUPS.get(protocol, (protocol,))
     certificates = [{"certificateFile": str(root / "tls.crt"), "keyFile": str(root / "tls.key")}]
-    inbounds, cases, ports = [], [], set()
+    inbounds, cases, ports, server_rules = [], [], set(), []
+    proxied = [{"type": "field", "domain": [f"full:{probe_host}"], "outboundTag": "proxy"},
+               {"type": "field", "ip": ["198.51.100.0/24", "2001:db8::/32"], "outboundTag": "proxy"}]
     for fmt in selected:
         if port is None:
-            while True:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                    sock.bind((bind, 0))
-                    carrier_port = sock.getsockname()[1]
-                if carrier_port not in ports:
-                    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
-                        udp.bind((bind, carrier_port))
-                    break
+            carrier_port = reserve_carrier(bind, ports)
         else:
             carrier_port = port
         ports.add(carrier_port)
+        if fmt in V010_PROTOCOLS:
+            built = v010_case(fmt, bind, carrier_port, lambda: reserve_carrier(bind, ports), pin, certificates,
+                              services or {})
+            inbounds.extend(built["inbounds"])
+            server_rules.extend(built.get("serverRules", []))
+            config = {"inbounds": [{"tag": "tun-in", "protocol": "tun"}],
+                      "dns": {"servers": [f"198.51.100.53:{dns_port}"]},
+                      "routing": {"domainStrategy": "AsIs", "rules": [*built.get("clientRules", []), *proxied]},
+                      "outbounds": built["outbounds"]}
+            case = {"format": "config", "label": V010_LABELS[fmt], "udp": True, "serverAddress": bind,
+                    "configJSON": json.dumps(config)}
+            for option in ("settleSeconds", "udpPayloadBytes"):
+                if option in built:
+                    case[option] = built[option]
+            cases.append(case)
+            continue
         settings = {"address": bind, "port": carrier_port}
         stream = {"network": "raw"}
         server_stream = {"network": "raw"}
@@ -373,9 +591,13 @@ def write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, po
     server = {"log": {"loglevel": "warning"}, "inbounds": inbounds,
               "outbounds": [{"tag": "blocked", "protocol": "blackhole"},
                             loopback_outbound()],
-              "routing": {"rules": [{"type": "field", "ip": ["198.51.100.0/24", "2001:db8::/32"], "outboundTag": "echo"}]}}
+              "routing": {"rules": [*server_rules, {"type": "field", "ip": ["198.51.100.0/24", "2001:db8::/32"], "outboundTag": "echo"}]}}
     envelope = {"cases": cases, "tcpPort": tcp_port, "udpPort": udp_port, "mode": mode, "probeHost": probe_host}
     invalid = invalid_imports(selected)
+    if protocol == "import-v010":
+        envelope["cases"] = [remnawave_profile(cases[0])]
+        envelope["imports"] = link_imports(bind, pin)
+        invalid = invalid_link_imports()
     if invalid:
         envelope.update(redactionMarker=REDACTION_MARKER, invalidImports=invalid)
     (root / "server.json").write_text(json.dumps(server, indent=2) + "\n")
@@ -402,6 +624,191 @@ async def dns_listeners(loop, address, probe_host):
     raise RuntimeError("no DNS port is free for both UDP and TCP")
 
 
+STUN_MAGIC = bytes.fromhex("2112a442")
+
+
+class Stun(asyncio.DatagramProtocol):
+    """Answers every Binding request with the XOR-MAPPED-ADDRESS of its source."""
+
+    def connection_made(self, transport):
+        self.transport = transport
+
+    def datagram_received(self, data, address):
+        if len(data) < 20 or data[:2] != b"\x00\x01" or data[4:8] != STUN_MAGIC:
+            return
+        ip = ipaddress.ip_address(address[0])
+        ip = getattr(ip, "ipv4_mapped", None) or ip
+        mask = STUN_MAGIC + data[8:20]
+        value = (bytes([0, 1 if ip.version == 4 else 2]) + struct.pack("!H", address[1] ^ 0x2112)
+                 + bytes(a ^ b for a, b in zip(ip.packed, mask)))
+        attribute = struct.pack("!HH", 0x0020, len(value)) + value
+        self.transport.sendto(struct.pack("!HH", 0x0101, len(attribute)) + mask + attribute, address)
+
+
+class Rendezvous:
+    """Hysteria's realm HTTP API, as far as Xray-core's realm server and a
+    realm client use it: the server registers its addresses and listens on an
+    event stream; a client's connect pushes a punch event to it, waits for the
+    server's fresh addresses and answers with them. It carries no traffic.
+    Ported from tests/support/realm_rendezvous.rs.
+    """
+
+    def __init__(self, token):
+        self.token, self.realms, self.sessions, self.pending, self.registrations = token, {}, {}, {}, 0
+
+    @staticmethod
+    async def request(reader):
+        line = (await reader.readline()).decode("latin-1").split()
+        if len(line) < 2:
+            return None
+        length, bearer = 0, ""
+        while True:
+            name, _, value = (await reader.readline()).decode("latin-1").rstrip("\r\n").partition(":")
+            if not name:
+                break
+            if name.lower() == "content-length":
+                length = int(value)
+            elif name.lower() == "authorization":
+                bearer = value.strip().removeprefix("Bearer ")
+        if not 0 <= length <= 65536:
+            return None
+        return line[0], line[1].lstrip("/").split("/"), bearer, await reader.readexactly(length)
+
+    @staticmethod
+    def respond(writer, status, body=None):
+        payload = (json.dumps(body, separators=(",", ":")) + "\n").encode() if body is not None else b""
+        head = f"HTTP/1.1 {status}\r\n"
+        if payload:
+            head += f"Content-Type: application/json\r\nContent-Length: {len(payload)}\r\n"
+        writer.write(head.encode() + b"\r\n" + payload)
+
+    async def handle(self, reader, writer):
+        try:
+            while True:
+                request = await asyncio.wait_for(self.request(reader), 120)
+                if request is None:
+                    break
+                method, parts, bearer, body = request
+                document = json.loads(body) if body else {}
+                listed = document.get("addresses") if isinstance(document, dict) else None
+                addresses = [a for a in listed if isinstance(a, str)] if isinstance(listed, list) else None
+                if (method, len(parts)) == ("POST", 2) and parts[0] == "v1":
+                    if bearer != self.token:
+                        self.respond(writer, "401 Unauthorized",
+                                     {"error": "invalid_token", "message": "invalid realm token"})
+                    else:
+                        session = f"session-{self.registrations}"
+                        self.registrations += 1
+                        self.sessions[session] = {"addresses": addresses or [], "events": asyncio.Queue()}
+                        self.realms[parts[1]] = session
+                        self.respond(writer, "200 OK", {"session_id": session, "ttl": 60})
+                elif (method, len(parts)) == ("DELETE", 2):
+                    self.realms.pop(parts[1], None)
+                    self.sessions.pop(bearer, None)
+                    self.respond(writer, "204 No Content")
+                elif (method, len(parts)) == ("POST", 3) and parts[2] == "heartbeat":
+                    if bearer in self.sessions and addresses is not None:
+                        self.sessions[bearer]["addresses"] = addresses
+                    self.respond(writer, "200 OK", {"ttl": 60})
+                elif (method, len(parts)) == ("GET", 3) and parts[2] == "events":
+                    session = self.sessions.get(bearer)
+                    if session is None:
+                        self.respond(writer, "401 Unauthorized",
+                                     {"error": "invalid_token", "message": "invalid session token"})
+                    else:
+                        writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
+                                     b"Cache-Control: no-cache\r\nConnection: close\r\n\r\n")
+                        while True:
+                            await writer.drain()
+                            writer.write(await session["events"].get())
+                elif (method, len(parts)) == ("POST", 3) and parts[2] == "connect":
+                    session = self.sessions.get(self.realms.get(parts[1]))
+                    if session is None or bearer != self.token:
+                        self.respond(writer, "404 Not Found",
+                                     {"error": "realm_not_found", "message": "realm not registered"})
+                    else:
+                        nonce = document.get("nonce") if isinstance(document.get("nonce"), str) else ""
+                        answer = self.pending[nonce] = asyncio.get_running_loop().create_future()
+                        event = {"addresses": document.get("addresses"), "nonce": nonce, "obfs": document.get("obfs")}
+                        session["events"].put_nowait(
+                            f"event: punch\ndata: {json.dumps(event, separators=(',', ':'))}\n\n".encode())
+                        try:
+                            fresh = await asyncio.wait_for(answer, 10)
+                        except TimeoutError:
+                            fresh = []
+                        self.pending.pop(nonce, None)
+                        self.respond(writer, "200 OK", {"addresses": fresh or session["addresses"],
+                                                        "nonce": nonce, "obfs": document.get("obfs")})
+                elif (method, len(parts)) == ("POST", 4) and parts[2] == "connects":
+                    answer = self.pending.pop(parts[3], None)
+                    if answer is not None and not answer.done():
+                        answer.set_result(addresses or [])
+                        self.respond(writer, "204 No Content")
+                    else:
+                        self.respond(writer, "404 Not Found",
+                                     {"error": "attempt_not_found", "message": "no pending attempt for nonce"})
+                else:
+                    self.respond(writer, "404 Not Found", {"error": "not_found", "message": "unknown path"})
+                await writer.drain()
+        except (TimeoutError, ConnectionError, asyncio.IncompleteReadError, ValueError):
+            pass
+        finally:
+            writer.close()
+
+
+def vlessenc(reference_binary):
+    """A fresh ``xray vlessenc`` pair with X25519 authentication."""
+    text = subprocess.check_output([str(reference_binary), "vlessenc"], text=True)
+    section = next(part for part in text.split("Authentication: ") if part.startswith("X25519"))
+    value = lambda key: next(line.removeprefix(f'"{key}": "').removesuffix('"')
+                             for line in section.splitlines() if line.startswith(f'"{key}": "'))
+    return value("decryption"), value("encryption")
+
+
+def require_raw_icmp():
+    try:
+        socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP).close()
+    except PermissionError:
+        raise SystemExit("xicmp: Xray-core's server reads raw ICMP sockets; run this fixture as root, "
+                         "or on Linux with CAP_NET_RAW") from None
+
+
+async def start_storage(args, log):
+    """The S3 stand-in of tools/xdrive-oracle on the bind address, with a fresh
+    key pair, and the VLESS encryption pair XDRIVE requires.
+
+    The stand-in checks every SigV4 signature. Its keys travel on its command
+    line, visible to this host's other processes for the fixture's lifetime.
+    """
+    binary = getattr(args, "xdrive_standin", None)
+    if binary is None:
+        binary = args.output / "xdrive-standin"
+        subprocess.run(["go", "-C", str(ROOT / "tools/xdrive-oracle/standin"), "build", "-mod=readonly",
+                        "-o", str(binary), "."], check=True)
+    access, secret = "V010" + secrets.token_hex(8).upper(), secrets.token_urlsafe(30)
+    child = await asyncio.create_subprocess_exec(
+        str(binary), "-mode", "s3", "-listen", f"{args.bind}:0", "-access", access, "-secret", secret,
+        "-region", "eu-test-1", "-bucket", "xdrive-fixture",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+
+    async def refusals():
+        # One "served" line per request would grow by megabytes a minute.
+        async for line in child.stderr:
+            if not line.startswith(b"served "):
+                log.write(line)
+                log.flush()
+
+    reader = asyncio.create_task(refusals())
+    try:
+        endpoint = "http://" + json.loads(await asyncio.wait_for(child.stdout.readline(), 20))["http"]
+    except (TimeoutError, ValueError, KeyError):
+        child.kill()
+        raise RuntimeError("the XDRIVE storage stand-in did not start") from None
+    decryption, encryption = vlessenc(args.reference_binary)
+    return child, reader, {"endpoint": endpoint, "access": access, "secret": secret, "region": "eu-test-1",
+                           "bucket": "xdrive-fixture", "decryption": decryption, "encryption": encryption}
+
+
 async def serve(args):
     loop = asyncio.get_running_loop()
     stop = asyncio.Event()
@@ -409,7 +816,11 @@ async def serve(args):
         loop.add_signal_handler(sig, stop.set)
     direct_targets = getattr(args, "direct_targets", False)
     transports, child, tcp, tcp6, dns_tcp = [], None, None, None, None
+    needed = set(GROUPS.get(args.protocol, (args.protocol,))) if SERVICES is None else set(SERVICES)
+    services, listeners, storage, storage_log, rendezvous, realm = {}, [], None, None, None, None
     try:
+        if "xicmp" in needed:
+            require_raw_icmp()
         echo_bind = "198.51.100.7" if direct_targets else "127.0.0.1"
         dns_bind = "198.51.100.53" if direct_targets else "127.0.0.1"
         handler = lambda r, w: tcp_echo(r, w, 1024 * 1024 * 1024 if args.mode == "resources" else 1024 * 1024)
@@ -427,9 +838,34 @@ async def serve(args):
             tcp6 = await asyncio.start_server(handler, "2001:db8::7", tcp_port, limit=8192)
             transport, _ = await loop.create_datagram_endpoint(Echo, local_addr=("2001:db8::7", udp_port))
             transports.append(transport)
+        if "vless-reverse" in needed and args.bind != echo_bind:
+            # The bridge is the device: its freedom dials the echo and DNS
+            # listeners itself, so they also listen on the LAN address.
+            try:
+                listeners.append(await asyncio.start_server(handler, args.bind, tcp_port, limit=8192))
+                listeners.append(await asyncio.start_server(lambda r, w: tcp_dns(r, w, probe_host), args.bind,
+                                                            dns_port, limit=8192))
+                for protocol, target in ((Echo, udp_port), (lambda: DNS(probe_host), dns_port)):
+                    transport, _ = await loop.create_datagram_endpoint(protocol, local_addr=(args.bind, target))
+                    transports.append(transport)
+            except OSError as error:
+                raise RuntimeError(f"a target port is taken on {args.bind}; start the fixture again") from error
+        if "realm" in needed:
+            transport, _ = await loop.create_datagram_endpoint(Stun, local_addr=(args.bind, 0))
+            transports.append(transport)
+            rendezvous = Rendezvous(secrets.token_urlsafe(24))
+            listeners.append(await asyncio.start_server(rendezvous.handle, args.bind, 0, limit=8192))
+            realm = "v010-" + secrets.token_hex(8)
+            meeting = listeners[-1].sockets[0].getsockname()[1]
+            services["realm"] = {"url": f"realm+http://{rendezvous.token}@{args.bind}:{meeting}/{realm}",
+                                 "stun": f"{args.bind}:{transport.get_extra_info('sockname')[1]}"}
+        if "xdrive" in needed:
+            storage_log = (args.output / "xdrive-standin.log").open("wb")
+            storage, storage_reader, services["xdrive"] = await start_storage(args, storage_log)
         write_fixtures(args.output, args.bind, tcp_port, udp_port, dns_port,
                        protocol=args.protocol, port=args.port, mode=args.mode, probe_host=probe_host,
-                       **({"direct_targets": True} if direct_targets else {}))
+                       **({"direct_targets": True} if direct_targets else {}),
+                       **({"services": services} if services else {}))
         with (args.output / "server.log").open("wb") as log:
             child = await asyncio.create_subprocess_exec(
                 str(args.reference_binary), "run", "-config", str(args.output / "server.json"),
@@ -437,6 +873,14 @@ async def serve(args):
             await asyncio.sleep(0.5)
             if child.returncode is not None:
                 raise RuntimeError("reference exited; inspect private server.log")
+            # A realm client is introduced only to a server that registered.
+            for _ in range(200 if realm else 0):
+                if realm in rendezvous.realms:
+                    break
+                await asyncio.sleep(0.1)
+            else:
+                if realm:
+                    raise RuntimeError("the reference never registered its realm; inspect private server.log")
             print(f"Fixture ready: {args.output / 'v07-probe.json'}", flush=True)
             stopper = asyncio.create_task(stop.wait())
             exited = asyncio.create_task(child.wait())
@@ -457,13 +901,24 @@ async def serve(args):
             except TimeoutError:
                 child.kill()
                 await child.wait()
+        if storage:
+            storage_reader.cancel()
+            if storage.returncode is None:
+                storage.kill()
+            await storage.wait()
+        if storage_log:
+            storage_log.close()
         for server in (tcp, tcp6, dns_tcp):
             if server:
                 server.close()
                 await server.wait_closed()
+        # The rendezvous holds its event streams open: close without waiting.
+        for server in listeners:
+            server.close()
         for transport in transports:
             transport.close()
-        for name in ("server-wg.pem", "client-wg.pem", "tls.key", "tls.crt", "server.json", "v07-probe.json"):
+        for name in ("server-wg.pem", "client-wg.pem", "tls.key", "tls.crt", "server.json", "v07-probe.json",
+                     "xdrive-standin"):
             (args.output / name).unlink(missing_ok=True)
         # Combined suites generate each part's keys in its own directory.
         shutil.rmtree(args.output / "parts", ignore_errors=True)
@@ -475,19 +930,23 @@ def main():
     parser.add_argument("--reference-binary", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path, help="new private directory")
     parser.add_argument("--seconds", type=int, default=600, help="maximum fixture lifetime (1..1800)")
-    parser.add_argument("--protocol", choices=("both", "wireguard", "hysteria2", "v08", *V08_PROTOCOLS, "v09", *V09_PROTOCOLS), default="both")
+    parser.add_argument("--protocol", choices=("both", "wireguard", "hysteria2", "v08", *V08_PROTOCOLS, "v09", *V09_PROTOCOLS,
+                                               "v010", "smoke-v010", "import-v010", *V010_PROTOCOLS), default="both")
     parser.add_argument("--port", type=int, help="explicit carrier port; requires a single protocol")
     parser.add_argument("--mode", choices=("smoke", "transitions", "lock-wake", "transitions-reset", "lifecycle", "resources", "udp-sweep"), default="smoke")
     parser.add_argument("--reference-sha256", help="expected binary SHA-256, instead of a clean Go VCS stamp check")
     parser.add_argument("--direct-targets", action="store_true",
                         help="bind pre-provisioned synthetic loopback targets without Freedom redirect")
+    parser.add_argument("--xdrive-standin", type=Path,
+                        help="built tools/xdrive-oracle/standin; without it XDRIVE cases build one with go")
     args = parser.parse_args()
     if args.direct_targets and args.protocol not in ("both", "wireguard", "hysteria2"):
         parser.error("--direct-targets requires WireGuard or Hysteria")
     address = ipaddress.IPv4Address(args.bind)
     if address.is_unspecified or address.is_multicast or not 1 <= args.seconds <= 1800:
         parser.error("use a specific unicast IPv4 address and 1..1800 seconds")
-    if args.port is not None and (args.protocol in ("both", "v08", "v09") or not 1 <= args.port <= 65535):
+    several = args.protocol in ("both", "import-v010", *GROUPS) and not SINGLE_CASE
+    if args.port is not None and (several or not 1 <= args.port <= 65535):
         parser.error("an explicit port requires one protocol and a port in 1..65535")
     if args.reference_sha256 and (len(args.reference_sha256) != 64 or any(c not in "0123456789abcdef" for c in args.reference_sha256)):
         parser.error("reference SHA-256 must be 64 lowercase hex characters")
