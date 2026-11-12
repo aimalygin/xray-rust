@@ -29,7 +29,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{sleep_until, Instant};
 
 use crate::quic_congestion::{
-    bbr_for_profile, quinn_bbr, BbrProfile, BrutalRate, ControllerSwitch, Installed,
+    bbr_for_profile, quinn_bbr, BbrProfile, BrutalRate, ControllerSwitch, Installed, RenoFactory,
     SwitchedFactory, STANDARD_RUNS_XRAY_BBR,
 };
 use crate::{
@@ -1807,9 +1807,7 @@ fn build_quinn_config(
             transport.congestion_controller_factory(quinn_bbr());
         }
         H3Congestion::Reno => {
-            transport.congestion_controller_factory(Arc::new(
-                quinn::congestion::NewRenoConfig::default(),
-            ));
+            transport.congestion_controller_factory(Arc::new(RenoFactory));
         }
         H3Congestion::ForceBrutal {
             bytes_per_second: 0,
