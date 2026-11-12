@@ -150,6 +150,13 @@ split routing; unsupported parameters fail explicitly. Host UI and secure
 storage remain caller-owned. See the [import contract](../../docs/v07-profile-import.md).
 Use a matching freshly built native library, header and JNI bridge.
 
+Development ABI 1.17 additionally provides `XrayProfileFormat.Vless`:
+`vless://` links through the shared Rust importer, which follows Xray-core. It
+requires the `VlessProfileImport` capability; use `supportsProfileImport`
+before importing. It is a different parser from `XrayVlessUrlImporter` below
+and accepts a different set of links; see the
+[VLESS import contract](../../docs/vless-profile-import.md).
+
 `XrayVlessUrlImporter.profile(rawUrl)` returns an `XrayImportedProfile` with a
 display name, server address, and JSON config ready for `XrayCore.create` or
 `XrayVpnService.startXrayTunnel`. It accepts a bare link, a link embedded in

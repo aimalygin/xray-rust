@@ -142,10 +142,13 @@ can go on, and each can change without touching the rest.
 6. **Smoke scenarios on Android** have one id each, without a backend suffix.
    The driver still runs every case on both backends.
 7. **`vless-link`.** The Swift and Kotlin SDKs keep their own VLESS importers,
-   and neither exposes the core's `vless` import format. On a device
-   `vless-link` therefore exercises the SDK importer, and the Apple probe
-   reports the library's ABI version. The core importer is covered by host
-   tests only. Exposing it is a public SDK API change, not made here.
+   and the device harness calls those. On a device `vless-link` therefore
+   exercises the SDK importer, and the Apple probe reports the library's ABI
+   version. Since the owner's word of 2026-11-11 the SDKs also expose the
+   core's `vless` format (`XrayProfileFormat.vless` / `.Vless`). Host tests
+   cover that path (Rust, Swift on macOS, the Android host JNI test); devices
+   do not. Covering it there is one more import call per `vless` case in each
+   probe.
 8. **`xhttp-h3-network-change` on Android** needs the Device Gate to opt in
    to the network-change coordinator, which 0.9.0's harness did not.
 

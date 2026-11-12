@@ -45,6 +45,32 @@ class XrayProfileImporterTest {
         }
     }
 
+    @Test fun vlessImportRequiresItsOwnCapabilityAndMinorBeforeNative() {
+        assertEquals(1L shl 30, XrayFfiCapability.VlessProfileImport.mask)
+        val caps = XrayFfiCapability.ProfileImport.mask or XrayFfiCapability.VlessProfileImport.mask
+        val available = XrayFfiInfo(XrayFfiVersion(1, 17), caps)
+        assertTrue(available.supportsProfileImport(XrayProfileFormat.Vless))
+        for (info in listOf(
+            XrayFfiInfo(XrayFfiVersion(1, 16), caps),
+            XrayFfiInfo(XrayFfiVersion(2, 17), caps),
+            XrayFfiInfo(XrayFfiVersion(1, 17), XrayFfiCapability.ProfileImport.mask),
+            XrayFfiInfo(XrayFfiVersion(1, 17), XrayFfiCapability.VlessProfileImport.mask),
+        )) {
+            assertThrows(IllegalStateException::class.java) {
+                XrayProfileImporter.importProfile("secret", XrayProfileFormat.Vless, null, emptyList(), info) {
+                    fail("unavailable VLESS import invoked native code"); byteArrayOf()
+                }
+            }
+        }
+        // The request names the core's format, not the SDK importer.
+        val output = JSONObject().put("schemaVersion", 1).put("name", "n")
+            .put("serverAddress", "vless.example").put("configJSON", "{}").toString().toByteArray()
+        XrayProfileImporter.importProfile("vless://id@vless.example", XrayProfileFormat.Vless, null, emptyList(), available) { input ->
+            assertEquals("vless", JSONObject(input.toString(Charsets.UTF_8)).getString("format"))
+            output
+        }
+    }
+
     @Test fun checksVersionAndBothCapabilitiesBeforeCallingNative() {
         for (info in listOf(XrayFfiInfo(XrayFfiVersion(1, 4), all), XrayFfiInfo(XrayFfiVersion(2, 5), all),
             XrayFfiInfo(XrayFfiVersion(1, 5), XrayFfiCapability.ProfileImport.mask),
@@ -237,6 +263,26 @@ class XrayProfileImporterNativeTest {
         val root = JSONObject(profile.configJson)
         assertEquals("00112233-4455-6677-8899-aabbccddeeff", root.getJSONArray("outbounds").getJSONObject(0).getJSONObject("settings").getString("id"))
         assertFalse(profile.toString().contains("00112233"))
+    }
+
+    @Test fun importsVlessThroughActualJniAndRust() {
+        enabled()
+        assertTrue(XrayCore.ffiInfo().supportsProfileImport(XrayProfileFormat.Vless))
+        val profile = XrayProfileImporter.profile("vless://00112233-4455-6677-8899-aabbccddeeff@vless.example:443?type=ws&security=tls&sni=vless.example&path=%2Fvless#Test%20%E2%9C%93", XrayProfileFormat.Vless)
+        assertEquals("Test ✓", profile.name)
+        assertEquals("vless.example", profile.serverAddress)
+        val outbound = JSONObject(profile.configJson).getJSONArray("outbounds").getJSONObject(0)
+        assertEquals("vless", outbound.getString("protocol"))
+        val user = outbound.getJSONObject("settings").getJSONArray("vnext").getJSONObject(0)
+            .getJSONArray("users").getJSONObject(0)
+        assertEquals("00112233-4455-6677-8899-aabbccddeeff", user.getString("id"))
+        assertEquals("ws", outbound.getJSONObject("streamSettings").getString("network"))
+        assertFalse(profile.toString().contains("00112233"))
+        // 31 bytes name no ID, so the core refuses the link; its error must not quote it.
+        val error = assertThrows(XrayCoreException::class.java) {
+            XrayProfileImporter.profile("vless://secret-secret-secret-secret-sec@vless.example:443?security=tls", XrayProfileFormat.Vless)
+        }
+        assertFalse(error.toString().contains("secret"))
     }
 
     @Test fun importsShadowsocks2022ThroughActualJniAndRust() {

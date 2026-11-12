@@ -166,6 +166,9 @@ public struct XrayFFICapabilities: OptionSet, Equatable, Sendable {
         rawValue: UInt64(XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS.rawValue)
     )
     public static let tunMtu = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_TUN_MTU.rawValue))
+    public static let vlessProfileImport = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_VLESS_PROFILE_IMPORT.rawValue)
+    )
 }
 
 /// MTU of the host's TUN interface (ABI 1.16). Give the interface and the core

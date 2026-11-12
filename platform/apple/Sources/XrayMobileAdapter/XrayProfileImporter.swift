@@ -10,9 +10,13 @@ public enum XrayProfileFormat: String, Codable, Sendable {
     case wireguard
     case socks
     case http
+    /// `vless://` links through the core importer, which follows Xray-core. `XrayVlessURLImporter`
+    /// is a separate parser with its own accepted set; the two can disagree on the same link.
+    case vless
 
     var capability: XrayFFICapabilities {
         switch self {
+        case .vless: return .vlessProfileImport
         case .http: return .httpProfileImport
         case .socks: return .socksProfileImport
         case .vmess: return .vmessOutbound
@@ -25,6 +29,7 @@ public enum XrayProfileFormat: String, Codable, Sendable {
 
     var minimumABIMinor: UInt32 {
         switch self {
+        case .vless: return 17
         case .http: return 14
         case .socks: return 13
         default: return 5

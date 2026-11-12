@@ -53,8 +53,9 @@ bit and the selected protocol bit for the original formats. SOCKS requires minor
 >=13 and `SOCKS_PROFILE_IMPORT` (26); HTTP/HTTPS requires minor >=14 and
 `HTTP_PROFILE_IMPORT` (27); VLESS requires minor >=17 and
 `VLESS_PROFILE_IMPORT` (30). Each also requires `PROFILE_IMPORT`. Swift/Kotlin
-expose `supportsProfileImport` with the format-specific minimum version (VLESS
-not yet: the SDKs still import VLESS links with their own parsers).
+expose `supportsProfileImport` with the format-specific minimum version. For
+VLESS the SDKs also keep their own link parsers, which differ from this
+importer; see [VLESS share-link import](vless-profile-import.md).
 Compile/link the adapter, header and native binary together; checking a bit
 cannot make a missing strongly linked symbol loadable in an older artifact.
 
