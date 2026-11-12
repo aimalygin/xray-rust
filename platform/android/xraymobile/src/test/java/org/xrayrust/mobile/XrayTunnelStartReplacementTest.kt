@@ -82,17 +82,137 @@ class XrayTunnelStartReplacementTest {
     }
 
     @Test(timeout = TIMEOUT_MILLIS)
-    fun replacementIsRejectedWhileASessionRunsOrStops() {
+    fun startIsRejectedWhileASessionRuns() {
         val lifecycle = XrayTunnelStateMachine<String>()
         val token = checkNotNull(lifecycle.beginStart())
         assertTrue(lifecycle.publish(token, "session"))
 
         assertEquals(XrayTunnelStartAdmission.Rejected, lifecycle.replace())
         assertTrue(lifecycle.requestStop() is XrayTunnelStopAction.StopSession)
-        assertEquals(XrayTunnelStartAdmission.Rejected, lifecycle.replace())
-        lifecycle.completeStop()
+        assertNull(lifecycle.completeStop())
         assertTrue(lifecycle.replace() is XrayTunnelStartAdmission.Started)
         assertNull(launched.get())
+    }
+
+    @Test(timeout = TIMEOUT_MILLIS)
+    fun startWhileASessionStopsRunsOnceTheStopCompletes() {
+        val lifecycle = XrayTunnelStateMachine<String>()
+        val token = checkNotNull(lifecycle.beginStart())
+        assertTrue(lifecycle.publish(token, "session"))
+        assertTrue(lifecycle.requestStop() is XrayTunnelStopAction.StopSession)
+
+        assertEquals(XrayTunnelStartAdmission.AwaitingStop(displacedQueuedStart = false), lifecycle.replace())
+        assertNull(launched.get())
+
+        checkNotNull(lifecycle.completeStop()).invoke()
+        assertTrue(lifecycle.isStartActive(checkNotNull(launched.get())))
+    }
+
+    @Test(timeout = TIMEOUT_MILLIS)
+    fun startDuringAPumpFailureTeardownRunsAfterTheFatalReport() {
+        val lifecycle = XrayTunnelStateMachine<String>()
+        val token = checkNotNull(lifecycle.beginStart())
+        assertTrue(lifecycle.publish(token, "session"))
+        val events = CopyOnWriteArrayList<String>()
+        val shutdownFailure = IllegalStateException("tunnel close failed")
+
+        val stopped = teardownFailedXraySession(
+            lifecycle = lifecycle,
+            failedSession = "session",
+            shutdown = {
+                events += "shutdown"
+                val admission = lifecycle.beginOrReplaceStart("next") { events += "launch" }
+                assertEquals(XrayTunnelStartAdmission.AwaitingStop(displacedQueuedStart = false), admission)
+                throw shutdownFailure
+            },
+            onStopped = { failure ->
+                assertSame(shutdownFailure, failure)
+                events += "fatal"
+            },
+        )
+
+        assertTrue(stopped)
+        assertEquals(listOf("shutdown", "fatal", "launch"), events)
+    }
+
+    @Test(timeout = TIMEOUT_MILLIS)
+    fun startsQueuedBehindAStopDisplaceOrRepeatAndStopDiscardsThem() {
+        val lifecycle = XrayTunnelStateMachine<String>()
+        val token = checkNotNull(lifecycle.beginStart())
+        assertTrue(lifecycle.publish(token, "session"))
+        assertTrue(lifecycle.requestStop() is XrayTunnelStopAction.StopSession)
+        val launches = CopyOnWriteArrayList<String>()
+
+        lifecycle.beginOrReplaceStart("first") { launches += "first" }
+        assertEquals(XrayTunnelStartAdmission.Rejected, lifecycle.beginOrReplaceStart("first") { launches += "again" })
+        assertEquals(
+            XrayTunnelStartAdmission.AwaitingStop(displacedQueuedStart = true),
+            lifecycle.beginOrReplaceStart("second") { launches += "second" },
+        )
+        assertEquals(XrayTunnelStopAction.CancelStart(discardedQueuedStart = true), lifecycle.requestStop())
+        assertEquals(XrayTunnelStopAction.None, lifecycle.requestStop())
+
+        assertNull(lifecycle.completeStop())
+        assertTrue(launches.isEmpty())
+        assertNotNull(lifecycle.beginStart())
+    }
+
+    @Test(timeout = TIMEOUT_MILLIS)
+    fun startedCallbackNeverFollowsAStopThatReturned() {
+        val lifecycle = XrayTunnelStateMachine<String>()
+        val notice = XrayStartedNotice(lifecycle)
+        val token = checkNotNull(lifecycle.beginStart())
+        assertTrue(lifecycle.publish(token, "session"))
+        val events = CopyOnWriteArrayList<String>()
+        val inCallback = CountDownLatch(1)
+        val releaseCallback = CountDownLatch(1)
+
+        val worker = Thread {
+            notice.deliver(
+                session = "session",
+                onStarted = {
+                    events += "started"
+                    inCallback.countDown()
+                    releaseCallback.await()
+                },
+                onCancelled = { events += "cancelled" },
+            )
+        }.apply { start() }
+        assertTrue(inCallback.await(1, TimeUnit.SECONDS))
+
+        assertTrue(lifecycle.requestStop() is XrayTunnelStopAction.StopSession)
+        val stopper = Thread {
+            notice.awaitDelivery()
+            events += "stopped"
+        }.apply { start() }
+        stopper.join(100)
+        assertTrue(stopper.isAlive)
+
+        releaseCallback.countDown()
+        stopper.join(1_000)
+        worker.join(1_000)
+        notice.deliver("session", onStarted = { events += "late started" }, onCancelled = { events += "cancelled" })
+        assertEquals(listOf("started", "stopped", "cancelled"), events)
+    }
+
+    @Test(timeout = TIMEOUT_MILLIS)
+    fun startedCallbackMayStopItsOwnSession() {
+        val lifecycle = XrayTunnelStateMachine<String>()
+        val notice = XrayStartedNotice(lifecycle)
+        val token = checkNotNull(lifecycle.beginStart())
+        assertTrue(lifecycle.publish(token, "session"))
+
+        notice.deliver(
+            session = "session",
+            onStarted = {
+                assertTrue(lifecycle.requestStop() is XrayTunnelStopAction.StopSession)
+                notice.awaitDelivery()
+                lifecycle.completeStop()
+            },
+            onCancelled = { error("the session was running") },
+        )
+
+        assertNull(lifecycle.runningSession())
     }
 
     @Test(timeout = TIMEOUT_MILLIS)

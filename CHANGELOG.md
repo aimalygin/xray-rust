@@ -21,6 +21,13 @@ long-term supported release series.
   soon as that lookup returns, if its own five-second deadline allows. It used
   to wait out the deadline without running and fail with
   `dnsBootstrapTimedOut`.
+- Android: `startXrayTunnel` while a session is stopping, after
+  `stopXrayTunnel` or a packet-pump or descriptor failure, starts once the stop
+  has finished. It was dropped without any callback, so a host that restarted
+  the tunnel at that moment waited forever. `stopXrayTunnel` now waits for an
+  `onXrayTunnelStarted` already running, and that callback no longer arrives
+  after the stop returned.
+
 - A TCP flow through a MASQUE or WireGuard outbound no longer stops for good
   while it uploads. Two faults in the userspace TCP/IP stack could strand it.
   The stack went to sleep when its queue of outgoing packets was full, and
