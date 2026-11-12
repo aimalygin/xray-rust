@@ -307,11 +307,16 @@ def reserve_carrier(bind, ports):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.bind((bind, 0))
             candidate = sock.getsockname()[1]
-        if candidate not in ports:
+        if candidate in ports:
+            continue
+        try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
                 udp.bind((bind, candidate))
-            ports.add(candidate)
-            return candidate
+        except OSError:
+            # Free for TCP, taken for UDP by another process: try the next.
+            continue
+        ports.add(candidate)
+        return candidate
 
 
 def v010_case(fmt, bind, carrier_port, reserve, pin, certificates, services):

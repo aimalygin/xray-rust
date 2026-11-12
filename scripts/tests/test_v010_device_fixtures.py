@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import shlex
 import shutil
+import socket
 import struct
 import tempfile
 import unittest
@@ -61,6 +62,35 @@ def generate(test, protocol, port=None, writer=None, **extra):
             patch.object(android.fixture, "openssl", side_effect=fake_openssl):
         writer(root, "127.0.0.1", 41001, 41002, 41003, protocol=protocol, port=port, **KW, **extra)
     return read(root)
+
+
+class CarrierPortTests(unittest.TestCase):
+    def test_a_port_taken_for_udp_is_passed_over(self):
+        """A carrier needs its port for TCP and UDP. The kernel may offer one
+        that another process holds for UDP; the reservation takes the next."""
+        while True:
+            with socket.socket() as tcp:
+                tcp.bind(("127.0.0.1", 0))
+                taken = tcp.getsockname()[1]
+            holder = socket.socket(type=socket.SOCK_DGRAM)
+            try:
+                holder.bind(("127.0.0.1", taken))
+                break
+            except OSError:
+                holder.close()
+        self.addCleanup(holder.close)
+        offers = iter([taken])
+
+        class Offering(socket.socket):
+            def bind(self, address):
+                if self.type == socket.SOCK_STREAM and address[1] == 0:
+                    address = (address[0], next(offers, 0))
+                super().bind(address)
+
+        with patch.object(device.socket, "socket", Offering):
+            port = device.reserve_carrier("127.0.0.1", set())
+        self.assertNotEqual(port, taken)
+        self.assertEqual(list(offers), [])  # the taken port was offered first
 
 
 class FullSetFixtureTests(unittest.TestCase):
