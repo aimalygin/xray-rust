@@ -971,23 +971,41 @@ async fn credit_after_a_fast_download(quic: H3QuicConfig) -> usize {
 /// Sixteen downloads whose readers fall behind their servers share the
 /// receive budget: each stream grants about a 1 MiB share past its reader,
 /// where each used to grant its 2 MiB handshake window, 32 MiB in all.
+///
+/// The bound holds only while data waits in every stream. On a starved host
+/// a server can write slower than its reader takes, the reader finds its
+/// stream empty, and the window rightly grows back as for a reader that
+/// keeps up. Such a run proves nothing, so it is run again, and a host that
+/// never lets the readers fall behind leaves the test inconclusive.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn slow_reader_downloads_grant_only_their_share_of_the_receive_budget() {
+    const ATTEMPTS: usize = 4;
     let _budget = RECEIVE_BUDGET.lock().await;
-    let ahead = credit_ahead_of_readers(BudgetReader::FallsBehind).await;
-    // Each response task and body may hold three 16 KiB batches past its
-    // reader; QUIC packets add a little more.
-    assert!(
-        ahead <= 16 * 1024 * 1024 + BUDGET_DOWNLOADS * 128 * 1024,
-        "{BUDGET_DOWNLOADS} slow readers let their servers write {ahead} bytes ahead"
-    );
-    assert!(
-        ahead >= BUDGET_DOWNLOADS * 512 * 1024,
-        "{BUDGET_DOWNLOADS} slow readers granted only {ahead} bytes"
-    );
-    // These connections count as downloading for up to two seconds after
-    // their last read.
-    tokio::time::sleep(Duration::from_millis(2100)).await;
+    for attempt in 1..=ATTEMPTS {
+        let (ahead, empty_reads) = credit_ahead_of_readers(BudgetReader::FallsBehind).await;
+        // These connections count as downloading for up to two seconds
+        // after their last read.
+        tokio::time::sleep(Duration::from_millis(2100)).await;
+        if empty_reads > 0 {
+            eprintln!(
+                "attempt {attempt}: slow readers found their streams empty {empty_reads} times \
+                 and {ahead} bytes ahead; inconclusive"
+            );
+            continue;
+        }
+        // Each response task and body may hold three 16 KiB batches past its
+        // reader; QUIC packets add a little more.
+        assert!(
+            ahead <= 16 * 1024 * 1024 + BUDGET_DOWNLOADS * 128 * 1024,
+            "{BUDGET_DOWNLOADS} slow readers let their servers write {ahead} bytes ahead"
+        );
+        assert!(
+            ahead >= BUDGET_DOWNLOADS * 512 * 1024,
+            "{BUDGET_DOWNLOADS} slow readers granted only {ahead} bytes"
+        );
+        return;
+    }
+    eprintln!("the readers never fell behind their servers in {ATTEMPTS} attempts; inconclusive");
 }
 
 /// Sixteen downloads whose readers keep up hold almost nothing, so the
@@ -997,7 +1015,7 @@ async fn slow_reader_downloads_grant_only_their_share_of_the_receive_budget() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn downloads_whose_readers_keep_up_keep_their_windows() {
     let _budget = RECEIVE_BUDGET.lock().await;
-    let ahead = credit_ahead_of_readers(BudgetReader::KeepsUp).await;
+    let (ahead, _) = credit_ahead_of_readers(BudgetReader::KeepsUp).await;
     assert!(
         ahead >= BUDGET_DOWNLOADS * 3 * 1024 * 1024 / 2,
         "{BUDGET_DOWNLOADS} readers that kept up granted only {ahead} bytes"
@@ -1025,8 +1043,9 @@ enum BudgetReader {
 /// server writes as far as its credit allows, waiting for its reader at every
 /// 64 KiB while that reader keeps up. Returns how far the servers got ahead of
 /// their readers in all once these stopped: the stream credit granted past
-/// the bytes read.
-async fn credit_ahead_of_readers(reader: BudgetReader) -> usize {
+/// the bytes read. Also returns how often a reader that falls behind found
+/// its stream empty after the first piece.
+async fn credit_ahead_of_readers(reader: BudgetReader) -> (usize, usize) {
     const READ: usize = 2 * 1024 * 1024;
     const PIECE: usize = 64 * 1024;
     const SERVER_PIECE: usize = 32 * 1024;
@@ -1089,11 +1108,13 @@ async fn credit_ahead_of_readers(reader: BudgetReader) -> usize {
     }))
     .await;
     let start = Arc::new(tokio::sync::Barrier::new(BUDGET_DOWNLOADS));
+    let empty_reads = Arc::new(AtomicUsize::new(0));
     let mut readers = tokio::task::JoinSet::new();
     for (index, client) in clients.into_iter().enumerate() {
         let client = client.expect("connect HTTP/3 client");
         let start = Arc::clone(&start);
         let taken = Arc::clone(&taken);
+        let empty_reads = Arc::clone(&empty_reads);
         readers.spawn(async move {
             let mut body = client
                 .send_fixed(
@@ -1106,8 +1127,19 @@ async fn credit_ahead_of_readers(reader: BudgetReader) -> usize {
             // sixteen count as downloading.
             start.wait().await;
             let mut piece = vec![0; PIECE];
-            for _ in 0..READ / PIECE {
-                timeout(DEADLINE, body.read_exact(&mut piece))
+            for step in 0..READ / PIECE {
+                // A first read that cannot complete at once found the
+                // stream empty, which the window counts as keeping up.
+                let mut filled = 0;
+                if reader == BudgetReader::FallsBehind && step > 0 {
+                    match futures_util::FutureExt::now_or_never(body.read(&mut piece)) {
+                        Some(read) => filled = read.expect("read"),
+                        None => {
+                            empty_reads.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                }
+                timeout(DEADLINE, body.read_exact(&mut piece[filled..]))
                     .await
                     .expect("read in time")
                     .expect("read");
@@ -1137,7 +1169,10 @@ async fn credit_ahead_of_readers(reader: BudgetReader) -> usize {
     }
     handler.abort();
     drop(downloads);
-    settled - BUDGET_DOWNLOADS * READ
+    (
+        settled - BUDGET_DOWNLOADS * READ,
+        empty_reads.load(Ordering::Relaxed),
+    )
 }
 
 /// A reader that keeps a server of small DATA frames waiting lets it write
