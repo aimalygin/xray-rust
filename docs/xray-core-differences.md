@@ -1424,9 +1424,9 @@ delay as with Xray-core.
 Differences: the wait is driven from the stream's read side, which the relay
 always polls; a client that closes before sending anything still gets the
 header and a clean close, where Xray-core drops the request. Trojan holds the
-header on every open, including native UDP and Mux parents, as Xray-core does.
-VMess, Shadowsocks, and VLESS UDP and Mux parent opens still send the header
-eagerly.
+header on every open, including native UDP and Mux parents, as Xray-core does,
+and so does VLESS for its UDP and Mux commands. VMess and Shadowsocks still
+send the header eagerly.
 
 ## Outbound URL probes
 

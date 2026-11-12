@@ -10,6 +10,12 @@ long-term supported release series.
 
 ## Unreleased
 
+- A VLESS UDP flow and a VLESS Mux connection send their request header
+  together with the first XUDP or Mux frame, as a TCP flow already did and
+  as Xray-core sends every request. The header used to go out on its
+  own, so over TLS or REALITY the first record had a fixed, header-only
+  size. With no frame within 500 ms the header goes alone, Vision padding
+  it with an empty frame, as for TCP.
 - A TCP flow through a MASQUE or WireGuard outbound recovers from a burst
   loss without waiting for its retransmission timer. The userspace TCP/IP
   stack resent one segment when the peer had repeated an ACK three times and
