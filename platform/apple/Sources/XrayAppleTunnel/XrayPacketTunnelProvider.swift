@@ -17,6 +17,9 @@ public enum XrayPacketTunnelProviderError: Error, LocalizedError, CustomNSError 
     case startSuperseded
     case invalidGeodataConfiguration
     case startupProbeTimedOut
+    /// The core stopped reading or writing the borrowed utun descriptor, so the tunnel would
+    /// move no packets; the provider cancels the tunnel with this error.
+    case tunFileDescriptorStopped
 
     public static let errorDomain = "XrayAppleTunnel.XrayPacketTunnelProviderError"
 
@@ -40,6 +43,8 @@ public enum XrayPacketTunnelProviderError: Error, LocalizedError, CustomNSError 
             return 7
         case .startupProbeTimedOut:
             return 8
+        case .tunFileDescriptorStopped:
+            return 9
         }
     }
 
@@ -63,6 +68,8 @@ public enum XrayPacketTunnelProviderError: Error, LocalizedError, CustomNSError 
             return "Geodata requires both an App Group identifier and an existing safe relative directory without symbolic links."
         case .startupProbeTimedOut:
             return "Startup probe preflight exceeded its deadline."
+        case .tunFileDescriptorStopped:
+            return "The core stopped moving packets over the tunnel's utun descriptor."
         }
     }
 }
@@ -284,6 +291,7 @@ final class XrayPacketTunnelLifecycle<Resource> {
 final class XrayPacketTunnelWorkGate: @unchecked Sendable {
     private let lock = NSLock()
     private var isOccupied = false
+    private var waiter: (() -> Void)?
 
     func tryAcquire() -> Bool {
         lock.lock()
@@ -295,10 +303,27 @@ final class XrayPacketTunnelWorkGate: @unchecked Sendable {
         return true
     }
 
+    /// Acquires the gate now and returns true, or returns false and hands the gate to `onAcquired`
+    /// when the holder releases it. A later waiter replaces an earlier one, which then never runs,
+    /// so at most one piece of work waits behind a blocked holder.
+    func acquireOrWait(_ onAcquired: @escaping () -> Void) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard isOccupied else {
+            isOccupied = true
+            return true
+        }
+        waiter = onAcquired
+        return false
+    }
+
     func release() {
         lock.lock()
-        isOccupied = false
+        let next = waiter
+        waiter = nil
+        isOccupied = next != nil
         lock.unlock()
+        next?()
     }
 }
 
@@ -380,9 +405,12 @@ final class XrayPacketTunnelBoundedTask<Output>: @unchecked Sendable {
         state = .running
         self.timer = timer
         timer.resume()
-        let acquiredWorker = workGate?.tryAcquire() ?? true
+        self.workItem = workItem
+        // A busy gate runs the work once its holder leaves, if the deadline still allows it;
+        // the work item itself checks that and releases the gate.
+        let workQueue = self.workQueue
+        let acquiredWorker = workGate?.acquireOrWait { workQueue.async(execute: workItem) } ?? true
         if acquiredWorker {
-            self.workItem = workItem
             workQueue.async(execute: workItem)
         }
         lock.unlock()
@@ -946,6 +974,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 }
                 let didFinish = self.lifecycle.finishStart(for: lifecycleToken) {
                     runtime.startNetworkObservation()
+                    let providerReference = XrayWeakReference(self)
+                    runtime.startTunFdLoopWatch(queue: self.debugStatsQueue) {
+                        providerReference.value?.handleTunFdLoopStopped(lifecycleToken: lifecycleToken)
+                    }
                     if resolvedConfig.debugLoggingEnabled {
                         runtime.startDebugStatsLogging(
                             queue: self.debugStatsQueue,
@@ -3013,6 +3045,21 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         XrayAppleLog.configureFileLogging(directory: nil)
     }
 
+    private func handleTunFdLoopStopped(
+        lifecycleToken: XrayPacketTunnelLifecycle<XrayPacketTunnelRuntime>.Token
+    ) {
+        // A stop or a newer start has already taken the runtime; it is not this watch's to end.
+        guard lifecycle.stop(ifCurrent: lifecycleToken) else {
+            return
+        }
+        XrayAppleLog.error(
+            "PacketTunnelProvider",
+            "The core stopped pumping the utun descriptor; cancelling the tunnel"
+        )
+        cancelTunnelWithError(XrayPacketTunnelProviderError.tunFileDescriptorStopped)
+        XrayAppleLog.configureFileLogging(directory: nil)
+    }
+
     private static func logDebugStats(_ core: XrayCore) {
         do {
             let stats = try core.stats()
@@ -3057,12 +3104,15 @@ private final class XrayPacketTunnelRuntime: @unchecked Sendable {
     private let lock = NSLock()
     private var pump: XrayPacketTunnelPump?
     private var debugStatsTimer: DispatchSourceTimer?
+    private var tunFdLoopWatch: XrayTunFdLoopWatch?
     private var networkObserver: XrayPacketTunnelNetworkObserver?
     private var isStopped = false
+    private let usesTunFileDescriptor: Bool
 
     init(core: XrayCore, pump: XrayPacketTunnelPump?) {
         self.core = core
         self.pump = pump
+        usesTunFileDescriptor = pump == nil
     }
 
 #if DEBUG
@@ -3107,6 +3157,25 @@ private final class XrayPacketTunnelRuntime: @unchecked Sendable {
         }
     }
 
+    /// On the utun descriptor backend, calls `onStopped` once if the core gives up on the descriptor.
+    func startTunFdLoopWatch(queue: DispatchQueue, onStopped: @escaping () -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isStopped, usesTunFileDescriptor, tunFdLoopWatch == nil else {
+            return
+        }
+        tunFdLoopWatch = XrayTunFdLoopWatch(
+            queue: queue,
+            loopExits: { [weak self] in
+                guard let stats = try? self?.runningCore()?.stats() else {
+                    return nil
+                }
+                return stats.tunFdReadLoopExits &+ stats.tunFdWriteLoopExits
+            },
+            onStopped: onStopped
+        )
+    }
+
     func startDebugStatsLogging(
         queue: DispatchQueue,
         handler: @escaping @Sendable (XrayCore) -> Void
@@ -3142,6 +3211,8 @@ private final class XrayPacketTunnelRuntime: @unchecked Sendable {
         isStopped = true
         timer = debugStatsTimer
         debugStatsTimer = nil
+        let fdLoopWatch = tunFdLoopWatch
+        tunFdLoopWatch = nil
         pump = self.pump
         self.pump = nil
         observer = networkObserver
@@ -3149,6 +3220,7 @@ private final class XrayPacketTunnelRuntime: @unchecked Sendable {
         lock.unlock()
 
         observer?.stop()
+        fdLoopWatch?.cancel()
         timer?.setEventHandler {}
         timer?.cancel()
         XrayAppleLog.info("PacketTunnelProvider", "Stopping packet pump")
@@ -3169,6 +3241,54 @@ private final class XrayPacketTunnelRuntime: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return isStopped ? nil : core
+    }
+}
+
+/// Notices that the core gave up on a borrowed utun descriptor. Its read and write loops stop on an
+/// error that means the descriptor is gone and only count that they did, so the tunnel would stay
+/// up and move no packets. This reads the count every `interval` and reports the first stop once;
+/// a count that cannot be read, as while the core stops, is not a stop. One timer with leeway keeps
+/// the Network Extension's wakeups and memory low.
+final class XrayTunFdLoopWatch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var timer: DispatchSourceTimer?
+
+    init(
+        queue: DispatchQueue,
+        interval: DispatchTimeInterval = .seconds(2),
+        leeway: DispatchTimeInterval = .seconds(1),
+        loopExits: @escaping () -> UInt64?,
+        onStopped: @escaping () -> Void
+    ) {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + interval, repeating: interval, leeway: leeway)
+        timer.setEventHandler { [weak self] in
+            guard let self, (loopExits() ?? 0) > 0, self.cancel() else {
+                return
+            }
+            onStopped()
+        }
+        self.timer = timer
+        timer.resume()
+    }
+
+    deinit {
+        cancel()
+    }
+
+    /// Ends the watch; returns false if it had already ended.
+    @discardableResult
+    func cancel() -> Bool {
+        lock.lock()
+        let timer = self.timer
+        self.timer = nil
+        lock.unlock()
+        guard let timer else {
+            return false
+        }
+        timer.setEventHandler {}
+        timer.cancel()
+        return true
     }
 }
 
