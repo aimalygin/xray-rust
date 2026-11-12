@@ -10,6 +10,17 @@ long-term supported release series.
 
 ## Unreleased
 
+- Linux: the download of a connection from a SOCKS, HTTP or transparent
+  inbound is moved in the kernel with `splice(2)` once the outbound reads a
+  bare TCP socket: a freedom outbound from its first byte, and VLESS Vision
+  after its download switches to direct mode, as Xray-core moves them. On a
+  saturated loopback this doubled download throughput and halved the
+  client's CPU per byte; upload, encrypted streams, TUN flows and every
+  other platform copy as before. A pipe the kernel will not grow to 64 KiB,
+  or a `splice` it refuses, falls back to copying. Xray-core's
+  `xray.buf.splice` environment flag (`XRAY_BUF_SPLICE`) turns it off, here
+  for Vision as well as freedom. See
+  [Linux splice](docs/xray-core-differences.md#linux-splice).
 - A TCP connection relayed from a SOCKS, HTTP or transparent-proxy inbound,
   or for a reverse session, no longer keeps the memory a transfer needed for
   as long as it stays open. Each direction used to grow a buffer of its own up

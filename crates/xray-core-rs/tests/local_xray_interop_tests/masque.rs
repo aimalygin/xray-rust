@@ -669,8 +669,46 @@ fn warp_device_key() -> (String, Vec<u8>) {
     )
 }
 
-async fn warp_server(mode: &str, device: &[u8]) -> WarpServer {
-    let binary = env::var_os("XRAY_MASQUE_WARP_SERVER").expect("run check-masque-interop.sh");
+/// The stand-in binary: the one the check script built, or a fresh build of
+/// the overlay test in the pinned checkout, kept in `dir`. Neither gate that
+/// runs every ignored test builds it.
+fn warp_server_binary(dir: &TempDir) -> PathBuf {
+    env::var_os("XRAY_MASQUE_WARP_SERVER")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let checkout = resolve_xray_checkout();
+            let source = fs::canonicalize(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../tools/masque-oracle/warp_server_test.go"),
+            )
+            .unwrap();
+            let overlay = dir.path.join("overlay.json");
+            let target = checkout.join("transport/internet/masque/xray_rust_warp_server_test.go");
+            fs::write(
+                &overlay,
+                json!({"Replace": {target.to_str().unwrap(): source.to_str().unwrap()}})
+                    .to_string(),
+            )
+            .unwrap();
+            let binary = dir.path.join("warp-server");
+            let output = Command::new("go")
+                .args(["test", "-c", "-mod=readonly", "-overlay"])
+                .arg(&overlay)
+                .arg("-o")
+                .arg(&binary)
+                .arg("./transport/internet/masque")
+                .current_dir(&checkout)
+                .output()
+                .expect("start go test -c for the WARP stand-in");
+            assert!(
+                output.status.success(),
+                "building the WARP stand-in failed: {output:?}"
+            );
+            binary
+        })
+}
+
+async fn warp_server(binary: &Path, mode: &str, device: &[u8]) -> WarpServer {
     let dir = create_temp_dir("xray-rust-warp-server");
     fs::write(dir.path.join("client.spki"), device).unwrap();
     let child = Command::new(binary)
@@ -720,13 +758,15 @@ fn warp_client(server: &WarpServer, alpn: &str, private_key: &str, public_key: &
 #[ignore = "requires a pinned Xray-core; run check-masque-interop.sh"]
 async fn masque_warp_carries_udp_through_cloudflares_handshake() {
     let (private_key, device) = warp_device_key();
+    let build_dir = create_temp_dir("xray-rust-warp-build");
+    let binary = warp_server_binary(&build_dir);
     for (mode, alpn) in [
         ("h3-draft", "h3"),
         ("h3-rfc", "h3"),
         ("h2", "h2"),
         ("h2-noalpn", "h2"),
     ] {
-        let server = warp_server(mode, &device).await;
+        let server = warp_server(&binary, mode, &device).await;
         let mut core = core(warp_client(&server, alpn, &private_key, &server.spki)).await;
         let proxy = core.inbound_addr(Some("socks-in")).unwrap();
         for target in [ECHO_V4, ECHO_V6] {
@@ -756,8 +796,10 @@ async fn masque_warp_refuses_an_endpoint_with_another_key() {
     let (private_key, device) = warp_device_key();
     let (_, other) = warp_device_key();
     let other = base64::engine::general_purpose::STANDARD.encode(other);
+    let build_dir = create_temp_dir("xray-rust-warp-build");
+    let binary = warp_server_binary(&build_dir);
     for (mode, alpn) in [("h3-draft", "h3"), ("h2", "h2")] {
-        let server = warp_server(mode, &device).await;
+        let server = warp_server(&binary, mode, &device).await;
         let mut core = core(warp_client(&server, alpn, &private_key, &other)).await;
         let proxy = core.inbound_addr(Some("socks-in")).unwrap();
         let result = timeout(Duration::from_secs(30), udp_echo(proxy, ECHO_V4, 9)).await;
