@@ -30,6 +30,10 @@ use tokio::{
 const TCP_RECEIVE_BUFFER: usize = 1024 * 1024;
 const TCP_INITIAL_RECEIVE_WINDOW: usize = 64 * 1024;
 const TCP_SEND_BUFFER: usize = 1024 * 1024;
+// How long past a round trip the retransmission timer waits at least. RFC 6298
+// says a second; Linux uses this value. It stays above the delayed ACK of the
+// common stacks, so a peer that is only slow to acknowledge is not resent to.
+const TCP_RETRANSMISSION_FLOOR_MS: u64 = 200;
 
 fn tcp_timestamp() -> u32 {
     static EPOCH: OnceLock<Clock> = OnceLock::new();
@@ -50,6 +54,11 @@ fn tcp_socket() -> tcp::Socket<'static> {
     // Peers can continue measuring RTT during retransmission, instead of
     // retaining an exponentially backed-off timeout after burst loss.
     socket.set_tsval_generator(Some(tcp_timestamp));
+    // A flight that is lost whole, or a retransmission that is lost again,
+    // leaves the peer nothing to answer: only this timer ends the wait.
+    socket.set_retransmission_timeout_floor(Some(smoltcp::time::Duration::from_millis(
+        TCP_RETRANSMISSION_FLOOR_MS,
+    )));
     socket
 }
 /// An IP packet crossing the stack's channels: WireGuard's engine passes its
@@ -1099,5 +1108,139 @@ mod tests {
         // The negotiated MSS is 1380. A bounded IW10 should fill ten segments
         // before another ACK, without disabling congestion or receiver limits.
         assert_eq!(payload_bytes, 10 * 1380);
+    }
+
+    #[test]
+    fn tcp_repairs_a_burst_loss_without_the_retransmission_timer() {
+        const MSS: usize = 1380;
+        let local = Ipv4Address::new(10, 44, 0, 2);
+        let remote = Ipv4Address::new(10, 44, 0, 1);
+        let (tx, mut outgoing) = mpsc::channel(PACKET_QUEUE);
+        let mut device = Packets::<Packet<Ip>> {
+            tx,
+            rx: None,
+            mtu: 1420,
+        };
+        let mut interface = Interface::new(
+            InterfaceConfig::new(HardwareAddress::Ip),
+            &mut device,
+            Instant::ZERO,
+        );
+        interface.update_ip_addrs(|addresses| {
+            addresses.push(IpCidr::new(local.into(), 24)).unwrap();
+        });
+        interface.set_tcp_egress_burst(32);
+        let mut socket = tcp_socket();
+        socket
+            .connect(interface.context(), (remote, 80), (local, 40000))
+            .unwrap();
+        let mut sockets = SocketSet::new(vec![]);
+        let handle = sockets.add(socket);
+        interface.poll(Instant::ZERO, &mut device, &mut sockets);
+        let syn = outgoing.try_recv().unwrap().into_bytes();
+        let ip = Ipv4Packet::new_checked(&syn[..]).unwrap();
+        let start = TcpPacket::new_checked(ip.payload()).unwrap().seq_number() + 1;
+        // What the peer answers: its SYN, or an ACK of `acked` octets that
+        // reports the octets `sacked` as held beyond a hole.
+        let answer = |acked: Option<usize>, sacked: Option<(usize, usize)>| {
+            let repr = TcpRepr {
+                src_port: 80,
+                dst_port: 40000,
+                control: if acked.is_none() {
+                    TcpControl::Syn
+                } else {
+                    TcpControl::None
+                },
+                seq_number: TcpSeqNumber(if acked.is_none() { 1000 } else { 1001 }),
+                ack_number: Some(start + acked.unwrap_or(0)),
+                window_len: u16::MAX,
+                window_scale: acked.is_none().then_some(0),
+                max_seg_size: acked.is_none().then_some(MSS as u16),
+                sack_permitted: acked.is_none(),
+                sack_ranges: [
+                    sacked.map(|(left, right)| ((start + left).0 as u32, (start + right).0 as u32)),
+                    None,
+                    None,
+                ],
+                timestamp: None,
+                payload: &[],
+            };
+            let ip_repr = Ipv4Repr {
+                src_addr: remote,
+                dst_addr: local,
+                next_header: IpProtocol::Tcp,
+                payload_len: repr.buffer_len(),
+                hop_limit: 64,
+            };
+            let mut bytes = BytesMut::zeroed(ip_repr.buffer_len() + repr.buffer_len());
+            let mut ip = Ipv4Packet::new_unchecked(&mut bytes[..]);
+            ip_repr.emit(&mut ip, &ChecksumCapabilities::default());
+            repr.emit(
+                &mut TcpPacket::new_unchecked(ip.payload_mut()),
+                &remote.into(),
+                &local.into(),
+                &ChecksumCapabilities::default(),
+            );
+            Packet::from_bytes(bytes).try_into_ip().unwrap()
+        };
+        // Offsets, from the first octet queued, of the data segments sent.
+        let mut sent = |interface: &mut Interface,
+                        device: &mut Packets<Packet<Ip>>,
+                        sockets: &mut SocketSet<'_>,
+                        now: i64| {
+            let mut offsets = Vec::new();
+            loop {
+                interface.poll(Instant::from_millis(now), device, sockets);
+                let before = offsets.len();
+                while let Ok(packet) = outgoing.try_recv() {
+                    let bytes = packet.into_bytes();
+                    let ip = Ipv4Packet::new_checked(&bytes[..]).unwrap();
+                    let tcp = TcpPacket::new_checked(ip.payload()).unwrap();
+                    if !tcp.payload().is_empty() {
+                        assert_eq!(tcp.payload().len(), MSS);
+                        offsets.push((tcp.seq_number() - start) / MSS);
+                    }
+                }
+                if offsets.len() == before {
+                    return offsets;
+                }
+            }
+        };
+        device.rx = Some(answer(None, None));
+        assert!(sent(&mut interface, &mut device, &mut sockets, 1).is_empty());
+        sockets
+            .get_mut::<tcp::Socket>(handle)
+            .send_slice(&[7; 64 * 1024])
+            .unwrap();
+        assert_eq!(
+            sent(&mut interface, &mut device, &mut sockets, 2),
+            (0..10).collect::<Vec<_>>()
+        );
+
+        // The first three segments are lost with one burst. The peer says
+        // what it holds; the hole is resent at once.
+        device.rx = Some(answer(Some(0), Some((3 * MSS, 10 * MSS))));
+        assert_eq!(sent(&mut interface, &mut device, &mut sockets, 3), [0]);
+        // Each ACK that stops short of the flight names the next loss.
+        device.rx = Some(answer(Some(MSS), Some((3 * MSS, 10 * MSS))));
+        assert_eq!(sent(&mut interface, &mut device, &mut sockets, 4), [1]);
+        device.rx = Some(answer(Some(2 * MSS), Some((3 * MSS, 10 * MSS))));
+        assert_eq!(sent(&mut interface, &mut device, &mut sockets, 5), [2]);
+        // The flight is whole after three round trips, and the halved
+        // window takes new data.
+        device.rx = Some(answer(Some(10 * MSS), None));
+        assert_eq!(
+            sent(&mut interface, &mut device, &mut sockets, 6),
+            [10, 11, 12, 13, 14]
+        );
+
+        // Nothing comes back for those. The timer waits its floor past the
+        // round trip, not the second of RFC 6298.
+        let floor = TCP_RETRANSMISSION_FLOOR_MS as i64;
+        assert!(sent(&mut interface, &mut device, &mut sockets, 6 + floor - 1).is_empty());
+        assert_eq!(
+            sent(&mut interface, &mut device, &mut sockets, 6 + floor + 50),
+            [10]
+        );
     }
 }

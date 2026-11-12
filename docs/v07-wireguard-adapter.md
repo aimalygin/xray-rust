@@ -196,6 +196,13 @@ repeated acknowledgement after lost ACKs. Round-robin socket egress prevents
 bounded packet queues from starving later flows. Negotiated TCP timestamps let
 peers measure RTT during retransmission; tests also cover peers without timestamps.
 SACK reports retained ranges and assembler overflow sends duplicate ACK feedback.
+A flight that loses several segments is repaired without the retransmission
+timer: each ACK that stops short of the flight resends the next missing segment
+(NewReno, RFC 6582), and the peer's SACK blocks show a loss that duplicate ACKs
+would not, a lost retransmission included. Where the peer has nothing to say (a
+flight lost whole or at its tail) the timer fires 200 ms past the round trip, as
+Linux's does, instead of the second of RFC 6298; there is no tail loss probe.
+The MASQUE outbound runs the same stack with the same settings.
 The handshake backlog is divided among configured peers, so an unreachable peer
 cannot starve a healthy peer's first UDP packet. Tests saturate one, two and seven
 unreachable peers without losing the healthy peer's response.
