@@ -4212,6 +4212,7 @@ fn runtime_config_with_password_socks_inbound() -> CoreConfig {
         )
         .unwrap()]),
         udp: true,
+        udp_address: None,
     });
     config
 }

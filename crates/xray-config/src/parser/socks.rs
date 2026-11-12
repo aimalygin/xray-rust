@@ -27,7 +27,30 @@ impl Parser<'_> {
                     .optional_bool_at(settings, "udp", format!("{path}.udp"))
                     .unwrap_or(true),
             },
+            udp_address: self.parse_socks_inbound_udp_address(settings, &path),
         }
+    }
+
+    /// `ip`, an IP literal. Xray-core also takes a domain here and then
+    /// panics on the first `UDP ASSOCIATE`, so a domain is refused.
+    fn parse_socks_inbound_udp_address(&mut self, settings: &Value, path: &str) -> Option<IpAddr> {
+        let path = format!("{path}.ip");
+        let value = match settings.get("ip") {
+            None | Some(Value::Null) => return None,
+            Some(Value::String(value)) => value,
+            Some(_) => {
+                self.error(path, "field `ip` must be a string");
+                return None;
+            }
+        };
+        let address = parse_xray_ip_address(value);
+        if address.is_none() {
+            self.error(
+                path,
+                "socks `ip` must be an IP address; Xray-core fails UDP ASSOCIATE for a domain",
+            );
+        }
+        address
     }
 
     /// `auth` and the accounts, as Xray-core v26.10.31 reads them: `accounts`

@@ -154,6 +154,43 @@ read, before the address. One difference remains: an absent `udp` keeps
 would turn UDP off for existing profiles that omit the field, so it is left
 for a maintainer decision rather than changed silently.
 
+## SOCKS inbound handshake deadline
+
+The `handshake` timeout of the SOCKS inbound starts when it accepts the
+connection and covers the wait for the first byte as well as the rest of the
+handshake, whichever of SOCKS 5, SOCKS 4/4a or HTTP that byte selects.
+Xray-core's SOCKS inbound (`Process` in `proxy/socks/server.go`) reads the
+first byte without a deadline and sets the handshake deadline only after it,
+in `processTCP` and in the HTTP server's `ProcessWithFirstbyte`. There a
+client may wait as long as it likes before its first byte and then gets a
+whole handshake timeout for the rest. Ours is stricter on purpose: a
+connection that sends nothing is closed after one timeout, and a first byte
+sent late leaves only what is left of it. Earlier releases bounded the first
+byte by one timeout and gave the rest a second one. Each later request on a
+kept-alive HTTP connection, and every request on the HTTP inbound, still gets
+the timeout from the start of its wait, as in Xray-core. The test
+`the_wait_for_the_first_byte_counts_against_the_deadline` in
+[socks_inbound_wire.rs](../crates/xray-core-rs/tests/runtime_data_path_tests/socks_inbound_wire.rs)
+sends the first byte of each protocol 0.9 s into a one-second timeout and
+expects the close at one second, not 1.9 s.
+
+## SOCKS inbound `ip`
+
+`ip` binds the `UDP ASSOCIATE` relay and is the address the reply names, as
+Xray-core's `proxy/socks/protocol.go` uses it. Two inputs Xray-core accepts
+are refused when the config loads:
+
+- A domain. Xray-core reads `ip` as an IP or a domain, and a domain makes the
+  first `UDP ASSOCIATE` call `IP()` on a domain address, which panics.
+- An IP outside loopback, `0.0.0.0` included, unless the inbound sets
+  `allowUnauthenticatedLan`. On a loopback listener such a relay would expose
+  the UDP side of the proxy to the network, which the listen address rule
+  exists to prevent.
+
+The parser test `parses_socks_inbound_udp_relay_ip` covers both refusals,
+and `the_ip_setting_names_the_udp_relay` an IPv6 control connection answered
+with the configured IPv4 relay.
+
 ## SOCKS outbound: supported subset and evidence
 
 The [parser contract](config-compatibility.md#socks-outbound) records the exact
