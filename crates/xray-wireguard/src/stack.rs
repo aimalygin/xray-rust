@@ -30,10 +30,11 @@ use tokio::{
 const TCP_RECEIVE_BUFFER: usize = 1024 * 1024;
 const TCP_INITIAL_RECEIVE_WINDOW: usize = 64 * 1024;
 const TCP_SEND_BUFFER: usize = 1024 * 1024;
-// How long past a round trip the retransmission timer waits at least. RFC 6298
-// says a second; Linux uses this value. It stays above the delayed ACK of the
-// common stacks, so a peer that is only slow to acknowledge is not resent to.
-const TCP_RETRANSMISSION_FLOOR_MS: u64 = 200;
+// How long past a round trip the retransmission timer of a CONNECT-IP stack
+// waits at least. RFC 6298 says a second; Linux uses this value. It stays
+// above the delayed ACK of the common stacks, so a peer that is only slow to
+// acknowledge is not resent to.
+const TCP_RETRANSMISSION_FLOOR: smoltcp::time::Duration = smoltcp::time::Duration::from_millis(200);
 
 fn tcp_timestamp() -> u32 {
     static EPOCH: OnceLock<Clock> = OnceLock::new();
@@ -41,7 +42,7 @@ fn tcp_timestamp() -> u32 {
     (EPOCH.get_or_init(Clock::now).elapsed().as_millis() as u32).wrapping_add(1)
 }
 
-fn tcp_socket() -> tcp::Socket<'static> {
+fn tcp_socket(retransmission_floor: Option<smoltcp::time::Duration>) -> tcp::Socket<'static> {
     let mut socket = tcp::Socket::new(
         tcp::SocketBuffer::new(vec![0; TCP_RECEIVE_BUFFER]),
         tcp::SocketBuffer::new(vec![0; TCP_SEND_BUFFER]),
@@ -54,22 +55,30 @@ fn tcp_socket() -> tcp::Socket<'static> {
     // Peers can continue measuring RTT during retransmission, instead of
     // retaining an exponentially backed-off timeout after burst loss.
     socket.set_tsval_generator(Some(tcp_timestamp));
-    // A flight that is lost whole, or a retransmission that is lost again,
-    // leaves the peer nothing to answer: only this timer ends the wait.
-    socket.set_retransmission_timeout_floor(Some(smoltcp::time::Duration::from_millis(
-        TCP_RETRANSMISSION_FLOOR_MS,
-    )));
+    // The tunnel drops packets in bursts. Resend what the peer's ACKs and
+    // SACK blocks show to be missing instead of waiting for a timer per hole.
+    socket.set_loss_recovery(true);
+    // A flight that is lost whole leaves the peer nothing to answer: only the
+    // timer ends that wait.
+    socket.set_retransmission_timeout_floor(retransmission_floor);
     socket
 }
 /// An IP packet crossing the stack's channels: WireGuard's engine passes its
 /// own packet type, a CONNECT-IP tunnel plain bytes.
 pub(crate) trait IpPacket: Send + Sized + 'static {
+    /// How long past a round trip the TCP retransmission timer of a stack
+    /// that carries these packets waits at least; `None` keeps the second of
+    /// RFC 6298.
+    const TCP_RETRANSMISSION_FLOOR: Option<smoltcp::time::Duration>;
     /// Wraps a packet smoltcp wrote; `None` drops it.
     fn from_ip_bytes(bytes: BytesMut) -> Option<Self>;
     /// Hands the packet's bytes to smoltcp.
     fn with_bytes<R>(self, f: impl FnOnce(&[u8]) -> R) -> R;
 }
 impl IpPacket for Packet<Ip> {
+    // WireGuard keeps the default until the shorter timer is measured on a
+    // real network: smoltcp does not undo a timeout that turns out spurious.
+    const TCP_RETRANSMISSION_FLOOR: Option<smoltcp::time::Duration> = None;
     fn from_ip_bytes(bytes: BytesMut) -> Option<Self> {
         Packet::from_bytes(bytes).try_into_ip().ok()
     }
@@ -78,6 +87,8 @@ impl IpPacket for Packet<Ip> {
     }
 }
 impl IpPacket for Bytes {
+    const TCP_RETRANSMISSION_FLOOR: Option<smoltcp::time::Duration> =
+        Some(TCP_RETRANSMISSION_FLOOR);
     fn from_ip_bytes(bytes: BytesMut) -> Option<Self> {
         Some(bytes.freeze())
     }
@@ -494,7 +505,7 @@ impl<P: IpPacket> Stack<P> {
                 }
                 // This TCP crosses a real UDP path; respect congestion instead
                 // of sending every flow's entire window into bounded queues.
-                let mut socket = tcp_socket();
+                let mut socket = tcp_socket(P::TCP_RETRANSMISSION_FLOOR);
                 let port = self.next_port();
                 if socket
                     .connect(
@@ -681,7 +692,7 @@ mod tests {
             ));
             let mut handles = Vec::new();
             for port in [40000, 40001] {
-                let mut socket = tcp_socket();
+                let mut socket = tcp_socket(None);
                 socket
                     .connect(interface.context(), (remote, 80), (local, port))
                     .unwrap();
@@ -903,7 +914,7 @@ mod tests {
         interface.update_ip_addrs(|addresses| {
             addresses.push(IpCidr::new(local.into(), 24)).unwrap();
         });
-        let mut socket = tcp_socket();
+        let mut socket = tcp_socket(None);
         socket
             .connect(interface.context(), (remote, 80), (local, 40000))
             .unwrap();
@@ -1112,6 +1123,27 @@ mod tests {
 
     #[test]
     fn tcp_repairs_a_burst_loss_without_the_retransmission_timer() {
+        // WireGuard's sockets: what only the timer can resend waits the
+        // second of RFC 6298.
+        assert_eq!(<Packet<Ip> as IpPacket>::TCP_RETRANSMISSION_FLOOR, None);
+        burst_loss_is_repaired_and_a_lost_tail_waits_for_the_timer(None, 1000);
+    }
+
+    #[test]
+    fn connect_ip_tcp_resends_a_lost_tail_after_the_retransmission_floor() {
+        let floor = <Bytes as IpPacket>::TCP_RETRANSMISSION_FLOOR;
+        assert_eq!(floor, Some(TCP_RETRANSMISSION_FLOOR));
+        burst_loss_is_repaired_and_a_lost_tail_waits_for_the_timer(
+            floor,
+            TCP_RETRANSMISSION_FLOOR.total_millis() as i64,
+        );
+    }
+
+    // The timer fires `timer` milliseconds past the round trip.
+    fn burst_loss_is_repaired_and_a_lost_tail_waits_for_the_timer(
+        retransmission_floor: Option<smoltcp::time::Duration>,
+        timer: i64,
+    ) {
         const MSS: usize = 1380;
         let local = Ipv4Address::new(10, 44, 0, 2);
         let remote = Ipv4Address::new(10, 44, 0, 1);
@@ -1130,7 +1162,7 @@ mod tests {
             addresses.push(IpCidr::new(local.into(), 24)).unwrap();
         });
         interface.set_tcp_egress_burst(32);
-        let mut socket = tcp_socket();
+        let mut socket = tcp_socket(retransmission_floor);
         socket
             .connect(interface.context(), (remote, 80), (local, 40000))
             .unwrap();
@@ -1234,12 +1266,10 @@ mod tests {
             [10, 11, 12, 13, 14]
         );
 
-        // Nothing comes back for those. The timer waits its floor past the
-        // round trip, not the second of RFC 6298.
-        let floor = TCP_RETRANSMISSION_FLOOR_MS as i64;
-        assert!(sent(&mut interface, &mut device, &mut sockets, 6 + floor - 1).is_empty());
+        // Nothing comes back for those, and only the timer can tell.
+        assert!(sent(&mut interface, &mut device, &mut sockets, 6 + timer - 1).is_empty());
         assert_eq!(
-            sent(&mut interface, &mut device, &mut sockets, 6 + floor + 50),
+            sent(&mut interface, &mut device, &mut sockets, 6 + timer + 50),
             [10]
         );
     }

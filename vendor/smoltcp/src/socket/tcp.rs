@@ -535,6 +535,10 @@ pub struct Socket<'a> {
     local_rx_dup_acks: u8,
     /// If a fast retransmit needs to occur
     pending_fast_retransmit: bool,
+    /// Whether a burst loss is repaired without the retransmission timer
+    /// (`set_loss_recovery`). While it is off the three fields below stay
+    /// `None` and the socket treats a loss as upstream does.
+    loss_recovery: bool,
     /// Set while a loss found by duplicate ACKs is being repaired: the end
     /// of what had been sent when it was found (RFC 6582 `recover`). An ACK
     /// of new data short of it is a partial ACK.
@@ -640,6 +644,7 @@ impl<'a> Socket<'a> {
             local_rx_last_seq: None,
             local_rx_dup_acks: 0,
             pending_fast_retransmit: false,
+            loss_recovery: false,
             recover: None,
             resent_at: None,
             timeout_recover: None,
@@ -928,6 +933,38 @@ impl<'a> Socket<'a> {
     /// See also the [set_keep_alive](#method.set_keep_alive) method.
     pub fn keep_alive(&self) -> Option<Duration> {
         self.keep_alive
+    }
+
+    /// Repair a burst loss without waiting for the retransmission timer.
+    ///
+    /// Off by default, and then a loss is treated as upstream treats it: the third
+    /// duplicate ACK resends one segment, and every other segment lost with it waits
+    /// for the retransmission timer. When enabled:
+    ///
+    /// * an ACK of new data that stops short of what had been sent when the loss was
+    ///   found resends the segment that now leads the flight (RFC 6582), a FIN included,
+    ///   and duplicate ACKs start no second fast retransmit until that point is passed;
+    /// * SACK blocks that report more than two segments beyond the cumulative ACK start
+    ///   a fast retransmit like a third duplicate ACK (RFC 6675, `IsLost`), and the same
+    ///   test on what was sent after a retransmission resends one that was lost;
+    /// * after a retransmission timeout neither sign starts a fast retransmit until an
+    ///   ACK passes what had been sent before it.
+    ///
+    /// The setting outlives the connection. Disabling it ends a recovery in progress.
+    pub fn set_loss_recovery(&mut self, enabled: bool) {
+        self.loss_recovery = enabled;
+        if !enabled {
+            self.recover = None;
+            self.resent_at = None;
+            self.timeout_recover = None;
+        }
+    }
+
+    /// Return whether a burst loss is repaired without the retransmission timer.
+    ///
+    /// See also the [set_loss_recovery](#method.set_loss_recovery) method.
+    pub fn loss_recovery(&self) -> bool {
+        self.loss_recovery
     }
 
     /// Replace the one-second lower bound of the retransmission timeout.
@@ -1523,7 +1560,7 @@ impl<'a> Socket<'a> {
     /// Whether a sign of loss may start a fast retransmit: not while a loss
     /// is being repaired, and after a retransmission timeout only once the
     /// ACK has passed what had been sent before it (RFC 6582 section 3.2
-    /// step 2).
+    /// step 2). Always, without `loss_recovery`: neither field is set then.
     fn fast_retransmit_allowed(&self, ack_number: TcpSeqNumber) -> bool {
         self.recover.is_none() && self.timeout_recover.is_none_or(|sent| ack_number > sent)
     }
@@ -2397,7 +2434,8 @@ impl<'a> Socket<'a> {
         // arriving. This also sees it in the ACK that ends a recovery, when
         // what was sent meanwhile has a hole of its own and the deflated
         // window admits nothing whose arrival would produce duplicate ACKs.
-        if let Some(ack_number) = repr.ack_number.filter(|_| !stale_ack)
+        if self.loss_recovery
+            && let Some(ack_number) = repr.ack_number.filter(|_| !stale_ack)
             && self.remote_has_sack
             && self.remote_win_len != 0
             && self.local_seq_no < self.remote_last_seq
@@ -2543,9 +2581,11 @@ impl<'a> Socket<'a> {
 
     fn seq_to_transmit(&self, cx: &mut Context) -> bool {
         // Fast retransmits should always send, even if later congestion checks would disallow.
-        // With an empty buffer what is still in flight is the FIN.
+        // With an empty buffer what is still in flight is the FIN, which a socket
+        // without `loss_recovery` does not resend here, as upstream does not.
         if self.pending_fast_retransmit
-            && (!self.tx_buffer.is_empty() || self.remote_last_seq != self.local_seq_no)
+            && (!self.tx_buffer.is_empty()
+                || (self.loss_recovery && self.remote_last_seq != self.local_seq_no))
         {
             return true;
         }
@@ -2734,13 +2774,15 @@ impl<'a> Socket<'a> {
                 // resent in order, and no ACK is a partial one any more.
                 // What the peer already has of it comes back as duplicate
                 // ACKs and SACK blocks.
-                self.recover = None;
-                self.resent_at = None;
-                let sent = self.remote_last_seq;
-                self.timeout_recover = Some(match self.timeout_recover {
-                    Some(earlier) => earlier.max(sent),
-                    None => sent,
-                });
+                if self.loss_recovery {
+                    self.recover = None;
+                    self.resent_at = None;
+                    let sent = self.remote_last_seq;
+                    self.timeout_recover = Some(match self.timeout_recover {
+                        Some(earlier) => earlier.max(sent),
+                        None => sent,
+                    });
+                }
 
                 // Rewind "last sequence number sent", as if we never
                 // had sent them. This will cause all data in the queue
@@ -2760,7 +2802,9 @@ impl<'a> Socket<'a> {
                     .on_loss(cx.now(), in_flight);
 
                 self.pending_fast_retransmit = true;
-                self.recover = Some(self.remote_last_seq);
+                if self.loss_recovery {
+                    self.recover = Some(self.remote_last_seq);
+                }
             }
 
             // Clear the `should_retransmit` state. If we can't retransmit right
@@ -7536,7 +7580,12 @@ mod test {
     /// segment is lost and later ones arrive. Returns after the fast
     /// retransmit of the first segment has left.
     fn socket_fast_retransmitted(payload: &'static [u8]) -> TestSocket {
+        socket_fast_retransmitted_with(payload, true)
+    }
+
+    fn socket_fast_retransmitted_with(payload: &'static [u8], loss_recovery: bool) -> TestSocket {
         let mut s = socket_established();
+        s.set_loss_recovery(loss_recovery);
         s.remote_mss = 3;
 
         send!(s, time 0, TcpRepr {
@@ -7710,6 +7759,7 @@ mod test {
     #[test]
     fn test_fast_recovery_resends_a_lost_fin_on_a_partial_ack() {
         let mut s = socket_established();
+        s.set_loss_recovery(true);
         s.remote_mss = 3;
 
         send!(s, time 0, TcpRepr {
@@ -7813,7 +7863,12 @@ mod test {
     /// An established socket whose peer takes SACK, with `payload` sent in
     /// three-octet segments at `time` 1000 and none of it acknowledged.
     fn socket_with_flight(payload: &'static [u8]) -> TestSocket {
+        socket_with_flight_with(payload, true)
+    }
+
+    fn socket_with_flight_with(payload: &'static [u8], loss_recovery: bool) -> TestSocket {
         let mut s = socket_established();
+        s.set_loss_recovery(loss_recovery);
         s.remote_mss = 3;
         s.remote_has_sack = true;
 
@@ -8134,6 +8189,7 @@ mod test {
         let mut s = socket_with_buffer_sizes(64 * 1024, 64);
         s.set_congestion_control(CongestionControl::Reno);
         assert!(s.set_reno_initial_window(10));
+        s.set_loss_recovery(true);
         s.state = State::Established;
         s.tuple = Some(TUPLE);
         s.local_seq_no = LOCAL_SEQ + 1;
@@ -8221,6 +8277,117 @@ mod test {
             ..SEND_TEMPL
         });
         assert_eq!(s.congestion_controller.inner().window(), 5000);
+    }
+
+    // A socket that did not ask for it treats a loss as before: the tests
+    // above, run on such a socket.
+
+    #[test]
+    fn test_without_loss_recovery_a_burst_loss_waits_for_the_retransmission_timer() {
+        // Six segments; the first three are lost.
+        let mut s = socket_fast_retransmitted_with(b"aaaBBBcccDDDeeeFFF", false);
+        assert!(!s.loss_recovery());
+        assert_eq!(s.recover, None);
+
+        // The partial ACK resends nothing: the second segment waits for the
+        // retransmission timer.
+        send!(s, time 1020, TcpRepr {
+            seq_number: REMOTE_SEQ + 1,
+            ack_number: Some(LOCAL_SEQ + 1 + 3),
+            ..SEND_TEMPL
+        });
+        recv_nothing!(s, time 1020);
+        let timeout_at = 1020 + s.rtte.retransmission_timeout().total_millis() as i64;
+        recv_nothing!(s, time timeout_at - 1);
+        for (index, payload) in [b"BBB", b"ccc", b"DDD", b"eee", b"FFF"].into_iter().enumerate() {
+            recv!(s, time timeout_at, Ok(TcpRepr {
+                seq_number: LOCAL_SEQ + 1 + 3 + 3 * index,
+                ack_number: Some(REMOTE_SEQ + 1),
+                payload:    &payload[..],
+                ..RECV_TEMPL
+            }));
+        }
+        assert_eq!((s.recover, s.resent_at, s.timeout_recover), (None, None, None));
+
+        // The duplicate ACKs that answer what the timer resent start a fast
+        // retransmit, as they always did.
+        for _ in 0..3 {
+            send!(s, time timeout_at + 1, TcpRepr {
+                seq_number: REMOTE_SEQ + 1,
+                ack_number: Some(LOCAL_SEQ + 1 + 3),
+                ..SEND_TEMPL
+            });
+        }
+        recv!(s, time timeout_at + 1, Ok(TcpRepr {
+            seq_number: LOCAL_SEQ + 1 + 3,
+            ack_number: Some(REMOTE_SEQ + 1),
+            payload:    &b"BBB"[..],
+            ..RECV_TEMPL
+        }));
+        assert_eq!((s.recover, s.resent_at, s.timeout_recover), (None, None, None));
+    }
+
+    #[test]
+    fn test_without_loss_recovery_sack_blocks_start_no_fast_retransmit() {
+        // Five segments; the first is lost, and the peer reports the other
+        // four. Only the third duplicate ACK resends it.
+        let mut s = socket_with_flight_with(b"aaaBBBcccDDDeee", false);
+        for time in [1010, 1011] {
+            send!(s, time time, TcpRepr {
+                seq_number: REMOTE_SEQ + 1,
+                ack_number: Some(LOCAL_SEQ + 1),
+                sack_ranges: [sack_block(3, 15), None, None],
+                ..SEND_TEMPL
+            });
+            recv_nothing!(s, time time);
+        }
+        send!(s, time 1012, TcpRepr {
+            seq_number: REMOTE_SEQ + 1,
+            ack_number: Some(LOCAL_SEQ + 1),
+            sack_ranges: [sack_block(3, 15), None, None],
+            ..SEND_TEMPL
+        });
+        recv!(s, time 1012, Ok(TcpRepr {
+            seq_number: LOCAL_SEQ + 1,
+            ack_number: Some(REMOTE_SEQ + 1),
+            payload:    &b"aaa"[..],
+            ..RECV_TEMPL
+        }));
+        assert_eq!((s.recover, s.resent_at), (None, None));
+    }
+
+    #[test]
+    fn test_without_loss_recovery_duplicate_acks_resend_no_fin() {
+        let mut s = socket_established();
+        s.send_slice(b"abc").unwrap();
+        recv!(s, time 1000, Ok(TcpRepr {
+            seq_number: LOCAL_SEQ + 1,
+            ack_number: Some(REMOTE_SEQ + 1),
+            payload:    &b"abc"[..],
+            ..RECV_TEMPL
+        }));
+        send!(s, time 1005, TcpRepr {
+            seq_number: REMOTE_SEQ + 1,
+            ack_number: Some(LOCAL_SEQ + 1 + 3),
+            ..SEND_TEMPL
+        });
+        s.close();
+        recv!(s, time 1006, Ok(TcpRepr {
+            control:    TcpControl::Fin,
+            seq_number: LOCAL_SEQ + 1 + 3,
+            ack_number: Some(REMOTE_SEQ + 1),
+            ..RECV_TEMPL
+        }));
+        for time in [1010, 1011, 1012] {
+            send!(s, time time, TcpRepr {
+                seq_number: REMOTE_SEQ + 1,
+                ack_number: Some(LOCAL_SEQ + 1 + 3),
+                ..SEND_TEMPL
+            });
+        }
+        // Only the FIN is in flight: nothing is resent for the duplicates.
+        recv_nothing!(s, time 1012);
+        assert_eq!(s.recover, None);
     }
 
     #[test]

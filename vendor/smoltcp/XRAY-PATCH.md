@@ -129,6 +129,12 @@ The sender now follows NewReno (RFC 6582) and reads the SACK blocks the peer
 already sends. It keeps no table of what the peer holds: every decision is
 taken from the segment that arrives.
 
+All of it is behind `Socket::set_loss_recovery` and off by default. A socket
+that does not ask for it treats a loss as upstream does: none of the state
+below is set and none of the rules applies. The adapter's sockets ask for it,
+for WireGuard and for a CONNECT-IP tunnel alike. The sockets that terminate
+the TUN link in `xray-core-rs` do not.
+
 - `recover` is the end of what had been sent when a fast retransmit
   started. An ACK of new data short of it is a partial ACK:
   the segment that now leads the flight was lost with the one just repaired,
@@ -165,20 +171,30 @@ the floor, which is how Linux applies its 200 ms: the timer never fires
 sooner than the floor after an ACK was expected, so a peer that delays its
 ACK by less causes no retransmission. A connection without a round-trip
 sample still waits the initial second, and the setting outlives `reset`. The
-adapter sets 200 ms. The timer remains the only answer where the peer has
-nothing to say: a flight lost whole or at its tail, a FIN lost on its own, a
-retransmission lost with nothing sent after it. A tail loss probe (RFC 8985)
-would cover those and is not implemented; nor are limited transmit and early
-retransmit, and holes are still repaired one per round trip.
+adapter sets 200 ms on the sockets of a CONNECT-IP tunnel (MASQUE) only.
+WireGuard's keep the default until the shorter timer is measured on a real
+network: a timeout that turns out spurious is not undone here, it rewinds the
+flight and collapses the Reno window. The timer remains the only answer where
+the peer has nothing to say: a flight lost whole or at its tail, a FIN lost
+on its own, a retransmission lost with nothing sent after it. A tail loss
+probe (RFC 8985) would cover those and is not implemented; nor are limited
+transmit and early retransmit, and holes are still repaired one per round
+trip.
 
 `reset` now also clears a pending fast retransmit together with the new
 state, so a socket that is opened again does not start with a retransmission
-owed by its previous connection.
+owed by its previous connection. It is the one change here that reaches a
+socket whatever its settings.
 
 Wire tests cover a burst of three lost segments and two separate holes
 repaired by partial ACKs, a lost FIN, a recovery that ends and a later one
 that starts, the Reno window across a recovery, the timeout taking over, the
 SACK threshold and the blocks that do not count, the hole behind a finished
 recovery, a retransmission lost again, the bound after a timeout, and the
-floor. Those of the new behavior fail without it. Controller tests cover the
-partial ACK. With the adapter's features the library suite runs 468 tests.
+floor. Those of the new behavior fail without it. Three more run a burst
+loss, SACK blocks, and duplicate ACKs with only a FIN in flight on a socket
+that did not ask for the recovery, and find what upstream does: the next hole
+waits for the timer, duplicate ACKs after a timeout start a fast retransmit,
+SACK blocks start none, and no FIN is resent for duplicates. Controller tests
+cover the partial ACK. With the adapter's features the library suite runs 471
+tests.

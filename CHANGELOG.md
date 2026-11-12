@@ -19,14 +19,17 @@ long-term supported release series.
   selective ACKs for a loss that repeated ACKs do not show, a retransmission
   lost in its turn among them, and halves its window once for a burst
   instead of once for each segment found missing. Where the peer has nothing
-  to say, a flight lost whole or at its end, the timer still decides: it now
-  fires 200 ms past the round trip, as Linux's does, instead of the second
-  of RFC 6298. Xray-core's MASQUE server drops what a burst leaves beyond 32
-  queued packets, so an upload through it paid that second over and over. On
-  a loopback one 64 MiB upload took 8.4 s and takes 0.26 s (Xray-core's own
-  client: 0.45 s); eight parallel 256 KiB uploads took 1.0 s and take 0.02 s,
-  or about 0.2 s in the runs where a flow loses a whole flight (Xray-core:
-  0.03 s).
+  to say, a flight lost whole or at its end, the timer still decides. Over
+  MASQUE it now fires 200 ms past the round trip, as Linux's does, instead
+  of the second of RFC 6298; over WireGuard it keeps the second. TCP that
+  enters through the TUN interface is terminated by other sockets, which
+  take neither change. Xray-core's MASQUE server drops what a burst leaves
+  beyond 32 queued packets, so an upload through it paid that second over
+  and over. On a loopback one 64 MiB upload took 5 to 8 s and takes 0.25 s
+  (Xray-core's own client: 0.4 s); eight parallel 256 KiB uploads took
+  1.0 s and take 0.02 s, or about 0.2 s in the runs where a flow loses a
+  whole flight (Xray-core: 0.03 s). WireGuard times on a loopback are
+  unchanged: nothing is dropped on that path.
 - A TCP flow through a MASQUE or WireGuard outbound no longer stops for good
   while it uploads. Two faults in the userspace TCP/IP stack could strand it.
   The stack went to sleep when its queue of outgoing packets was full, and
