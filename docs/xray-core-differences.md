@@ -1309,12 +1309,15 @@ differences:
   outbound's `sockopt` to them; Go's resolver in Xray-core sets nothing on
   them. The connection to a `realm` rendezvous takes both as well.
 - On Android, iOS and tvOS without `/etc/resolv.conf`, the
-  `addressPortStrategy` SRV or TXT lookup is skipped, with one warning per
-  process, and the configured server is dialled. Go's resolver in Xray-core
-  asks `127.0.0.1:53` and `[::1]:53` there, which no phone serves, so its
-  lookup fails and it dials the configured server too, one failed exchange
-  per dial later. A lookup through the phone's own resolver or the core's
-  `dns.servers` is not implemented on either side.
+  `addressPortStrategy` SRV or TXT lookup asks the core's `dns.servers` in
+  their configured order, through the same routed, protected query
+  transport as the core's own DNS queries, without a search list, four
+  seconds a server. Go's resolver in Xray-core asks `127.0.0.1:53` and
+  `[::1]:53` there, which no phone serves, so its lookup fails and it dials
+  the configured server. Without a running managed DNS client or a server
+  in `dns.servers`, the lookup is skipped, with one warning per process, and
+  the configured server is dialled, as Go ends up doing. Wherever
+  `/etc/resolv.conf` exists, desktops included, Go's resolver is followed.
 - `interface` is bound before every other option. In Xray-core the binding
   follows `mark` on Linux and the TCP options on Apple platforms, and an
   option that fails stops the rest: with `tcpFastOpen` on an Apple platform,
