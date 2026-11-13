@@ -1,14 +1,21 @@
 # 0.10.0 release preparation
 
 Preparation started on 2026-11-11 on the owner's word, with `main` at
-`fb3a27f57595e140128e219209bc0ca2a02d51a0`. There is no candidate yet: the
-workspace version is still 0.9.0, and no device result exists.
+`fb3a27f57595e140128e219209bc0ca2a02d51a0`. Publication is pending, and no
+device result exists.
 The shared steps are in the [release process](release-process.md); this page
 holds what is specific to 0.10.0.
 
+The candidate is the 0.10.0 release commit: `main` through
+`3dfc10e85cd57c2baac3f990c0b641c578ebb547` plus the workspace version,
+lockfile, generated configuration contract, dated changelog section and this
+document. Its exact revision and tree are recorded here once it merges; every
+later step binds to them. The README install snippets keep the published
+0.9.0 until the 0.10.0 packages exist.
+
 ## Scope
 
-Everything merged into `main` since 0.9.0, listed under Unreleased in the
+Everything merged into `main` since 0.9.0, listed under 0.10.0 in the
 [changelog](../CHANGELOG.md). What the device evidence has to cover:
 
 - Two new carriers: mKCP and the MASQUE client (CONNECT-IP over HTTP/3 and
@@ -186,9 +193,9 @@ after the SDK publishes, since it pins the published SDK.
    [v0.10 evidence collection](v010-release-evidence.md). The `v010`
    performance comparison suite and the collector for the comparison against
    0.9.0 followed in their own change; the same page has their commands.
-3. Pre-release fixes on `main`, then the release commit: workspace version
-   0.10.0, dated changelog section, regenerated configuration contract. That
-   commit is the candidate.
+3. ~~Pre-release fixes on `main`, then the release commit: workspace version
+   0.10.0, dated changelog section, regenerated configuration contract.~~
+   Done in the release commit, which is the candidate.
 4. Full release CI on the candidate.
 5. `xray-rust-mobile`: pin the candidate, synchronize, add the `v010`
    profile, pass SDK CI.

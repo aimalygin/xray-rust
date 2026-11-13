@@ -10,6 +10,11 @@ long-term supported release series.
 
 ## Unreleased
 
+## 0.10.0 - 2026-11-12
+
+Release candidate preparation; publication and exact-candidate release
+qualification are pending.
+
 - A VLESS UDP flow and a VLESS Mux connection send their request header
   together with the first XUDP or Mux frame, as a TCP flow already did and
   as Xray-core sends every request. The header used to go out on its
