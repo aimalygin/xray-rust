@@ -1610,10 +1610,19 @@ an unknown address as a new connection (`listener.go:93-121`), so from a new
 address the session is lost; Xray-core's client sits out the 30-second
 dead-link timeout. The host's report does not say that the address changed:
 it also comes for a connection dialed on the new network before the report,
-and for a change that leaves the address as it was. So the connection waits
-for its server and fails only if it is not heard: its reads and writes report
-`NetworkDown`, nothing more goes out, the flows it carried end, and the next
-flow dials a new connection. Nothing redials within the transport.
+and for a change that leaves the address as it was. So the connection first
+asks the system which address a datagram to its server leaves from: a UDP
+socket made for the question, protected as its own, is connected to the
+server, which picks a route and sends nothing. If the answer differs from the
+one at the dial, the connection fails at once. If it is the same, the address
+the server sees may still have changed behind a NAT, and the connection waits
+for its server and fails only if it is not heard. An answer the system does
+not give, for want of a route between two networks, is left to the wait as
+well: the route may come back with the same address. A failed connection's
+reads and writes report `NetworkDown`, nothing more goes out, the flows it
+carried end, and the next flow dials a new connection. Nothing redials within
+the transport. Behind `realm` the dial ends with the introduction, so a
+change during it is left to the wait.
 
 The wait follows Xray-core's timers. Its `Input` answers no ping
 (`connection.go:584-603`), so nothing can be sent to ask. A connection with
@@ -1633,7 +1642,10 @@ mKCP over `xdns` or `xicmp` is left alone: their sockets are not the
 session's, and Xray-core's xicmp server knows a client by the id in its
 echoes and answers wherever the last one came from
 (`transport/internet/finalmask/xicmp/server.go:164-173,283-297`).
-Evidence: `kcp::tests::a_network_change_fails_a_connection_whose_peer_stays_silent`,
+Evidence: `kcp::tests::a_changed_source_address_fails_the_connection_at_once`,
+`an_unchanged_or_unknown_source_address_leaves_it_to_the_wait`,
+`the_system_tells_the_source_address_without_sending`,
+`a_network_change_fails_a_connection_whose_peer_stays_silent`,
 `a_second_network_change_starts_the_wait_for_the_peer_over`,
 `a_peer_heard_after_a_network_change_keeps_the_connection`,
 `a_network_change_fails_a_connection_waiting_for_a_standalone_reply` and

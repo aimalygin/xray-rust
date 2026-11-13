@@ -1596,7 +1596,8 @@ pub unsafe extern "C" fn xray_core_rebind_wireguard(
 /// every other live QUIC carrier: XHTTP, MASQUE and XDRIVE's storages over
 /// HTTP/3. Endpoint addresses and QUIC/inner flows are retained. An mKCP
 /// connection on its own UDP socket cannot move: it fails, its flows with
-/// it, unless its peer is heard within seconds of the call. The returned
+/// it, at once if its source address changed and otherwise unless its peer
+/// is heard within seconds of the call. The returned
 /// count is accepted coalesced requests, the mKCP connections told among
 /// them, not successful binds, path validation or surviving connections.
 ///

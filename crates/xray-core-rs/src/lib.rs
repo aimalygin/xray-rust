@@ -1041,7 +1041,8 @@ impl Core {
     /// connection behind a `realm`, `xdns` or `xicmp` mask stays as it is.
     /// An mKCP connection on its own UDP socket, plain or behind `realm`,
     /// cannot move, as its server would not know the new socket: it fails
-    /// with `NetworkDown` unless its peer is heard within seconds. The count
+    /// with `NetworkDown`, at once if its source address changed and
+    /// otherwise unless its peer is heard within seconds. The count
     /// is of connections told, these among them, not of paths validated or
     /// of connections that survive.
     pub fn rebind_quic(&self) -> u64 {

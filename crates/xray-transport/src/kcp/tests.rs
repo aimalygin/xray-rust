@@ -365,6 +365,100 @@ async fn a_peer_heard_after_a_network_change_keeps_the_connection() {
     assert_eq!(&echoed, b"after!");
 }
 
+/// A connection to `peer` on a socket of its own that takes `source` for the
+/// address its datagrams leave from, whatever the host's interfaces are.
+fn watched(
+    peer: SocketAddr,
+    changes: &crate::NetworkChanges,
+    source: &Arc<StdMutex<Option<IpAddr>>>,
+) -> KcpStream {
+    let source = Arc::clone(source);
+    KcpStream::start(
+        KcpSocket::Udp(open_socket(peer, None).unwrap()),
+        peer,
+        Masks::new(&[], None).unwrap(),
+        next_conversation(),
+        config(Vec::new()).engine_config().unwrap(),
+        Some(NetworkWatch {
+            changes: changes.follow(),
+            source: Box::new(move |_| *source.lock().unwrap()),
+        }),
+    )
+}
+
+/// Datagrams that leave from another address reach Xray-core's server as a
+/// stranger's, so nothing is left to wait for, however alive the peer is.
+#[tokio::test]
+async fn a_changed_source_address_fails_the_connection_at_once() {
+    let (peer, _seen) = echo_peer(Vec::new()).await;
+    let changes = crate::NetworkChanges::default();
+    let source = Arc::new(StdMutex::new(Some(IpAddr::from([10, 0, 0, 1]))));
+    let mut stream = watched(peer, &changes, &source);
+    stream.write_all(b"before").await.unwrap();
+    let mut echoed = [0; 6];
+    within(stream.read_exact(&mut echoed)).await.unwrap();
+    assert_eq!(&echoed, b"before");
+
+    *source.lock().unwrap() = Some(IpAddr::from([10, 0, 0, 2]));
+    let changed = Instant::now();
+    assert_eq!(changes.notify(), 1);
+    let error = within(stream.read(&mut echoed)).await.unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::NetworkDown);
+    assert!(
+        error.to_string().contains("source address changed"),
+        "{error}"
+    );
+    assert!(
+        changed.elapsed() < PROBE_AWAITING_ACK / 2,
+        "{:?}",
+        changed.elapsed()
+    );
+    let error = stream.write(b"after").await.unwrap_err();
+    assert!(
+        error.to_string().contains("source address changed"),
+        "{error}"
+    );
+    unfollowed(&changes).await;
+}
+
+/// The same address, or none the system can tell, verifies nothing: behind a
+/// NAT the server may see another one all the same. The wait for the peer
+/// decides.
+#[tokio::test]
+async fn an_unchanged_or_unknown_source_address_leaves_it_to_the_wait() {
+    let (peer, _seen) = silent_peer().await;
+    let changes = crate::NetworkChanges::default();
+    let source = Arc::new(StdMutex::new(Some(IpAddr::from([10, 0, 0, 1]))));
+    let mut stream = watched(peer, &changes, &source);
+    let mut pending = tokio::spawn(async move {
+        let mut buf = [0; 8];
+        stream.read(&mut buf).await
+    });
+    assert_eq!(changes.notify(), 1);
+    let early = tokio::time::timeout(PROBE_IDLE / 5, &mut pending).await;
+    assert!(early.is_err(), "the same address ended the connection");
+
+    *source.lock().unwrap() = None;
+    let again = Instant::now();
+    assert_eq!(changes.notify(), 1);
+    let early = tokio::time::timeout(PROBE_IDLE / 5, &mut pending).await;
+    assert!(early.is_err(), "an unknown address ended the connection");
+    let error = within(pending).await.unwrap().unwrap_err();
+    assert_network_down(&error);
+    assert!(again.elapsed() >= PROBE_IDLE, "{:?}", again.elapsed());
+}
+
+/// The system's answer for loopback, without a packet sent: what the dial
+/// records and a change compares with.
+#[tokio::test]
+async fn the_system_tells_the_source_address_without_sending() {
+    let (peer, seen) = silent_peer().await;
+    let source = system_source(None);
+    assert_eq!(source(peer), Some(IpAddr::from([127, 0, 0, 1])));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(seen.lock().unwrap().raw.is_empty());
+}
+
 /// A change of network reaches a connection that waits for a standalone
 /// reply, which holds its driver for as long as none comes.
 #[tokio::test]

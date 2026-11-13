@@ -803,7 +803,8 @@ class XrayCore private constructor(handle: Long) : Closeable {
      * Retains endpoints and inner flows, without DNS refresh. Call after the host
      * has selected a usable underlying network. Idle outbounds remain lazy.
      * An mKCP connection cannot move and is counted too: it fails, its flows with
-     * it, unless its peer is heard within seconds. */
+     * it, at once if its source address changed and otherwise unless its peer is
+     * heard within seconds. */
     fun rebindHysteria(): Long {
         requireFeature(7, XrayFfiCapability.Hysteria2Outbound)
         return withDataPathHandle { nativeRebindHysteria(it) }

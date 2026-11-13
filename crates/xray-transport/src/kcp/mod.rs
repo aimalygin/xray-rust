@@ -17,9 +17,12 @@
 //! conversation, so from a new address the connection reaches it as a
 //! stranger and the session is lost. The report alone does not say so: it
 //! also comes for a connection dialed on the new network already, or when
-//! the address did not change. The connection therefore waits a short while
-//! for a segment only its own session's peer sends, and fails with
-//! `NetworkDown` if none comes, rather than sit out the dead-link timeout.
+//! the address did not change. So the connection asks the system which
+//! address a datagram to its peer leaves from now. If that is another than
+//! at the dial, it fails with `NetworkDown` at once. Otherwise the address
+//! the server sees may still have changed behind a NAT, and the connection
+//! waits a short while for a segment only its own session's peer sends,
+//! failing if none comes, rather than sit out the dead-link timeout.
 //! Over `xdns` and `xicmp` nothing is carried on such a socket, and the
 //! connection is left alone.
 mod engine;
@@ -28,7 +31,7 @@ mod segment;
 
 use std::{
     io,
-    net::{SocketAddr, UdpSocket as StdUdpSocket},
+    net::{IpAddr, SocketAddr, UdpSocket as StdUdpSocket},
     pin::Pin,
     sync::{
         atomic::{AtomicU32, Ordering},
@@ -157,8 +160,9 @@ fn count_up(counter: &AtomicU32) -> u16 {
 /// Opens an mKCP connection to the first of `candidates` a socket opens
 /// for. Nothing is sent until the stream is written to, unless a `realm`
 /// mask introduces the socket first, with what `realm` lends. A connection
-/// on its own UDP socket fails after one of `network_changes` unless its
-/// peer is heard again in time.
+/// on its own UDP socket fails after one of `network_changes` if its
+/// datagrams leave from another address than before, or if its peer is not
+/// heard again in time.
 pub async fn connect(
     candidates: &[SocketAddr],
     protector: Option<Arc<dyn SocketProtector>>,
@@ -167,6 +171,12 @@ pub async fn connect(
     network_changes: Option<&crate::NetworkChanges>,
 ) -> Result<KcpStream, TransportError> {
     let follow = || network_changes.map(crate::NetworkChanges::follow);
+    let watch = |changes: Option<watch::Receiver<u64>>| {
+        changes.map(|changes| NetworkWatch {
+            changes,
+            source: system_source(protector.clone()),
+        })
+    };
     let engine_config = config.engine_config().map_err(TransportError::Kcp)?;
     let masks = Masks::new(&config.masks, config.noise.as_ref()).map_err(TransportError::Kcp)?;
     if let (Some(realm), Some(env)) = (&config.realm, realm) {
@@ -177,8 +187,8 @@ pub async fn connect(
             )));
         }
         let udp = crate::realm::RealmUdp::open(realm.family, protector.as_deref())?;
-        // Followed from here, so a change during the introduction fails the
-        // connection as soon as it starts.
+        // Followed from here, so a change during the introduction puts the
+        // connection to the test as soon as it starts.
         let changes = follow();
         // Boxed: the introduction would otherwise grow every dial's future.
         let peer = Box::pin(crate::realm::establish(&udp, realm, env))
@@ -190,7 +200,7 @@ pub async fn connect(
             masks,
             next_conversation(),
             engine_config,
-            changes,
+            watch(changes),
         ));
     }
     if let Some(xicmp) = &config.xicmp {
@@ -242,7 +252,7 @@ pub async fn connect(
                     masks,
                     next_conversation(),
                     engine_config,
-                    follow(),
+                    watch(follow()),
                 ))
             }
             Err(error) => last = Some(error),
@@ -256,11 +266,33 @@ pub async fn connect(
     }))
 }
 
+/// Finds the address a datagram to a peer leaves from now, if the system
+/// can tell.
+type SourceLookup = Box<dyn Fn(SocketAddr) -> Option<IpAddr> + Send + Sync>;
+
+/// What a connection on its own socket needs to follow the host's network.
+struct NetworkWatch {
+    changes: watch::Receiver<u64>,
+    source: SourceLookup,
+}
+
+/// Asks the system through a socket made for the question and protected as
+/// the connection's own is, so that it is routed alike. Connecting a UDP
+/// socket picks its route and sends nothing.
+fn system_source(protector: Option<Arc<dyn SocketProtector>>) -> SourceLookup {
+    Box::new(move |peer| {
+        let peer = crate::canonicalize_socket_addr(peer);
+        let socket = bind_wildcard(peer, protector.as_deref()).ok()?;
+        socket.connect(peer).ok()?;
+        Some(socket.local_addr().ok()?.ip().to_canonical())
+    })
+}
+
 /// A wildcard socket of `peer`'s family, protected before it is used.
-fn open_socket(
+fn bind_wildcard(
     peer: SocketAddr,
     protector: Option<&dyn SocketProtector>,
-) -> Result<UdpSocket, TransportError> {
+) -> Result<StdUdpSocket, TransportError> {
     let bind: SocketAddr = if peer.is_ipv4() {
         (std::net::Ipv4Addr::UNSPECIFIED, 0).into()
     } else {
@@ -268,6 +300,15 @@ fn open_socket(
     };
     let socket = StdUdpSocket::bind(bind).map_err(TransportError::Kcp)?;
     crate::protect_std_udp_socket(&socket, protector)?;
+    Ok(socket)
+}
+
+/// A wildcard socket of `peer`'s family, protected before it is used.
+fn open_socket(
+    peer: SocketAddr,
+    protector: Option<&dyn SocketProtector>,
+) -> Result<UdpSocket, TransportError> {
+    let socket = bind_wildcard(peer, protector)?;
     socket.set_nonblocking(true).map_err(TransportError::Kcp)?;
     UdpSocket::from_std(socket).map_err(TransportError::Kcp)
 }
@@ -337,7 +378,26 @@ struct Inner {
     reader: Option<Waker>,
     writer: Option<Waker>,
     /// Why the driver gave the connection up, which reads and writes report.
-    failure: Option<io::ErrorKind>,
+    failure: Option<Failure>,
+}
+
+/// Why a connection was given up after a change of network.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Failure {
+    /// Its datagrams leave from another address than at the dial.
+    SourceChanged,
+    /// Its peer was not heard in the time a live one takes.
+    PeerSilent,
+}
+
+impl Failure {
+    fn error(self) -> io::Error {
+        let message = match self {
+            Self::SourceChanged => "mKCP: the source address changed with the OS network",
+            Self::PeerSilent => "mKCP: the peer was not heard after the OS network changed",
+        };
+        io::Error::new(io::ErrorKind::NetworkDown, message)
+    }
 }
 
 impl Inner {
@@ -398,7 +458,7 @@ impl KcpStream {
         masks: Masks,
         conv: u16,
         config: engine::Config,
-        network_changes: Option<watch::Receiver<u64>>,
+        network: Option<NetworkWatch>,
     ) -> Self {
         let shared = Arc::new(Shared {
             since: Instant::now(),
@@ -410,7 +470,7 @@ impl KcpStream {
             }),
             wake: Notify::new(),
         });
-        let driver = Driver::new(Arc::clone(&shared), socket, peer, masks, network_changes);
+        let driver = Driver::new(Arc::clone(&shared), socket, peer, masks, network);
         tokio::spawn(driver.run());
         Self { shared }
     }
@@ -438,7 +498,7 @@ impl AsyncRead for KcpStream {
         }
         let mut inner = self.shared.lock();
         if let Some(failure) = inner.failure {
-            return Poll::Ready(Err(failed(failure)));
+            return Poll::Ready(Err(failure.error()));
         }
         match inner.engine.read(buf.initialize_unfilled()) {
             None => Poll::Ready(Ok(())),
@@ -476,7 +536,7 @@ impl AsyncWrite for KcpStream {
             }
             Err(WriteBlocked::Closed) => Poll::Ready(Err(inner
                 .failure
-                .map_or_else(|| io::ErrorKind::BrokenPipe.into(), failed))),
+                .map_or_else(|| io::ErrorKind::BrokenPipe.into(), Failure::error))),
         }
     }
 
@@ -545,12 +605,24 @@ const PROBE_AWAITING_ACK: Duration = Duration::from_millis(600);
 #[cfg(test)]
 const PROBE_IDLE: Duration = Duration::from_millis(1500);
 
-/// The error of a connection given up after a change of network.
-fn failed(kind: io::ErrorKind) -> io::Error {
-    io::Error::new(
-        kind,
-        "mKCP: the peer was not heard after the OS network changed",
-    )
+/// Where the connection's datagrams left from at the dial, and how to ask
+/// again.
+struct Source {
+    lookup: SourceLookup,
+    dialed_from: Option<IpAddr>,
+}
+
+impl Source {
+    /// Whether datagrams to `peer` verifiably leave from another address
+    /// than at the dial. An answer the system does not give, then or now,
+    /// verifies nothing: there may be no route for a moment between two
+    /// networks, and the address may be the same once there is one.
+    fn changed(&self, peer: SocketAddr) -> bool {
+        matches!(
+            (self.dialed_from, (self.lookup)(peer)),
+            (Some(dialed), Some(now)) if dialed != now
+        )
+    }
 }
 
 /// How the wait for a standalone reply ended.
@@ -579,6 +651,10 @@ struct Driver {
     /// The host's network changes, each of which puts a connection on its
     /// own socket to the test.
     network_changes: Option<watch::Receiver<u64>>,
+    /// The address the datagrams left from at the dial, to compare with on
+    /// a change of network. With a `realm` mask the dial ends with the
+    /// introduction, so a change during it is left to the wait for the peer.
+    source: Option<Source>,
     /// Until when the peer has to be heard after the last change of network.
     probe: Option<Instant>,
 }
@@ -589,8 +665,21 @@ impl Driver {
         socket: KcpSocket,
         peer: SocketAddr,
         masks: Masks,
-        network_changes: Option<watch::Receiver<u64>>,
+        network: Option<NetworkWatch>,
     ) -> Self {
+        let (network_changes, source) = match network {
+            Some(NetworkWatch { changes, source }) => {
+                let dialed_from = source(peer);
+                (
+                    Some(changes),
+                    Some(Source {
+                        lookup: source,
+                        dialed_from,
+                    }),
+                )
+            }
+            None => (None, None),
+        };
         let since = shared.since;
         let interval = Duration::from_millis(shared.lock().engine.tti().into());
         let local = socket
@@ -611,6 +700,7 @@ impl Driver {
             ping_next: since,
             receiving: true,
             network_changes,
+            source,
             probe: None,
         }
     }
@@ -627,10 +717,12 @@ impl Driver {
                 biased;
                 // Ahead of the traffic, which could hold both off.
                 changed = network_changed(&mut self.network_changes) => {
-                    self.network_change(changed);
+                    if !self.network_change(changed) {
+                        return;
+                    }
                 }
                 () = probe_expired(self.probe) => {
-                    self.fail(io::ErrorKind::NetworkDown);
+                    self.fail(Failure::PeerSilent);
                     return;
                 }
                 () = self.shared.wake.notified() => self.wake_data(),
@@ -776,10 +868,12 @@ impl Driver {
             tokio::select! {
                 biased;
                 changed = network_changed(&mut self.network_changes) => {
-                    self.network_change(changed);
+                    if !self.network_change(changed) {
+                        return Awaited::Closed;
+                    }
                 }
                 () = probe_expired(self.probe) => {
-                    self.fail(io::ErrorKind::NetworkDown);
+                    self.fail(Failure::PeerSilent);
                     return Awaited::Closed;
                 }
                 () = self.shared.wake.notified() => {}
@@ -804,14 +898,24 @@ impl Driver {
     }
 
     /// The host reported a change of network, or `changed` is false and
-    /// nobody reports them any more. The peer has to be heard anew from now:
-    /// a change during a wait starts the wait over, as what the peer sent
+    /// nobody reports them any more. False once the connection failed: its
+    /// datagrams leave from another address now, which the server takes for
+    /// a stranger's. Otherwise the peer has to be heard anew from now: a
+    /// change during a wait starts the wait over, as what the peer sent
     /// meanwhile may have gone to a network that is no more. Nothing is sent
     /// to ask, as Xray-core answers no ping.
-    fn network_change(&mut self, changed: bool) {
+    fn network_change(&mut self, changed: bool) -> bool {
         if !changed {
             self.network_changes = None;
-            return;
+            return true;
+        }
+        if self
+            .source
+            .as_ref()
+            .is_some_and(|source| source.changed(self.peer))
+        {
+            self.fail(Failure::SourceChanged);
+            return false;
         }
         let mut inner = self.shared.lock();
         inner.engine.peer_heard = false;
@@ -822,12 +926,13 @@ impl Driver {
         };
         drop(inner);
         self.probe = Some(Instant::now() + wait);
+        true
     }
 
     /// Gives the connection up with `failure`, which its reader and writer
     /// get, and wakes them. Nothing more goes out: the server would not know
     /// the socket a new network gives.
-    fn fail(&self, failure: io::ErrorKind) {
+    fn fail(&self, failure: Failure) {
         let mut inner = self.shared.lock();
         inner.failure = Some(failure);
         inner.engine.abort(elapsed(self.shared.since));
