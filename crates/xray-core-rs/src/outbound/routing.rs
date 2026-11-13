@@ -15,15 +15,24 @@ use crate::CoreError;
 // silently truncate the answer: a discarded address could change the route.
 const MAX_IP_ON_DEMAND_ADDRESSES: usize = 256;
 
+/// Routes `target`. `original_ip` is the destination IP a `routeOnly`
+/// sniffed domain stands in for: as Xray-core keeps it in `ob.Target` beside
+/// `ob.RouteTarget`, rules see both the domain and that IP. Under
+/// `IPOnDemand` the addresses of the domain replace it, and it is left only
+/// when the lookup fails. Under `IPIfNonMatch` the rules see it first, and
+/// the addresses of the domain only when no rule matched.
 pub(super) async fn select_routed_target_with_resolver<'a>(
     routing: &'a RoutingConfig,
     route: &RouteContext<'_>,
     target: &Target,
+    original_ip: Option<&IpAddr>,
     dns_resolver: &dyn DnsResolver,
 ) -> Result<Option<&'a RoutingRuleTarget>, CoreError> {
+    let original_ip = target_domain(target).and(original_ip);
     if routing.domain_strategy == RoutingDomainStrategy::IpOnDemand {
         if let Some(domain) = target_domain(target) {
-            return select_on_demand(routing, route, domain, target, dns_resolver).await;
+            return select_on_demand(routing, route, domain, target, original_ip, dns_resolver)
+                .await;
         }
     }
 
@@ -31,7 +40,7 @@ pub(super) async fn select_routed_target_with_resolver<'a>(
         routing,
         route,
         target_domain(target),
-        target_ip(target),
+        target_ip(target).or(original_ip),
         Some(target_network(target)),
         Some(target.port),
     ) {
@@ -60,11 +69,14 @@ async fn select_on_demand<'a>(
     route: &RouteContext<'_>,
     domain: &str,
     target: &Target,
+    original_ip: Option<&IpAddr>,
     dns_resolver: &dyn DnsResolver,
 ) -> Result<Option<&'a RoutingRuleTarget>, CoreError> {
     // None means not attempted; Some(None) remembers a failed lookup so later
     // IP rules cannot trigger a retry storm. The lookup stays on this future:
-    // cancellation drops it and the caller retains one policy revision.
+    // cancellation drops it and the caller retains one policy revision. A
+    // failed lookup leaves the original IP of a `routeOnly` flow, as
+    // Xray-core's `ResolvableContext` falls back to the target's own IPs.
     let mut resolution = None;
     for rule in &routing.rules {
         // Xray-core v26.10.31's BuildCondition checks these before the
@@ -94,11 +106,11 @@ async fn select_on_demand<'a>(
                 }
                 resolution = Some(resolved);
             }
-            if !resolution
-                .as_ref()
-                .and_then(Option::as_ref)
-                .is_some_and(|lookup| lookup.ips().any(|ip| rule.matches_ip(Some(&ip))))
-            {
+            let matched = match resolution.as_ref().and_then(Option::as_ref) {
+                Some(lookup) => lookup.ips().any(|ip| rule.matches_ip(Some(&ip))),
+                None => original_ip.is_some_and(|ip| rule.matches_ip(Some(ip))),
+            };
+            if !matched {
                 continue;
             }
         }

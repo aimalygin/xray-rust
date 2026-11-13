@@ -1730,6 +1730,57 @@ fn parses_ext_geodata_rules_from_named_files_and_inverse_geoip() {
 }
 
 #[test]
+fn negated_cidrs_and_negated_geoip_codes_in_one_ip_list_are_separate_matchers() {
+    // Xray-core's `buildOptimizedIPMatcher`: the negated CIDRs are one
+    // reversed matcher, the negated GeoIP codes another, and either matches.
+    let asset_dir = unique_temp_dir("negated-geoip");
+    write_geoip_dat(
+        &asset_dir,
+        "geoip.dat",
+        &[
+            TestGeoIp {
+                code: "TEST".to_owned(),
+                cidr: vec![
+                    geo_cidr(&[10, 1, 0, 0], 16),
+                    geo_cidr(&[198, 51, 100, 0], 24),
+                ],
+                reverse_match: false,
+            },
+            TestGeoIp {
+                code: "OTHER".to_owned(),
+                cidr: vec![geo_cidr(&[203, 0, 113, 0], 24)],
+                reverse_match: false,
+            },
+        ],
+    );
+    let raw = raw_with_routing(
+        r#""rules": [
+          {"type": "field", "ip": ["!10.0.0.0/8", "!geoip:test"], "outboundTag": "proxy"},
+          {"type": "field", "ip": ["!10.0.0.0/8", "!ext-ip:geoip.dat:test"], "outboundTag": "proxy"},
+          {"type": "field", "ip": ["!geoip:test", "!geoip:other"], "outboundTag": "proxy"}
+        ]"#,
+    );
+
+    let parsed =
+        parse_xray_json_with_geodata_dirs(&raw, &[asset_dir]).expect("config should parse");
+    let rules = &parsed.config.routing.rules;
+    let matches = |rule: usize, ip: [u8; 4]| rules[rule].matches_ip(Some(&IpAddr::from(ip)));
+
+    for rule in [0, 1] {
+        // Outside the code alone, outside the CIDR alone, outside both.
+        assert!(matches(rule, [10, 2, 0, 1]), "rule {rule}");
+        assert!(matches(rule, [198, 51, 100, 42]), "rule {rule}");
+        assert!(matches(rule, [8, 8, 8, 8]), "rule {rule}");
+        // Inside both the CIDR and the code.
+        assert!(!matches(rule, [10, 1, 0, 1]), "rule {rule}");
+    }
+    // Negated codes share one matcher: an address in either code is in it.
+    assert!(!matches(2, [198, 51, 100, 42]));
+    assert!(!matches(2, [203, 0, 113, 7]));
+    assert!(matches(2, [8, 8, 8, 8]));
+}
+
+#[test]
 fn rejects_missing_geodata_code_with_path() {
     let asset_dir = unique_temp_dir("missing-geodata-code");
     write_geosite_dat(

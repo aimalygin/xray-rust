@@ -1302,9 +1302,10 @@ on, for example after a first set of rules chose to treat it apart.
 - Routing again keeps the connection's source, local address and user, but
   not the protocol or `attrs` that sniffing found, since Xray-core's loopback
   starts a new session content.
-- It checks the address the connection goes to, which differs from the one
-  routing checked when sniffing with `routeOnly` found a domain: routing
-  again then sees the IP.
+- It checks the address the connection goes to. When sniffing with
+  `routeOnly` found a domain, routing again sees that domain beside the IP,
+  as the first routing did: Xray-core's loopback dispatches the same outbound
+  session, which keeps its route target.
 - It makes none of the DNS lookups of `IPIfNonMatch` and `IPOnDemand`, as
   Xray-core skips DNS resolution for a loopback's connections.
 - TCP and UDP from SOCKS, HTTP and TUN go through loopbacks, as do DNS
@@ -3906,8 +3907,10 @@ balancers and 4,096 selector prefixes are accepted per configuration.
 
 `random` selects a candidate independently for each new flow. `roundRobin`
 uses one atomic cursor shared by every router backed by the core's factory.
-Both treat unknown health as eligible and skip candidates known to be
-unhealthy. `leastPing` requires a successful observation and deterministically
+Both treat unknown health as eligible and, when the balancer has a
+`fallbackTag`, skip candidates known to be unhealthy. Without a `fallbackTag`
+they pick among every candidate, the unhealthy ones too, as Xray-core's two
+strategies consult the observatory only when one is set. `leastPing` requires a successful observation and deterministically
 chooses the lowest delay, using lexicographic candidate order to break ties.
 `leastLoad` retains the latest 16 probe outcomes per outbound and orders healthy
 candidates by RTT deviation, average RTT, failures, sample count, and tag. It
@@ -3919,8 +3922,12 @@ the squared deviation, which is ordering-equivalent to Xray's
 resulting bounded top-N. Regex costs and the undocumented zero-value automatic
 cost coefficient fail closed.
 
-If no eligible candidate remains, `fallbackTag` is used; without a valid
-fallback the route fails closed. The core API can install or clear a validated
+If the strategy picks no candidate, `fallbackTag` is used. A `fallbackTag`
+that names no outbound fails the connection. Without a `fallbackTag` the
+connection goes to the default outbound, as Xray-core's dispatcher sends it:
+for `leastPing` and `leastLoad` that is whenever no candidate is observed
+healthy, for `random` and `roundRobin` only when the selectors match no
+outbound. The core API can install or clear a validated
 per-group override atomically. An explicit override is authoritative even when
 that member is currently unhealthy. It affects only new flows, while already
 opened flows and lazy handler/transport pools remain intact. Non-empty strategy
