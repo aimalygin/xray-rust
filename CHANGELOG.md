@@ -16,13 +16,26 @@ long-term supported release series.
   that caused the eviction found no permit and was dropped, and the app
   waited for its own retransmission. A flow now holds its permit for as long
   as it is in the flow table.
-- A TUN UDP bridge that returns when the host closes its connection now
-  ends its flow. The flow used to keep its place in the table until the next
-  datagram to the same destination found its queue closed and was dropped.
+- TUN DNS query tasks and TUN UDP flows no longer take each other's task
+  permits: the pool they share now holds a full flow table and every DNS
+  query task at once. A full flow table used to leave no permit for a DNS
+  query, which was answered with SERVFAIL, and a DNS query in flight took
+  the permit of a flow the table still had room for, whose first datagram
+  was dropped.
+- A TUN UDP bridge that returns when the host closes its connection, or
+  that panics, now ends its flow. The flow used to keep its place in the
+  table until the next datagram to the same destination found its queue
+  closed and was dropped.
 - A TUN TCP connection whose remote side has closed is reset once the app
   has kept its own side open for 30 seconds after acknowledging the FIN, as
   Xray-core's `tcpLinger` does. Such a connection used to keep its socket
   buffers and its place under the TCP flow limit until the app closed it.
+- A TUN TCP connection whose remote side has closed is reset once the app
+  has taken nothing of what is left for it, data or the FIN, for four
+  minutes, the time Xray-core gives an unacknowledged segment
+  (`tcpGiveUpTicks`). An app that had stopped reading kept such a
+  connection, and its place under the TCP flow limit, for as long as it
+  stayed that way.
 
 ## 0.10.0 - 2026-11-12
 
