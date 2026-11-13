@@ -7,6 +7,7 @@ use std::{
     future::Future,
     net::SocketAddr,
     path::{Path, PathBuf},
+    task::Poll,
 };
 
 use thiserror::Error;
@@ -364,10 +365,19 @@ where
                 .map(|addr| (inbound.tag.clone(), addr))
         })
         .collect::<Vec<_>>();
+    // Poll the shutdown future once before reporting the bound inbounds. A
+    // signal-backed future installs its handlers on its first poll, and the
+    // report is the readiness line that supervisors and tests wait for, so a
+    // stop signal sent after it always takes the graceful path below.
+    let mut shutdown = std::pin::pin!(shutdown);
+    let stop_requested =
+        std::future::poll_fn(|cx| Poll::Ready(shutdown.as_mut().poll(cx).is_ready())).await;
     if !bound.is_empty() {
         eprintln!("{}", format_bound_inbounds(&bound));
     }
-    shutdown.await;
+    if !stop_requested {
+        shutdown.await;
+    }
     if let Some(runtime) = tun_fd_runtime.take() {
         runtime.stop().await;
     }

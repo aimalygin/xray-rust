@@ -10,6 +10,16 @@ long-term supported release series.
 
 ## Unreleased
 
+- `xray-rust run` stops gracefully on SIGTERM as well as SIGINT, as
+  Xray-core does. SIGTERM, which `systemctl stop`, `docker stop` and launchd
+  send, used to end the process at once, without the core's shutdown. Flows
+  over TCP closed anyway, because the kernel closes their sockets, but a flow
+  over a QUIC carrier such as MASQUE never told the server it had ended, so
+  the server held it open until its own timeout. The `bound inbound` lines now
+  come after the stop handlers are installed, so a signal sent after them
+  always takes the graceful path; a signal during startup still ends the
+  process at once, as in Xray-core. Non-unix targets still stop on Ctrl+C.
+
 ## 0.10.0 - 2026-11-12
 
 Release candidate preparation; publication and exact-candidate release
