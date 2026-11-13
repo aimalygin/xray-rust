@@ -324,8 +324,6 @@ struct Entry {
     /// The parent is gone: both directions fail and queued data is dropped.
     failed: bool,
     read_eof: bool,
-    /// The reader has been handed EOF, so no received data is left.
-    eof_delivered: bool,
     accepted: u64,
     sent: u64,
     read_waker: Option<Waker>,
@@ -387,7 +385,6 @@ impl Parent {
                 dropped: false,
                 failed: false,
                 read_eof: false,
-                eof_delivered: false,
                 accepted: 0,
                 sent: 0,
                 read_waker: None,
@@ -508,26 +505,10 @@ impl AsyncRead for Child {
             return Poll::Ready(Ok(()));
         }
         if entry.read_eof {
-            entry.eof_delivered = true;
-            // A write held back by the peer's End may fail now.
-            wake(&mut entry.write_waker);
             return Poll::Ready(Ok(()));
         }
         entry.read_waker = Some(cx.waker().clone());
         Poll::Pending
-    }
-}
-impl Entry {
-    /// Writing after the peer's End fails, as Xray-core interrupts the
-    /// session's uplink. A stream child fails it only once its reader has
-    /// taken every received byte and EOF: a relay ends on the first error of
-    /// either direction and would otherwise cut the downlink short.
-    fn poll_write_after_end<T>(&mut self, cx: &Context<'_>) -> Poll<io::Result<T>> {
-        if self.target.network == RoutingNetwork::Tcp && !self.eof_delivered {
-            self.write_waker = Some(cx.waker().clone());
-            return Poll::Pending;
-        }
-        Poll::Ready(Err(closed()))
     }
 }
 impl AsyncWrite for Child {
@@ -539,11 +520,12 @@ impl AsyncWrite for Child {
         let shared = &self.token.parent.shared;
         let mut state = lock(&shared.state);
         let entry = state.children.get_mut(&self.token.id).ok_or_else(closed)?;
-        if entry.failed || entry.closing {
+        // A write after the peer's End fails at once, as Xray-core interrupts
+        // the session's uplink (`Session.Close`). It must not wait for the
+        // reader: a caller that stops reading before EOF would never see it
+        // end.
+        if entry.failed || entry.closing || entry.ended {
             return Poll::Ready(Err(closed()));
-        }
-        if entry.ended {
-            return entry.poll_write_after_end(cx);
         }
         if entry.target.network == RoutingNetwork::Udp && input.len() > wire::MAX_PAYLOAD {
             return Poll::Ready(Err(io::Error::new(
@@ -577,10 +559,11 @@ impl AsyncWrite for Child {
         if entry.ended {
             // No new frame goes out after the peer's End, so only data
             // already written to the parent counts as flushed.
-            if entry.sent == entry.accepted {
-                return Poll::Ready(Ok(()));
-            }
-            return entry.poll_write_after_end(cx);
+            return Poll::Ready(if entry.sent == entry.accepted {
+                Ok(())
+            } else {
+                Err(closed())
+            });
         }
         if !entry.inflight
             && entry.sent == entry.accepted
@@ -738,8 +721,9 @@ fn deliver(shared: &Shared, frame: Frame<'_>) -> io::Result<bool> {
             }
         }
         // As Xray-core's client (`handleStatusEnd`), whatever the error flag:
-        // the uplink fails and unsent frames are dropped, but the reader still
-        // gets every frame received before the End, then EOF.
+        // writes fail from now on and unsent frames are dropped, while a
+        // reader that keeps reading still gets every frame received before
+        // the End, then EOF.
         Status::End => {
             e.read_eof = true;
             e.ended = true;
@@ -1036,6 +1020,15 @@ mod tests {
             tokio::task::yield_now().await;
         }
     }
+    /// One poll of a write: an operation waiting for anything shows up as
+    /// `Pending` instead of as a late error.
+    async fn poll_write_once(child: &mut Child, data: &[u8]) -> Poll<io::Result<usize>> {
+        std::future::poll_fn(|cx| Poll::Ready(Pin::new(&mut *child).poll_write(cx, data))).await
+    }
+    /// One poll of a flush, as [`poll_write_once`].
+    async fn poll_flush_once(child: &mut Child) -> Poll<io::Result<()>> {
+        std::future::poll_fn(|cx| Poll::Ready(Pin::new(&mut *child).poll_flush(cx))).await
+    }
 
     #[tokio::test]
     async fn mux_peer_end_with_error_flag_still_delivers_received_data() {
@@ -1055,7 +1048,10 @@ mod tests {
             let mut received = Vec::new();
             child.read_to_end(&mut received).await.unwrap();
             assert_eq!(received, b"first second");
-            assert!(child.write_all(b"late").await.is_err());
+            assert!(matches!(
+                poll_write_once(&mut child, b"late").await,
+                Poll::Ready(Err(_))
+            ));
             pool.close();
             pool.join().await;
         })
@@ -1064,7 +1060,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mux_peer_end_with_unsent_uplink_drains_downlink_before_failing_writes() {
+    async fn mux_peer_end_with_unsent_uplink_fails_writes_at_once_and_keeps_received_data() {
         timeout(Duration::from_secs(10), async {
             let pool = Pool::new(2);
             let target = destination(RoutingNetwork::Tcp);
@@ -1083,16 +1079,59 @@ mod tests {
                 let entry = &state.children[&id];
                 assert_ne!(entry.sent, entry.accepted, "the uplink must be unsent");
             }
-            // The write fails only once the reader has every byte and EOF, so
-            // a relay ending on that error does not cut the downlink short.
-            assert!(timeout(Duration::from_millis(50), child.write_all(b"late"))
-                .await
-                .is_err());
+            // The uplink is interrupted at once, with the response still
+            // unread: neither a write nor a flush of the lost data waits.
+            assert!(matches!(
+                poll_write_once(&mut child, b"late").await,
+                Poll::Ready(Err(_))
+            ));
+            assert!(matches!(
+                poll_flush_once(&mut child).await,
+                Poll::Ready(Err(_))
+            ));
+            // The failed uplink does not take the received data with it.
             let mut received = Vec::new();
             child.read_to_end(&mut received).await.unwrap();
             assert_eq!(received, b"response body");
-            assert!(child.write_all(b"late").await.is_err());
-            assert!(child.flush().await.is_err());
+            pool.close();
+            pool.join().await;
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn mux_write_after_peer_end_fails_while_reader_stops_before_eof() {
+        timeout(Duration::from_secs(10), async {
+            let pool = Pool::new(2);
+            let target = destination(RoutingNetwork::Tcp);
+            let (stream, mut peer) = pair();
+            let mut child = pool.open(&target, async { Ok(stream) }).await.unwrap();
+            child.write_all(b"request head").await.unwrap();
+            child.flush().await.unwrap();
+            let id = child.token.id;
+            let response = b"length-framed response";
+            peer.write_all(&keep(id, response)).await.unwrap();
+            peer.write_all(&end(id)).await.unwrap();
+            wait_until_ended(&child).await;
+            // A caller that frames the response itself takes its bytes and
+            // never asks for EOF, while it still has a request body to send.
+            let mut received = vec![0; response.len()];
+            child.read_exact(&mut received).await.unwrap();
+            assert_eq!(received, response);
+            assert!(
+                matches!(
+                    poll_write_once(&mut child, b"request body").await,
+                    Poll::Ready(Err(_))
+                ),
+                "a write after the End must not wait for the reader's EOF"
+            );
+            // Everything written before the End went out, so nothing is lost.
+            assert!(matches!(
+                poll_flush_once(&mut child).await,
+                Poll::Ready(Ok(()))
+            ));
+            assert_eq!(child.read(&mut received).await.unwrap(), 0);
             pool.close();
             pool.join().await;
         })

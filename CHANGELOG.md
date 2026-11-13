@@ -15,10 +15,10 @@ long-term supported release series.
   to send, used to fail the child at once, dropping up to 64 KiB of the
   response already queued and ending the read with an error. As in
   Xray-core's client, which closes the session's output gracefully whatever
-  the flag, the reader now gets every queued byte and then EOF. Writes still
-  fail after the End; a stream child fails them only once its reader has
-  reached EOF, so a relay that ends on the uplink error no longer cuts the
-  response short.
+  the flag, a reader that keeps reading now gets every queued byte and then
+  EOF: a response followed by the target's reset arrives whole. Writes after
+  the End still fail at once, so a relay that is still uploading may end on
+  that error before the whole response is handed over, as Xray-core's does.
 - A Mux open that fits on an existing parent no longer waits for another
   open's cold connect to a new parent. A slow or unreachable server used to
   hold every new flow of the outbound behind that dial, each spending its own
