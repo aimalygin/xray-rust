@@ -105,8 +105,8 @@ socket, plain or behind `realm`, fails with `NetworkDown` at once if the
 system now sends its datagrams from another address than at the dial; the
 check protects one more socket through the host's protector and sends nothing.
 Otherwise it waits for its server: three seconds when it has segments
-unacknowledged, nine when it is idle, and fails if nothing that only its own
-session's server sends arrives in that time. Either way its flows end, and
+unacknowledged, fourteen when it is idle, and fails if nothing that only its
+own session's server sends arrives in that time. Either way its flows end, and
 the next flow dials a new connection. One
 over `xdns` or `xicmp` is left alone. The count includes every mKCP connection
 told of the change, whether it then survives or fails, and one whose stream

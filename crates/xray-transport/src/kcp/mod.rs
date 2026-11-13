@@ -595,10 +595,12 @@ const PROBE_AWAITING_ACK: Duration = Duration::from_secs(3);
 /// How long an idle connection waits for its peer after a change of network.
 /// Xray-core does not answer a ping. Its ping updater runs every five
 /// seconds and skips a run less than three seconds after a ping its data
-/// updater sent, so a live peer is silent for under eight seconds; one more
-/// is for the way here.
+/// updater sent, so a live peer is silent for under eight seconds. Fourteen
+/// hold two of its pings, so that one lost on the new network, as datagrams
+/// often are right after a handover, does not fail a live connection; a dead
+/// one still fails in under half the 30-second dead-link timeout.
 #[cfg(not(test))]
-const PROBE_IDLE: Duration = Duration::from_secs(9);
+const PROBE_IDLE: Duration = Duration::from_secs(14);
 /// The same waits, short enough to sit out in a test.
 #[cfg(test)]
 const PROBE_AWAITING_ACK: Duration = Duration::from_millis(600);

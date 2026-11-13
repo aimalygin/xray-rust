@@ -1639,10 +1639,12 @@ change during it is left to the wait.
 The wait follows Xray-core's timers. Its `Input` answers no ping
 (`connection.go:584-603`), so nothing can be sent to ask. A connection with
 segments unacknowledged waits three seconds: each is resent after its timeout
-and acknowledged within a round trip. An idle one waits nine: the server's
-ping updater runs every five seconds (`connection.go:242-247`) and skips a run
-less than three seconds after another ping (`connection.go:643`), so a live
-server is silent for under eight. A change during the wait starts it over.
+and acknowledged within a round trip. An idle one waits fourteen: the
+server's ping updater runs every five seconds (`connection.go:242-247`) and
+skips a run less than three seconds after another ping (`connection.go:643`),
+so a live server is silent for under eight, and fourteen seconds hold two of
+its pings, so that one lost on the new network does not fail a live
+connection. A change during the wait starts it over.
 What counts as hearing the server is an acknowledgement or a ping that names
 a non-zero number as the next it reads (`connection.go:656`,
 `receiving.go:244`): the session a listener opens for the same conversation
