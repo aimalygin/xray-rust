@@ -273,6 +273,41 @@ async fn answered_pings_keep_the_connection() {
     assert!(!tunnel.is_closed(), "{:?}", tunnel.close_reason());
 }
 
+/// A dial dropped while it waits for the response, as a Happy Eyeballs
+/// loser is, stops the connection driver and the keepalive at once instead
+/// of leaving the keepalive until its next PING fails.
+#[tokio::test]
+async fn a_dropped_dial_stops_its_tasks() {
+    let (client, server) = tokio::io::duplex(1 << 20);
+    let (requested, request) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let mut builder = h2::server::Builder::new();
+        builder.enable_connect_protocol();
+        let mut connection = builder.handshake::<_, Bytes>(server).await.unwrap();
+        // Hold the request unanswered while the connection is served.
+        let pending = connection.accept().await;
+        let _ = requested.send(());
+        while connection.accept().await.is_some() {}
+        drop(pending);
+        // Outlive the client, so only the dial's tasks change the count.
+        std::future::pending::<()>().await;
+    });
+    let metrics = tokio::runtime::Handle::current().metrics();
+    let before = metrics.num_alive_tasks();
+    tokio::select! {
+        dial = dial_h2(client, config()) => panic!("the dial ended: {:?}", dial.err()),
+        sent = timeout(Duration::from_secs(5), request) => sent.unwrap().unwrap(),
+    }
+    // The driver and the keepalive were running when the dial was dropped.
+    timeout(Duration::from_secs(5), async {
+        while metrics.num_alive_tasks() > before {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the dial's tasks outlived it");
+}
+
 #[tokio::test(start_paused = true)]
 async fn an_unanswered_ping_closes_the_connection() {
     let (client, server) = tokio::io::duplex(1 << 20);
