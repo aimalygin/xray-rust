@@ -111,9 +111,10 @@ impl VmessOutbound {
     ) -> Result<BoxedTransportStream, CoreError> {
         let mut inner = self.0.carrier.open(candidates, download, dialer).await?;
         inner.release_record_alignment();
-        let mut stream = ClientStream::new_mux(inner, &self.0.account)?;
-        stream.flush().await?;
-        Ok(Box::new(protocol_stream::ProtocolStream(stream)))
+        Ok(held(ClientStream::new_mux(
+            holding(inner),
+            &self.0.account,
+        )?))
     }
     async fn open_direct(
         &self,
@@ -125,8 +126,6 @@ impl VmessOutbound {
         Account::validate_target(target)?;
         let mut inner = self.0.carrier.open(candidates, download, dialer).await?;
         inner.release_record_alignment();
-        let mut stream = ClientStream::new(inner, &self.0.account, target)?;
-        stream.flush().await?;
         // Independent tasks reduce measured ChaCha CPU cost. Keep AES on the
         // combined relay: its parallel variant used more CPU for the same load.
         if self.0.parallel_duplex
@@ -134,9 +133,17 @@ impl VmessOutbound {
             && matches!(self.0.carrier.transport_layer, TransportLayer::Raw)
             && matches!(self.0.carrier.transport, ConnectorConfig::Tcp)
         {
+            // The split halves have no read side to drive the deadline, so
+            // this plain-TCP path still sends its header eagerly.
+            let mut stream = ClientStream::new(inner, &self.0.account, target)?;
+            stream.flush().await?;
             return Ok(Box::new(ParallelStream(Some(stream))));
         }
-        Ok(Box::new(protocol_stream::ProtocolStream(stream)))
+        Ok(held(ClientStream::new(
+            holding(inner),
+            &self.0.account,
+            target,
+        )?))
     }
     pub(super) async fn open_udp(
         &self,
@@ -171,10 +178,9 @@ impl VmessOutbound {
             let download = self.0.carrier.resolve_download(resolver, dialer).await?;
             let mut inner = self.0.carrier.open(&candidates, &download, dialer).await?;
             inner.release_record_alignment();
-            let mut stream = ClientStream::new_mux(inner, &self.0.account)?;
-            stream.flush().await?;
+            let stream = ClientStream::new_mux(holding(inner), &self.0.account)?;
             return Ok(UdpSession::Xudp(super::xudp::Session::new(
-                Box::new(protocol_stream::ProtocolStream(stream)),
+                held(stream),
                 target.clone(),
                 self.0.flow_ids.derive(flow_id),
             )));
@@ -187,6 +193,19 @@ impl VmessOutbound {
             writer: AsyncMutex::new(Some(writer)),
         }))
     }
+}
+/// Like Xray-core, the request header the codec writes first waits for the
+/// first payload so both share one write; the deadline in [`held`] sends it
+/// alone when none arrives.
+fn holding(carrier: BoxedTransportStream) -> BoxedTransportStream {
+    Box::new(HeldHeader::first_write(carrier))
+}
+fn held(stream: ClientStream<BoxedTransportStream>) -> BoxedTransportStream {
+    Box::new(FirstPayloadDeadline::new(
+        protocol_stream::ProtocolStream(stream),
+        VMESS_FIRST_PAYLOAD_WAIT,
+        flush_header_alone,
+    ))
 }
 pub(crate) enum UdpSession {
     Native(NativeUdpSession),

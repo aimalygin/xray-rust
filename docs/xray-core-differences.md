@@ -1466,23 +1466,35 @@ configuration error.
 
 ## Request header and first payload
 
-VLESS (including Vision) and Trojan outbounds hold the request header until the
-first client payload and hand both to the carrier in one write, so TLS and
-REALITY seal them into one record. If no payload arrives, the header is sent
-alone after Xray-core's wait: 500 ms for VLESS
+VLESS (including Vision), Trojan, VMess and Shadowsocks outbounds hold the
+request header until the first client payload and hand both to the carrier in
+one write, so TLS and REALITY seal them into one record. If no payload arrives,
+the header is sent alone after Xray-core's wait: 500 ms for VLESS
 (`proxy/vless/outbound/outbound.go:311-345`, `ReadMultiBufferTimeout`), 100 ms
-for Trojan (`proxy/trojan/client.go:102-123`, `buf.CopyOnceTimeout`). With
-Vision, the empty long-padding frame is written only on that timeout, behind
-the header, as in Xray-core; the first payload otherwise carries the UUID and
-the first padding block. Server-first flows therefore see the same first-byte
-delay as with Xray-core.
+for Trojan (`proxy/trojan/client.go:102-123`, `buf.CopyOnceTimeout`), 100 ms for
+VMess on every command, TCP, UDP and Mux/XUDP alike
+(`proxy/vmess/outbound/outbound.go:153-174`, `buf.CopyOnceTimeout`), 100 ms for
+the classic Shadowsocks AEAD methods (`proxy/shadowsocks/client.go:118-131`,
+`buf.CopyOnceTimeout`), and no wait for Shadowsocks 2022, whose Xray-core
+outbound takes only a payload that is already there
+(`proxy/shadowsocks_2022/outbound.go:130-150`, `ReadMultiBufferTimeout(0)`).
+With Vision, the empty long-padding frame is written only on that timeout,
+behind the header, as in Xray-core; the first payload otherwise carries the
+UUID and the first padding block. Server-first flows therefore see the same
+first-byte delay as with Xray-core.
 
 Differences: the wait is driven from the stream's read side, which the relay
 always polls; a client that closes before sending anything still gets the
-header and a clean close, where Xray-core drops the request. Trojan holds the
-header on every open, including native UDP and Mux parents, as Xray-core does,
-and so does VLESS for its UDP and Mux commands. VMess and Shadowsocks still
-send the header eagerly.
+header and a clean close, where Xray-core drops the request. Trojan, VMess and
+Shadowsocks hold the header on every open, including native UDP (VMess) and Mux
+parents, as Xray-core does, and so does VLESS for its UDP and Mux commands.
+Shadowsocks native UDP has no separate header to hold. For Shadowsocks 2022 a
+payload that is ready goes out in one write with the header, but as its own
+chunk behind the padded variable header, where Xray-core places it inside that
+header and pads only short payloads; both layouts are valid SIP022 requests.
+A VMess `chacha20-poly1305` flow over plain TCP, which this client relays in
+two independent tasks, still sends its header eagerly: neither half can drive
+the wait.
 
 ## Outbound URL probes
 

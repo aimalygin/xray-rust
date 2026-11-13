@@ -19,6 +19,14 @@ long-term supported release series.
   come after the stop handlers are installed, so a signal sent after them
   always takes the graceful path; a signal during startup still ends the
   process at once, as in Xray-core. Non-unix targets still stop on Ctrl+C.
+- VMess and Shadowsocks outbounds send their request header together with
+  the first client payload, as Xray-core does and as VLESS and Trojan already
+  did. The header used to go out on its own, so over TLS or REALITY the
+  first record had a fixed, header-only size. With no payload the header goes
+  alone after Xray-core's wait: 100 ms for VMess, on TCP, UDP and Mux/XUDP
+  alike, and for the classic AEAD methods; none for Shadowsocks 2022, which
+  takes only a payload that is already there. A VMess `chacha20-poly1305`
+  flow over plain TCP still sends its header eagerly.
 
 ## 0.10.0 - 2026-11-12
 

@@ -4,8 +4,10 @@
 //! the first client payload, so header and payload go out in one write and,
 //! over TLS or REALITY, in one record. Only when the wait expires does it
 //! send the header alone (`proxy/vless/outbound/outbound.go:311-345`,
-//! `proxy/trojan/client.go:102-123`). Writing the header eagerly instead
-//! gives the first record a fixed, header-only size.
+//! `proxy/trojan/client.go:102-123`, `proxy/vmess/outbound/outbound.go:153-174`,
+//! `proxy/shadowsocks/client.go:118-131`,
+//! `proxy/shadowsocks_2022/outbound.go:130-150`). Writing the header eagerly
+//! instead gives the first record a fixed, header-only size.
 use super::*;
 use std::future::Future;
 use std::task::ready;
@@ -16,6 +18,15 @@ use tokio::time::Sleep;
 pub(super) const VLESS_FIRST_PAYLOAD_WAIT: Duration = Duration::from_millis(500);
 /// Xray-core's Trojan wait (`buf.CopyOnceTimeout(..., time.Millisecond*100)`).
 pub(super) const TROJAN_FIRST_PAYLOAD_WAIT: Duration = Duration::from_millis(100);
+/// Xray-core's VMess wait, the same for every command
+/// (`buf.CopyOnceTimeout(input, bodyWriter, time.Millisecond*100)`).
+pub(super) const VMESS_FIRST_PAYLOAD_WAIT: Duration = Duration::from_millis(100);
+/// Xray-core's wait for the classic AEAD methods
+/// (`buf.CopyOnceTimeout(link.Reader, bodyWriter, time.Millisecond*100)`).
+pub(super) const SHADOWSOCKS_FIRST_PAYLOAD_WAIT: Duration = Duration::from_millis(100);
+/// Xray-core's Shadowsocks 2022 outbound takes only a payload that is
+/// already there (`ReadMultiBufferTimeout(0)`).
+pub(super) const SHADOWSOCKS_2022_FIRST_PAYLOAD_WAIT: Duration = Duration::ZERO;
 
 /// Carrier wrapper that prepends a held request header to the first write.
 ///
@@ -26,6 +37,8 @@ pub(super) struct HeldHeader {
     inner: BoxedTransportStream,
     pending: Zeroizing<Vec<u8>>,
     pending_pos: usize,
+    /// The next write is the header itself, from a codec that writes its own.
+    capture: bool,
     merged: bool,
 }
 
@@ -35,7 +48,17 @@ impl HeldHeader {
             inner,
             pending: Zeroizing::new(header.to_vec()),
             pending_pos: 0,
+            capture: false,
             merged: false,
+        }
+    }
+
+    /// Holds the first write as the header, for VMess and Shadowsocks codecs
+    /// that encode their request header themselves and write it first.
+    pub(super) fn first_write(inner: BoxedTransportStream) -> Self {
+        Self {
+            capture: true,
+            ..Self::new(inner, &[])
         }
     }
 
@@ -74,6 +97,11 @@ impl AsyncWrite for HeldHeader {
         input: &[u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
+        if this.capture && !input.is_empty() {
+            this.capture = false;
+            this.pending.extend_from_slice(input);
+            return Poll::Ready(Ok(input.len()));
+        }
         if !this.merged && !input.is_empty() {
             this.merged = true;
             this.pending.extend_from_slice(input);
@@ -463,6 +491,169 @@ mod tests {
         let padding = u16::from_be_bytes([frame[3], frame[4]]) as usize;
         assert!((900..1400).contains(&padding), "{padding}");
         assert_eq!(writes[0].len(), VISION_PREFIX + padding);
+    }
+
+    /// A codec over a carrier that holds the header the codec writes first,
+    /// as the VMess and Shadowsocks outbounds build it.
+    fn codec<S: AsyncRead + AsyncWrite + Unpin + Send>(
+        wait: Duration,
+        build: impl FnOnce(BoxedTransportStream) -> S,
+    ) -> (
+        FirstPayloadDeadline<protocol_stream::ProtocolStream<S>>,
+        Writes,
+    ) {
+        let recorder = Recorder::default();
+        let writes = recorder.writes.clone();
+        let carrier: BoxedTransportStream = Box::new(HeldHeader::first_write(Box::new(recorder)));
+        let stream = FirstPayloadDeadline::new(
+            protocol_stream::ProtocolStream(build(carrier)),
+            wait,
+            flush_header_alone,
+        );
+        (stream, writes)
+    }
+
+    const STEP: Duration = Duration::from_secs(1);
+
+    /// Checks Xray-core's behaviour for a codec that writes its own header:
+    /// nothing leaves while the relay reads before the wait is over, a
+    /// payload leaves in one carrier write behind the header, and without one
+    /// the header leaves alone only once the wait is over. Returns the
+    /// lengths of the merged write, the lone header and the lone record.
+    async fn codec_holds_its_header<S: AsyncRead + AsyncWrite + Unpin + Send>(
+        wait: Duration,
+        build: impl Fn(BoxedTransportStream) -> S,
+    ) -> (usize, usize, usize) {
+        const PAYLOAD: &[u8] = b"first payload";
+        let mut byte = [0; 1];
+
+        let (mut stream, writes) = codec(wait, &build);
+        let early = wait - Duration::from_millis(1);
+        let read = tokio::time::timeout(early, stream.read(&mut byte)).await;
+        assert!(read.is_err());
+        assert!(writes.lock().unwrap().is_empty(), "header left early");
+        tokio::time::timeout(STEP, stream.write_all(PAYLOAD))
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(STEP, stream.flush())
+            .await
+            .unwrap()
+            .unwrap();
+        let merged = writes.lock().unwrap().clone();
+        assert_eq!(merged.len(), 1, "header and payload share one write");
+
+        let (mut stream, writes) = codec(wait, &build);
+        let read = tokio::time::timeout(early, stream.read(&mut byte)).await;
+        assert!(read.is_err());
+        assert!(writes.lock().unwrap().is_empty(), "header left early");
+        let read = tokio::time::timeout(Duration::from_millis(2), stream.read(&mut byte)).await;
+        assert!(read.is_err());
+        assert_eq!(writes.lock().unwrap().len(), 1, "header leaves alone");
+        tokio::time::timeout(STEP, stream.write_all(PAYLOAD))
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(STEP, stream.flush())
+            .await
+            .unwrap()
+            .unwrap();
+        let alone = writes.lock().unwrap().clone();
+        assert_eq!(alone.len(), 2);
+        assert!(alone[1].len() > PAYLOAD.len() && alone[0].len() > alone[1].len() - PAYLOAD.len());
+        (merged[0].len(), alone[0].len(), alone[1].len())
+    }
+
+    fn vmess_account() -> xray_proxy::vmess::Account {
+        xray_proxy::vmess::Account::new(
+            &[7; 16],
+            xray_proxy::vmess::Cipher::parse("aes-128-gcm").unwrap(),
+            xray_proxy::vmess::Options {
+                authenticated_length: false,
+                no_termination_signal: false,
+            },
+        )
+    }
+
+    fn target(network: RoutingNetwork) -> Target {
+        Target::new(
+            RoutingTargetAddr::Domain("example.test".into()),
+            443,
+            network,
+        )
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn vmess_holds_its_header_for_every_command() {
+        let account = vmess_account();
+        for network in [RoutingNetwork::Tcp, RoutingNetwork::Udp] {
+            let target = target(network);
+            codec_holds_its_header(VMESS_FIRST_PAYLOAD_WAIT, |carrier| {
+                xray_proxy::vmess::ClientStream::new(carrier, &account, &target).unwrap()
+            })
+            .await;
+        }
+        // Mux.Cool and XUDP ride command 3.
+        codec_holds_its_header(VMESS_FIRST_PAYLOAD_WAIT, |carrier| {
+            xray_proxy::vmess::ClientStream::new_mux(carrier, &account).unwrap()
+        })
+        .await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn shadowsocks_aead_holds_its_header() {
+        let method = xray_proxy::shadowsocks::Method::new("aes-128-gcm", "synthetic").unwrap();
+        for target in [target(RoutingNetwork::Tcp), super::super::mux::target()] {
+            let (merged, header, record) =
+                codec_holds_its_header(SHADOWSOCKS_FIRST_PAYLOAD_WAIT, |carrier| {
+                    xray_proxy::shadowsocks::ClientStream::new(carrier, &method, &target).unwrap()
+                })
+                .await;
+            // Salt, sealed length and sealed address, then one sealed record.
+            assert_eq!(merged, header + record);
+        }
+    }
+
+    /// Xray-core's 2022 outbound takes only a payload already there: one
+    /// written before the relay first reads shares the header's write, and
+    /// the first read sends the header alone.
+    #[tokio::test(start_paused = true)]
+    async fn shadowsocks_2022_takes_only_a_ready_payload() {
+        let method = xray_proxy::shadowsocks::Method::new(
+            "2022-blake3-aes-128-gcm",
+            "AQEBAQEBAQEBAQEBAQEBAQ==",
+        )
+        .unwrap();
+        let target = target(RoutingNetwork::Tcp);
+        let build = |carrier| {
+            xray_proxy::shadowsocks::ClientStream::new(carrier, &method, &target).unwrap()
+        };
+        let (mut stream, writes) = codec(SHADOWSOCKS_2022_FIRST_PAYLOAD_WAIT, build);
+        assert!(writes.lock().unwrap().is_empty());
+        tokio::time::timeout(STEP, stream.write_all(b"ready payload"))
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(STEP, stream.flush())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(writes.lock().unwrap().len(), 1);
+
+        let (mut stream, writes) = codec(SHADOWSOCKS_2022_FIRST_PAYLOAD_WAIT, build);
+        let mut byte = [0; 1];
+        let read = tokio::time::timeout(Duration::from_millis(1), stream.read(&mut byte)).await;
+        assert!(read.is_err());
+        assert_eq!(writes.lock().unwrap().len(), 1, "header leaves alone");
+        tokio::time::timeout(STEP, stream.write_all(b"late payload"))
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(STEP, stream.flush())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(writes.lock().unwrap().len(), 2);
     }
 
     #[tokio::test(start_paused = true)]

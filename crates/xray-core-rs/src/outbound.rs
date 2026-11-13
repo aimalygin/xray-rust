@@ -3,8 +3,9 @@ pub use vmess::VmessOutbound;
 mod first_payload;
 mod protocol_stream;
 use first_payload::{
-    flush_header_alone, FirstPayloadDeadline, HeldHeader, TROJAN_FIRST_PAYLOAD_WAIT,
-    VLESS_FIRST_PAYLOAD_WAIT,
+    flush_header_alone, FirstPayloadDeadline, HeldHeader, SHADOWSOCKS_2022_FIRST_PAYLOAD_WAIT,
+    SHADOWSOCKS_FIRST_PAYLOAD_WAIT, TROJAN_FIRST_PAYLOAD_WAIT, VLESS_FIRST_PAYLOAD_WAIT,
+    VMESS_FIRST_PAYLOAD_WAIT,
 };
 mod shadowsocks;
 pub use shadowsocks::Shadowsocks2022Outbound;
