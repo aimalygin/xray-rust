@@ -1040,8 +1040,10 @@ impl Core {
     /// XDRIVE's storages over HTTP/3. Streams and tunnels are kept; a
     /// connection behind a `realm`, `xdns` or `xicmp` mask stays as it is.
     /// An mKCP connection on its own UDP socket, plain or behind `realm`,
-    /// fails instead, as its server would not know the new socket. The count
-    /// is of connections asked, not of paths validated.
+    /// cannot move, as its server would not know the new socket: it fails
+    /// with `NetworkDown` unless its peer is heard within seconds. The count
+    /// is of connections told, these among them, not of paths validated or
+    /// of connections that survive.
     pub fn rebind_quic(&self) -> u64 {
         self.transport_dialer.network_changes().notify()
     }

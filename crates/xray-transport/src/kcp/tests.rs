@@ -238,12 +238,113 @@ async fn a_closed_peer_refuses_writes_and_ends_reads() {
     assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
 }
 
-/// Xray-core's server knows a session by the client's address, so a change
-/// of network fails the connection at once: reads and writes report it,
-/// nothing more goes out, and the connection stops following the changes.
+/// A peer that answers nothing and keeps what it is sent.
+async fn silent_peer() -> (SocketAddr, Arc<StdMutex<Seen>>) {
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let address = socket.local_addr().unwrap();
+    let seen = Arc::new(StdMutex::new(Seen::default()));
+    let record = Arc::clone(&seen);
+    tokio::spawn(async move {
+        let mut buf = vec![0; 8192];
+        while let Ok((length, _)) = socket.recv_from(&mut buf).await {
+            let mut seen = record.lock().unwrap();
+            seen.raw.push(buf[..length].to_vec());
+            seen.segments.extend(read_segments(&buf[..length]));
+        }
+    });
+    (address, seen)
+}
+
+/// Waits until nothing follows `changes` any more: the driver is gone.
+async fn unfollowed(changes: &crate::NetworkChanges) {
+    within(async {
+        while changes.notify() != 0 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+}
+
+fn assert_network_down(error: &io::Error) {
+    assert_eq!(error.kind(), io::ErrorKind::NetworkDown);
+    assert!(error.to_string().contains("network changed"), "{error}");
+}
+
+/// Xray-core's server knows a session by the client's address, so after a
+/// change of network a connection whose segments stay unacknowledged fails
+/// once the wait for the peer is over, not at the report: reads and writes
+/// say why, the connection stops following the changes, and it goes without
+/// a terminate segment or anything after.
 #[tokio::test]
-async fn a_network_change_fails_the_connection_at_once() {
-    let (peer, seen) = echo_peer(Vec::new()).await;
+async fn a_network_change_fails_a_connection_whose_peer_stays_silent() {
+    let (peer, seen) = silent_peer().await;
+    let changes = crate::NetworkChanges::default();
+    let mut stream = connect(&[peer], None, &config(Vec::new()), None, Some(&changes))
+        .await
+        .unwrap();
+    stream.write_all(b"unanswered").await.unwrap();
+    eventually(&seen, |seen| !seen.raw.is_empty()).await;
+
+    let (mut read, mut write) = tokio::io::split(stream);
+    let pending = tokio::spawn(async move {
+        let mut buf = [0; 8];
+        read.read(&mut buf).await
+    });
+    let changed = Instant::now();
+    assert_eq!(changes.notify(), 1, "the connection follows the changes");
+    let error = within(pending).await.unwrap().unwrap_err();
+    assert_network_down(&error);
+    let waited = changed.elapsed();
+    assert!(
+        waited >= PROBE_AWAITING_ACK && waited < PROBE_IDLE,
+        "{waited:?}"
+    );
+    assert_network_down(&write.write(b"after").await.unwrap_err());
+
+    unfollowed(&changes).await;
+    let sent = seen.lock().unwrap().raw.len();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let log = seen.lock().unwrap();
+    assert_eq!(log.raw.len(), sent, "nothing went out after");
+    assert!(
+        !log.segments
+            .iter()
+            .any(|segment| matches!(segment, Segment::Cmd(cmd) if cmd.cmd == CMD_TERMINATE)),
+        "the connection left without a terminate segment"
+    );
+}
+
+/// An idle connection waits longer, a live Xray-core peer being silent for
+/// seconds, and a change during the wait starts it over.
+#[tokio::test]
+async fn a_second_network_change_starts_the_wait_for_the_peer_over() {
+    let (peer, _seen) = silent_peer().await;
+    let changes = crate::NetworkChanges::default();
+    let mut stream = connect(&[peer], None, &config(Vec::new()), None, Some(&changes))
+        .await
+        .unwrap();
+    let mut pending = tokio::spawn(async move {
+        let mut buf = [0; 8];
+        stream.read(&mut buf).await
+    });
+    assert_eq!(changes.notify(), 1);
+    tokio::time::sleep(PROBE_IDLE * 3 / 5).await;
+    let again = Instant::now();
+    assert_eq!(changes.notify(), 1, "the connection is still waiting");
+    // Past the end of the first wait, short of the end of the second.
+    let early = tokio::time::timeout(PROBE_IDLE * 3 / 5, &mut pending).await;
+    assert!(early.is_err(), "the first wait ended the connection");
+    let error = within(pending).await.unwrap().unwrap_err();
+    assert_network_down(&error);
+    assert!(again.elapsed() >= PROBE_IDLE, "{:?}", again.elapsed());
+}
+
+/// A report of a change does not say that the address changed. A peer that
+/// acknowledges what the connection sends afterwards holds its session, and
+/// the connection stays.
+#[tokio::test]
+async fn a_peer_heard_after_a_network_change_keeps_the_connection() {
+    let (peer, _seen) = echo_peer(Vec::new()).await;
     let changes = crate::NetworkChanges::default();
     let mut stream = connect(&[peer], None, &config(Vec::new()), None, Some(&changes))
         .await
@@ -253,31 +354,46 @@ async fn a_network_change_fails_the_connection_at_once() {
     within(stream.read_exact(&mut echoed)).await.unwrap();
     assert_eq!(&echoed, b"before");
 
-    let (mut read, mut write) = tokio::io::split(stream);
-    let pending = tokio::spawn(async move {
-        let mut buf = [0; 8];
-        read.read(&mut buf).await
-    });
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    assert_eq!(changes.notify(), 1, "the connection follows the changes");
-    let error = within(pending).await.unwrap().unwrap_err();
-    assert_eq!(error.kind(), io::ErrorKind::NetworkDown);
-    let error = write.write(b"after").await.unwrap_err();
-    assert_eq!(error.kind(), io::ErrorKind::NetworkDown);
+    assert_eq!(changes.notify(), 1);
+    stream.write_all(b"during").await.unwrap();
+    within(stream.read_exact(&mut echoed)).await.unwrap();
+    assert_eq!(&echoed, b"during");
+    // Past both waits.
+    tokio::time::sleep(PROBE_IDLE + Duration::from_millis(300)).await;
+    stream.write_all(b"after!").await.unwrap();
+    within(stream.read_exact(&mut echoed)).await.unwrap();
+    assert_eq!(&echoed, b"after!");
+}
 
-    let sent = seen.lock().unwrap().raw.len();
-    within(async {
-        while changes.notify() != 0 {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-    })
-    .await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert_eq!(
-        seen.lock().unwrap().raw.len(),
-        sent,
-        "nothing went out after"
-    );
+/// A change of network reaches a connection that waits for a standalone
+/// reply, which holds its driver for as long as none comes.
+#[tokio::test]
+async fn a_network_change_fails_a_connection_waiting_for_a_standalone_reply() {
+    use crate::header_custom::HeaderCustomUdpConfig;
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let peer = socket.local_addr().unwrap();
+    let changes = crate::NetworkChanges::default();
+    let mut stream = connect(
+        &[peer],
+        None,
+        &config(vec![KcpMask::HeaderCustom(Arc::new(
+            HeaderCustomUdpConfig {
+                standalone: true,
+                ..Default::default()
+            },
+        ))]),
+        None,
+        Some(&changes),
+    )
+    .await
+    .unwrap();
+    stream.write_all(b"pending").await.unwrap();
+    let mut buf = [0; 8192];
+    assert_eq!(within(socket.recv_from(&mut buf)).await.unwrap().0, 0);
+    assert_eq!(changes.notify(), 1);
+    let error = within(stream.read(&mut buf)).await.unwrap_err();
+    assert_network_down(&error);
+    unfollowed(&changes).await;
 }
 
 #[tokio::test]

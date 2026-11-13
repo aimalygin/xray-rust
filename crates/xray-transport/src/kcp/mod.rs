@@ -11,12 +11,17 @@
 //! the `realm` mask the socket is introduced to the server first, and the
 //! datagrams go to the address that answered its punch.
 //!
-//! A connection on its own UDP socket, plain or introduced by `realm`, fails
-//! when the host reports that the OS network changed. Xray-core's server
-//! tells sessions apart by the client's address, port and conversation, so a
-//! fresh socket would reach it as a stranger; failing at once lets the flow
-//! dial again rather than sit out the dead-link timeout. Over `xdns` and
-//! `xicmp` nothing is carried on such a socket, and the connection stays.
+//! A connection on its own UDP socket, plain or introduced by `realm`, is put
+//! to the test when the host reports that the OS network changed. Xray-core's
+//! server tells sessions apart by the client's address, port and
+//! conversation, so from a new address the connection reaches it as a
+//! stranger and the session is lost. The report alone does not say so: it
+//! also comes for a connection dialed on the new network already, or when
+//! the address did not change. The connection therefore waits a short while
+//! for a segment only its own session's peer sends, and fails with
+//! `NetworkDown` if none comes, rather than sit out the dead-link timeout.
+//! Over `xdns` and `xicmp` nothing is carried on such a socket, and the
+//! connection is left alone.
 mod engine;
 mod mask;
 mod segment;
@@ -152,7 +157,8 @@ fn count_up(counter: &AtomicU32) -> u16 {
 /// Opens an mKCP connection to the first of `candidates` a socket opens
 /// for. Nothing is sent until the stream is written to, unless a `realm`
 /// mask introduces the socket first, with what `realm` lends. A connection
-/// on its own UDP socket fails on each of `network_changes`.
+/// on its own UDP socket fails after one of `network_changes` unless its
+/// peer is heard again in time.
 pub async fn connect(
     candidates: &[SocketAddr],
     protector: Option<Arc<dyn SocketProtector>>,
@@ -432,7 +438,7 @@ impl AsyncRead for KcpStream {
         }
         let mut inner = self.shared.lock();
         if let Some(failure) = inner.failure {
-            return Poll::Ready(Err(failure.into()));
+            return Poll::Ready(Err(failed(failure)));
         }
         match inner.engine.read(buf.initialize_unfilled()) {
             None => Poll::Ready(Ok(())),
@@ -470,8 +476,7 @@ impl AsyncWrite for KcpStream {
             }
             Err(WriteBlocked::Closed) => Poll::Ready(Err(inner
                 .failure
-                .unwrap_or(io::ErrorKind::BrokenPipe)
-                .into())),
+                .map_or_else(|| io::ErrorKind::BrokenPipe.into(), failed))),
         }
     }
 
@@ -521,6 +526,33 @@ struct DataUpdater {
 /// updater waits for its reply for good.
 const STANDALONE_RESEND: Duration = Duration::from_secs(1);
 
+/// How long a connection with segments out waits for its peer after a change
+/// of network. Xray-core acknowledges a data segment within a round trip and
+/// its `tti`, and each one is resent after its timeout, so three seconds, the
+/// span Xray-core lets pass between its pings, take several attempts.
+#[cfg(not(test))]
+const PROBE_AWAITING_ACK: Duration = Duration::from_secs(3);
+/// How long an idle connection waits for its peer after a change of network.
+/// Xray-core does not answer a ping. Its ping updater runs every five
+/// seconds and skips a run less than three seconds after a ping its data
+/// updater sent, so a live peer is silent for under eight seconds; one more
+/// is for the way here.
+#[cfg(not(test))]
+const PROBE_IDLE: Duration = Duration::from_secs(9);
+/// The same waits, short enough to sit out in a test.
+#[cfg(test)]
+const PROBE_AWAITING_ACK: Duration = Duration::from_millis(600);
+#[cfg(test)]
+const PROBE_IDLE: Duration = Duration::from_millis(1500);
+
+/// The error of a connection given up after a change of network.
+fn failed(kind: io::ErrorKind) -> io::Error {
+    io::Error::new(
+        kind,
+        "mKCP: the peer was not heard after the OS network changed",
+    )
+}
+
 /// How the wait for a standalone reply ended.
 enum Awaited {
     /// A datagram arrived; the reply may be among them.
@@ -544,8 +576,11 @@ struct Driver {
     ping_next: Instant,
     /// Xray stops reading for good after a receive error.
     receiving: bool,
-    /// The host's network changes, which end a connection on its own socket.
+    /// The host's network changes, each of which puts a connection on its
+    /// own socket to the test.
     network_changes: Option<watch::Receiver<u64>>,
+    /// Until when the peer has to be heard after the last change of network.
+    probe: Option<Instant>,
 }
 
 impl Driver {
@@ -576,6 +611,7 @@ impl Driver {
             ping_next: since,
             receiving: true,
             network_changes,
+            probe: None,
         }
     }
 
@@ -589,6 +625,14 @@ impl Driver {
             };
             tokio::select! {
                 biased;
+                // Ahead of the traffic, which could hold both off.
+                changed = network_changed(&mut self.network_changes) => {
+                    self.network_change(changed);
+                }
+                () = probe_expired(self.probe) => {
+                    self.fail(io::ErrorKind::NetworkDown);
+                    return;
+                }
                 () = self.shared.wake.notified() => self.wake_data(),
                 received = self.socket.recv_from(&mut buf), if self.receiving => {
                     match received {
@@ -597,14 +641,6 @@ impl Driver {
                     }
                 }
                 () = tokio::time::sleep_until(deadline) => {}
-                changed = network_changed(&mut self.network_changes) => {
-                    if changed {
-                        self.fail(io::ErrorKind::NetworkDown);
-                        return;
-                    }
-                    // Nobody reports changes any more.
-                    self.network_changes = None;
-                }
             }
             // The timers run whichever branch woke the loop, so datagrams
             // that keep arriving cannot hold them off.
@@ -670,6 +706,9 @@ impl Driver {
         }
         let mut inner = self.shared.lock();
         inner.engine.input(segments, elapsed(self.shared.since));
+        if inner.engine.peer_heard {
+            self.probe = None;
+        }
         let wake = std::mem::take(&mut inner.engine.wake_data);
         self.shared.signal_from_driver(inner);
         if wake {
@@ -721,7 +760,8 @@ impl Driver {
     }
 
     /// A standalone write waits for the matching reply, receiving ordinary
-    /// packets meanwhile and honoring the stream's cancellation.
+    /// packets meanwhile and honoring the stream's cancellation and the
+    /// changes of network.
     async fn receive_handshake(&mut self, resend: Instant) -> Awaited {
         let mut buf = vec![0; RECEIVE_BUFFER];
         loop {
@@ -734,6 +774,14 @@ impl Driver {
                 return Awaited::Closed;
             }
             tokio::select! {
+                biased;
+                changed = network_changed(&mut self.network_changes) => {
+                    self.network_change(changed);
+                }
+                () = probe_expired(self.probe) => {
+                    self.fail(io::ErrorKind::NetworkDown);
+                    return Awaited::Closed;
+                }
                 () = self.shared.wake.notified() => {}
                 () = tokio::time::sleep_until(resend) => return Awaited::Resend,
                 received = self.socket.recv_from(&mut buf) => {
@@ -755,6 +803,27 @@ impl Driver {
         self.shared.signal_from_driver(inner);
     }
 
+    /// The host reported a change of network, or `changed` is false and
+    /// nobody reports them any more. The peer has to be heard anew from now:
+    /// a change during a wait starts the wait over, as what the peer sent
+    /// meanwhile may have gone to a network that is no more. Nothing is sent
+    /// to ask, as Xray-core answers no ping.
+    fn network_change(&mut self, changed: bool) {
+        if !changed {
+            self.network_changes = None;
+            return;
+        }
+        let mut inner = self.shared.lock();
+        inner.engine.peer_heard = false;
+        let wait = if inner.engine.awaits_acknowledgement() {
+            PROBE_AWAITING_ACK
+        } else {
+            PROBE_IDLE
+        };
+        drop(inner);
+        self.probe = Some(Instant::now() + wait);
+    }
+
     /// Gives the connection up with `failure`, which its reader and writer
     /// get, and wakes them. Nothing more goes out: the server would not know
     /// the socket a new network gives.
@@ -762,8 +831,6 @@ impl Driver {
         let mut inner = self.shared.lock();
         inner.failure = Some(failure);
         inner.engine.abort(elapsed(self.shared.since));
-        inner.engine.input_ready = true;
-        inner.engine.output_ready = true;
         self.shared.signal_from_driver(inner);
     }
 }
@@ -773,6 +840,14 @@ impl Driver {
 async fn network_changed(changes: &mut Option<watch::Receiver<u64>>) -> bool {
     match changes {
         Some(changes) => changes.changed().await.is_ok(),
+        None => std::future::pending().await,
+    }
+}
+
+/// Done when the wait for the peer is over; pending for good without one.
+async fn probe_expired(probe: Option<Instant>) {
+    match probe {
+        Some(deadline) => tokio::time::sleep_until(deadline).await,
         None => std::future::pending().await,
     }
 }

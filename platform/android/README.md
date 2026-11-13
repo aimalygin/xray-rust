@@ -335,6 +335,9 @@ is unchanged.
 request fresh protected carrier sockets while retaining live inner flows and
 current endpoints. Each returns accepted/coalesced requests, not completed
 path validation or handshakes. Idle outbounds return zero without connecting.
+`rebindHysteria()` also reaches mKCP on its own UDP socket, which cannot move:
+such a connection is counted and fails, its inner flows with it, unless its
+server is heard within seconds, so the count is not of connections that survive.
 
 Apps owning the TUN fd can opt into `XrayNetworkChangeCoordinator`. Add
 `android.permission.ACCESS_NETWORK_STATE` to the host manifest and supply the
