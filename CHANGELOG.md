@@ -10,6 +10,21 @@ long-term supported release series.
 
 ## Unreleased
 
+- Routing parity with Xray-core, three corrections:
+  - With sniffing `routeOnly`, rules see the original destination IP as well
+    as the sniffed domain, as Xray-core keeps `ob.Target` beside
+    `ob.RouteTarget`. An `ip` or `geoip` rule, such as `geoip:private` to
+    `direct`, used to miss such a flow because routing saw only the domain.
+    Under `IPOnDemand`, a failed lookup falls back to that IP. A fake IP
+    still routes and dials by its domain.
+  - A balancer that has no eligible member and no `fallbackTag` sends the
+    connection to the default outbound, as Xray-core's dispatcher does,
+    instead of failing it. A `fallbackTag` that names no outbound still fails.
+  - In one `ip` list, negated CIDRs and negated GeoIP codes (including
+    `geoip:private`) are two matchers ORed together, as in Xray-core's
+    `buildOptimizedIPMatcher`. `["!10.0.0.0/8", "!geoip:cn"]` used to match
+    only an address outside both.
+
 ## 0.10.0 - 2026-11-12
 
 Release candidate preparation; publication and exact-candidate release

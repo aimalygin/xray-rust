@@ -156,6 +156,93 @@ async fn domain_strategy_matches_pinned_go_routing_oracle() {
     }
 }
 
+/// Routes a `routeOnly` flow: the sniffed `example.test` in place of
+/// `original`, which is still dialed.
+async fn route_only_tag(router: &OutboundRouter, original: &str, resolver: &Resolver) -> String {
+    let dial = Target::new(
+        TargetAddr::Ip(original.parse().unwrap()),
+        443,
+        RoutingNetwork::Tcp,
+    );
+    let node = router
+        .select_session_node_with_resolver(
+            &xray_config::RouteContext::inbound(Some("socks-in")),
+            &target(),
+            &dial,
+            resolver,
+        )
+        .await
+        .unwrap();
+    router.graph().node(node).unwrap().tag().unwrap().to_owned()
+}
+
+#[tokio::test]
+async fn route_only_ip_rules_see_the_original_destination() {
+    // Xray-core keeps the IP in `ob.Target` and the sniffed domain in
+    // `ob.RouteTarget`, so `geoip:private` still matches a LAN destination.
+    let router = OutboundRouter::new(Arc::new(config(json!({"rules": [
+        {"type": "field", "ip": ["192.168.0.0/16"], "outboundTag": "ip"},
+        {"type": "field", "domain": ["full:other.test"], "outboundTag": "domain"}
+    ]}))));
+    let resolver = Resolver::new(vec![]);
+    assert_eq!(
+        route_only_tag(&router, "192.168.1.10", &resolver).await,
+        "ip"
+    );
+    assert_eq!(
+        route_only_tag(&router, "8.8.8.8", &resolver).await,
+        "default"
+    );
+    assert_eq!(resolver.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn route_only_combined_rule_needs_both_domain_and_original_ip() {
+    let router = OutboundRouter::new(Arc::new(config(json!({"rules": [
+        {"type": "field", "domain": ["full:example.test"], "ip": ["192.168.0.0/16"],
+         "outboundTag": "ip"}
+    ]}))));
+    let resolver = Resolver::new(vec![]);
+    assert_eq!(
+        route_only_tag(&router, "192.168.1.10", &resolver).await,
+        "ip"
+    );
+    assert_eq!(
+        route_only_tag(&router, "8.8.8.8", &resolver).await,
+        "default"
+    );
+}
+
+#[tokio::test]
+async fn route_only_ip_on_demand_prefers_the_lookup_and_falls_back_to_the_original_ip() {
+    // Xray-core's ResolvableContext resolves the domain first and takes the
+    // target's own IPs only when the lookup fails.
+    let router = OutboundRouter::new(Arc::new(on_demand_config()));
+    let resolved = Resolver::new(vec!["192.0.2.1".parse().unwrap()]);
+    assert_eq!(
+        route_only_tag(&router, "203.0.113.7", &resolved).await,
+        "domain"
+    );
+    let mut failed = Resolver::new(vec![]);
+    failed.fail = true;
+    assert_eq!(route_only_tag(&router, "203.0.113.7", &failed).await, "ip");
+    assert_eq!(failed.calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn route_only_ip_if_non_match_matches_the_original_ip_before_resolving() {
+    let router = OutboundRouter::new(Arc::new(config(json!({
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [{"type": "field", "ip": ["203.0.113.7/32"], "outboundTag": "ip"}]
+    }))));
+    let resolver = Resolver::new(vec!["192.0.2.1".parse().unwrap()]);
+    assert_eq!(
+        route_only_tag(&router, "203.0.113.7", &resolver).await,
+        "ip"
+    );
+    assert_eq!(resolver.calls.load(Ordering::SeqCst), 0);
+}
+
 #[tokio::test]
 async fn ip_on_demand_checks_the_last_address_at_the_limit_and_rejects_overflow() {
     let router = OutboundRouter::new(Arc::new(on_demand_config()));
@@ -759,4 +846,33 @@ async fn a_loopback_chain_ends_after_the_hop_limit() {
             .0,
         Err(CoreError::LoopbackChainTooLong(_))
     ));
+}
+
+#[tokio::test]
+async fn negated_cidr_and_negated_geoip_match_separately() {
+    // Xray-core compiles negated CIDRs and negated GeoIP codes into two
+    // matchers ORed together, so an address outside either one matches.
+    let router = OutboundRouter::new(Arc::new(config(json!({"rules": [
+        {"type": "field", "ip": ["!93.184.216.0/24", "!geoip:private"], "outboundTag": "ip"}
+    ]}))));
+    let resolver = Resolver::new(vec![]);
+    let ip_target = |ip: &str| {
+        Target::new(
+            TargetAddr::Ip(ip.parse().unwrap()),
+            443,
+            RoutingNetwork::Tcp,
+        )
+    };
+    assert_eq!(
+        selected_tag(&router, &ip_target("10.0.0.1"), &resolver).await,
+        "ip"
+    );
+    assert_eq!(
+        selected_tag(&router, &ip_target("93.184.216.34"), &resolver).await,
+        "ip"
+    );
+    assert_eq!(
+        selected_tag(&router, &ip_target("8.8.8.8"), &resolver).await,
+        "ip"
+    );
 }

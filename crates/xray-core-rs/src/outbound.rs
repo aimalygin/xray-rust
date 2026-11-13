@@ -2498,7 +2498,11 @@ impl OutboundSelectionOverlay {
         self.revision.fetch_add(1, Ordering::AcqRel);
     }
 
-    fn select(&self, group_tag: &str) -> Result<OutboundNodeId, CoreError> {
+    /// The balancer's pick, its `fallbackTag` when it has no eligible member,
+    /// or `None` when it has no fallback either: Xray-core's dispatcher then
+    /// takes the default outbound. A `fallbackTag` naming no outbound fails,
+    /// as Xray-core closes a connection routed to a tag it lacks.
+    fn select(&self, group_tag: &str) -> Result<Option<OutboundNodeId>, CoreError> {
         let (group_index, group) = self.group_for_tag(group_tag)?;
         let state = &self.groups[group_index];
         if let Some(member_index) = state.override_member.load(Ordering::Acquire).checked_sub(1) {
@@ -2506,6 +2510,7 @@ impl OutboundSelectionOverlay {
                 .members()
                 .get(member_index)
                 .copied()
+                .map(Some)
                 .ok_or(CoreError::NoSupportedOutbound);
         }
         let selected = match group.strategy() {
@@ -2517,13 +2522,15 @@ impl OutboundSelectionOverlay {
             RoutingBalancerStrategy::LeastPing => self.select_least_ping(group),
             RoutingBalancerStrategy::LeastLoad(settings) => self.select_least_load(group, settings),
         };
-        selected
-            .or_else(|| {
-                group
-                    .fallback_tag()
-                    .and_then(|tag| self.graph.node_for_tag(tag))
-            })
-            .ok_or(CoreError::NoSupportedOutbound)
+        match (selected, group.fallback_tag()) {
+            (Some(node), _) => Ok(Some(node)),
+            (None, Some(tag)) => self
+                .graph
+                .node_for_tag(tag)
+                .map(Some)
+                .ok_or(CoreError::NoSupportedOutbound),
+            (None, None) => Ok(None),
+        }
     }
 
     fn group_for_tag(&self, group_tag: &str) -> Result<(usize, &OutboundSelectorGroup), CoreError> {
@@ -3630,13 +3637,21 @@ impl OutboundRouter {
         dial_target: &Target,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<OutboundNodeId, CoreError> {
-        let node =
-            match select_routed_target_with_resolver(&policy.routing, route, target, dns_resolver)
-                .await?
-            {
-                Some(target) => self.node_for_target(target)?,
-                None => self.select_default_configured_node()?,
-            };
+        // A `routeOnly` sniffed domain routes with the IP still dialed, as
+        // Xray-core keeps `ob.Target` beside `ob.RouteTarget`. A fake IP has
+        // already given way to its domain in `dial_target`, as there.
+        let node = match select_routed_target_with_resolver(
+            &policy.routing,
+            route,
+            target,
+            target_ip(dial_target),
+            dns_resolver,
+        )
+        .await?
+        {
+            Some(target) => self.node_for_target(target)?,
+            None => self.select_default_configured_node()?,
+        };
         self.follow_loopbacks(
             policy,
             node,
@@ -3673,7 +3688,10 @@ impl OutboundRouter {
     fn node_for_target(&self, target: &RoutingRuleTarget) -> Result<OutboundNodeId, CoreError> {
         match target {
             RoutingRuleTarget::Outbound(tag) => self.node_for_tag(tag),
-            RoutingRuleTarget::Balancer(tag) => self.selection().select(tag),
+            RoutingRuleTarget::Balancer(tag) => match self.selection().select(tag)? {
+                Some(node) => Ok(node),
+                None => self.select_default_configured_node(),
+            },
         }
     }
 }
@@ -8261,6 +8279,38 @@ mod tests {
             .unwrap();
 
         assert!(matches!(selected, TcpOutbound::Freedom(_)));
+    }
+
+    #[test]
+    fn empty_selector_group_without_fallback_takes_the_default_outbound() {
+        // Xray-core: the balancer's pick fails, PickRoute errs, and the
+        // dispatcher takes the default handler instead of closing.
+        let mut config = selector_group_config(RoutingBalancerStrategy::Random);
+        config.routing.balancers[0].selectors = vec!["absent".to_owned()];
+        config.routing.balancers[0].fallback_tag = None;
+        let router = OutboundRouter::new(Arc::new(config));
+
+        let selected = router
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &domain_tcp_target("example.test"),
+                true,
+            )
+            .expect("default outbound");
+
+        assert_eq!(selected.tag.as_deref(), Some("direct"));
+    }
+
+    #[test]
+    fn empty_selector_group_with_a_missing_fallback_tag_fails() {
+        let mut config = selector_group_config(RoutingBalancerStrategy::Random);
+        config.routing.balancers[0].selectors = vec!["absent".to_owned()];
+        config.routing.balancers[0].fallback_tag = Some("missing".to_owned());
+        let router = OutboundRouter::new(Arc::new(config));
+
+        assert!(router
+            .select_tcp_outbound_for_session(None, &domain_tcp_target("example.test"))
+            .is_err());
     }
 
     #[test]
