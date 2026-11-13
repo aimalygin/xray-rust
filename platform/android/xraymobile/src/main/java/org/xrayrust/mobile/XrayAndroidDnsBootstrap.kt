@@ -502,7 +502,10 @@ private fun collectOutboundBootstrapDomains(
         val settings = outbound.getJSONObject("settings")
         val addresses = when (protocol) {
             "vless", "vmess" -> {
-                if (protocol == "vmess" && settings.has("address")) listOf(settings.getString("address"))
+                // As the core and Xray-core read both protocols: a non-null address
+                // is the simplified form, the server is these fields and vnext is
+                // not read; otherwise the server is the vnext entry.
+                if (!settings.isNull("address")) listOf(settings.getString("address"))
                 else {
                     val servers = settings.getJSONArray("vnext")
                     (0 until servers.length()).map { servers.getJSONObject(it).getString("address") }

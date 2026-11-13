@@ -1551,7 +1551,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
         switch protocolName {
         case "vless", "vmess":
-            if protocolName == "vmess", let address = settings["address"] as? String { return [address] }
+            // As the core and Xray-core read both protocols: a non-null address
+            // is the simplified form, the server is these fields and vnext is
+            // not read; otherwise the server is the vnext entry.
+            if let address = settings["address"] as? String { return [address] }
             guard let servers = settings["vnext"] as? [[String: Any]] else {
                 throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
             }
