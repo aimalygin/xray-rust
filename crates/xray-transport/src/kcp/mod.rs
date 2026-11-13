@@ -10,6 +10,13 @@
 //! out in DNS queries to the resolvers and come back in their answers. With
 //! the `realm` mask the socket is introduced to the server first, and the
 //! datagrams go to the address that answered its punch.
+//!
+//! A connection on its own UDP socket, plain or introduced by `realm`, fails
+//! when the host reports that the OS network changed. Xray-core's server
+//! tells sessions apart by the client's address, port and conversation, so a
+//! fresh socket would reach it as a stranger; failing at once lets the flow
+//! dial again rather than sit out the dead-link timeout. Over `xdns` and
+//! `xicmp` nothing is carried on such a socket, and the connection stays.
 mod engine;
 mod mask;
 mod segment;
@@ -29,7 +36,7 @@ use std::{
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::UdpSocket,
-    sync::Notify,
+    sync::{watch, Notify},
     time::Instant,
 };
 
@@ -144,13 +151,16 @@ fn count_up(counter: &AtomicU32) -> u16 {
 
 /// Opens an mKCP connection to the first of `candidates` a socket opens
 /// for. Nothing is sent until the stream is written to, unless a `realm`
-/// mask introduces the socket first, with what `realm` lends.
+/// mask introduces the socket first, with what `realm` lends. A connection
+/// on its own UDP socket fails on each of `network_changes`.
 pub async fn connect(
     candidates: &[SocketAddr],
     protector: Option<Arc<dyn SocketProtector>>,
     config: &KcpConfig,
     realm: Option<&crate::realm::RealmEnv>,
+    network_changes: Option<&crate::NetworkChanges>,
 ) -> Result<KcpStream, TransportError> {
+    let follow = || network_changes.map(crate::NetworkChanges::follow);
     let engine_config = config.engine_config().map_err(TransportError::Kcp)?;
     let masks = Masks::new(&config.masks, config.noise.as_ref()).map_err(TransportError::Kcp)?;
     if let (Some(realm), Some(env)) = (&config.realm, realm) {
@@ -161,6 +171,9 @@ pub async fn connect(
             )));
         }
         let udp = crate::realm::RealmUdp::open(realm.family, protector.as_deref())?;
+        // Followed from here, so a change during the introduction fails the
+        // connection as soon as it starts.
+        let changes = follow();
         // Boxed: the introduction would otherwise grow every dial's future.
         let peer = Box::pin(crate::realm::establish(&udp, realm, env))
             .await
@@ -171,6 +184,7 @@ pub async fn connect(
             masks,
             next_conversation(),
             engine_config,
+            changes,
         ));
     }
     if let Some(xicmp) = &config.xicmp {
@@ -189,6 +203,7 @@ pub async fn connect(
             masks,
             next_conversation(),
             engine_config,
+            None,
         ));
     }
     if let Some(xdns) = &config.xdns {
@@ -207,6 +222,7 @@ pub async fn connect(
             masks,
             next_conversation(),
             engine_config,
+            None,
         ));
     }
     let mut last = None;
@@ -220,6 +236,7 @@ pub async fn connect(
                     masks,
                     next_conversation(),
                     engine_config,
+                    follow(),
                 ))
             }
             Err(error) => last = Some(error),
@@ -313,6 +330,8 @@ struct Inner {
     engine: Engine,
     reader: Option<Waker>,
     writer: Option<Waker>,
+    /// Why the driver gave the connection up, which reads and writes report.
+    failure: Option<io::ErrorKind>,
 }
 
 impl Inner {
@@ -373,6 +392,7 @@ impl KcpStream {
         masks: Masks,
         conv: u16,
         config: engine::Config,
+        network_changes: Option<watch::Receiver<u64>>,
     ) -> Self {
         let shared = Arc::new(Shared {
             since: Instant::now(),
@@ -380,10 +400,12 @@ impl KcpStream {
                 engine: Engine::new(conv, config),
                 reader: None,
                 writer: None,
+                failure: None,
             }),
             wake: Notify::new(),
         });
-        tokio::spawn(Driver::new(Arc::clone(&shared), socket, peer, masks).run());
+        let driver = Driver::new(Arc::clone(&shared), socket, peer, masks, network_changes);
+        tokio::spawn(driver.run());
         Self { shared }
     }
 }
@@ -409,6 +431,9 @@ impl AsyncRead for KcpStream {
             return Poll::Ready(Ok(()));
         }
         let mut inner = self.shared.lock();
+        if let Some(failure) = inner.failure {
+            return Poll::Ready(Err(failure.into()));
+        }
         match inner.engine.read(buf.initialize_unfilled()) {
             None => Poll::Ready(Ok(())),
             Some(0) => {
@@ -443,7 +468,10 @@ impl AsyncWrite for KcpStream {
                 inner.writer = Some(cx.waker().clone());
                 Poll::Pending
             }
-            Err(WriteBlocked::Closed) => Poll::Ready(Err(io::ErrorKind::BrokenPipe.into())),
+            Err(WriteBlocked::Closed) => Poll::Ready(Err(inner
+                .failure
+                .unwrap_or(io::ErrorKind::BrokenPipe)
+                .into())),
         }
     }
 
@@ -516,10 +544,18 @@ struct Driver {
     ping_next: Instant,
     /// Xray stops reading for good after a receive error.
     receiving: bool,
+    /// The host's network changes, which end a connection on its own socket.
+    network_changes: Option<watch::Receiver<u64>>,
 }
 
 impl Driver {
-    fn new(shared: Arc<Shared>, socket: KcpSocket, peer: SocketAddr, masks: Masks) -> Self {
+    fn new(
+        shared: Arc<Shared>,
+        socket: KcpSocket,
+        peer: SocketAddr,
+        masks: Masks,
+        network_changes: Option<watch::Receiver<u64>>,
+    ) -> Self {
         let since = shared.since;
         let interval = Duration::from_millis(shared.lock().engine.tti().into());
         let local = socket
@@ -539,6 +575,7 @@ impl Driver {
             },
             ping_next: since,
             receiving: true,
+            network_changes,
         }
     }
 
@@ -560,6 +597,14 @@ impl Driver {
                     }
                 }
                 () = tokio::time::sleep_until(deadline) => {}
+                changed = network_changed(&mut self.network_changes) => {
+                    if changed {
+                        self.fail(io::ErrorKind::NetworkDown);
+                        return;
+                    }
+                    // Nobody reports changes any more.
+                    self.network_changes = None;
+                }
             }
             // The timers run whichever branch woke the loop, so datagrams
             // that keep arriving cannot hold them off.
@@ -708,6 +753,27 @@ impl Driver {
         let mut inner = self.shared.lock();
         inner.engine.abort(elapsed(self.shared.since));
         self.shared.signal_from_driver(inner);
+    }
+
+    /// Gives the connection up with `failure`, which its reader and writer
+    /// get, and wakes them. Nothing more goes out: the server would not know
+    /// the socket a new network gives.
+    fn fail(&self, failure: io::ErrorKind) {
+        let mut inner = self.shared.lock();
+        inner.failure = Some(failure);
+        inner.engine.abort(elapsed(self.shared.since));
+        inner.engine.input_ready = true;
+        inner.engine.output_ready = true;
+        self.shared.signal_from_driver(inner);
+    }
+}
+
+/// True when the network changed, false when nobody reports changes any
+/// more; pending for good without a follower.
+async fn network_changed(changes: &mut Option<watch::Receiver<u64>>) -> bool {
+    match changes {
+        Some(changes) => changes.changed().await.is_ok(),
+        None => std::future::pending().await,
     }
 }
 

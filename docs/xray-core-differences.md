@@ -1602,6 +1602,19 @@ to the server and would need a new introduction; one behind `xdns` or
 `xicmp`, which carry nothing over the UDP socket; and mKCP, whose server
 tells sessions apart by the client's address.
 
+An mKCP connection on its own UDP socket, plain or introduced by `realm`,
+fails instead: its reads and writes report `NetworkDown` and nothing more goes
+out, so the flow dials again at once. Xray-core's listener keys a session by
+the client's address, port and conversation
+(`transport/internet/kcp/listener.go:18-22,82-86`) and takes a datagram from
+an unknown address as a new connection (`listener.go:93-121`), so a fresh
+socket cannot carry the session; Xray-core's client sits out the dead-link
+timeout on the socket whose network is gone. mKCP over `xdns` or `xicmp`
+stays: their sockets are not the session's, and Xray-core's xicmp server
+knows a client by the id in its echoes and answers wherever the last one came
+from (`transport/internet/finalmask/xicmp/server.go:165-173,283-297`).
+Evidence: `kcp::tests::a_network_change_fails_the_connection_at_once`.
+
 Evidence: `xhttp_h3_takes_a_fresh_socket_when_the_network_changes` moves a
 live connection to a new local port through a relay that counts its sources,
 with the socket protected again and a request before and after. Against

@@ -7,7 +7,9 @@ use tokio::sync::watch;
 /// One core's signal that the OS network changed. A QUIC connection dialed
 /// with it takes a fresh protected socket on every change and keeps its
 /// streams, as a Hysteria client does on its own rebind. A connection that
-/// cannot move, behind a `realm`, `xdns` or `xicmp` mask, is left alone.
+/// cannot move, behind a `realm`, `xdns` or `xicmp` mask, is left alone. An
+/// mKCP connection on its own UDP socket fails instead: its server knows a
+/// session by the client's address, so a fresh socket would be a stranger.
 #[derive(Clone, Debug)]
 pub struct NetworkChanges(Arc<watch::Sender<u64>>);
 

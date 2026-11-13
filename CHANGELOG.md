@@ -10,6 +10,15 @@ long-term supported release series.
 
 ## Unreleased
 
+- An mKCP connection on its own UDP socket, plain or introduced by `realm`,
+  fails with `NetworkDown` when the host reports that the OS network changed,
+  through the same request (`xray_core_rebind_hysteria`, `Core::rebind_quic`)
+  that moves the QUIC carriers. Xray-core's mKCP server tells sessions apart
+  by the client's address, port and conversation, so the session cannot
+  move; until now the connection sat on the dead network until its dead-link
+  timeout before the next flow dialed again. mKCP over `xdns` or `xicmp` is
+  left alone. Xray-core has no counterpart.
+
 ## 0.10.0 - 2026-11-12
 
 Release candidate preparation; publication and exact-candidate release

@@ -526,6 +526,7 @@ impl TransportDialer {
                 self.socket_protector.clone(),
                 kcp,
                 realm.as_ref(),
+                Some(&self.network_changes),
             )
             .await?,
         );

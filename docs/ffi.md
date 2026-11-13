@@ -100,7 +100,10 @@ ABI or wrapper change comes with it: a host that reports network changes for
 Hysteria already reports them for these. A connection behind a `realm`, `xdns`
 or `xicmp` mask does not move (a realm socket needs a new introduction, the
 other two carry nothing over UDP), and neither does mKCP, whose server tells
-sessions apart by the client's address. A carrier that cannot bind or protect
+sessions apart by the client's address: an mKCP connection on its own UDP
+socket, plain or behind `realm`, fails at once with `NetworkDown` so the flow
+dials again, and one over `xdns` or `xicmp` stays; the count includes the
+failed ones. A carrier that cannot bind or protect
 its new socket keeps the old one.
 
 The development 0.8 Kotlin adapter now exposes both `rebindHysteria()` and

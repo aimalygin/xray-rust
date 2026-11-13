@@ -97,7 +97,7 @@ async fn eventually(seen: &StdMutex<Seen>, check: impl Fn(&Seen) -> bool) {
 #[tokio::test]
 async fn bytes_come_back_from_an_echo_peer() {
     let (peer, seen) = echo_peer(Vec::new()).await;
-    let mut stream = connect(&[peer], None, &config(Vec::new()), None)
+    let mut stream = connect(&[peer], None, &config(Vec::new()), None, None)
         .await
         .unwrap();
     let message: Vec<u8> = (0..100_000).map(|i| (i % 251) as u8).collect();
@@ -122,7 +122,7 @@ async fn bytes_come_back_from_an_echo_peer() {
 #[tokio::test]
 async fn nothing_goes_out_until_the_first_write() {
     let (peer, seen) = echo_peer(Vec::new()).await;
-    let mut stream = connect(&[peer], None, &config(Vec::new()), None)
+    let mut stream = connect(&[peer], None, &config(Vec::new()), None, None)
         .await
         .unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -138,7 +138,9 @@ async fn masked_bytes_come_back_and_the_wire_carries_the_masks() {
         KcpMask::Header(KcpHeader::Wechat),
     ];
     let (peer, seen) = echo_peer(masks.clone()).await;
-    let mut stream = connect(&[peer], None, &config(masks), None).await.unwrap();
+    let mut stream = connect(&[peer], None, &config(masks), None, None)
+        .await
+        .unwrap();
     stream.write_all(b"masked").await.unwrap();
     let mut echoed = [0; 6];
     within(stream.read_exact(&mut echoed)).await.unwrap();
@@ -158,7 +160,7 @@ async fn masked_bytes_come_back_and_the_wire_carries_the_masks() {
 #[tokio::test]
 async fn dropping_the_stream_closes_then_terminates() {
     let (peer, seen) = echo_peer(Vec::new()).await;
-    let mut stream = connect(&[peer], None, &config(Vec::new()), None)
+    let mut stream = connect(&[peer], None, &config(Vec::new()), None, None)
         .await
         .unwrap();
     stream.write_all(b"bye").await.unwrap();
@@ -198,7 +200,7 @@ async fn noise_goes_out_ahead_of_the_first_segment() {
         reset_secs: crate::udp_noise::NoiseRange { from: 0, to: 0 },
         before_salamander: false,
     });
-    let mut stream = connect(&[peer], None, &config, None).await.unwrap();
+    let mut stream = connect(&[peer], None, &config, None, None).await.unwrap();
     stream.write_all(b"after the noise").await.unwrap();
     let mut echoed = [0; 15];
     within(stream.read_exact(&mut echoed)).await.unwrap();
@@ -212,7 +214,7 @@ async fn a_closed_peer_refuses_writes_and_ends_reads() {
     // A peer that answers the first segment with a terminate.
     let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let peer = socket.local_addr().unwrap();
-    let mut stream = connect(&[peer], None, &config(Vec::new()), None)
+    let mut stream = connect(&[peer], None, &config(Vec::new()), None, None)
         .await
         .unwrap();
     stream.write_all(b"hello?").await.unwrap();
@@ -236,16 +238,58 @@ async fn a_closed_peer_refuses_writes_and_ends_reads() {
     assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
 }
 
+/// Xray-core's server knows a session by the client's address, so a change
+/// of network fails the connection at once: reads and writes report it,
+/// nothing more goes out, and the connection stops following the changes.
+#[tokio::test]
+async fn a_network_change_fails_the_connection_at_once() {
+    let (peer, seen) = echo_peer(Vec::new()).await;
+    let changes = crate::NetworkChanges::default();
+    let mut stream = connect(&[peer], None, &config(Vec::new()), None, Some(&changes))
+        .await
+        .unwrap();
+    stream.write_all(b"before").await.unwrap();
+    let mut echoed = [0; 6];
+    within(stream.read_exact(&mut echoed)).await.unwrap();
+    assert_eq!(&echoed, b"before");
+
+    let (mut read, mut write) = tokio::io::split(stream);
+    let pending = tokio::spawn(async move {
+        let mut buf = [0; 8];
+        read.read(&mut buf).await
+    });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(changes.notify(), 1, "the connection follows the changes");
+    let error = within(pending).await.unwrap().unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::NetworkDown);
+    let error = write.write(b"after").await.unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::NetworkDown);
+
+    let sent = seen.lock().unwrap().raw.len();
+    within(async {
+        while changes.notify() != 0 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        seen.lock().unwrap().raw.len(),
+        sent,
+        "nothing went out after"
+    );
+}
+
 #[tokio::test]
 async fn a_settings_error_or_no_address_fails_the_dial() {
     let mut bad = config(Vec::new());
     bad.mtu = 20;
     assert!(matches!(
-        connect(&["127.0.0.1:1".parse().unwrap()], None, &bad, None).await,
+        connect(&["127.0.0.1:1".parse().unwrap()], None, &bad, None, None).await,
         Err(TransportError::Kcp(_))
     ));
     assert!(matches!(
-        connect(&[], None, &config(Vec::new()), None).await,
+        connect(&[], None, &config(Vec::new()), None, None).await,
         Err(TransportError::Kcp(_))
     ));
     let long_label = KcpMask::Header(KcpHeader::Dns(format!("{}.b", "a".repeat(64))));
@@ -254,6 +298,7 @@ async fn a_settings_error_or_no_address_fails_the_dial() {
             &["127.0.0.1:1".parse().unwrap()],
             None,
             &config(vec![long_label]),
+            None,
             None
         )
         .await,
@@ -273,9 +318,15 @@ async fn the_socket_is_protected_before_it_sends() {
     }
     let (peer, _) = echo_peer(Vec::new()).await;
     let counting = Arc::new(Counting::default());
-    let _stream = connect(&[peer], Some(counting.clone()), &config(Vec::new()), None)
-        .await
-        .unwrap();
+    let _stream = connect(
+        &[peer],
+        Some(counting.clone()),
+        &config(Vec::new()),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(counting.0.load(Ordering::SeqCst), 1);
     // A protector that fails stops the dial.
     struct Refusing;
@@ -285,7 +336,14 @@ async fn the_socket_is_protected_before_it_sends() {
         }
     }
     assert!(matches!(
-        connect(&[peer], Some(Arc::new(Refusing)), &config(Vec::new()), None).await,
+        connect(
+            &[peer],
+            Some(Arc::new(Refusing)),
+            &config(Vec::new()),
+            None,
+            None
+        )
+        .await,
         Err(TransportError::SocketProtection(_))
     ));
 }
@@ -296,7 +354,7 @@ async fn the_socket_is_protected_before_it_sends() {
 async fn resends_go_out_while_datagrams_keep_arriving() {
     let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let peer = socket.local_addr().unwrap();
-    let mut stream = connect(&[peer], None, &config(Vec::new()), None)
+    let mut stream = connect(&[peer], None, &config(Vec::new()), None, None)
         .await
         .unwrap();
     stream.write_all(b"resend me").await.unwrap();
@@ -357,6 +415,7 @@ async fn dropping_a_stream_waiting_for_a_standalone_reply_releases_the_driver() 
             },
         ))]),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -409,6 +468,7 @@ async fn custom_headers_write_with_go_dual_stack_local_address() {
         None,
         &fields(&[("be32", "remote_ip4_u32"), ("be16", "local_port")]),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -420,9 +480,15 @@ async fn custom_headers_write_with_go_dual_stack_local_address() {
     // The first stream keeps resending to its unanswering peer.
     let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let peer = socket.local_addr().unwrap();
-    let mut stream = connect(&[peer], None, &fields(&[("be32", "local_ip4_u32")]), None)
-        .await
-        .unwrap();
+    let mut stream = connect(
+        &[peer],
+        None,
+        &fields(&[("be32", "local_ip4_u32")]),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     stream.write_all(b"dropped").await.unwrap();
     let received =
         tokio::time::timeout(Duration::from_millis(300), socket.recv_from(&mut buf)).await;
@@ -456,6 +522,7 @@ async fn an_unanswered_standalone_request_goes_out_again_after_a_second() {
                 server: vec![item(b"ACK")],
             },
         ))]),
+        None,
         None,
     )
     .await

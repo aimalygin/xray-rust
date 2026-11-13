@@ -1039,7 +1039,9 @@ impl Core {
     /// protected socket after an OS network change: XHTTP, MASQUE and
     /// XDRIVE's storages over HTTP/3. Streams and tunnels are kept; a
     /// connection behind a `realm`, `xdns` or `xicmp` mask stays as it is.
-    /// The count is of connections asked, not of paths validated.
+    /// An mKCP connection on its own UDP socket, plain or behind `realm`,
+    /// fails instead, as its server would not know the new socket. The count
+    /// is of connections asked, not of paths validated.
     pub fn rebind_quic(&self) -> u64 {
         self.transport_dialer.network_changes().notify()
     }
