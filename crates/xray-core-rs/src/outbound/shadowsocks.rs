@@ -128,9 +128,22 @@ impl Shadowsocks2022Outbound {
         Method::validate_target(target)?;
         let mut inner = self.0.carrier.open(candidates, download, dialer).await?;
         inner.release_record_alignment();
-        let mut stream = wire::ClientStream::new(inner, &self.0.method, target)?;
-        stream.flush().await?;
-        Ok(Box::new(protocol_stream::ProtocolStream(stream)))
+        let carrier: BoxedTransportStream = Box::new(HeldHeader::first_write(inner));
+        let stream = wire::ClientStream::new(carrier, &self.0.method, target)?;
+        // Like Xray-core, the request header waits for the first payload so
+        // both share one write; the deadline sends it alone when none arrives.
+        // Unlike Xray-core's 2022 outbound, the payload stays in its own
+        // chunk behind the padded header rather than inside it.
+        let wait = if self.0.method.is_2022() {
+            SHADOWSOCKS_2022_FIRST_PAYLOAD_WAIT
+        } else {
+            SHADOWSOCKS_FIRST_PAYLOAD_WAIT
+        };
+        Ok(Box::new(FirstPayloadDeadline::new(
+            protocol_stream::ProtocolStream(stream),
+            wait,
+            flush_header_alone,
+        )))
     }
     pub(super) async fn open_udp(
         &self,
