@@ -1377,6 +1377,9 @@ public final class XrayCore: @unchecked Sendable {
     /// Requests fresh protected Hysteria sockets after an OS path change.
     /// Retains current endpoints, QUIC connection and inner flows. The count denotes
     /// accepted requests, not completed path validation. Requires ABI 1.7.
+    /// An mKCP connection cannot move and is counted too: it fails, its flows
+    /// with it, at once if its source address changed and otherwise unless its
+    /// peer is heard within seconds.
     @discardableResult
     public func rebindHysteria() throws -> UInt64 {
         let version = Self.ffiInfo.version

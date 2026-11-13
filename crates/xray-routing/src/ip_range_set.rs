@@ -316,10 +316,16 @@ impl IpRangeSetBuilder {
     }
 }
 
+/// One IP list, such as a routing rule's `ip`, as Xray-core's
+/// `buildOptimizedIPMatcher` compiles it: every positive entry in one set,
+/// and the negated entries in two, the literal CIDRs apart from the GeoIP
+/// codes. The list matches when any of the three does, so `!10.0.0.0/8` with
+/// `!geoip:cn` takes an address outside either, not only one outside both.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct IpMatcherSet {
     positive: IpRangeSet,
-    inverse: IpRangeSet,
+    inverse_custom: IpRangeSet,
+    inverse_geoip: IpRangeSet,
 }
 
 impl IpMatcherSet {
@@ -328,29 +334,34 @@ impl IpMatcherSet {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.positive.is_empty() && self.inverse.is_empty()
+        self.positive.is_empty() && self.inverse_custom.is_empty() && self.inverse_geoip.is_empty()
     }
 
     pub fn range_count(&self) -> usize {
-        self.positive.range_count() + self.inverse.range_count()
+        self.positive.range_count()
+            + self.inverse_custom.range_count()
+            + self.inverse_geoip.range_count()
     }
 
     pub fn matches(&self, address: IpAddr) -> bool {
         self.positive.contains(address)
-            || (!self.inverse.is_empty() && self.inverse.lookup(address) == Some(false))
+            || self.inverse_custom.lookup(address) == Some(false)
+            || self.inverse_geoip.lookup(address) == Some(false)
     }
 }
 
 #[derive(Debug, Default)]
 pub struct IpMatcherSetBuilder {
     positive: IpRangeSetBuilder,
-    inverse: IpRangeSetBuilder,
+    inverse_custom: IpRangeSetBuilder,
+    inverse_geoip: IpRangeSetBuilder,
     matcher_count: usize,
 }
 
 impl IpMatcherSetBuilder {
+    /// Adds a literal CIDR entry.
     pub fn insert_cidr(&mut self, cidr: Cidr, inverted: bool) {
-        self.ranges(inverted).insert_cidr(cidr);
+        self.ranges(inverted, false).insert_cidr(cidr);
         self.matcher_count += 1;
     }
 
@@ -358,8 +369,17 @@ impl IpMatcherSetBuilder {
         self.insert_cidr(Cidr::host(address), inverted);
     }
 
+    /// Adds one range of a GeoIP code, `geoip:` or `ext:`. A negated code
+    /// joins the other negated codes, not the negated literal CIDRs.
+    pub fn insert_geoip_cidr(&mut self, cidr: Cidr, inverted: bool) {
+        self.ranges(inverted, true).insert_cidr(cidr);
+        self.matcher_count += 1;
+    }
+
+    /// Adds `geoip:private`, a GeoIP code in Xray-core, which reads it from
+    /// `geoip.dat`.
     pub fn insert_private_networks(&mut self, inverted: bool) {
-        self.ranges(inverted).insert_private_networks();
+        self.ranges(inverted, true).insert_private_networks();
         self.matcher_count += 1;
     }
 
@@ -370,15 +390,16 @@ impl IpMatcherSetBuilder {
     pub fn build(self) -> IpMatcherSet {
         IpMatcherSet {
             positive: self.positive.build(),
-            inverse: self.inverse.build(),
+            inverse_custom: self.inverse_custom.build(),
+            inverse_geoip: self.inverse_geoip.build(),
         }
     }
 
-    fn ranges(&mut self, inverted: bool) -> &mut IpRangeSetBuilder {
-        if inverted {
-            &mut self.inverse
-        } else {
-            &mut self.positive
+    fn ranges(&mut self, inverted: bool, geoip: bool) -> &mut IpRangeSetBuilder {
+        match (inverted, geoip) {
+            (false, _) => &mut self.positive,
+            (true, false) => &mut self.inverse_custom,
+            (true, true) => &mut self.inverse_geoip,
         }
     }
 }
@@ -617,5 +638,37 @@ mod tests {
         assert!(not_private.matches(v4(8, 8, 8, 8)));
         assert!(!not_private.matches(v4(10, 0, 0, 1)));
         assert!(!not_private.matches(IpAddr::V6(Ipv6Addr::LOCALHOST)));
+    }
+
+    #[test]
+    fn negated_cidrs_and_negated_geoip_codes_are_separate_matchers() {
+        // Xray-core: `["!10.0.0.0/8", "!geoip:cn"]` is (not in 10/8) OR
+        // (not in cn); an address in cn alone still matches.
+        let mut builder = IpMatcherSet::builder();
+        builder.insert_cidr(cidr(v4(10, 0, 0, 0), 8), true);
+        builder.insert_geoip_cidr(cidr(v4(1, 2, 3, 0), 24), true);
+        builder.insert_geoip_cidr(cidr(v4(5, 6, 0, 0), 16), true);
+        let set = builder.build();
+        assert_eq!(set.range_count(), 3);
+        assert!(set.matches(v4(1, 2, 3, 4)));
+        assert!(set.matches(v4(10, 1, 1, 1)));
+        assert!(set.matches(v4(8, 8, 8, 8)));
+        // Negated codes still share one set, as Xray-core merges them.
+        let mut builder = IpMatcherSet::builder();
+        builder.insert_geoip_cidr(cidr(v4(1, 2, 3, 0), 24), true);
+        builder.insert_geoip_cidr(cidr(v4(5, 6, 0, 0), 16), true);
+        let codes = builder.build();
+        assert!(!codes.matches(v4(1, 2, 3, 4)));
+        assert!(!codes.matches(v4(5, 6, 7, 8)));
+        assert!(codes.matches(v4(8, 8, 8, 8)));
+
+        // `geoip:private` is a GeoIP code.
+        let mut builder = IpMatcherSet::builder();
+        builder.insert_private_networks(true);
+        builder.insert_cidr(cidr(v4(93, 184, 216, 0), 24), true);
+        let set = builder.build();
+        assert!(set.matches(v4(10, 0, 0, 1)));
+        assert!(set.matches(v4(93, 184, 216, 34)));
+        assert!(set.matches(v4(8, 8, 8, 8)));
     }
 }

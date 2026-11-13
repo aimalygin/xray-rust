@@ -19,6 +19,89 @@ long-term supported release series.
   come after the stop handlers are installed, so a signal sent after them
   always takes the graceful path; a signal during startup still ends the
   process at once, as in Xray-core. Non-unix targets still stop on Ctrl+C.
+- VMess and Shadowsocks outbounds send their request header together with
+  the first client payload, as Xray-core does and as VLESS and Trojan already
+  did. The header used to go out on its own, so over TLS or REALITY the
+  first record had a fixed, header-only size. With no payload the header goes
+  alone after Xray-core's wait: 100 ms for VMess, on TCP, UDP and Mux/XUDP
+  alike, and for the classic AEAD methods; none for Shadowsocks 2022, which
+  takes only a payload that is already there. A VMess `chacha20-poly1305`
+  flow over plain TCP still sends its header eagerly.
+- Routing parity with Xray-core, three corrections:
+  - With sniffing `routeOnly`, rules see the original destination IP as well
+    as the sniffed domain, as Xray-core keeps `ob.Target` beside
+    `ob.RouteTarget`. An `ip` or `geoip` rule, such as `geoip:private` to
+    `direct`, used to miss such a flow because routing saw only the domain.
+    Under `IPOnDemand`, a failed lookup falls back to that IP. A fake IP
+    still routes and dials by its domain. This covers SOCKS, HTTP and
+    reverse sessions and TUN UDP; TUN TCP still routes a real IP by the IP
+    alone.
+    A loopback outbound routes such a flow again by both the domain and the
+    IP; it used to see only the IP.
+  - A balancer whose strategy picks no member and that has no `fallbackTag`
+    sends the connection to the default outbound, as Xray-core's dispatcher
+    does, instead of failing it. A `fallbackTag` that names no outbound still
+    fails. `random` and `roundRobin` skip unhealthy members only when the
+    balancer has a `fallbackTag`, as in Xray-core; without one they keep
+    picking among all members and no longer fail when every member is
+    unhealthy.
+  - In one `ip` list, negated CIDRs and negated GeoIP codes (including
+    `geoip:private`) are two matchers ORed together, as in Xray-core's
+    `buildOptimizedIPMatcher`. `["!10.0.0.0/8", "!geoip:cn"]` used to match
+    only an address outside both.
+- A Mux child keeps the data it received before the server's End. An End
+  carrying the error flag, or arriving while the child still had uplink data
+  to send, used to fail the child at once, dropping up to 64 KiB of the
+  response already queued and ending the read with an error. As in
+  Xray-core's client, which closes the session's output gracefully whatever
+  the flag, a reader that keeps reading now gets every queued byte and then
+  EOF: a response followed by the target's reset arrives whole. Writes after
+  the End still fail at once, so a relay that is still uploading may end on
+  that error before the whole response is handed over, as Xray-core's does.
+- A Mux open that fits on an existing parent no longer waits for another
+  open's cold connect to a new parent. A slow or unreachable server used to
+  hold every new flow of the outbound behind that dial, each spending its own
+  handshake timeout there. Xray-core dials a new Mux connection in the
+  background.
+- A new TUN UDP flow that takes the place of the oldest one at the flow
+  limit now takes that flow's task permit over. The evicted bridge task
+  released its permit only once the runtime had dropped it, so the datagram
+  that caused the eviction found no permit and was dropped, and the app
+  waited for its own retransmission. A flow now holds its permit for as long
+  as it is in the flow table.
+- TUN DNS query tasks and TUN UDP flows no longer take each other's task
+  permits: the pool they share now holds a full flow table and every DNS
+  query task at once. A full flow table used to leave no permit for a DNS
+  query, which was answered with SERVFAIL, and a DNS query in flight took
+  the permit of a flow the table still had room for, whose first datagram
+  was dropped.
+- A TUN UDP bridge that returns when the host closes its connection, or
+  that panics, now ends its flow. The flow used to keep its place in the
+  table until the next datagram to the same destination found its queue
+  closed and was dropped.
+- A TUN TCP connection whose remote side has closed is reset once the app
+  has kept its own side open for 30 seconds after acknowledging the FIN, as
+  Xray-core's `tcpLinger` does. Such a connection used to keep its socket
+  buffers and its place under the TCP flow limit until the app closed it.
+- A TUN TCP connection whose remote side has closed is reset once the app
+  has taken nothing of what is left for it, data or the FIN, for four
+  minutes, the time Xray-core gives an unacknowledged segment
+  (`tcpGiveUpTicks`). An app that had stopped reading kept such a
+  connection, and its place under the TCP flow limit, for as long as it
+  stayed that way.
+- An mKCP connection on its own UDP socket, plain or introduced by `realm`,
+  is put to the test when the host reports that the OS network changed,
+  through the same request (`xray_core_rebind_hysteria`, `Core::rebind_quic`)
+  that moves the QUIC carriers. Xray-core's mKCP server tells sessions apart
+  by the client's address, port and conversation, so the session cannot
+  move: the connection fails with `NetworkDown` at once if its datagrams now
+  leave from another address than at the dial, and otherwise unless its
+  server is heard within three seconds when segments are unacknowledged,
+  fourteen when it is idle. Its flows end and the next flow dials a new
+  connection; until now it sat out the 30-second dead-link timeout first. A
+  connection that keeps its address and whose server still answers stays.
+  The request's count includes these connections. mKCP over `xdns` or
+  `xicmp` is left alone. Xray-core has no counterpart.
 
 ## 0.10.0 - 2026-11-12
 

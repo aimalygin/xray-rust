@@ -539,6 +539,7 @@ fn full_udp_queue_drops_the_datagram_but_keeps_the_flow() {
             generation: 7,
             last_used_sequence: 0,
             task: None,
+            permit: None,
         },
     )]);
     let mut budget = FlowBudgetState::new(MOBILE_FLOW_BUDGET_POLICY);
@@ -552,9 +553,11 @@ fn full_udp_queue_drops_the_datagram_but_keeps_the_flow() {
     assert_eq!(flows[&key].generation, 7, "a full queue must keep the flow");
 
     from_stack.try_recv().unwrap();
-    assert_eq!(
-        budget.admit_udp_flow(&mut flows, key),
-        UdpFlowAdmission::Existing,
+    assert!(
+        matches!(
+            budget.admit_udp_flow(&mut flows, key),
+            UdpFlowAdmission::Existing
+        ),
         "the next datagram must reuse the flow instead of opening a new one"
     );
     forward_udp_payload(&mut flows, key, Bytes::from_static(b"later"), &mut budget);

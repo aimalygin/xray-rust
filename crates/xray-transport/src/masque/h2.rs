@@ -13,7 +13,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use http::{Method, Request};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::task::AbortHandle;
+use tokio::task::{AbortHandle, JoinHandle};
 use tokio::time::Instant;
 
 use super::capsule::IpPrefix;
@@ -87,36 +87,40 @@ where
         let _ = connection.await;
     });
     let connection = driver.abort_handle();
-    let mut tasks = vec![driver];
+    // Until the tunnel owns them, a dropped dial aborts the tasks too.
+    let mut tasks = Tasks(vec![driver]);
     if let (Some(period), Some(ping_pong)) = (config.keep_alive, ping_pong) {
-        tasks.push(tokio::spawn(keep_alive(
+        tasks.0.push(tokio::spawn(keep_alive(
             ping_pong, last_frame, period, connection,
         )));
     }
-    match open(send_request.clone(), &config).await {
-        Ok((send, recv)) => {
-            session::start(
-                RequestSend::H2(send),
-                RequestRecv::H2(recv),
-                Datagrams::Capsules {
-                    bare: config.warp.is_some(),
-                },
-                HttpConnection::Http2 {
-                    _send_request: send_request,
-                    tasks,
-                },
-                match &config.warp {
-                    Some(addresses) => Addressing::Fixed(addresses.clone()),
-                    None => Addressing::Request,
-                },
-            )
-            .await
-        }
-        Err(error) => {
-            for task in &tasks {
-                task.abort();
-            }
-            Err(error)
+    let (send, recv) = open(send_request.clone(), &config).await?;
+    session::start(
+        RequestSend::H2(send),
+        RequestRecv::H2(recv),
+        Datagrams::Capsules {
+            bare: config.warp.is_some(),
+        },
+        HttpConnection::Http2 {
+            _send_request: send_request,
+            tasks: std::mem::take(&mut tasks.0),
+        },
+        match &config.warp {
+            Some(addresses) => Addressing::Fixed(addresses.clone()),
+            None => Addressing::Request,
+        },
+    )
+    .await
+}
+
+/// The connection's tasks while the dial runs: aborted when it fails or is
+/// dropped, as a Happy Eyeballs loser or a cancelled flow drops it.
+struct Tasks(Vec<JoinHandle<()>>);
+
+impl Drop for Tasks {
+    fn drop(&mut self) {
+        for task in &self.0 {
+            task.abort();
         }
     }
 }

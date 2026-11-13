@@ -399,7 +399,10 @@ XrayStatus xray_core_rebind_wireguard(
  * Concurrent with data-path calls, but not lifecycle/free. Lazy clients stay lazy.
  * The same call moves every other live QUIC carrier (XHTTP, MASQUE and XDRIVE
  * storages over HTTP/3) to a fresh protected socket and counts them too; one
- * that fails to bind keeps its current socket. */
+ * that fails to bind keeps its current socket. An mKCP connection on its own
+ * UDP socket cannot move and is counted as well: it fails, its flows with it,
+ * at once if its source address changed and otherwise unless its peer is heard
+ * within seconds of the call. */
 XrayStatus xray_core_rebind_hysteria(
     XrayCoreHandle *handle,
     uint64_t *accepted,

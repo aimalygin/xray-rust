@@ -210,7 +210,7 @@ impl GeodataLoader {
         }
         let inverse = inverse ^ (apply_asset_reverse && geoip.reverse_match);
         for cidr in &geoip.cidr {
-            matchers.insert_cidr(cidr_to_ip_cidr(cidr, file_name, &code)?.cidr(), inverse);
+            matchers.insert_geoip_cidr(cidr_to_ip_cidr(cidr, file_name, &code)?.cidr(), inverse);
             #[cfg(test)]
             {
                 self.ip_matcher_builds += 1;

@@ -1,4 +1,5 @@
-//! The OS network changed under live QUIC connections.
+//! The OS network changed under live connections on UDP sockets of their
+//! own: QUIC carriers and mKCP.
 
 use std::sync::Arc;
 
@@ -7,7 +8,11 @@ use tokio::sync::watch;
 /// One core's signal that the OS network changed. A QUIC connection dialed
 /// with it takes a fresh protected socket on every change and keeps its
 /// streams, as a Hysteria client does on its own rebind. A connection that
-/// cannot move, behind a `realm`, `xdns` or `xicmp` mask, is left alone.
+/// cannot move, behind a `realm`, `xdns` or `xicmp` mask, is left alone. An
+/// mKCP connection on its own UDP socket cannot move either: its server
+/// knows a session by the client's address. It fails at once if its
+/// datagrams leave from another address now; otherwise it waits a short
+/// while for its peer, and fails if the peer is not heard.
 #[derive(Clone, Debug)]
 pub struct NetworkChanges(Arc<watch::Sender<u64>>);
 
@@ -18,8 +23,11 @@ impl Default for NetworkChanges {
 }
 
 impl NetworkChanges {
-    /// Asks every connection that follows these changes for a fresh socket.
-    /// Returns how many follow them: requests accepted, not paths validated.
+    /// Tells every connection that follows these changes of one: a QUIC
+    /// connection takes a fresh socket, an mKCP connection fails or starts
+    /// waiting for its peer. Returns how many follow them, of either kind: neither
+    /// paths validated nor connections that will survive. An mKCP connection
+    /// is counted until its driver is gone, a while after its stream.
     pub fn notify(&self) -> u64 {
         self.0
             .send_modify(|generation| *generation = generation.wrapping_add(1));
