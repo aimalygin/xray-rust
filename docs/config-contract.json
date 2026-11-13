@@ -570,6 +570,28 @@
       "notes": "type is required and case-insensitive: none, http (Xray's fixed HTTP 403 reply) or custom. custom sends customResponseData, standard padded base64 of at most 65,535 bytes; absent or null sends nothing. Other types ignore it. Null, empty and unknown responses fail closed, matching Xray."
     },
     {
+      "context": "$.burstObservatory",
+      "fields": [
+        "subjectSelector",
+        "pingConfig"
+      ],
+      "id": "BURST_OBSERVATORY",
+      "notes": "pingConfig is required, as in Xray-core. With observatory also present that one drives selection, as in Xray-core, and this one is validated and not run."
+    },
+    {
+      "context": "$.burstObservatory.pingConfig",
+      "fields": [
+        "destination",
+        "connectivity",
+        "interval",
+        "sampling",
+        "timeout",
+        "httpMethod"
+      ],
+      "id": "BURST_PING_CONFIG",
+      "notes": "Xray-core's defaults: destination https://connectivitycheck.gstatic.com/generate_204, interval 1m (a shorter nonzero one becomes 10s), sampling 10, timeout 5s, httpMethod HEAD. Bounded for phones with a warning: interval at most 24h, sampling at most 100, timeout at most 60s. httpMethod must be an HTTP token."
+    },
+    {
       "context": "$.dns",
       "fields": [
         "fakeIp",
@@ -1260,6 +1282,7 @@
         "outbounds",
         "routing",
         "observatory",
+        "burstObservatory",
         "dns",
         "policy",
         "reverse",

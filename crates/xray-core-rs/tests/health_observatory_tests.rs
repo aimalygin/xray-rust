@@ -3,8 +3,9 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use xray_config::{
-    CoreConfig, InboundConfig, InboundProtocol, Network, ObservatoryConfig, OutboundConfig,
-    OutboundSettings, RoutingConfig, StreamSecurity, StreamSettings, StreamTransport,
+    BurstObservatoryConfig, BurstPingConfig, CoreConfig, InboundConfig, InboundProtocol, Network,
+    ObservatoryConfig, OutboundConfig, OutboundSettings, RoutingConfig, StreamSecurity,
+    StreamSettings, StreamTransport,
 };
 use xray_core_rs::{Core, CoreState, OutboundHealthState};
 
@@ -55,6 +56,7 @@ fn observatory_config(probe_url: String) -> CoreConfig {
             probe_interval: Duration::from_secs(1),
             enable_concurrency: true,
         }),
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -199,4 +201,248 @@ fn invalid_observatory_url_is_rejected_before_runtime_start() {
         error,
         xray_core_rs::CoreError::InvalidObservatoryProbeUrl
     ));
+}
+
+fn burst_observatory_config(ping: BurstPingConfig) -> CoreConfig {
+    CoreConfig {
+        observatory: None,
+        burst_observatory: Some(BurstObservatoryConfig {
+            subject_selectors: vec!["proxy-".to_owned()],
+            ping,
+        }),
+        ..observatory_config(String::new())
+    }
+}
+
+/// A local address nothing listens on: a connection to it is refused.
+async fn refused_url() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a port to release");
+    let port = listener.local_addr().expect("released address").port();
+    drop(listener);
+    format!("http://127.0.0.1:{port}/generate_204")
+}
+
+async fn wait_for_health(core: &Core, state: OutboundHealthState) {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let snapshot = core.outbound_health_snapshot();
+            if snapshot.outbounds.len() == 2
+                && snapshot
+                    .outbounds
+                    .iter()
+                    .all(|status| status.state == state)
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "outbounds should become {state:?}: {:?}",
+            core.outbound_health_snapshot()
+        )
+    });
+}
+
+/// `app/observatory/burst/healthping.go`: every subject is pinged once when
+/// the scheduler starts, with `pingConfig.httpMethod` (HEAD unless named) and
+/// the navigation persona `ping.go` sets.
+#[tokio::test]
+async fn burst_observatory_pings_subjects_at_start_with_the_configured_method() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind local ping server");
+    let addr = listener.local_addr().expect("local ping address");
+    let server = tokio::spawn(async move {
+        let mut requests = Vec::new();
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().await.expect("accept burst ping");
+            let mut request = [0u8; 2048];
+            let read = stream.read(&mut request).await.expect("read burst ping");
+            requests.push(String::from_utf8_lossy(&request[..read]).into_owned());
+            stream
+                .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                .await
+                .expect("write burst response");
+        }
+        requests
+    });
+    let mut core = Core::new(burst_observatory_config(BurstPingConfig {
+        destination: format!("http://127.0.0.1:{}/generate_204", addr.port()),
+        ..BurstPingConfig::default()
+    }))
+    .expect("build core with burst observatory");
+
+    core.start().await.expect("start core");
+    wait_for_health(&core, OutboundHealthState::Healthy).await;
+    core.stop().await.expect("stop core");
+
+    for request in server.await.expect("ping server should finish") {
+        assert!(
+            request.starts_with("HEAD /generate_204 HTTP/1.1\r\n"),
+            "{request}"
+        );
+        assert!(
+            request.contains("Sec-Fetch-Mode: navigate\r\n"),
+            "{request}"
+        );
+    }
+}
+
+/// `healthping.go` `doCheck`: a failed ping counts against the outbound when
+/// the connectivity URL answers over the device's own network.
+#[tokio::test]
+async fn burst_observatory_counts_a_failed_ping_while_connectivity_answers() {
+    let connectivity = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind connectivity server");
+    let addr = connectivity.local_addr().expect("connectivity address");
+    let server = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = connectivity.accept().await.expect("accept connectivity");
+            let mut request = [0u8; 2048];
+            let _ = stream.read(&mut request).await;
+            let _ = stream
+                .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                .await;
+        }
+    });
+    let mut core = Core::new(burst_observatory_config(BurstPingConfig {
+        destination: refused_url().await,
+        connectivity: Some(format!("http://127.0.0.1:{}/", addr.port())),
+        ..BurstPingConfig::default()
+    }))
+    .expect("build core with burst observatory");
+
+    core.start().await.expect("start core");
+    wait_for_health(&core, OutboundHealthState::Unhealthy).await;
+    core.stop().await.expect("stop core");
+    server.abort();
+}
+
+/// `healthping.go` `doCheck`: when the connectivity URL fails too the network
+/// is down and the ping is not a sample, so no outbound is marked dead.
+#[tokio::test]
+async fn burst_observatory_does_not_count_pings_while_connectivity_fails() {
+    let connectivity = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind connectivity server");
+    let addr = connectivity.local_addr().expect("connectivity address");
+    let (checked, mut checks) = tokio::sync::mpsc::unbounded_channel();
+    let server = tokio::spawn(async move {
+        loop {
+            // Closing without an answer fails the check.
+            let (stream, _) = connectivity.accept().await.expect("accept connectivity");
+            drop(stream);
+            let _ = checked.send(());
+        }
+    });
+    let mut core = Core::new(burst_observatory_config(BurstPingConfig {
+        destination: refused_url().await,
+        connectivity: Some(format!("http://127.0.0.1:{}/", addr.port())),
+        ..BurstPingConfig::default()
+    }))
+    .expect("build core with burst observatory");
+
+    core.start().await.expect("start core");
+    for _ in 0..2 {
+        tokio::time::timeout(Duration::from_secs(3), checks.recv())
+            .await
+            .expect("each failed ping should check connectivity")
+            .expect("connectivity server is running");
+    }
+    // Long enough for a failure to be recorded if it were counted.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let snapshot = core.outbound_health_snapshot();
+    assert_eq!(snapshot.outbounds.len(), 2, "{snapshot:?}");
+    assert!(
+        snapshot
+            .outbounds
+            .iter()
+            .all(|status| status.state == OutboundHealthState::Unknown
+                && status.last_failure.is_none()),
+        "{snapshot:?}"
+    );
+
+    core.stop().await.expect("stop core");
+    server.abort();
+}
+
+/// xray-rust only: after the device changes network every subject is pinged
+/// again within seconds instead of at its next random point of the period.
+#[tokio::test]
+async fn burst_observatory_pings_subjects_again_after_a_network_change() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind local ping server");
+    let addr = listener.local_addr().expect("local ping address");
+    let (pinged, mut pings) = tokio::sync::mpsc::unbounded_channel();
+    let server = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = listener.accept().await.expect("accept burst ping");
+            let mut request = [0u8; 2048];
+            let _ = stream.read(&mut request).await;
+            let _ = stream
+                .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                .await;
+            let _ = pinged.send(());
+        }
+    });
+    // Ten pings per outbound over a day leave the test's seconds to the
+    // pings a start and a network change add.
+    let mut core = Core::new(burst_observatory_config(BurstPingConfig {
+        destination: format!("http://127.0.0.1:{}/generate_204", addr.port()),
+        interval: Duration::from_secs(8_640),
+        ..BurstPingConfig::default()
+    }))
+    .expect("build core with burst observatory");
+    core.start().await.expect("start core");
+    for _ in 0..2 {
+        tokio::time::timeout(Duration::from_secs(3), pings.recv())
+            .await
+            .expect("every subject is pinged at start")
+            .expect("ping server is running");
+    }
+
+    assert_eq!(
+        core.rebind_quic(),
+        0,
+        "the observatory is not a connection asked to move"
+    );
+
+    for _ in 0..2 {
+        tokio::time::timeout(Duration::from_secs(5), pings.recv())
+            .await
+            .expect("every subject is pinged again on the new network")
+            .expect("ping server is running");
+    }
+    core.stop().await.expect("stop core");
+    server.abort();
+}
+
+#[test]
+fn invalid_burst_observatory_urls_are_rejected_before_runtime_start() {
+    for ping in [
+        BurstPingConfig {
+            destination: "file:///private/config".to_owned(),
+            ..BurstPingConfig::default()
+        },
+        BurstPingConfig {
+            connectivity: Some("ftp://example.com/".to_owned()),
+            ..BurstPingConfig::default()
+        },
+    ] {
+        let error = match Core::new(burst_observatory_config(ping)) {
+            Ok(_) => panic!("invalid burst observatory URL must be rejected"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            xray_core_rs::CoreError::InvalidObservatoryProbeUrl
+        ));
+    }
 }

@@ -10,6 +10,25 @@ long-term supported release series.
 
 ## Unreleased
 
+- `burstObservatory` is read and run as in Xray-core v26.11.9; it used to be
+  refused as an unknown root field. `pingConfig` takes `destination`,
+  `connectivity`, `interval`, `sampling`, `timeout` and `httpMethod` with
+  Xray-core's defaults and lower bounds. Every subject is pinged once at
+  start and then `sampling` times at random points of each
+  `interval * sampling`. `leastLoad`, `leastPing`, `random` and `roundRobin`
+  read Xray's burst statistics: the latest `sampling` pings no older than two
+  periods, alive while one of them succeeded, the average as the delay. A
+  failed ping is not counted while the `connectivity` URL fails too. With
+  `observatory` also present that one drives selection, as in Xray-core, and
+  `burstObservatory` is not run. Deliberately different, for phones:
+  `interval`, `sampling` and `timeout` are capped at 24h, 100 and 60s with a
+  warning; at most four pings run at once; while the connectivity check fails
+  one ping leaves per backoff of 5s up to `interval` instead of every
+  scheduled one; and after a network change reported through `rebind_quic`
+  every subject is pinged again within 3 seconds and its first new sample
+  replaces the old network's. `CoreConfig` gains `burst_observatory` and
+  `NetworkChanges` gains `observe`.
+
 ## 0.10.0 - 2026-11-12
 
 Release candidate preparation; publication and exact-candidate release

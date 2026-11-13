@@ -7089,6 +7089,256 @@ fn raw_with_routing(routing: &str) -> String {
     raw
 }
 
+fn raw_with_burst_observatory(burst: &str) -> String {
+    format!(
+        r#"{{
+          "burstObservatory": {burst},
+          "inbounds": [],
+          "outbounds": [{{ "tag": "direct", "protocol": "freedom" }}]
+        }}"#
+    )
+}
+
+fn burst_ping_config(ping: &str) -> (xray_config::BurstPingConfig, Vec<String>) {
+    let raw = raw_with_burst_observatory(&format!(r#"{{"pingConfig": {ping}}}"#));
+    let parsed = parse_xray_json(&raw).unwrap_or_else(|error| panic!("{ping}: {error:?}"));
+    let warned = parsed
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Warning)
+        .filter_map(|diagnostic| diagnostic.path.clone())
+        .collect();
+    let burst = parsed.config.burst_observatory.expect("burst observatory");
+    (burst.ping, warned)
+}
+
+/// Defaults of `app/observatory/burst/healthping.go` `NewHealthPing`.
+#[test]
+fn burst_observatory_uses_xray_defaults() {
+    let raw = raw_with_burst_observatory(r#"{"pingConfig": {}}"#);
+    let parsed = parse_xray_json(&raw).expect("empty pingConfig should use defaults");
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    assert!(parsed.config.observatory.is_none());
+    let burst = parsed.config.burst_observatory.expect("burst observatory");
+
+    assert!(burst.subject_selectors.is_empty());
+    assert_eq!(burst.ping, xray_config::BurstPingConfig::default());
+    assert_eq!(
+        burst.ping.destination,
+        "https://connectivitycheck.gstatic.com/generate_204"
+    );
+    assert_eq!(burst.ping.connectivity, None);
+    assert_eq!(burst.ping.interval, Duration::from_secs(60));
+    assert_eq!(burst.ping.sampling, 10);
+    assert_eq!(burst.ping.timeout, Duration::from_secs(5));
+    assert_eq!(burst.ping.http_method, "HEAD");
+    assert_eq!(burst.ping.sampling_period(), Duration::from_secs(600));
+    assert_eq!(burst.ping.sample_validity(), Duration::from_secs(1200));
+}
+
+#[test]
+fn parses_burst_observatory_and_trims_like_xray() {
+    let raw = raw_with_burst_observatory(
+        r#"{
+          "subjectSelector": ["proxy-", "direct"],
+          "pingConfig": {
+            "destination": " https://probe.example/generate_204 ",
+            "connectivity": " http://connectivity.example/ ",
+            "interval": "1m30s",
+            "sampling": 4,
+            "timeout": "3s",
+            "httpMethod": " GET "
+          }
+        }"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("burst observatory should parse");
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let burst = parsed.config.burst_observatory.expect("burst observatory");
+
+    assert_eq!(burst.subject_selectors, ["proxy-", "direct"]);
+    assert_eq!(
+        burst.ping,
+        xray_config::BurstPingConfig {
+            destination: "https://probe.example/generate_204".to_owned(),
+            connectivity: Some("http://connectivity.example/".to_owned()),
+            interval: Duration::from_secs(90),
+            sampling: 4,
+            timeout: Duration::from_secs(3),
+            http_method: "GET".to_owned(),
+        }
+    );
+}
+
+/// `NewHealthPing`: interval 0 is 1m and a shorter nonzero one 10s; sampling
+/// and timeout at or below zero take their defaults. The upper bounds are
+/// xray-rust's.
+#[test]
+fn burst_observatory_applies_xray_bounds_and_mobile_limits() {
+    for (ping, interval, warns) in [
+        (r#"{"interval": "0s"}"#, 60, false),
+        (r#"{"interval": "0"}"#, 60, false),
+        (r#"{"interval": "10s"}"#, 10, false),
+        (r#"{"interval": "9s"}"#, 10, true),
+        (r#"{"interval": "-5m"}"#, 10, true),
+        (r#"{"interval": "24h"}"#, 86_400, false),
+        (r#"{"interval": "48h"}"#, 86_400, true),
+    ] {
+        let (config, warned) = burst_ping_config(ping);
+        assert_eq!(config.interval, Duration::from_secs(interval), "{ping}");
+        let expected: &[&str] = if warns {
+            &["$.burstObservatory.pingConfig.interval"]
+        } else {
+            &[]
+        };
+        assert_eq!(warned, expected, "{ping}");
+    }
+    for (ping, sampling, warns) in [
+        (r#"{"sampling": 0}"#, 10, false),
+        (r#"{"sampling": -3}"#, 10, false),
+        (r#"{"sampling": 1}"#, 1, false),
+        (r#"{"sampling": 100}"#, 100, false),
+        (r#"{"sampling": 101}"#, 100, true),
+        (r#"{"sampling": 4294967296}"#, 100, true),
+    ] {
+        let (config, warned) = burst_ping_config(ping);
+        assert_eq!(config.sampling, sampling, "{ping}");
+        assert_eq!(warned.len(), usize::from(warns), "{ping}");
+    }
+    for (ping, timeout, warns) in [
+        (r#"{"timeout": "0s"}"#, 5, false),
+        (r#"{"timeout": "-1s"}"#, 5, false),
+        (r#"{"timeout": "60s"}"#, 60, false),
+        (r#"{"timeout": "5m"}"#, 60, true),
+    ] {
+        let (config, warned) = burst_ping_config(ping);
+        assert_eq!(config.timeout, Duration::from_secs(timeout), "{ping}");
+        assert_eq!(warned.len(), usize::from(warns), "{ping}");
+    }
+    for (ping, method) in [
+        (r#"{"httpMethod": ""}"#, "HEAD"),
+        (r#"{"httpMethod": "  "}"#, "GET"),
+        (r#"{"httpMethod": "get"}"#, "get"),
+    ] {
+        assert_eq!(burst_ping_config(ping).0.http_method, method, "{ping}");
+    }
+    let (config, _) = burst_ping_config(r#"{"destination": "  ", "connectivity": " "}"#);
+    assert_eq!(config, xray_config::BurstPingConfig::default());
+}
+
+/// `infra/conf/observatory.go`: "BurstObservatory requires a valid pingConfig".
+#[test]
+fn burst_observatory_requires_ping_config() {
+    for burst in [
+        "{}",
+        r#"{"pingConfig": null}"#,
+        r#"{"subjectSelector": ["proxy-"]}"#,
+    ] {
+        assert_parse_error_path(
+            &raw_with_burst_observatory(burst),
+            "$.burstObservatory.pingConfig",
+        );
+    }
+    let parsed = parse_xray_json(&raw_with_burst_observatory("null"))
+        .expect("a null burstObservatory is absent");
+    assert!(parsed.config.burst_observatory.is_none());
+}
+
+#[test]
+fn rejects_unknown_and_mistyped_burst_observatory_fields() {
+    for (burst, path) in [
+        (r#"[]"#, "$.burstObservatory"),
+        (
+            r#"{"pingConfig": {}, "probeURL": "https://probe.example/"}"#,
+            "$.burstObservatory.probeURL",
+        ),
+        (
+            r#"{"pingConfig": {"samplingCount": 3}}"#,
+            "$.burstObservatory.pingConfig.samplingCount",
+        ),
+        (
+            r#"{"pingConfig": {}, "subjectSelector": "proxy"}"#,
+            "$.burstObservatory.subjectSelector",
+        ),
+        (
+            r#"{"pingConfig": {}, "subjectSelector": [1]}"#,
+            "$.burstObservatory.subjectSelector[0]",
+        ),
+        (r#"{"pingConfig": []}"#, "$.burstObservatory.pingConfig"),
+        (
+            r#"{"pingConfig": {"interval": 60}}"#,
+            "$.burstObservatory.pingConfig.interval",
+        ),
+        (
+            r#"{"pingConfig": {"interval": "soon"}}"#,
+            "$.burstObservatory.pingConfig.interval",
+        ),
+        (
+            r#"{"pingConfig": {"interval": ""}}"#,
+            "$.burstObservatory.pingConfig.interval",
+        ),
+        (
+            r#"{"pingConfig": {"timeout": 5}}"#,
+            "$.burstObservatory.pingConfig.timeout",
+        ),
+        (
+            r#"{"pingConfig": {"sampling": 2.5}}"#,
+            "$.burstObservatory.pingConfig.sampling",
+        ),
+        (
+            r#"{"pingConfig": {"sampling": "10"}}"#,
+            "$.burstObservatory.pingConfig.sampling",
+        ),
+        (
+            r#"{"pingConfig": {"destination": 1}}"#,
+            "$.burstObservatory.pingConfig.destination",
+        ),
+        (
+            r#"{"pingConfig": {"connectivity": false}}"#,
+            "$.burstObservatory.pingConfig.connectivity",
+        ),
+        (
+            r#"{"pingConfig": {"httpMethod": "GE T"}}"#,
+            "$.burstObservatory.pingConfig.httpMethod",
+        ),
+    ] {
+        assert_parse_error_path(&raw_with_burst_observatory(burst), path);
+    }
+}
+
+/// Xray-core registers both as the observatory feature and its strategies
+/// read the first, `observatory` (`infra/conf/xray.go`, `core/xray.go`
+/// `getFeature`). Both are still built, so both must be valid.
+#[test]
+fn observatory_wins_when_both_observatories_are_present() {
+    let both = |burst: &str| {
+        format!(
+            r#"{{
+              "observatory": {{"subjectSelector": ["proxy-"], "probeInterval": "30s"}},
+              "burstObservatory": {burst},
+              "inbounds": [],
+              "outbounds": [{{ "tag": "direct", "protocol": "freedom" }}]
+            }}"#
+        )
+    };
+
+    let parsed = parse_xray_json(&both(
+        r#"{"subjectSelector": ["proxy-"], "pingConfig": {}}"#,
+    ))
+    .expect("both observatories should parse");
+    assert!(parsed.config.observatory.is_some());
+    assert!(parsed.config.burst_observatory.is_some());
+    let warned = parsed
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Warning)
+        .map(|diagnostic| diagnostic.path.as_deref())
+        .collect::<Vec<_>>();
+    assert_eq!(warned, [Some("$.burstObservatory")]);
+
+    assert_parse_error_path(&both("{}"), "$.burstObservatory.pingConfig");
+}
+
 fn raw_with_observatory(observatory: &str) -> String {
     format!(
         r#"{{

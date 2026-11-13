@@ -9,11 +9,22 @@ use tokio::sync::watch;
 /// streams, as a Hysteria client does on its own rebind. A connection that
 /// cannot move, behind a `realm`, `xdns` or `xicmp` mask, is left alone.
 #[derive(Clone, Debug)]
-pub struct NetworkChanges(Arc<watch::Sender<u64>>);
+pub struct NetworkChanges(Arc<Signals>);
+
+#[derive(Debug)]
+struct Signals {
+    /// Followed by the connections that take a fresh socket.
+    connections: watch::Sender<u64>,
+    /// Followed by whoever only needs to know, and is not counted.
+    observers: watch::Sender<u64>,
+}
 
 impl Default for NetworkChanges {
     fn default() -> Self {
-        Self(Arc::new(watch::channel(0).0))
+        Self(Arc::new(Signals {
+            connections: watch::channel(0).0,
+            observers: watch::channel(0).0,
+        }))
     }
 }
 
@@ -21,13 +32,21 @@ impl NetworkChanges {
     /// Asks every connection that follows these changes for a fresh socket.
     /// Returns how many follow them: requests accepted, not paths validated.
     pub fn notify(&self) -> u64 {
-        self.0
-            .send_modify(|generation| *generation = generation.wrapping_add(1));
-        self.0.receiver_count() as u64
+        for signal in [&self.0.connections, &self.0.observers] {
+            signal.send_modify(|generation| *generation = generation.wrapping_add(1));
+        }
+        self.0.connections.receiver_count() as u64
     }
 
     pub(crate) fn follow(&self) -> watch::Receiver<u64> {
-        self.0.subscribe()
+        self.0.connections.subscribe()
+    }
+
+    /// Sees every later change without being counted among the connections
+    /// [`NetworkChanges::notify`] reports: for a listener that moves no
+    /// socket, such as the burst observatory probing the new network.
+    pub fn observe(&self) -> watch::Receiver<u64> {
+        self.0.observers.subscribe()
     }
 }
 
@@ -50,6 +69,14 @@ mod tests {
         assert!(follower.has_changed().unwrap());
         drop(follower);
         assert_eq!(base.network_changes().notify(), 0);
+
+        let observer = derived.network_changes().observe();
+        assert_eq!(
+            base.network_changes().notify(),
+            0,
+            "observers move no socket"
+        );
+        assert!(observer.has_changed().unwrap());
 
         let other = crate::TransportDialer::system().unwrap();
         let _stranger = other.network_changes().follow();

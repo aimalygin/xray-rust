@@ -66,6 +66,7 @@ fn runtime_config() -> CoreConfig {
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }

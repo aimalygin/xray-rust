@@ -48,6 +48,13 @@ pub use model::{
     UdpNoiseSettings, UdpSudoku, XdnsDomain, XdnsMask, XdnsProtocol, XdnsResolver, XicmpMask,
     XmcMask, XmcProfile,
 };
+pub use model::{
+    BurstObservatoryConfig, BurstPingConfig, DEFAULT_BURST_OBSERVATORY_DESTINATION,
+    DEFAULT_BURST_OBSERVATORY_HTTP_METHOD, DEFAULT_BURST_OBSERVATORY_INTERVAL,
+    DEFAULT_BURST_OBSERVATORY_SAMPLING, DEFAULT_BURST_OBSERVATORY_TIMEOUT,
+    MAX_BURST_OBSERVATORY_INTERVAL, MAX_BURST_OBSERVATORY_SAMPLING, MAX_BURST_OBSERVATORY_TIMEOUT,
+    MIN_BURST_OBSERVATORY_INTERVAL,
+};
 pub use model::{MasqueOutboundSettings, MasqueSettings, MasqueWarpSettings, MASQUE_DEFAULT_XMUX};
 pub use parser::{
     parse_xray_json, parse_xray_json_with_exclusive_geodata_dirs, parse_xray_json_with_geodata_dir,
