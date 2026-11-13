@@ -8822,6 +8822,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
             ..Default::default()
         },
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -9320,6 +9321,7 @@ fn phase2_selector_config(member_count: usize) -> CoreConfig {
             ..RoutingConfig::default()
         },
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -9338,6 +9340,7 @@ fn phase2_chain_config(chain_depth: usize) -> CoreConfig {
         default_outbound_tag: Some("chain-0000".to_owned()),
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -9454,6 +9457,7 @@ async fn measure_phase2_connection_registry(
         default_outbound_tag: Some("direct".to_owned()),
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     })
@@ -10800,6 +10804,7 @@ fn route_probe_config(
             ..Default::default()
         },
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     })

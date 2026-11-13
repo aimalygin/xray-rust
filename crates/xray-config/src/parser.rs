@@ -1,4 +1,5 @@
 mod blackhole;
+mod burst_observatory;
 mod dns;
 mod filter;
 mod fragment;
@@ -379,6 +380,7 @@ impl Parser<'_> {
         let outbounds = self.parse_outbounds();
         let routing = self.parse_routing();
         let observatory = self.parse_observatory();
+        let burst_observatory = self.parse_burst_observatory();
         let dns = self.parse_dns();
         let policy = self.parse_policy();
         let default_outbound_tag = outbounds.first().and_then(|outbound| outbound.tag.clone());
@@ -389,6 +391,7 @@ impl Parser<'_> {
             default_outbound_tag,
             routing,
             observatory,
+            burst_observatory,
             dns,
             policy,
         }
@@ -439,40 +442,7 @@ impl Parser<'_> {
         }
         self.reject_unknown_fields(observatory, path, &surface::OBSERVATORY);
 
-        let subject_selectors = match observatory.get("subjectSelector") {
-            None | Some(Value::Null) => Vec::new(),
-            Some(Value::Array(values)) => {
-                if values.len() > MAX_OBSERVATORY_SUBJECT_SELECTORS {
-                    self.error(
-                        format!("{path}.subjectSelector"),
-                        format!(
-                            "observatory contains {} subject selectors; maximum supported per configuration is {MAX_OBSERVATORY_SUBJECT_SELECTORS}",
-                            values.len()
-                        ),
-                    );
-                    return None;
-                }
-                let mut selectors = Vec::with_capacity(values.len());
-                for (index, value) in values.iter().enumerate() {
-                    let Some(value) = value.as_str() else {
-                        self.error(
-                            format!("{path}.subjectSelector[{index}]"),
-                            "observatory subject selector must be a string",
-                        );
-                        return None;
-                    };
-                    selectors.push(value.to_owned());
-                }
-                selectors
-            }
-            Some(_) => {
-                self.error(
-                    format!("{path}.subjectSelector"),
-                    "observatory subjectSelector must be an array",
-                );
-                return None;
-            }
-        };
+        let subject_selectors = self.parse_subject_selectors(observatory, path, "observatory")?;
         let probe_url = match observatory.get("probeURL") {
             None | Some(Value::Null) => DEFAULT_OBSERVATORY_PROBE_URL.to_owned(),
             Some(Value::String(value)) if value.is_empty() => {

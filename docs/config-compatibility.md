@@ -723,6 +723,7 @@ exposes an unauthenticated proxy to the network.
 | `outbounds` | Supported subset below |
 | `routing` | Ordered `field` rules and selector-group subset below |
 | `observatory` | Bounded periodic HTTP(S) URL probes for tagged outbounds |
+| `burstObservatory` | Xray's `pingConfig`: a window of `sampling` pings per outbound spread at random over `interval * sampling`; unused while `observatory` is present |
 | `dns` | Hosts, string/object servers with managed selection policy, global and per-server `queryStrategy` including `UseSystem`, and `fakeIp` subset |
 | `policy` | Level/system fields are parsed; runtime timeout/buffer behavior is a subset |
 | `log` | Accepted for input compatibility, but runtime file logging is configured through the embedding API |
@@ -3910,7 +3911,11 @@ Both treat unknown health as eligible and skip candidates known to be
 unhealthy. `leastPing` requires a successful observation and deterministically
 chooses the lowest delay, using lexicographic candidate order to break ties.
 `leastLoad` retains the latest 16 probe outcomes per outbound and orders healthy
-candidates by RTT deviation, average RTT, failures, sample count, and tag. It
+candidates by RTT deviation, average RTT, failures, sample count, and tag.
+Under `burstObservatory` every strategy reads Xray's burst statistics instead:
+the window is the latest `pingConfig.sampling` pings no older than two sampling
+periods, an outbound is alive while that window holds one success, and its
+delay, which `leastPing` and `maxRTT` compare, is the window's average. It
 accepts `expected` from 0 through 16, `maxRTT` up to the 5-second probe timeout,
 `tolerance` from 0 through 1, at most 16 positive duration `baselines`, and at
 most 64 positive literal-substring `costs`. The cost multiplier is applied to
@@ -3968,6 +3973,49 @@ dials one leaf by tag or the default outbound with routing bypassed, takes a
 host timeout of 1 to 60000 ms, and returns the delay or the same typed failure
 category. Its result is not written to health snapshots and does not
 influence selector groups.
+
+### Burst observatory
+
+The top-level `burstObservatory` object accepts Xray's `subjectSelector` and
+`pingConfig`. `subjectSelector` is read as for `observatory`. `pingConfig` is
+required, with Xray-core's error when it is absent or null, and takes:
+
+| Field | Meaning and default |
+| --- | --- |
+| `destination` | URL pinged through every subject. Trimmed; empty means `https://connectivitycheck.gstatic.com/generate_204` |
+| `connectivity` | URL requested over the device's own network after a failed ping. Trimmed; empty means no check |
+| `interval` | Average time between two pings of one outbound. `0` means `1m`; a shorter or negative one becomes `10s` with a warning, as in Xray-core; above `24h` becomes `24h` with a warning |
+| `sampling` | Pings of one outbound per period, and the size of its window. Zero or negative means 10; above 100 becomes 100 with a warning |
+| `timeout` | Bound of one ping. Zero or negative means `5s`; above `60s` becomes `60s` with a warning |
+| `httpMethod` | Request method, sent as written. Absent or empty means `HEAD`; only whitespace means `GET`, as Go's `net/http` reads the empty method Xray-core's trim leaves. Anything but an HTTP token is refused |
+
+Durations are Go duration strings and may carry a sign; a number is refused, as
+in Xray-core. Unknown fields are refused in both objects. Both URLs must be
+HTTP or HTTPS URLs the startup-probe parser accepts.
+
+One sampling period is `interval * sampling`. When the core starts every
+subject is pinged once; in each period every subject is then pinged `sampling`
+times, each at a uniformly random point of the period, at most four pings at a
+time. A ping is the observatory's probe with `httpMethod`: any HTTP response
+is a success, whatever its status. A ping still pending when the period ends is
+dropped.
+
+A failed ping counts against its outbound unless `connectivity` is set and
+that URL fails too: then the network is taken to be down and nothing is
+recorded for the outbound. xray-rust then holds the scheduled pings back and
+lets one through after 5 seconds, doubling up to `interval`, until a ping
+produces a sample again. A sample older than two periods no longer counts; an
+outbound whose samples have all expired is not alive until a ping succeeds.
+
+When the host reports a network change (`rebind_quic`), xray-rust starts a new
+period: every subject is pinged again 1 to 3 seconds later, and an outbound's
+first sample on the new network replaces its window. Until then the old
+samples keep driving selection.
+
+With both `observatory` and `burstObservatory` present, `observatory` drives
+selection, as in Xray-core where strategies read the first registered
+observatory. `burstObservatory` is still validated, raises a warning, and is
+not run.
 
 Domain matchers, read in routing rules as Xray-core's `ParseDomainRules`
 reads them:

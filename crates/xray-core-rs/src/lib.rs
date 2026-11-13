@@ -761,6 +761,17 @@ impl Core {
         }) {
             return Err(CoreError::InvalidObservatoryProbeUrl);
         }
+        if config
+            .burst_observatory
+            .as_ref()
+            .is_some_and(|observatory| {
+                std::iter::once(&observatory.ping.destination)
+                    .chain(&observatory.ping.connectivity)
+                    .any(|url| startup_probe::parse_probe_url(url).is_err())
+            })
+        {
+            return Err(CoreError::InvalidObservatoryProbeUrl);
+        }
         if config.dns.fake_ip.as_ref().is_some_and(|fake_ip| {
             fake_ip.enabled
                 && fake_dns::FakeIpMapper::from_config(
@@ -1571,6 +1582,37 @@ impl Core {
                 );
                 let task =
                     tokio::spawn(health::run_observatory(runtime, self.shutdown.subscribe()));
+                self.runtime
+                    .as_mut()
+                    .expect("running core retains runtime state")
+                    .tasks
+                    .push(task);
+            }
+        } else if let Some(observatory) = config.burst_observatory.clone() {
+            // With both observatories Xray-core's strategies read the classic
+            // one, registered first; only without it does the burst one run.
+            let selection = outbound_router.selection_handle();
+            selection.use_burst_health(outbound::BurstHealthPolicy {
+                sampling: observatory.ping.sampling as usize,
+                validity: observatory.ping.sample_validity(),
+            });
+            let nodes = outbound_router
+                .graph()
+                .leaf_nodes_matching_prefixes(&observatory.subject_selectors);
+            if !nodes.is_empty() {
+                let runtime = health::BurstObservatoryRuntime::new(
+                    observatory.ping,
+                    nodes,
+                    Arc::clone(&outbound_router),
+                    selection,
+                    Arc::clone(&runtime_dns_resolvers.destination),
+                    Arc::clone(&runtime_dns_resolvers.bootstrap),
+                    Arc::clone(&self.transport_dialer),
+                );
+                let task = tokio::spawn(health::run_burst_observatory(
+                    runtime,
+                    self.shutdown.subscribe(),
+                ));
                 self.runtime
                     .as_mut()
                     .expect("running core retains runtime state")

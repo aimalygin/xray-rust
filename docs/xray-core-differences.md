@@ -1503,6 +1503,79 @@ Differences: probes still speak HTTP/1.1 over a TLS handshake without ALPN,
 where Go's transport offers `h2, http/1.1` for an `https` probe URL, and they
 stop reading after the status line.
 
+## burstObservatory
+
+xray-rust reads `burstObservatory` as Xray-core v26.11.9 does and feeds the
+same statistics to the balancer strategies. From the reference:
+
+- `pingConfig` is required (`infra/conf/observatory.go` lines 29-32). Defaults
+  and lower bounds are `NewHealthPing`'s (`app/observatory/burst/healthping.go`
+  lines 40-79): destination `https://connectivitycheck.gstatic.com/generate_204`,
+  interval `1m` with a nonzero one below `10s` raised to `10s`, sampling 10,
+  timeout `5s`, method `HEAD`.
+- One ping per subject at start (`healthping.go` lines 99-107), then `sampling`
+  pings per subject at uniformly random points of `interval * sampling`
+  (lines 95 and 180-186). The next period cancels what is pending (lines
+  116-121).
+- A failed ping is a failure sample unless the `connectivity` URL, requested
+  through no outbound, fails too; then nothing is recorded (lines 190-224 and
+  274-286).
+- An outbound keeps its latest `sampling` samples, each valid for two periods
+  (lines 241-248; `healthping_result.go` lines 81-124). It is alive while
+  `All != Fail`, its delay is the average of the successes
+  (`burstobserver.go` lines 44-45), and the deviation of a single success is
+  half of it. `leastLoad` ranks by that deviation, average, failures and count
+  and applies `tolerance` to `Fail / All` (`app/router/strategy_leastload.go`
+  lines 168-174 and 185-199); `leastPing` and `maxRTT` compare the average.
+- With `observatory` also present both are registered as the observatory
+  feature (`infra/conf/xray.go` lines 689-703) and every strategy receives the
+  first, `observatory` (`core/xray.go` `getFeature` and `callbackResolution`,
+  lines 38-58). xray-rust selects on `observatory` too.
+
+Deliberate differences:
+
+- **Unused burst observatory.** With both present Xray-core still starts the
+  burst scheduler, whose results nothing reads (`burstobserver.go` lines
+  68-81). xray-rust validates it, warns, and sends no ping.
+- **Upper bounds.** Xray-core has none (`healthping.go` lines 66-79).
+  xray-rust lowers `interval` above `24h`, `sampling` above 100 and `timeout`
+  above `60s` to those values with a warning. They bound an outbound's window
+  and the pings scheduled for one period.
+- **Method.** Xray-core accepts any string and, when `net/http` refuses it,
+  fails every ping (`ping.go` line 61). xray-rust refuses a method that is
+  not an HTTP token when it reads the configuration.
+- **URLs.** A URL the probe cannot request (another scheme, user info, an IPv6
+  literal) fails every ping in Xray-core and is refused by `Core::new` here.
+- **Concurrency.** Xray-core fires every timer on its own goroutine
+  (`healthping.go` line 186). xray-rust runs at most four pings at once, as
+  its `observatory` does; a ping whose turn comes late leaves late, and one
+  not sent by the end of the period is dropped.
+- **No network.** After a failed connectivity check Xray-core keeps sending
+  every scheduled ping, and a connectivity request after each (`healthping.go`
+  lines 190-203). xray-rust holds the scheduled pings back and lets one
+  through after 5 seconds, then 10, doubling up to `interval`; a ping that
+  produces a sample, success or counted failure, resumes the schedule. Nothing
+  is recorded meanwhile, as in Xray-core, and samples expire as there.
+- **Network change.** Xray-core keeps balancing on samples of the network the
+  device left until the random schedule replaces them, up to two periods
+  (`healthping.go` lines 241-248). When the host reports a change through
+  `rebind_quic`, xray-rust starts a new period, pings every subject 1 to 3
+  seconds later, and lets an outbound's first sample on the new network
+  replace its window. Old samples drive selection only until then.
+- **Expiry.** Xray-core ages samples out when a strategy reads them
+  (`healthping_result.go` line 91). xray-rust does at every recorded sample
+  of that outbound, at the start of a period and at every failed connectivity
+  check, so an outbound that stopped being pinged can stay alive up to one
+  period longer.
+- **Resolution.** Statistics are kept in milliseconds, as for `observatory`;
+  Xray-core compares nanoseconds. A ping stops at the status line, so a `GET`
+  does not time the body (`ping.go` lines 72-77).
+
+Not done: re-probing a dead outbound sooner than the schedule, limiting
+subjects to the members of a balancer, and counting real dial failures as
+samples. Each would change what a window of `sampling` pings means to
+`leastLoad`.
+
 ## XHTTP HTTP/2 connection preface
 
 Xray's XHTTP client dials HTTP/2 with a bare `golang.org/x/net/http2`
