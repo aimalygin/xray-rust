@@ -175,23 +175,27 @@ impl Pool {
             global_id: None,
             payload: None,
         })?;
-        // Serialize admission with cold connects, but cancellation never keeps
-        // the lock or inserts an incompletely constructed parent.
         let mut shutdown = self.shutdown.subscribe();
         if self.closed.load(Ordering::Acquire) {
             return Err(closed().into());
         }
+        // A parent with room takes the child at once: a stalled cold connect
+        // must not hold up children that need no new parent.
+        if let Some(child) = self.allocate_existing(target, global_id) {
+            return Ok(child);
+        }
+        // Serialize cold connects, but cancellation never keeps the lock or
+        // inserts an incompletely constructed parent.
         let _guard = tokio::select! {_ = shutdown.changed()=>return Err(closed().into()),g=self.connecting.lock()=>g};
         if self.closed.load(Ordering::Acquire) {
             return Err(closed().into());
         }
+        // Room may have appeared while this open waited for the lock.
+        if let Some(child) = self.allocate_existing(target, global_id) {
+            return Ok(child);
+        }
         let retired = {
             let mut parents = lock(&self.parents);
-            for parent in parents.iter() {
-                if let Some(child) = parent.allocate(target, self.concurrency, global_id) {
-                    return Ok(child);
-                }
-            }
             let mut retired = Vec::new();
             parents.retain(|p| {
                 let retire = {
@@ -239,6 +243,11 @@ impl Pool {
             return Err(closed().into());
         }
         Ok(child.expect("admission requires an allocated child"))
+    }
+    fn allocate_existing(&self, target: &Target, global_id: [u8; 8]) -> Option<Child> {
+        lock(&self.parents)
+            .iter()
+            .find_map(|parent| parent.allocate(target, self.concurrency, global_id))
     }
     pub(super) fn close(&self) {
         self.closed.store(true, Ordering::Release);
@@ -312,8 +321,11 @@ struct Entry {
     closing: bool,
     ended: bool,
     dropped: bool,
+    /// The parent is gone: both directions fail and queued data is dropped.
     failed: bool,
     read_eof: bool,
+    /// The reader has been handed EOF, so no received data is left.
+    eof_delivered: bool,
     accepted: u64,
     sent: u64,
     read_waker: Option<Waker>,
@@ -375,6 +387,7 @@ impl Parent {
                 dropped: false,
                 failed: false,
                 read_eof: false,
+                eof_delivered: false,
                 accepted: 0,
                 sent: 0,
                 read_waker: None,
@@ -495,10 +508,26 @@ impl AsyncRead for Child {
             return Poll::Ready(Ok(()));
         }
         if entry.read_eof {
+            entry.eof_delivered = true;
+            // A write held back by the peer's End may fail now.
+            wake(&mut entry.write_waker);
             return Poll::Ready(Ok(()));
         }
         entry.read_waker = Some(cx.waker().clone());
         Poll::Pending
+    }
+}
+impl Entry {
+    /// Writing after the peer's End fails, as Xray-core interrupts the
+    /// session's uplink. A stream child fails it only once its reader has
+    /// taken every received byte and EOF: a relay ends on the first error of
+    /// either direction and would otherwise cut the downlink short.
+    fn poll_write_after_end<T>(&mut self, cx: &Context<'_>) -> Poll<io::Result<T>> {
+        if self.target.network == RoutingNetwork::Tcp && !self.eof_delivered {
+            self.write_waker = Some(cx.waker().clone());
+            return Poll::Pending;
+        }
+        Poll::Ready(Err(closed()))
     }
 }
 impl AsyncWrite for Child {
@@ -510,8 +539,11 @@ impl AsyncWrite for Child {
         let shared = &self.token.parent.shared;
         let mut state = lock(&shared.state);
         let entry = state.children.get_mut(&self.token.id).ok_or_else(closed)?;
-        if entry.failed || entry.closing || entry.ended {
+        if entry.failed || entry.closing {
             return Poll::Ready(Err(closed()));
+        }
+        if entry.ended {
+            return entry.poll_write_after_end(cx);
         }
         if entry.target.network == RoutingNetwork::Udp && input.len() > wire::MAX_PAYLOAD {
             return Poll::Ready(Err(io::Error::new(
@@ -539,8 +571,16 @@ impl AsyncWrite for Child {
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let mut state = lock(&self.token.parent.shared.state);
         let entry = state.children.get_mut(&self.token.id).ok_or_else(closed)?;
-        if entry.failed || entry.ended && entry.sent != entry.accepted {
+        if entry.failed {
             return Poll::Ready(Err(closed()));
+        }
+        if entry.ended {
+            // No new frame goes out after the peer's End, so only data
+            // already written to the parent counts as flushed.
+            if entry.sent == entry.accepted {
+                return Poll::Ready(Ok(()));
+            }
+            return entry.poll_write_after_end(cx);
         }
         if !entry.inflight
             && entry.sent == entry.accepted
@@ -697,13 +737,13 @@ fn deliver(shared: &Shared, frame: Frame<'_>) -> io::Result<bool> {
                 });
             }
         }
+        // As Xray-core's client (`handleStatusEnd`), whatever the error flag:
+        // the uplink fails and unsent frames are dropped, but the reader still
+        // gets every frame received before the End, then EOF.
         Status::End => {
             e.read_eof = true;
             e.ended = true;
             e.tx.clear();
-            if frame.error || e.sent != e.accepted {
-                e.failed = true;
-            }
         }
         _ => {}
     }
@@ -974,15 +1014,124 @@ mod tests {
         .unwrap()
     }
     fn end(id: u16) -> Vec<u8> {
+        end_with(id, false)
+    }
+    fn end_with(id: u16, error: bool) -> Vec<u8> {
         wire::encode(&Frame {
             session_id: id,
             status: Status::End,
-            error: false,
+            error,
             target: None,
             global_id: None,
             payload: None,
         })
         .unwrap()
+    }
+    async fn wait_until_ended(child: &Child) {
+        while !lock(&child.token.parent.shared.state)
+            .children
+            .get(&child.token.id)
+            .is_some_and(|entry| entry.ended)
+        {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn mux_peer_end_with_error_flag_still_delivers_received_data() {
+        timeout(Duration::from_secs(10), async {
+            let pool = Pool::new(2);
+            let target = destination(RoutingNetwork::Tcp);
+            let (stream, mut peer) = pair();
+            let mut child = pool.open(&target, async { Ok(stream) }).await.unwrap();
+            child.flush().await.unwrap();
+            let id = child.token.id;
+            peer.write_all(&keep(id, b"first ")).await.unwrap();
+            peer.write_all(&keep(id, b"second")).await.unwrap();
+            // Xray-core's server flags the End when its read from the target
+            // failed; its client still hands over what came before.
+            peer.write_all(&end_with(id, true)).await.unwrap();
+            wait_until_ended(&child).await;
+            let mut received = Vec::new();
+            child.read_to_end(&mut received).await.unwrap();
+            assert_eq!(received, b"first second");
+            assert!(child.write_all(b"late").await.is_err());
+            pool.close();
+            pool.join().await;
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn mux_peer_end_with_unsent_uplink_drains_downlink_before_failing_writes() {
+        timeout(Duration::from_secs(10), async {
+            let pool = Pool::new(2);
+            let target = destination(RoutingNetwork::Tcp);
+            // A tiny pipe the peer never reads keeps the uplink frame in flight.
+            let (stream, mut peer) = tokio::io::duplex(64);
+            let stream: BoxedTransportStream = Box::new(protocol_stream::ProtocolStream(stream));
+            let mut child = pool.open(&target, async { Ok(stream) }).await.unwrap();
+            child.write_all(&[0x47; 4096]).await.unwrap();
+            let id = child.token.id;
+            peer.write_all(&keep(id, b"response ")).await.unwrap();
+            peer.write_all(&keep(id, b"body")).await.unwrap();
+            peer.write_all(&end(id)).await.unwrap();
+            wait_until_ended(&child).await;
+            {
+                let state = lock(&child.token.parent.shared.state);
+                let entry = &state.children[&id];
+                assert_ne!(entry.sent, entry.accepted, "the uplink must be unsent");
+            }
+            // The write fails only once the reader has every byte and EOF, so
+            // a relay ending on that error does not cut the downlink short.
+            assert!(timeout(Duration::from_millis(50), child.write_all(b"late"))
+                .await
+                .is_err());
+            let mut received = Vec::new();
+            child.read_to_end(&mut received).await.unwrap();
+            assert_eq!(received, b"response body");
+            assert!(child.write_all(b"late").await.is_err());
+            assert!(child.flush().await.is_err());
+            pool.close();
+            pool.join().await;
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn mux_open_takes_free_parent_while_cold_connect_stalls() {
+        let pool = Pool::new(1);
+        let target = destination(RoutingNetwork::Tcp);
+        let (stream, _peer) = pair();
+        let first = pool.open(&target, async { Ok(stream) }).await.unwrap();
+        let parent = first.token.parent.clone();
+        // The only parent is full, so this open dials one that never connects.
+        let stalled = pool.open(&target, std::future::pending());
+        tokio::pin!(stalled);
+        std::future::poll_fn(|cx| {
+            assert!(stalled.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        drop(first);
+        timeout(Duration::from_secs(5), async {
+            while !lock(&parent.shared.state).children.is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let second = timeout(Duration::from_secs(1), pool.open(&target, unused()))
+            .await
+            .expect("an open with a free parent must not wait for a cold connect")
+            .unwrap();
+        assert!(Arc::ptr_eq(&second.token.parent, &parent));
+        drop(second);
+        pool.close();
+        assert!(stalled.await.is_err());
+        pool.join().await;
     }
     fn queued(child: &Child) -> Option<usize> {
         let state = lock(&child.token.parent.shared.state);
