@@ -89,6 +89,19 @@ long-term supported release series.
   (`tcpGiveUpTicks`). An app that had stopped reading kept such a
   connection, and its place under the TCP flow limit, for as long as it
   stayed that way.
+- An mKCP connection on its own UDP socket, plain or introduced by `realm`,
+  is put to the test when the host reports that the OS network changed,
+  through the same request (`xray_core_rebind_hysteria`, `Core::rebind_quic`)
+  that moves the QUIC carriers. Xray-core's mKCP server tells sessions apart
+  by the client's address, port and conversation, so the session cannot
+  move: the connection fails with `NetworkDown` at once if its datagrams now
+  leave from another address than at the dial, and otherwise unless its
+  server is heard within three seconds when segments are unacknowledged,
+  nine when it is idle. Its flows end and the next flow dials a new
+  connection; until now it sat out the 30-second dead-link timeout first. A
+  connection that keeps its address and whose server still answers stays.
+  The request's count includes these connections. mKCP over `xdns` or
+  `xicmp` is left alone. Xray-core has no counterpart.
 
 ## 0.10.0 - 2026-11-12
 

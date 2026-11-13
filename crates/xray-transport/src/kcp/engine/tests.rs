@@ -560,3 +560,38 @@ fn the_data_updater_runs_while_data_or_acks_wait() {
     assert!(client.data_update_terminated());
     assert!(!client.data_update_necessary());
 }
+
+/// Xray-core's listener opens a session of its own for a conversation it
+/// meets from a new address. Its segments name zero as the next number it
+/// reads, which the peer that holds the session names no more.
+#[test]
+fn a_stranger_to_the_session_is_not_taken_for_its_peer() {
+    let (mut client, mut server) = pair();
+    client.write(b"request").unwrap();
+    client.flush(0);
+    deliver(&mut client, &mut server, 0);
+    assert_eq!(read_all(&mut server), Some(b"request".to_vec()));
+    server.flush(0);
+    deliver(&mut server, &mut client, 0);
+    assert!(client.peer_heard, "the peer acknowledged the request");
+    assert!(!client.awaits_acknowledgement());
+
+    client.peer_heard = false;
+    let mut stranger = Engine::new(7, config());
+    stranger.flush(3000);
+    assert_eq!(
+        commands(&deliver(&mut stranger, &mut client, 3000)),
+        [CMD_PING]
+    );
+    assert!(!client.peer_heard, "a stranger's ping");
+    server.flush(3000);
+    assert!(commands(&deliver(&mut server, &mut client, 3000)).contains(&CMD_PING));
+    assert!(client.peer_heard, "the peer's ping");
+
+    // Before anything was acknowledged a stranger serves as well as the peer.
+    let mut fresh = Engine::new(7, config());
+    let mut stranger = Engine::new(7, config());
+    stranger.flush(3000);
+    deliver(&mut stranger, &mut fresh, 3000);
+    assert!(fresh.peer_heard);
+}

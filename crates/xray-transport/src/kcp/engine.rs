@@ -463,6 +463,9 @@ pub(super) struct Engine {
     pub(super) output_ready: bool,
     /// Xray's `dataUpdater.WakeUp()`.
     pub(super) wake_data: bool,
+    /// The peer that holds this session was heard: see
+    /// [`Engine::holds_the_session`]. The driver clears it to ask anew.
+    pub(super) peer_heard: bool,
 }
 
 /// Why a write took nothing.
@@ -497,7 +500,24 @@ impl Engine {
             input_ready: false,
             output_ready: false,
             wake_data: false,
+            peer_heard: false,
         }
+    }
+
+    /// Whether segments are out that the peer has yet to acknowledge, so an
+    /// acknowledgement is due within a round trip.
+    pub(super) fn awaits_acknowledgement(&self) -> bool {
+        !self.sending.window.is_empty()
+    }
+
+    /// Whether a segment naming `receiving_next` as the next number its
+    /// sender reads comes from the peer that holds this session. Xray-core's
+    /// listener opens a session of its own, numbered from zero, for a
+    /// conversation it meets from a new address, and such a stranger reads
+    /// nothing while segment zero does not reach it again. Until the peer
+    /// has acknowledged anything, a stranger is as good as the peer.
+    fn holds_the_session(&self, receiving_next: u32) -> bool {
+        receiving_next != 0 || self.sending.first_unacknowledged == 0
     }
 
     pub(super) fn state(&self) -> State {
@@ -636,6 +656,7 @@ impl Engine {
                     self.wake_data = true;
                 }
                 Segment::Ack(segment) => {
+                    self.peer_heard |= self.holds_the_session(segment.receiving_next);
                     self.handle_option(segment.option, current);
                     let rto = self.round_trip.rto;
                     self.sending
@@ -644,6 +665,7 @@ impl Engine {
                     self.wake_data = true;
                 }
                 Segment::Cmd(segment) => {
+                    self.peer_heard |= self.holds_the_session(segment.receiving_next);
                     self.handle_option(segment.option, current);
                     if segment.cmd == CMD_TERMINATE {
                         match self.state {
