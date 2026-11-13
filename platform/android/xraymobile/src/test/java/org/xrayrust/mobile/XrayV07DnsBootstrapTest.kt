@@ -48,6 +48,35 @@ class XrayV07DnsBootstrapTest {
     }
 
     @Test
+    fun pinsBothVlessConfigFormsWithoutChangingCredentials() {
+        for (settings in listOf(
+            """{"address":"Vless.Example.","port":443,"id":"00112233-4455-6677-8899-aabbccddeeff","encryption":"none"}""",
+            """{"vnext":[{"address":"Vless.Example.","port":443,"users":[{"id":"00112233-4455-6677-8899-aabbccddeeff","encryption":"none"}]}]}""",
+        )) {
+            val json = """{"outbounds":[{"protocol":"vless","settings":$settings}]}"""
+            val prepared = prepare(json) { domain ->
+                assertEquals("vless.example", domain)
+                listOf("192.0.2.8")
+            }
+            val root = JSONObject(prepared.json)
+            assertEquals(JSONObject(json).getJSONArray("outbounds").toString(),
+                root.getJSONArray("outbounds").toString())
+            assertEquals("192.0.2.8", root.getJSONObject("dns").getJSONObject("hosts")
+                .getJSONArray("full:vless.example").getString(0))
+        }
+    }
+
+    @Test
+    fun flatVlessWithAnAddressNeedsNoLookup() {
+        // The shape of the v0.10 device fixtures' mKCP, mask, XDRIVE and
+        // reverse-bridge cases: a literal server address in the simplified form.
+        val json = """{"dns":{"servers":["198.51.100.53:5353"]},"outbounds":[{"tag":"proxy","protocol":"vless","settings":{"address":"192.0.2.7","port":443,"id":"00112233-4455-6677-8899-aabbccddeeff","encryption":"none"},"streamSettings":{"network":"kcp"}}]}"""
+        val prepared = prepare(json)
+        assertEquals(JSONObject(json).getJSONArray("outbounds").toString(),
+            JSONObject(prepared.json).getJSONArray("outbounds").toString())
+    }
+
+    @Test
     fun pinsBothShadowsocks2022ConfigFormsWithoutChangingCredentials() {
         for (settings in listOf(
             """{"address":"Trojan.Example.","port":443,"password":"synthetic-secret"}""",

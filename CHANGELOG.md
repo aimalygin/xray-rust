@@ -10,6 +10,17 @@ long-term supported release series.
 
 ## Unreleased
 
+- The Apple and Android adapters start a profile whose VLESS outbound is in
+  the simplified form, its server in `settings.address` with no `vnext`, as
+  the core and Xray-core read it. Before the tunnel's DNS takes over, both
+  adapters collect the carrier addresses to exclude from the tunnel and the
+  names to resolve; for VLESS they read only `vnext`, so such a profile failed
+  to start (Apple: "A proxy or DNS bootstrap hostname could not be resolved",
+  `XrayPacketTunnelProviderError.outboundServerResolutionFailed`; Android: a
+  missing `vnext`). VMess already had the simplified form. Found on an iPhone
+  by the v0.10 device fixtures, which write mKCP, the masks, XDRIVE and the
+  reverse bridge in that form. A VMess outbound whose `address` is null now
+  reads `vnext` on Android too, as the core does.
 - `xray-rust run` stops gracefully on SIGTERM as well as SIGINT, as
   Xray-core does. SIGTERM, which `systemctl stop`, `docker stop` and launchd
   send, used to end the process at once, without the core's shutdown. Flows

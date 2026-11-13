@@ -2126,6 +2126,40 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         }
     }
 
+    func testVlessPinningPreservesBothConfigFormsAndCredentials() throws {
+        for settings in [
+            #"{"address":"Vless.Example.","port":443,"id":"00112233-4455-6677-8899-aabbccddeeff","encryption":"none"}"#,
+            #"{"vnext":[{"address":"Vless.Example.","port":443,"users":[{"id":"00112233-4455-6677-8899-aabbccddeeff","encryption":"none"}]}]}"#,
+        ] {
+            let json = "{\"outbounds\":[{\"protocol\":\"vless\",\"settings\":\(settings)}]}"
+            let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+                resolvedConfig(json: json), resolveAddress: { domain in
+                    XCTAssertEqual(domain, "vless.example")
+                    return ["192.0.2.8"]
+                }
+            )
+            let original = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? NSDictionary)
+            let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? NSDictionary)
+            XCTAssertEqual(root["outbounds"] as? NSArray, original["outbounds"] as? NSArray)
+            XCTAssertEqual(prepared.excludedServerAddresses, ["192.0.2.8"])
+            XCTAssertFalse(XrayPacketTunnelProvider.configSummary(prepared.json).contains("00112233-4455-6677-8899-aabbccddeeff"))
+        }
+    }
+
+    func testFlatVlessWithAnAddressNeedsNoLookup() throws {
+        // The shape of the v0.10 device fixtures' mKCP, mask, XDRIVE and
+        // reverse-bridge cases: a literal server address in the simplified form.
+        let json = #"{"dns":{"servers":["198.51.100.53:5353"]},"outbounds":[{"tag":"proxy","protocol":"vless","settings":{"address":"192.0.2.7","port":443,"id":"00112233-4455-6677-8899-aabbccddeeff","encryption":"none"},"streamSettings":{"network":"kcp"}}]}"#
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolvedConfig(json: json), resolveAddress: { domain in
+                XCTFail("unexpected lookup of \(domain)")
+                return nil
+            }
+        )
+        XCTAssertEqual(prepared.json, json)
+        XCTAssertEqual(prepared.excludedServerAddresses, ["192.0.2.7"])
+    }
+
     func testShadowsocks2022PinningPreservesBothConfigFormsAndCredentials() throws {
         for settings in [
             #"{"address":"Trojan.Example.","port":443,"password":"synthetic-secret"}"#,
