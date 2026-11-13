@@ -10,13 +10,7 @@ fn main() {
 }
 
 async fn run() {
-    if let Err(error) = xray_cli::run_cli_with_shutdown(std::env::args(), async {
-        if let Err(error) = tokio::signal::ctrl_c().await {
-            eprintln!("failed to wait for shutdown signal: {error}");
-        }
-    })
-    .await
-    {
+    if let Err(error) = xray_cli::run_cli_with_shutdown(std::env::args(), shutdown_signal()).await {
         let code = match &error {
             xray_cli::CliError::ConfigCheckFailed { code } => i32::from(*code),
             xray_cli::CliError::InvalidArguments(_) | xray_cli::CliError::Output { .. } => 2,
@@ -27,5 +21,40 @@ async fn run() {
             eprintln!("{error}");
         }
         std::process::exit(code);
+    }
+}
+
+/// Completes on the first graceful stop request. On unix that is SIGINT or
+/// SIGTERM, the two signals Xray-core stops on; SIGTERM is what
+/// `systemctl stop`, `docker stop` and launchd send. Other targets wait for
+/// Ctrl+C.
+///
+/// The handlers are installed on the first poll, so a signal that arrives
+/// before then still ends the process at once, as one sent to Xray-core
+/// before its server has started does.
+#[cfg(unix)]
+async fn shutdown_signal() {
+    use tokio::signal::unix::{signal, SignalKind};
+
+    let (mut interrupt, mut terminate) = match (
+        signal(SignalKind::interrupt()),
+        signal(SignalKind::terminate()),
+    ) {
+        (Ok(interrupt), Ok(terminate)) => (interrupt, terminate),
+        (Err(error), _) | (_, Err(error)) => {
+            eprintln!("failed to wait for shutdown signal: {error}");
+            return;
+        }
+    };
+    tokio::select! {
+        _ = interrupt.recv() => {}
+        _ = terminate.recv() => {}
+    }
+}
+
+#[cfg(not(unix))]
+async fn shutdown_signal() {
+    if let Err(error) = tokio::signal::ctrl_c().await {
+        eprintln!("failed to wait for shutdown signal: {error}");
     }
 }

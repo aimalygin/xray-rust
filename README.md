@@ -296,8 +296,9 @@ network, and reports problems with their JSON path. The exported examples
 before running. See [configuration tooling](docs/config-tooling.md).
 
 For a credential-free smoke run, the loopback example starts a SOCKS5 listener
-at `127.0.0.1:1080`, routes directly through the host network, and waits for
-`Ctrl-C`:
+at `127.0.0.1:1080`, routes directly through the host network, and runs until
+`Ctrl-C`; on unix, SIGTERM (from `systemctl stop`, `docker stop` or launchd)
+stops it as gracefully, as in Xray-core:
 
 ```sh
 cargo run --locked -p xray-cli -- run \
