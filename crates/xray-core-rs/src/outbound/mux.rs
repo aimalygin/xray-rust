@@ -175,23 +175,27 @@ impl Pool {
             global_id: None,
             payload: None,
         })?;
-        // Serialize admission with cold connects, but cancellation never keeps
-        // the lock or inserts an incompletely constructed parent.
         let mut shutdown = self.shutdown.subscribe();
         if self.closed.load(Ordering::Acquire) {
             return Err(closed().into());
         }
+        // A parent with room takes the child at once: a stalled cold connect
+        // must not hold up children that need no new parent.
+        if let Some(child) = self.allocate_existing(target, global_id) {
+            return Ok(child);
+        }
+        // Serialize cold connects, but cancellation never keeps the lock or
+        // inserts an incompletely constructed parent.
         let _guard = tokio::select! {_ = shutdown.changed()=>return Err(closed().into()),g=self.connecting.lock()=>g};
         if self.closed.load(Ordering::Acquire) {
             return Err(closed().into());
         }
+        // Room may have appeared while this open waited for the lock.
+        if let Some(child) = self.allocate_existing(target, global_id) {
+            return Ok(child);
+        }
         let retired = {
             let mut parents = lock(&self.parents);
-            for parent in parents.iter() {
-                if let Some(child) = parent.allocate(target, self.concurrency, global_id) {
-                    return Ok(child);
-                }
-            }
             let mut retired = Vec::new();
             parents.retain(|p| {
                 let retire = {
@@ -239,6 +243,11 @@ impl Pool {
             return Err(closed().into());
         }
         Ok(child.expect("admission requires an allocated child"))
+    }
+    fn allocate_existing(&self, target: &Target, global_id: [u8; 8]) -> Option<Child> {
+        lock(&self.parents)
+            .iter()
+            .find_map(|parent| parent.allocate(target, self.concurrency, global_id))
     }
     pub(super) fn close(&self) {
         self.closed.store(true, Ordering::Release);
@@ -312,6 +321,7 @@ struct Entry {
     closing: bool,
     ended: bool,
     dropped: bool,
+    /// The parent is gone: both directions fail and queued data is dropped.
     failed: bool,
     read_eof: bool,
     accepted: u64,
@@ -510,6 +520,10 @@ impl AsyncWrite for Child {
         let shared = &self.token.parent.shared;
         let mut state = lock(&shared.state);
         let entry = state.children.get_mut(&self.token.id).ok_or_else(closed)?;
+        // A write after the peer's End fails at once, as Xray-core interrupts
+        // the session's uplink (`Session.Close`). It must not wait for the
+        // reader: a caller that stops reading before EOF would never see it
+        // end.
         if entry.failed || entry.closing || entry.ended {
             return Poll::Ready(Err(closed()));
         }
@@ -539,8 +553,17 @@ impl AsyncWrite for Child {
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let mut state = lock(&self.token.parent.shared.state);
         let entry = state.children.get_mut(&self.token.id).ok_or_else(closed)?;
-        if entry.failed || entry.ended && entry.sent != entry.accepted {
+        if entry.failed {
             return Poll::Ready(Err(closed()));
+        }
+        if entry.ended {
+            // No new frame goes out after the peer's End, so only data
+            // already written to the parent counts as flushed.
+            return Poll::Ready(if entry.sent == entry.accepted {
+                Ok(())
+            } else {
+                Err(closed())
+            });
         }
         if !entry.inflight
             && entry.sent == entry.accepted
@@ -697,13 +720,14 @@ fn deliver(shared: &Shared, frame: Frame<'_>) -> io::Result<bool> {
                 });
             }
         }
+        // As Xray-core's client (`handleStatusEnd`), whatever the error flag:
+        // writes fail from now on and unsent frames are dropped, while a
+        // reader that keeps reading still gets every frame received before
+        // the End, then EOF.
         Status::End => {
             e.read_eof = true;
             e.ended = true;
             e.tx.clear();
-            if frame.error || e.sent != e.accepted {
-                e.failed = true;
-            }
         }
         _ => {}
     }
@@ -974,15 +998,179 @@ mod tests {
         .unwrap()
     }
     fn end(id: u16) -> Vec<u8> {
+        end_with(id, false)
+    }
+    fn end_with(id: u16, error: bool) -> Vec<u8> {
         wire::encode(&Frame {
             session_id: id,
             status: Status::End,
-            error: false,
+            error,
             target: None,
             global_id: None,
             payload: None,
         })
         .unwrap()
+    }
+    async fn wait_until_ended(child: &Child) {
+        while !lock(&child.token.parent.shared.state)
+            .children
+            .get(&child.token.id)
+            .is_some_and(|entry| entry.ended)
+        {
+            tokio::task::yield_now().await;
+        }
+    }
+    /// One poll of a write: an operation waiting for anything shows up as
+    /// `Pending` instead of as a late error.
+    async fn poll_write_once(child: &mut Child, data: &[u8]) -> Poll<io::Result<usize>> {
+        std::future::poll_fn(|cx| Poll::Ready(Pin::new(&mut *child).poll_write(cx, data))).await
+    }
+    /// One poll of a flush, as [`poll_write_once`].
+    async fn poll_flush_once(child: &mut Child) -> Poll<io::Result<()>> {
+        std::future::poll_fn(|cx| Poll::Ready(Pin::new(&mut *child).poll_flush(cx))).await
+    }
+
+    #[tokio::test]
+    async fn mux_peer_end_with_error_flag_still_delivers_received_data() {
+        timeout(Duration::from_secs(10), async {
+            let pool = Pool::new(2);
+            let target = destination(RoutingNetwork::Tcp);
+            let (stream, mut peer) = pair();
+            let mut child = pool.open(&target, async { Ok(stream) }).await.unwrap();
+            child.flush().await.unwrap();
+            let id = child.token.id;
+            peer.write_all(&keep(id, b"first ")).await.unwrap();
+            peer.write_all(&keep(id, b"second")).await.unwrap();
+            // Xray-core's server flags the End when its read from the target
+            // failed; its client still hands over what came before.
+            peer.write_all(&end_with(id, true)).await.unwrap();
+            wait_until_ended(&child).await;
+            let mut received = Vec::new();
+            child.read_to_end(&mut received).await.unwrap();
+            assert_eq!(received, b"first second");
+            assert!(matches!(
+                poll_write_once(&mut child, b"late").await,
+                Poll::Ready(Err(_))
+            ));
+            pool.close();
+            pool.join().await;
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn mux_peer_end_with_unsent_uplink_fails_writes_at_once_and_keeps_received_data() {
+        timeout(Duration::from_secs(10), async {
+            let pool = Pool::new(2);
+            let target = destination(RoutingNetwork::Tcp);
+            // A tiny pipe the peer never reads keeps the uplink frame in flight.
+            let (stream, mut peer) = tokio::io::duplex(64);
+            let stream: BoxedTransportStream = Box::new(protocol_stream::ProtocolStream(stream));
+            let mut child = pool.open(&target, async { Ok(stream) }).await.unwrap();
+            child.write_all(&[0x47; 4096]).await.unwrap();
+            let id = child.token.id;
+            peer.write_all(&keep(id, b"response ")).await.unwrap();
+            peer.write_all(&keep(id, b"body")).await.unwrap();
+            peer.write_all(&end(id)).await.unwrap();
+            wait_until_ended(&child).await;
+            {
+                let state = lock(&child.token.parent.shared.state);
+                let entry = &state.children[&id];
+                assert_ne!(entry.sent, entry.accepted, "the uplink must be unsent");
+            }
+            // The uplink is interrupted at once, with the response still
+            // unread: neither a write nor a flush of the lost data waits.
+            assert!(matches!(
+                poll_write_once(&mut child, b"late").await,
+                Poll::Ready(Err(_))
+            ));
+            assert!(matches!(
+                poll_flush_once(&mut child).await,
+                Poll::Ready(Err(_))
+            ));
+            // The failed uplink does not take the received data with it.
+            let mut received = Vec::new();
+            child.read_to_end(&mut received).await.unwrap();
+            assert_eq!(received, b"response body");
+            pool.close();
+            pool.join().await;
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn mux_write_after_peer_end_fails_while_reader_stops_before_eof() {
+        timeout(Duration::from_secs(10), async {
+            let pool = Pool::new(2);
+            let target = destination(RoutingNetwork::Tcp);
+            let (stream, mut peer) = pair();
+            let mut child = pool.open(&target, async { Ok(stream) }).await.unwrap();
+            child.write_all(b"request head").await.unwrap();
+            child.flush().await.unwrap();
+            let id = child.token.id;
+            let response = b"length-framed response";
+            peer.write_all(&keep(id, response)).await.unwrap();
+            peer.write_all(&end(id)).await.unwrap();
+            wait_until_ended(&child).await;
+            // A caller that frames the response itself takes its bytes and
+            // never asks for EOF, while it still has a request body to send.
+            let mut received = vec![0; response.len()];
+            child.read_exact(&mut received).await.unwrap();
+            assert_eq!(received, response);
+            assert!(
+                matches!(
+                    poll_write_once(&mut child, b"request body").await,
+                    Poll::Ready(Err(_))
+                ),
+                "a write after the End must not wait for the reader's EOF"
+            );
+            // Everything written before the End went out, so nothing is lost.
+            assert!(matches!(
+                poll_flush_once(&mut child).await,
+                Poll::Ready(Ok(()))
+            ));
+            assert_eq!(child.read(&mut received).await.unwrap(), 0);
+            pool.close();
+            pool.join().await;
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn mux_open_takes_free_parent_while_cold_connect_stalls() {
+        let pool = Pool::new(1);
+        let target = destination(RoutingNetwork::Tcp);
+        let (stream, _peer) = pair();
+        let first = pool.open(&target, async { Ok(stream) }).await.unwrap();
+        let parent = first.token.parent.clone();
+        // The only parent is full, so this open dials one that never connects.
+        let stalled = pool.open(&target, std::future::pending());
+        tokio::pin!(stalled);
+        std::future::poll_fn(|cx| {
+            assert!(stalled.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        drop(first);
+        timeout(Duration::from_secs(5), async {
+            while !lock(&parent.shared.state).children.is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let second = timeout(Duration::from_secs(1), pool.open(&target, unused()))
+            .await
+            .expect("an open with a free parent must not wait for a cold connect")
+            .unwrap();
+        assert!(Arc::ptr_eq(&second.token.parent, &parent));
+        drop(second);
+        pool.close();
+        assert!(stalled.await.is_err());
+        pool.join().await;
     }
     fn queued(child: &Child) -> Option<usize> {
         let state = lock(&child.token.parent.shared.state);

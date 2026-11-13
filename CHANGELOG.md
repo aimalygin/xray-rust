@@ -49,6 +49,20 @@ long-term supported release series.
     `geoip:private`) are two matchers ORed together, as in Xray-core's
     `buildOptimizedIPMatcher`. `["!10.0.0.0/8", "!geoip:cn"]` used to match
     only an address outside both.
+- A Mux child keeps the data it received before the server's End. An End
+  carrying the error flag, or arriving while the child still had uplink data
+  to send, used to fail the child at once, dropping up to 64 KiB of the
+  response already queued and ending the read with an error. As in
+  Xray-core's client, which closes the session's output gracefully whatever
+  the flag, a reader that keeps reading now gets every queued byte and then
+  EOF: a response followed by the target's reset arrives whole. Writes after
+  the End still fail at once, so a relay that is still uploading may end on
+  that error before the whole response is handed over, as Xray-core's does.
+- A Mux open that fits on an existing parent no longer waits for another
+  open's cold connect to a new parent. A slow or unreachable server used to
+  hold every new flow of the outbound behind that dial, each spending its own
+  handshake timeout there. Xray-core dials a new Mux connection in the
+  background.
 
 ## 0.10.0 - 2026-11-12
 
