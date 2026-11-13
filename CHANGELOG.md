@@ -10,6 +10,11 @@ long-term supported release series.
 
 ## Unreleased
 
+## 0.10.0 - 2026-11-13
+
+Release candidate preparation; publication and exact-candidate release
+qualification are pending.
+
 - The Apple and Android adapters start a profile whose VLESS outbound is in
   the simplified form, its server in `settings.address` with no `vnext`, as
   the core and Xray-core read it. Before the tunnel's DNS takes over, both
@@ -113,11 +118,6 @@ long-term supported release series.
   connection that keeps its address and whose server still answers stays.
   The request's count includes these connections. mKCP over `xdns` or
   `xicmp` is left alone. Xray-core has no counterpart.
-
-## 0.10.0 - 2026-11-12
-
-Release candidate preparation; publication and exact-candidate release
-qualification are pending.
 
 - A VLESS UDP flow and a VLESS Mux connection send their request header
   together with the first XUDP or Mux frame, as a TCP flow already did and

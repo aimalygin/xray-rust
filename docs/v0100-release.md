@@ -6,12 +6,36 @@ device result exists.
 The shared steps are in the [release process](release-process.md); this page
 holds what is specific to 0.10.0.
 
-The candidate is the 0.10.0 release commit: `main` through
-`3dfc10e85cd57c2baac3f990c0b641c578ebb547` plus the workspace version,
-lockfile, generated configuration contract, dated changelog section and this
-document. Its exact revision and tree are recorded here once it merges; every
-later step binds to them. The README install snippets keep the published
-0.9.0 until the 0.10.0 packages exist.
+The candidate is the second 0.10.0 release commit: `main` through
+`0598c13f05928934be559a91ae2e1ecf7fef3d25` plus the changelog section, now
+dated 2026-11-13, and this document. The workspace version, lockfile and
+generated configuration contract are already 0.10.0 from the first release
+commit and do not change. Its exact revision and tree are recorded here once
+it merges; every later step binds to them. The README install snippets keep
+the published 0.9.0 until the 0.10.0 packages exist.
+
+### The superseded first candidate
+
+The first candidate was `9455450d83583ab1f2f7ffec8dc0a2d6dc8b571a` (tree
+`e4d3df6d5cf7a0d3e0ee5a15d807d8a683c24bf8`), the merge of
+[#284](https://github.com/aimalygin/xray-rust/pull/284). Its full CI passed
+(run 43352360291), the SDK pinned it in
+[xray-rust-mobile#49](https://github.com/aimalygin/xray-rust-mobile/pull/49),
+and the host measurements and device stands were made from it.
+
+On 2026-11-13 its first device run, on an iPhone, found that the Apple and
+Android adapters did not start a profile whose VLESS outbound is in the
+simplified form, and every v0.10 fixture for mKCP, the masks, XDRIVE and the
+reverse bridge writes that form. The fix is
+[#292](https://github.com/aimalygin/xray-rust/pull/292). Since a new candidate
+was needed, the owner also took what had merged or been reviewed since:
+[#291](https://github.com/aimalygin/xray-rust/pull/291) (graceful stop of
+`xray-rust run` on SIGTERM) and the contributor fixes #285 to #289, merged as
+[#293](https://github.com/aimalygin/xray-rust/pull/293).
+
+No result bound to the first candidate counts for 0.10.0. Its CI, SDK pin,
+performance measurements, device stands and device runs are all repeated on
+this one.
 
 ## Scope
 
@@ -195,7 +219,8 @@ after the SDK publishes, since it pins the published SDK.
    0.9.0 followed in their own change; the same page has their commands.
 3. ~~Pre-release fixes on `main`, then the release commit: workspace version
    0.10.0, dated changelog section, regenerated configuration contract.~~
-   Done in the release commit, which is the candidate.
+   Done in the release commit. The second release commit, after the fixes
+   above, is the candidate.
 4. Full release CI on the candidate.
 5. `xray-rust-mobile`: pin the candidate, synchronize, add the `v010`
    profile, pass SDK CI.
