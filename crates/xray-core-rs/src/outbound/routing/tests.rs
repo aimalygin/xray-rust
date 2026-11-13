@@ -179,7 +179,7 @@ async fn route_only_tag(router: &OutboundRouter, original: &str, resolver: &Reso
 #[tokio::test]
 async fn route_only_ip_rules_see_the_original_destination() {
     // Xray-core keeps the IP in `ob.Target` and the sniffed domain in
-    // `ob.RouteTarget`, so `geoip:private` still matches a LAN destination.
+    // `ob.RouteTarget`, so an `ip` rule still matches a LAN destination.
     let router = OutboundRouter::new(Arc::new(config(json!({"rules": [
         {"type": "field", "ip": ["192.168.0.0/16"], "outboundTag": "ip"},
         {"type": "field", "domain": ["full:other.test"], "outboundTag": "domain"}
@@ -240,6 +240,51 @@ async fn route_only_ip_if_non_match_matches_the_original_ip_before_resolving() {
         route_only_tag(&router, "203.0.113.7", &resolver).await,
         "ip"
     );
+    assert_eq!(resolver.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn route_only_ip_if_non_match_second_pass_routes_by_the_lookup() {
+    // No rule takes the original IP, so Xray-core resolves the sniffed domain
+    // and applies the rules again to the addresses it got.
+    let router = OutboundRouter::new(Arc::new(config(json!({
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [{"type": "field", "ip": ["192.0.2.1/32"], "outboundTag": "ip"}]
+    }))));
+    let resolved = Resolver::new(vec!["192.0.2.1".parse().unwrap()]);
+    assert_eq!(
+        route_only_tag(&router, "203.0.113.7", &resolved).await,
+        "ip"
+    );
+    assert_eq!(resolved.calls.load(Ordering::SeqCst), 1);
+
+    let mut failed = Resolver::new(vec![]);
+    failed.fail = true;
+    assert_eq!(
+        route_only_tag(&router, "203.0.113.7", &failed).await,
+        "default"
+    );
+    assert_eq!(failed.calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn route_only_ip_rules_see_ipv6_and_ipv4_mapped_originals() {
+    let router = OutboundRouter::new(Arc::new(config(json!({"rules": [
+        {"type": "field", "ip": ["192.168.0.0/16", "fd00::/8"], "outboundTag": "ip"}
+    ]}))));
+    let resolver = Resolver::new(vec![]);
+    for (original, expected) in [
+        ("fd00::1", "ip"),
+        ("::ffff:192.168.1.10", "ip"),
+        ("2001:db8::1", "default"),
+        ("::ffff:8.8.8.8", "default"),
+    ] {
+        assert_eq!(
+            route_only_tag(&router, original, &resolver).await,
+            expected,
+            "original {original}"
+        );
+    }
     assert_eq!(resolver.calls.load(Ordering::SeqCst), 0);
 }
 
@@ -763,6 +808,24 @@ async fn loopbacks_route_the_dial_target_without_lookups() {
     // skips DNS resolution.
     let (selected, lookups) = loopback_selection(&router, &socks, &ip_target(), &target()).await;
     assert_eq!((selected.unwrap(), lookups), ("direct".to_owned(), 0));
+}
+
+#[tokio::test]
+async fn loopbacks_keep_the_route_only_domain() {
+    // Xray-core's loopback dispatches the same outbound session, whose
+    // `RouteTarget` still holds the sniffed domain beside the IP in `Target`.
+    let router = OutboundRouter::new(Arc::new(loopback_config(json!({"rules": [
+        {"inboundTag": ["socks-in"], "outboundTag": "lb"},
+        {"inboundTag": ["again"], "domain": ["full:example.test"], "ip": ["203.0.113.7/32"],
+         "outboundTag": "second"},
+        {"inboundTag": ["again"], "outboundTag": "direct"}
+    ]}))));
+    let socks = xray_config::RouteContext::inbound(Some("socks-in"));
+    let (selected, lookups) = loopback_selection(&router, &socks, &target(), &ip_target()).await;
+    assert_eq!((selected.unwrap(), lookups), ("second".to_owned(), 0));
+    // Without a sniffed domain the combined rule has no domain to match.
+    let (selected, _) = loopback_selection(&router, &socks, &ip_target(), &ip_target()).await;
+    assert_eq!(selected.unwrap(), "direct");
 }
 
 #[tokio::test]

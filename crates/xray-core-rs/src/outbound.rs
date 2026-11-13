@@ -2498,10 +2498,16 @@ impl OutboundSelectionOverlay {
         self.revision.fetch_add(1, Ordering::AcqRel);
     }
 
-    /// The balancer's pick, its `fallbackTag` when it has no eligible member,
-    /// or `None` when it has no fallback either: Xray-core's dispatcher then
-    /// takes the default outbound. A `fallbackTag` naming no outbound fails,
-    /// as Xray-core closes a connection routed to a tag it lacks.
+    /// The balancer's pick, its `fallbackTag` when the strategy picks no
+    /// member, or `None` when it has no fallback either: Xray-core's
+    /// dispatcher then takes the default outbound. A `fallbackTag` naming no
+    /// outbound fails, as Xray-core closes a connection routed to a tag it
+    /// lacks.
+    ///
+    /// `leastPing` and `leastLoad` pick no member unless one is observed
+    /// healthy. `random` and `roundRobin` pick none only when every member is
+    /// unhealthy and the balancer has a `fallbackTag`, or when it has no
+    /// member at all: see [`Self::is_candidate`].
     fn select(&self, group_tag: &str) -> Result<Option<OutboundNodeId>, CoreError> {
         let (group_index, group) = self.group_for_tag(group_tag)?;
         let state = &self.groups[group_index];
@@ -2557,11 +2563,20 @@ impl OutboundSelectionOverlay {
         })
     }
 
+    /// Whether `random` and `roundRobin` may pick `node` in `group`.
+    /// Xray-core's two strategies ask the observatory only when the balancer
+    /// has a `fallbackTag` (`RandomStrategy.InjectContext`), so a balancer
+    /// without one keeps every member, the unhealthy ones too, and never
+    /// leaves its members for the default outbound.
+    fn is_candidate(&self, group: &OutboundSelectorGroup, node: OutboundNodeId) -> bool {
+        group.fallback_tag().is_none() || self.is_eligible(node)
+    }
+
     fn select_random_eligible(&self, group: &OutboundSelectorGroup) -> Option<OutboundNodeId> {
         let eligible_count = group
             .members()
             .iter()
-            .filter(|node| self.is_eligible(**node))
+            .filter(|node| self.is_candidate(group, **node))
             .count();
         if eligible_count == 0 {
             return None;
@@ -2571,7 +2586,7 @@ impl OutboundSelectionOverlay {
             .members()
             .iter()
             .copied()
-            .filter(|node| self.is_eligible(*node))
+            .filter(|node| self.is_candidate(group, *node))
             .nth(selected)
     }
 
@@ -2583,7 +2598,7 @@ impl OutboundSelectionOverlay {
         let eligible_count = group
             .members()
             .iter()
-            .filter(|node| self.is_eligible(**node))
+            .filter(|node| self.is_candidate(group, **node))
             .count();
         if eligible_count == 0 {
             return None;
@@ -2594,7 +2609,7 @@ impl OutboundSelectionOverlay {
             .members()
             .iter()
             .copied()
-            .filter(|node| self.is_eligible(*node))
+            .filter(|node| self.is_candidate(group, *node))
             .nth(selected)
     }
 
@@ -3209,7 +3224,8 @@ impl OutboundRouter {
     }
 
     /// Selects the outbound of a TCP session routed by `target` that goes to
-    /// `dial_target`, which loopbacks route again.
+    /// `dial_target`. With `routeOnly` the two differ, and rules see the domain
+    /// of the first beside the IP of the second.
     pub(crate) async fn select_tcp_session_outbound_with_tag_and_resolver(
         &self,
         route: &RouteContext<'_>,
@@ -3411,7 +3427,8 @@ impl OutboundRouter {
     }
 
     /// Selects the outbound of a UDP session routed by `target` that goes to
-    /// `dial_target`, which loopbacks route again.
+    /// `dial_target`. With `routeOnly` the two differ, and rules see the domain
+    /// of the first beside the IP of the second.
     pub(crate) async fn select_udp_session_outbound_with_tag_and_resolver(
         &self,
         route: &RouteContext<'_>,
@@ -3516,9 +3533,10 @@ impl OutboundRouter {
     /// Follows loopback outbounds from `node`, as Xray-core's loopback
     /// dispatches its connection again. Routing then sees the loopback's
     /// `inboundTag` with the source, local address and user it had, but no
-    /// sniffed protocol or attributes, and checks the target given, the
-    /// address the connection goes to, without the DNS lookups of
-    /// `IPIfNonMatch` and `IPOnDemand`. Xray-core sets no limit to how many
+    /// sniffed protocol or attributes, and checks the target given without
+    /// the DNS lookups of `IPIfNonMatch` and `IPOnDemand`. That target is the
+    /// address the connection goes to, with the domain that `routeOnly`
+    /// sniffing found for it. Xray-core sets no limit to how many
     /// loopbacks follow one another, and recurses until it crashes on a loop;
     /// here more than [`MAX_LOOPBACK_HOPS`] fail the connection.
     #[expect(
@@ -3607,8 +3625,12 @@ impl OutboundRouter {
             .await
     }
 
-    /// Routes a session by `target`, then follows loopbacks by `dial_target`,
-    /// the address it goes to, which Xray-core's loopback routes again.
+    /// Routes a session by `target` and follows the loopbacks it meets.
+    /// `dial_target` is the address the session goes to. It differs from
+    /// `target` only when sniffing with `routeOnly` found a domain: `target`
+    /// is then that domain and `dial_target` the original destination, whose
+    /// IP the rules see beside the domain, at the first route and at every
+    /// loopback hop.
     async fn select_session_node_with_resolver(
         &self,
         route: &RouteContext<'_>,
@@ -3652,11 +3674,13 @@ impl OutboundRouter {
             Some(target) => self.node_for_target(target)?,
             None => self.select_default_configured_node()?,
         };
+        // A loopback's connection is the same Xray-core outbound session, so
+        // the `routeOnly` domain in `ob.RouteTarget` routes it again too.
         self.follow_loopbacks(
             policy,
             node,
             route,
-            target_domain(dial_target),
+            target_domain(target).or(target_domain(dial_target)),
             target_ip(dial_target),
             Some(target_network(dial_target)),
             Some(dial_target.port),
@@ -8308,9 +8332,83 @@ mod tests {
         config.routing.balancers[0].fallback_tag = Some("missing".to_owned());
         let router = OutboundRouter::new(Arc::new(config));
 
-        assert!(router
-            .select_tcp_outbound_for_session(None, &domain_tcp_target("example.test"))
-            .is_err());
+        assert!(matches!(
+            router.select_tcp_outbound_for_session(None, &domain_tcp_target("example.test")),
+            Err(CoreError::NoSupportedOutbound)
+        ));
+    }
+
+    /// The tag a balancer of `strategy` routes to once observation has marked
+    /// both its members unhealthy. `direct` is the default outbound and
+    /// `spare` the outbound a `fallback_tag` names; neither is a member.
+    fn tag_with_every_member_unhealthy(
+        strategy: RoutingBalancerStrategy,
+        fallback_tag: Option<&str>,
+    ) -> String {
+        let mut config = selector_group_config(strategy);
+        config.outbounds.push(direct_selection_freedom("spare"));
+        config.routing.balancers[0].fallback_tag = fallback_tag.map(str::to_owned);
+        let graph = Arc::new(OutboundGraph::new(Arc::new(config)));
+        let members = ["proxy-a", "proxy-b"].map(|tag| graph.node_for_tag(tag).unwrap());
+        let router = OutboundRouter::from_factory(Arc::new(OutboundFactory::new(graph)));
+        for member in members {
+            router
+                .selection()
+                .record_health_failure(member, OutboundHealthFailure::Timeout, 1_000);
+        }
+        router
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &domain_tcp_target("example.test"),
+                true,
+            )
+            .expect("a route")
+            .tag
+            .expect("a tagged outbound")
+    }
+
+    fn every_strategy() -> [RoutingBalancerStrategy; 4] {
+        [
+            RoutingBalancerStrategy::Random,
+            RoutingBalancerStrategy::RoundRobin,
+            RoutingBalancerStrategy::LeastPing,
+            RoutingBalancerStrategy::LeastLoad(RoutingLeastLoadSettings::default()),
+        ]
+    }
+
+    #[test]
+    fn random_and_round_robin_without_fallback_keep_unhealthy_members() {
+        // Xray-core's two strategies take the observatory only when the
+        // balancer has a `fallbackTag`, so without one they never leave the
+        // members for the default outbound.
+        for strategy in [
+            RoutingBalancerStrategy::Random,
+            RoutingBalancerStrategy::RoundRobin,
+        ] {
+            let tag = tag_with_every_member_unhealthy(strategy.clone(), None);
+            assert!(tag.starts_with("proxy-"), "{strategy:?} took {tag}");
+        }
+    }
+
+    #[test]
+    fn least_ping_and_least_load_without_fallback_take_the_default_outbound() {
+        // Both always read the observatory, and with no healthy member their
+        // empty pick sends Xray-core's dispatcher to the default handler.
+        for strategy in [
+            RoutingBalancerStrategy::LeastPing,
+            RoutingBalancerStrategy::LeastLoad(RoutingLeastLoadSettings::default()),
+        ] {
+            let tag = tag_with_every_member_unhealthy(strategy.clone(), None);
+            assert_eq!(tag, "direct", "{strategy:?}");
+        }
+    }
+
+    #[test]
+    fn every_strategy_takes_its_fallback_when_all_members_are_unhealthy() {
+        for strategy in every_strategy() {
+            let tag = tag_with_every_member_unhealthy(strategy.clone(), Some("spare"));
+            assert_eq!(tag, "spare", "{strategy:?}");
+        }
     }
 
     #[test]

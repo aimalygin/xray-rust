@@ -17,8 +17,10 @@ const MAX_IP_ON_DEMAND_ADDRESSES: usize = 256;
 
 /// Routes `target`. `original_ip` is the destination IP a `routeOnly`
 /// sniffed domain stands in for: as Xray-core keeps it in `ob.Target` beside
-/// `ob.RouteTarget`, rules see both the domain and that IP, and a failed
-/// lookup for `IPIfNonMatch` or `IPOnDemand` falls back to it.
+/// `ob.RouteTarget`, rules see both the domain and that IP. Under
+/// `IPOnDemand` the addresses of the domain replace it, and it is left only
+/// when the lookup fails. Under `IPIfNonMatch` the rules see it first, and
+/// the addresses of the domain only when no rule matched.
 pub(super) async fn select_routed_target_with_resolver<'a>(
     routing: &'a RoutingConfig,
     route: &RouteContext<'_>,

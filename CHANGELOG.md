@@ -16,10 +16,18 @@ long-term supported release series.
     `ob.RouteTarget`. An `ip` or `geoip` rule, such as `geoip:private` to
     `direct`, used to miss such a flow because routing saw only the domain.
     Under `IPOnDemand`, a failed lookup falls back to that IP. A fake IP
-    still routes and dials by its domain.
-  - A balancer that has no eligible member and no `fallbackTag` sends the
-    connection to the default outbound, as Xray-core's dispatcher does,
-    instead of failing it. A `fallbackTag` that names no outbound still fails.
+    still routes and dials by its domain. This covers SOCKS, HTTP and
+    reverse sessions and TUN UDP; TUN TCP still routes a real IP by the IP
+    alone.
+    A loopback outbound routes such a flow again by both the domain and the
+    IP; it used to see only the IP.
+  - A balancer whose strategy picks no member and that has no `fallbackTag`
+    sends the connection to the default outbound, as Xray-core's dispatcher
+    does, instead of failing it. A `fallbackTag` that names no outbound still
+    fails. `random` and `roundRobin` skip unhealthy members only when the
+    balancer has a `fallbackTag`, as in Xray-core; without one they keep
+    picking among all members and no longer fail when every member is
+    unhealthy.
   - In one `ip` list, negated CIDRs and negated GeoIP codes (including
     `geoip:private`) are two matchers ORed together, as in Xray-core's
     `buildOptimizedIPMatcher`. `["!10.0.0.0/8", "!geoip:cn"]` used to match
