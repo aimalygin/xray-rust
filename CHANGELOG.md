@@ -10,6 +10,20 @@ long-term supported release series.
 
 ## Unreleased
 
+- A new TUN UDP flow that takes the place of the oldest one at the flow
+  limit now takes that flow's task permit over. The evicted bridge task
+  released its permit only once the runtime had dropped it, so the datagram
+  that caused the eviction found no permit and was dropped, and the app
+  waited for its own retransmission. A flow now holds its permit for as long
+  as it is in the flow table.
+- A TUN UDP bridge that returns when the host closes its connection now
+  ends its flow. The flow used to keep its place in the table until the next
+  datagram to the same destination found its queue closed and was dropped.
+- A TUN TCP connection whose remote side has closed is reset once the app
+  has kept its own side open for 30 seconds after acknowledging the FIN, as
+  Xray-core's `tcpLinger` does. Such a connection used to keep its socket
+  buffers and its place under the TCP flow limit until the app closed it.
+
 ## 0.10.0 - 2026-11-12
 
 Release candidate preparation; publication and exact-candidate release

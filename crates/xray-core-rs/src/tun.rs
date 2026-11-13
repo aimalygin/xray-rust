@@ -113,6 +113,9 @@ const TCP_REMOTE_DRAIN_MAX_PASSES_PER_TICK: usize = 4;
 const TCP_REMOTE_DRAIN_MAX_BYTES_PER_TICK: usize = 4 * 1024 * 1024;
 const TUN_FLOW_STATS_INTERVAL: Duration = Duration::from_secs(1);
 const TUN_BACKPRESSURE_RETRY_INTERVAL: Duration = Duration::from_millis(25);
+/// How long a TUN TCP socket whose side is closed waits for the app to close
+/// its own, as Xray-core's `tcpLinger`.
+const TUN_TCP_LINGER: Duration = Duration::from_secs(30);
 const TCP_SLOW_FLOW_THRESHOLD_MS: u64 = 500;
 const TCP_REMOTE_WRITE_SLOW_THRESHOLD_MS: u64 = 500;
 const TCP_FLOW_SUMMARY_64KIB_BYTES: u64 = 64 * 1024;
@@ -633,10 +636,16 @@ struct DnsQuestion {
     qclass: u16,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 enum UdpFlowAdmission {
     Existing,
-    Admit { sequence: u64 },
+    /// `permit` is the task permit of the flow evicted to make room. The
+    /// evicted task releases nothing until the runtime drops it, so the new
+    /// flow takes the capacity over here instead of waiting for that.
+    Admit {
+        sequence: u64,
+        permit: Option<OwnedSemaphorePermit>,
+    },
     Drop,
 }
 
@@ -842,13 +851,16 @@ impl FlowBudgetState {
             return UdpFlowAdmission::Drop;
         }
 
+        let mut permit = None;
         if flows.len() >= limit {
             if let Some(oldest_key) = flows
                 .iter()
                 .min_by_key(|(_, flow)| flow.last_used_sequence)
                 .map(|(key, _)| *key)
             {
-                flows.remove(&oldest_key);
+                permit = flows
+                    .remove(&oldest_key)
+                    .and_then(|mut evicted| evicted.permit.take());
                 self.udp_evicted_flows = self.udp_evicted_flows.saturating_add(1);
             }
         }
@@ -858,7 +870,7 @@ impl FlowBudgetState {
             return UdpFlowAdmission::Drop;
         }
 
-        UdpFlowAdmission::Admit { sequence }
+        UdpFlowAdmission::Admit { sequence, permit }
     }
 
     fn record_udp_channel_drop(&mut self) {
@@ -942,6 +954,7 @@ pub(crate) async fn serve_tun_endpoint(
         .clone()
         .map(|policy| admission::UdpAdmission::new(policy, udp_task_limit));
     let mut delayed_stack_events = VecDeque::new();
+    let mut tcp_linger = HashMap::new();
     let (stack_tx, mut stack_rx) = mpsc::channel(STACK_EVENT_CHANNEL_DEPTH);
     let fake_ip_mapper = dns_outbound_runtime.fake_ip_mapper();
     let dns_mode = TunDnsMode::from_config(config.as_ref(), fake_ip_mapper);
@@ -1128,6 +1141,15 @@ pub(crate) async fn serve_tun_endpoint(
             &mut device,
             Some(tun.as_ref()),
         );
+        let flow_stats_due = last_flow_stats.elapsed() >= TUN_FLOW_STATS_INTERVAL;
+        if flow_stats_due {
+            tcp_stack_dirty |= abort_lingering_tcp_flows(
+                &mut sockets,
+                &tcp_flows,
+                &mut tcp_linger,
+                StdInstant::now(),
+            );
+        }
         let outbound_backpressured = match flush_tun_outbound(&tun, &mut device).await {
             TunOutboundFlush::Complete => false,
             TunOutboundFlush::Backpressured => true,
@@ -1194,7 +1216,7 @@ pub(crate) async fn serve_tun_endpoint(
             tcp_flows.len(),
             active_udp_tasks,
         );
-        if last_flow_stats.elapsed() >= TUN_FLOW_STATS_INTERVAL {
+        if flow_stats_due {
             runtime_context
                 .dns_tcp_connection_pool
                 .prune_expired(TokioInstant::now());
@@ -1869,6 +1891,10 @@ struct UdpFlow {
     generation: u64,
     last_used_sequence: u64,
     task: Option<AbortHandle>,
+    /// One of `udp_task_permits`, held for as long as the flow is in the
+    /// table: removing the flow frees its capacity at once, and an eviction
+    /// hands it to the flow that takes the place.
+    permit: Option<OwnedSemaphorePermit>,
 }
 
 impl Drop for UdpFlow {
@@ -2857,6 +2883,41 @@ fn cleanup_closed_tcp_flows(
         }
         sockets.remove(handle);
     }
+}
+
+/// Aborts the sockets that have waited `TUN_TCP_LINGER` in FIN-WAIT-2: the
+/// bridge is gone and its FIN acknowledged, so nothing more goes either way,
+/// and smoltcp would keep the socket, its buffers and its place under the
+/// flow limit for as long as the app keeps its side open. `linger` holds
+/// since when each one waits, with its flow's generation, as a socket handle
+/// is used again. True when a socket was aborted and the stack has a reset
+/// to send.
+fn abort_lingering_tcp_flows(
+    sockets: &mut SocketSet<'static>,
+    flows: &HashMap<SocketHandle, TcpFlow>,
+    linger: &mut HashMap<SocketHandle, (u64, StdInstant)>,
+    now: StdInstant,
+) -> bool {
+    linger.retain(|handle, (generation, _)| {
+        flows
+            .get(handle)
+            .is_some_and(|flow| flow.generation == *generation)
+    });
+    let mut aborted = false;
+    for (handle, flow) in flows {
+        let socket = sockets.get_mut::<tcp::Socket>(*handle);
+        if socket.state() != tcp::State::FinWait2 {
+            linger.remove(handle);
+            continue;
+        }
+        let (_, since) = *linger.entry(*handle).or_insert((flow.generation, now));
+        if now.saturating_duration_since(since) >= TUN_TCP_LINGER {
+            socket.abort();
+            linger.remove(handle);
+            aborted = true;
+        }
+    }
+    aborted
 }
 
 fn elapsed_ms_since(start: &StdInstant) -> u64 {
@@ -4461,7 +4522,7 @@ fn handle_udp_packet(
 
     match flow_budget_state.admit_udp_flow(flows, key) {
         UdpFlowAdmission::Existing => {}
-        UdpFlowAdmission::Admit { sequence } => {
+        UdpFlowAdmission::Admit { sequence, permit } => {
             let Some(restored_target) =
                 context.restored_target_from_endpoint(packet.target, RoutingNetwork::Udp)
             else {
@@ -4469,9 +4530,9 @@ fn handle_udp_packet(
             };
             let provenance = restored_target.provenance;
             let target = restored_target.target;
-            let Some(task_permit) =
+            let Some(task_permit) = permit.or_else(|| {
                 try_acquire_udp_task_permit(&context.udp_task_permits, flow_budget_state)
-            else {
+            }) else {
                 return;
             };
             let udp_timing_start = context
@@ -4479,17 +4540,21 @@ fn handle_udp_packet(
                 .collect_tcp_timings
                 .then(StdInstant::now);
             let (to_remote, from_stack) = mpsc::channel(UDP_BRIDGE_CHANNEL_DEPTH);
-            let task = udp_tasks.spawn(bridge_udp_flow(
+            let task = udp_tasks.spawn(close_udp_flow_after(
+                context.stack_tx.clone(),
                 key,
                 sequence,
-                target,
-                provenance,
-                original_packet,
-                context.clone(),
-                from_stack,
-                shutdown,
-                udp_timing_start,
-                task_permit,
+                bridge_udp_flow(
+                    key,
+                    sequence,
+                    target,
+                    provenance,
+                    original_packet,
+                    context.clone(),
+                    from_stack,
+                    shutdown,
+                    udp_timing_start,
+                ),
             ));
             flows.insert(
                 key,
@@ -4498,6 +4563,7 @@ fn handle_udp_packet(
                     generation: sequence,
                     last_used_sequence: sequence,
                     task: Some(task),
+                    permit: Some(task_permit),
                 },
             );
         }
@@ -4542,6 +4608,23 @@ fn try_acquire_udp_task_permit(
     }
 }
 
+/// Ends a UDP flow once its bridge returns, whichever way it returned. Some
+/// bridges leave without a word when the host closes the connection; the
+/// flow would then keep its place in the table, and its task permit, until
+/// the next datagram found the queue closed and was dropped for it. A close
+/// the bridge already sent is harmless: the generation is gone by then.
+async fn close_udp_flow_after(
+    stack_tx: mpsc::Sender<StackEvent>,
+    key: UdpFlowKey,
+    generation: u64,
+    bridge: impl std::future::Future<Output = ()>,
+) {
+    bridge.await;
+    let _ = stack_tx
+        .send(StackEvent::UdpClosed { key, generation })
+        .await;
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "UDP bridge owns flow identity, cancellation, admission, and timing state"
@@ -4556,7 +4639,6 @@ async fn bridge_udp_flow(
     mut from_stack: mpsc::Receiver<Bytes>,
     mut shutdown: watch::Receiver<bool>,
     udp_timing_start: Option<StdInstant>,
-    _task_permit: OwnedSemaphorePermit,
 ) {
     let Some(first_payload) = read_first_tun_udp_payload(&mut from_stack, &mut shutdown).await
     else {
@@ -7360,6 +7442,7 @@ mod tests {
                 generation: last_used_sequence,
                 last_used_sequence,
                 task: None,
+                permit: None,
             },
         );
     }
@@ -7519,6 +7602,7 @@ mod tests {
                 generation: 1,
                 last_used_sequence: 1,
                 task: Some(task),
+                permit: None,
             },
         );
         let mut budget = test_flow_budget(1);
@@ -7530,6 +7614,68 @@ mod tests {
             .unwrap();
 
         assert!(joined.unwrap_err().is_cancelled());
+    }
+
+    #[test]
+    fn udp_flow_eviction_hands_its_task_permit_to_the_new_flow() {
+        let permits = Arc::new(Semaphore::new(1));
+        let mut budget = test_flow_budget(1);
+        let mut flows = HashMap::new();
+        insert_udp_flow(&mut flows, test_udp_key(1), 1);
+        flows.get_mut(&test_udp_key(1)).unwrap().permit =
+            Some(Arc::clone(&permits).try_acquire_owned().unwrap());
+
+        let UdpFlowAdmission::Admit { permit, .. } =
+            budget.admit_udp_flow(&mut flows, test_udp_key(2))
+        else {
+            panic!("a full table admits the new flow in place of the oldest");
+        };
+
+        // The pool is still empty: the evicted flow's bridge task has not
+        // been dropped yet, and nothing else could have been acquired.
+        assert_eq!(permits.available_permits(), 0);
+        assert!(
+            permit.is_some(),
+            "the new flow must take the evicted flow's permit over"
+        );
+        assert_eq!(budget.udp_budget_drops(), 0);
+        drop(permit);
+        assert_eq!(permits.available_permits(), 1);
+    }
+
+    #[test]
+    fn removing_a_udp_flow_frees_its_task_permit_at_once() {
+        let permits = Arc::new(Semaphore::new(1));
+        let key = test_udp_key(1);
+        let mut flows = HashMap::new();
+        insert_udp_flow(&mut flows, key, 1);
+        flows.get_mut(&key).unwrap().permit =
+            Some(Arc::clone(&permits).try_acquire_owned().unwrap());
+
+        assert!(remove_udp_flow_generation(&mut flows, key, 1));
+
+        assert_eq!(permits.available_permits(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_udp_bridge_that_returns_without_a_close_still_ends_its_flow() {
+        let key = test_udp_key(1);
+        let mut flows = HashMap::new();
+        insert_udp_flow(&mut flows, key, 7);
+        let (stack_tx, mut stack_rx) = mpsc::channel(1);
+
+        // As the bridges that return on the host's close of the connection.
+        close_udp_flow_after(stack_tx, key, 7, async {}).await;
+
+        let event = stack_rx.try_recv().expect("the flow was not closed");
+        let mut tcp_flows = HashMap::new();
+        let mut budget = test_flow_budget(1);
+        let mut device = PacketDevice::new(1500);
+        assert!(
+            try_apply_stack_event(event, &mut tcp_flows, &mut budget, &mut flows, &mut device)
+                .is_ok()
+        );
+        assert!(flows.is_empty(), "the ended flow kept its place");
     }
 
     #[test]
@@ -7795,7 +7941,8 @@ mod tests {
         let mut budget = test_flow_budget(1);
         let mut flows = HashMap::new();
         let key = test_udp_key(1);
-        let UdpFlowAdmission::Admit { sequence } = budget.admit_udp_flow(&mut flows, key) else {
+        let UdpFlowAdmission::Admit { sequence, .. } = budget.admit_udp_flow(&mut flows, key)
+        else {
             panic!("first packet should admit a new UDP flow");
         };
         insert_udp_flow(&mut flows, key, sequence);
@@ -8707,6 +8854,137 @@ mod tests {
             sent_fin,
             "the closed remote did not reach the client as FIN"
         );
+    }
+
+    #[test]
+    fn a_closed_tcp_flow_the_app_keeps_open_is_reset_after_the_linger() {
+        let client_ip = Ipv4Addr::new(10, 10, 0, 2);
+        let server_ip = Ipv4Addr::new(203, 0, 113, 7);
+        let client_port = 49_152;
+        let server_port = 443;
+        let client_seq = 1_000u32;
+        let endpoint = IpEndpoint::new(IpAddress::Ipv4(server_ip), server_port);
+        let client_segment = |sequence: u32, acknowledgement: u32, flags: u8| {
+            Bytes::from(build_ipv4_tcp_packet(
+                client_ip,
+                client_port,
+                server_ip,
+                server_port,
+                sequence,
+                acknowledgement,
+                flags,
+                &[],
+            ))
+        };
+
+        let mut device = PacketDevice::new(1500);
+        let mut iface_config = InterfaceConfig::new(HardwareAddress::Ip);
+        iface_config.random_seed = DEFAULT_RANDOM_SEED;
+        let mut iface = Interface::new(iface_config, &mut device, Instant::now());
+        iface.set_any_ip(true);
+        let mut sockets = SocketSet::new(Vec::new());
+        let mut listeners = HashMap::new();
+        add_tcp_listener(&mut sockets, &mut listeners, endpoint, 1500);
+        let handle = listeners.get(&endpoint).unwrap().handle;
+
+        device.push_inbound(client_segment(client_seq, 0, TCP_SYN));
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+        let server_seq = ipv4_tcp_sequence(&device.pop_outbound().unwrap()).unwrap();
+        device.push_inbound(client_segment(client_seq + 1, server_seq + 1, TCP_ACK));
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+
+        // The remote closed and the bridge ended; the app acknowledges the
+        // FIN and keeps its own side open.
+        let (to_remote, _from_stack) = mpsc::channel(1);
+        let mut flow_budget_state = test_flow_budget(256);
+        let mut tcp_flows = HashMap::new();
+        tcp_flows.insert(
+            handle,
+            TcpFlow {
+                generation: 1,
+                to_remote: Some(to_remote),
+                task: None,
+                remote_open: false,
+                upload_queue_packets: None,
+                upload_pending: Arc::default(),
+                upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
+                pending_remote: VecDeque::new(),
+                pending_remote_bytes: 0,
+                has_deferred_remote_data: false,
+                pending_remote_delivery: None,
+                remote_closed: true,
+                remote_aborted: false,
+            },
+        );
+        write_remote_data_to_sockets(&mut sockets, &mut tcp_flows, &mut flow_budget_state);
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+        while device.pop_outbound().is_some() {}
+        device.push_inbound(client_segment(client_seq + 1, server_seq + 2, TCP_ACK));
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+        assert_eq!(
+            sockets.get::<tcp::Socket>(handle).state(),
+            tcp::State::FinWait2
+        );
+
+        let mut linger = HashMap::new();
+        let start = StdInstant::now();
+        assert!(!abort_lingering_tcp_flows(
+            &mut sockets,
+            &tcp_flows,
+            &mut linger,
+            start
+        ));
+        assert!(!abort_lingering_tcp_flows(
+            &mut sockets,
+            &tcp_flows,
+            &mut linger,
+            start + TUN_TCP_LINGER - Duration::from_secs(1)
+        ));
+        assert!(sockets.get::<tcp::Socket>(handle).is_open());
+
+        assert!(abort_lingering_tcp_flows(
+            &mut sockets,
+            &tcp_flows,
+            &mut linger,
+            start + TUN_TCP_LINGER
+        ));
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+        let mut sent_reset = false;
+        while let Some(packet) = device.pop_outbound() {
+            sent_reset |=
+                ipv4_tcp_header_and_payload(&packet).is_some_and(|tcp| tcp[13] & 0x04 != 0);
+        }
+        assert!(sent_reset, "the app was not told the connection is gone");
+        cleanup_closed_tcp_flows(&mut sockets, &mut tcp_flows, &mut flow_budget_state);
+        assert!(tcp_flows.is_empty(), "the lingering flow kept its place");
+    }
+
+    #[test]
+    fn a_tcp_flow_that_is_not_closed_does_not_linger() {
+        let mut sockets = SocketSet::new(Vec::new());
+        let mut socket = tcp::Socket::new(
+            tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+            tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+        );
+        socket
+            .listen(IpEndpoint::new(IpAddress::v4(203, 0, 113, 7), 443))
+            .unwrap();
+        let handle = sockets.add(socket);
+        let mut tcp_flows = HashMap::new();
+        insert_aborted_tcp_flow(handle, 1, &mut tcp_flows);
+        // A stale entry of the flow that had this handle before.
+        let start = StdInstant::now();
+        let mut linger = HashMap::from([(handle, (0, start))]);
+
+        assert!(!abort_lingering_tcp_flows(
+            &mut sockets,
+            &tcp_flows,
+            &mut linger,
+            start + 2 * TUN_TCP_LINGER
+        ));
+
+        assert!(linger.is_empty());
+        assert!(sockets.get::<tcp::Socket>(handle).is_listening());
     }
 
     #[test]
