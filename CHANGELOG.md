@@ -10,6 +10,25 @@ long-term supported release series.
 
 ## Unreleased
 
+- A VLESS UDP flow and a VLESS Mux connection send their request header
+  together with the first XUDP or Mux frame, as a TCP flow already did and
+  as Xray-core sends every request. The header used to go out on its
+  own, so over TLS or REALITY the first record had a fixed, header-only
+  size. With no frame within 500 ms the header goes alone, Vision padding
+  it with an empty frame, as for TCP.
+- QUIC loss and congestion accounting for Hysteria and XHTTP H3, four
+  corrections. A ChromeParrot client's lone Handshake ACK no longer counts as
+  a packet in flight that awaits an acknowledgement: it took room in the
+  congestion window and armed the loss timer, though an ACK elicits none.
+  `congestion: reno` starts at quic-go's window of 32 datagrams instead of
+  Quinn's 10, so it starts as fast as Xray-core and a ChromeParrot handshake
+  under it picks Xray-core's packet number lengths. With `bbrProfile`
+  `conservative` or `aggressive`, the sender no longer confuses packets of
+  different packet number spaces: the acknowledgement of the client's
+  Finished used to close the delivery sample of the 1-RTT packet with the
+  same number. And a lost MTU probe no longer puts that sender into
+  recovery: a probe larger than the path carries is lost by design. Xray-core
+  does the last two itself; both are listed as deliberate differences.
 - A TCP flow through a MASQUE or WireGuard outbound recovers from a burst
   loss without waiting for its retransmission timer. The userspace TCP/IP
   stack resent one segment when the peer had repeated an ACK three times and
@@ -30,6 +49,50 @@ long-term supported release series.
   1.0 s and take 0.02 s, or about 0.2 s in the runs where a flow loses a
   whole flight (Xray-core: 0.03 s). WireGuard times on a loopback are
   unchanged: nothing is dropped on that path.
+- A SOCKS inbound gives a client its `handshake` timeout once, from the
+  moment it connects. A client that sent its first byte just before the
+  timeout used to get a second full timeout for the rest of the handshake,
+  so a slow or stalled client could hold the connection for nearly twice as
+  long; SOCKS 4 and HTTP on the SOCKS port had the same gap. Xray-core waits
+  for the first byte without any limit; see
+  [the differences](docs/xray-core-differences.md#socks-inbound-handshake-deadline).
+- `UDP ASSOCIATE` on a SOCKS inbound that listens on `::` with
+  `allowUnauthenticatedLan` now works for IPv4 clients. The relay was bound
+  to `::1` for them and the reply sent them there, where an IPv4 client
+  cannot reach it. Like Xray-core, the relay now binds the IP the client
+  connected to, in its IPv4 form for an IPv4 client, and a LAN client of a
+  `0.0.0.0` listener gets a relay on the LAN address instead of on
+  `127.0.0.1`. A password-protected association also admits such a client's
+  datagrams, which come from its IPv4 address.
+- Another local process can no longer push a SOCKS client's UDP flows out
+  of its association. Without a password, any sender's datagrams opened
+  flows in it, and 128 targets were enough to evict the client's own. The
+  association is now pinned as in Xray-core: to the endpoint the client
+  declared, or to its TCP connection's IP and the port of its first
+  datagram, and datagrams from anyone else are dropped.
+- The SOCKS inbound's `ip` setting takes effect: the `UDP ASSOCIATE` relay
+  binds that address and the reply names it, as in Xray-core. It was
+  accepted and ignored before. A domain is refused, since Xray-core fails on
+  it, and so is an address outside loopback unless `allowUnauthenticatedLan`
+  is set; see
+  [the differences](docs/xray-core-differences.md#socks-inbound-ip).
+- iOS and macOS: the packet tunnel provider cancels the tunnel with
+  `XrayPacketTunnelProviderError.tunFileDescriptorStopped` when the core's read
+  or write loop gives up on the borrowed utun descriptor. Nothing watched
+  those loops, so the system went on showing a connected VPN that moved no
+  packets. Android has done the same since its file-descriptor watch; the
+  provider reads the loop counters every two seconds on that backend only,
+  and a stop or newer start that comes first wins. A start that arrives while
+  an earlier DNS bootstrap lookup still holds the bootstrap worker now runs as
+  soon as that lookup returns, if its own five-second deadline allows. It used
+  to wait out the deadline without running and fail with
+  `dnsBootstrapTimedOut`.
+- Android: `startXrayTunnel` while a session is stopping, after
+  `stopXrayTunnel` or a packet-pump or descriptor failure, starts once the stop
+  has finished. It was dropped without any callback, so a host that restarted
+  the tunnel at that moment waited forever. `stopXrayTunnel` now waits for an
+  `onXrayTunnelStarted` already running, and that callback no longer arrives
+  after the stop returned.
 - A TCP flow through a MASQUE or WireGuard outbound no longer stops for good
   while it uploads. Two faults in the userspace TCP/IP stack could strand it.
   The stack went to sleep when its queue of outgoing packets was full, and

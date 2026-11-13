@@ -329,16 +329,23 @@ pub async fn serve_socks_listener(
     while connections.join_next().await.is_some() {}
 }
 
-/// Pins a password-protected UDP association to one client socket.
+/// Pins a UDP association to one client socket.
 ///
 /// RFC 1929 authenticates only the TCP control connection, and the relay
-/// socket is reachable by every local process. The association therefore
-/// accepts datagrams only from the endpoint the client declared in its
-/// UDP ASSOCIATE request. A request that leaves the port unset gives nothing
-/// to bind the login to, since local processes share the loopback IP, so it
-/// gets no lock and the association is refused.
+/// socket is reachable by every local process. A password-protected
+/// association therefore accepts datagrams only from the endpoint the client
+/// declared in its UDP ASSOCIATE request. A request that leaves the port unset
+/// gives nothing to bind the login to, since local processes share the
+/// loopback IP, so it gets no lock and the association is refused.
+///
+/// Without a password the association is pinned as Xray-core pins it: to the
+/// declared IP and port, or to the TCP peer's IP when the declared IP is
+/// unspecified or a domain, and to the port of the first datagram from that
+/// IP when no port is known. Other senders cannot add flows to it, so they
+/// cannot push the client's flows out of its table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SocksUdpClientLock {
+    /// Port 0 until the first datagram from the client's IP sets it.
     client: SocketAddr,
 }
 
@@ -349,11 +356,35 @@ impl SocksUdpClientLock {
             (TargetAddr::Ip(ip), port) if !ip.is_unspecified() => Some(SocketAddr::new(*ip, port)),
             (_, port) => control_peer.map(|peer| SocketAddr::new(peer.ip(), port)),
         };
-        client.map(|client| Self { client })
+        client.map(Self::new)
     }
 
-    fn admits(self, source: SocketAddr) -> bool {
-        self.client == source
+    /// Xray-core's pin for an association without a password, which keeps a
+    /// declared port only together with a declared IP.
+    fn first_sender(declared: &Target, control_peer: Option<SocketAddr>) -> Option<Self> {
+        let client = match &declared.addr {
+            TargetAddr::Ip(ip) if !ip.is_unspecified() => SocketAddr::new(*ip, declared.port),
+            _ => SocketAddr::new(control_peer?.ip(), 0),
+        };
+        Some(Self::new(client))
+    }
+
+    // An IPv4 client of a dual-stack listener sends to the IPv4 relay from
+    // its IPv4 address, not the mapped one the control peer shows.
+    fn new(client: SocketAddr) -> Self {
+        Self {
+            client: SocketAddr::new(client.ip().to_canonical(), client.port()),
+        }
+    }
+
+    fn admits(&mut self, source: SocketAddr) -> bool {
+        if self.client.ip() != source.ip().to_canonical() {
+            return false;
+        }
+        if self.client.port() == 0 {
+            self.client.set_port(source.port());
+        }
+        self.client.port() == source.port()
     }
 }
 
@@ -377,10 +408,13 @@ async fn handle_socks_connection(
     udp_budgets: SocksUdpBudgets,
 ) {
     let auth = &settings.auth;
+    // One deadline from the accept covers the first byte and the whole
+    // handshake, whichever protocol that byte selects.
+    let deadline = tokio::time::Instant::now() + policy.handshake;
     // Like Xray-core, the first byte selects SOCKS 5, SOCKS 4/4a or, for
     // anything else, HTTP on the same port (`mixed` is only an alias).
     let mut first = [0_u8; 1];
-    let Ok(Ok(1)) = tokio::time::timeout(policy.handshake, inbound.peek(&mut first)).await else {
+    let Ok(Ok(1)) = tokio::time::timeout_at(deadline, inbound.peek(&mut first)).await else {
         return;
     };
     match first[0] {
@@ -388,6 +422,7 @@ async fn handle_socks_connection(
         SOCKS4_VERSION => {
             handle_socks4_connection(
                 inbound,
+                deadline,
                 auth,
                 inbound_tag,
                 config,
@@ -405,6 +440,7 @@ async fn handle_socks_connection(
         _ => {
             handle_socks_http_connection(
                 inbound,
+                deadline,
                 auth,
                 inbound_tag,
                 config,
@@ -420,8 +456,6 @@ async fn handle_socks_connection(
             return;
         }
     }
-    // Xray-core gives the whole handshake one deadline.
-    let deadline = tokio::time::Instant::now() + policy.handshake;
     let Some(user) = tokio::time::timeout_at(deadline, negotiate_socks5(&mut inbound, auth))
         .await
         .ok()
@@ -480,10 +514,11 @@ async fn handle_socks_connection(
                 };
                 Some(lock)
             } else {
-                None
+                SocksUdpClientLock::first_sender(&target, inbound.peer_addr().ok())
             };
             handle_socks_udp_associate(
                 inbound,
+                settings.udp_address,
                 client_lock,
                 user,
                 inbound_tag,
@@ -510,6 +545,7 @@ async fn handle_socks_connection(
 )]
 async fn handle_socks4_connection(
     mut inbound: TcpStream,
+    deadline: tokio::time::Instant,
     auth: &SocksInboundAuth,
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
@@ -527,14 +563,13 @@ async fn handle_socks4_connection(
     }
     // The whole request is read even when it will be refused, so closing
     // does not reset the connection over unread bytes and lose the reply.
-    let target =
-        match tokio::time::timeout(policy.handshake, parse_socks4_connect(&mut inbound)).await {
-            Ok(Ok(target)) if !auth.requires_password() => target,
-            _ => {
-                let _ = inbound.write_all(&SOCKS4_REJECTED).await;
-                return;
-            }
-        };
+    let target = match tokio::time::timeout_at(deadline, parse_socks4_connect(&mut inbound)).await {
+        Ok(Ok(target)) if !auth.requires_password() => target,
+        _ => {
+            let _ = inbound.write_all(&SOCKS4_REJECTED).await;
+            return;
+        }
+    };
     if inbound.write_all(&SOCKS4_GRANTED).await.is_err() {
         return;
     }
@@ -563,6 +598,7 @@ async fn handle_socks4_connection(
 )]
 async fn handle_socks_http_connection(
     inbound: TcpStream,
+    deadline: tokio::time::Instant,
     auth: &SocksInboundAuth,
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
@@ -576,6 +612,7 @@ async fn handle_socks_http_connection(
 ) {
     crate::http::serve_http_proxy_connection(
         inbound,
+        deadline,
         &HttpInboundAccounts::from(auth),
         inbound_tag,
         config,
@@ -1014,13 +1051,35 @@ where
     (Bytes::copy_from_slice(&buffer), sniffed)
 }
 
+/// Where the `UDP ASSOCIATE` relay binds, so where the reply sends the client:
+/// the inbound's `ip` when set, else the control connection's local IP, as in
+/// Xray-core. An IPv4 client of a dual-stack listener gets that IP in its IPv4
+/// form, which it can reach. A link-local control address keeps its interface:
+/// without the scope the relay could not bind there.
+fn socks_udp_relay_bind(
+    configured: Option<IpAddr>,
+    control_local: Option<SocketAddr>,
+) -> SocketAddr {
+    if let Some(ip) = configured {
+        return SocketAddr::new(ip, 0);
+    }
+    match control_local {
+        Some(SocketAddr::V6(local)) if local.ip().to_canonical().is_ipv6() => SocketAddr::V6(
+            std::net::SocketAddrV6::new(*local.ip(), 0, 0, local.scope_id()),
+        ),
+        Some(local) => SocketAddr::new(local.ip().to_canonical(), 0),
+        None => SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
+    }
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "connection tasks receive shared runtime dependencies explicitly"
 )]
 async fn handle_socks_udp_associate(
     mut control: TcpStream,
-    client_lock: Option<SocksUdpClientLock>,
+    relay_ip: Option<IpAddr>,
+    mut client_lock: Option<SocksUdpClientLock>,
     user: Option<InboundUser>,
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
@@ -1033,11 +1092,8 @@ async fn handle_socks_udp_associate(
     mut shutdown: watch::Receiver<bool>,
     budgets: SocksUdpBudgets,
 ) {
-    let bind_addr = match control.local_addr() {
-        Ok(SocketAddr::V6(_)) => SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 0),
-        _ => SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
-    };
-    let socket = match UdpSocket::bind(bind_addr).await {
+    let relay = socks_udp_relay_bind(relay_ip, control.local_addr().ok());
+    let socket = match UdpSocket::bind(relay).await {
         Ok(socket) => Arc::new(socket),
         Err(_) => {
             let _ = write_socks5_failure(&mut control).await;
@@ -1096,7 +1152,7 @@ async fn handle_socks_udp_associate(
                 let Ok((len, client_addr)) = received else {
                     break;
                 };
-                if client_lock.is_some_and(|lock| !lock.admits(client_addr)) {
+                if client_lock.as_mut().is_some_and(|lock| !lock.admits(client_addr)) {
                     continue;
                 }
                 let Ok(datagram) = parse_socks5_udp_datagram(&buffer[..len]) else {
@@ -2343,7 +2399,7 @@ fn socks_udp_flow_global_id(client_addr: SocketAddr, target: &Target) -> [u8; 8]
 mod tests {
     use std::collections::HashMap;
     use std::mem::size_of;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use std::pin::Pin;
     use std::sync::Arc;
     use std::task::{Context, Poll};
@@ -2357,10 +2413,10 @@ mod tests {
 
     use super::{
         admit_socks_udp_flow, apply_fake_ip_sniffed_dial_precedence, evict_oldest_socks_udp_flow,
-        should_sniff_socks_tcp, write_socks_vless_udp_payload, BoxedSocksDnsStreamFuture,
-        FakeIpTargetProvenance, SocksUdpBudgetExhaustionLog, SocksUdpBudgets, SocksUdpClientLock,
-        SocksUdpFlowEntry, SocksUdpSniffedTarget, VlessUdpFraming, SOCKS_UDP_FLOW_QUEUE,
-        SOCKS_UDP_MAX_FLOWS_PER_ASSOCIATION,
+        should_sniff_socks_tcp, socks_udp_relay_bind, write_socks_vless_udp_payload,
+        BoxedSocksDnsStreamFuture, FakeIpTargetProvenance, SocksUdpBudgetExhaustionLog,
+        SocksUdpBudgets, SocksUdpClientLock, SocksUdpFlowEntry, SocksUdpSniffedTarget,
+        VlessUdpFraming, SOCKS_UDP_FLOW_QUEUE, SOCKS_UDP_MAX_FLOWS_PER_ASSOCIATION,
     };
     use crate::{RuntimeLogConfig, RuntimeLogger};
 
@@ -2867,13 +2923,13 @@ mod tests {
         let client = SocketAddr::from((Ipv4Addr::LOCALHOST, 40_000));
         let other = SocketAddr::from((Ipv4Addr::LOCALHOST, 40_001));
 
-        let exact =
+        let mut exact =
             SocksUdpClientLock::for_request(&declared(Ipv4Addr::LOCALHOST, 40_000), Some(peer))
                 .unwrap();
         assert!(!exact.admits(other));
         assert!(exact.admits(client));
 
-        let port_only =
+        let mut port_only =
             SocksUdpClientLock::for_request(&declared(Ipv4Addr::UNSPECIFIED, 40_000), Some(peer))
                 .unwrap();
         assert!(!port_only.admits(other));
@@ -2889,6 +2945,94 @@ mod tests {
         );
         assert_eq!(
             SocksUdpClientLock::for_request(&declared(Ipv4Addr::UNSPECIFIED, 40_000), None),
+            None
+        );
+    }
+
+    #[test]
+    fn an_ipv4_client_of_a_dual_stack_listener_gets_an_ipv4_udp_relay() {
+        let mapped = Ipv4Addr::new(192, 0, 2, 7).to_ipv6_mapped();
+        assert_eq!(
+            socks_udp_relay_bind(None, Some(SocketAddr::from((mapped, 1080)))),
+            SocketAddr::from((Ipv4Addr::new(192, 0, 2, 7), 0))
+        );
+        for local in [
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 1080)),
+            SocketAddr::from((Ipv6Addr::LOCALHOST, 1080)),
+        ] {
+            assert_eq!(
+                socks_udp_relay_bind(None, Some(local)),
+                SocketAddr::new(local.ip(), 0)
+            );
+        }
+        assert_eq!(
+            socks_udp_relay_bind(None, None),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 0))
+        );
+
+        // A link-local control address binds only on its interface.
+        let link_local = Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1);
+        let control = std::net::SocketAddrV6::new(link_local, 1080, 0, 4);
+        assert_eq!(
+            socks_udp_relay_bind(None, Some(SocketAddr::V6(control))),
+            SocketAddr::V6(std::net::SocketAddrV6::new(link_local, 0, 0, 4))
+        );
+
+        // Its datagrams come from its IPv4 address, which the lock admits.
+        let declared = Target::new(
+            TargetAddr::Ip(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+            40_000,
+            Network::Udp,
+        );
+        let peer = SocketAddr::from((Ipv4Addr::LOCALHOST.to_ipv6_mapped(), 50_000));
+        let mut lock = SocksUdpClientLock::for_request(&declared, Some(peer)).unwrap();
+        assert!(lock.admits(SocketAddr::from((Ipv4Addr::LOCALHOST, 40_000))));
+    }
+
+    #[test]
+    fn a_configured_ip_takes_the_udp_relay_whatever_the_connection() {
+        let local = SocketAddr::from((Ipv6Addr::LOCALHOST, 1080));
+        for configured in [
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+        ] {
+            assert_eq!(
+                socks_udp_relay_bind(Some(configured), Some(local)),
+                SocketAddr::new(configured, 0)
+            );
+        }
+    }
+
+    #[test]
+    fn an_association_without_a_password_keeps_its_first_sender() {
+        let peer = SocketAddr::from((Ipv4Addr::LOCALHOST, 50_000));
+        let declared =
+            |ip: Ipv4Addr, port| Target::new(TargetAddr::Ip(IpAddr::V4(ip)), port, Network::Udp);
+        let client = SocketAddr::from((Ipv4Addr::LOCALHOST, 40_000));
+        let other = SocketAddr::from((Ipv4Addr::LOCALHOST, 40_001));
+        let foreign = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 7), 40_000));
+
+        // As in Xray-core, an unspecified IP drops the declared port: the
+        // first datagram from the TCP peer's IP sets it.
+        for declared in [
+            declared(Ipv4Addr::UNSPECIFIED, 0),
+            declared(Ipv4Addr::UNSPECIFIED, 40_001),
+            Target::new(TargetAddr::Domain("localhost".to_owned()), 0, Network::Udp),
+        ] {
+            let mut lock = SocksUdpClientLock::first_sender(&declared, Some(peer)).unwrap();
+            assert!(!lock.admits(foreign));
+            assert!(lock.admits(client));
+            assert!(!lock.admits(other));
+            assert!(lock.admits(client));
+        }
+
+        let mut exact =
+            SocksUdpClientLock::first_sender(&declared(Ipv4Addr::LOCALHOST, 40_000), Some(peer))
+                .unwrap();
+        assert!(!exact.admits(other));
+        assert!(exact.admits(client));
+        assert_eq!(
+            SocksUdpClientLock::first_sender(&declared(Ipv4Addr::UNSPECIFIED, 0), None),
             None
         );
     }

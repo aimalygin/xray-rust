@@ -193,8 +193,9 @@ As in Xray, the controller takes over from quic-go's default sender, Reno,
 only once the connection is up: on XHTTP H3 right after the handshake, and on
 Hysteria after the server's authentication reply, which also decides whether
 Brutal runs instead. Until then the connection runs Quinn's NewReno.
-`force-brutal` switches at the same points, and `reno` keeps NewReno. Quinn's
-BBR for `standard` runs from the first packet.
+`force-brutal` switches at the same points, and `reno` keeps NewReno, started
+like the others at quic-go's 32 datagrams of the initial size. Quinn's BBR for
+`standard` runs from the first packet.
 
 What differs from Xray, deliberately:
 
@@ -773,9 +774,21 @@ treats it as `false`; set `udp` explicitly in profiles shared with Xray-core.
 Whether to adopt Xray-core's default is an
 [open compatibility question](xray-core-differences.md#socks-inbound-udp-false-and-the-absent-default).
 
+`ip` names where the `UDP ASSOCIATE` relay binds and where the reply sends the
+client, as in Xray-core; without it the relay takes the local IP of the
+client's TCP connection, IPv4 for an IPv4 client of a dual-stack listener. It
+must be an IP literal: Xray-core accepts a domain and then fails the first
+`UDP ASSOCIATE`. An `ip` outside loopback, `0.0.0.0` included, needs
+`allowUnauthenticatedLan`, like a listen address outside loopback. An
+association without a password is pinned as Xray-core pins it: to the
+declared IP and port, or, when the declared IP is unspecified or a domain, to
+the TCP peer's IP and the port of its first datagram. Datagrams from any other
+source are dropped, so another local process cannot open flows in it.
+
 A SOCKS5 request is read as Xray-core v26.10.31 reads it, within one
-handshake timeout from the first byte of the greeting to the end of the
-request:
+handshake timeout from the accepted connection to the end of the request
+(Xray-core starts it at the first byte; see
+[the handshake deadline](xray-core-differences.md#socks-inbound-handshake-deadline)):
 
 - Only the command byte is checked, not the version or reserved byte. Tor's
   `RESOLVE` (`0xF0`) and `RESOLVE_PTR` (`0xF1`) connect, as `CONNECT` does.

@@ -4875,7 +4875,7 @@ async fn open_vless_tcp_stream_with_resolved_server_and_dialer(
 }
 
 /// The request on `stream`, its header held until the first payload, as
-/// Xray-core's VLESS outbound sends a TCP or reverse request.
+/// Xray-core's VLESS outbound sends every request.
 fn held_request_stream(
     outbound: &VlessTcpOutbound,
     flow: VisionFlow,
@@ -5264,8 +5264,9 @@ async fn open_reverse_carrier(
     vless.open_carrier(&server, &download, &proxy_dialer).await
 }
 
-/// Writes the request header for a UDP or Mux command. Unlike a TCP request,
-/// Vision queues no empty padding frame: an XUDP or Mux frame always follows.
+/// The request for a UDP or Mux command, its header held until the first
+/// XUDP or Mux frame as for a TCP request: Xray-core's `postRequest` sends
+/// every command's header with the first payload.
 async fn open_vless_command_stream(
     outbound: &VlessTcpOutbound,
     flow: VisionFlow,
@@ -5278,32 +5279,8 @@ async fn open_vless_command_stream(
     let stream = outbound
         .open_carrier(resolved_server, resolved_download, transport_dialer)
         .await?;
-    let mut stream = encryption::wrap(stream, outbound.encryption(), flow.uses_vision()).await?;
-    let request = VlessRequest {
-        user_id: outbound.user().id,
-        command,
-        target: target.clone(),
-        flow: flow.request_flow(),
-    };
-    let header = Zeroizing::new(encode_request_header(&request)?);
-
-    stream.write_all(&header).await?;
-
-    if flow.uses_vision() {
-        let stream = VlessResponseStream::new(VisionTransportStream::new(stream));
-        return Ok(Box::new(VisionOutboundStream::new(VisionStream::new(
-            stream,
-            *outbound.user().id.as_bytes(),
-            outbound.user().vision_seed,
-        ))));
-    }
-
-    // Without Vision there is no direct mode, so the transport never needs
-    // record-aligned reads.
-    stream.release_record_alignment();
-    Ok(Box::new(VlessOutboundStream::new(
-        VlessResponseStream::new(stream),
-    )))
+    let stream = encryption::wrap(stream, outbound.encryption(), flow.uses_vision()).await?;
+    held_request_stream(outbound, flow, stream, command, target)
 }
 
 fn should_use_xudp_for_udp_target(target: &Target) -> bool {
@@ -10512,7 +10489,7 @@ mod tests {
             .unwrap()
             .with_reality_engine(engine.clone());
 
-        let (_stream, framing) = open_vless_udp_stream_with_resolver_and_dialer(
+        let (mut stream, framing) = open_vless_udp_stream_with_resolver_and_dialer(
             &outbound,
             &target,
             &SystemDnsResolver,
@@ -10522,6 +10499,9 @@ mod tests {
         .expect("open VLESS UDP/443 stream with explicit udp443 Vision flow");
 
         assert_eq!(framing, VlessUdpFraming::Xudp);
+        // The header waits for the first XUDP frame and leaves in front of it.
+        stream.write_all(b"first frame").await.unwrap();
+        stream.flush().await.unwrap();
         let expected_header = encode_request_header(&VlessRequest {
             user_id: outbound.user().id,
             command: VlessCommand::Mux,
@@ -10530,11 +10510,21 @@ mod tests {
         })
         .unwrap();
         let mut received_header = vec![0; expected_header.len()];
-        protected_side
-            .read_exact(&mut received_header)
-            .await
-            .expect("read VLESS header from protected stream");
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            protected_side.read_exact(&mut received_header),
+        )
+        .await
+        .expect("the header leaves with the first frame")
+        .expect("read VLESS header from protected stream");
         assert_eq!(received_header, expected_header);
+        let (_, content_len, _) = tokio::time::timeout(
+            Duration::from_secs(5),
+            read_vision_frame(&mut protected_side, true),
+        )
+        .await
+        .expect("the first frame follows the header");
+        assert_eq!(content_len, b"first frame".len());
         assert!(engine.seen().is_some());
     }
 
@@ -10608,15 +10598,28 @@ mod tests {
         .unwrap()
         .len();
         let mut header = vec![0; header_len];
-        protected_side.read_exact(&mut header).await.unwrap();
         for (index, payload) in [b"first".as_slice(), b"second", b"third"]
             .into_iter()
             .enumerate()
         {
             stream.write_all(payload).await.unwrap();
             stream.flush().await.unwrap();
-            let (_, content_len, padding_len) =
-                read_vision_frame(&mut protected_side, index == 0).await;
+            // The header leaves with the first frame.
+            if index == 0 {
+                tokio::time::timeout(
+                    Duration::from_secs(5),
+                    protected_side.read_exact(&mut header),
+                )
+                .await
+                .expect("the header leaves with the first frame")
+                .unwrap();
+            }
+            let (_, content_len, padding_len) = tokio::time::timeout(
+                Duration::from_secs(5),
+                read_vision_frame(&mut protected_side, index == 0),
+            )
+            .await
+            .expect("the frame arrives");
             assert_eq!(content_len, payload.len());
             assert_eq!(padding_len, 0, "frame {index}");
         }
@@ -11800,6 +11803,78 @@ mod testpre_tests {
             443,
             RoutingNetwork::Tcp,
         )
+    }
+
+    /// A UDP or Mux request header waits for the first frame and leaves with
+    /// it, as Xray-core's `postRequest` sends the header of every command.
+    #[tokio::test]
+    async fn vless_command_header_waits_for_the_first_frame() {
+        let (port, mut connections) = server().await;
+        let outbound = vless(port, 0);
+        let flow = validate_outbound_flow(&outbound).unwrap();
+        let dialer = TransportDialer::system().unwrap();
+        let server_addr = [SocketAddr::from((Ipv4Addr::LOCALHOST, port))];
+        let wait = Duration::from_secs(5);
+        let target = target();
+        for command in [VlessCommand::Udp, VlessCommand::Mux] {
+            let open = open_vless_command_stream(
+                &outbound,
+                flow,
+                command,
+                &target,
+                &server_addr,
+                &[],
+                &dialer,
+            );
+            let mut stream = tokio::time::timeout(wait, open).await.unwrap().unwrap();
+            let mut connection = tokio::time::timeout(wait, connections.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let mut byte = [0; 1];
+            assert!(
+                tokio::time::timeout(Duration::from_millis(200), connection.read(&mut byte))
+                    .await
+                    .is_err(),
+                "{command:?}: the header left before the first frame"
+            );
+            stream.write_all(b"first frame").await.unwrap();
+            stream.flush().await.unwrap();
+            let mut header = [0; 17];
+            tokio::time::timeout(wait, connection.read_exact(&mut header))
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(header[0], 0);
+            assert_eq!(&header[1..], uuid::Uuid::parse_str(ID).unwrap().as_bytes());
+
+            // Without a frame the header leaves alone once Xray-core's wait
+            // is over, driven by the relay's read. The wait starts when the
+            // stream is built, so it is measured from before the open.
+            let opened = tokio::time::Instant::now();
+            let open = open_vless_command_stream(
+                &outbound,
+                flow,
+                command,
+                &target,
+                &server_addr,
+                &[],
+                &dialer,
+            );
+            let mut stream = tokio::time::timeout(wait, open).await.unwrap().unwrap();
+            let mut connection = tokio::time::timeout(wait, connections.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            tokio::select! {
+                read = stream.read(&mut byte) => panic!("{command:?}: {read:?}"),
+                received = tokio::time::timeout(wait, connection.read_exact(&mut header)) => {
+                    received.expect("the header leaves alone").unwrap();
+                }
+            }
+            assert!(opened.elapsed() >= VLESS_FIRST_PAYLOAD_WAIT, "{command:?}");
+            assert_eq!(header[0], 0);
+        }
     }
 
     /// Nothing opens before the first request. Then each of the `testpre`

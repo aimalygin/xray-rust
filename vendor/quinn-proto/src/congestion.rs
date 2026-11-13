@@ -112,12 +112,25 @@ pub trait Controller: Send + Sync {
     /// One ack-eliciting packet was declared lost, with the token recorded
     /// when it was sent.
     ///
-    /// Unlike `on_packets_lost`, lost MTU probes are included, as quic-go
-    /// reports them to its controller. Called before the
+    /// Unlike `on_packets_lost`, lost MTU probes are included by default, as
+    /// quic-go reports them to its controller: see
+    /// `on_mtu_probe_lost_with_token`. Called before the
     /// `on_congestion_event_end` of the ACK or loss timeout that found it.
     /// The default ignores it.
     #[allow(unused_variables)]
     fn on_packet_lost_with_token(&mut self, now: Instant, bytes: u64, token: u64) {}
+
+    /// One MTU probe was declared lost, with the token recorded when it was
+    /// sent.
+    ///
+    /// A probe larger than the path carries is lost by design, and RFC 9000
+    /// section 14.4 keeps such a loss out of the congestion response. The
+    /// default reports it through `on_packet_lost_with_token`, as quic-go
+    /// lists it for its controller; a controller that reacts to every loss
+    /// it is told of overrides this.
+    fn on_mtu_probe_lost_with_token(&mut self, now: Instant, bytes: u64, token: u64) {
+        self.on_packet_lost_with_token(now, bytes, token);
+    }
 
     /// The processing of one ACK frame that acknowledged new packets, or of
     /// one loss-detection timeout, finished.

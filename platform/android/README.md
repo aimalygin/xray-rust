@@ -252,7 +252,13 @@ starts once the earlier one's cleanup has finished, so wrappers need not wait.
 Only the latest queued replacement runs; an older one also reports
 cancellation. A call with the same arguments as the start in flight, such as a
 redelivered intent, is ignored like before, as is a call while a session is
-running or stopping. A replacement whose worker cannot be scheduled reports
+running. A call while a session is stopping, after `stopXrayTunnel()` or a
+packet-pump or descriptor failure, starts once that stop has finished; a later
+such call replaces it, and the replaced one reports `onXrayTunnelStartCancelled`.
+`stopXrayTunnel()` blocks until the core has stopped, and once it returns the
+stopped session calls no `onXrayTunnelStarted`: it waits for one already
+running, so that callback must not wait for a thread that stops the tunnel. A
+replacement whose worker cannot be scheduled reports
 `onXrayTunnelStartFailed`, or `onXrayTunnelStartCancelled` if it was stopped
 meanwhile, instead of throwing. The callbacks carry no attempt identity, and
 those of different attempts can arrive on different threads and interleave.

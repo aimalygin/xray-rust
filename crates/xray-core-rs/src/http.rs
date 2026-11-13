@@ -95,6 +95,7 @@ pub async fn serve_http_listener(
                 connections.spawn(async move {
                     serve_http_proxy_connection(
                         stream,
+                        tokio::time::Instant::now() + policy.handshake,
                         &accounts,
                         inbound_tag,
                         config,
@@ -126,13 +127,15 @@ pub async fn serve_http_listener(
 /// an absolute target are forwarded, each routed on its own, and the
 /// connection takes another request after a response of known length when
 /// the client sent `Proxy-Connection: keep-alive`. A request without a host
-/// gets a 400.
+/// gets a 400. The first request head must arrive by `deadline`, each later
+/// one within the handshake timeout of the response before it.
 #[expect(
     clippy::too_many_arguments,
     reason = "connection tasks receive shared runtime dependencies explicitly"
 )]
 pub(crate) async fn serve_http_proxy_connection(
     mut inbound: TcpStream,
+    mut deadline: tokio::time::Instant,
     accounts: &HttpInboundAccounts,
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
@@ -146,7 +149,7 @@ pub(crate) async fn serve_http_proxy_connection(
 ) {
     loop {
         let Ok(Ok(head)) =
-            tokio::time::timeout(policy.handshake, read_http_request_head(&mut inbound)).await
+            tokio::time::timeout_at(deadline, read_http_request_head(&mut inbound)).await
         else {
             drain_arrived(&inbound);
             return;
@@ -207,6 +210,7 @@ pub(crate) async fn serve_http_proxy_connection(
         if !(reusable && request.keep_alive) {
             return;
         }
+        deadline = tokio::time::Instant::now() + policy.handshake;
     }
 }
 

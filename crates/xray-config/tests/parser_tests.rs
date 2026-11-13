@@ -956,6 +956,7 @@ fn parses_socks_inbound_password_accounts_without_leaking_them() {
                 SocksAccount::new(b"synthetic-user", b"synthetic-pass").unwrap(),
             ]),
             udp: true,
+            udp_address: None,
         })
     );
     assert!(parsed.diagnostics.is_empty());
@@ -998,6 +999,43 @@ fn parses_socks_inbound_udp_flag_and_keeps_absent_udp_enabled() {
         assert!(parsed.diagnostics.is_empty(), "{extra}");
     }
     assert!(SocksInboundSettings::default().udp);
+}
+
+#[test]
+fn parses_socks_inbound_udp_relay_ip() {
+    for (settings, expected) in [
+        (
+            r#""ip": "127.0.0.1""#,
+            Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+        ),
+        (r#""ip": "[::1]""#, Some(IpAddr::V6(Ipv6Addr::LOCALHOST))),
+        (
+            r#""ip": "0.0.0.0", "allowUnauthenticatedLan": true"#,
+            Some(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+        ),
+        (r#""ip": null"#, None),
+        ("", None),
+    ] {
+        let parsed =
+            parse_xray_json(&raw_with_socks_settings(settings)).expect("config should parse");
+        let InboundProtocol::Socks(socks) = &parsed.config.inbounds[0].protocol else {
+            panic!("expected a socks inbound for {settings}");
+        };
+        assert_eq!(socks.udp_address, expected, "{settings}");
+    }
+    // A domain, which Xray-core fails on at the first UDP ASSOCIATE, and a
+    // relay beyond loopback without the LAN opt-in are refused.
+    for settings in [
+        r#""ip": "localhost""#,
+        r#""ip": 1"#,
+        r#""ip": "0.0.0.0""#,
+        r#""ip": "192.0.2.7""#,
+    ] {
+        assert_parse_error_path(
+            &raw_with_socks_settings(settings),
+            "$.inbounds[0].settings.ip",
+        );
+    }
 }
 
 #[test]
@@ -7667,6 +7705,7 @@ fn mixed_is_xrays_alias_of_the_socks_inbound() {
             )
             .unwrap()]),
             udp: false,
+            udp_address: None,
         })
     );
 }

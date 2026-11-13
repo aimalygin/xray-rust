@@ -223,6 +223,101 @@ async fn the_handshake_has_one_deadline() {
 }
 
 #[tokio::test]
+async fn the_wait_for_the_first_byte_counts_against_the_deadline() {
+    let mut core = start("{}", r#", "policy": {"levels": {"0": {"handshake": 1}}}"#).await;
+    let addr = core.inbound_addr(Some("socks-in")).unwrap();
+    // SOCKS 5, SOCKS 4 and HTTP on the same port: the first byte comes at
+    // 0.9 s and nothing after it, so the inbound closes at 1 s, not 1.9 s.
+    // The clock is real: paused, it runs ahead while loopback packets are
+    // still on their way. The window leaves a loaded runner room on both
+    // sides.
+    let mut clients = JoinSet::new();
+    for first in [5, 4, b'G'] {
+        clients.spawn(async move {
+            let mut client = TcpStream::connect(addr).await.unwrap();
+            let connected = TokioInstant::now();
+            sleep(Duration::from_millis(900)).await;
+            client.write_all(&[first]).await.unwrap();
+            let mut received = Vec::new();
+            let read = timeout(Duration::from_secs(5), client.read_to_end(&mut received))
+                .await
+                .expect("the inbound closes the connection");
+            if let Err(error) = read {
+                assert_eq!(error.kind(), ErrorKind::ConnectionReset, "{error}");
+            }
+            (first, connected.elapsed())
+        });
+    }
+    while let Some(joined) = clients.join_next().await {
+        let (first, closed) = joined.unwrap();
+        assert!(
+            (Duration::from_millis(900)..Duration::from_millis(1500)).contains(&closed),
+            "first byte {first}: closed after {closed:?}"
+        );
+    }
+    core.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn an_association_without_a_password_ignores_other_senders() {
+    let sink = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let sink_addr = sink.local_addr().unwrap();
+    let mut core = start(r#"{"udp": true}"#, "").await;
+    let mut control = TcpStream::connect(core.inbound_addr(Some("socks-in")).unwrap())
+        .await
+        .unwrap();
+    // `0.0.0.0:0`: the first datagram from the TCP peer's IP sets the port.
+    let relay = socks5_udp_associate(&mut control).await;
+    let client = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let foreign = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let target = Target::new(
+        RoutingTargetAddr::Ip(sink_addr.ip()),
+        sink_addr.port(),
+        RoutingNetwork::Udp,
+    );
+    let datagram = |payload: &[u8]| encode_socks5_udp_datagram(&target, payload).unwrap();
+    let mut buffer = [0; 64];
+    for (sender, payload) in [
+        (&client, b"client".as_slice()),
+        (&foreign, b"foreign"),
+        (&client, b"client again"),
+    ] {
+        sender.send_to(&datagram(payload), relay).await.unwrap();
+    }
+    for expected in [b"client".as_slice(), b"client again"] {
+        let (len, _) = timeout(Duration::from_secs(5), sink.recv_from(&mut buffer))
+            .await
+            .expect("the client's datagrams arrive")
+            .unwrap();
+        assert_eq!(&buffer[..len], expected);
+    }
+    drop(control);
+    core.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn the_ip_setting_names_the_udp_relay() {
+    let raw = r#"{
+        "inbounds": [{"tag": "socks-in", "protocol": "socks", "listen": "::1",
+            "port": 0, "settings": {"udp": true, "ip": "127.0.0.1"}}],
+        "outbounds": [{"tag": "direct", "protocol": "freedom"}]
+    }"#;
+    let mut core = Core::new(parse_xray_json(raw).unwrap().config).unwrap();
+    core.start().await.unwrap();
+    let mut control = TcpStream::connect(core.inbound_addr(Some("socks-in")).unwrap())
+        .await
+        .unwrap();
+    // The control connection is IPv6; the reply names the IPv4 relay.
+    let relay = timeout(Duration::from_secs(5), socks5_udp_associate(&mut control))
+        .await
+        .expect("the inbound answers UDP ASSOCIATE");
+    assert_eq!(relay.ip(), Ipv4Addr::LOCALHOST);
+    assert_ne!(relay.port(), 0);
+    drop(control);
+    core.stop().await.unwrap();
+}
+
+#[tokio::test]
 async fn udp_datagrams_without_a_payload_are_dropped() {
     let sink = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let sink_addr = sink.local_addr().unwrap();

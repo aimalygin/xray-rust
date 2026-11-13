@@ -215,3 +215,33 @@ confirmed did it: a certificate the client refuses, or a dial given up after
 the Finished. `chrome_parrot_close_before_the_handshake_is_confirmed_is_sent_once`
 fails with sixteen datagrams, where it stops counting, when the condition is
 removed. The complete 312-test library suite passes in the reconstruction.
+
+## A ChromeParrot Handshake ACK alone elicits no acknowledgement
+
+`poll_transmit` decides whether a packet is ack-eliciting before it is
+filled, from what is pending in its space. A ChromeParrot client sends its
+Handshake ACK in a packet of its own while the Finished is still pending, so
+that packet was tracked as ack-eliciting: 50 bytes in flight, the loss timer
+armed for it and a delivery token taken, for a packet the server never has
+to acknowledge. quic-go tracks it as the ACK-only packet it is. After `populate_packet`, a Handshake packet of an unconfirmed
+ChromeParrot handshake that carries an ACK alone clears the builder's
+`ack_eliciting`; it is then reported through `on_sent_not_ack_eliciting`.
+`chrome_parrot_handshake_ack_alone_is_not_ack_eliciting` checks that the
+second ack-eliciting packet a controller is told of is the Finished; without
+the change it is the 50-byte ACK.
+
+## Lost MTU probes have their own callback
+
+`Controller::on_mtu_probe_lost_with_token` reports a lost MTU probe. Its
+default calls `on_packet_lost_with_token`, so every controller sees what it
+saw before; a controller that reacts to each loss it is told of overrides it
+and leaves the probe out, as RFC 9000 section 14.4 asks. The port of Xray's
+BBR sender does. `lost_mtu_probes_are_reported_per_packet_only` also checks
+that every lost probe comes through the new callback. The complete 313-test
+library suite passes in the reconstruction.
+
+A Retry was checked and left as it is: `space.take(0)` finds no packet under
+ChromeParrot, whose Initial numbers start at 1, so the first Initial is not
+credited to the congestion controller as acknowledged, which is what quic-go's
+`ResetForRetry` does; `discard_space` takes every sent Initial out of the
+bytes in flight once, and the ClientHello is queued again whole.
