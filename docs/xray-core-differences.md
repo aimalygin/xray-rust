@@ -1010,6 +1010,16 @@ Deliberate differences:
   packet went to, as Xray-core's Linux server sends them. A family the
   addresses do not use needs no socket, where Xray-core fails every dial
   unless sockets of both families open.
+- On Apple systems a socket nothing bound takes the interface the system
+  scopes a UDP socket of the process to on its way to the same address, and
+  asks again at most once a second while it sends. Inside a Network
+  Extension the system scopes the extension's UDP sockets to the physical
+  interface but not its ICMP sockets, so an unbound socket's echo requests
+  follow the tunnel's routes into the tunnel; found on an iPhone, where the
+  server saw none. Xray-core's sockets are never bound to an interface, and
+  its server's answering the client's latest address is what lets a socket
+  here move with the network. Where the system scopes no UDP socket, outside
+  a Network Extension, the socket stays unbound as Xray-core's does.
 - It must be the last UDP mask, and runs neither with udphop, xdns, realm
   nor header-custom, nor on QUIC with sudoku: Xray-core fails every dial
   with it anywhere else, the others send elsewhere, header-custom keys its

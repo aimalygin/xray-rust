@@ -15,6 +15,20 @@ long-term supported release series.
 Release candidate preparation; publication and exact-candidate release
 qualification are pending.
 
+- The `xicmp` mask works inside an Apple Network Extension. There the system
+  scopes the extension's UDP sockets to the physical interface but not its
+  ICMP sockets, so the client's echo requests followed the tunnel's routes
+  into the tunnel and never left the device: on an iPhone, mKCP over xicmp
+  failed at its first exchange and the server saw no echo request, while the
+  macOS CLI and Android worked against the same server. On Apple systems an
+  xicmp socket nothing bound now takes the interface the system scopes a UDP
+  socket of the process to on its way to the same address, and asks again at
+  most once a second while it sends, so it moves between Wi-Fi and cellular;
+  Xray-core's server knows the client by its id and answers its latest
+  address. Outside a Network Extension the system scopes no UDP socket and
+  the socket stays unbound, as before, and `sockopt.interface` still binds
+  it. Android, Linux and the macOS CLI behave as before. Found on an iPhone
+  by the v0.10 device fixtures.
 - The Apple and Android adapters start a profile whose VLESS outbound is in
   the simplified form, its server in `settings.address` with no `vnext`, as
   the core and Xray-core read it. Before the tunnel's DNS takes over, both
