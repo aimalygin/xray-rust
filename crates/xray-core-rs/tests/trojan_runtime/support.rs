@@ -16,6 +16,14 @@ pub const PASSWORD: &str = "synthetic-local-trojan-test-password";
 pub const DEADLINE: Duration = Duration::from_secs(20);
 /// Far longer than sing-box takes from flushing its 101 to the hijack.
 const HTTPUPGRADE_ROUND_TRIP: Duration = Duration::from_millis(10);
+/// Starts of a reference whose port another socket took, each on a fresh
+/// port. The harness picks a port by binding it and lets go for the
+/// reference to bind; a parallel test's socket can take it in between
+/// ("address already in use").
+const PORT_ATTEMPTS: usize = 5;
+/// Restarts on the same port, which a client knows, 100 ms apart: about two
+/// seconds for another socket to let go of it.
+const RESTART_ATTEMPTS: usize = 20;
 
 pub fn independent_reference() -> bool {
     match std::env::var("XRAY_CLIENT_PROTOCOL_REFERENCE").as_deref() {
@@ -77,6 +85,23 @@ impl ReferenceServer {
         vmess: Option<(&str, &str)>,
         vless: Option<(&str, bool)>,
     ) -> Self {
+        for _ in 1..PORT_ATTEMPTS {
+            if let Some(server) = Self::try_start_protocol(network, shadowsocks, vmess, vless).await
+            {
+                return server;
+            }
+        }
+        Self::try_start_protocol(network, shadowsocks, vmess, vless)
+            .await
+            .expect("the reference's port was taken on every attempt")
+    }
+    /// A started reference, or `None` when another socket took its port.
+    async fn try_start_protocol(
+        network: &str,
+        shadowsocks: Option<(&str, bool)>,
+        vmess: Option<(&str, &str)>,
+        vless: Option<(&str, bool)>,
+    ) -> Option<Self> {
         let independent = independent_reference();
         assert!(vless.is_none() || !independent);
         assert!(reference_supports(
@@ -272,34 +297,52 @@ impl ReferenceServer {
             settings,
             latency,
         };
-        server.wait_ready().await;
-        server
+        server.wait_ready().await.then_some(server)
     }
+    /// Restarts the reference on its port, which a client knows. Another
+    /// socket may hold it a moment; it is tried again then.
     pub async fn restart(&mut self) {
         self.child.kill().unwrap();
         self.child.wait().unwrap();
-        let log = std::fs::File::create(self.directory.join("server.log")).unwrap();
-        self.child = Command::new(std::env::var_os("XRAY_CLIENT_PROTOCOL_BINARY").unwrap())
-            .args([
-                "run",
-                if independent_reference() {
-                    "-c"
-                } else {
-                    "-config"
-                },
-            ])
-            .arg(self.directory.join("config.json"))
-            .stdin(Stdio::null())
-            .stdout(log.try_clone().unwrap())
-            .stderr(log)
-            .spawn()
-            .unwrap();
-        self.wait_ready().await;
+        for attempt in 1..=RESTART_ATTEMPTS {
+            let log = std::fs::File::create(self.directory.join("server.log")).unwrap();
+            self.child = Command::new(std::env::var_os("XRAY_CLIENT_PROTOCOL_BINARY").unwrap())
+                .args([
+                    "run",
+                    if independent_reference() {
+                        "-c"
+                    } else {
+                        "-config"
+                    },
+                ])
+                .arg(self.directory.join("config.json"))
+                .stdin(Stdio::null())
+                .stdout(log.try_clone().unwrap())
+                .stderr(log)
+                .spawn()
+                .unwrap();
+            if self.wait_ready().await {
+                return;
+            }
+            assert!(
+                attempt < RESTART_ATTEMPTS,
+                "the reference's port stayed taken"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
-    async fn wait_ready(&mut self) {
+    /// Waits until the reference accepts connections: `false` when it
+    /// exited because another socket held its port, a panic when it exited
+    /// for anything else.
+    async fn wait_ready(&mut self) -> bool {
         let deadline = tokio::time::Instant::now() + DEADLINE;
         loop {
-            assert!(self.child.try_wait().unwrap().is_none(), "reference exited");
+            if self.child.try_wait().unwrap().is_some() {
+                let log =
+                    std::fs::read_to_string(self.directory.join("server.log")).unwrap_or_default();
+                assert!(log.contains("address already in use"), "reference exited");
+                return false;
+            }
             // Xray's gRPC hub binds its listener in a goroutine after the core
             // reports `started`, so the log line alone can race the first dial.
             if std::fs::read_to_string(self.directory.join("server.log"))
@@ -319,6 +362,7 @@ impl ReferenceServer {
             );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
+        true
     }
     pub fn profile(&self) -> Value {
         json!({"inbounds":[
