@@ -270,9 +270,22 @@ async fn kcp_header_custom_udp_modes_and_mask_order() {
     let noise = json!({"type":"noise","settings":{"noise":[{"type":"str","packet":"noise","delay":"1-2"}]}});
     let legacy = json!({"type":"mkcp-legacy","settings":{"value":"header-udp-seed"}});
     for mode in ["prefix", "standalone"] {
+        // A prefix whose server reuses the token the client draws for each
+        // datagram carries one datagram for one, as `direct_udp_masks` says:
+        // Xray-core's client takes a reply only with the token of its latest
+        // datagram, and mKCP's stream keeps crossing them. Under CPU
+        // contention nearly every reply was dropped and the resends kept
+        // the tokens moving, past the 60-second timeout on CI. So the prefix
+        // reuses nothing, as a stream needs; the standalone handshake, one
+        // request for one answer, keeps the token.
+        let reply = if mode == "prefix" {
+            json!({"rand":8})
+        } else {
+            json!({"reuse":"token"})
+        };
         let header = json!({"type":"header-custom","settings":{"mode":mode,
             "client":[{"rand":8,"capture":"token"},{"type":"str","packet":"hello"}],
-            "server":[{"reuse":"token"},{"transform":{"op":"be16","args":[{"u64":443}]}}]}});
+            "server":[reply,{"transform":{"op":"be16","args":[{"u64":443}]}}]}});
         for (order, masks) in [
             ("plain", json!([header])),
             ("noise-inner", json!([noise, header, legacy])),

@@ -7,6 +7,12 @@
 //! Network Extension refuses to bind an ICMP socket or read an unconnected
 //! one. Replies then come only from the address the socket sends to, as
 //! Xray-core's Linux server makes them.
+//!
+//! On Apple systems a socket is also bound to an interface where the system
+//! scopes the process's UDP sockets to one, as it does inside a Network
+//! Extension, and moves with it; see [`scope`].
+mod scope;
+
 use super::{message, XicmpConfig, XicmpError};
 use crate::SocketProtector;
 use rand::{Rng, RngCore};
@@ -61,11 +67,20 @@ struct Shared {
     /// The socket of each distinct address. Sends go straight to the
     /// system, which a Tokio socket defers until its reactor has seen the
     /// socket writable; a clone of each reads.
-    sockets: Vec<(IpAddr, std::net::UdpSocket)>,
+    sockets: Vec<Socket>,
+    /// Protects the sockets that ask the system where to scope one.
+    protector: Option<Arc<dyn SocketProtector>>,
     client_id: [u8; 8],
     id: u16,
     seq: Mutex<u16>,
     dgram: bool,
+}
+
+/// One server address's socket and the interface it leaves through.
+struct Socket {
+    address: IpAddr,
+    socket: std::net::UdpSocket,
+    scope: scope::Scope,
 }
 
 impl XicmpClient {
@@ -81,25 +96,30 @@ impl XicmpClient {
         } else {
             config.ips.iter().map(IpAddr::to_canonical).collect()
         };
-        let mut sockets: Vec<(IpAddr, std::net::UdpSocket)> = Vec::new();
+        let mut sockets: Vec<Socket> = Vec::new();
         let mut readers = Vec::new();
         for &address in &addresses {
-            if sockets.iter().any(|(ip, _)| *ip == address) {
+            if sockets.iter().any(|socket| socket.address == address) {
                 continue;
             }
-            let socket = open(address, config.dgram, protector.as_deref())?;
+            let (socket, scope) = open(address, config.dgram, protector.as_deref())?;
             let reader = socket
                 .try_clone()
                 .and_then(UdpSocket::from_std)
                 .map_err(XicmpError::Socket)?;
             readers.push((address, reader));
-            sockets.push((address, socket));
+            sockets.push(Socket {
+                address,
+                socket,
+                scope,
+            });
         }
         let mut client_id = [0u8; 8];
         rand::thread_rng().fill_bytes(&mut client_id);
         let shared = Arc::new(Shared {
             addresses,
             sockets,
+            protector,
             client_id,
             id: rand::thread_rng().gen(),
             seq: Mutex::new(1),
@@ -136,9 +156,15 @@ impl XicmpClient {
         };
         let addresses = &self.shared.addresses;
         let address = addresses[rand::thread_rng().gen_range(0..addresses.len())];
-        let Some((_, socket)) = self.shared.sockets.iter().find(|(ip, _)| *ip == address) else {
+        let Some(Socket { socket, scope, .. }) = self
+            .shared
+            .sockets
+            .iter()
+            .find(|socket| socket.address == address)
+        else {
             return Ok(());
         };
+        scope.refresh(socket, address, self.shared.protector.as_deref());
         let mut data = Vec::with_capacity(8 + packet.len());
         data.extend_from_slice(&self.shared.client_id);
         data.extend_from_slice(packet);
@@ -181,14 +207,15 @@ impl Drop for XicmpClient {
     }
 }
 
-/// A nonblocking ICMP socket for `address`'s family, connected to it. On
-/// Apple systems an IPv4 datagram socket returns the IP header unless told
-/// not to, which Go's `icmp.ListenPacket` does.
+/// A nonblocking ICMP socket for `address`'s family, connected to it, and
+/// the interface it leaves through. On Apple systems an IPv4 datagram
+/// socket returns the IP header unless told not to, which Go's
+/// `icmp.ListenPacket` does.
 fn open(
     address: IpAddr,
     dgram: bool,
     protector: Option<&dyn SocketProtector>,
-) -> Result<std::net::UdpSocket, XicmpError> {
+) -> Result<(std::net::UdpSocket, scope::Scope), XicmpError> {
     use socket2::{Domain, Protocol, Socket, Type};
     let (domain, protocol) = if address.is_ipv4() {
         (Domain::IPV4, Protocol::ICMPV4)
@@ -203,11 +230,12 @@ fn open(
     }
     let socket: std::net::UdpSocket = socket.into();
     crate::protect_std_udp_socket(&socket, protector).map_err(XicmpError::Protection)?;
+    let scope = scope::Scope::open(&socket, address, protector).map_err(XicmpError::Socket)?;
     socket
         .connect(SocketAddr::new(address, 0))
         .map_err(XicmpError::Socket)?;
     socket.set_nonblocking(true).map_err(XicmpError::Socket)?;
-    Ok(socket)
+    Ok((socket, scope))
 }
 
 /// `IP_STRIPHDR`, Darwin's option to read an ICMP datagram socket without

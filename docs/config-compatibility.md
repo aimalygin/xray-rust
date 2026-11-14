@@ -3144,7 +3144,7 @@ Where the sockets come from:
 | macOS | Granted to any process (checked) | Root only |
 | Linux | Granted to the groups in `net.ipv4.ping_group_range`: the kernel's default `1 0` refuses everyone, systemd and Docker set `0 2147483647` (both checked in a container) | `CAP_NET_RAW` |
 | Android | Granted to apps: `init.rc` sets `ping_group_range` to `0 2147483647`; the sockets take the VPN's protection like the core's others (not checked on a device) | Not granted to apps |
-| iOS | Granted without entitlements, as Apple's SimplePing uses them; inside a Network Extension Apple's forum reports `bind` and reads on an unconnected socket failing with `EPERM`, which the client avoids (not checked on a device) | Not granted |
+| iOS | Granted without entitlements, as Apple's SimplePing uses them; inside a Network Extension Apple's forum reports `bind` and reads on an unconnected socket failing with `EPERM`, which the client avoids, and the socket must be bound to an interface (below) | Not granted |
 
 Each server address gets its own socket, never bound and connected to it: an
 unbound socket is bound on its first send, and replies come only from the
@@ -3152,6 +3152,18 @@ address each packet went to, as Xray-core's Linux server makes them. Linux
 datagram sockets put their own identifier in the request, and the server's
 replies with it reach them. On macOS and iOS an IPv4 datagram socket would
 return the IP header, which the client switches off as Go does.
+
+On macOS and iOS a socket nothing bound takes the interface the system
+scopes a UDP socket of the process to on its way to the same address, and
+asks again at most once a second while it sends, so that it moves between
+Wi-Fi and cellular as the UDP sockets opened after a change do; the server
+knows the client by its id and answers where its latest request came from.
+Inside a Network Extension the system scopes the extension's UDP sockets to
+the physical interface but not its ICMP sockets, whose echo requests would
+otherwise follow the tunnel's routes into the tunnel and never leave the
+device. Elsewhere the system scopes no UDP socket and the socket stays
+unbound, following the routes. A socket `sockopt.interface` bound keeps that
+interface.
 
 The mask must be the last UDP mask: Xray-core fails every dial with it
 anywhere else, even before a [filter](#filter-mask). The masks listed
