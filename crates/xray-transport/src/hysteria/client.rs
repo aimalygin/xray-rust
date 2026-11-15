@@ -300,7 +300,8 @@ impl Shared {
         }
         let endpoint = endpoint.as_ref().ok_or(HysteriaError::Closed)?;
         // On the captured runtime. Quinn retains at most the current and
-        // previous carrier until an authenticated packet arrives on the new one.
+        // previous carrier, the previous one until a few seconds after an
+        // authenticated packet arrives on the new one.
         let result = if self.carrier.enabled() {
             let wire_peer = self.carrier.next_hop_peer(
                 logical_peer,
