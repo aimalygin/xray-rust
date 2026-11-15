@@ -6,9 +6,9 @@ device result exists.
 The shared steps are in the [release process](release-process.md); this page
 holds what is specific to 0.10.0.
 
-The candidate is the second 0.10.0 release commit: `main` through
-`0598c13f05928934be559a91ae2e1ecf7fef3d25` plus the changelog section, now
-dated 2026-11-13, and this document. The workspace version, lockfile and
+The candidate is the third 0.10.0 release commit: `main` through
+`46c38c19ef473ab756a6f12526405566928ab0ac` plus the changelog section, now
+dated 2026-11-14, and this document. The workspace version, lockfile and
 generated configuration contract are already 0.10.0 from the first release
 commit and do not change. Its exact revision and tree are recorded here once
 it merges; every later step binds to them. The README install snippets keep
@@ -34,8 +34,32 @@ was needed, the owner also took what had merged or been reviewed since:
 [#293](https://github.com/aimalygin/xray-rust/pull/293).
 
 No result bound to the first candidate counts for 0.10.0. Its CI, SDK pin,
-performance measurements, device stands and device runs are all repeated on
-this one.
+performance measurements and device stands were repeated on the second.
+
+### The superseded second candidate
+
+The second candidate was `4a61b057e97042396ec1a03fa8a0699919c42d64` (tree
+`764bee7817e1a184a9a0c5e2ba0cfbdcb79932a5`), the merge of
+[#294](https://github.com/aimalygin/xray-rust/pull/294). Its full CI passed
+(run 43528798851), the SDK pinned it in
+[xray-rust-mobile#50](https://github.com/aimalygin/xray-rust-mobile/pull/50),
+and the host measurements and device stands were made from it.
+
+On 2026-11-14 its device campaign found that the `xicmp` mask did not work
+inside the Apple Network Extension. On an iPhone mKCP under `xicmp` failed at
+its first exchange, while Android and the macOS CLI worked against the same
+server. The fixes are
+[#295](https://github.com/aimalygin/xray-rust/pull/295), which gives the
+client's ICMP sockets the interface the system gives its UDP sockets, and
+[#296](https://github.com/aimalygin/xray-rust/pull/296), which leaves them
+unconnected on Apple systems. A diagnostic build with both passed the `xicmp`
+smoke set on the iPhone against Xray-core's server on a Linux host. A
+diagnostic is not evidence; the run is repeated on the candidate.
+
+No result bound to the second candidate counts for 0.10.0 either. On
+2026-11-14 the owner chose a full repeat («Полный повтор»): CI, the SDK pin,
+the performance measurements, the device stands and every device run are made
+again on this one.
 
 ## Scope
 
@@ -158,10 +182,13 @@ can go on, and each can change without touching the rest.
 4. **Where `xicmp`'s server runs.** Xray-core's server reads raw ICMP sockets,
    which need root on macOS and `CAP_NET_RAW` on Linux, so the `xicmp` fixture
    runs alone and refuses to start without them. Docker on a Mac cannot serve
-   it: ICMP to the Mac's address never reaches a container. The options are
-   the Mac fixture host under `sudo`, or a Linux host on the same LAN.
-   [#236](https://github.com/aimalygin/xray-rust/issues/236) is still open:
-   the client has never run on a device.
+   it: ICMP to the Mac's address never reaches a container. The second
+   candidate's campaign showed that the Mac cannot serve it under `sudo`
+   either: macOS answers echo requests in the kernel and does not hand them
+   to a raw socket, so the server received nothing. The server therefore
+   runs on a Linux host the devices can reach.
+   [#236](https://github.com/aimalygin/xray-rust/issues/236) stays open until
+   the device evidence is published.
 5. **How the device is the bridge.** No transition is replaced by a negative
    control. The device's own probe traffic enters the portal (Xray-core on the
    fixture host) as an ordinary VLESS client, comes back down the reverse
@@ -219,7 +246,7 @@ after the SDK publishes, since it pins the published SDK.
    0.9.0 followed in their own change; the same page has their commands.
 3. ~~Pre-release fixes on `main`, then the release commit: workspace version
    0.10.0, dated changelog section, regenerated configuration contract.~~
-   Done in the release commit. The second release commit, after the fixes
+   Done in the release commit. The third release commit, after the fixes
    above, is the candidate.
 4. Full release CI on the candidate.
 5. `xray-rust-mobile`: pin the candidate, synchronize, add the `v010`

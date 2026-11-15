@@ -10,7 +10,7 @@ long-term supported release series.
 
 ## Unreleased
 
-## 0.10.0 - 2026-11-13
+## 0.10.0 - 2026-11-14
 
 Release candidate preparation; publication and exact-candidate release
 qualification are pending.
