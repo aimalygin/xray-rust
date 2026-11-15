@@ -78,7 +78,7 @@ async fn a_datagram_client_sends_and_drops_the_systems_echo_of_it() {
 #[tokio::test]
 async fn an_apple_ipv4_datagram_socket_reads_without_the_header() {
     use std::os::fd::AsRawFd;
-    let Ok((socket, _)) = open("127.0.0.1".parse().unwrap(), true, None) else {
+    let Ok((socket, _, _)) = open("127.0.0.1".parse().unwrap(), true, None) else {
         return;
     };
     let mut value: libc::c_int = 0;
@@ -96,6 +96,81 @@ async fn an_apple_ipv4_datagram_socket_reads_without_the_header() {
     // The system reports the flag it keeps, nonzero once set.
     assert_eq!(result, 0);
     assert_ne!(value, 0);
+}
+
+/// The device defect of 0.10.0's candidates: inside a Network Extension
+/// NECP defuncted a connected ICMP socket after its first echo request. On
+/// Apple systems the socket is left unconnected, in either family.
+#[cfg(target_vendor = "apple")]
+#[test]
+fn an_apple_socket_is_left_unconnected() {
+    for address in ["127.0.0.1", "::1"] {
+        let address: IpAddr = address.parse().unwrap();
+        let (socket, _, connected) = open(address, true, None).unwrap();
+        assert!(!connected, "{address}");
+        assert_eq!(
+            socket.peer_addr().unwrap_err().kind(),
+            io::ErrorKind::NotConnected,
+            "{address}"
+        );
+    }
+}
+
+/// Elsewhere the socket is connected to its address, as before.
+#[cfg(not(target_vendor = "apple"))]
+#[test]
+fn elsewhere_a_socket_is_connected_to_its_address() {
+    let address: IpAddr = "127.0.0.1".parse().unwrap();
+    let Ok((socket, _, connected)) = open(address, true, None) else {
+        return;
+    };
+    assert!(connected);
+    assert_eq!(socket.peer_addr().unwrap().ip(), address);
+}
+
+/// An unconnected socket reads every echo reply the system gets. A reply
+/// from another address, even with the client's identifier and a packet in
+/// it, is not the server's; the same from the server's address is.
+#[cfg(target_vendor = "apple")]
+#[tokio::test]
+async fn an_unconnected_socket_keeps_only_the_replies_from_its_address() {
+    use socket2::{Domain, Protocol, Socket, Type};
+    // Another address of this system, which echoes requests to it as well.
+    let route = std::net::UdpSocket::bind("0.0.0.0:0").unwrap();
+    if route.connect("192.0.2.1:9").is_err() {
+        return;
+    }
+    let other = route.local_addr().unwrap().ip();
+    if other.is_loopback() || other.is_unspecified() {
+        return;
+    }
+    let config = XicmpConfig {
+        dgram: true,
+        ips: vec![],
+    };
+    let server: IpAddr = "127.0.0.1".parse().unwrap();
+    let client = XicmpClient::connect(&config, server, None).await.unwrap();
+    let pinger = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::ICMPV4)).unwrap();
+    let id = client.shared.id;
+    let elsewhere = message::echo(message::ECHO_REQUEST_V4, id, 1, b"from elsewhere");
+    pinger
+        .send_to(&elsewhere, &SocketAddr::new(other, 0).into())
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(
+        client.try_recv().is_none(),
+        "another address's reply got through"
+    );
+    let from_server = message::echo(message::ECHO_REQUEST_V4, id, 2, b"from the server");
+    pinger
+        .send_to(&from_server, &SocketAddr::new(server, 0).into())
+        .unwrap();
+    let packet = tokio::time::timeout(std::time::Duration::from_secs(2), client.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(packet.data, b"from the server");
+    assert_eq!(packet.from, SocketAddr::new(server, 0));
 }
 
 #[tokio::test]
@@ -156,10 +231,11 @@ fn two_interfaces() -> (std::num::NonZeroU32, std::num::NonZeroU32) {
     )
 }
 
-/// What NECP does inside a Network Extension: binds the process's UDP
-/// sockets, which take a port, to the interface the tunnel runs over, and
-/// leaves its ICMP sockets alone. Zero leaves them unbound, as outside one.
-/// With `all`, it binds the ICMP sockets too, as `sockopt.interface` does.
+/// Stands in for NECP inside a Network Extension: binds the process's UDP
+/// sockets, which take a port, to the interface the tunnel runs over. It
+/// leaves the ICMP sockets alone, so that the tests see what the client
+/// binds them to. Zero leaves the UDP sockets unbound, as outside one. With
+/// `all`, it binds the ICMP sockets too, as `sockopt.interface` does.
 #[cfg(target_vendor = "apple")]
 #[derive(Default)]
 struct ScopesUdp {
@@ -213,10 +289,8 @@ impl SocketProtector for ScopesUdp {
     }
 }
 
-/// The device defect of 0.10.0's second candidate: in a Network Extension
-/// the system scoped the UDP sockets and not the ICMP one, whose echo
-/// requests went into the tunnel. The ICMP socket now takes the UDP
-/// sockets' interface, in either family.
+/// The ICMP socket takes the interface the system scopes the process's UDP
+/// sockets to, in either family.
 #[cfg(target_vendor = "apple")]
 #[tokio::test]
 async fn an_icmp_socket_takes_the_interface_the_system_scopes_udp_to() {
@@ -224,7 +298,7 @@ async fn an_icmp_socket_takes_the_interface_the_system_scopes_udp_to() {
     for address in ["127.0.0.1", "::1"] {
         let address: IpAddr = address.parse().unwrap();
         let scopes = ScopesUdp::to(loopback);
-        let (socket, scope) = open(address, true, Some(&scopes)).unwrap();
+        let (socket, scope, _) = open(address, true, Some(&scopes)).unwrap();
         assert_eq!(
             scope::system(address, Some(&scopes)).unwrap(),
             Some(loopback)
@@ -248,7 +322,7 @@ async fn an_icmp_socket_stays_unbound_while_udp_sockets_are() {
     let (loopback, _) = two_interfaces();
     let scopes = ScopesUdp::default();
     let address: IpAddr = "127.0.0.1".parse().unwrap();
-    let (socket, scope) = open(address, true, Some(&scopes)).unwrap();
+    let (socket, scope, _) = open(address, true, Some(&scopes)).unwrap();
     assert_eq!(scope::bound(&socket, address).unwrap(), None);
     assert!(scope.follows());
     let later = std::time::Instant::now() + scope::RECHECK;
@@ -271,7 +345,7 @@ async fn an_icmp_socket_the_protector_bound_keeps_its_interface() {
         ..ScopesUdp::to(other)
     };
     let address: IpAddr = "127.0.0.1".parse().unwrap();
-    let (socket, scope) = open(address, true, Some(&scopes)).unwrap();
+    let (socket, scope, _) = open(address, true, Some(&scopes)).unwrap();
     assert_eq!(scope::bound(&socket, address).unwrap(), Some(loopback));
     assert!(!scope.follows());
     assert_eq!(scopes.asked(), 0, "the system was asked");
@@ -287,7 +361,7 @@ async fn an_icmp_socket_moves_with_the_interface_the_system_scopes_udp_to() {
     let (loopback, other) = two_interfaces();
     let scopes = ScopesUdp::to(loopback);
     let address: IpAddr = "127.0.0.1".parse().unwrap();
-    let (socket, scope) = open(address, true, Some(&scopes)).unwrap();
+    let (socket, scope, _) = open(address, true, Some(&scopes)).unwrap();
     let opened = std::time::Instant::now();
     scopes.set(Some(other));
     scope.refresh_at(opened, &socket, address, Some(&scopes));

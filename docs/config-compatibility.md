@@ -3133,9 +3133,10 @@ connection, a sequence number counting from one, then the client's random
 server answers with the identifier and sequence of the client's last request
 and the packet alone. The server's own system echoes each request back as
 well; the client drops a reply that starts with its id. On a raw socket,
-and on an Apple datagram socket, which keeps the identifier and receives
-every reply from its address, it also drops replies with another
-identifier; a Linux datagram socket gets only its own.
+and on an Apple datagram socket, which keeps the identifier, it also drops
+replies with another identifier; a Linux datagram socket gets only its own.
+An Apple socket, unconnected (below), also reads the replies from other
+addresses, and drops them.
 
 Where the sockets come from:
 
@@ -3144,25 +3145,29 @@ Where the sockets come from:
 | macOS | Granted to any process (checked) | Root only |
 | Linux | Granted to the groups in `net.ipv4.ping_group_range`: the kernel's default `1 0` refuses everyone, systemd and Docker set `0 2147483647` (both checked in a container) | `CAP_NET_RAW` |
 | Android | Granted to apps: `init.rc` sets `ping_group_range` to `0 2147483647`; the sockets take the VPN's protection like the core's others (not checked on a device) | Not granted to apps |
-| iOS | Granted without entitlements, as Apple's SimplePing uses them; inside a Network Extension Apple's forum reports `bind` and reads on an unconnected socket failing with `EPERM`, which the client avoids, and the socket must be bound to an interface (below) | Not granted |
+| iOS | Granted without entitlements, as Apple's SimplePing uses them; inside a Network Extension a connected socket fails after its first echo request, so the client's is bound to the wildcard and unconnected (checked on an iPhone), and connected only where the bind is refused, as Apple's forum once reported there (below) | Not granted |
 
-Each server address gets its own socket, never bound and connected to it: an
-unbound socket is bound on its first send, and replies come only from the
-address each packet went to, as Xray-core's Linux server makes them. Linux
-datagram sockets put their own identifier in the request, and the server's
-replies with it reach them. On macOS and iOS an IPv4 datagram socket would
-return the IP header, which the client switches off as Go does.
+Each server address gets its own socket. On macOS and iOS it is bound to the
+wildcard and left unconnected, as Xray-core's sockets are, and keeps the echo
+replies from its address. Inside a Network Extension a connected ICMP socket
+fails: XNU leaves its local address empty, the tunnel's policy matches such a
+flow, and NECP defuncts a connected socket with that result, after which every
+send fails with `EPIPE` and every read with `ENOTCONN`. Where the bind is
+refused, the socket is connected instead. Elsewhere it is connected to its
+address, and replies come only from there, as Xray-core's Linux server makes
+them. Linux datagram sockets put their own identifier in the request, and the
+server's replies with it reach them. On macOS and iOS an IPv4 datagram socket
+would return the IP header, which the client switches off as Go does.
 
 On macOS and iOS a socket nothing bound takes the interface the system
 scopes a UDP socket of the process to on its way to the same address, and
 asks again at most once a second while it sends, so that it moves between
 Wi-Fi and cellular as the UDP sockets opened after a change do; the server
 knows the client by its id and answers where its latest request came from.
-Inside a Network Extension the system scopes the extension's UDP sockets to
-the physical interface but not its ICMP sockets, whose echo requests would
-otherwise follow the tunnel's routes into the tunnel and never leave the
-device. Elsewhere the system scopes no UDP socket and the socket stays
-unbound, following the routes. A socket `sockopt.interface` bound keeps that
+Inside a Network Extension the system scopes a socket to the physical
+interface when it binds, and leaves it there when the network changes.
+Elsewhere the system scopes no UDP socket and the socket stays unbound,
+following the routes. A socket `sockopt.interface` bound keeps that
 interface.
 
 The mask must be the last UDP mask: Xray-core fails every dial with it

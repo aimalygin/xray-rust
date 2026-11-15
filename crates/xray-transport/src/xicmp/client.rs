@@ -2,11 +2,11 @@
 //! after the client's id, and echo replies bring the server's packets.
 //!
 //! Xray-core listens on one unconnected socket per family, bound to the
-//! wildcard. Here each server address gets its own socket, never bound and
-//! connected to it: an unbound socket is bound on its first send, and a
-//! Network Extension refuses to bind an ICMP socket or read an unconnected
-//! one. Replies then come only from the address the socket sends to, as
-//! Xray-core's Linux server makes them.
+//! wildcard. Here each server address gets its own socket. On Apple systems
+//! it is bound to the wildcard and left unconnected as well, and its reader
+//! keeps the replies from its address: a Network Extension defuncts a
+//! connected one ([`attach`]). Elsewhere it is connected to its address,
+//! and replies come only from there, as Xray-core's Linux server makes them.
 //!
 //! On Apple systems a socket is also bound to an interface where the system
 //! scopes the process's UDP sockets to one, as it does inside a Network
@@ -76,10 +76,12 @@ struct Shared {
     dgram: bool,
 }
 
-/// One server address's socket and the interface it leaves through.
+/// One server address's socket, whether it is connected to the address,
+/// and the interface it leaves through.
 struct Socket {
     address: IpAddr,
     socket: std::net::UdpSocket,
+    connected: bool,
     scope: scope::Scope,
 }
 
@@ -102,15 +104,16 @@ impl XicmpClient {
             if sockets.iter().any(|socket| socket.address == address) {
                 continue;
             }
-            let (socket, scope) = open(address, config.dgram, protector.as_deref())?;
+            let (socket, scope, connected) = open(address, config.dgram, protector.as_deref())?;
             let reader = socket
                 .try_clone()
                 .and_then(UdpSocket::from_std)
                 .map_err(XicmpError::Socket)?;
-            readers.push((address, reader));
+            readers.push((address, connected, reader));
             sockets.push(Socket {
                 address,
                 socket,
+                connected,
                 scope,
             });
         }
@@ -128,8 +131,14 @@ impl XicmpClient {
         let (sender, received) = mpsc::channel(RECEIVE_QUEUE);
         let tasks = readers
             .into_iter()
-            .map(|(address, reader)| {
-                tokio::spawn(read(shared.clone(), address, reader, sender.clone()))
+            .map(|(address, connected, reader)| {
+                tokio::spawn(read(
+                    shared.clone(),
+                    address,
+                    connected,
+                    reader,
+                    sender.clone(),
+                ))
             })
             .collect();
         Ok(Self {
@@ -156,7 +165,12 @@ impl XicmpClient {
         };
         let addresses = &self.shared.addresses;
         let address = addresses[rand::thread_rng().gen_range(0..addresses.len())];
-        let Some(Socket { socket, scope, .. }) = self
+        let Some(Socket {
+            socket,
+            connected,
+            scope,
+            ..
+        }) = self
             .shared
             .sockets
             .iter()
@@ -173,7 +187,13 @@ impl XicmpClient {
         } else {
             message::ECHO_REQUEST_V6
         };
-        match socket.send(&message::echo(kind, self.shared.id, seq, &data)) {
+        let echo = message::echo(kind, self.shared.id, seq, &data);
+        let sent = if *connected {
+            socket.send(&echo)
+        } else {
+            socket.send_to(&echo, SocketAddr::new(address, 0))
+        };
+        match sent {
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(()),
             result => result.map(drop),
         }
@@ -207,15 +227,15 @@ impl Drop for XicmpClient {
     }
 }
 
-/// A nonblocking ICMP socket for `address`'s family, connected to it, and
-/// the interface it leaves through. On Apple systems an IPv4 datagram
-/// socket returns the IP header unless told not to, which Go's
-/// `icmp.ListenPacket` does.
+/// A nonblocking ICMP socket for `address`'s family, the interface it
+/// leaves through, and whether it is connected to `address` ([`attach`]).
+/// On Apple systems an IPv4 datagram socket returns the IP header unless
+/// told not to, which Go's `icmp.ListenPacket` does.
 fn open(
     address: IpAddr,
     dgram: bool,
     protector: Option<&dyn SocketProtector>,
-) -> Result<(std::net::UdpSocket, scope::Scope), XicmpError> {
+) -> Result<(std::net::UdpSocket, scope::Scope, bool), XicmpError> {
     use socket2::{Domain, Protocol, Socket, Type};
     let (domain, protocol) = if address.is_ipv4() {
         (Domain::IPV4, Protocol::ICMPV4)
@@ -231,11 +251,47 @@ fn open(
     let socket: std::net::UdpSocket = socket.into();
     crate::protect_std_udp_socket(&socket, protector).map_err(XicmpError::Protection)?;
     let scope = scope::Scope::open(&socket, address, protector).map_err(XicmpError::Socket)?;
-    socket
-        .connect(SocketAddr::new(address, 0))
-        .map_err(XicmpError::Socket)?;
+    let connected = attach(&socket, address).map_err(XicmpError::Socket)?;
     socket.set_nonblocking(true).map_err(XicmpError::Socket)?;
-    Ok((socket, scope))
+    Ok((socket, scope, connected))
+}
+
+/// Readies `socket` to reach `address`: bound to the wildcard and left
+/// unconnected on Apple systems, connected elsewhere. Returns whether it is
+/// connected.
+///
+/// XNU's `rip_connect` records only the peer of an ICMP socket and leaves
+/// its local address empty, where connecting a UDP socket fills it in.
+/// Inside a Network Extension a flow with no local address matches the
+/// tunnel's policy, and when NECP evaluates a connected socket again and
+/// finds a drop or another interface's tunnel, it defuncts the socket
+/// (`necp_socket_find_policy_match`): every later send fails with `EPIPE`
+/// and every read with `ENOTCONN`. On an iPhone that took each socket
+/// dialed while the tunnel came up, the first connection's among them,
+/// after one echo request (the 0.10.0 device campaign). NECP never defuncts
+/// an unconnected socket so, and checks each of its packets with the source
+/// address it leaves from; there both an unconnected socket and one bound
+/// to the interface's address kept sending and reading. Binding to the
+/// wildcard also has the system scope it, as it scopes UDP sockets when
+/// they bind. Where the bind is refused, as Apple's forum once reported
+/// inside a Network Extension, the socket is connected as before.
+fn attach(socket: &std::net::UdpSocket, address: IpAddr) -> io::Result<bool> {
+    #[cfg(target_vendor = "apple")]
+    {
+        let wildcard = if address.is_ipv4() {
+            SocketAddr::from((std::net::Ipv4Addr::UNSPECIFIED, 0))
+        } else {
+            SocketAddr::from((std::net::Ipv6Addr::UNSPECIFIED, 0))
+        };
+        if socket2::SockRef::from(socket)
+            .bind(&wildcard.into())
+            .is_ok()
+        {
+            return Ok(false);
+        }
+    }
+    socket.connect(SocketAddr::new(address, 0))?;
+    Ok(true)
 }
 
 /// `IP_STRIPHDR`, Darwin's option to read an ICMP datagram socket without
@@ -263,21 +319,34 @@ fn strip_header(socket: &socket2::Socket) -> io::Result<()> {
     }
 }
 
-/// `recv4` and `recv6`: echo replies, with this client's identifier where
-/// the socket keeps it, whose data does not start with the client's id,
-/// which the server's own system echoes back. A read error stops the
-/// reader, as it stops Xray-core's.
+/// `recv4` and `recv6`: echo replies from `address`, with this client's
+/// identifier where the socket keeps it, whose data does not start with the
+/// client's id, which the server's own system echoes back. An unconnected
+/// socket reads every reply the system gets and keeps those from `address`,
+/// all a connected one would get; Xray-core's hands on a reply from any
+/// address with that address. A read error stops the reader, as it stops
+/// Xray-core's.
 async fn read(
     shared: Arc<Shared>,
     address: IpAddr,
+    connected: bool,
     socket: UdpSocket,
     sender: mpsc::Sender<Packet>,
 ) {
     let mut buf = vec![0u8; MAX_PACKET];
     let v6 = address.is_ipv6();
     loop {
-        let Ok(length) = socket.recv(&mut buf).await else {
-            return;
+        let length = if connected {
+            match socket.recv(&mut buf).await {
+                Ok(length) => length,
+                Err(_) => return,
+            }
+        } else {
+            match socket.recv_from(&mut buf).await {
+                Ok((length, from)) if from.ip().to_canonical() == address => length,
+                Ok(_) => continue,
+                Err(_) => return,
+            }
         };
         let Some(data) = accept(&buf[..length], v6, &shared) else {
             continue;

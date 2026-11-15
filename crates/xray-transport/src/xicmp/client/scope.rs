@@ -4,23 +4,20 @@
 //! and the system keeps the extension's own traffic out of it by scoping
 //! its sockets to the physical interface: NECP's `SOCKET_SCOPED` result,
 //! which XNU's `inp_update_necp_policy` applies as the socket's bound
-//! interface. On an iPhone it scoped the extension's UDP sockets so but
-//! left its ICMP datagram socket unbound: no echo request reached the
-//! network until `sockopt.interface` bound the socket (the 0.10.0 device
-//! campaign). XNU evaluates the same policies for ICMP sockets, so the ones
-//! the system installs for the extension do not match them; nothing else
-//! scopes such a socket (`rip_connect` records only the address,
-//! `rip_output` routes as the socket is bound), and its echo requests
-//! follow the tunnel's routes into the tunnel.
+//! interface when the socket binds or connects. On an iPhone it scoped the
+//! xicmp socket so as well when the socket bound to the wildcard (the
+//! 0.10.0 device campaign), but only then: the interface stays when the
+//! network changes, and the client keeps its sockets for the life of a
+//! connection.
 //!
-//! So an ICMP socket the protector left unbound is bound here to the
-//! interface the system gives a UDP socket of this process on its way to
-//! the same address, and asks again while it sends, at most once a period:
-//! it moves with the network as the UDP sockets opened after a change do,
-//! and takes an interface once the system starts scoping, as when the dial
-//! came before the tunnel's settings. Xray-core's server knows a client by
-//! its id and answers where its latest request came from, so the connection
-//! goes on over the new network.
+//! So an ICMP socket the protector left unbound is bound here, before it
+//! binds, to the interface the system gives a UDP socket of this process on
+//! its way to the same address, and asks again while it sends, at most once
+//! a period: it moves with the network as the UDP sockets opened after a
+//! change do, and takes an interface once the system starts scoping, as
+//! when the dial came before the tunnel's settings. Xray-core's server
+//! knows a client by its id and answers where its latest request came from,
+//! so the connection goes on over the new network.
 //!
 //! Where the system scopes no UDP socket, outside a Network Extension, the
 //! ICMP socket stays unbound and follows the routes, as Xray-core's does. A

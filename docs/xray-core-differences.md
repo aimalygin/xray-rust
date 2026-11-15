@@ -1004,22 +1004,25 @@ x/net/icmp's reading of replies, the drop of the system's own echo and of a
 raw socket's foreign identifiers, and Go's stripping of a raw IPv4 header.
 Deliberate differences:
 
-- Each server address gets its own socket, never bound and connected to it.
-  Xray-core binds one unconnected socket per family to the wildcard, which a
-  Network Extension refuses; replies here come only from the address each
-  packet went to, as Xray-core's Linux server sends them. A family the
+- Each server address gets its own socket, where Xray-core binds one
+  unconnected socket per family to the wildcard. On Apple systems it is
+  bound to the wildcard and unconnected as well, but keeps only the replies
+  from its address, where Xray-core hands on a reply from any address with
+  that address; a Network Extension defuncts a connected ICMP socket, whose
+  local address XNU leaves empty, and where the bind is refused the socket
+  is connected instead. Elsewhere it is connected to its address, so replies
+  come only from there, as Xray-core's Linux server sends them. A family the
   addresses do not use needs no socket, where Xray-core fails every dial
   unless sockets of both families open.
 - On Apple systems a socket nothing bound takes the interface the system
   scopes a UDP socket of the process to on its way to the same address, and
   asks again at most once a second while it sends. Inside a Network
-  Extension the system scopes the extension's UDP sockets to the physical
-  interface but not its ICMP sockets, so an unbound socket's echo requests
-  follow the tunnel's routes into the tunnel; found on an iPhone, where the
-  server saw none. Xray-core's sockets are never bound to an interface, and
-  its server's answering the client's latest address is what lets a socket
-  here move with the network. Where the system scopes no UDP socket, outside
-  a Network Extension, the socket stays unbound as Xray-core's does.
+  Extension the system scopes a socket to the physical interface when it
+  binds and leaves it there when the network changes. Xray-core's sockets
+  are never bound to an interface, and its server's answering the client's
+  latest address is what lets a socket here move with the network. Where
+  the system scopes no UDP socket, outside a Network Extension, the socket
+  stays unbound as Xray-core's does.
 - It must be the last UDP mask, and runs neither with udphop, xdns, realm
   nor header-custom, nor on QUIC with sudoku: Xray-core fails every dial
   with it anywhere else, the others send elsewhere, header-custom keys its
@@ -1029,9 +1032,9 @@ Deliberate differences:
   core starts; Xray-core never resolves it and fails every dial. With `ips`,
   a name there must still resolve.
 - An Apple datagram socket keeps the client's identifier and receives every
-  reply from its address, so replies are told apart by identifier, as on a
-  raw socket. Xray-core's datagram sockets there also read the replies meant
-  for other connections to the same server.
+  reply the system gets, so replies are told apart by identifier and
+  address, as on a raw socket. Xray-core's datagram sockets there also read
+  the replies meant for other connections.
 - An echo the socket has no room for is dropped, as a datagram would be;
   Xray-core's writer waits.
 
