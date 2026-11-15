@@ -10,11 +10,43 @@ long-term supported release series.
 
 ## Unreleased
 
-## 0.10.0 - 2026-11-14
+## 0.10.0 - 2026-11-15
 
 Release candidate preparation; publication and exact-candidate release
 qualification are pending.
 
+- A QUIC connection that takes a fresh socket when the OS network changes
+  goes on receiving on the socket it left, for three seconds after the first
+  packet on the new one: MASQUE, Hysteria, and XHTTP and XDRIVE's storages
+  over HTTP/3. The vendored Quinn closed the old socket on that packet, and
+  until then could leave datagrams unread in it until something else woke the
+  endpoint. Where the old network is still there and is the slower one, as
+  cellular is under Wi-Fi, the server's packets already on their way reach
+  the old socket after the first one on the new, and they were dropped. QUIC
+  sends a DATAGRAM frame once, so a MASQUE tunnel or a Hysteria UDP flow lost
+  the packets of that moment; streams were sent again and lost only time. On
+  an iPhone returning to Wi-Fi a MASQUE tunnel lost the answer to a DNS query
+  sent 60 to 90 ms before the change: the lookup failed after four seconds,
+  and iOS kept the failure for the name for half a minute. Found by the v0.10
+  device campaign.
+- A DNS query the core's resolver sends through an outbound whose carrier can
+  lose a datagram goes out again every second, until its answer comes or its
+  server's four seconds are over: SOCKS's UDP relay, Shadowsocks UDP outside
+  Mux, Hysteria, WireGuard and MASQUE. The resolver inside a WireGuard or
+  MASQUE tunnel, which looks up the destinations of the tunnel's own flows,
+  does the same. Lookups of one name share one query, so one lost datagram
+  failed all of them after four seconds, and a TUN answers a failed lookup
+  with SERVFAIL, which a system resolver keeps for the name. A stream carrier
+  is sent the query once, as before. Xray-core sends one query everywhere.
+- A lookup past the managed resolver's operation cap, 16 exchanges at a time
+  on the mobile profile, waits for a place for as long as its own deadline
+  lets it, in a queue of four waiters for every place. Past that queue it is
+  refused, as it used to be at the cap itself. A phone asks for a dozen names
+  at once when its tunnel starts or its network changes, the moments when the
+  exchanges before them are slow, and a TUN answered the refused ones with
+  SERVFAIL within milliseconds. The UDP-socket cap that managed Freedom UDP
+  shares with the DNS outbound, and the DNS outbound's own operation cap,
+  still fail closed without waiting.
 - The `xicmp` mask works inside an Apple Network Extension. The client
   connected its ICMP sockets to the server, and XNU leaves a connected ICMP
   socket's local address empty, where connecting a UDP socket fills it in.

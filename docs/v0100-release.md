@@ -6,9 +6,9 @@ device result exists.
 The shared steps are in the [release process](release-process.md); this page
 holds what is specific to 0.10.0.
 
-The candidate is the third 0.10.0 release commit: `main` through
-`46c38c19ef473ab756a6f12526405566928ab0ac` plus the changelog section, now
-dated 2026-11-14, and this document. The workspace version, lockfile and
+The candidate is the fourth 0.10.0 release commit: `main` through pull
+request [#300](https://github.com/aimalygin/xray-rust/pull/300) plus the
+changelog section, now dated 2026-11-15, and this document. The workspace version, lockfile and
 generated configuration contract are already 0.10.0 from the first release
 commit and do not change. Its exact revision and tree are recorded here once
 it merges; every later step binds to them. The README install snippets keep
@@ -58,8 +58,50 @@ diagnostic is not evidence; the run is repeated on the candidate.
 
 No result bound to the second candidate counts for 0.10.0 either. On
 2026-11-14 the owner chose a full repeat («Полный повтор»): CI, the SDK pin,
-the performance measurements, the device stands and every device run are made
-again on this one.
+the performance measurements, the device stands and every device run were
+made again on the third.
+
+### The superseded third candidate
+
+The third candidate was `706a766cb68c0a2d571d0c0c3532d7cd508cc34c` (tree
+`c9a8f38535c0aedbcfb8865fc74224afc008dc4c`), the merge of
+[#297](https://github.com/aimalygin/xray-rust/pull/297). It stood on `main`
+through `23fcbc2a1f1d8851cd231c687c33a9bd7bc42f11`, the merge of
+[#298](https://github.com/aimalygin/xray-rust/pull/298); this page named
+`46c38c19ef473ab756a6f12526405566928ab0ac` then, one merge short. Its full
+CI passed (run 43663383151), the SDK pinned it in
+[xray-rust-mobile#51](https://github.com/aimalygin/xray-rust-mobile/pull/51),
+and the host measurements and device stands were made from it.
+
+On 2026-11-15 its device campaign passed the iPhone's LAN runs, `xicmp` and
+the WAN mKCP run. The WAN MASQUE run then failed twice on the return from
+cellular to Wi-Fi, and passed in four diagnostic repeats. One DNS answer had
+been lost when the tunnel moved to its Wi-Fi socket: the vendored Quinn
+closed the socket a connection had left at the first packet on the new one,
+with the answer still on its way to it. The core's resolver failed the lookup
+after four seconds, and iOS kept that failure for the name for half a minute.
+[#299](https://github.com/aimalygin/xray-rust/pull/299) keeps the old socket
+for what is on its way, sends a DNS query again over a carrier that can lose
+it, and lets a lookup past the resolver's operation cap wait for a place.
+In three diagnostic runs on the iPhone its builds lost no lookup around the
+return to Wi-Fi, where the third candidate's core lost five in one such run.
+A diagnostic is not evidence; the run is repeated on the candidate.
+
+The same day the owner took the network change out of the Android part of
+the evidence profile, since the Android test device has no cellular data
+([#300](https://github.com/aimalygin/xray-rust/pull/300); item 5 of the
+contract below).
+
+This time the owner chose to repeat what the changes touch («Только
+затронутое»), not everything. The fourth candidate differs from the third by
+#299, #300, which changes release tooling only, and the release commit.
+
+- Counted from the third candidate: the iPhone's LAN runs. The evidence
+  report and the release's owner-decision record name the build each of them
+  ran.
+- Made again on the fourth: full CI, the SDK pin, the host measurements, the
+  device stands, every run against a public host (`xicmp` and the WAN runs)
+  and every Android run. No Android run had been made on the third.
 
 ## Scope
 
@@ -256,7 +298,7 @@ after the SDK publishes, since it pins the published SDK.
    0.9.0 followed in their own change; the same page has their commands.
 3. ~~Pre-release fixes on `main`, then the release commit: workspace version
    0.10.0, dated changelog section, regenerated configuration contract.~~
-   Done in the release commit. The third release commit, after the fixes
+   Done in the release commit. The fourth release commit, after the fixes
    above, is the candidate.
 4. Full release CI on the candidate.
 5. `xray-rust-mobile`: pin the candidate, synchronize, add the `v010`
