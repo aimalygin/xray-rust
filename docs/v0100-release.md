@@ -31,7 +31,8 @@ binds to that commit and tree. The README install snippets keep the published
 - **Evidence.** The schema-5 archive is
   [v0.10.0-device-evidence.zip](releases/v0.10.0-device-evidence.zip), with
   its [record](releases/v0.10.0-device-evidence.json). The candidate's
-  unchanged checker validates it.
+  unchanged checker validates it, locally and in `v010-release-evidence.yml`
+  on the candidate (run 43768546896).
 - **Decisions.** Asked on 2026-11-15 «Выпускать 0.10.0 с этими ограничениями и
   публиковать свидетельства?», the owner answered «Да, публикуй». The
   [decision record](releases/v0.10.0-owner-decisions.json) holds that answer,
@@ -349,7 +350,8 @@ after the SDK publishes, since it pins the published SDK.
    "The candidate's qualification" above. The gate also needs the four
    common measurements of `run-v06-feature-benchmarks.py`, which
    [v0.10 evidence collection](v010-release-evidence.md) does not list yet.
-7. `v010-release-evidence.yml` on the candidate, with the published archive.
+7. ~~`v010-release-evidence.yml` on the candidate, with the published
+   archive.~~ Passed on `7eb199bb`, run 43768546896.
 8. Tag the candidate, publish the core release, the SDK and then the KMP
    library, and resolve the packages from clean consumers. Each waits for the
    owner's word.

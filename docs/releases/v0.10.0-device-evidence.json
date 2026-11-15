@@ -5,8 +5,8 @@
   "archiveSHA256": "5e15a1341d2e89a4b49db2e490883eb328283db43ec21c03f20a6ce31ffdd459",
   "schemaVersion": 5,
   "localValidation": "passed with the candidate's unchanged check-v010-release-evidence.py",
-  "workflowValidation": "pending",
+  "workflowValidation": "passed",
   "publication": "authorized; pending validation and canonical artifacts",
   "scope": "Physical iPhone and Samsung runs under the v0.10 profile: the fourth candidate's public-host iPhone runs (xicmp, WAN mKCP, MASQUE and XHTTP H3) and every Android run, with the third candidate's iPhone LAN runs carried over by owner decision; the ten schema-5 performance metrics and the comparison against 0.9.0; all failed attempts retained.",
-  "workflowRun": "pending"
+  "workflowRun": "https://github.com/aimalygin/xray-rust/actions/runs/43768546896"
 }
