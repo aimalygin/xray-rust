@@ -1,0 +1,24 @@
+{
+  "summary": {
+    "suite": "import-v010",
+    "cases": 1,
+    "failed": 0,
+    "fixtureSecretsRemoved": true,
+    "scope": "host loopback through SOCKS ingress; not device evidence"
+  },
+  "results": [
+    {
+      "case": "remnawave-json",
+      "format": "config",
+      "checks": [
+        "ipv4-tcp",
+        "ipv6-tcp",
+        "ipv4-udp",
+        "ipv6-udp",
+        "routed-dns",
+        "domain-destination"
+      ],
+      "result": "passed"
+    }
+  ]
+}

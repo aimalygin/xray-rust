@@ -1,0 +1,84 @@
+diff --git a/platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift b/platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift
+index e5295e35..386f1029 100644
+--- a/platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift
++++ b/platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift
+@@ -144,7 +144,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
+                     providerBundleIdentifier: XrayClientProfile.defaultProviderBundleIdentifier(
+                         hostBundleIdentifier: Bundle.main.bundleIdentifier),
+                     serverAddress: item.serverAddress, configJSON: item.configJSON,
+-                    debugLoggingEnabled: false, useTunFileDescriptor: true, tunRuntimeProfile: .mobile)
++                    debugLoggingEnabled: false, useTunFileDescriptor: ProcessInfo.processInfo.environment["XRAY_PROJECTION_PACKET_PUMP"] != "1", tunRuntimeProfile: .mobile)
+                 if fixture.mode == .udpSweep {
+                     try await udpSweep(fixture, profile: profile, update: update)
+                     try await cleanup()
+@@ -614,6 +614,14 @@ private final class ProtocolDeviceProbe: ObservableObject {
+     }
+ 
+     private func sample(cycle: Int, stage: String) async throws {
++        if ProcessInfo.processInfo.environment["XRAY_ADAPTER_PROJECTION_DEVICE_CHECK"] == "1" {
++            guard let counts = try await controller.protocolProbeCPU(),
++                  let tcp = counts["admissionTCP"], let udp = counts["admissionUDP"], tcp > 0, udp > 0,
++                  counts["invalidTuples"] == 0 else { throw Failure.configuration }
++            emit(["event": "host-adapter-projection", "result": "passed", "tcpCallbacks": tcp,
++                  "udpCallbacks": udp, "stage": stage,
++                  "backend": ProcessInfo.processInfo.environment["XRAY_PROJECTION_PACKET_PUMP"] == "1" ? "packet-pump" : "file-descriptor"])
++        }
+         if let events = try await controller.protocolProbeNetworkEvents() {
+             emit(["event": "network-observer", "stage": stage, "events": events])
+         }
+diff --git a/platform/apple/XrayClient/Tunnel/PacketTunnelProvider.swift b/platform/apple/XrayClient/Tunnel/PacketTunnelProvider.swift
+index 464ed60c..718f13fe 100644
+--- a/platform/apple/XrayClient/Tunnel/PacketTunnelProvider.swift
++++ b/platform/apple/XrayClient/Tunnel/PacketTunnelProvider.swift
+@@ -1,4 +1,5 @@
+ import XrayAppleTunnel
++import XrayMobileAdapter
+ #if DEBUG
+ import Darwin
+ import Foundation
+@@ -7,6 +8,11 @@ import Foundation
+ @available(iOSApplicationExtension 15.0, tvOSApplicationExtension 17.0, *)
+ final class PacketTunnelProvider: XrayPacketTunnelProvider {
+ #if DEBUG
++    private let projection = ProjectionCounters()
++    override func tunAdmissionOptions() throws -> XrayTunAdmissionOptions? {
++        let counters = projection
++        return try XrayTunAdmissionOptions { flow in counters.record(flow); return true }
++    }
+     // Reference-app instrumentation only. CPU belongs to this extension,
+     // including all live and terminated threads; no SDK or FFI ABI change.
+     override func handleAppMessage(_ data: Data, completionHandler: ((Data?) -> Void)?) {
+@@ -18,10 +24,29 @@ final class PacketTunnelProvider: XrayPacketTunnelProvider {
+         guard getrusage(RUSAGE_SELF, &usage) == 0 else { completionHandler?(nil); return }
+         let user = Double(usage.ru_utime.tv_sec) + Double(usage.ru_utime.tv_usec) / 1_000_000
+         let system = Double(usage.ru_stime.tv_sec) + Double(usage.ru_stime.tv_usec) / 1_000_000
+-        completionHandler?(try? JSONSerialization.data(withJSONObject: [
+-            "userSeconds": user, "systemSeconds": system,
+-            "uptime": ProcessInfo.processInfo.systemUptime, "pid": Double(getpid())
+-        ]))
++        var values = projection.snapshot()
++        values["userSeconds"] = user; values["systemSeconds"] = system
++        values["uptime"] = ProcessInfo.processInfo.systemUptime; values["pid"] = Double(getpid())
++        completionHandler?(try? JSONSerialization.data(withJSONObject: values))
+     }
+ #endif
+ }
++
++#if DEBUG
++private final class ProjectionCounters: @unchecked Sendable {
++    private let lock = NSLock()
++    private var tcp = 0, udp = 0, invalid = 0
++    func record(_ flow: XrayTunFlow) {
++        lock.lock(); defer { lock.unlock() }
++        if flow.protocolNumber == 6 { tcp += 1 }
++        if flow.protocolNumber == 17 { udp += 1 }
++        let length = flow.addressFamily == 4 ? 4 : (flow.addressFamily == 6 ? 16 : 0)
++        if length == 0 || flow.sourceAddress.count != length || flow.destinationAddress.count != length
++            || flow.sourcePort == 0 || flow.destinationPort == 0 { invalid += 1 }
++    }
++    func snapshot() -> [String: Double] {
++        lock.lock(); defer { lock.unlock() }
++        return ["admissionTCP": Double(tcp), "admissionUDP": Double(udp), "invalidTuples": Double(invalid)]
++    }
++}
++#endif

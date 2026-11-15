@@ -1,0 +1,48 @@
+{
+  "summary": {
+    "fixtureArgs": "--suite v010 --protocol v010",
+    "rows": 4,
+    "failed": 2,
+    "boundSeconds": 3,
+    "fixtureSecretsRemoved": true,
+    "scope": "host loopback through SOCKS ingress; not device evidence"
+  },
+  "rows": [
+    {
+      "case": "mkcp-vless",
+      "mode": "socket-close",
+      "id": 7001,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 6.001,
+      "result": "failed"
+    },
+    {
+      "case": "mkcp-vless",
+      "mode": "process-stop",
+      "id": 7002,
+      "openedToRequest": 0.0,
+      "reason": "TimeoutError",
+      "closeAfterRequest": 20.001,
+      "result": "failed"
+    },
+    {
+      "case": "masque-h3",
+      "mode": "socket-close",
+      "id": 7003,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 2.004,
+      "result": "passed"
+    },
+    {
+      "case": "masque-h3",
+      "mode": "process-stop",
+      "id": 7004,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.002,
+      "result": "passed"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+active
+active
+active
+udp   UNCONN 0      0                  0.0.0.0:53053      0.0.0.0:*    users:(("python3",pid=3849049,fd=4))                      
+tcp   LISTEN 0      4096                     *:53053            *:*    users:(("xray-linux-amd6",pid=3705177,fd=4))              
+ls: cannot access '/tmp/xray-0100-wan': No such file or directory
