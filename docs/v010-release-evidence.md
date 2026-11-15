@@ -98,6 +98,7 @@ Xray-core's stack fragments them.
 | `--protocol mkcp` or `masque` | one case; accepts `--port` for a WAN host |
 | `--protocol smoke-v010` | the seven smoke cases other than xicmp |
 | `--protocol xicmp` | `xicmp:mkcp`; refuses to start without raw ICMP sockets |
+| any v0.10 selection above with `--vless-encryption` | the same cases, VLESS with a fresh VLESS Encryption pair; for a public `--bind` |
 | `--protocol import-v010` | `remnawave-json`, four `imports`, four `invalidImports` |
 | `run-v08-apple-acceptance-fixture.py --suite legacy-v010` | the twelve legacy protocols, labelled by transition id |
 | `--suite xhttp-h3-v010` | `xhttp-h3` alone; accepts `--port` |
@@ -114,10 +115,28 @@ refusal ids.
 Xray-core's xicmp server opens `ip4:icmp` and `ip6:ipv6-icmp` sockets. They
 need root on macOS and `CAP_NET_RAW` on Linux, so the case runs in a fixture
 of its own. Docker on a Mac cannot serve a phone: ICMP sent to the Mac's
-address is answered by the Mac's kernel and never reaches a container. For
-the device run the fixture host is either the Mac under `sudo` or a Linux
-host on the same LAN; which one is the owner's choice. The client has never
-run on a device ([#236](https://github.com/aimalygin/xray-rust/issues/236)).
+address is answered by the Mac's kernel and never reaches a container. The
+Mac under `sudo` cannot serve one either: macOS answers echo requests in the
+kernel and does not hand them to a raw socket, so the server starts and
+receives nothing. The second candidate's campaign found this. For the device
+run the fixture host is a Linux host the phones can reach, with inbound ICMP
+echo allowed on the way to it.
+[#236](https://github.com/aimalygin/xray-rust/issues/236) stays open until
+the device evidence is published.
+
+### A public fixture host needs `--vless-encryption`
+
+The mKCP case and the mask cases carry VLESS with `"encryption": "none"` and
+no TLS. The core refuses that toward a public address, as Xray-core v26.11.9
+does: "vless without TLS or other encryption is prohibited unless the server
+address is a private IP or domain". Against the Mac's LAN address such a case
+starts; against a public host it cannot.
+
+`--vless-encryption` gives the v0.10 VLESS cases a fresh VLESS Encryption
+pair from the reference binary's `vlessenc`, on the server and in the client
+config. MASQUE is not VLESS, and XDRIVE keeps its own pair. The Android
+fixture takes the same option. Use it wherever `--bind` is public: the WAN
+mKCP run, and xicmp when its Linux host is not on the LAN.
 
 ## Host loopback check
 
@@ -151,6 +170,11 @@ against Xray-core built for Linux from the same pinned checkout and named by
 `--reference-sha256`, with the CLI built in the container. That checks the
 fixture case and the client's datagram sockets on Linux; it says nothing
 about Xray-core's server on macOS.
+
+`--vless-encryption` goes on to the fixture. On 2026-11-14, against the same
+Xray-core and a release build of `main` at `46c38c19`, `v010` passed 2 of 2
+and `smoke-v010` 7 of 7 with it on macOS arm64. `xicmp` was not run with it
+in a container.
 
 The four import links and the four malformed ones were also given to the
 core's importer on the host: all four import with the fixture address, and
@@ -186,9 +210,11 @@ Runs:
 2. **Full set, WAN**: on a public host, `--protocol mkcp` and `--protocol
    masque`, each with `--bind <public IPv4> --port <open UDP port> --mode
    transitions`. Both carriers are UDP only. mKCP does not move to the new
-   network; it recovers when new flows dial.
-3. **Smoke, LAN**: `--protocol smoke-v010 --mode smoke`, and `--protocol xicmp
-   --mode smoke` from a fixture with raw ICMP sockets.
+   network; it recovers when new flows dial. mKCP needs `--vless-encryption`
+   there.
+3. **Smoke**: `--protocol smoke-v010 --mode smoke` on the LAN, and `--protocol
+   xicmp --mode smoke` on a Linux host with raw ICMP sockets, with
+   `--vless-encryption` if its address is public.
 4. **Legacy, LAN**: `run-v08-apple-acceptance-fixture.py --suite legacy-v010`,
    smoke. REALITY's decoy handshake reaches `www.google.com:443`.
 5. **`xhttp-h3-network-change`, WAN**: `--suite xhttp-h3-v010 --bind <public
@@ -250,6 +276,7 @@ It needs:
 - A SIM with mobile data.
 - A fixture the phone reaches from both networks: a public host with
   `--protocol mkcp` or `masque`, or `--suite xhttp-h3-v010`, and `--port`.
+  mKCP needs `--vless-encryption` there, as on Apple.
 - This change's Device Gate, which opts in to the network-change coordinator.
   An older build reports no rebind request and fails the step.
 
@@ -423,7 +450,9 @@ to 20% above it on eleven.
   `:devicehost:compileDebugKotlin` and its unit tests, and the iOS Debug build
   of `XrayAppleClient` against a stub framework. The adb Wi-Fi step was run
   only against the tests' fake adb.
-- The xicmp client on iOS and Android, and Xray-core's xicmp server on macOS.
+- The xicmp client on iOS and Android. The second candidate's runs do not
+  count, and the candidate's own are still to be made.
+- Xray-core's xicmp server on macOS, which cannot serve a device run.
 
 ## Remaining for the owner
 

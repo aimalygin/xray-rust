@@ -40,4 +40,8 @@ if __name__ == "__main__":
         at = sys.argv.index("--xdrive-standin")
         loopback.FIXTURE_ARGUMENTS = sys.argv[at:at + 2]
         del sys.argv[at:at + 2]
+    # --vless-encryption goes on too: the cases a public-server run uses.
+    if "--vless-encryption" in sys.argv:
+        sys.argv.remove("--vless-encryption")
+        loopback.FIXTURE_ARGUMENTS = [*loopback.FIXTURE_ARGUMENTS, "--vless-encryption"]
     sys.exit(loopback.main())
