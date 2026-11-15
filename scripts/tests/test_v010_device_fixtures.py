@@ -547,7 +547,10 @@ class ProfileCoverageTests(unittest.TestCase):
         self.assertEqual(driver.network_transitions("mkcp-vless"), ["wifi-cellular-wifi"])
         self.assertEqual(driver.network_transitions("xhttp-h3"), ["wifi-cellular-wifi", "xhttp-h3-network-change"])
         self.assertIn("xhttp-h3-network-change", policy.LEGACY_TRANSITIONS)
-        self.assertIn("wifi-cellular-wifi", policy.POLICY.transitions("masque-packet-pump"))
+        # The driver still has the step; since 2026-11-15 the profile does not
+        # require it on Android, where it is not tested.
+        self.assertIn("wifi-cellular-wifi", policy.POLICY.transitions("masque"))
+        self.assertNotIn("wifi-cellular-wifi", policy.POLICY.transitions("masque-packet-pump"))
 
     def test_the_loopback_check_has_a_suite_for_every_new_case(self):
         fixtures = {"run-v07-apple-protocol-fixture.py": device.GROUPS, "run-v08-apple-acceptance-fixture.py": {}}

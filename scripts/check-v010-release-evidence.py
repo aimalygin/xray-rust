@@ -32,10 +32,14 @@ SMOKE_TRANSITIONS = {
     "ipv4-tcp", "ipv6-tcp", "ipv4-udp", "ipv6-udp", "domain-destination",
     "routed-dns", "start-stop",
 }
-# Owner decision on 2026-11-11: Android Wi-Fi/cellular is tested this time,
-# driven over adb. Android lock/wake is not decided; until the owner decides it
-# stays not tested, as in v0.9, and release known limitations must say so.
-ANDROID_OWNER_SKIPPED_TRANSITIONS = {"lock-wake"}
+# Owner decision on 2026-11-15, replacing the one of 2026-11-11 that had
+# Android Wi-Fi/cellular tested over adb: the Android test device has no
+# cellular data, so the network change is not tested on Android, as in v0.7 to
+# v0.9. Android lock/wake is not decided and stays not tested, as in v0.9.
+# Neither is a transition that passed: release known limitations must say so.
+ANDROID_OWNER_SKIPPED_TRANSITIONS = {"wifi-cellular-wifi", "lock-wake"}
+# The same Wi-Fi/cellular step on the legacy scenario's XHTTP H3 case.
+ANDROID_OWNER_SKIPPED_LEGACY_TRANSITIONS = {"xhttp-h3-network-change"}
 ANDROID_PROTOCOL_SCENARIOS = {
     f"{protocol}-{path}": protocol
     for protocol in FULL_PROTOCOLS
@@ -112,6 +116,13 @@ class V010Policy(COMMON.EvidencePolicy):
         if scenario == "legacy-regression":
             return LEGACY_TRANSITIONS
         return set()
+
+    def device_transitions(self, platform: str, scenario: str) -> set[str]:
+        required = self.transitions(scenario)
+        # The scenario has one id on both platforms; Apple keeps the transition.
+        if platform == "android" and scenario == "legacy-regression":
+            return required - ANDROID_OWNER_SKIPPED_LEGACY_TRANSITIONS
+        return required
 
 
 POLICY = V010Policy()

@@ -57,7 +57,8 @@ class V010ReleaseEvidenceTests(unittest.TestCase):
             template = device["scenarios"][0]
             device["scenarios"] = [
                 dict(copy.deepcopy(template), id=scenario,
-                     transitions=sorted(V010.POLICY.transitions(scenario)) or ["start-stop"])
+                     transitions=sorted(V010.POLICY.device_transitions(device["platform"], scenario))
+                     or ["start-stop"])
                 for scenario in sorted(V010.POLICY.scenarios(device["platform"]))
             ]
         manifest["performance"]["measurements"] = [
@@ -184,23 +185,34 @@ class V010ReleaseEvidenceTests(unittest.TestCase):
             for name in V010.POLICY.scenarios(platform) - V010.SHARED_SCENARIOS:
                 self.assertFalse([t for t in V010.POLICY.transitions(name) if t.endswith("-refused")], name)
 
-    def test_android_tests_network_change_and_skips_only_lock_wake(self):
+    def test_android_network_change_and_lock_wake_are_owner_skipped(self):
         full = V010.PROTOCOL_TRANSITIONS
-        self.assertEqual(V010.ANDROID_OWNER_SKIPPED_TRANSITIONS, {"lock-wake"})
+        skipped = {"wifi-cellular-wifi", "lock-wake"}
+        # The owner's decision of 2026-11-15: as v0.9, plus the XHTTP H3 step.
+        self.assertEqual(V010.ANDROID_OWNER_SKIPPED_TRANSITIONS, V09.ANDROID_OWNER_SKIPPED_TRANSITIONS)
+        self.assertEqual(V010.ANDROID_OWNER_SKIPPED_TRANSITIONS, skipped)
+        self.assertEqual(V010.ANDROID_OWNER_SKIPPED_LEGACY_TRANSITIONS, {"xhttp-h3-network-change"})
         for name in FULL_ANDROID:
-            self.assertEqual(V010.POLICY.transitions(name), full - {"lock-wake"})
-            self.assertIn("wifi-cellular-wifi", V010.POLICY.transitions(name))
-
-            def untested(m, _, name=name):
-                android = next(d for d in m["devices"] if d["platform"] == "android")
-                next(s for s in android["scenarios"] if s["id"] == name)["transitions"].remove("wifi-cellular-wifi")
-            self.reject(untested, "transitions must include")
-        # v0.9 skipped both; that decision is not inherited.
-        self.assertEqual(V09.ANDROID_OWNER_SKIPPED_TRANSITIONS, {"wifi-cellular-wifi", "lock-wake"})
+            self.assertEqual(V010.POLICY.device_transitions("android", name), full - skipped)
+        self.assertEqual(V010.POLICY.device_transitions("android", "legacy-regression"), V010.LEGACY_PROTOCOLS)
+        # Not tested is not passed: a valid archive claims none of them on Android.
         manifest, _ = self.evidence()
         android = next(d for d in manifest["devices"] if d["platform"] == "android")
         for scenario in android["scenarios"]:
-            self.assertNotIn("lock-wake", scenario["transitions"])
+            self.assertFalse(set(scenario["transitions"]) & (skipped | {"xhttp-h3-network-change"}), scenario["id"])
+        V010.validate_archive(self.write_zip(), legacy.REVISION, legacy.TREE)
+        # Apple keeps all three.
+        for name in V010.FULL_PROTOCOLS:
+            self.assertEqual(V010.POLICY.device_transitions("apple", name), full)
+        self.assertEqual(V010.POLICY.device_transitions("apple", "legacy-regression"), V010.LEGACY_TRANSITIONS)
+        for name, transition in [("mkcp", "wifi-cellular-wifi"), ("masque", "wifi-cellular-wifi"),
+                                 ("mkcp", "lock-wake"), ("masque", "lock-wake"),
+                                 ("legacy-regression", "xhttp-h3-network-change")]:
+            with self.subTest(scenario=name, transition=transition):
+                def untested(m, _, name=name, transition=transition):
+                    apple = next(d for d in m["devices"] if d["platform"] == "apple")
+                    next(s for s in apple["scenarios"] if s["id"] == name)["transitions"].remove(transition)
+                self.reject(untested, "transitions must include")
 
     def test_import_and_legacy_regression_cover_what_changed_since_v09(self):
         self.assertEqual(V010.POLICY.transitions("profile-import"), {
@@ -211,7 +223,7 @@ class V010ReleaseEvidenceTests(unittest.TestCase):
         self.assertEqual(V010.POLICY.transitions("legacy-regression"), legacy_v09 | {"xhttp-h3-network-change"})
         for platform in ["apple", "android"]:
             for scenario in ["profile-import", "legacy-regression"]:
-                for transition in V010.POLICY.transitions(scenario):
+                for transition in V010.POLICY.device_transitions(platform, scenario):
                     with self.subTest(platform=platform, scenario=scenario, transition=transition):
                         def omit(m, _):
                             device = next(d for d in m["devices"] if d["platform"] == platform)
