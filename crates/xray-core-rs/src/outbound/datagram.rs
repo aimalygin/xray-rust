@@ -139,6 +139,18 @@ impl Session {
             Self::Socks(_) | Self::Hysteria(_) => usize::MAX,
         }
     }
+    /// Whether a datagram of this session can be lost on its way with
+    /// nothing under it to send it again: the carrier is UDP itself or QUIC
+    /// datagrams. The others ride a stream.
+    pub(crate) fn loses_datagrams(&self) -> bool {
+        match self {
+            Self::VlessMux(_) | Self::Trojan(_) | Self::Vmess(_) => false,
+            Self::Shadowsocks2022(session) => session.loses_datagrams(),
+            Self::Socks(_) | Self::Hysteria(_) | Self::Wireguard { .. } | Self::Masque { .. } => {
+                true
+            }
+        }
+    }
     pub(crate) async fn send(&self, target: &Target, payload: &[u8]) -> Result<(), CoreError> {
         match self {
             Self::VlessMux(session) => session.send(target, payload).await,

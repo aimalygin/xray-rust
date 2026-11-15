@@ -340,7 +340,10 @@ What differs from Xray:
 `settings.remoteDNS` accepts up to eight usable IP literals. Missing, null or
 empty values select the upstream defaults `1.1.1.1`, `1.0.0.1`,
 `2606:4700:4700::1111`, `2606:4700:4700::1001`. Destination queries use UDP/53
-inside the WireGuard device, with TCP fallback for truncated replies. A failed
+inside the WireGuard device, with TCP fallback for truncated replies. A UDP
+query without an answer is sent again every second until its server's time is
+over, which Xray-core does not do: the tunnel loses a datagram as its carrier
+does, and one lost query otherwise fails the lookup after four seconds. A failed
 tunnel query never falls back to host DNS. Only when no `remoteDNS` server is
 routable through the tunnel (covered by a peer's `allowedIPs`, with a local
 `address` of its family) are destinations resolved by the caller's resolver
@@ -4187,6 +4190,14 @@ also consume only its remaining time. IP response filters run after the timed
 query. Failure advances to the next selected server with the original name and
 a fresh full per-server budget.
 
+Within that budget a UDP query routed through an outbound whose carrier can
+lose a datagram is sent again every second until its answer comes: SOCKS's UDP
+relay, Shadowsocks UDP outside Mux, Hysteria, WireGuard and MASQUE. Xray-core
+sends one query. Lookups of one name share a single flight in both, so its one
+lost datagram fails every lookup waiting on it after the full budget; a tunnel
+over QUIC datagrams loses the ones on their way whenever its network goes away.
+A query over a stream carrier is sent once, as the stream delivers it.
+
 The core consumes these policy matchers once during construction. Exact rules
 are indexed by hash and suffix rules by reversed domain labels, following
 Xray-core's Compact mobile matcher trade-off; keyword and regex rules remain
@@ -4467,9 +4478,15 @@ SERVFAIL rather than recursing into `198.18.0.1:53`.
 All managed `dns.servers` exchanges have a separate Core-wide operation cap of
 8/16/32/32/64 for `LowMemory`/`Mobile`/`MobilePlus`/`Desktop`/`Throughput`.
 It applies uniformly to routed and local TCP, VLESS UDP/TCP, Freedom UDP, and a
-selected DNS outbound; saturation fails closed without an unbounded waiter
-queue. Direct DNS-outbound UDP and managed Freedom UDP also share a protected
-UDP-socket cap with the same profile values. These budgets are separate from
+selected DNS outbound. An exchange past the cap waits for a place, for as long
+as its lookup's own deadline lets it, in a queue of four waiters for every
+place (32/64/128/128/256); past that queue saturation fails closed. It used to
+fail closed at the cap itself, which a TUN answers with SERVFAIL: a phone asks
+for a dozen names at once when its tunnel starts or its network changes, the
+moments when the exchanges before them are slow, and the system resolver keeps
+that SERVFAIL for the name. Direct DNS-outbound UDP and managed Freedom UDP
+also share a protected UDP-socket cap with the same profile values, which
+still fails closed without waiting. These budgets are separate from
 the ingress DNS policy semaphore and from TCP pool permits, so a Hijack that
 performs a managed lookup cannot self-deadlock by reacquiring its own permit.
 

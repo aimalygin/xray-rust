@@ -1323,13 +1323,16 @@ pub(crate) fn move_udp_carrier(
 /// UDP transport, with these deliberate differences: the timer starts once
 /// the connection exists rather than at dial, every remote hop changes the
 /// port, a remote hop also takes a fresh local socket, Quinn keeps the
-/// previous socket until the new path authenticates, and the task ends with
-/// the connection. A failed hop keeps the current protected path until the
-/// next interval, as in Xray.
+/// previous socket until a few seconds after the new path authenticates, and
+/// the task ends with the connection. A failed hop keeps the current
+/// protected path until the next interval, as in Xray.
 ///
 /// A change of the OS network takes a fresh socket towards the same peer,
 /// which Xray-core does not do: the old socket's network is gone, and the
 /// connection would otherwise sit out its idle timeout before a redial.
+/// Where the old network is still there, as cellular is under Wi-Fi, the
+/// peer's datagrams already on their way arrive on the old socket, which
+/// Quinn goes on reading for those few seconds.
 async fn follow_udp_carrier(
     endpoint: Endpoint,
     connection: quinn::Connection,

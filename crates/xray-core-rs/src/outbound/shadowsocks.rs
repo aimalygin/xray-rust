@@ -287,6 +287,10 @@ impl UdpSession {
             Self::Mux(s) => s.recv().await,
         }
     }
+    /// A datagram of its own on the wire, where Mux carries it in a stream.
+    pub(super) fn loses_datagrams(&self) -> bool {
+        matches!(self, Self::Native(_))
+    }
 }
 
 #[cfg(test)]

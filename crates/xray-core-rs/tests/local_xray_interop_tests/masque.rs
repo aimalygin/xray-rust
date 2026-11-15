@@ -982,3 +982,216 @@ async fn masque_h2_runs_under_tcp_masks() {
     );
     core.stop().await.unwrap();
 }
+
+/// One direction pair of delays for a network path of [`TwoPathRelay`].
+#[derive(Clone, Copy)]
+struct PathDelay {
+    up: Duration,
+    down: Duration,
+}
+
+/// A relay as [`UdpHopRelay`], which also delays every datagram: the first
+/// client source it sees travels the old network, every later one the new
+/// network. Each direction of a path is a queue, so a path keeps its order.
+struct TwoPathRelay {
+    address: SocketAddr,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl TwoPathRelay {
+    async fn start(server: SocketAddr, old: PathDelay, new: PathDelay) -> Self {
+        use tokio::sync::mpsc;
+        type Queue = mpsc::UnboundedSender<(Instant, Vec<u8>)>;
+        let front = Arc::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap());
+        let address = front.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            let mut paths = std::collections::HashMap::<SocketAddr, (Queue, Duration)>::new();
+            let mut buffer = [0; 65535];
+            while let Ok((n, client)) = front.recv_from(&mut buffer).await {
+                if !paths.contains_key(&client) {
+                    let delay = if paths.is_empty() { old } else { new };
+                    let upstream =
+                        Arc::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap());
+                    upstream.connect(server).await.unwrap();
+                    let (up, mut up_queue) = mpsc::unbounded_channel::<(Instant, Vec<u8>)>();
+                    let (down, mut down_queue) = mpsc::unbounded_channel::<(Instant, Vec<u8>)>();
+                    let to_server = upstream.clone();
+                    tokio::spawn(async move {
+                        while let Some((at, data)) = up_queue.recv().await {
+                            tokio::time::sleep_until(at).await;
+                            let _ = to_server.send(&data).await;
+                        }
+                    });
+                    let to_client = front.clone();
+                    tokio::spawn(async move {
+                        while let Some((at, data)) = down_queue.recv().await {
+                            tokio::time::sleep_until(at).await;
+                            let _ = to_client.send_to(&data, client).await;
+                        }
+                    });
+                    tokio::spawn(async move {
+                        let mut data = [0; 65535];
+                        while let Ok(n) = upstream.recv(&mut data).await {
+                            if down
+                                .send((Instant::now() + delay.down, data[..n].to_vec()))
+                                .is_err()
+                            {
+                                return;
+                            }
+                        }
+                    });
+                    paths.insert(client, (up, delay.up));
+                }
+                let (queue, delay) = &paths[&client];
+                let _ = queue.send((Instant::now() + *delay, buffer[..n].to_vec()));
+            }
+        });
+        Self { address, task }
+    }
+}
+
+impl Drop for TwoPathRelay {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+/// One UDP exchange through a tunnel whose network changes `offset` after
+/// the request leaves (before it, when negative): how long the echo took, or
+/// `None` when it never came. The tunnel is dialed over the old network and
+/// moves to the new one on the change.
+async fn udp_exchange_across_a_network_change(
+    server: &XrayServer,
+    udp_port: u16,
+    old: PathDelay,
+    new: PathDelay,
+    offset_ms: i64,
+) -> Option<Duration> {
+    let relay = TwoPathRelay::start(server.addr, old, new).await;
+    let mut config = client_config(server, "h3", credentials());
+    config["outbounds"][0]["settings"]["port"] = json!(relay.address.port());
+    let mut core = core(config).await;
+    let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+    let (_control, socks_relay) = socks(proxy, 3, "0.0.0.0", 0).await.unwrap();
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let datagram = |payload: &[u8]| {
+        let mut datagram = vec![0, 0, 0, 1];
+        datagram.extend(ECHO_V4.parse::<Ipv4Addr>().unwrap().octets());
+        datagram.extend(udp_port.to_be_bytes());
+        datagram.extend(payload);
+        datagram
+    };
+    let mut reply = vec![0; 2048];
+    // The tunnel and the flow exist before the change.
+    let mut ready = false;
+    for _ in 0..10 {
+        socket
+            .send_to(&datagram(b"warm-up"), socks_relay)
+            .await
+            .unwrap();
+        if let Ok(Ok((n, _))) = timeout(Duration::from_secs(2), socket.recv_from(&mut reply)).await
+        {
+            ready = reply[..n].ends_with(b"warm-up");
+            break;
+        }
+    }
+    assert!(ready, "no echo before the change; {}", server.logs());
+    sleep(Duration::from_millis(600)).await;
+    while socket.try_recv_from(&mut reply).is_ok() {}
+
+    let change = Instant::now() + Duration::from_millis(500);
+    let request = if offset_ms >= 0 {
+        change + Duration::from_millis(offset_ms as u64)
+    } else {
+        change - Duration::from_millis(offset_ms.unsigned_abs())
+    };
+    let (_, took) = tokio::join!(
+        async {
+            tokio::time::sleep_until(change).await;
+            assert_eq!(core.rebind_quic(), 1, "the tunnel follows the change");
+        },
+        async {
+            tokio::time::sleep_until(request).await;
+            let sent = Instant::now();
+            socket
+                .send_to(&datagram(b"across-the-change"), socks_relay)
+                .await
+                .unwrap();
+            loop {
+                match timeout(Duration::from_millis(1500), socket.recv_from(&mut reply)).await {
+                    Ok(Ok((n, _))) if reply[..n].ends_with(b"across-the-change") => {
+                        return Some(sent.elapsed());
+                    }
+                    Ok(Ok(_)) => {}
+                    _ => return None,
+                }
+            }
+        }
+    );
+    core.stop().await.unwrap();
+    took
+}
+
+/// A UDP reply still on its way over the old network when the network
+/// changes reaches its flow: the tunnel's old socket goes on receiving while
+/// the server's datagrams for the old path arrive. An iPhone back on Wi-Fi
+/// from cellular lost the answers to DNS queries it had sent up to a tenth
+/// of a second before the change (2026-11-15): cellular was the slower
+/// path, so they arrived after the first packet over Wi-Fi, which closed the
+/// old socket; and what had arrived before that waited unread for the new
+/// socket's first packet. The paths here have that day's delays.
+///
+/// `MASQUE_CHANGE_OFFSETS_MS` takes other request times, in milliseconds
+/// from the change, for a sweep; every exchange prints its line.
+#[tokio::test]
+#[ignore = "requires a pinned Xray-core; run check-masque-interop.sh"]
+async fn masque_h3_udp_reply_in_flight_survives_a_network_change() {
+    let checkout = resolve_xray_checkout();
+    let server = start_server(&checkout, "h3", |_| {}).await;
+    let (_tcp_port, udp_port, _tcp, _udp) = echo_servers().await;
+    // About 240 ms over cellular, the request reaching the server in 77 ms,
+    // and about 146 ms over Wi-Fi.
+    let old = PathDelay {
+        up: Duration::from_millis(77),
+        down: Duration::from_millis(163),
+    };
+    let new = PathDelay {
+        up: Duration::from_millis(73),
+        down: Duration::from_millis(73),
+    };
+    let offsets: Vec<i64> = env::var("MASQUE_CHANGE_OFFSETS_MS")
+        .ok()
+        .map(|list| {
+            list.split(',')
+                .filter_map(|value| value.trim().parse().ok())
+                .collect()
+        })
+        // Replies due on the old socket before the first packet on the new
+        // one, around it and after it; and a request after the change.
+        .unwrap_or_else(|| vec![-200, -120, -60, -40, -20, 40]);
+    let mut failed = Vec::new();
+    for offset in offsets {
+        let took = udp_exchange_across_a_network_change(&server, udp_port, old, new, offset).await;
+        // A reply takes its path's round trip; the old path's is the longer.
+        // The room above it is for a slow runner: the replies this guards
+        // were lost, and the late ones came with them.
+        let limit = old.up + old.down + Duration::from_millis(250);
+        match took {
+            Some(took) => {
+                println!("CHANGE offset_ms={offset:+} reply_ms={}", took.as_millis());
+                if took > limit {
+                    failed.push(format!("{offset:+} ms: {} ms", took.as_millis()));
+                }
+            }
+            None => {
+                println!("CHANGE offset_ms={offset:+} reply=LOST");
+                failed.push(format!("{offset:+} ms: lost"));
+            }
+        }
+    }
+    assert!(
+        failed.is_empty(),
+        "replies in flight across the change were lost or late (request time from the change: reply): {failed:?}; {}",
+        server.logs()
+    );
+}
