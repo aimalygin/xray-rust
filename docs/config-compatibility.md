@@ -340,7 +340,10 @@ What differs from Xray:
 `settings.remoteDNS` accepts up to eight usable IP literals. Missing, null or
 empty values select the upstream defaults `1.1.1.1`, `1.0.0.1`,
 `2606:4700:4700::1111`, `2606:4700:4700::1001`. Destination queries use UDP/53
-inside the WireGuard device, with TCP fallback for truncated replies. A failed
+inside the WireGuard device, with TCP fallback for truncated replies. A UDP
+query without an answer is sent again every second until its server's time is
+over, which Xray-core does not do: the tunnel loses a datagram as its carrier
+does, and one lost query otherwise fails the lookup after four seconds. A failed
 tunnel query never falls back to host DNS. Only when no `remoteDNS` server is
 routable through the tunnel (covered by a peer's `allowedIPs`, with a local
 `address` of its family) are destinations resolved by the caller's resolver
@@ -4186,6 +4189,14 @@ share the deadline. UDP-to-TCP retry and the Rust CNAME continuation extension
 also consume only its remaining time. IP response filters run after the timed
 query. Failure advances to the next selected server with the original name and
 a fresh full per-server budget.
+
+Within that budget a UDP query routed through an outbound whose carrier can
+lose a datagram is sent again every second until its answer comes: SOCKS's UDP
+relay, Shadowsocks UDP outside Mux, Hysteria, WireGuard and MASQUE. Xray-core
+sends one query. Lookups of one name share a single flight in both, so its one
+lost datagram fails every lookup waiting on it after the full budget; a tunnel
+over QUIC datagrams loses the ones on their way whenever its network goes away.
+A query over a stream carrier is sent once, as the stream delivers it.
 
 The core consumes these policy matchers once during construction. Exact rules
 are indexed by hash and suffix rules by reversed domain labels, following

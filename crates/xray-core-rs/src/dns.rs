@@ -36,6 +36,10 @@ const MAX_DIRECT_DNS_UNRELATED_TCP_RESPONSES: usize = 8;
 const DNS_LOCAL_TCP_FALLBACK_DELAY: Duration = Duration::from_millis(300);
 const DNS_DIRECT_UDP_ATTEMPT_TIMEOUT: Duration = Duration::from_millis(750);
 const DNS_DIRECT_TOTAL_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long a query waits for its answer before it goes out again over a
+/// carrier that can lose it: the first interval of the system resolvers
+/// that ask the tunnel, so their own second query finds ours on its way.
+const DNS_DATAGRAM_RESEND_INTERVAL: Duration = Duration::from_secs(1);
 
 /// DNS roles used by one runtime ingress context.
 ///
@@ -281,16 +285,7 @@ impl RoutedDnsQueryTransport {
                 )
                 .await
                 .map_err(io::Error::other)?;
-                session
-                    .send(&target, query)
-                    .await
-                    .map_err(io::Error::other)?;
-                loop {
-                    let reply = session.recv().await.map_err(io::Error::other)?;
-                    if dns_response_matches_query(query, &reply.payload) {
-                        return Ok(reply.payload);
-                    }
-                }
+                exchange_over_datagrams(&session, &target, query).await
             }
         }
     }
@@ -938,6 +933,52 @@ impl DnsQueryTransport for RoutedDnsQueryTransport {
             DnsQueryTransportKind::Quic => self.exchange_quic(server, metadata, query).await,
         }
     }
+}
+
+/// One query over a datagram session of an outbound; the caller's deadline
+/// ends it. Where the carrier can lose a datagram the query goes out again
+/// every [`DNS_DATAGRAM_RESEND_INTERVAL`], which Xray-core does not do: its
+/// one query, like ours before, turned one lost datagram into a lookup
+/// that failed after the server's four seconds, for every lookup of the
+/// name that had joined it. A tunnel over QUIC datagrams loses the ones on
+/// their way when its network goes away.
+async fn exchange_over_datagrams(
+    session: &crate::outbound::datagram::Session,
+    target: &Target,
+    query: &[u8],
+) -> io::Result<Vec<u8>> {
+    session
+        .send(target, query)
+        .await
+        .map_err(io::Error::other)?;
+    let resends = session.loses_datagrams();
+    let mut resend = dns_datagram_resend();
+    loop {
+        tokio::select! {
+            reply = session.recv() => {
+                let reply = reply.map_err(io::Error::other)?;
+                if dns_response_matches_query(query, &reply.payload) {
+                    return Ok(reply.payload);
+                }
+            }
+            _ = resend.tick(), if resends => {
+                session
+                    .send(target, query)
+                    .await
+                    .map_err(io::Error::other)?;
+            }
+        }
+    }
+}
+
+/// The ticks at which an unanswered query goes out again.
+pub(crate) fn dns_datagram_resend() -> tokio::time::Interval {
+    let mut resend = tokio::time::interval_at(
+        tokio::time::Instant::now() + DNS_DATAGRAM_RESEND_INTERVAL,
+        DNS_DATAGRAM_RESEND_INTERVAL,
+    );
+    resend.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    resend
 }
 
 async fn exchange_freedom_udp(
@@ -3076,6 +3117,101 @@ mod tests {
         assert_eq!(bootstrap.calls.load(Ordering::Relaxed), 1);
         assert!(protector.calls.load(Ordering::Relaxed) >= 2);
         server.await.expect("join routed fallback DNS server");
+    }
+
+    /// A SOCKS5 server for one UDP association whose relay loses the first
+    /// `lost` datagrams and answers the rest as a DNS server. Returns its
+    /// control address and how many datagrams reached the relay.
+    async fn spawn_lossy_socks_dns_relay(lost: usize) -> (SocketAddr, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let control_addr = listener.local_addr().unwrap();
+        let relay = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let relay_port = relay.local_addr().unwrap().port();
+        let received = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&received);
+        tokio::spawn(async move {
+            let (mut control, _) = listener.accept().await.unwrap();
+            let mut greeting = [0; 3];
+            control.read_exact(&mut greeting).await.unwrap();
+            assert_eq!(greeting, [5, 1, 0]);
+            control.write_all(&[5, 0]).await.unwrap();
+            let mut head = [0; 4];
+            control.read_exact(&mut head).await.unwrap();
+            assert_eq!(&head[..3], &[5, 3, 0]);
+            let mut declared = vec![0; if head[3] == 1 { 6 } else { 18 }];
+            control.read_exact(&mut declared).await.unwrap();
+            let mut reply = vec![5, 0, 0, 1, 127, 0, 0, 1];
+            reply.extend_from_slice(&relay_port.to_be_bytes());
+            control.write_all(&reply).await.unwrap();
+
+            let mut buffer = [0_u8; 2048];
+            loop {
+                let (read, peer) = relay.recv_from(&mut buffer).await.unwrap();
+                if counter.fetch_add(1, Ordering::SeqCst) < lost {
+                    continue;
+                }
+                // RSV, FRAG, an IPv4 destination and its port, then the query.
+                assert_eq!(&buffer[..4], &[0, 0, 0, 1]);
+                let mut datagram = buffer[..10].to_vec();
+                datagram.extend_from_slice(&dns_response(&buffer[10..read]));
+                relay.send_to(&datagram, peer).await.unwrap();
+                // The association lives as long as its control connection.
+                let _ = &control;
+            }
+        });
+        (control_addr, received)
+    }
+
+    /// A query whose datagram is lost goes out again on a carrier that can
+    /// lose one, here SOCKS's UDP relay. An iPhone back on Wi-Fi lost the
+    /// answer to one query in its MASQUE tunnel (2026-11-15): the lookup
+    /// failed after the server's four seconds for every query of the name
+    /// that had joined it, and iOS kept that failure for half a minute.
+    #[tokio::test]
+    async fn a_query_lost_on_a_datagram_carrier_goes_out_again() {
+        let (socks, received) = spawn_lossy_socks_dns_relay(1).await;
+        let config = xray_config::parse_xray_json(&format!(
+            r#"{{"outbounds": [{{"tag": "via-socks", "protocol": "socks",
+                "settings": {{"address": "127.0.0.1", "port": {}}}}}]}}"#,
+            socks.port()
+        ))
+        .expect("the SOCKS outbound parses")
+        .config;
+        let transport = RoutedDnsQueryTransport::new(
+            Arc::new(OutboundRouter::new(Arc::new(config))),
+            Arc::new(CandidateBootstrapResolver {
+                expected_domain: "unused.test",
+                expected_port: 0,
+                candidates: Vec::new(),
+                calls: AtomicUsize::new(0),
+            }),
+            Arc::new(TransportDialer::system().expect("build DNS dialer")),
+            Vec::new(),
+        );
+        let query = dns_query(0x1dea, "lost-once.test");
+        let started = tokio::time::Instant::now();
+
+        // The resolver gives a server four seconds.
+        let response = timeout(
+            Duration::from_secs(4),
+            transport.exchange(
+                &NameServer::Socket(SocketAddr::from(([192, 0, 2, 53], 53))),
+                DnsQueryTransportKind::Udp,
+                DnsQueryMetadata::new(None),
+                &query,
+            ),
+        )
+        .await
+        .expect("the query lost on its way is sent again within the server's time")
+        .expect("the second query is answered");
+
+        assert_eq!(response, dns_response(&query));
+        assert_eq!(received.load(Ordering::SeqCst), 2, "one resend");
+        assert!(
+            started.elapsed() >= DNS_DATAGRAM_RESEND_INTERVAL,
+            "the query is not sent twice at once: {:?}",
+            started.elapsed()
+        );
     }
 
     #[tokio::test]
