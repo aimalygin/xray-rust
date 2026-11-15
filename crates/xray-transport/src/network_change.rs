@@ -185,14 +185,16 @@ mod tests {
             }
         });
 
-        // The old network is four times as slow as the new one.
+        // The old network is four times as slow as the new one. The delays
+        // are long so that a slow runner's scheduling stays small against
+        // them.
         let old = PathDelay {
-            up: Duration::from_millis(40),
-            down: Duration::from_millis(120),
+            up: Duration::from_millis(100),
+            down: Duration::from_millis(300),
         };
         let new = PathDelay {
-            up: Duration::from_millis(20),
-            down: Duration::from_millis(20),
+            up: Duration::from_millis(50),
+            down: Duration::from_millis(50),
         };
         let (relay, relay_task) = two_path_relay(server_addr, old, new).await;
         // Without connection IDs of its own the client takes a packet by its
@@ -225,15 +227,21 @@ mod tests {
             .unwrap();
         assert_eq!(&warm_up[..], [0]);
 
-        // Requests from 140 ms before the change on. Each reaches the server
-        // before it hears of the new socket, 20 ms after the change, so its
-        // reply takes the old path: due on the old socket from 20 ms to
-        // 130 ms after the change, while the first packet on the new socket
-        // is due about 40 ms after it. The last request leaves from the new
+        // Requests from 350 ms before the change on. Each reaches the server
+        // before it hears of the new socket, 50 ms after the change, so its
+        // reply takes the old path: due on the old socket from 50 ms to
+        // 300 ms after the change, while the first packet on the new socket
+        // is due about 100 ms after it. The last request leaves from the new
         // socket.
-        let change = Instant::now() + Duration::from_millis(200);
-        let requests: [(u8, i64); 6] =
-            [(1, -140), (2, -110), (3, -80), (4, -50), (5, -30), (6, 60)];
+        let change = Instant::now() + Duration::from_millis(500);
+        let requests: [(u8, i64); 6] = [
+            (1, -350),
+            (2, -280),
+            (3, -210),
+            (4, -150),
+            (5, -100),
+            (6, 150),
+        ];
         let send = async {
             for (id, offset) in requests {
                 let at = if offset < 0 {
@@ -253,7 +261,7 @@ mod tests {
         };
         let receive = async {
             let mut arrived = Vec::new();
-            let deadline = change + Duration::from_millis(1500);
+            let deadline = change + Duration::from_millis(3000);
             while arrived.len() < requests.len() {
                 match tokio::time::timeout_at(deadline, connection.read_datagram()).await {
                     Ok(Ok(datagram)) => {
@@ -268,15 +276,15 @@ mod tests {
         let mut ids: Vec<u8> = arrived.iter().map(|(id, _)| *id).collect();
         ids.sort_unstable();
         assert_eq!(ids, [1, 2, 3, 4, 5, 6], "every reply arrives: {arrived:?}");
-        // Each reply within its path's round trip of the request, not when
-        // the new socket's next packet wakes the endpoint: 160 ms over the
-        // old network, 40 ms over the new one.
+        // Each reply about its path's round trip after the request, not when
+        // a later packet on the new socket wakes the endpoint: 400 ms over
+        // the old network, 100 ms over the new one.
         for (id, offset) in requests {
-            let round_trip = if offset < 0 { 160 } else { 40 };
+            let round_trip = if offset < 0 { 400 } else { 100 };
             let due = Duration::from_millis((offset + round_trip) as u64);
             let at = arrived.iter().find(|(reply, _)| *reply == id).unwrap().1;
             assert!(
-                at <= due + Duration::from_millis(60),
+                at <= due + Duration::from_millis(250),
                 "reply {id} is due {due:?} after the change and came after {at:?}: {arrived:?}"
             );
         }

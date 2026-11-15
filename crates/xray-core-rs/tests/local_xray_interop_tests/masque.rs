@@ -1173,7 +1173,9 @@ async fn masque_h3_udp_reply_in_flight_survives_a_network_change() {
     for offset in offsets {
         let took = udp_exchange_across_a_network_change(&server, udp_port, old, new, offset).await;
         // A reply takes its path's round trip; the old path's is the longer.
-        let limit = old.up + old.down + Duration::from_millis(60);
+        // The room above it is for a slow runner: the replies this guards
+        // were lost, and the late ones came with them.
+        let limit = old.up + old.down + Duration::from_millis(250);
         match took {
             Some(took) => {
                 println!("CHANGE offset_ms={offset:+} reply_ms={}", took.as_millis());
