@@ -40,6 +40,10 @@ const DNS_DIRECT_TOTAL_TIMEOUT: Duration = Duration::from_secs(5);
 /// carrier that can lose it: the first interval of the system resolvers
 /// that ask the tunnel, so their own second query finds ours on its way.
 const DNS_DATAGRAM_RESEND_INTERVAL: Duration = Duration::from_secs(1);
+/// How many managed exchanges may wait for a place for every one that runs.
+/// A wait ends with its lookup's own time, so the queue holds what the
+/// ingresses admit within a server's few seconds and no more than this.
+const MANAGED_DNS_WAITERS_PER_OPERATION: usize = 4;
 
 /// DNS roles used by one runtime ingress context.
 ///
@@ -65,6 +69,8 @@ pub(crate) struct RoutedDnsQueryTransport {
     forbidden_servers: Arc<[SocketAddr]>,
     direct_executor: Arc<DnsDirectExecutor>,
     operation_permits: Arc<Semaphore>,
+    /// The places in the queue for `operation_permits`.
+    waiter_permits: Semaphore,
     tls_connector: Result<Arc<TlsConnector>, String>,
 }
 
@@ -107,6 +113,11 @@ impl RoutedDnsQueryTransport {
             forbidden_servers: forbidden_servers.into(),
             direct_executor,
             operation_permits: Arc::new(Semaphore::new(max_concurrent_operations.max(1))),
+            waiter_permits: Semaphore::new(
+                max_concurrent_operations
+                    .max(1)
+                    .saturating_mul(MANAGED_DNS_WAITERS_PER_OPERATION),
+            ),
             tls_connector: TlsConnector::system()
                 .map(Arc::new)
                 .map_err(|error| error.to_string()),
@@ -119,15 +130,34 @@ impl RoutedDnsQueryTransport {
         self
     }
 
-    fn try_reserve_operation(&self) -> io::Result<OwnedSemaphorePermit> {
+    /// A place among the exchanges that run at once. When all are taken the
+    /// exchange waits its turn, for as long as its caller's deadline lets
+    /// it, in a queue of [`MANAGED_DNS_WAITERS_PER_OPERATION`] for each
+    /// place; only past that queue is it refused.
+    ///
+    /// It used to be refused at once, which a TUN answers with SERVFAIL. A
+    /// phone asks for a dozen names in one moment when its network changes
+    /// or its tunnel starts, the moments when the exchanges before them are
+    /// slow, and a system resolver keeps a SERVFAIL for the name: iOS for
+    /// half a minute and more.
+    async fn reserve_operation(&self) -> io::Result<OwnedSemaphorePermit> {
         match Arc::clone(&self.operation_permits).try_acquire_owned() {
-            Ok(permit) => Ok(permit),
-            Err(tokio::sync::TryAcquireError::NoPermits) => Err(io::Error::new(
+            Ok(permit) => return Ok(permit),
+            Err(tokio::sync::TryAcquireError::NoPermits) => {}
+            Err(error @ tokio::sync::TryAcquireError::Closed) => {
+                return Err(io::Error::other(error))
+            }
+        }
+        let _waiter = self.waiter_permits.try_acquire().map_err(|_| {
+            io::Error::new(
                 io::ErrorKind::WouldBlock,
                 "managed DNS operation limit reached",
-            )),
-            Err(error @ tokio::sync::TryAcquireError::Closed) => Err(io::Error::other(error)),
-        }
+            )
+        })?;
+        Arc::clone(&self.operation_permits)
+            .acquire_owned()
+            .await
+            .map_err(io::Error::other)
     }
 
     fn target(&self, server: &NameServer, network: RoutingNetwork) -> Target {
@@ -918,7 +948,7 @@ impl DnsQueryTransport for RoutedDnsQueryTransport {
         metadata: DnsQueryMetadata<'_>,
         query: &[u8],
     ) -> io::Result<Vec<u8>> {
-        let _operation_permit = self.try_reserve_operation()?;
+        let _operation_permit = self.reserve_operation().await?;
         match transport {
             DnsQueryTransportKind::Udp if metadata.dispatch == DnsQueryDispatch::Local => {
                 Err(io::Error::new(
@@ -1911,17 +1941,20 @@ mod tests {
             .await
             .expect("Freedom query should occupy both managed and UDP budgets");
 
+        // A second managed operation waits for the place and opens nothing
+        // while it does.
         let second_query = dns_query(0x2362, "second-freedom-budget.test");
-        let error = transport
-            .exchange(
+        timeout(
+            Duration::from_millis(150),
+            transport.exchange(
                 &NameServer::Socket(server_addr),
                 DnsQueryTransportKind::Udp,
                 DnsQueryMetadata::new(None),
                 &second_query,
-            )
-            .await
-            .expect_err("second managed DNS operation must fail closed at the global cap");
-        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+            ),
+        )
+        .await
+        .expect_err("the second managed DNS operation waits at the global cap");
 
         let ingress_outbound = selected_dns_outbound(DnsOutboundSettings {
             rewrite_network: Some(Network::Udp),
@@ -1972,6 +2005,100 @@ mod tests {
             !server.await.expect("join Freedom budget DNS server"),
             "a saturated managed or ingress query opened a second UDP socket"
         );
+    }
+
+    /// An exchange past the operation cap waits for a place and is then
+    /// answered; only past the queue for places is one refused. On an iPhone
+    /// (2026-11-15) the seventeenth lookup at once was refused, with
+    /// SERVFAIL, whenever sixteen were slow: after the tunnel's start and
+    /// after Wi-Fi went away.
+    #[tokio::test]
+    async fn an_exchange_past_the_operation_cap_waits_for_a_place() {
+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind DNS UDP server");
+        let server_addr = socket.local_addr().expect("read DNS address");
+        let (observed_tx, observed_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        // Holds the first answer until released, then answers everything.
+        let server = tokio::spawn(async move {
+            let mut buffer = [0_u8; 512];
+            let (read, peer) = socket.recv_from(&mut buffer).await.unwrap();
+            let response = dns_response(&buffer[..read]);
+            observed_tx.send(()).unwrap();
+            release_rx.await.unwrap();
+            socket.send_to(&response, peer).await.unwrap();
+            loop {
+                let (read, peer) = socket.recv_from(&mut buffer).await.unwrap();
+                let response = dns_response(&buffer[..read]);
+                socket.send_to(&response, peer).await.unwrap();
+            }
+        });
+        let config = xray_config::parse_xray_json(r#"{"outbounds": [{"protocol": "freedom"}]}"#)
+            .expect("the freedom outbound parses")
+            .config;
+        let bootstrap: Arc<dyn DnsResolver> = Arc::new(xray_transport::SystemDnsResolver);
+        let dialer = Arc::new(TransportDialer::system().expect("build DNS dialer"));
+        let direct_executor = Arc::new(DnsDirectExecutor::with_pool_config(
+            Arc::clone(&bootstrap),
+            Arc::clone(&dialer),
+            Vec::new(),
+            DnsDirectPoolConfig::from_runtime_limit(1, Duration::from_secs(30)),
+        ));
+        // One exchange at a time, and so four places in the queue.
+        let transport = Arc::new(RoutedDnsQueryTransport::with_direct_executor(
+            Arc::new(OutboundRouter::new(Arc::new(config))),
+            bootstrap,
+            dialer,
+            Vec::new(),
+            direct_executor,
+            1,
+        ));
+        let exchange = |id: u16| {
+            let transport = Arc::clone(&transport);
+            tokio::spawn(async move {
+                let query = dns_query(id, "waits-its-turn.test");
+                let response = transport
+                    .exchange(
+                        &NameServer::Socket(server_addr),
+                        DnsQueryTransportKind::Udp,
+                        DnsQueryMetadata::new(None),
+                        &query,
+                    )
+                    .await?;
+                assert_eq!(response, dns_response(&query));
+                io::Result::Ok(())
+            })
+        };
+        let first = exchange(0x3001);
+        observed_rx.await.expect("the first exchange has the place");
+        let waiting: Vec<_> = (0x3002..=0x3005).map(exchange).collect();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            waiting.iter().all(|exchange| !exchange.is_finished()),
+            "an exchange past the cap waits instead of failing"
+        );
+        // The queue is full: the next one is refused at once.
+        let refused = timeout(Duration::from_millis(500), exchange(0x3006))
+            .await
+            .expect("an exchange past the queue is refused without waiting")
+            .expect("join the refused exchange")
+            .expect_err("an exchange past the queue is refused");
+        assert_eq!(refused.kind(), io::ErrorKind::WouldBlock);
+
+        release_tx.send(()).unwrap();
+        first
+            .await
+            .unwrap()
+            .expect("the first exchange is answered");
+        for exchange in waiting {
+            timeout(Duration::from_secs(2), exchange)
+                .await
+                .expect("a waiting exchange gets its place")
+                .unwrap()
+                .expect("a waiting exchange is answered");
+        }
+        server.abort();
     }
 
     /// A query routed through freedom over UDP leaves on a socket with

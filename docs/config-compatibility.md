@@ -4478,9 +4478,15 @@ SERVFAIL rather than recursing into `198.18.0.1:53`.
 All managed `dns.servers` exchanges have a separate Core-wide operation cap of
 8/16/32/32/64 for `LowMemory`/`Mobile`/`MobilePlus`/`Desktop`/`Throughput`.
 It applies uniformly to routed and local TCP, VLESS UDP/TCP, Freedom UDP, and a
-selected DNS outbound; saturation fails closed without an unbounded waiter
-queue. Direct DNS-outbound UDP and managed Freedom UDP also share a protected
-UDP-socket cap with the same profile values. These budgets are separate from
+selected DNS outbound. An exchange past the cap waits for a place, for as long
+as its lookup's own deadline lets it, in a queue of four waiters for every
+place (32/64/128/128/256); past that queue saturation fails closed. It used to
+fail closed at the cap itself, which a TUN answers with SERVFAIL: a phone asks
+for a dozen names at once when its tunnel starts or its network changes, the
+moments when the exchanges before them are slow, and the system resolver keeps
+that SERVFAIL for the name. Direct DNS-outbound UDP and managed Freedom UDP
+also share a protected UDP-socket cap with the same profile values, which
+still fails closed without waiting. These budgets are separate from
 the ingress DNS policy semaphore and from TCP pool permits, so a Hijack that
 performs a managed lookup cannot self-deadlock by reacquiring its own permit.
 
