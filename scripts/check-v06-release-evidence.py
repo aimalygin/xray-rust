@@ -62,6 +62,10 @@ class EvidencePolicy:
     def transitions(scenario: str) -> set[str]:
         return set()
 
+    def device_transitions(self, platform: str, scenario: str) -> set[str]:
+        """What a device of one platform must show for a scenario."""
+        return self.transitions(scenario)
+
 
 V06_POLICY = EvidencePolicy()
 
@@ -219,7 +223,7 @@ def validate_device(
                 f"{scenario_label}.transitions[{transition_index}]",
                 128,
             )
-        required_transitions = policy.transitions(scenario_id)
+        required_transitions = policy.device_transitions(platform, scenario_id)
         if (required_transitions or policy.unique_transitions) and (
             len(transitions) != len(set(transitions))
             or not required_transitions <= set(transitions)

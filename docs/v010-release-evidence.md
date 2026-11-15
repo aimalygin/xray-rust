@@ -9,17 +9,22 @@ The contract is the schema-5 `v010` profile in
 and recorded with its open proposals in
 [0.10.0 release preparation](v0100-release.md):
 
-- `mkcp` and `masque` take all twelve transitions on Apple and both TUN
-  backends on Android, where `wifi-cellular-wifi` is tested this time and
-  `lock-wake` is not.
+- `mkcp` and `masque` take all twelve transitions on Apple. On Android they
+  run on both TUN backends without `wifi-cellular-wifi` and `lock-wake`,
+  which are not tested there.
 - `xdns`, `xicmp`, `realm`, `sudoku`, `xmc`, `header-custom`, `xdrive` and
   `vless-reverse` take seven smoke transitions on a LAN, on both platforms.
-- `legacy-regression` needs the twelve protocols 0.9.0 shipped and
-  `xhttp-h3-network-change`; `profile-import` needs `vless-link`,
+- `legacy-regression` needs the twelve protocols 0.9.0 shipped and, on
+  Apple, `xhttp-h3-network-change`; `profile-import` needs `vless-link`,
   `trojan-link`, `vmess-link`, `hysteria2-link`, `remnawave-json` and
   `invalid-input-redaction`.
 - `mkcp-` and `masque-` `throughput`, `latency` and `memory`, and the
   `release-comparison` artifact against 0.9.0.
+
+The Android network change left the contract on 2026-11-15, on the owner's
+decision: the Android test device has no cellular data. As in 0.7 to 0.9,
+`wifi-cellular-wifi` and `xhttp-h3-network-change` are not tested on Android,
+and release known limitations must say so.
 
 The shared scenarios (`vless-encryption`, `ip-on-demand`,
 `xhttp-download-session`, `cancellation`, `host-adapter-projection`) are
@@ -255,11 +260,16 @@ controls.
 | `routed-dns` | the `domain` target, resolved through the VPN's DNS |
 | `start-stop`, `reconnect` | `running`, `cancel-start-recovery` after `rapid-stop` |
 | `cancel-active-flow`, `resource-recovery` | separate runs, as in 0.9.0 |
-| `wifi-cellular-wifi` | `--network-change`: `transition-recovered` for `cellular` and `wifi`, then `network-change` |
-| `xhttp-h3-network-change` | the same step on the `xhttp-h3` case |
+| `wifi-cellular-wifi`, `xhttp-h3-network-change` | not tested: the owner's decision of 2026-11-15, the test device has no cellular data |
 | `lock-wake` | not tested, pending the owner's decision |
 
 ### Wi-Fi/cellular over adb
+
+The profile does not ask for this step since 2026-11-15, and the 0.10.0
+campaign does not run it. The driver keeps it for a device with mobile data:
+it yields `wifi-cellular-wifi` for every case and `xhttp-h3-network-change`
+for the `xhttp-h3` case, as `transition-recovered` for `cellular` and `wifi`
+and then `network-change`.
 
 `--network-change` adds a step to every case, after its traffic. With the VPN
 running the driver runs `svc wifi disable`, waits until `settings get global

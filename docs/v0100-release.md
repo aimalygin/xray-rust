@@ -98,7 +98,8 @@ The owner accepted this contract on 2026-11-11 («Принимаю»):
    `cancel-active-flow`, `reconnect`, `wifi-cellular-wifi`, `lock-wake` and
    `resource-recovery`. On Android each runs on both TUN backends, as
    `mkcp-file-descriptor`, `mkcp-packet-pump`, `masque-file-descriptor` and
-   `masque-packet-pump`.
+   `masque-packet-pump`, without `wifi-cellular-wifi` and `lock-wake`; see
+   item 5.
 2. **The masks, XDRIVE and the reverse bridge take a LAN smoke set on both
    platforms.** Scenarios `xdns`, `xicmp`, `realm`, `sudoku`, `xmc`,
    `header-custom`, `xdrive` and `vless-reverse` each pass `ipv4-tcp`,
@@ -110,12 +111,19 @@ The owner accepted this contract on 2026-11-11 («Принимаю»):
    `shadowsocks2022`, `vmess`, `socks`, `http` and `shadowsocks-aead`.
    Hysteria2 and XHTTP H3 run with ChromeParrot, their default now, and
    `xhttp-h3-network-change` shows XHTTP H3 keeping its connection across a
-   network change.
+   network change. It is required on Apple; see item 5 for Android.
 4. **Profile import covers every kind added since 0.9.0:** `vless-link`,
    `trojan-link`, `vmess-link`, `hysteria2-link` and `remnawave-json`, plus
    `invalid-input-redaction`.
-5. **Android Wi-Fi/cellular is tested this time**, driven over adb. In v0.9 it
-   was not tested. Android `lock-wake` is not decided; see the open questions.
+5. **The network change is not tested on Android.** The contract accepted
+   on 2026-11-11 had Android Wi-Fi/cellular tested this time, driven over
+   adb. The owner changed that on 2026-11-15: the Android test device has no
+   cellular data. As in 0.7 to 0.9, the Android mKCP and MASQUE scenarios do
+   not need `wifi-cellular-wifi`, and Android's `legacy-regression` does not
+   need `xhttp-h3-network-change`, which is the same step. Apple keeps both.
+   These are checks that were not made, not transitions that passed, and
+   release known limitations must say so. Android `lock-wake` is not decided;
+   see the open questions.
 6. **Performance.** The gate holds `mkcp-` and `masque-` `throughput`,
    `latency` and `memory` against Xray-core v26.11.9, next to the four
    measurements every release carries. The full comparison deferred from
@@ -163,8 +171,8 @@ can go on, and each can change without touching the rest.
 
 1. **Android `lock-wake`.** Not decided. The profile keeps it not tested on
    Android, as v0.9 did, and release known limitations must say so. If the
-   owner wants it tested, `ANDROID_OWNER_SKIPPED_TRANSITIONS` becomes empty
-   and the Android driver needs a lock step (`input keyevent`).
+   owner wants it tested, `ANDROID_OWNER_SKIPPED_TRANSITIONS` loses
+   `lock-wake` and the Android driver needs a lock step (`input keyevent`).
 2. **Verdict budgets of the 0.9.0 comparison.** Proposed: a candidate median
    of at least 90% of the baseline's throughput, and at most 110% of its
    latency and of its memory. Outside them a row is a `regression`.
@@ -208,7 +216,9 @@ can go on, and each can change without touching the rest.
    do not. Covering it there is one more import call per `vless` case in each
    probe.
 8. **`xhttp-h3-network-change` on Android** needs the Device Gate to opt in
-   to the network-change coordinator, which 0.9.0's harness did not.
+   to the network-change coordinator, which 0.9.0's harness did not. The
+   opt-in stays in the harness. Since 2026-11-15 the profile does not require
+   the transition on Android; see item 5 of the contract.
 
 Not a decision, but found while building the fixtures: a MASQUE tunnel
 carries 1280-byte packets and its stack does not fragment, so a UDP datagram
