@@ -3,6 +3,78 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# 0.10.0 evidence. Rehashed from the retained files they name: the pinned
+# Xray-core v26.11.9 builds, the candidate CLI the feature harness built
+# ("xray-rust"), and the stand's libraries and key helper. The feature harness
+# recorded "keys" and "xray-core" from temporary executables it built. These
+# are exact SHA-256 fields and lines, not credential values.
+[[allowlists]]
+description = "Harness-recorded 0.10.0 feature key-generator executable SHA256"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^docs/device-results/2026-11-15-v0100-candidate/performance-features/build-manifest\.json$''']
+regexes = ['''^\s*"keys": "4ef08c6ab7bab5db2af3058e53d7af9bd8437c6e6fe7f07771844c9041323f5b",?\s*$''']
+
+[[allowlists]]
+description = "0.10.0 feature benchmark client executable SHA256 fields"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^docs/device-results/2026-11-15-v0100-candidate/performance-features/build-manifest\.json$''']
+regexes = [
+  '''^\s*"xray-core": "2999bd8edaef6e787ba8b7c584c3de1e6051f57432e56dfb62adb55d42e3d63a",?\s*$''',
+  '''^\s*"xray-rust": "65a8ac2343179990f9c6f5915267bb174e9005df7c60b0394c96b22b79230be5",?\s*$''',
+]
+
+[[allowlists]]
+description = "Verified 0.10.0 pinned protocol reference binary SHA256"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^docs/device-results/2026-11-15-v0100-candidate/performance-protocols/manifest\.json$''']
+regexes = ['''^\s*"<perf>/comparison/bin/xray": "799824a3005d4a5d699cfdf9634e7601a48c33028884142e0fccf783692f322d",?\s*$''']
+
+[[allowlists]]
+description = "Verified 0.10.0 pinned reference binary SHA256 in the comparison against 0.9.0"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^docs/device-results/2026-11-15-v0100-candidate/release-comparison/manifest\.json$''']
+regexes = ['''^\s*"<perf>/xray": "799824a3005d4a5d699cfdf9634e7601a48c33028884142e0fccf783692f322d",?\s*$''']
+
+[[allowlists]]
+description = "Verified 0.10.0 stand binary SHA256 values in the inventory tool"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^docs/device-results/2026-11-15-v0100-candidate/tools/campaign/make_inventory\.py$''']
+regexes = [
+  '''^\s*add\(entry\(PERF / "xray", "799824a3005d4a5d699cfdf9634e7601a48c33028884142e0fccf783692f322d",\s*$''',
+  '''^\s*add\(entry\(O / "wan/xray-linux-arm64", "a5771eb2911d82692c33c17d4c84b9af37f5cfe37d306880677bfdd21d5ea65d",\s*$''',
+  '''^\s*add\(entry\(O / "loopback/xicmp-reference/xray", "a5771eb2911d82692c33c17d4c84b9af37f5cfe37d306880677bfdd21d5ea65d",\s*$''',
+  '''^\s*add\(entry\(O / "loopback/xicmp-client/xray-rust-linux-arm64", "40a342756acdcbc925d7ef31e3624ac62ed0650f43204fb745ca7ba4eb686820",\s*$''',
+  '''^\s*add\(entry\(O / "apple/core-xcframework/ios-device/libxray_ffi\.a", "48c013331baf6dd070d3c17e4730bf8fd6bfbd1034d1839e93271b4225fac5a3",\s*$''',
+  '''^\s*add\(entry\(O / "apple/sdk-xcframework/ios-device/libxray_ffi\.a", "4fef32f82846b4ce5f56471123dda941f98dadc3abc2ac28bd1d69da3b125137",\s*$''',
+]
+
+[[allowlists]]
+description = "Verified 0.10.0 stand key-helper SHA256 in the inventory tool"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^docs/device-results/2026-11-15-v0100-candidate/tools/campaign/make_inventory\.py$''']
+regexes = ['''^\s*add\(entry\(O / "tools/shared/bin/vless-keys", "b883ae45a4542d0fcaa5df4439ec5a06913364ed5850094edd85ffbd7aa38f86",\s*$''']
+
+# The generic rule reads the case id after "socks-password" as its value.
+[[allowlists]]
+description = "0.10.0 copy of the UDP cancellation collector's case-id filter"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^docs/device-results/2026-11-15-v0100-candidate/tools/campaign/shared/udp_cancel_v09\.py$''']
+regexes = ['''^\s*for case in \[c for c in env\['cases'\] if c\['caseId'\] in \('socks-password','shadowsocks-aead-aes-256-gcm'\)\]:  # HTTP carries no UDP$''']
+
 # Rehashed from the retained 0.9.0 candidate CLI and Xray-core v26.10.21
 # reference; the feature harness recorded the key-generator digest from the
 # temporary executable it built. These are exact binarySha256 fields.

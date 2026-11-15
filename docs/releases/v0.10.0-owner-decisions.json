@@ -1,0 +1,116 @@
+{
+  "release": "0.10.0",
+  "recordedDate": "2026-11-15",
+  "ownerQuestion": "Выпускать 0.10.0 с этими ограничениями и публиковать свидетельства?",
+  "ownerInstruction": "Да, публикуй",
+  "publicationRequested": true,
+  "status": "accepted by the owner on 2026-11-15 with the decisions and known limitations below",
+  "candidateCommit": "7eb199bba2562659fdbf0bcde9820e016dd8530c",
+  "candidateTree": "b637ff77211f6dc1aa865779d42b0325a7c7cc86",
+  "decisions": [
+    {
+      "id": "v010-evidence-contract",
+      "recordedDate": "2026-11-11",
+      "ownerWords": "Принимаю",
+      "releaseRequirement": "evidence-contract",
+      "scope": "The v0.10 evidence contract: mKCP and MASQUE take the full device transition set on Apple and both Android TUN backends; the masks, XDRIVE and the VLESS reverse bridge take a LAN smoke set on both platforms; legacy regression covers the twelve protocols 0.9.0 shipped; profile import covers every kind added since 0.9.0; performance holds the mkcp- and masque- measurements against Xray-core v26.11.9 and the comparison against 0.9.0.",
+      "source": "docs/v0100-release.md, scripts/check-v010-release-evidence.py"
+    },
+    {
+      "id": "v010-proposals-as-implemented",
+      "recordedDate": "2026-11-13",
+      "ownerWords": "Принимаю",
+      "releaseRequirement": "evidence-contract",
+      "scope": "The proposals as implemented: Android lock-wake is not tested; the comparison against 0.9.0 uses budgets of at least 90% of 0.9.0's throughput and at most 110% of its p95 latency and of its memory; one carrier per mask; vless-link goes through the SDK importer on the devices; the Device Gate opts in to the network-change coordinator.",
+      "source": "docs/v0100-release.md \"Proposals awaiting the owner\""
+    },
+    {
+      "id": "v010-masque-download-cap",
+      "recordedDate": "2026-11-13",
+      "ownerWords": "Нет, в ограничения",
+      "releaseRequirement": "known-limitation",
+      "scope": "MASQUE's one-flow download rate is not fixed before the 0.10.0 tag; it is listed as a known limitation."
+    },
+    {
+      "id": "v010-mkcp-cancel-criterion",
+      "recordedDate": "2026-11-13",
+      "ownerWords": "Да, так",
+      "releaseRequirement": "scoped-criterion",
+      "scope": "mKCP's cancel-active-flow counts on what the device proves (the flow is cancelled and traffic recovers afterwards); the delay before the mKCP server learns of the cancellation is a known limitation. MASQUE keeps 0.9.0's remote-close bound."
+    },
+    {
+      "id": "v010-android-network-change",
+      "recordedDate": "2026-11-15",
+      "ownerChoice": "Снять с Android",
+      "releaseRequirement": "not-tested-by-owner-decision",
+      "scope": "The Android network change left the evidence profile (core #300): wifi-cellular-wifi for the four Android mKCP and MASQUE scenarios and xhttp-h3-network-change on Android are not tested, because the Android test device has no cellular data. They are not tested, not successful.",
+      "source": "scripts/check-v010-release-evidence.py ANDROID_OWNER_SKIPPED_TRANSITIONS, ANDROID_OWNER_SKIPPED_LEGACY_TRANSITIONS"
+    },
+    {
+      "id": "v010-fourth-candidate-repeat-scope",
+      "recordedDate": "2026-11-15",
+      "ownerWords": "Только затронутое",
+      "releaseRequirement": "carried-over-evidence",
+      "scope": "On the fourth candidate only what its changes touch is repeated. The iPhone's LAN runs count from the third candidate's build; full CI, the SDK pin, the host measurements, the device stands, every run against a public host and every Android run are made on the fourth."
+    },
+    {
+      "id": "v010-android-masque-stress",
+      "recordedDate": "2026-11-15",
+      "ownerWords": "Ограничение и перепрогон",
+      "releaseRequirement": "known-limitation",
+      "scope": "The 16-TCP-flow bound of a MASQUE or WireGuard tunnel is a known limitation of 0.10.0. Android's MASQUE resource stress is re-run with 8 connections at once (mKCP stays at 32); the candidate does not change."
+    },
+    {
+      "id": "v010-apple-resource-bound",
+      "recordedDate": "2026-11-15",
+      "ownerWords": "Без прогона, в ограничения",
+      "releaseRequirement": "known-limitation",
+      "question": "The documented criterion for Apple resource-recovery (the 0.9 guide's row and the probe, XrayProtocolDeviceProbe.swift:402) is footprint at most baseline + 8 MiB and threads at most baseline + 8, and it passed; the 8 MiB bound on RSS is only 0.9.0's assembler convention, and MASQUE is 0.26 MiB over it. Option 1: a re-run on the fourth candidate's build. Option 2: no re-run, raise the Apple RSS bound in the manifest and name the excess plainly in the known limitations, with the drawback said aloud that the bound is chosen after the number was seen.",
+      "scope": "Option 2: no re-run. The archive bounds Apple RSS growth per protocol by the rule Android has used since 0.8, max(8 MiB, 25% of the RSS after the first cycle's recovery); footprint and threads keep their 8 MiB and 8 bounds; the excess over 0.9.0's 8 MiB is a known limitation."
+    }
+  ],
+  "knownLimitations": [
+    {
+      "id": "comparison-memory-regressions",
+      "scope": "Against a build of 0.9.0 measured in the same run on the same machine (five repeats, one SOCKS flow each), the candidate's sampled peak memory is above the 110% budget for ten protocols, medians 0.9.0 to candidate: http-memory 6.00 to 6.91 MiB (115.1%), hysteria2-memory 17.02 to 19.27 MiB (113.2%), shadowsocks-aead-memory 6.00 to 6.94 MiB (115.6%), shadowsocks2022-memory 5.89 to 6.80 MiB (115.4%), socks-memory 5.83 to 6.72 MiB (115.3%), trojan-memory 8.45 to 9.53 MiB (112.8%), vless-reality-memory 8.80 to 10.02 MiB (113.9%), vmess-memory 6.06 to 7.06 MiB (116.5%), xhttp-h2-memory 12.38 to 13.77 MiB (111.2%) and xhttp-h3-memory 12.72 to 14.97 MiB (117.7%). wireguard-memory (107.9%) and xhttp-h1-memory (107.6%) are within the budget, and throughput (90.6-111.7%) and p95 latency (90.9-107.0%) are within it for all twelve protocols."
+    },
+    {
+      "id": "android-network-change-and-lock-wake-not-tested",
+      "scope": "Android: wifi-cellular-wifi and xhttp-h3-network-change were not tested, because the Android test device has no cellular data, and lock-wake was not tested either. Not tested is not passed. The iPhone ran all three."
+    },
+    {
+      "id": "iphone-lan-runs-on-third-candidate",
+      "scope": "The iPhone's LAN runs (mKCP and MASQUE smoke, lifecycle and resources; the seven LAN smoke masks; legacy regression over the twelve 0.9.0 protocols; profile import; the shared scenarios and FakeDNS controls; host-adapter projection) were made on the third candidate 706a766c (tree c9a8f385) and not repeated on the fourth candidate 7eb199bb. The fourth differs by #299 (the vendored Quinn keeps a rebound connection's old socket for 3 s; the resolver sends a DNS query again over a carrier that can lose a datagram; a lookup past the resolver's operation cap waits for a place), #300 (evidence checker and documents only) and the release commit (changelog and release document). Nothing under platform/, crates/xray-ffi or tests/fixtures changed. The iPhone runs against a public host (xicmp, WAN mKCP, MASQUE and XHTTP H3) and every Android run were made on the fourth."
+    },
+    {
+      "id": "masque-wireguard-16-tcp-flows",
+      "scope": "A MASQUE or WireGuard tunnel carries at most 16 TCP flows at once, idle ones included, and refuses the next one at once. Android's resource stress therefore ran MASQUE with 8 connections at once where mKCP ran 32. Its first attempt at 32 is kept in the report: 68 of 240 HTTP requests passed and all 480 UDP; the second attempt, at 8, passed every burst (240 of 240 HTTP, 480 of 480 UDP). Waiting for a place instead of refusing is planned for after the release."
+    },
+    {
+      "id": "masque-udp-datagram-size",
+      "scope": "MASQUE does not deliver a UDP datagram above 1252 bytes over IPv4 or 1232 bytes over IPv6: the tunnel carries 1280-byte packets and its stack does not fragment, where Xray-core's stack would. The device cases send datagrams of exactly those sizes."
+    },
+    {
+      "id": "masque-one-flow-download",
+      "scope": "On one flow that only downloads, MASQUE is far slower than Xray-core's client: a median 11.8% of its throughput in five paired loopback repeats (11.6, 11.8, 11.8, 19.5 and 25.7%; candidate 17.4-23.4 MiB/s, Xray-core 89.4-164.7 MiB/s). Upload on one flow (176%), full duplex on one flow (155%) and download on eight flows (152%) are faster than Xray-core's. This case is outside the gate."
+    },
+    {
+      "id": "mkcp-remote-close",
+      "scope": "mKCP: the server learns that a flow was cancelled only about six seconds after the client closes it, as with Xray-core's own client. The remote-close bound therefore fails for mKCP in android-cancel-tcp (0 of 4; MASQUE 4 of 4; local cancellation 8 of 8) and in the host check (hold-close-v010: the two mKCP rows fail with the candidate and with Xray-core's client)."
+    },
+    {
+      "id": "ios-slow-first-exchange",
+      "scope": "On iOS the first exchange after a tunnel start is sometimes slow. In the counted iPhone runs: 109 tunnel starts, no failed first exchange, 16 that took 2 s or more (the fourth candidate's four runs: 6 starts, 3 slow; the carried-over LAN runs: 103 starts, 13 slow). The three failed attempts kept from the third candidate (ios-smoke-v010, ios-legacy-v010 and ios-shared attempt-1) each failed on the first exchange after a tunnel start (45 starts, 3 failed); their second attempts passed. 0.9.0 showed the same: one HTTPS first exchange on the iPhone closed after 10 s and was not reproduced."
+    },
+    {
+      "id": "apple-resource-bound-set-after-measurement",
+      "scope": "In the iPhone resource run (the third candidate's build, carried over), MASQUE's resident memory grew 8.25 MiB (8,650,752 bytes) from its pre-load baseline of 34,652,160 bytes, over the recovery stages +0.86, +5.47, +5.55 and +8.25 MiB: 0.26 MiB above the 8 MiB RSS bound 0.9.0's evidence used for Apple. The documented criterion, physical footprint at most 8 MiB and threads at most 8 above the baseline, passed (+0.20 MiB, +0 threads). Without a re-run, on the owner's decision of 2026-11-15, this archive bounds Apple RSS growth per protocol by the rule Android has used since 0.8, max(8 MiB, 25% of the RSS after the first cycle's recovery): 9.63 MiB for MASQUE. That bound was set after the number was seen. Measured the way Android's rule measures growth, from the first cycle's recovery to the second's, MASQUE grew 2.78 MiB. mKCP grew 4.16 MiB from its baseline (0.48 MiB between the recoveries), inside either bound."
+    }
+  ],
+  "unchangedRequirements": [
+    "Preserve all original measurements, failures, fixture conditions and exact build identities.",
+    "Unchanged schema-5 validation with the candidate's check-v010-release-evidence.py and all unrelated CI and interoperability checks.",
+    "Verified immutable annotated tags, exact SDK/core pins and canonical artifact checksums.",
+    "Clean consumers of published Apple and Android packages."
+  ]
+}

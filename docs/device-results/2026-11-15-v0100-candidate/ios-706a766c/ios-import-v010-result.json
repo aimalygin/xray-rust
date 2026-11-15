@@ -1,0 +1,1023 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 17,
+    "protocol" : "setup",
+    "time" : "2026-11-15T04:21:39Z"
+  },
+  {
+    "event" : "invalid-import-redaction",
+    "format" : "vless",
+    "protocol" : "vless-link",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:39Z"
+  },
+  {
+    "event" : "invalid-import-redaction",
+    "format" : "trojan",
+    "protocol" : "trojan-link",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:39Z"
+  },
+  {
+    "event" : "invalid-import-redaction",
+    "format" : "vmess",
+    "protocol" : "vmess-link",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:39Z"
+  },
+  {
+    "event" : "invalid-import-redaction",
+    "format" : "hysteria2",
+    "protocol" : "hysteria2-link",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:39Z"
+  },
+  {
+    "event" : "link-import",
+    "format" : "vless",
+    "protocol" : "vless-link",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:40Z",
+    "transition" : "vless-link"
+  },
+  {
+    "event" : "link-import",
+    "format" : "trojan",
+    "protocol" : "trojan-link",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:40Z",
+    "transition" : "trojan-link"
+  },
+  {
+    "event" : "link-import",
+    "format" : "vmess",
+    "protocol" : "vmess-link",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:40Z",
+    "transition" : "vmess-link"
+  },
+  {
+    "event" : "link-import",
+    "format" : "hysteria2",
+    "protocol" : "hysteria2-link",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:40Z",
+    "transition" : "hysteria2-link"
+  },
+  {
+    "event" : "import",
+    "protocol" : "remnawave-json",
+    "result" : "not-applicable",
+    "time" : "2026-11-15T04:21:40Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "remnawave-json",
+    "seconds" : 0.27397894859313965,
+    "time" : "2026-11-15T04:21:40Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:40Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.58785374998115003,
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:41Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:41Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.10988237499259412,
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:41Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-a99675374b1f.test",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:41Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.26493787509389222,
+    "host" : "v07-probe-a99675374b1f.test",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:41Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:41Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.071959999855607748,
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:41Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:41Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.077693624887615442,
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:41Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:41Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2004015.1052762084"
+      }
+    ],
+    "protocol" : "remnawave-json",
+    "stage" : "after-traffic",
+    "time" : "2026-11-15T04:21:41Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4605552,
+    "inboundPackets" : 182,
+    "outboundPackets" : 168,
+    "protocol" : "remnawave-json",
+    "rss" : 33914880,
+    "runtime" : "655a5aaa-2718-41f7-869e-64b54b286cbb",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-15T04:21:41Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 1,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:42Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle" : 1,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "remnawave-json",
+    "seconds" : 2.1699056667275727,
+    "time" : "2026-11-15T04:21:44Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2004015.1052762084"
+      }
+    ],
+    "protocol" : "remnawave-json",
+    "stage" : "after-close",
+    "time" : "2026-11-15T04:21:44Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4425328,
+    "inboundPackets" : 186,
+    "outboundPackets" : 175,
+    "protocol" : "remnawave-json",
+    "rss" : 34521088,
+    "runtime" : "655a5aaa-2718-41f7-869e-64b54b286cbb",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-15T04:21:44Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:44Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.11663429159671068,
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:44Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:44Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.259196916827932,
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:44Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-a99675374b1f.test",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:44Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.11884758318774402,
+    "host" : "v07-probe-a99675374b1f.test",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:44Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:44Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.06791308312676847,
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:45Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:45Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.13974162517115474,
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:45Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:45Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "traffic-after-close",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:45Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2004015.1052762084"
+      }
+    ],
+    "protocol" : "remnawave-json",
+    "stage" : "after-recovery",
+    "time" : "2026-11-15T04:21:45Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4523632,
+    "inboundPackets" : 364,
+    "outboundPackets" : 343,
+    "protocol" : "remnawave-json",
+    "rss" : 34766848,
+    "runtime" : "655a5aaa-2718-41f7-869e-64b54b286cbb",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-15T04:21:45Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 1,
+    "event" : "disconnected",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:45Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "connected",
+    "protocol" : "remnawave-json",
+    "seconds" : 0.26164090633392334,
+    "time" : "2026-11-15T04:21:46Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:46Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.25528212497010827,
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:46Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:46Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.1183114165905863,
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:46Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-a99675374b1f.test",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:46Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.19997545843943954,
+    "host" : "v07-probe-a99675374b1f.test",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:46Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:46Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.082115000113844872,
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:46Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:47Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.070915291551500559,
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:47Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:47Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2004020.735343292"
+      }
+    ],
+    "protocol" : "remnawave-json",
+    "stage" : "after-traffic",
+    "time" : "2026-11-15T04:21:47Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4671088,
+    "inboundPackets" : 189,
+    "outboundPackets" : 170,
+    "protocol" : "remnawave-json",
+    "rss" : 34062336,
+    "runtime" : "dbf94db2-5a27-45e0-b55d-45addec57b30",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-15T04:21:47Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 2,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:47Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle" : 2,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "remnawave-json",
+    "seconds" : 2.1135404582601041,
+    "time" : "2026-11-15T04:21:49Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2004020.735343292"
+      }
+    ],
+    "protocol" : "remnawave-json",
+    "stage" : "after-close",
+    "time" : "2026-11-15T04:21:49Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4392560,
+    "inboundPackets" : 199,
+    "outboundPackets" : 183,
+    "protocol" : "remnawave-json",
+    "rss" : 34504704,
+    "runtime" : "dbf94db2-5a27-45e0-b55d-45addec57b30",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-15T04:21:49Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:49Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.12207712512463331,
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:49Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:49Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.25242837518453598,
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:49Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-a99675374b1f.test",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:49Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.11151700001209974,
+    "host" : "v07-probe-a99675374b1f.test",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:50Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:50Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.066978958202525973,
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:50Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:50Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.20516329165548086,
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:50Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:50Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "traffic-after-close",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:50Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2004020.735343292"
+      }
+    ],
+    "protocol" : "remnawave-json",
+    "stage" : "after-recovery",
+    "time" : "2026-11-15T04:21:50Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4408944,
+    "inboundPackets" : 384,
+    "outboundPackets" : 348,
+    "protocol" : "remnawave-json",
+    "rss" : 34684928,
+    "runtime" : "dbf94db2-5a27-45e0-b55d-45addec57b30",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-15T04:21:50Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 2,
+    "event" : "disconnected",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:51Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "connected",
+    "protocol" : "remnawave-json",
+    "seconds" : 0.27265191078186035,
+    "time" : "2026-11-15T04:21:51Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:51Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.22238125000149012,
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:51Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:51Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.11149708344601095,
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:51Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-a99675374b1f.test",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:51Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.2203937501180917,
+    "host" : "v07-probe-a99675374b1f.test",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:52Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:52Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.06978949997574091,
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:52Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:52Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.074108375003561378,
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:52Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:52Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2004025.9927164167"
+      }
+    ],
+    "protocol" : "remnawave-json",
+    "stage" : "after-traffic",
+    "time" : "2026-11-15T04:21:52Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4589168,
+    "inboundPackets" : 191,
+    "outboundPackets" : 172,
+    "protocol" : "remnawave-json",
+    "rss" : 33947648,
+    "runtime" : "bdfff4ce-b038-472b-b27b-90a96d1ff277",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-15T04:21:52Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 3,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:52Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle" : 3,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "remnawave-json",
+    "seconds" : 2.1332524584140629,
+    "time" : "2026-11-15T04:21:54Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2004025.9927164167"
+      }
+    ],
+    "protocol" : "remnawave-json",
+    "stage" : "after-close",
+    "time" : "2026-11-15T04:21:54Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4392560,
+    "inboundPackets" : 195,
+    "outboundPackets" : 179,
+    "protocol" : "remnawave-json",
+    "rss" : 34521088,
+    "runtime" : "bdfff4ce-b038-472b-b27b-90a96d1ff277",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-15T04:21:54Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:54Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.1062432499602437,
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:54Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:54Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.24897841666825116,
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:55Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-a99675374b1f.test",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:55Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.11659995838999748,
+    "host" : "v07-probe-a99675374b1f.test",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:55Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:55Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.072484625037759542,
+    "host" : "198.51.100.7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:55Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "time" : "2026-11-15T04:21:55Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.19653533329255879,
+    "host" : "2001:db8::7",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:55Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:55Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "traffic-after-close",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:55Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2004025.9927164167"
+      }
+    ],
+    "protocol" : "remnawave-json",
+    "stage" : "after-recovery",
+    "time" : "2026-11-15T04:21:55Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4490864,
+    "inboundPackets" : 366,
+    "outboundPackets" : 343,
+    "protocol" : "remnawave-json",
+    "rss" : 34799616,
+    "runtime" : "bdfff4ce-b038-472b-b27b-90a96d1ff277",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-15T04:21:55Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 3,
+    "event" : "disconnected",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:56Z"
+  },
+  {
+    "event" : "complete",
+    "protocol" : "remnawave-json",
+    "result" : "passed",
+    "time" : "2026-11-15T04:21:56Z"
+  }
+]

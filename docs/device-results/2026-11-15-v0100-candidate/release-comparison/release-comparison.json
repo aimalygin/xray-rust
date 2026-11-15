@@ -1,0 +1,698 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "version": "0.9.0",
+    "revision": "30928ad51b4a434546cf143f8e385a8746523172",
+    "tree": "e55a6c3f021643bd507a611c247f2781aaabbb83"
+  },
+  "candidate": {
+    "revision": "7eb199bba2562659fdbf0bcde9820e016dd8530c",
+    "tree": "b637ff77211f6dc1aa865779d42b0325a7c7cc86"
+  },
+  "measurements": [
+    {
+      "id": "http-throughput",
+      "unit": "MiB/s",
+      "baseline": [
+        3961.020310866599,
+        4548.72725456467,
+        4344.885172322389,
+        4433.026745376788,
+        4420.587546507258
+      ],
+      "candidate": [
+        4170.43954331276,
+        4708.971533485317,
+        4267.404572040582,
+        4339.505556736865,
+        4385.622097710718
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "http-latency",
+      "unit": "microseconds, p95",
+      "baseline": [
+        133,
+        143,
+        138,
+        151,
+        156
+      ],
+      "candidate": [
+        119,
+        173,
+        135,
+        127,
+        130
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "http-memory",
+      "unit": "MiB sampled peak RSS",
+      "baseline": [
+        5.96875,
+        6.0,
+        6.015625,
+        5.984375,
+        6.015625
+      ],
+      "candidate": [
+        6.90625,
+        6.90625,
+        6.90625,
+        6.875,
+        6.921875
+      ],
+      "verdict": "regression"
+    },
+    {
+      "id": "hysteria2-throughput",
+      "unit": "MiB/s",
+      "baseline": [
+        443.4472655023577,
+        459.73739745981624,
+        440.68978279674474,
+        456.640366006957,
+        445.11420841205626
+      ],
+      "candidate": [
+        459.7048740858428,
+        458.2390676874137,
+        447.1130534524965,
+        449.58045586511645,
+        445.45493499033284
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "hysteria2-latency",
+      "unit": "microseconds, p95",
+      "baseline": [
+        171,
+        193,
+        162,
+        163,
+        179
+      ],
+      "candidate": [
+        161,
+        183,
+        198,
+        176,
+        188
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "hysteria2-memory",
+      "unit": "MiB sampled peak RSS",
+      "baseline": [
+        17.296875,
+        16.6875,
+        16.625,
+        17.015625,
+        17.65625
+      ],
+      "candidate": [
+        18.609375,
+        20.890625,
+        18.046875,
+        19.265625,
+        20.296875
+      ],
+      "verdict": "regression"
+    },
+    {
+      "id": "shadowsocks-aead-throughput",
+      "unit": "MiB/s",
+      "baseline": [
+        1868.4395374680844,
+        2159.949454482828,
+        1907.922845999917,
+        2148.122557457212,
+        1939.9747634290763
+      ],
+      "candidate": [
+        2237.0089875593553,
+        1934.4701413362425,
+        2167.4323911798238,
+        1854.3821095588507,
+        2206.2605876000184
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "shadowsocks-aead-latency",
+      "unit": "microseconds, p95",
+      "baseline": [
+        144,
+        173,
+        168,
+        171,
+        162
+      ],
+      "candidate": [
+        146,
+        166,
+        154,
+        157,
+        165
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "shadowsocks-aead-memory",
+      "unit": "MiB sampled peak RSS",
+      "baseline": [
+        5.953125,
+        6.0,
+        5.984375,
+        6.015625,
+        6.0
+      ],
+      "candidate": [
+        7.0,
+        6.9375,
+        6.875,
+        6.9375,
+        6.84375
+      ],
+      "verdict": "regression"
+    },
+    {
+      "id": "shadowsocks2022-throughput",
+      "unit": "MiB/s",
+      "baseline": [
+        1060.6990368782308,
+        1073.751563579935,
+        1083.0745900925992,
+        1052.1077594987776,
+        1099.7999549803762
+      ],
+      "candidate": [
+        1050.7762308744027,
+        1092.5246959446158,
+        1052.0899235148504,
+        1099.213303129385,
+        1060.6701063480052
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "shadowsocks2022-latency",
+      "unit": "microseconds, p95",
+      "baseline": [
+        140,
+        163,
+        169,
+        170,
+        168
+      ],
+      "candidate": [
+        157,
+        185,
+        167,
+        169,
+        158
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "shadowsocks2022-memory",
+      "unit": "MiB sampled peak RSS",
+      "baseline": [
+        5.890625,
+        5.90625,
+        5.875,
+        5.890625,
+        5.890625
+      ],
+      "candidate": [
+        6.765625,
+        6.84375,
+        6.828125,
+        6.796875,
+        6.796875
+      ],
+      "verdict": "regression"
+    },
+    {
+      "id": "socks-throughput",
+      "unit": "MiB/s",
+      "baseline": [
+        4220.30051094898,
+        4492.909640136981,
+        4349.7637560046915,
+        4396.642407848693,
+        4356.150788772137
+      ],
+      "candidate": [
+        4546.943079954486,
+        4160.534043549496,
+        4564.001880867962,
+        4311.754431235084,
+        4188.411742896211
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "socks-latency",
+      "unit": "microseconds, p95",
+      "baseline": [
+        155,
+        143,
+        141,
+        166,
+        147
+      ],
+      "candidate": [
+        149,
+        135,
+        156,
+        128,
+        166
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "socks-memory",
+      "unit": "MiB sampled peak RSS",
+      "baseline": [
+        5.78125,
+        5.84375,
+        5.828125,
+        5.8125,
+        5.84375
+      ],
+      "candidate": [
+        6.671875,
+        6.6875,
+        6.71875,
+        6.71875,
+        6.71875
+      ],
+      "verdict": "regression"
+    },
+    {
+      "id": "trojan-throughput",
+      "unit": "MiB/s",
+      "baseline": [
+        2053.7426011265366,
+        2086.286137908909,
+        2042.9943206912606,
+        2009.759628273603,
+        2049.659199121689
+      ],
+      "candidate": [
+        2045.519807233729,
+        2029.21689472244,
+        2041.0959928043392,
+        2036.0635772782064,
+        2010.1301529828793
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "trojan-latency",
+      "unit": "microseconds, p95",
+      "baseline": [
+        163,
+        149,
+        168,
+        145,
+        163
+      ],
+      "candidate": [
+        173,
+        173,
+        144,
+        184,
+        175
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "trojan-memory",
+      "unit": "MiB sampled peak RSS",
+      "baseline": [
+        8.46875,
+        8.453125,
+        8.421875,
+        8.453125,
+        8.4375
+      ],
+      "candidate": [
+        9.453125,
+        9.484375,
+        9.53125,
+        9.625,
+        9.53125
+      ],
+      "verdict": "regression"
+    },
+    {
+      "id": "vless-reality-throughput",
+      "unit": "MiB/s",
+      "baseline": [
+        2636.861208140794,
+        2224.232623454142,
+        2582.1814811814597,
+        2212.165147218856,
+        2501.34502256157
+      ],
+      "candidate": [
+        2277.557700856746,
+        2471.7075178287596,
+        2099.8803408616,
+        2486.9857299673254,
+        2093.481231458278
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "vless-reality-latency",
+      "unit": "microseconds, p95",
+      "baseline": [
+        158,
+        150,
+        162,
+        154,
+        149
+      ],
+      "candidate": [
+        141,
+        170,
+        148,
+        156,
+        145
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "vless-reality-memory",
+      "unit": "MiB sampled peak RSS",
+      "baseline": [
+        8.796875,
+        8.734375,
+        8.84375,
+        8.796875,
+        8.765625
+      ],
+      "candidate": [
+        9.921875,
+        10.015625,
+        10.015625,
+        10.140625,
+        10.09375
+      ],
+      "verdict": "regression"
+    },
+    {
+      "id": "vmess-throughput",
+      "unit": "MiB/s",
+      "baseline": [
+        2607.295253877813,
+        2459.290516300905,
+        2514.3478287793755,
+        2538.5382457188507,
+        2333.6429466765458
+      ],
+      "candidate": [
+        2246.3985503709355,
+        2188.033019213131,
+        2276.7791168910094,
+        2349.800553564362,
+        2440.2217170200697
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "vmess-latency",
+      "unit": "microseconds, p95",
+      "baseline": [
+        152,
+        168,
+        157,
+        162,
+        144
+      ],
+      "candidate": [
+        159,
+        170,
+        163,
+        160,
+        175
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "vmess-memory",
+      "unit": "MiB sampled peak RSS",
+      "baseline": [
+        6.09375,
+        6.03125,
+        6.0625,
+        6.0625,
+        6.078125
+      ],
+      "candidate": [
+        7.0625,
+        7.03125,
+        7.046875,
+        7.15625,
+        7.1875
+      ],
+      "verdict": "regression"
+    },
+    {
+      "id": "wireguard-throughput",
+      "unit": "MiB/s",
+      "baseline": [
+        282.9087281662523,
+        290.3742565055068,
+        283.6340323660622,
+        287.0779997698621,
+        289.61484020018406
+      ],
+      "candidate": [
+        286.92160732664007,
+        283.19774503795514,
+        293.56256574514987,
+        284.0657360536669,
+        289.5581964641742
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "wireguard-latency",
+      "unit": "microseconds, p95",
+      "baseline": [
+        214,
+        203,
+        182,
+        203,
+        184
+      ],
+      "candidate": [
+        198,
+        173,
+        199,
+        168,
+        200
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "wireguard-memory",
+      "unit": "MiB sampled peak RSS",
+      "baseline": [
+        9.65625,
+        9.828125,
+        9.609375,
+        9.59375,
+        9.703125
+      ],
+      "candidate": [
+        10.46875,
+        10.40625,
+        10.421875,
+        10.40625,
+        10.5
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "xhttp-h1-throughput",
+      "unit": "MiB/s",
+      "baseline": [
+        58.91116687919848,
+        58.8673671365967,
+        59.18246533206223,
+        59.154649724810106,
+        59.013596945623206
+      ],
+      "candidate": [
+        58.87572124375593,
+        58.98473050576615,
+        58.67545601344205,
+        58.97299168253437,
+        58.78530247231434
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "xhttp-h1-latency",
+      "unit": "microseconds, p95",
+      "baseline": [
+        33505,
+        33510,
+        33571,
+        33492,
+        33504
+      ],
+      "candidate": [
+        33474,
+        33528,
+        33491,
+        33591,
+        33554
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "xhttp-h1-memory",
+      "unit": "MiB sampled peak RSS",
+      "baseline": [
+        14.390625,
+        14.390625,
+        14.640625,
+        14.46875,
+        14.53125
+      ],
+      "candidate": [
+        15.65625,
+        15.578125,
+        13.71875,
+        15.375,
+        15.5625
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "xhttp-h2-throughput",
+      "unit": "MiB/s",
+      "baseline": [
+        1293.2083712146143,
+        1226.4207437571113,
+        1303.041851948232,
+        1241.8939074193609,
+        1290.336537611944
+      ],
+      "candidate": [
+        1244.5799031382353,
+        1306.3808657783015,
+        1230.0518237410213,
+        1300.7944182708263,
+        1234.463100460935
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "xhttp-h2-latency",
+      "unit": "microseconds, p95",
+      "baseline": [
+        158,
+        181,
+        166,
+        168,
+        155
+      ],
+      "candidate": [
+        166,
+        175,
+        156,
+        172,
+        174
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "xhttp-h2-memory",
+      "unit": "MiB sampled peak RSS",
+      "baseline": [
+        15.015625,
+        12.375,
+        12.203125,
+        11.671875,
+        12.5625
+      ],
+      "candidate": [
+        13.765625,
+        14.265625,
+        15.09375,
+        13.421875,
+        13.203125
+      ],
+      "verdict": "regression"
+    },
+    {
+      "id": "xhttp-h3-throughput",
+      "unit": "MiB/s",
+      "baseline": [
+        414.55305234307235,
+        423.019256800756,
+        418.4433256755535,
+        432.073526762187,
+        420.21825712774
+      ],
+      "candidate": [
+        421.1946895329315,
+        423.8297007561573,
+        413.94804134533734,
+        422.9370376366292,
+        423.49772740077105
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "xhttp-h3-latency",
+      "unit": "microseconds, p95",
+      "baseline": [
+        167,
+        197,
+        182,
+        190,
+        196
+      ],
+      "candidate": [
+        199,
+        181,
+        199,
+        175,
+        195
+      ],
+      "verdict": "within-budget"
+    },
+    {
+      "id": "xhttp-h3-memory",
+      "unit": "MiB sampled peak RSS",
+      "baseline": [
+        12.8125,
+        12.921875,
+        12.53125,
+        12.546875,
+        12.71875
+      ],
+      "candidate": [
+        14.96875,
+        14.859375,
+        15.078125,
+        14.765625,
+        15.375
+      ],
+      "verdict": "regression"
+    }
+  ]
+}

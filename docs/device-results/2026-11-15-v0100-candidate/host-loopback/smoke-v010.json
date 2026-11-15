@@ -1,0 +1,102 @@
+{
+  "summary": {
+    "suite": "smoke-v010",
+    "cases": 7,
+    "failed": 0,
+    "fixtureSecretsRemoved": true,
+    "scope": "host loopback through SOCKS ingress; not device evidence"
+  },
+  "results": [
+    {
+      "case": "xdns:mkcp",
+      "format": "config",
+      "checks": [
+        "ipv4-tcp",
+        "ipv6-tcp",
+        "ipv4-udp",
+        "ipv6-udp",
+        "routed-dns",
+        "domain-destination"
+      ],
+      "result": "passed"
+    },
+    {
+      "case": "realm:mkcp",
+      "format": "config",
+      "checks": [
+        "ipv4-tcp",
+        "ipv6-tcp",
+        "ipv4-udp",
+        "ipv6-udp",
+        "routed-dns",
+        "domain-destination"
+      ],
+      "result": "passed"
+    },
+    {
+      "case": "sudoku:tcp",
+      "format": "config",
+      "checks": [
+        "ipv4-tcp",
+        "ipv6-tcp",
+        "ipv4-udp",
+        "ipv6-udp",
+        "routed-dns",
+        "domain-destination"
+      ],
+      "result": "passed"
+    },
+    {
+      "case": "xmc:tcp",
+      "format": "config",
+      "checks": [
+        "ipv4-tcp",
+        "ipv6-tcp",
+        "ipv4-udp",
+        "ipv6-udp",
+        "routed-dns",
+        "domain-destination"
+      ],
+      "result": "passed"
+    },
+    {
+      "case": "header-custom:tcp",
+      "format": "config",
+      "checks": [
+        "ipv4-tcp",
+        "ipv6-tcp",
+        "ipv4-udp",
+        "ipv6-udp",
+        "routed-dns",
+        "domain-destination"
+      ],
+      "result": "passed"
+    },
+    {
+      "case": "xdrive:s3",
+      "format": "config",
+      "checks": [
+        "ipv4-tcp",
+        "ipv6-tcp",
+        "ipv4-udp",
+        "ipv6-udp",
+        "routed-dns",
+        "domain-destination"
+      ],
+      "result": "passed"
+    },
+    {
+      "case": "vless-reverse:bridge",
+      "format": "config",
+      "checks": [
+        "ipv4-tcp",
+        "ipv6-tcp",
+        "ipv4-udp",
+        "ipv6-udp",
+        "routed-dns",
+        "domain-destination"
+      ],
+      "result": "passed"
+    }
+  ]
+}

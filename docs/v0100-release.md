@@ -1,18 +1,55 @@
 # 0.10.0 release preparation
 
 Preparation started on 2026-11-11 on the owner's word, with `main` at
-`fb3a27f57595e140128e219209bc0ca2a02d51a0`. Publication is pending, and no
-device result exists.
+`fb3a27f57595e140128e219209bc0ca2a02d51a0`. The candidate's evidence is
+published; the tag and the packages are pending.
 The shared steps are in the [release process](release-process.md); this page
 holds what is specific to 0.10.0.
 
 The candidate is the fourth 0.10.0 release commit: `main` through pull
 request [#300](https://github.com/aimalygin/xray-rust/pull/300) plus the
-changelog section, now dated 2026-11-15, and this document. The workspace version, lockfile and
-generated configuration contract are already 0.10.0 from the first release
-commit and do not change. Its exact revision and tree are recorded here once
-it merges; every later step binds to them. The README install snippets keep
-the published 0.9.0 until the 0.10.0 packages exist.
+changelog section, now dated 2026-11-15, and this document. The workspace
+version, lockfile and generated configuration contract are already 0.10.0
+from the first release commit and do not change. It merged as
+`7eb199bba2562659fdbf0bcde9820e016dd8530c` (tree
+`b637ff77211f6dc1aa865779d42b0325a7c7cc86`), the merge of
+[#301](https://github.com/aimalygin/xray-rust/pull/301); every later step
+binds to that commit and tree. The README install snippets keep the published
+0.9.0 until the 0.10.0 packages exist.
+
+### The candidate's qualification
+
+- **CI.** The full release CI passed on the candidate (run 43748376213).
+- **SDK.** `xray-rust-mobile` pins it by commit and tree since
+  [xray-rust-mobile#52](https://github.com/aimalygin/xray-rust-mobile/pull/52)
+  (`main` at `86abc0be5dcfc0a1b4f3b75b47e07a769135ca97`).
+- **Devices and host.** The campaign of 2026-11-15 is in the
+  [report](device-results/2026-11-15-v0100-candidate/README.md): the iPhone's
+  runs against a public host and every Android run on the candidate, the
+  iPhone's LAN runs carried over from the third candidate, the ten
+  measurements of the gate and the comparison against 0.9.0.
+- **Evidence.** The schema-5 archive is
+  [v0.10.0-device-evidence.zip](releases/v0.10.0-device-evidence.zip), with
+  its [record](releases/v0.10.0-device-evidence.json). The candidate's
+  unchanged checker validates it, locally and in `v010-release-evidence.yml`
+  on the candidate (run 43768546896).
+- **Decisions.** Asked on 2026-11-15 «Выпускать 0.10.0 с этими ограничениями и
+  публиковать свидетельства?», the owner answered «Да, публикуй». The
+  [decision record](releases/v0.10.0-owner-decisions.json) holds that answer,
+  the owner's eight decisions and the nine accepted known limitations.
+
+Three of those decisions were made during the campaign, on 2026-11-15:
+
+- **Android MASQUE stress** («Ограничение и перепрогон»). A MASQUE or
+  WireGuard tunnel carries at most 16 TCP flows at once and refuses the next.
+  Android's resource stress opened 32 and failed for MASQUE; it was run again
+  with 8, and the bound is a known limitation.
+- **The iPhone's resource bound** («Без прогона, в ограничения»). MASQUE's
+  resident memory grew 8.25 MiB in the iPhone's resource run, 0.26 MiB over
+  the 8 MiB the 0.9.0 evidence used; footprint and threads, the documented
+  criterion, passed. The archive bounds it by Android's rule, set after the
+  number was seen, and says so.
+- **Publication**, above.
 
 ### The superseded first candidate
 
@@ -208,8 +245,9 @@ not an undisclosed one.
 
 ## Proposals awaiting the owner
 
-The contract leaves these open. Each is implemented as proposed so the work
-can go on, and each can change without touching the rest.
+The contract left these open. Each was implemented as proposed so the work
+could go on. On 2026-11-13 the owner accepted them as implemented
+(«Принимаю»).
 
 1. **Android `lock-wake`.** Not decided. The profile keeps it not tested on
    Android, as v0.9 did, and release known limitations must say so. If the
@@ -300,14 +338,20 @@ after the SDK publishes, since it pins the published SDK.
    0.10.0, dated changelog section, regenerated configuration contract.~~
    Done in the release commit. The fourth release commit, after the fixes
    above, is the candidate.
-4. Full release CI on the candidate.
-5. `xray-rust-mobile`: pin the candidate, synchronize, add the `v010`
-   profile, pass SDK CI.
-6. The owner's decisions on the proposals above, then the device and host
+4. ~~Full release CI on the candidate.~~ Passed, run 43748376213.
+5. ~~`xray-rust-mobile`: pin the candidate, synchronize, add the `v010`
+   profile, pass SDK CI.~~ Done in xray-rust-mobile#52. The SDK carries no
+   copy of the evidence checker, so #300 needed no change there.
+6. ~~The owner's decisions on the proposals above, then the device and host
    campaign on the candidate: Apple and Android runs, the gate's performance
    measurements (`run-v08-protocol-comparison.py --suite v010` for mKCP and
    MASQUE), the comparison against 0.9.0
-   (`run-v010-release-comparison.py`), the archive, and
-   `v010-release-evidence.yml` on the candidate.
-7. Publish the evidence on `main`, tag, publish the core release, the SDK and
-   then the KMP library, and resolve the packages from clean consumers.
+   (`run-v010-release-comparison.py`), the archive.~~ Done on 2026-11-15; see
+   "The candidate's qualification" above. The gate also needs the four
+   common measurements of `run-v06-feature-benchmarks.py`, which
+   [v0.10 evidence collection](v010-release-evidence.md) does not list yet.
+7. ~~`v010-release-evidence.yml` on the candidate, with the published
+   archive.~~ Passed on `7eb199bb`, run 43768546896.
+8. Tag the candidate, publish the core release, the SDK and then the KMP
+   library, and resolve the packages from clean consumers. Each waits for the
+   owner's word.

@@ -1,0 +1,1163 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 17,
+    "protocol" : "setup",
+    "time" : "2026-11-15T20:09:47Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "mkcp:vless",
+    "result" : "not-applicable",
+    "time" : "2026-11-15T20:09:47Z"
+  },
+  {
+    "event" : "access-network",
+    "interface" : "wifi",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:47Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "mkcp:vless",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T20:09:47Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi",
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:47Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:47Z"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:50Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "mkcp:vless",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T20:09:50Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:50Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:50Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "mkcp:vless",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T20:09:50Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.50446137500330224,
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:09:51Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:51Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.29231983333374956,
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:09:51Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-76c2a9f13dc6.test",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:51Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.54373683333324152,
+    "host" : "v07-probe-76c2a9f13dc6.test",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:09:52Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:52Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.23468304166817688,
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:09:52Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:52Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.23730099999738741,
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:09:52Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:09:52Z"
+  },
+  {
+    "activeRecoverySeconds" : 2.1081937499984633,
+    "event" : "transition-recovered",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "retries" : 0,
+    "secondsSincePathOrUnlock" : 5.4964217499982624,
+    "stage" : "wifi-baseline",
+    "time" : "2026-11-15T20:09:52Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28859.098844750002"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28859.235951958333"
+      }
+    ],
+    "protocol" : "mkcp:vless",
+    "stage" : "wifi-baseline",
+    "time" : "2026-11-15T20:09:53Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 5310088,
+    "inboundPackets" : 198,
+    "outboundPackets" : 181,
+    "protocol" : "mkcp:vless",
+    "rss" : 33374208,
+    "runtime" : "c4102a2b-3f84-4cc8-8671-ec27c45f2467",
+    "stage" : "wifi-baseline",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-15T20:09:53Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "action" : "cellular",
+    "event" : "action-required",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:53Z"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:55Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "mkcp:vless",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T20:09:57Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "unavailable",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:57Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "access-network",
+    "interface" : "cellular",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:57Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event" : "system-path",
+    "protocol" : "mkcp:vless",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T20:09:57Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:57Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event" : "system-path",
+    "protocol" : "mkcp:vless",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T20:09:57Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.8521678333345335,
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:09:58Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:58Z"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:58Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.88825324999925215,
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:09:59Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-76c2a9f13dc6.test",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:09:59Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.91845816666682367,
+    "host" : "v07-probe-76c2a9f13dc6.test",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:00Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:00Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.92177716666628839,
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:01Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:01Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.25810162499692524,
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:01Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:02Z"
+  },
+  {
+    "activeRecoverySeconds" : 4.3805277499996009,
+    "event" : "transition-recovered",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "retries" : 0,
+    "secondsSincePathOrUnlock" : 4.4636369583313353,
+    "stage" : "cellular",
+    "time" : "2026-11-15T20:10:02Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28859.098844750002"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28859.235951958333"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28865.75174191667"
+      },
+      {
+        "interface" : "",
+        "kind" : "offline",
+        "uptime" : "28865.898740458335"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "28866.027285875003"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "28866.55986741667"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "28870.249817333333"
+      }
+    ],
+    "protocol" : "mkcp:vless",
+    "stage" : "cellular",
+    "time" : "2026-11-15T20:10:02Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4605576,
+    "inboundPackets" : 426,
+    "outboundPackets" : 381,
+    "protocol" : "mkcp:vless",
+    "rss" : 33751040,
+    "runtime" : "c4102a2b-3f84-4cc8-8671-ec27c45f2467",
+    "stage" : "cellular",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-15T20:10:02Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "action" : "wifi",
+    "event" : "action-required",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:02Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event" : "system-path",
+    "protocol" : "mkcp:vless",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T20:10:03Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi",
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:05Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:06Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "mkcp:vless",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T20:10:06Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "access-network",
+    "interface" : "wifi",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:06Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "mkcp:vless",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T20:10:06Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:06Z"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:06Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.29409491666592658,
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:06Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:06Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.34131333333425573,
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:06Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-76c2a9f13dc6.test",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:06Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.35080074999859789,
+    "host" : "v07-probe-76c2a9f13dc6.test",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:07Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:07Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "mkcp:vless",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T20:10:07Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.23970383333289647,
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:07Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:07Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.23301945833372883,
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:07Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:08Z"
+  },
+  {
+    "activeRecoverySeconds" : 1.9477495416649617,
+    "event" : "transition-recovered",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "retries" : 0,
+    "secondsSincePathOrUnlock" : 2.0314185416646069,
+    "stage" : "wifi",
+    "time" : "2026-11-15T20:10:08Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28859.098844750002"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28859.235951958333"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28865.75174191667"
+      },
+      {
+        "interface" : "",
+        "kind" : "offline",
+        "uptime" : "28865.898740458335"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "28866.027285875003"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "28866.55986741667"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "28870.249817333333"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "28871.612268333334"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "28874.367902541668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "28874.49144941667"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "28875.021056041667"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "28875.68008779167"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "28876.198406416668"
+      }
+    ],
+    "protocol" : "mkcp:vless",
+    "stage" : "wifi",
+    "time" : "2026-11-15T20:10:08Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4572808,
+    "inboundPackets" : 613,
+    "outboundPackets" : 559,
+    "protocol" : "mkcp:vless",
+    "rss" : 33947648,
+    "runtime" : "c4102a2b-3f84-4cc8-8671-ec27c45f2467",
+    "stage" : "wifi",
+    "tcp" : 1,
+    "threads" : 10,
+    "time" : "2026-11-15T20:10:08Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "action" : "lock-30-seconds",
+    "event" : "action-required",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:08Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "mkcp:vless",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T20:10:12Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:16Z"
+  },
+  {
+    "event" : "protected-data-unavailable",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:18Z"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:19Z"
+  },
+  {
+    "event" : "app-background",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:20Z"
+  },
+  {
+    "event" : "protected-data-available",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:50Z"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:50Z"
+  },
+  {
+    "event" : "lock-interval",
+    "protocol" : "mkcp:vless",
+    "seconds" : 31.566655958333286,
+    "time" : "2026-11-15T20:10:51Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:51Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.35363179166961345,
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:51Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:51Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.29500108333377284,
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:51Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-76c2a9f13dc6.test",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:51Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.34387937499923282,
+    "host" : "v07-probe-76c2a9f13dc6.test",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:52Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:52Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.23895224999796483,
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:52Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:52Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.23582558333146153,
+    "host" : "2001:db8::7",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:52Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:52Z"
+  },
+  {
+    "activeRecoverySeconds" : 1.7641662083333358,
+    "event" : "transition-recovered",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "retries" : 0,
+    "secondsSincePathOrUnlock" : 2.8333227499970235,
+    "stage" : "after-unlock",
+    "time" : "2026-11-15T20:10:52Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28859.098844750002"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28859.235951958333"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28865.75174191667"
+      },
+      {
+        "interface" : "",
+        "kind" : "offline",
+        "uptime" : "28865.898740458335"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "28866.027285875003"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "28866.55986741667"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "28870.249817333333"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "28871.612268333334"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "28874.367902541668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "28874.49144941667"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "28875.021056041667"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "28875.68008779167"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "28876.198406416668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28879.294387041668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28880.738398041667"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28894.31805641667"
+      }
+    ],
+    "protocol" : "mkcp:vless",
+    "stage" : "after-unlock",
+    "time" : "2026-11-15T20:10:52Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4654728,
+    "inboundPackets" : 842,
+    "outboundPackets" : 776,
+    "protocol" : "mkcp:vless",
+    "rss" : 33964032,
+    "runtime" : "c4102a2b-3f84-4cc8-8671-ec27c45f2467",
+    "stage" : "after-unlock",
+    "tcp" : 1,
+    "threads" : 10,
+    "time" : "2026-11-15T20:10:52Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 4
+  },
+  {
+    "cycle" : 1,
+    "event" : "connection-close-request",
+    "ids" : [
+      16,
+      17,
+      22,
+      23,
+      24
+    ],
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-15T20:10:53Z"
+  },
+  {
+    "closedIDs" : [
+      16,
+      17,
+      22,
+      23,
+      24
+    ],
+    "cycle" : 1,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "mkcp:vless",
+    "seconds" : 2.1017384583319654,
+    "time" : "2026-11-15T20:10:55Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28859.098844750002"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28859.235951958333"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28865.75174191667"
+      },
+      {
+        "interface" : "",
+        "kind" : "offline",
+        "uptime" : "28865.898740458335"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "28866.027285875003"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "28866.55986741667"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "28870.249817333333"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "28871.612268333334"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "28874.367902541668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "28874.49144941667"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "28875.021056041667"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "28875.68008779167"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "28876.198406416668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28879.294387041668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28880.738398041667"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "28894.31805641667"
+      }
+    ],
+    "protocol" : "mkcp:vless",
+    "stage" : "after-close",
+    "time" : "2026-11-15T20:10:55Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4605576,
+    "inboundPackets" : 851,
+    "outboundPackets" : 777,
+    "protocol" : "mkcp:vless",
+    "rss" : 34177024,
+    "runtime" : "c4102a2b-3f84-4cc8-8671-ec27c45f2467",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-15T20:10:55Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 9
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "mkcp:vless",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T20:10:55Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "cycle" : 1,
+    "event" : "disconnected",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:55Z"
+  },
+  {
+    "event" : "complete",
+    "protocol" : "mkcp:vless",
+    "result" : "passed",
+    "time" : "2026-11-15T20:10:55Z"
+  }
+]

@@ -1,0 +1,993 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 17,
+    "protocol" : "setup",
+    "time" : "2026-11-15T04:42:07Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "masque:h3",
+    "result" : "not-applicable",
+    "time" : "2026-11-15T04:42:07Z"
+  },
+  {
+    "event" : "access-network",
+    "interface" : "wifi",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:07Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "masque:h3",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T04:42:07Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi",
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:07Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:07Z"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:10Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "masque:h3",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T04:42:10Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:10Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "masque:h3",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T04:42:11Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:11Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.0529169584624469,
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:12Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:12Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.79465904156677425,
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:12Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-408867bf0732.test",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:13Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.6783171251881868,
+    "host" : "v07-probe-408867bf0732.test",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:14Z"
+  },
+  {
+    "bytes" : 1252,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:14Z"
+  },
+  {
+    "bytes" : 1252,
+    "event" : "udp",
+    "exchangeSeconds" : 0.23122041672468185,
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:14Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1232,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:15Z"
+  },
+  {
+    "bytes" : 1232,
+    "event" : "udp",
+    "exchangeSeconds" : 0.20262766676023602,
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:15Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:15Z"
+  },
+  {
+    "activeRecoverySeconds" : 4.2503380416892469,
+    "event" : "transition-recovered",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "retries" : 0,
+    "secondsSincePathOrUnlock" : 7.8105276667047292,
+    "stage" : "wifi-baseline",
+    "time" : "2026-11-15T04:42:15Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005245.5698443335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005249.1029550417"
+      }
+    ],
+    "protocol" : "masque:h3",
+    "stage" : "wifi-baseline",
+    "time" : "2026-11-15T04:42:15Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 5211784,
+    "inboundPackets" : 289,
+    "outboundPackets" : 216,
+    "protocol" : "masque:h3",
+    "rss" : 35373056,
+    "runtime" : "17533313-072a-4cc9-996f-fa7db93de88c",
+    "stage" : "wifi-baseline",
+    "tcp" : 1,
+    "threads" : 10,
+    "time" : "2026-11-15T04:42:15Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 5
+  },
+  {
+    "action" : "cellular",
+    "event" : "action-required",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:15Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "masque:h3",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T04:42:18Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "masque:h3",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T04:42:18Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "unavailable",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:18Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event" : "system-path",
+    "protocol" : "masque:h3",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T04:42:18Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "access-network",
+    "interface" : "cellular",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:19Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:19Z"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:20Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 2.9654317500535399,
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:22Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:22Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.95783512503840029,
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:23Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-408867bf0732.test",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:23Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.72842066665180027,
+    "host" : "v07-probe-408867bf0732.test",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:23Z"
+  },
+  {
+    "bytes" : 1252,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:23Z"
+  },
+  {
+    "bytes" : 1252,
+    "event" : "udp",
+    "exchangeSeconds" : 0.19112512492574751,
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:24Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1232,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:24Z"
+  },
+  {
+    "bytes" : 1232,
+    "event" : "udp",
+    "exchangeSeconds" : 0.19046808336861432,
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:24Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:24Z"
+  },
+  {
+    "activeRecoverySeconds" : 5.4919897501822561,
+    "event" : "transition-recovered",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "retries" : 0,
+    "secondsSincePathOrUnlock" : 5.6052455417811871,
+    "stage" : "cellular",
+    "time" : "2026-11-15T04:42:24Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005245.5698443335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005249.1029550417"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005252.9100757919"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "2005253.41217375"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "2005253.5185210835"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "2005254.04662825"
+      }
+    ],
+    "protocol" : "masque:h3",
+    "stage" : "cellular",
+    "time" : "2026-11-15T04:42:24Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 5392008,
+    "inboundPackets" : 577,
+    "outboundPackets" : 442,
+    "protocol" : "masque:h3",
+    "rss" : 35880960,
+    "runtime" : "17533313-072a-4cc9-996f-fa7db93de88c",
+    "stage" : "cellular",
+    "tcp" : 1,
+    "threads" : 10,
+    "time" : "2026-11-15T04:42:24Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 7
+  },
+  {
+    "action" : "wifi",
+    "event" : "action-required",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:24Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "masque:h3",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T04:42:30Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "access-network",
+    "interface" : "wifi",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:30Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:30Z"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi",
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:30Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "masque:h3",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T04:42:30Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:31Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "masque:h3",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T04:42:31Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.83471070835366845,
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:31Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:31Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "masque:h3",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T04:42:31Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:31Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "masque:h3",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-11-15T04:42:31Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.69470912497490644,
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:32Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-408867bf0732.test",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:32Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.47711241687648,
+    "host" : "v07-probe-408867bf0732.test",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:33Z"
+  },
+  {
+    "bytes" : 1252,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:33Z"
+  },
+  {
+    "bytes" : 1252,
+    "event" : "udp",
+    "exchangeSeconds" : 0.18461566674523056,
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:33Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1232,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:34Z"
+  },
+  {
+    "bytes" : 1232,
+    "event" : "udp",
+    "exchangeSeconds" : 0.2361267083324492,
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:34Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "attempt" : 1,
+    "event" : "recovery-retry",
+    "protocol" : "masque:h3",
+    "stage" : "wifi",
+    "time" : "2026-11-15T04:42:36Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:36Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.89136112504638731,
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:37Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:37Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.71022329176776111,
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:38Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-408867bf0732.test",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:38Z"
+  },
+  {
+    "attempt" : 2,
+    "event" : "recovery-retry",
+    "protocol" : "masque:h3",
+    "stage" : "wifi",
+    "time" : "2026-11-15T04:42:49Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:49Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.6837321252096444,
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:51Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:51Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.70546295843087137,
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:42:52Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-408867bf0732.test",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:42:52Z"
+  },
+  {
+    "attempt" : 3,
+    "event" : "recovery-retry",
+    "protocol" : "masque:h3",
+    "stage" : "wifi",
+    "time" : "2026-11-15T04:43:03Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:43:03Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.7666188748553395,
+    "host" : "198.51.100.7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:43:05Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:43:05Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.3969320415053517,
+    "host" : "2001:db8::7",
+    "protocol" : "masque:h3",
+    "result" : "passed",
+    "time" : "2026-11-15T04:43:06Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-408867bf0732.test",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:43:06Z"
+  },
+  {
+    "code" : 0,
+    "domain" : "XrayProtocolDeviceProbe.Network",
+    "event" : "transition-failed",
+    "protocol" : "masque:h3",
+    "stage" : "wifi",
+    "time" : "2026-11-15T04:43:16Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005245.5698443335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005249.1029550417"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005252.9100757919"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "2005253.41217375"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "2005253.5185210835"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "2005254.04662825"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "2005265.16083725"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "2005265.339839125"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "2005266.1647599167"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "2005266.4648454168"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "2005266.9946665417"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005271.0777970834"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005281.073264"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005286.0910574584"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005301.0910084585"
+      }
+    ],
+    "protocol" : "masque:h3",
+    "stage" : "wifi-failure",
+    "time" : "2026-11-15T04:43:16Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 5129864,
+    "inboundPackets" : 1358,
+    "outboundPackets" : 1041,
+    "protocol" : "masque:h3",
+    "rss" : 36864000,
+    "runtime" : "17533313-072a-4cc9-996f-fa7db93de88c",
+    "stage" : "wifi-failure",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-15T04:43:16Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 4
+  },
+  {
+    "code" : 8,
+    "domain" : "XrayProtocolDeviceProbe",
+    "event" : "failure",
+    "protocol" : "masque:h3",
+    "time" : "2026-11-15T04:43:16Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005245.5698443335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005249.1029550417"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005252.9100757919"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "2005253.41217375"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "2005253.5185210835"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "2005254.04662825"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "2005265.16083725"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "2005265.339839125"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "2005266.1647599167"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "2005266.4648454168"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "2005266.9946665417"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005271.0777970834"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005281.073264"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005286.0910574584"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "2005301.0910084585"
+      }
+    ],
+    "protocol" : "masque:h3",
+    "stage" : "failure",
+    "time" : "2026-11-15T04:43:16Z"
+  },
+  {
+    "cycle" : 0,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 5129864,
+    "inboundPackets" : 1358,
+    "outboundPackets" : 1041,
+    "protocol" : "masque:h3",
+    "rss" : 36864000,
+    "runtime" : "17533313-072a-4cc9-996f-fa7db93de88c",
+    "stage" : "failure",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-15T04:43:16Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 4
+  },
+  {
+    "event" : "complete",
+    "protocol" : "masque:h3",
+    "result" : "failed",
+    "time" : "2026-11-15T04:43:16Z"
+  }
+]

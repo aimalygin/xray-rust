@@ -1,0 +1,71 @@
+{
+  "artifacts": [
+    {
+      "kind": "benchmark-raw",
+      "path": "benchmark-raw.json",
+      "sha256": "fa6e80c7a94d9c71e73fa85f47ea75c3eb9a4231f0a77c2c2c44d767ba04cf0f"
+    },
+    {
+      "kind": "build-manifest",
+      "path": "build-manifest.json",
+      "sha256": "afb56751cbfefe6dd06727aabb63787ccfc3dd581e1a518df16bb385d323dc71"
+    }
+  ],
+  "clean": true,
+  "measurements": [
+    {
+      "comparison": "at-least",
+      "id": "process-throughput",
+      "samples": [
+        515.9137212603564,
+        562.9817539456114,
+        540.7243598601915,
+        656.9582742828993,
+        546.5989806690542
+      ],
+      "threshold": 10,
+      "unit": "MiB/s"
+    },
+    {
+      "comparison": "at-least",
+      "id": "vless-encryption-throughput",
+      "samples": [
+        359.57850396989534,
+        343.7961348040012,
+        367.96412339613414,
+        359.2044741432398,
+        314.29335036881514
+      ],
+      "threshold": 272.71139192485043,
+      "unit": "MiB/s"
+    },
+    {
+      "comparison": "at-most",
+      "id": "ip-on-demand-latency",
+      "samples": [
+        0.17614549142308533,
+        0.16645848518237472,
+        0.16385401249863207,
+        0.16564549878239632,
+        0.16720802523195744
+      ],
+      "threshold": 1.1615624933037907,
+      "unit": "ms"
+    },
+    {
+      "comparison": "at-most",
+      "id": "xhttp-memory",
+      "samples": [
+        18.53125,
+        18.46875,
+        18.53125,
+        18.359375,
+        18.578125
+      ],
+      "threshold": 64,
+      "unit": "MiB"
+    }
+  ],
+  "profile": "release",
+  "result": "pass"
+}
