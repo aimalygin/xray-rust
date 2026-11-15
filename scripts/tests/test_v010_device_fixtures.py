@@ -115,6 +115,26 @@ class FullSetFixtureTests(unittest.TestCase):
         self.assertEqual(outbound["settings"], {"address": "127.0.0.1", "port": 41020,
                                                 "id": inbound["settings"]["clients"][0]["id"], "encryption": "none"})
 
+    def test_vless_encryption_gives_both_sides_of_mkcp_one_pair(self):
+        # A public --bind: the core refuses VLESS there without TLS or encryption.
+        for writer, fixture in ((device.write_fixtures, device), (android.write_fixtures, android.fixture)):
+            with patch.object(fixture, "VLESS_ENCRYPTION_BINARY", Path("xray")), \
+                    patch.object(fixture, "vlessenc", return_value=("dec-pair", "enc-pair")) as pair:
+                server, envelope = generate(self, "v010", writer=writer)
+            pair.assert_called_with(Path("xray"))
+            mkcp, masque = envelope["cases"]
+            self.assertEqual(server["inbounds"][0]["settings"]["decryption"], "dec-pair")
+            self.assertEqual(config(mkcp)["outbounds"][0]["settings"]["encryption"], "enc-pair")
+            # MASQUE is not VLESS and takes no pair.
+            self.assertNotIn("pair", json.dumps(server["inbounds"][1]) + masque["configJSON"])
+
+    def test_vless_encryption_is_refused_outside_the_v010_cases(self):
+        argv = ["fixture", "--bind", "127.0.0.1", "--reference-binary", "xray", "--output", "unused",
+                "--protocol", "v09", "--vless-encryption"]
+        with patch.object(device.sys, "argv", argv), patch("sys.stderr"), self.assertRaises(SystemExit) as refused:
+            device.main()
+        self.assertEqual(refused.exception.code, 2)
+
     def test_masque_is_pinned_http3_with_datagrams_its_tunnel_carries(self):
         server, envelope = generate(self, "masque")
         case, inbound = envelope["cases"][0], server["inbounds"][0]
@@ -200,6 +220,23 @@ class SmokeFixtureTests(unittest.TestCase):
         self.assertEqual((server["settings"]["decryption"], client["settings"]["encryption"]), ("dec", "enc"))
         self.assertTrue(client["mux"]["enabled"])
         self.assertNotIn("flow", client["settings"])
+
+    def test_vless_encryption_covers_the_smoke_cases_and_leaves_xdrive_its_pair(self):
+        with patch.object(device, "VLESS_ENCRYPTION_BINARY", Path("xray")), \
+                patch.object(device, "vlessenc", return_value=("dec-pair", "enc-pair")):
+            self.server, self.envelope = generate(self, "smoke-v010", services=SERVICES)
+        self.cases = {case["label"]: case for case in self.envelope["cases"]}
+        for label in ("xdns:mkcp", "realm:mkcp", "sudoku:tcp", "xmc:tcp", "header-custom:tcp"):
+            self.assertEqual(self.outbound(label)["settings"]["encryption"], "enc-pair", label)
+        self.assertEqual((self.inbound("xdrive:s3")["settings"]["decryption"],
+                          self.outbound("xdrive:s3")["settings"]["encryption"]), ("dec", "enc"))
+        # Every other VLESS inbound decrypts with the option's pair.
+        self.assertEqual({i["settings"]["decryption"] for i in self.server["inbounds"] if i["protocol"] == "vless"},
+                         {"dec-pair", "dec"})
+        # Both hops of the reverse bridge are VLESS.
+        bridge = config(self.cases["vless-reverse:bridge"])["outbounds"]
+        self.assertEqual([o["settings"]["encryption"] for o in bridge if o["protocol"] == "vless"],
+                         ["enc-pair", "enc-pair"])
 
     def test_the_bridge_serves_its_own_probe_traffic_through_the_portal(self):
         case = self.cases["vless-reverse:bridge"]

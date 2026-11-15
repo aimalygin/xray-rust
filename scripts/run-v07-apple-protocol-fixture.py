@@ -57,6 +57,9 @@ XDRIVE_TUNING = {"flushIntervalMs": 5, "pollIntervalMs": 5, "maxPollIntervalMs":
 # say when they write one case, which may then take an explicit port.
 SERVICES = None
 SINGLE_CASE = False
+# --vless-encryption: the reference binary whose `vlessenc` gives the v0.10
+# VLESS cases a pair. None leaves them at "none".
+VLESS_ENCRYPTION_BINARY = None
 
 
 def openssl(*args):
@@ -328,16 +331,20 @@ def v010_case(fmt, bind, carrier_port, reserve, pin, certificates, services):
     canonical JSON, as they do for WireGuard on Android.
     """
     user = str(uuid.uuid4())
+    # "none" unless --vless-encryption: the core, as Xray-core, refuses VLESS
+    # without TLS or encryption toward a public address, where the WAN runs
+    # and the Linux host of xicmp's server are.
+    decryption, encryption = vlessenc(VLESS_ENCRYPTION_BINARY) if VLESS_ENCRYPTION_BINARY else ("none", "none")
 
     def vless_inbound(stream, port=carrier_port, client=None, tag=None):
         inbound = {"listen": bind, "port": port, "protocol": "vless", "settings": {
-            "clients": [client or {"id": user}], "decryption": "none"}, "streamSettings": stream}
+            "clients": [client or {"id": user}], "decryption": decryption}, "streamSettings": stream}
         return {**inbound, "tag": tag} if tag else inbound
 
     def vless_outbound(stream, port=carrier_port, tag="proxy", **settings):
         # The flat form: the Apple probe reads the carrier port from it.
         return {"tag": tag, "protocol": "vless", "settings": {
-            "address": bind, "port": port, "id": user, "encryption": "none", **settings},
+            "address": bind, "port": port, "id": user, "encryption": encryption, **settings},
             "streamSettings": stream}
 
     def masked(network, kind, client, server=None):
@@ -930,6 +937,7 @@ async def serve(args):
 
 
 def main():
+    global VLESS_ENCRYPTION_BINARY
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bind", required=True, help="host IPv4 address reachable from the iPhone")
     parser.add_argument("--reference-binary", required=True, type=Path)
@@ -944,9 +952,14 @@ def main():
                         help="bind pre-provisioned synthetic loopback targets without Freedom redirect")
     parser.add_argument("--xdrive-standin", type=Path,
                         help="built tools/xdrive-oracle/standin; without it XDRIVE cases build one with go")
+    parser.add_argument("--vless-encryption", action="store_true",
+                        help="give the v0.10 VLESS cases a fresh VLESS Encryption pair instead of \"none\", "
+                             "which the core refuses toward a public --bind address")
     args = parser.parse_args()
     if args.direct_targets and args.protocol not in ("both", "wireguard", "hysteria2"):
         parser.error("--direct-targets requires WireGuard or Hysteria")
+    if args.vless_encryption and args.protocol not in ("v010", "smoke-v010", *V010_PROTOCOLS):
+        parser.error("--vless-encryption applies to the v0.10 cases")
     address = ipaddress.IPv4Address(args.bind)
     if address.is_unspecified or address.is_multicast or not 1 <= args.seconds <= 1800:
         parser.error("use a specific unicast IPv4 address and 1..1800 seconds")
@@ -958,6 +971,8 @@ def main():
     args.output = args.output.absolute()
     args.reference_binary = args.reference_binary.resolve(strict=True)
     verify_reference(args.reference_binary, args.reference_sha256)
+    if args.vless_encryption:
+        VLESS_ENCRYPTION_BINARY = args.reference_binary
     os.umask(0o077)
     args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
     asyncio.run(serve(args))
