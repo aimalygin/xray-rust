@@ -10,6 +10,21 @@ long-term supported release series.
 
 ## Unreleased
 
+- A Hysteria connect attempt to the last of the server's addresses, the only
+  one for a server with one address, gets what is left of the dial's ten
+  seconds, at most eight, where every attempt had three. Quinn's first probe
+  timeout is a second against quic-go's 300 ms, so three seconds carried two
+  Initials where Xray-core's client sends four or five, and a slow or lossy
+  mobile path failed to connect where Xray-core connected. Attempts with
+  further addresses waiting keep three seconds each.
+- TUN sniffs a TCP flow to an IP address for `destOverride`'s `http` and
+  `tls`, as Xray-core's dispatcher sniffs every flow, so an app that connects
+  to an address from its own DoH lookup or a cache is routed by the name it
+  sends. TUN sniffed TCP only to a fake IP the fake DNS did not know, while
+  UDP and the SOCKS and HTTP inbounds already sniffed every flow. `routeOnly`,
+  `domainsExcluded`, `ipsExcluded` and the 250 ms wait for the first bytes
+  apply as before, and a fake IP the fake DNS knows keeps its domain.
+
 ## 0.10.0 - 2026-11-15
 
 Published on 2026-11-15 with exact-candidate release evidence and the
