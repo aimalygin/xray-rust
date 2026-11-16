@@ -19,9 +19,9 @@
 use rand::{rngs::OsRng, RngCore};
 use rustls::{
     client::{
-        ClientHelloAdvertisedSupportedGroups, ClientHelloAdvertisedSupportedVersions,
-        ClientHelloAlpnProtocols, ClientHelloCertificateCompressionAlgorithms,
-        ClientHelloCipherSuites, ClientHelloContext, ClientHelloExactExtension,
+        ClientHelloAdvertisedCipherSuites, ClientHelloAdvertisedSupportedGroups,
+        ClientHelloAdvertisedSupportedVersions, ClientHelloAlpnProtocols,
+        ClientHelloCertificateCompressionAlgorithms, ClientHelloContext, ClientHelloExactExtension,
         ClientHelloExactExtensions, ClientHelloExtensionOrder, ClientHelloExtensionPlan,
         ClientHelloForcedExtensions, ClientHelloGreaseExtension, ClientHelloGreasePlan,
         ClientHelloKeySharePlan, ClientHelloPaddingPlan, ClientHelloPlan, ClientHelloRawExtension,
@@ -305,10 +305,9 @@ pub(crate) fn apply_utls_profile(
     alpn_override: Option<&[Vec<u8>]>,
 ) -> Result<ClientHelloPlan, RustlsError> {
     let supported_versions = supported_versions(profile)?;
-    let cipher_suites = cipher_suites(profile, context, supported_versions.as_slice())?;
-    let padding_offset = boringssl_padding_offset(profile, context, supported_versions.as_slice());
+    let cipher_suites = advertised_cipher_suites(profile, context, supported_versions.as_slice())?;
     plan = plan
-        .with_cipher_suites(cipher_suites)
+        .with_advertised_cipher_suites(cipher_suites)
         .with_supported_versions(supported_versions);
 
     if !profile.supported_versions.is_empty() {
@@ -350,50 +349,39 @@ pub(crate) fn apply_utls_profile(
     if let Some(raw_extensions) = raw_extensions {
         plan = plan.with_raw_extensions(raw_extensions);
     }
-    if let Some(grease) = grease_plan(profile, context, draws, &extensions)? {
+    if let Some(grease) = grease_plan(profile, draws, &extensions)? {
         plan = plan.with_grease(grease);
     }
     if let Some(protocols) = alpn_override {
         plan = plan.with_alpn_protocols(ClientHelloAlpnProtocols::try_from(protocols.to_vec())?);
     }
     if profile.padding_length.is_some() {
-        plan = plan.with_padding(ClientHelloPaddingPlan::boringssl(padding_offset)?);
+        plan = plan.with_padding(ClientHelloPaddingPlan::boringssl(
+            boringssl_padding_offset(profile),
+        )?);
     }
 
     Ok(plan)
 }
 
 /// What the hello uTLS sends on this connection has that this one does not,
-/// in bytes: the suites this provider cannot negotiate, which the plan leaves
-/// out of the cipher list, less the `supported_versions` rustls adds to a
+/// in bytes: nothing, less the `supported_versions` rustls adds to a
 /// TLS-1.2-era hello (one version, `0x0303`: seven bytes).
 ///
-/// Every other extension is as long on both hellos -- the profile records
-/// them as uTLS writes them, and the server name, the ALPN list or override
-/// and the ECH GREASE draw go into both alike -- so shaped-rustls, applying
-/// BoringSSL's padding rule to each ClientHello as it encodes it with this
-/// added, pads as uTLS's own hello is padded and to its length: the second
-/// ClientHello a HelloRetryRequest asks for as much as the first.
-fn boringssl_padding_offset(
-    profile: &UtlsClientHelloProfile,
-    context: ClientHelloContext<'_>,
-    supported_versions: &[ProtocolVersion],
-) -> isize {
+/// The cipher suite list is the profile's own, every suite of it, so it is as
+/// long on both hellos, and so is every extension but that one -- the profile
+/// records them as uTLS writes them, and the server name, the ALPN list or
+/// override and the ECH GREASE draw go into both alike -- so shaped-rustls,
+/// applying BoringSSL's padding rule to each ClientHello as it encodes it with
+/// this added, pads as uTLS's own hello is padded and to its length: the
+/// second ClientHello a HelloRetryRequest asks for as much as the first.
+fn boringssl_padding_offset(profile: &UtlsClientHelloProfile) -> isize {
     const TLS12_SUPPORTED_VERSIONS_LEN: isize = 4 + 1 + 2;
-    let filtered = profile
-        .cipher_suites
-        .iter()
-        .filter(|suite| {
-            !is_grease_value(**suite)
-                && !provider_supports_cipher_suite(**suite, context, supported_versions)
-        })
-        .count() as isize;
-    let added = if profile_has_extension(profile, EXT_SUPPORTED_VERSIONS) {
+    if profile_has_extension(profile, EXT_SUPPORTED_VERSIONS) {
         0
     } else {
-        TLS12_SUPPORTED_VERSIONS_LEN
-    };
-    2 * filtered - added
+        -TLS12_SUPPORTED_VERSIONS_LEN
+    }
 }
 
 /// This hello's extensions in uTLS's order, GREASE ones included: the drawn
@@ -422,18 +410,43 @@ fn planned_extensions(
     extensions
 }
 
-fn cipher_suites(
+/// The profile's cipher suites, every one of them in uTLS's order, less the
+/// GREASE value, which `grease_plan` puts back at its place.
+///
+/// Suites this provider does not implement -- the CBC and RSA key exchange
+/// suites every browser profile still lists, Chrome's six and Firefox's eight
+/// -- are advertised all the same. Leaving them out gave every profile a
+/// cipher list, and so a JA3/JA4, that no browser sends. They are advertised
+/// only: shaped-rustls negotiates nothing but a suite of the provider, and a
+/// server that picks one of the others fails the handshake with
+/// `SelectedUnofferedCipherSuite`, a TLS alert and an error, not a panic.
+///
+/// A profile with no suite the provider can negotiate at all is refused
+/// instead, since every server's choice would fail. Plain TLS refuses such a
+/// fingerprint before the handshake (`reject_unnegotiable_fingerprint`); this
+/// keeps the plan itself from ever building that hello.
+fn advertised_cipher_suites(
     profile: &UtlsClientHelloProfile,
     context: ClientHelloContext<'_>,
     supported_versions: &[ProtocolVersion],
-) -> Result<ClientHelloCipherSuites, RustlsError> {
-    ClientHelloCipherSuites::try_from(
-        profile
-            .cipher_suites
-            .iter()
-            .copied()
-            .filter(|suite| !is_grease_value(*suite))
-            .filter(|suite| provider_supports_cipher_suite(*suite, context, supported_versions))
+) -> Result<ClientHelloAdvertisedCipherSuites, RustlsError> {
+    let suites = profile
+        .cipher_suites
+        .iter()
+        .copied()
+        .filter(|suite| !is_grease_value(*suite))
+        .collect::<Vec<_>>();
+    if !suites
+        .iter()
+        .any(|suite| provider_supports_cipher_suite(*suite, context, supported_versions))
+    {
+        return Err(RustlsError::General(
+            "the uTLS profile advertises no cipher suite this client implements".into(),
+        ));
+    }
+    ClientHelloAdvertisedCipherSuites::try_from(
+        suites
+            .into_iter()
             .map(CipherSuite::from)
             .collect::<Vec<_>>(),
     )
@@ -938,7 +951,6 @@ fn draw_candidate<T: Copy>(candidates: &[T], what: &str) -> Result<T, RustlsErro
 
 fn grease_plan(
     profile: &UtlsClientHelloProfile,
-    context: ClientHelloContext<'_>,
     draws: &HelloDraws,
     extensions: &[u16],
 ) -> Result<Option<ClientHelloGreasePlan>, RustlsError> {
@@ -961,19 +973,14 @@ fn grease_plan(
     // share is a raw one with the group slot's value, and supported_versions
     // and supported_groups carry theirs in the advertised lists.
     let mut grease = ClientHelloGreasePlan::new(draws.grease(GREASE_CIPHER))?;
+    // The advertised list is every other suite of the profile, so the GREASE
+    // value goes back in at its own index in the profile.
     if let Some(grease_index) = profile
         .cipher_suites
         .iter()
         .position(|suite| is_grease_value(*suite))
     {
-        let supported_versions = supported_versions(profile)?;
-        let position = profile.cipher_suites[..grease_index]
-            .iter()
-            .filter(|suite| {
-                provider_supports_cipher_suite(**suite, context, supported_versions.as_slice())
-            })
-            .count();
-        grease = grease.with_cipher_suite_position(position);
+        grease = grease.with_cipher_suite_position(grease_index);
     }
     let mut non_grease_position = 0;
     let mut grease_extensions = 0;
@@ -1546,14 +1553,28 @@ mod tests {
         panic!("{fingerprint}: no hello in 256 drew the ECH length {ech:?}");
     }
 
-    /// `boringssl_padding_offset` for a profile as the plain-TLS path shapes it:
-    /// the shaping provider's suites, and TLS 1.2 alone for a TLS-1.2-era
-    /// profile.
-    fn padding_offset(profile: &UtlsClientHelloProfile) -> isize {
+    /// The cipher suites of a ClientHello handshake message, as sent.
+    fn hello_cipher_suites(hello: &[u8]) -> Vec<u16> {
+        let mut cursor = 4 + 2 + 32;
+        cursor += 1 + usize::from(hello[cursor]);
+        let len = usize::from(u16::from_be_bytes([hello[cursor], hello[cursor + 1]]));
+        cursor += 2;
+        hello[cursor..cursor + len]
+            .chunks_exact(2)
+            .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+            .collect()
+    }
+
+    /// The context the plain-TLS path shapes `profile` in: the shaping
+    /// provider's suites, and TLS 1.2 alone for a TLS-1.2-era profile.
+    fn with_context<T>(
+        profile: &UtlsClientHelloProfile,
+        body: impl FnOnce(ClientHelloContext<'_>) -> T,
+    ) -> T {
         let provider = std::sync::Arc::new(rustls::crypto::aws_lc_rs::default_provider());
         let server_name = rustls::pki_types::ServerName::try_from("example.com").unwrap();
         let tls12: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS12];
-        let context = ClientHelloContext {
+        body(ClientHelloContext {
             server_name: &server_name,
             alpn_protocols: &[],
             versions: if profile_offers_tls13(profile) {
@@ -1563,38 +1584,113 @@ mod tests {
             },
             crypto_provider: &provider,
             is_quic: false,
+        })
+    }
+
+    /// Every profile advertises its whole cipher suite list, in uTLS's order,
+    /// with the GREASE value where uTLS puts it, the CBC and RSA key exchange
+    /// suites rustls does not implement included: Chrome's hello carries
+    /// fifteen suites and Firefox's seventeen, as theirs do. The `360` names
+    /// alone build no hello: none of their suites is one this client
+    /// implements.
+    #[test]
+    fn every_profile_advertises_its_whole_cipher_suite_list() {
+        let canonical = |suites: &[u16]| {
+            suites
+                .iter()
+                .map(|suite| {
+                    if is_grease_value(*suite) {
+                        0x0a0a
+                    } else {
+                        *suite
+                    }
+                })
+                .collect::<Vec<_>>()
         };
-        let supported_versions = supported_versions(profile).unwrap();
-        boringssl_padding_offset(profile, context, supported_versions.as_slice())
+        let mut checked = 0;
+        for name in xray_utls::XRAY_UTLS_FINGERPRINTS {
+            let Some(profile) = crate::utls_profiles::profile_for_fingerprint(name) else {
+                continue;
+            };
+            let config = crate::TlsClientConfig {
+                server_name: "example.com".to_owned(),
+                allow_insecure: true,
+                pinned_peer_cert_sha256: Vec::new(),
+                verify_peer_cert_by_name: Vec::new(),
+                alpn: Vec::new(),
+                fingerprint: Some((*name).to_owned()),
+            };
+            match crate::tls::plain_tls_client_hello_bytes(&config) {
+                Ok(record) => {
+                    assert_eq!(
+                        canonical(&hello_cipher_suites(&record[5..])),
+                        canonical(profile.cipher_suites),
+                        "{name}"
+                    );
+                    checked += 1;
+                }
+                Err(error) => assert!(
+                    matches!(*name, "360" | "hello360_auto" | "hello360_7_5"),
+                    "{name}: ClientHello: {error}"
+                ),
+            }
+        }
+        assert!(checked >= 55, "{checked} profiles checked");
+
+        let chrome = profile("chrome");
+        assert_eq!(
+            chrome.cipher_suites,
+            [
+                0x0a0a, 0x1301, 0x1302, 0x1303, 0xc02b, 0xc02f, 0xc02c, 0xc030, 0xcca9, 0xcca8,
+                0xc013, 0xc014, 0x009c, 0x009d, 0x002f, 0x0035,
+            ]
+        );
+        assert_eq!(profile("firefox").cipher_suites.len(), 17);
+    }
+
+    /// The plan refuses a profile whose suites the provider implements none
+    /// of, as plain TLS refuses its name before dialing: a hello that only
+    /// advertises would lose every handshake at the ServerHello.
+    #[test]
+    fn a_profile_with_no_implemented_suite_builds_no_plan() {
+        let unnegotiable = profile("hello360_7_5");
+        let error = with_context(unnegotiable, |context| {
+            apply_utls_profile(
+                ClientHelloPlan::new(),
+                unnegotiable,
+                context,
+                &HelloDraws::zero(unnegotiable),
+                None,
+            )
+            .unwrap_err()
+        });
+        assert!(error.to_string().contains("cipher suite"), "{error}");
+
+        let chrome = profile("chrome");
+        with_context(chrome, |context| {
+            apply_utls_profile(
+                ClientHelloPlan::new(),
+                chrome,
+                context,
+                &HelloDraws::zero(chrome),
+                None,
+            )
+            .unwrap()
+        });
     }
 
     #[test]
-    fn the_padding_offset_counts_filtered_suites_and_the_added_supported_versions() {
-        // Six suites rustls lacks (CBC and RSA key exchange), the twelve bytes
-        // Chrome 120's padding makes up against uTLS's fixtures.
-        assert_eq!(padding_offset(profile("hellochrome_120")), 12);
-
-        let provider = rustls::crypto::aws_lc_rs::default_provider();
-        for name in ["hellofirefox_120", "hellochrome_133", "hellochrome_58"] {
-            let profile = profile(name);
-            let tls13 = profile_offers_tls13(profile);
-            let filtered = profile
-                .cipher_suites
-                .iter()
-                .filter(|suite| !is_grease_value(**suite))
-                .filter(|suite| {
-                    !provider.cipher_suites.iter().any(|candidate| {
-                        u16::from(candidate.suite()) == **suite
-                            && (tls13 || candidate.version().version == ProtocolVersion::TLSv1_2)
-                    })
-                })
-                .count() as isize;
-            // A TLS-1.2-era hello also carries the seven-byte
-            // supported_versions rustls adds and uTLS's lacks.
-            let added = if tls13 { 0 } else { 7 };
-            assert_eq!(padding_offset(profile), 2 * filtered - added, "{name}");
+    fn the_padding_offset_is_only_the_added_supported_versions() {
+        // Chrome 120's hello is uTLS's own to the byte, its whole cipher list
+        // included, so its padding has nothing to make up.
+        assert_eq!(boringssl_padding_offset(profile("hellochrome_120")), 0);
+        for name in ["hellofirefox_120", "hellochrome_133", "hellochrome_155"] {
+            assert_eq!(boringssl_padding_offset(profile(name)), 0, "{name}");
         }
+        // A TLS-1.2-era hello carries the seven-byte supported_versions rustls
+        // adds and uTLS's lacks.
         assert!(!profile_offers_tls13(profile("hellochrome_58")));
+        assert_eq!(boringssl_padding_offset(profile("hellochrome_58")), -7);
     }
 
     /// Our hello plus `boringssl_padding_offset` is uTLS's own hello before
@@ -1614,7 +1710,7 @@ mod tests {
             let (_, our_extensions) = hello_layout(&ours);
             assert_eq!(
                 unpadded(ours.len(), body_len(&our_extensions, EXT_PADDING)) as isize
-                    + padding_offset(profile(name)),
+                    + boringssl_padding_offset(profile(name)),
                 unpadded(utls.len(), body_len(&utls_extensions, EXT_PADDING)) as isize,
                 "{name} (ECH {ech:?})"
             );
@@ -1630,7 +1726,7 @@ mod tests {
             let (_, our_extensions) = hello_layout(&ours);
             assert_eq!(
                 unpadded(ours.len(), body_len(&our_extensions, EXT_PADDING)) as isize
-                    + padding_offset(profile(name)),
+                    + boringssl_padding_offset(profile(name)),
                 unpadded(
                     length("handshake_length").unwrap(),
                     length("padding_length")
@@ -1661,11 +1757,10 @@ mod tests {
     /// name with a trailing dot, which is sent without it, come on top.
     ///
     /// uTLS's length is read off our own hello, independently of
-    /// `boringssl_padding_offset`: the suites the provider filtered go back
-    /// in, as counted on the wire, and
-    /// what rustls adds that the profile lacks (`supported_versions` on a
-    /// TLS-1.2-era hello) comes out. BoringSSL's rule is restated here from
-    /// `BoringPaddingStyle`.
+    /// `boringssl_padding_offset`: the cipher list is the profile's whole one,
+    /// as counted on the wire, and what rustls adds that the profile lacks
+    /// (`supported_versions` on a TLS-1.2-era hello) comes out. BoringSSL's
+    /// rule is restated here from `BoringPaddingStyle`.
     #[test]
     fn padded_profiles_pad_as_boringssl_pads_the_utls_hello() {
         let mut profiles: Vec<(&str, &UtlsClientHelloProfile)> = Vec::new();
@@ -1725,6 +1820,11 @@ mod tests {
                             .map(|(_, body)| *body)
                     };
                     let padding = body(EXT_PADDING);
+                    assert_eq!(
+                        cipher_suites,
+                        profile.cipher_suites.len(),
+                        "{name}: every suite of the profile is on the wire"
+                    );
                     // An ALPN extension the override appends is one uTLS's
                     // hello gets too, from Xray.
                     let added = extensions
@@ -1739,9 +1839,7 @@ mod tests {
                         })
                         .map(|(_, body)| EXTENSION_HEADER_LEN + body)
                         .sum::<usize>();
-                    let utls_unpadded = unpadded(hello.len(), padding)
-                        + 2 * (profile.cipher_suites.len() - cipher_suites)
-                        - added;
+                    let utls_unpadded = unpadded(hello.len(), padding) - added;
                     let utls_padding = (0x100..0x200).contains(&utls_unpadded).then(|| {
                         // `paddingLen >= 4+1` in uTLS.
                         let padding = 0x200 - utls_unpadded;

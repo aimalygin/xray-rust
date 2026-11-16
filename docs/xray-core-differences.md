@@ -1611,6 +1611,21 @@ binary's own hellos for `""`, `chrome`, `hellochrome_155` and `hellochrome_133`
 to the fixtures with the per-connection draws set aside, any of the four ECH
 lengths accepted.
 
+## uTLS cipher suites
+
+Every fingerprint advertises its uTLS profile's whole cipher suite list, as
+Xray-core does (resolved after 0.10.0; before, the suites rustls does not
+implement were left off the wire and BoringSSL padding made up their bytes).
+Tested: the raw oracle fixtures, cipher vector and padding included, match
+byte for byte on TLS and REALITY (`reality_rustls_tests`, `utls_shaping`).
+
+Difference: the CBC and RSA key exchange suites among them are advertised
+only. A server that picks one fails the handshake with
+`SelectedUnofferedCipherSuite` (tested against a peer that does, in
+`utls_tls_shaping_tests`), where Xray-core completes it on that suite. A
+fingerprint that offers no suite rustls implements, `hello360_7_5`, is still
+refused before the handshake.
+
 ## QUIC carriers and a change of network
 
 When the host reports that the OS network changed, XHTTP, MASQUE and
