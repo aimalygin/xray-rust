@@ -47,7 +47,7 @@ mod udp_ingress;
 
 #[cfg(feature = "fuzzing")]
 #[doc(hidden)]
-pub use sniffing::sniff_quic_initial_sni_for_fuzzing;
+pub use sniffing::{sniff_initial_payload_for_fuzzing, sniff_quic_initial_sni_for_fuzzing};
 
 const TUN_INBOUND_QUEUE_DEPTH: usize = 1024;
 const TUN_OUTBOUND_QUEUE_DEPTH: usize = 4096;

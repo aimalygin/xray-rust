@@ -98,5 +98,30 @@ impl XdnsConfig {
     }
 }
 
+/// A resolver's answer as the client reads it, under a domain that takes
+/// every record type and one that takes TXT alone.
+#[cfg(feature = "fuzzing")]
+pub(crate) fn fuzz_response(data: &[u8]) {
+    use domain::{Domain, TYPE_A, TYPE_AAAA, TYPE_CNAME, TYPE_TXT};
+    use std::sync::OnceLock;
+
+    static DOMAINS: OnceLock<Vec<Domain>> = OnceLock::new();
+    let domains = DOMAINS.get_or_init(|| {
+        vec![
+            Domain::new(
+                "t.example.com",
+                255,
+                63,
+                &[TYPE_A, TYPE_AAAA, TYPE_CNAME],
+                0,
+            )
+            .expect("valid xdns domain"),
+            Domain::new("x.example", 255, 63, &[TYPE_TXT], 1232).expect("valid xdns domain"),
+        ]
+    });
+    let _ = message::read(data, domains);
+    let _ = message::unframe(data);
+}
+
 #[cfg(test)]
 mod tests;

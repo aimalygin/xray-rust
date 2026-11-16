@@ -111,5 +111,23 @@ fn confirms(data: &[u8], profile: &XmcProfile) -> io::Result<bool> {
         && signature == profile.textures_signature.as_bytes())
 }
 
+/// The server's packets before the ciphers turn on, each read as the
+/// login reads it: the Encryption Request's fields, then the Login Success
+/// a client compares with its profile.
+#[cfg(feature = "fuzzing")]
+pub(super) async fn fuzz_server_packets<S: AsyncRead + AsyncWrite + Unpin>(conn: &mut Conn<S>) {
+    let profile = XmcProfile {
+        username: "Steve".to_owned(),
+        uuid: [0x11; 16],
+        textures_value: "e30=".to_owned(),
+        textures_signature: "c2ln".to_owned(),
+    };
+    while let Ok((_, data)) = conn.read_packet().await {
+        let mut fields = Fields(&data);
+        let _ = (fields.string(), fields.bytes(), fields.bytes());
+        let _ = confirms(&data, &profile);
+    }
+}
+
 #[cfg(test)]
 mod tests;

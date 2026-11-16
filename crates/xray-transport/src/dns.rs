@@ -3211,6 +3211,50 @@ fn invalid_dns_response(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
+/// Feeds `data` to the resolver's response checks as a reply to an A or
+/// AAAA query. With the selector's second bit set the reply takes the
+/// query's ID and question, so the answer section is reached on every run.
+#[cfg(feature = "fuzzing")]
+pub(crate) fn fuzz_response(data: &[u8]) {
+    let Some((&selector, response)) = data.split_first() else {
+        return;
+    };
+    let record_type = if selector & 1 == 0 {
+        DnsRecordType::A
+    } else {
+        DnsRecordType::Aaaa
+    };
+    let id = u16::from_be_bytes([
+        response.first().copied().unwrap_or_default(),
+        response.get(1).copied().unwrap_or_default(),
+    ]);
+    let edns = if selector & 4 != 0 {
+        edns_opt_record(None, DOH_PADDING_MIN)
+    } else {
+        None
+    };
+    let Ok(query) = build_dns_query_with_id("origin.example", record_type, id, edns.as_deref())
+    else {
+        return;
+    };
+    let _ = dns_response_matches_query(&query, response);
+    let _ = parse_dns_response(&query, response, record_type);
+
+    if selector & 2 != 0 && response.len() >= 4 {
+        // The query's ID and question around the fuzzed flags, counts and
+        // records: what an on-path forger that saw the query sends.
+        let question_end = query.len() - edns.as_ref().map_or(0, Vec::len);
+        let mut forged = query[..2].to_vec();
+        forged.extend_from_slice(&[response[2] | 0x80, response[3]]);
+        forged.extend_from_slice(&1_u16.to_be_bytes());
+        forged.extend_from_slice(response.get(4..10).unwrap_or(&[0, 1, 0, 0, 0, 0]));
+        forged.extend_from_slice(&query[12..question_end]);
+        forged.extend_from_slice(response.get(10..).unwrap_or_default());
+        let _ = dns_response_matches_query(&query, &forged);
+        let _ = parse_dns_response(&query, &forged, record_type);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;

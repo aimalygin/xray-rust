@@ -659,6 +659,57 @@ pub fn sniff_quic_initial_sni_for_fuzzing<'a>(
     None
 }
 
+/// Exercises the TCP sniffers (HTTP, TLS ClientHello, BitTorrent) and the
+/// first-datagram UDP sniffers (QUIC, uTP) on `payload`, as a flow's reader
+/// feeds them: every prefix the flags pick, then the whole payload. A domain
+/// a sniffer names must be one a target can carry.
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub fn sniff_initial_payload_for_fuzzing(flags: u8, payload: &[u8]) {
+    let config = InboundSniffingConfig {
+        enabled: true,
+        dest_override: vec![
+            SniffingDestination::Http,
+            SniffingDestination::Tls,
+            SniffingDestination::Quic,
+        ],
+        metadata_only: false,
+        route_only: flags & 1 != 0,
+        ..Default::default()
+    };
+    let address = TargetAddr::Ip(IpAddr::from([192, 0, 2, 1]));
+    let tcp = Target::new(address.clone(), 443, xray_routing::Network::Tcp);
+    let record_attributes = flags & 2 != 0;
+    let step = usize::from(flags >> 2) + 1;
+    let check = |sniffed: Option<&Sniffed>| {
+        if let Some(SniffedTarget { route_target, .. }) =
+            sniffed.and_then(|sniffed| sniffed.target.as_ref())
+        {
+            let TargetAddr::Domain(domain) = &route_target.addr else {
+                panic!("a sniffed target is not a domain");
+            };
+            assert!(!domain.is_empty() && !domain.contains(char::is_whitespace));
+        }
+    };
+    let mut end = step.min(payload.len());
+    loop {
+        let complete = end == payload.len();
+        match sniff_tcp_initial_payload(&config, &tcp, &payload[..end], complete, record_attributes)
+        {
+            TcpSniff::Done(done) => {
+                check(done.sniffed.as_ref());
+                break;
+            }
+            TcpSniff::NeedMore if complete => panic!("a complete payload needs more"),
+            TcpSniff::NeedMore => end = (end + step).min(payload.len()),
+        }
+    }
+    let udp = Target::new(address, 443, xray_routing::Network::Udp);
+    if let UdpSniffProgress::Done(sniffed) = UdpSniffer::new(&config, &udp).feed(payload) {
+        check(sniffed.as_ref());
+    }
+}
+
 enum QuicSniff {
     Domain(String),
     NeedMore,
