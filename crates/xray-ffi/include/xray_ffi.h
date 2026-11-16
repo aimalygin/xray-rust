@@ -250,6 +250,11 @@ typedef enum XrayFfiCapability {
   XRAY_FFI_CAPABILITY_VLESS_PROFILE_IMPORT = 1 << 30
 } XrayFfiCapability;
 
+/* A C enum constant is an int, so capability bits from 31 on are 64-bit
+ * macros instead. */
+/* ABI 1.18: xray_core_set_runtime_worker_threads. */
+#define XRAY_FFI_CAPABILITY_RUNTIME_WORKER_THREADS 0x80000000ULL
+
 /* ABI 1.9. Outcome written by xray_core_probe_outbound_url through an int32_t.
  * Failure kinds mirror the outbound health snapshot's lastFailureKind. */
 typedef enum XrayOutboundProbeFailureKind {
@@ -302,6 +307,16 @@ XrayStatus xray_core_set_hysteria_stream_limits(
  * Lifecycle call: do not race any other handle call. */
 XrayStatus xray_core_set_tun_mtu(
     XrayCoreHandle *handle, uint32_t mtu, XrayError **error);
+/* ABI 1.18, RUNTIME_WORKER_THREADS. Worker threads of the handle's Tokio
+ * runtime, 1..=64, or 0 for the TUN runtime profile's default: 2 for the
+ * mobile, mobile-plus and low-memory profiles and for the default profile on
+ * Android, iOS, tvOS and watchOS; the available parallelism within 2..=6
+ * otherwise. Set
+ * before config load; a count set here outlives later profile changes.
+ * Invalid calls change nothing. Lifecycle call: do not race any other handle
+ * call. */
+XrayStatus xray_core_set_runtime_worker_threads(
+    XrayCoreHandle *handle, uint32_t worker_threads, XrayError **error);
 /* Searches dir first, then the process default geodata directories. */
 XrayStatus xray_core_set_geodata_search_dir(
     XrayCoreHandle *handle,
@@ -479,6 +494,8 @@ XrayStatus xray_core_set_tun_collect_tcp_timings(
     XrayCoreHandle *handle,
     int32_t collect_tcp_timings,
     XrayError **error);
+/* Set before config load. Also selects the runtime's default worker threads
+ * (see xray_core_set_runtime_worker_threads). */
 XrayStatus xray_core_set_tun_runtime_profile(
     XrayCoreHandle *handle,
     int32_t profile,

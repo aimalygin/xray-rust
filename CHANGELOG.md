@@ -21,6 +21,19 @@ long-term supported release series.
   balancer with `probeInterval: "10m"` was kept for up to ten minutes; it is
   now left after one failed open and one probe. Without failures the
   observatory probes as before.
+- The mobile, mobile-plus and low-memory TUN runtime profiles, and the
+  default profile on Android, iOS, tvOS and watchOS, run the FFI handle's
+  Tokio runtime on 2 worker threads, as the CLI does, where they ran on the
+  available parallelism up to 6. Measured with eight flows, 2 workers moved
+  72-74 Gbit/s for 330-360 ms of CPU and 6 workers 55-58 Gbit/s for 590-660
+  ms. The desktop and throughput profiles, and the default profile on other
+  targets, keep their count. ABI 1.18 adds
+  `xray_core_set_runtime_worker_threads` (`RUNTIME_WORKER_THREADS`, bit 31,
+  the first capability defined as a 64-bit macro since a C enum constant
+  cannot hold it) to set 1..=64 workers, or 0 for the profile's count, before
+  config load, and Swift `XrayCore` initializers take an optional
+  `runtimeWorkerThreads`. Selecting a profile or a count replaces the
+  handle's still idle runtime when the count changes.
 - The TUN loop no longer wakes every second. It slept at most a second for
   its statistics, so an idle VPN, with no flows or only idle ones, woke the
   process 45 to 50 times a minute where the same core without TUN woke none
