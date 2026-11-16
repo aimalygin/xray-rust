@@ -10,6 +10,14 @@ long-term supported release series.
 
 ## Unreleased
 
+- A Hysteria connect attempt to the last of the server's addresses, the only
+  one for a server with one address, gets what is left of the dial's ten
+  seconds, at most eight, where every attempt had three. Quinn's first probe
+  timeout is a second against quic-go's 300 ms, so three seconds carried two
+  Initials where Xray-core's client sends four or five, and a slow or lossy
+  mobile path failed to connect where Xray-core connected. Attempts with
+  further addresses waiting keep three seconds each.
+
 ## 0.10.0 - 2026-11-15
 
 Published on 2026-11-15 with exact-candidate release evidence and the
