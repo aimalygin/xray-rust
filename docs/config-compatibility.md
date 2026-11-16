@@ -907,6 +907,17 @@ behavior.
   is. When the destination is an IP it matches, a sniffed domain never
   replaces it. A destination given as a name is not checked against it.
 
+As in Xray-core's dispatcher, `destOverride` applies to every flow whatever
+its destination, so an app that connects to an IP address, from its own DoH
+lookup or a cached address, is routed by the name it sends. A sniffed domain
+routes the flow, and is dialed too unless `routeOnly` keeps the original
+destination. A fake IP whose domain the fake DNS knows keeps that domain, and
+a fake IP it does not know dials the sniffed domain even under `routeOnly`,
+since its address leads nowhere. On TUN a TCP flow is accepted before it is
+routed so that its first bytes can be read; it waits at most 250 ms for them,
+then is routed on its original destination. A protocol in which the server
+speaks first, such as SMTP, waits that long before it is dialed.
+
 QUIC sniffing reads the SNI from a client's Initial packets (QUIC v1, v2 and
 draft-29). A ClientHello larger than one datagram, such as Chrome's with a
 post-quantum key share, is reassembled from the CRYPTO frames of several
@@ -3314,14 +3325,28 @@ extensions, padding and pre_shared_key staying in place. Other profiles keep
 their fixed order. The Chrome profiles draw their ECH GREASE payload length
 per hello too (see [ECH GREASE](#ech-grease)).
 
+Every profile advertises its whole uTLS cipher suite list, in uTLS's order
+and with the GREASE value where uTLS puts it, on TLS and REALITY alike. That
+includes the CBC and RSA key exchange suites rustls does not implement:
+Chrome's `0xc013`, `0xc014`, `0x009c`, `0x009d`, `0x002f` and `0x0035`, so
+`chrome` sends the fifteen suites Chrome sends, Firefox's `0xc00a` and
+`0xc009` on top of those, for seventeen, and Safari's and iOS's longer tails.
+Up to 0.10.0 those suites were left off the wire, which gave every profile a
+cipher list, and so a JA3/JA4, that no browser sends. They are advertised
+only: the handshake negotiates nothing but a suite this build implements, and
+a server that picks one of the others fails it with a TLS alert and the error
+`SelectedUnofferedCipherSuite`, where Xray-core would complete it. A server
+that prefers a CBC suite over every AEAD one Chrome offers is rare, and real
+Chrome reaches it on the CBC suite. A profile offering no suite this build
+implements is refused before the handshake (`hello360_7_5`, below).
+
 A profile with BoringSSL's padding extension pads as BoringSSL does, and uTLS
 with it (`BoringPaddingStyle`): a hello of 256 to 511 bytes before padding is
 padded to 512, by a single byte when only the extension's header would fit
 below 512, and any other hello goes out without the extension. What decides
 is the length uTLS's own hello has: shaped-rustls measures each ClientHello as
-it encodes it and adds what uTLS's hello has on top -- the suites this build
-cannot negotiate, less the `supported_versions` rustls adds to a TLS-1.2-era
-hello -- so a padded hello is exactly as long as uTLS's.
+it encodes it, less the `supported_versions` rustls adds to a TLS-1.2-era
+hello, so a padded hello is exactly as long as uTLS's, byte for byte.
 
 A HelloRetryRequest is answered as uTLS answers it. A retry that names a
 group gets that group's key share alone, without the GREASE share and any
@@ -3846,7 +3871,7 @@ rule. A request the HTTP inbound forwards, rather than tunnels, is
 `http/1.1`, as in Xray-core. When a rule has `protocol`, flows are sniffed for it even where
 `destOverride` would not read them, though only `destOverride` decides whether
 a sniffed domain replaces the destination. On TUN that opens a TCP flow
-before routing it, as for an unmapped fake IP. A flow is read only until every
+before routing it, as `destOverride` does. A flow is read only until every
 sniffer has ruled it out, as in Xray-core, so a protocol no sniffer knows is
 routed as soon as its first bytes arrive.
 

@@ -169,7 +169,14 @@ requires ABI 1.10 and the new capability. Rust hosts set
 
 A handle does not support config replacement. Create a new handle for a new
 config or a fresh lifecycle. `xray_core_free(NULL)` is allowed and attempts to
-stop a live core before releasing it.
+stop a live core before releasing it. Once the core has stopped,
+`xray_core_free` shuts the handle's runtime down and waits for its threads,
+without a limit: when the call returns none of them is inside the
+socket-protect callback, and the host may release the callback's `user_data`.
+A system DNS lookup (`XRAY_DNS_BOOTSTRAP_MODE_SYSTEM`) cannot be cancelled, so
+it runs on a thread outside the runtime, at most 64 at once. One still in
+`getaddrinfo` is not waited for: it finishes by itself after the call returns
+and calls no host callback.
 
 ## Handles and errors
 

@@ -381,6 +381,120 @@ async fn hysteria_total_deadline_and_caller_cancellation_release_single_flight()
     );
 }
 
+#[test]
+fn connect_attempts_share_the_dial_deadline_by_address_count() {
+    // The dial's deadline is the default policy `handshake`, which also
+    // bounds the open waiting on it.
+    assert_eq!(
+        DIAL_DEADLINE,
+        crate::policy::EffectivePolicy::default().handshake
+    );
+    // A lone address gets eight seconds, leaving two for admission and DNS.
+    assert_eq!(attempt_timeout(1, DIAL_DEADLINE), Duration::from_secs(8));
+    // Several get three each while others wait, and the last what is left.
+    assert_eq!(attempt_timeout(2, DIAL_DEADLINE), Duration::from_secs(3));
+    assert_eq!(
+        attempt_timeout(1, Duration::from_secs(7)),
+        Duration::from_secs(7)
+    );
+    // No attempt outlives the deadline.
+    assert_eq!(
+        attempt_timeout(8, Duration::from_secs(1)),
+        Duration::from_secs(1)
+    );
+    assert_eq!(attempt_timeout(1, Duration::ZERO), Duration::ZERO);
+}
+
+/// A UDP socket that reads every datagram and answers none, with the time
+/// since `start` when its first datagram came.
+async fn silent_server(
+    start: tokio::time::Instant,
+) -> (
+    SocketAddr,
+    tokio::sync::oneshot::Receiver<Duration>,
+    tokio::task::JoinHandle<()>,
+) {
+    let socket = tokio::net::UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    let address = socket.local_addr().unwrap();
+    let (first, first_rx) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(async move {
+        let mut first = Some(first);
+        let mut buffer = [0; 2048];
+        while socket.recv_from(&mut buffer).await.is_ok() {
+            if let Some(first) = first.take() {
+                let _ = first.send(start.elapsed());
+            }
+        }
+    });
+    (address, first_rx, task)
+}
+
+struct FixedDns(Vec<SocketAddr>);
+#[async_trait]
+impl DnsResolver for FixedDns {
+    async fn resolve(&self, _domain: &str, _port: u16) -> Result<SocketAddr, TransportError> {
+        Ok(self.0[0])
+    }
+    async fn resolve_all(
+        &self,
+        _domain: &str,
+        _port: u16,
+    ) -> Result<xray_transport::DnsLookup, TransportError> {
+        Ok(xray_transport::DnsLookup::new(self.0.iter().copied(), None))
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_lone_server_address_gets_eight_seconds_to_connect() {
+    let start = tokio::time::Instant::now();
+    let (server, first, silent) = silent_server(start).await;
+    let mut config = configured();
+    let OutboundSettings::Hysteria(settings) = &mut config.settings else {
+        panic!()
+    };
+    settings.server = TargetAddr::Ip(server.ip());
+    settings.port = server.port();
+    let outbound = HysteriaOutbound::new(&config).unwrap();
+    let dialer = TransportDialer::system().unwrap();
+    assert!(matches!(
+        outbound.open_udp(&PendingDns::default(), &dialer).await,
+        Err(CoreError::Hysteria(HysteriaError::Timeout))
+    ));
+    assert_eq!(start.elapsed(), LAST_ATTEMPT_TIMEOUT);
+    // The paused clock may run on before the datagram is read, so its time
+    // is an upper bound.
+    assert!(first.await.unwrap() < CANDIDATE_ATTEMPT_TIMEOUT);
+    silent.abort();
+}
+
+#[tokio::test(start_paused = true)]
+async fn later_server_addresses_get_three_seconds_and_the_last_the_rest() {
+    let start = tokio::time::Instant::now();
+    let (first_server, first_reached, first_silent) = silent_server(start).await;
+    let (last_server, last_reached, last_silent) = silent_server(start).await;
+    let outbound = HysteriaOutbound::new(&configured()).unwrap();
+    let dialer = TransportDialer::system().unwrap();
+    let dns = FixedDns(vec![first_server, last_server]);
+    assert!(matches!(
+        outbound.open_udp(&dns, &dialer).await,
+        Err(CoreError::Hysteria(HysteriaError::Timeout))
+    ));
+    assert_eq!(start.elapsed(), DIAL_DEADLINE);
+    // The first address had three seconds, and the last the seven left. The
+    // paused clock may run on before a datagram is read, so its time is an
+    // upper bound.
+    assert!(first_reached.await.unwrap() < CANDIDATE_ATTEMPT_TIMEOUT);
+    let last = last_reached.await.unwrap();
+    assert!(
+        (CANDIDATE_ATTEMPT_TIMEOUT..DIAL_DEADLINE - CANDIDATE_ATTEMPT_TIMEOUT).contains(&last),
+        "{last:?}"
+    );
+    first_silent.abort();
+    last_silent.abort();
+}
+
 #[path = "../../../../xray-transport/tests/hysteria/support.rs"]
 mod rebind_reference;
 

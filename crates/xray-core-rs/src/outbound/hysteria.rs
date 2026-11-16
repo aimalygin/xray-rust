@@ -6,6 +6,32 @@ use xray_transport::hysteria::{
     GeckoPacketSize, HysteriaClient, HysteriaConfig, HysteriaError, HysteriaUdpSession,
 };
 
+/// One dial's whole deadline: admission, the server's lookup and every
+/// connect attempt. It is the default policy `handshake`, which also bounds
+/// each open that waits on a dial.
+const DIAL_DEADLINE: Duration = Duration::from_secs(10);
+/// A connect attempt's share while other server addresses are still to be
+/// tried, so a dead address leaves time for the next.
+const CANDIDATE_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(3);
+/// The last address's attempt, which is the only one for a server with one
+/// address. Quinn's first probe timeout is a second, from its 333 ms initial
+/// RTT, against quic-go's 300 ms, so three seconds carried two Initials
+/// where Xray-core's client sends four or five, and a lossy path failed.
+const LAST_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// How long the connect attempt with `remaining` addresses left, itself
+/// included, may take when `left` remains of the dial's deadline: three
+/// seconds while others wait, up to eight for the last, and never past the
+/// deadline.
+fn attempt_timeout(remaining: usize, left: Duration) -> Duration {
+    let share = if remaining > 1 {
+        CANDIDATE_ATTEMPT_TIMEOUT
+    } else {
+        LAST_ATTEMPT_TIMEOUT
+    };
+    share.min(left)
+}
+
 #[derive(Clone, Debug)]
 pub struct HysteriaOutbound {
     inner: Arc<SessionOwner>,
@@ -241,11 +267,11 @@ impl HysteriaOutbound {
         let dialer = self.socket_dialer(dialer);
         // One total deadline includes contention, endpoint DNS and candidate
         // attempts, and a realm introduction before them.
-        let deadline = Duration::from_secs(10) + self.realm_budget();
+        let deadline = tokio::time::Instant::now() + DIAL_DEADLINE + self.realm_budget();
         tokio::select! {
             biased;
             _ = shutdown.changed() => Err(HysteriaError::Closed.into()),
-            result = tokio::time::timeout(deadline, self.client_inner(resolver, &dialer)) => result.map_err(|_| HysteriaError::Timeout)?,
+            result = tokio::time::timeout_at(deadline, self.client_inner(resolver, &dialer, deadline)) => result.map_err(|_| HysteriaError::Timeout)?,
         }
     }
 
@@ -289,6 +315,7 @@ impl HysteriaOutbound {
         &self,
         resolver: &dyn DnsResolver,
         dialer: &TransportDialer,
+        deadline: tokio::time::Instant,
     ) -> Result<HysteriaClient, CoreError> {
         let _admission = self.inner.connecting.lock().await;
         if self.inner.closed.load(Ordering::Acquire) {
@@ -332,7 +359,9 @@ impl HysteriaOutbound {
         } else {
             8
         };
-        for candidate in candidates.into_iter().take(attempts) {
+        let attempts = candidates.len().min(attempts);
+        let realm_budget = self.realm_budget();
+        for (index, candidate) in candidates.into_iter().take(attempts).enumerate() {
             let mut config = HysteriaConfig::new(candidate, self.inner.tls.clone(), String::new());
             config.auth = self.inner.auth.auth.clone();
             config.limits = self.inner.limits;
@@ -340,10 +369,12 @@ impl HysteriaOutbound {
             config.quic = self.inner.quic.clone();
             config.receive_bytes_per_second = self.inner.receive_bytes_per_second;
             config.realm = realm.clone();
-            // Give later DNS candidates a chance within the total operation deadline.
+            // Give later DNS candidates a chance within the total operation
+            // deadline, and the last one what is left of it.
             let generation = self.inner.network_generation.load(Ordering::Acquire);
+            let left = deadline.saturating_duration_since(tokio::time::Instant::now());
             let attempt = tokio::time::timeout(
-                Duration::from_secs(3) + self.realm_budget(),
+                attempt_timeout(attempts - index, left.saturating_sub(realm_budget)) + realm_budget,
                 HysteriaClient::connect(config, dialer.tls_connector()),
             )
             .await;

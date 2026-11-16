@@ -10,6 +10,49 @@ long-term supported release series.
 
 ## Unreleased
 
+- A Hysteria connect attempt to the last of the server's addresses, the only
+  one for a server with one address, gets what is left of the dial's ten
+  seconds, at most eight, where every attempt had three. Quinn's first probe
+  timeout is a second against quic-go's 300 ms, so three seconds carried two
+  Initials where Xray-core's client sends four or five, and a slow or lossy
+  mobile path failed to connect where Xray-core connected. Attempts with
+  further addresses waiting keep three seconds each.
+- TUN sniffs a TCP flow to an IP address for `destOverride`'s `http` and
+  `tls`, as Xray-core's dispatcher sniffs every flow, so an app that connects
+  to an address from its own DoH lookup or a cache is routed by the name it
+  sends. TUN sniffed TCP only to a fake IP the fake DNS did not know, while
+  UDP and the SOCKS and HTTP inbounds already sniffed every flow. `routeOnly`,
+  `domainsExcluded`, `ipsExcluded` and the 250 ms wait for the first bytes
+  apply as before, and a fake IP the fake DNS knows keeps its domain.
+- A system DNS lookup no longer holds `xray_core_free`. The lookup ran
+  `getaddrinfo`, which cannot be cancelled, on the runtime's blocking pool,
+  and freeing a handle waits for the handle's runtime, so a host stopping or
+  restarting its tunnel on a network that had gone away could hang until the
+  lookup gave up. The lookup now runs on a thread of its own, at most 64 at
+  once: one still in flight finishes by itself after the call returns and
+  calls no host callback. `xray_core_free` goes on waiting for the runtime's
+  threads without a limit, so none of them is inside the socket-protect
+  callback once it returns. Only a core that asks the system resolver was
+  affected, as under the default `XRAY_DNS_BOOTSTRAP_MODE_SYSTEM`.
+- Every TLS and REALITY fingerprint now advertises its profile's whole uTLS
+  cipher suite list, in uTLS's order with GREASE where uTLS puts it. The
+  suites rustls does not implement, the CBC and RSA key exchange ones, were
+  left off the wire, so `chrome` sent nine suites where Chrome sends fifteen
+  (without `0xc013`, `0xc014`, `0x009c`, `0x009d`, `0x002f` and `0x0035`),
+  `firefox` nine where Firefox sends seventeen (also without `0xc009` and
+  `0xc00a`), and `safari` nine of twenty: a JA3/JA4 no browser produces,
+  which a DPI can pick out. BoringSSL padding grew to make up the missing
+  bytes, so padded hellos had the right length and the wrong layout. The
+  suites go out through shaped-rustls' advertise-only cipher suites, so
+  negotiation still takes only a suite rustls implements: a server that picks
+  one of the others fails the handshake with `SelectedUnofferedCipherSuite`,
+  where Xray-core would complete it on that suite; a server that prefers an
+  AEAD suite is unaffected. Padding is now uTLS's to the byte, and the oracle
+  tests compare against the unfiltered uTLS hellos instead of filtering the
+  reference the same way.
+- Update async-compression to 0.4.52, with compression-codecs 0.4.47 and
+  compression-core 0.4.34, and regex to 1.13.0.
+
 ## 0.10.0 - 2026-11-15
 
 Published on 2026-11-15 with exact-candidate release evidence and the
