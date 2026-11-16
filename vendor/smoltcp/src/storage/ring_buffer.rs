@@ -111,6 +111,30 @@ impl<'a, T: 'a> RingBuffer<'a, T> {
     }
 }
 
+impl<'a, T: 'a + Copy> RingBuffer<'a, T> {
+    /// Move the contents into `storage`, which must be at least as long as the
+    /// current storage. Returns `false`, changing nothing, when it is shorter.
+    ///
+    /// Every element keeps its offset from the read position, the unallocated
+    /// ones included: TCP reassembly keeps out-of-order data there.
+    pub fn grow<S>(&mut self, storage: S) -> bool
+    where
+        S: Into<ManagedSlice<'a, T>>,
+    {
+        let mut storage = storage.into();
+        let capacity = self.capacity();
+        if storage.len() < capacity {
+            return false;
+        }
+        let head = capacity - self.read_at;
+        storage[..head].copy_from_slice(&self.storage[self.read_at..]);
+        storage[head..capacity].copy_from_slice(&self.storage[..self.read_at]);
+        self.storage = storage;
+        self.read_at = 0;
+        true
+    }
+}
+
 /// This is the "discrete" ring buffer interface: it operates with single elements,
 /// and boundary conditions (empty/full) are errors.
 impl<'a, T: 'a> RingBuffer<'a, T> {
@@ -410,6 +434,34 @@ impl<'a, T: 'a> From<ManagedSlice<'a, T>> for RingBuffer<'a, T> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_buffer_grow_keeps_offsets() {
+        let mut ring = RingBuffer::new(vec![0u8; 6]);
+        assert_eq!(ring.enqueue_slice(b"abcd"), 4);
+        assert_eq!(ring.dequeue_many(3), b"abc");
+        // Wraps: `d` at index 3, then `efgh` across the end.
+        assert_eq!(ring.enqueue_slice(b"efgh"), 4);
+        // Out-of-order bytes beyond the allocated ones.
+        ring.get_unallocated(0, 1).copy_from_slice(b"x");
+
+        assert!(!ring.grow(vec![0u8; 5]));
+        assert_eq!(ring.capacity(), 6);
+
+        assert!(ring.grow(vec![0u8; 16]));
+        assert_eq!(ring.capacity(), 16);
+        assert_eq!(ring.len(), 5);
+        assert_eq!(ring.get_unallocated(0, 1), b"x");
+        assert_eq!(ring.enqueue_slice(b"ijklmnopqrs"), 11);
+        assert_eq!(ring.dequeue_many(16), b"defghijklmnopqrs");
+        assert!(ring.is_empty());
+
+        let mut empty = RingBuffer::<u8>::new(vec![]);
+        assert_eq!(empty.capacity(), 0);
+        assert!(empty.grow(vec![0u8; 4]));
+        assert_eq!(empty.enqueue_slice(b"wxyz"), 4);
+        assert_eq!(empty.dequeue_many(4), b"wxyz");
+    }
 
     #[test]
     fn test_buffer_length_changes() {

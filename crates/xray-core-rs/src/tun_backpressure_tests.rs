@@ -47,19 +47,19 @@ async fn ready_frames_are_batched_without_waiting_for_more_data() {
         ReadStep::Data(Bytes::from_static(b"tail")),
         ReadStep::End(RemoteReadEnd::Closed),
     ]));
-    let mut buffer = [0; 32];
     // The reader deliberately cannot wake this task. Waiting for another
     // frame after Pending would leave this future pending instead of returning.
-    let mut batch = Box::pin(read_remote_batch(&mut reader, &mut buffer));
+    let mut batch = Box::pin(read_remote_batch(&mut reader, 32));
     let mut cx = Context::from_waker(Waker::noop());
-    assert_eq!(batch.as_mut().poll(&mut cx), Poll::Ready((11, None)));
-    drop(batch);
-    assert_eq!(&buffer[..11], b"firstsecond");
     assert_eq!(
-        read_remote_batch(&mut reader, &mut buffer).await,
-        (4, Some(RemoteReadEnd::Closed))
+        batch.as_mut().poll(&mut cx),
+        Poll::Ready((Bytes::from_static(b"firstsecond"), None))
     );
-    assert_eq!(&buffer[..4], b"tail");
+    drop(batch);
+    assert_eq!(
+        read_remote_batch(&mut reader, 32).await,
+        (Bytes::from_static(b"tail"), Some(RemoteReadEnd::Closed))
+    );
 }
 
 #[tokio::test]
@@ -70,15 +70,54 @@ async fn batching_keeps_tail_bytes_before_eof_or_error_and_respects_capacity() {
             ReadStep::Data(Bytes::from_static(b"67890")),
             ReadStep::End(end),
         ]));
-        let mut buffer = [0; 8];
-        assert_eq!(read_remote_batch(&mut reader, &mut buffer).await, (8, None));
-        assert_eq!(&buffer, b"12345678");
         assert_eq!(
-            read_remote_batch(&mut reader, &mut buffer).await,
-            (2, Some(end))
+            read_remote_batch(&mut reader, 8).await,
+            (Bytes::from_static(b"12345678"), None)
         );
-        assert_eq!(&buffer[..2], b"90");
+        assert_eq!(
+            read_remote_batch(&mut reader, 8).await,
+            (Bytes::from_static(b"90"), Some(end))
+        );
         assert!(reader.0.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn a_pending_download_read_holds_no_buffer_and_large_reads_continue_in_one_chunk() {
+    // Nothing ready: the read waits without a chunk of its own.
+    let mut reader = FramedReader(VecDeque::from([ReadStep::Pending]));
+    let mut batch = Box::pin(read_remote_batch(&mut reader, TCP_DOWNLOAD_CHUNK_SIZE));
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(batch.as_mut().poll(&mut cx).is_pending());
+    drop(batch);
+
+    // More than the stack buffer: the frames continue in one chunk, up to
+    // the limit, whatever their sizes.
+    let frames: Vec<Bytes> = (0..5u8)
+        .map(|i| Bytes::from(vec![i; 20 * 1024 + usize::from(i)]))
+        .collect();
+    let expected: Vec<u8> = frames.iter().flat_map(|frame| frame.to_vec()).collect();
+    let mut steps: VecDeque<_> = frames.into_iter().map(ReadStep::Data).collect();
+    steps.push_back(ReadStep::Pending);
+    let mut reader = FramedReader(steps);
+    let (first, end) = read_remote_batch(&mut reader, TCP_DOWNLOAD_CHUNK_SIZE).await;
+    assert_eq!(end, None);
+    assert_eq!(first.len(), TCP_DOWNLOAD_CHUNK_SIZE);
+    assert_eq!(first.as_ref(), &expected[..TCP_DOWNLOAD_CHUNK_SIZE]);
+    let (rest, end) = read_remote_batch(&mut reader, TCP_DOWNLOAD_CHUNK_SIZE).await;
+    assert_eq!(end, None);
+    assert_eq!(rest.as_ref(), &expected[TCP_DOWNLOAD_CHUNK_SIZE..]);
+
+    // A chunk that ends up less than half full is handed on at its own size;
+    // one at least half full as it is.
+    for len in [12 * 1024, TCP_DOWNLOAD_CHUNK_SIZE / 2 + 1] {
+        let mut reader = FramedReader(VecDeque::from([
+            ReadStep::Data(Bytes::from(vec![0x5a; len])),
+            ReadStep::End(RemoteReadEnd::Closed),
+        ]));
+        let (data, end) = read_remote_batch(&mut reader, TCP_DOWNLOAD_CHUNK_SIZE).await;
+        assert_eq!((data.len(), end), (len, Some(RemoteReadEnd::Closed)));
+        assert!(data.iter().all(|byte| *byte == 0x5a));
     }
 }
 
@@ -681,5 +720,72 @@ fn queued_udp_datagrams_do_not_share_the_tun_read_buffer() {
     assert!(
         !std::ptr::eq(queued.as_ptr(), payload.as_ptr()),
         "a queued datagram must not keep the 64 KiB read buffer alive"
+    );
+}
+
+#[test]
+fn tun_tcp_socket_buffers_grow_only_when_the_flow_carries_data() {
+    assert_eq!(tcp_initial_rx_buffer_size(1500), TCP_INITIAL_RX_BUFFER_SIZE);
+    assert_eq!(tcp_initial_rx_buffer_size(9000), 2 * (9000 - 40));
+    assert!(tcp_initial_rx_buffer_size(9000) < tcp_rx_buffer_size(9000));
+
+    let tun = TunEndpoint::new(xray_tun::TunConfig {
+        mtu: 1500,
+        queue_depth: 16,
+    });
+    let mut sockets = SocketSet::new(Vec::new());
+    let mut listeners = HashMap::new();
+    let endpoint = IpEndpoint::new(IpAddress::v4(192, 0, 2, 1), 443);
+    add_tcp_listener(&mut sockets, &mut listeners, endpoint, 1500);
+    let handle = listeners[&endpoint].handle;
+    let socket = sockets.get::<tcp::Socket>(handle);
+    assert_eq!(socket.recv_capacity(), TCP_INITIAL_RX_BUFFER_SIZE);
+    assert_eq!(socket.send_capacity(), 0);
+
+    let (to_remote, _from_stack) = mpsc::channel(1);
+    let mut flows = HashMap::from([(
+        handle,
+        TcpFlow {
+            generation: 1,
+            to_remote: Some(to_remote),
+            task: None,
+            remote_open: false,
+            upload_queue_packets: None,
+            upload_pending: Arc::default(),
+            upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
+            pending_remote: VecDeque::new(),
+            pending_remote_bytes: 0,
+            has_deferred_remote_data: false,
+            pending_remote_delivery: None,
+            remote_closed: false,
+            remote_aborted: false,
+        },
+    )]);
+    let mut budget = FlowBudgetState::new(LOW_MEMORY_FLOW_BUDGET_POLICY);
+
+    // A flow whose outbound is still opening keeps the small buffers.
+    read_socket_data_to_remote(&tun, &mut sockets, &mut flows, &mut budget);
+    write_remote_data_to_sockets(&mut sockets, &mut flows, &mut budget);
+    let socket = sockets.get::<tcp::Socket>(handle);
+    assert_eq!(socket.recv_capacity(), TCP_INITIAL_RX_BUFFER_SIZE);
+    assert_eq!(socket.send_capacity(), 0);
+
+    // Its bridge reading the client's data gives it the full receive buffer.
+    flows.get_mut(&handle).unwrap().remote_open = true;
+    read_socket_data_to_remote(&tun, &mut sockets, &mut flows, &mut budget);
+    let socket = sockets.get::<tcp::Socket>(handle);
+    assert_eq!(socket.recv_capacity(), tcp_rx_buffer_size(1500));
+    assert_eq!(socket.send_capacity(), 0);
+
+    // The remote's first bytes give it the send buffer.
+    let flow = flows.get_mut(&handle).unwrap();
+    flow.pending_remote
+        .push_back(Bytes::from_static(b"response"));
+    flow.pending_remote_bytes = 8;
+    budget.record_pending_remote_enqueue(0, 8);
+    write_remote_data_to_sockets(&mut sockets, &mut flows, &mut budget);
+    assert_eq!(
+        sockets.get::<tcp::Socket>(handle).send_capacity(),
+        TCP_BUFFER_SIZE
     );
 }

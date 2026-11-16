@@ -10,6 +10,19 @@ long-term supported release series.
 
 ## Unreleased
 
+- An idle TUN TCP flow holds about 80 KiB of heap instead of 146 KiB. Its
+  bridge kept a 64 KiB read buffer for the flow's whole life and copied every
+  read out of it; it now reads into a buffer on the stack and continues in a
+  heap chunk only when more is ready, which goes to the stack without the
+  copy. The smoltcp socket no longer takes its two 32 KiB buffers at the SYN:
+  it starts with an 8 KiB receive buffer (two segments at least) and no send
+  buffer, and grows them when the flow's bridge starts reading the client's
+  data and when the remote sends its first bytes, so SYNs that are never
+  completed and flows whose outbound is still connecting cost a few KiB each.
+  A grown receive window is announced at once. The vendored smoltcp gains
+  `Socket::grow_recv_buffer` and `Socket::grow_send_buffer` for this. The
+  upload side releases its coalescing buffer once nothing waits to be written,
+  and a freedom UDP flow no longer keeps a 16 KiB receive buffer.
 - A TUN UDP flow's queue to its outbound is bounded in bytes as well as in
   datagrams: 64 KiB per flow and 2 MiB across flows on the `LowMemory` TUN
   profile, 128 KiB and 4 MiB on `Mobile`, 256 KiB and 8 MiB on `MobilePlus`,

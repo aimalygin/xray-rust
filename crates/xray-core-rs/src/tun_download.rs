@@ -1,4 +1,5 @@
 use super::*;
+use bytes::BufMut as _;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum RemoteReadEnd {
@@ -6,34 +7,96 @@ pub(super) enum RemoteReadEnd {
     Failed,
 }
 
-/// Coalesce only immediately available data. H2/TLS readers can return one
-/// small frame per poll even when more frames are ready; handing each frame
-/// to the stack separately adds avoidable task/channel round trips. Preserve
-/// a terminal result following data so the bridge delivers those bytes first.
+/// What a remote read starts in, on the stack: a flow waiting for its remote
+/// holds no read buffer.
+const TCP_DOWNLOAD_PROBE_SIZE: usize = 8 * 1024;
+
+enum ReadStep {
+    Read,
+    Pending,
+    End(RemoteReadEnd),
+}
+
+fn poll_read_step<R: AsyncRead + Unpin>(
+    reader: &mut R,
+    cx: &mut std::task::Context<'_>,
+    buffer: &mut tokio::io::ReadBuf<'_>,
+) -> ReadStep {
+    let before = buffer.filled().len();
+    match std::pin::Pin::new(reader).poll_read(cx, buffer) {
+        std::task::Poll::Pending => ReadStep::Pending,
+        std::task::Poll::Ready(Err(_)) => ReadStep::End(RemoteReadEnd::Failed),
+        std::task::Poll::Ready(Ok(())) if buffer.filled().len() == before => {
+            ReadStep::End(RemoteReadEnd::Closed)
+        }
+        std::task::Poll::Ready(Ok(())) => ReadStep::Read,
+    }
+}
+
+/// Coalesce only immediately available data, up to `limit` bytes. H2/TLS
+/// readers can return one small frame per poll even when more frames are
+/// ready; handing each frame to the stack separately adds avoidable
+/// task/channel round trips. Preserve a terminal result following data so the
+/// bridge delivers those bytes first.
+///
+/// A read that waits for its remote holds no heap buffer. It starts in a
+/// buffer on the stack and returns a copy of what that holds; only data that
+/// fills it continues in a chunk of `limit` bytes, which is handed on without
+/// another copy. A chunk filled to less than half is copied to its own size,
+/// so the stack's prefetch queue never keeps more than twice the bytes it
+/// counts.
 pub(super) async fn read_remote_batch<R: AsyncRead + Unpin>(
     reader: &mut R,
-    buffer: &mut [u8],
-) -> (usize, Option<RemoteReadEnd>) {
-    debug_assert!(!buffer.is_empty());
+    limit: usize,
+) -> (Bytes, Option<RemoteReadEnd>) {
+    debug_assert!(limit > 0);
     std::future::poll_fn(|cx| {
-        let mut total = 0;
-        loop {
-            let mut read = tokio::io::ReadBuf::new(&mut buffer[total..]);
-            match std::pin::Pin::new(&mut *reader).poll_read(cx, &mut read) {
-                std::task::Poll::Pending if total == 0 => return std::task::Poll::Pending,
-                std::task::Poll::Pending => return std::task::Poll::Ready((total, None)),
-                std::task::Poll::Ready(Err(_)) => {
-                    return std::task::Poll::Ready((total, Some(RemoteReadEnd::Failed)));
+        let mut probe = [std::mem::MaybeUninit::<u8>::uninit(); TCP_DOWNLOAD_PROBE_SIZE];
+        let mut probe =
+            tokio::io::ReadBuf::uninit(&mut probe[..limit.min(TCP_DOWNLOAD_PROBE_SIZE)]);
+        let mut end = None;
+        while probe.remaining() > 0 {
+            match poll_read_step(reader, cx, &mut probe) {
+                ReadStep::Read => {}
+                ReadStep::Pending if probe.filled().is_empty() => {
+                    return std::task::Poll::Pending;
                 }
-                std::task::Poll::Ready(Ok(())) if read.filled().is_empty() => {
-                    return std::task::Poll::Ready((total, Some(RemoteReadEnd::Closed)));
+                ReadStep::Pending => break,
+                ReadStep::End(read_end) => {
+                    end = Some(read_end);
+                    break;
                 }
-                std::task::Poll::Ready(Ok(())) => total += read.filled().len(),
-            }
-            if total == buffer.len() {
-                return std::task::Poll::Ready((total, None));
             }
         }
+        if probe.remaining() > 0 || end.is_some() || probe.filled().len() == limit {
+            return std::task::Poll::Ready((Bytes::copy_from_slice(probe.filled()), end));
+        }
+
+        let mut chunk = BytesMut::with_capacity(limit);
+        chunk.extend_from_slice(probe.filled());
+        while chunk.len() < limit {
+            let room = limit - chunk.len();
+            let mut spare = tokio::io::ReadBuf::uninit(&mut chunk.spare_capacity_mut()[..room]);
+            let step = poll_read_step(reader, cx, &mut spare);
+            let read = spare.filled().len();
+            // SAFETY: `ReadBuf` reports `read` initialized bytes at the start
+            // of the spare capacity it was given.
+            unsafe { chunk.advance_mut(read) };
+            match step {
+                ReadStep::Read => {}
+                ReadStep::Pending => break,
+                ReadStep::End(read_end) => {
+                    end = Some(read_end);
+                    break;
+                }
+            }
+        }
+        let data = if chunk.len() < limit / 2 {
+            Bytes::copy_from_slice(&chunk)
+        } else {
+            chunk.freeze()
+        };
+        std::task::Poll::Ready((data, end))
     })
     .await
 }

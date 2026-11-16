@@ -71,6 +71,10 @@ const DNS_RCODE_SERVFAIL: u16 = 2;
 pub(crate) const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
 pub(crate) const TUN_CLIENT_IPV4: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 2);
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
+/// Receive buffer a TUN TCP socket starts with, until its bridge takes the
+/// client's data: room for a TLS ClientHello or an HTTP request. The send
+/// buffer starts empty, until the remote's first data.
+const TCP_INITIAL_RX_BUFFER_SIZE: usize = 8 * 1024;
 /// IPv4 and TCP headers without options: the largest MSS a link MTU admits.
 const TCP_IPV4_HEADERS_LEN: usize = 40;
 const TUN_TCP_SNIFF_BUFFER_SIZE: usize = 8 * 1024;
@@ -2756,6 +2760,9 @@ fn write_remote_data_to_sockets(
             socket.abort();
             continue;
         }
+        if !flow.pending_remote.is_empty() {
+            grow_tcp_send_buffer(socket);
+        }
         while socket.can_send() {
             let Some(front) = flow.pending_remote.front_mut() else {
                 break;
@@ -2828,6 +2835,7 @@ fn read_socket_data_to_remote(
             continue;
         };
         let socket = sockets.get_mut::<tcp::Socket>(*handle);
+        grow_tcp_recv_buffer(socket, rx_buffer_size);
         while socket.can_recv() {
             if flow.upload_queue_full() {
                 flow_budget_state
@@ -3977,14 +3985,13 @@ where
     W: AsyncWrite + Unpin,
     T: TcpFirstByteTiming,
 {
-    let mut read_buffer = vec![0; TCP_DOWNLOAD_CHUNK_SIZE];
     let mut pending_download: Option<PendingDownload<'_>> = None;
     let mut remote_read_end = None;
     let mut upload_open = true;
     let mut active_idle_timeout = idle_timeout;
     let upload_policy = context.runtime_policy.tcp_upload;
     let mut upload_batch = BytesMut::new();
-    let mut upload_reservations = Vec::with_capacity(upload_policy.max_batch_messages.min(64));
+    let mut upload_reservations = Vec::new();
     // Keep the current upload batch alive across download/cancellation polls,
     // but return to select after each completed batch. An unbounded upload
     // loop consumes the task's cooperative budget before download can run.
@@ -4077,8 +4084,9 @@ where
                     }
                     idle_sleep.as_mut().reset(TokioInstant::now() + active_idle_timeout);
                 }
-                (read, end) = read_remote_batch(remote_reader, &mut read_buffer), if pending_download.is_none() => {
+                (data, end) = read_remote_batch(remote_reader, TCP_DOWNLOAD_CHUNK_SIZE), if pending_download.is_none() => {
                     remote_read_end = end;
+                    let read = data.len();
                     if read == 0 {
                         continue;
                     }
@@ -4088,11 +4096,7 @@ where
                     timing.record_remote_read(context.tun.as_ref(), target, read);
                     pending_download = Some(Box::pin(await_with_optional_timeout(
                         operation_timeout,
-                        context.send_remote_data(
-                            handle,
-                            generation,
-                            Bytes::copy_from_slice(&read_buffer[..read]),
-                        ),
+                        context.send_remote_data(handle, generation, data),
                     )));
                     idle_sleep
                         .as_mut()
@@ -4569,7 +4573,12 @@ where
     if write_result.is_ok() && !batch.is_empty() {
         write_result = remote_writer.write_all(batch).await;
     }
-    batch.clear();
+    if from_stack.is_empty() {
+        // Nothing waits to be coalesced: an idle flow keeps no copy buffer.
+        *batch = BytesMut::new();
+    } else {
+        batch.clear();
+    }
     let write_duration_ms = elapsed_ms_since(&write_start);
     tun.record_tcp_remote_write_wait(write_duration_ms);
     record_tcp_remote_write_slow_event(
@@ -5418,7 +5427,7 @@ async fn bridge_udp_freedom_flow_loop<T>(
 {
     let client = key.client.into_endpoint();
     let response_source = key.target.into_endpoint();
-    let mut read_buffer = vec![0; BRIDGE_READ_BUFFER_SIZE];
+    let mut masked_buffer = Vec::new();
     let first_payload_len = first_payload.len();
     let first_sent = tokio::select! {
         biased;
@@ -5462,11 +5471,12 @@ async fn bridge_udp_freedom_flow_loop<T>(
                 traffic.record_uplink(payload_len as u64);
                 timing.record_written(payload_len);
             }
-            received = socket.recv_from(&mut read_buffer) => {
-                let Ok((len, source)) = received else {
+            received = socket.recv_datagram::<BRIDGE_READ_BUFFER_SIZE>(&mut masked_buffer) => {
+                let Ok((payload, source)) = received else {
                     context.tun.record_udp_remote_read_error();
                     break;
                 };
+                let len = payload.len();
                 if final_rules::blocks(rules, xray_config::Network::Udp, source) {
                     continue;
                 }
@@ -5478,7 +5488,7 @@ async fn bridge_udp_freedom_flow_loop<T>(
                     .send(StackEvent::UdpDatagram {
                         client,
                         source: response_source,
-                        payload: Bytes::copy_from_slice(&read_buffer[..len]),
+                        payload,
                     })
                     .await
                     .is_err()
@@ -5842,6 +5852,34 @@ fn tcp_rx_buffer_size(mtu: usize) -> usize {
     TCP_BUFFER_SIZE.max(4 * mtu.saturating_sub(TCP_IPV4_HEADERS_LEN))
 }
 
+/// Receive buffer a TUN TCP socket starts with: two segments at least. The
+/// SYN fixes the window scale from the buffer's size, so a socket whose full
+/// buffer needs a scale starts with all of it.
+fn tcp_initial_rx_buffer_size(mtu: usize) -> usize {
+    let full = tcp_rx_buffer_size(mtu);
+    if full > usize::from(u16::MAX) {
+        return full;
+    }
+    TCP_INITIAL_RX_BUFFER_SIZE
+        .max(2 * mtu.saturating_sub(TCP_IPV4_HEADERS_LEN))
+        .min(full)
+}
+
+/// Gives a socket whose bridge reads the client's data its full receive
+/// buffer. The larger window goes out as a window update.
+fn grow_tcp_recv_buffer(socket: &mut tcp::Socket<'static>, size: usize) {
+    if socket.recv_capacity() < size {
+        socket.grow_recv_buffer(vec![0; size]);
+    }
+}
+
+/// Gives a socket its send buffer once the remote has data for it.
+fn grow_tcp_send_buffer(socket: &mut tcp::Socket<'static>) {
+    if socket.send_capacity() < TCP_BUFFER_SIZE {
+        socket.grow_send_buffer(vec![0; TCP_BUFFER_SIZE]);
+    }
+}
+
 fn tcp_listener_capacity_available(
     policy: TcpFlowBudgetPolicy,
     active_flow_count: usize,
@@ -5856,9 +5894,12 @@ fn add_tcp_listener(
     endpoint: IpEndpoint,
     mtu: usize,
 ) {
+    // A socket takes its full buffers only when it carries data: a SYN that
+    // is never completed, or a flow whose outbound does not connect, holds
+    // a few KiB instead of two buffers of 32 KiB.
     let mut socket = tcp::Socket::new(
-        tcp::SocketBuffer::new(vec![0; tcp_rx_buffer_size(mtu)]),
-        tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+        tcp::SocketBuffer::new(vec![0; tcp_initial_rx_buffer_size(mtu)]),
+        tcp::SocketBuffer::new(Vec::new()),
     );
     socket.set_nagle_enabled(false);
     // This socket terminates the host's local TUN link. Keep its existing
@@ -8221,10 +8262,13 @@ mod tests {
         assert_eq!(writer.written.len(), 8 * 32 * 1024);
         assert_eq!(writer.writes, 4);
         assert_eq!(writer.flushes, 1);
+        // Chunks still wait, so the copy buffer is kept for them.
         let capacity = batch.capacity();
+        assert!(capacity > 0);
         assert!(capacity <= 2 * TCP_BRIDGE_COALESCE_BYTES);
 
-        // The next batch reuses the same buffer.
+        // The next batch reuses the same buffer, and releases it once
+        // nothing is left to coalesce.
         write_stack_batch_to_remote(
             &mut writer,
             &target,
@@ -8240,7 +8284,7 @@ mod tests {
         .await
         .unwrap();
         assert!(rx.is_empty());
-        assert_eq!(batch.capacity(), capacity);
+        assert_eq!(batch.capacity(), 0, "an idle flow keeps no copy buffer");
         assert_eq!(writer.written.len(), 13 * 32 * 1024);
     }
 

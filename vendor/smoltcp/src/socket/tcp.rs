@@ -6,6 +6,7 @@ use core::fmt::Display;
 #[cfg(feature = "async")]
 use core::task::Waker;
 use core::{fmt, mem};
+use managed::ManagedSlice;
 
 use crate::phy::PacketMeta;
 #[cfg(feature = "async")]
@@ -888,6 +889,45 @@ impl<'a> Socket<'a> {
         let last_win_adjusted = last_ack + last_win - next_ack;
 
         Some(u16::try_from(last_win_adjusted >> self.remote_win_shift).unwrap_or(u16::MAX))
+    }
+
+    /// Replace the receive buffer with `storage`, keeping what the buffer holds,
+    /// the out-of-order data waiting for reassembly included. Returns `false`,
+    /// changing nothing, when `storage` is smaller than the current buffer or
+    /// larger than 1 GiB.
+    ///
+    /// A socket that has not taken a SYN yet derives its window scale from the
+    /// new capacity, as [`Socket::new`] does. Later the scale is fixed, and a
+    /// window too large for it is advertised as the largest one it expresses.
+    /// A grown window is announced like any window update.
+    pub fn grow_recv_buffer<S>(&mut self, storage: S) -> bool
+    where
+        S: Into<ManagedSlice<'a, u8>>,
+    {
+        let storage = storage.into();
+        #[cfg(not(target_pointer_width = "16"))]
+        if storage.len() > (1 << 30) {
+            return false;
+        }
+        if !self.rx_buffer.grow(storage) {
+            return false;
+        }
+        if matches!(self.state, State::Closed | State::Listen) {
+            let rx_cap_log2 =
+                mem::size_of::<usize>() * 8 - self.rx_buffer.capacity().leading_zeros() as usize;
+            self.remote_win_shift = rx_cap_log2.saturating_sub(16) as u8;
+        }
+        true
+    }
+
+    /// Replace the transmit buffer with `storage`, keeping what the buffer
+    /// holds, sent or not. Returns `false`, changing nothing, when `storage`
+    /// is smaller than the current buffer.
+    pub fn grow_send_buffer<S>(&mut self, storage: S) -> bool
+    where
+        S: Into<ManagedSlice<'a, u8>>,
+    {
+        self.tx_buffer.grow(storage)
     }
 
     /// Set the timeout duration.
@@ -4893,6 +4933,97 @@ mod test {
                 assert_eq!(reply.window_len, 64);
             });
         }
+    }
+
+    #[test]
+    fn test_grow_recv_buffer_keeps_reassembly_and_opens_the_window() {
+        let mut s = socket_established_with_buffer_sizes(64, 16);
+        let put = |s: &mut TestSocket, offset, payload| {
+            send(
+                s,
+                Instant::ZERO,
+                &TcpRepr {
+                    seq_number: REMOTE_SEQ + 1 + offset,
+                    ack_number: Some(LOCAL_SEQ + 1),
+                    payload,
+                    ..SEND_TEMPL
+                },
+            );
+        };
+        put(&mut s, 0, b"abcdef");
+        put(&mut s, 12, b"mno");
+        assert!(!s.assembler.is_empty());
+        s.remote_last_win = s.scaled_window();
+        assert_eq!(s.remote_last_win, 10);
+
+        assert!(!s.grow_recv_buffer(vec![0; 8]));
+        assert_eq!(s.recv_capacity(), 16);
+        assert!(s.grow_recv_buffer(vec![0; 64]));
+        assert_eq!(s.recv_capacity(), 64);
+        assert_eq!(s.remote_win_shift, 0);
+        assert_eq!(s.scaled_window(), 58);
+        assert!(s.window_to_update(), "a grown window is announced");
+
+        put(&mut s, 6, b"ghijkl");
+        let mut reassembled = [0; 15];
+        assert_eq!(s.recv_slice(&mut reassembled).unwrap(), 15);
+        assert_eq!(&reassembled, b"abcdefghijklmno");
+        assert!(s.assembler.is_empty());
+        assert_eq!(s.scaled_window(), 64);
+    }
+
+    #[test]
+    fn test_grow_recv_buffer_window_scale() {
+        // Before a SYN the scale follows the new capacity, as in `new`.
+        let mut s = socket_with_buffer_sizes(64, 64);
+        assert!(s.grow_recv_buffer(vec![0; 1 << 18]));
+        let fresh = Socket::new(
+            SocketBuffer::new(vec![0; 1 << 18]),
+            SocketBuffer::new(vec![0; 64]),
+        );
+        assert_eq!(s.remote_win_shift, fresh.remote_win_shift);
+        assert!(s.remote_win_shift > 0);
+
+        // After it the scale stays, and the window is clamped to what it
+        // expresses.
+        let mut s = socket_established_with_buffer_sizes(64, 64);
+        assert!(s.grow_recv_buffer(vec![0; 1 << 18]));
+        assert_eq!(s.remote_win_shift, 0);
+        assert_eq!(s.scaled_window(), u16::MAX);
+    }
+
+    #[test]
+    fn test_grow_send_buffer_keeps_unacknowledged_data() {
+        let mut s = socket_established_with_buffer_sizes(0, 64);
+        assert!(!s.can_send());
+        assert_eq!(s.send_slice(b"abcdef"), Ok(0));
+        assert!(s.grow_send_buffer(vec![0; 8]));
+        assert_eq!(s.send_slice(b"abcdef"), Ok(6));
+        recv!(
+            s,
+            [TcpRepr {
+                seq_number: LOCAL_SEQ + 1,
+                ack_number: Some(REMOTE_SEQ + 1),
+                payload: &b"abcdef"[..],
+                ..RECV_TEMPL
+            }]
+        );
+        assert!(!s.grow_send_buffer(vec![0; 4]));
+        // The unacknowledged bytes move with the buffer and are sent again
+        // from it.
+        assert!(s.grow_send_buffer(vec![0; 64]));
+        assert_eq!(s.send_capacity(), 64);
+        assert_eq!(s.send_queue(), 6);
+        recv!(
+            s,
+            time 1000,
+            [TcpRepr {
+                seq_number: LOCAL_SEQ + 1,
+                ack_number: Some(REMOTE_SEQ + 1),
+                payload: &b"abcdef"[..],
+                ..RECV_TEMPL
+            }]
+        );
     }
 
     #[test]

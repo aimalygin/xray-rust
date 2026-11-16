@@ -372,7 +372,8 @@ by the MTU; the adapters do this from `tunMtu`.
 
 What grows with the MTU:
 
-- each TUN TCP socket's receive buffer is `max(32 KiB, 4 × MSS)`, because
+- each TUN TCP socket's receive buffer is `max(32 KiB, 4 × MSS)` once its
+  flow carries data (it starts at `max(8 KiB, 2 × MSS)`), because
   Linux, Android and Darwin senders only put whole segments into the window.
   32 KiB already covers MTUs up to 8232; at 9000 it is 35 KiB, at most
   768 KiB more on the `Mobile` profile (256 flows) and 1.1 MiB on `MobilePlus`;

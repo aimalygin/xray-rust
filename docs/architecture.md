@@ -156,6 +156,22 @@ runtime profile:
 A datagram over a limit is dropped, as one that finds its queue full, and
 counted in `udp_channel_dropped_packets`; the flow stays up.
 
+A TCP flow holds buffers only for what it carries. Its smoltcp socket starts
+with an 8 KiB receive buffer (two segments at least) and no send buffer, so a
+SYN that is never completed or a flow whose outbound is still connecting
+costs a few KiB; the receive buffer grows to its full size when the flow's
+bridge starts reading the client's data, the send buffer to 32 KiB with the
+remote's first bytes. The bridge reads the remote into a buffer on the stack
+and moves to a heap chunk of up to 64 KiB only when more is ready; that chunk
+goes to the stack without another copy, and a chunk filled to less than half
+is copied to its own size, so the bounded prefetch queue never holds more
+than twice the bytes it counts. A flow waiting for its remote therefore keeps
+no read buffer, and the upload side drops its coalescing buffer once nothing
+waits to be written. A freedom UDP flow reads its replies through the stack
+as well. With these an idle TUN TCP flow holds about 80 KiB of heap, 64 KiB
+of it the socket's two buffers, against about 146 KiB before
+(`crates/xray-core-rs/tests/tun_flow_memory.rs` measures it).
+
 ### DNS
 
 DNS is split at the wire-transport boundary instead of being owned by TUN.
