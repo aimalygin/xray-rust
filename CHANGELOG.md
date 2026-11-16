@@ -10,6 +10,11 @@ long-term supported release series.
 
 ## Unreleased
 
+## 0.10.1 - 2026-11-16
+
+Release candidate preparation; publication and exact-candidate release
+qualification are pending.
+
 - A Hysteria connect attempt to the last of the server's addresses, the only
   one for a server with one address, gets what is left of the dial's ten
   seconds, at most eight, where every attempt had three. Quinn's first probe
