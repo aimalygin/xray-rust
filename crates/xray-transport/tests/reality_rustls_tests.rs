@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, env, fmt::Write as _, fs, path::Path, process::Command};
+use std::{env, fmt::Write as _, fs, path::Path, process::Command};
 
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519StaticSecret};
 use xray_transport::{
@@ -75,46 +75,6 @@ struct KeyShareShape {
 struct KeySharePayload {
     group: u16,
     key_exchange: Vec<u8>,
-}
-
-/// Applies the one deliberate divergence from the uTLS shape oracle: suites
-/// this build cannot negotiate are removed from the wire. BoringSSL padding
-/// absorbs the shorter cipher vector when the profile carries it; otherwise
-/// the handshake itself becomes shorter.
-fn apply_provider_cipher_filter(shape: &mut ClientHelloShape) {
-    let offers_tls13 = shape
-        .supported_versions
-        .iter()
-        .any(|version| version == "0x0304");
-    let supported = rustls::crypto::aws_lc_rs::default_provider()
-        .cipher_suites
-        .iter()
-        .filter(|suite| {
-            suite.version().version == rustls::ProtocolVersion::TLSv1_2
-                || (offers_tls13 && suite.version().version == rustls::ProtocolVersion::TLSv1_3)
-        })
-        .map(|suite| format!("0x{:04x}", u16::from(suite.suite())))
-        .collect::<BTreeSet<_>>();
-    let before = shape.cipher_suites.len();
-    shape
-        .cipher_suites
-        .retain(|suite| suite == "GREASE" || supported.contains(suite));
-    let removed_bytes = (before - shape.cipher_suites.len()) * 2;
-    if removed_bytes == 0 {
-        return;
-    }
-
-    if let Some(padding_length) = shape.padding_length.as_mut() {
-        *padding_length += removed_bytes;
-        shape
-            .extensions
-            .iter_mut()
-            .find(|extension| extension.r#type == "0x0015")
-            .expect("a recorded padding length must have a padding extension")
-            .length += removed_bytes;
-    } else {
-        shape.handshake_length -= removed_bytes;
-    }
 }
 
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, Eq)]
@@ -333,10 +293,8 @@ fn reality_provider_rejects_profiles_without_x25519_before_dialing() {
 
 #[test]
 fn rustls_reality_provider_matches_utls_hellochrome_100_shape_oracle() {
-    let mut expected: ClientHelloShape =
-        serde_json::from_str(CLIENTHELLO_SHAPE_HELLOCHROME_100_JSON)
-            .expect("uTLS ClientHello shape fixture should decode");
-    apply_provider_cipher_filter(&mut expected);
+    let expected: ClientHelloShape = serde_json::from_str(CLIENTHELLO_SHAPE_HELLOCHROME_100_JSON)
+        .expect("uTLS ClientHello shape fixture should decode");
     let provider = RustlsRealityTlsSessionProvider::new();
 
     let session = provider
@@ -364,10 +322,8 @@ fn rustls_reality_provider_matches_utls_hellochrome_100_shape_oracle() {
 /// on those weights, so the REALITY hello must match it field for field.
 #[test]
 fn rustls_reality_provider_matches_utls_randomizednoalpn_shape_oracle() {
-    let mut expected: ClientHelloShape =
-        serde_json::from_str(CLIENTHELLO_SHAPE_RANDOMIZEDNOALPN_JSON)
-            .expect("uTLS ClientHello shape fixture should decode");
-    apply_provider_cipher_filter(&mut expected);
+    let expected: ClientHelloShape = serde_json::from_str(CLIENTHELLO_SHAPE_RANDOMIZEDNOALPN_JSON)
+        .expect("uTLS ClientHello shape fixture should decode");
     let provider = RustlsRealityTlsSessionProvider::new();
 
     let session = provider
@@ -403,11 +359,10 @@ fn rustls_reality_provider_matches_utls_xray_fingerprints_in_order() {
             continue;
         }
 
-        let mut expected = without_drawn_order(
+        let expected = without_drawn_order(
             fingerprint,
             utls_client_hello_shape_from_oracle(fingerprint),
         );
-        apply_provider_cipher_filter(&mut expected);
         let actual = rustls_client_hello_shape(&provider, fingerprint, &expected)
             .unwrap_or_else(|error| panic!("{fingerprint}: {error}"));
 
@@ -663,7 +618,7 @@ fn rustls_reality_provider_reports_utls_xray_fingerprint_parity() {
     );
     assert!(
         results.iter().all(|result| result.status() != "mismatch"),
-        "report includes a fixed fingerprint whose provider-filtered shape differs from uTLS"
+        "report includes a fixed fingerprint whose shape differs from uTLS"
     );
 }
 
@@ -773,7 +728,9 @@ fn decode_hex(input: &str) -> Result<Vec<u8>, String> {
 
 /// Compares a hello with the oracle's after taking out what uTLS draws per
 /// connection: GREASE values, and for a profile that shuffles, the extension
-/// order (`client_hello_draws`). Everything else stays byte-exact.
+/// order (`client_hello_draws`). Everything else stays byte-exact: the whole
+/// cipher suite vector of the profile, the suites rustls only advertises
+/// included, and the padding BoringSSL's rule gives a hello of uTLS's length.
 fn assert_masked_client_hello_eq(fingerprint: &str, actual: &[u8], expected: &[u8]) {
     let shuffles = client_hello_draws::shuffles(fingerprint);
     let actual = &client_hello_draws::canonical_client_hello(actual, shuffles);
@@ -782,30 +739,10 @@ fn assert_masked_client_hello_eq(fingerprint: &str, actual: &[u8], expected: &[u
         .unwrap_or_else(|error| panic!("{fingerprint}: parse actual cipher suites: {error}"));
     let expected_ciphers = raw_client_hello_cipher_suites(expected)
         .unwrap_or_else(|error| panic!("{fingerprint}: parse expected cipher suites: {error}"));
-    let expected_offers_tls13 = raw_client_hello_offers_tls13(expected)
-        .unwrap_or_else(|error| panic!("{fingerprint}: parse expected TLS versions: {error}"));
-    let supported = rustls::crypto::aws_lc_rs::default_provider()
-        .cipher_suites
-        .iter()
-        .filter(|suite| {
-            suite.version().version == rustls::ProtocolVersion::TLSv1_2
-                || (expected_offers_tls13
-                    && suite.version().version == rustls::ProtocolVersion::TLSv1_3)
-        })
-        .map(|suite| u16::from(suite.suite()))
-        .collect::<BTreeSet<_>>();
-    let removed_cipher_bytes = expected_ciphers
-        .len()
-        .checked_sub(actual_ciphers.len())
-        .and_then(|removed| removed.checked_mul(2))
-        .expect("provider filtering cannot add cipher suites");
-    let expected_ciphers = expected_ciphers
-        .into_iter()
-        .filter(|suite| is_grease(*suite) || supported.contains(suite))
-        .collect::<Vec<_>>();
     assert_eq!(
-        actual_ciphers, expected_ciphers,
-        "{fingerprint}: provider-filtered cipher suite vector differs from the uTLS profile"
+        format_u16s(&actual_ciphers),
+        format_u16s(&expected_ciphers),
+        "{fingerprint}: cipher suite vector differs from the uTLS profile"
     );
 
     let actual_padding = raw_client_hello_padding(actual)
@@ -813,31 +750,15 @@ fn assert_masked_client_hello_eq(fingerprint: &str, actual: &[u8], expected: &[u
     let expected_padding = raw_client_hello_padding(expected)
         .unwrap_or_else(|error| panic!("{fingerprint}: parse expected padding: {error}"));
     assert_eq!(
-        actual_padding.is_some(),
-        expected_padding.is_some(),
-        "{fingerprint}: padding extension presence differs from uTLS"
+        actual_padding.map(<[u8]>::len),
+        expected_padding.map(<[u8]>::len),
+        "{fingerprint}: padding extension differs from uTLS"
     );
-    if let (Some(actual_padding), Some(expected_padding)) = (actual_padding, expected_padding) {
-        assert!(
-            actual_padding.iter().all(|byte| *byte == 0),
-            "{fingerprint}: provider padding contains a non-zero byte"
-        );
-        assert!(
-            expected_padding.iter().all(|byte| *byte == 0),
-            "{fingerprint}: committed uTLS padding contains a non-zero byte"
-        );
-        assert_eq!(
-            actual_padding.len(),
-            expected_padding.len() + removed_cipher_bytes,
-            "{fingerprint}: padding did not absorb exactly the filtered cipher bytes"
-        );
-    }
 
-    let actual_masked = canonical_client_hello_for_raw_oracle(actual)
-        .unwrap_or_else(|error| panic!("{fingerprint}: canonicalize actual ClientHello: {error}"));
-    let expected_masked = canonical_client_hello_for_raw_oracle(expected).unwrap_or_else(|error| {
-        panic!("{fingerprint}: canonicalize expected ClientHello: {error}")
-    });
+    let actual_masked = masked_client_hello_for_raw_oracle(actual)
+        .unwrap_or_else(|error| panic!("{fingerprint}: mask actual ClientHello: {error}"));
+    let expected_masked = masked_client_hello_for_raw_oracle(expected)
+        .unwrap_or_else(|error| panic!("{fingerprint}: mask expected ClientHello: {error}"));
 
     if actual_masked == expected_masked {
         return;
@@ -864,106 +785,6 @@ fn assert_masked_client_hello_eq(fingerprint: &str, actual: &[u8], expected: &[u
     panic!("{fingerprint}: masked raw ClientHello differs: {difference}");
 }
 
-/// Removes the two byte ranges whose lengths intentionally change when the
-/// local rustls provider cannot negotiate every suite in a uTLS profile.
-///
-/// The cipher vector is asserted independently above. BoringSSL-style
-/// profiles absorb its shorter wire length by growing their all-zero padding
-/// payload. Padding presence, position, header and exact growth are asserted
-/// independently too; only its already-checked payload is removed here.
-/// Length fields are rewritten before removal, leaving a canonical
-/// ClientHello in which every other byte, extension, and ordering decision
-/// remains byte-exact.
-fn canonical_client_hello_for_raw_oracle(raw: &[u8]) -> Result<Vec<u8>, String> {
-    let mut canonical = masked_client_hello_for_raw_oracle(raw)?;
-    let mut cursor = ByteCursor::new(raw);
-    let handshake_type = cursor.read_u8("missing handshake type")?;
-    if handshake_type != 0x01 {
-        return Err(format!(
-            "not a ClientHello handshake: 0x{handshake_type:02x}"
-        ));
-    }
-    cursor.read_u24("missing handshake length")?;
-    cursor.read_u16("missing legacy version")?;
-    cursor.take(32, "missing ClientHello random")?;
-    let session_id_len = cursor.read_u8("missing legacy session id length")?;
-    cursor.take(session_id_len, "truncated legacy session id")?;
-
-    let cipher_length_offset = cursor.offset;
-    let cipher_bytes = cursor.read_u16("missing cipher suites length")?;
-    if cipher_bytes % 2 != 0 {
-        return Err(format!("cipher suites length is odd: {cipher_bytes}"));
-    }
-    let cipher_data_offset = cursor.offset;
-    cursor.take(cipher_bytes, "truncated cipher suites")?;
-    let cipher_data_end = cursor.offset;
-
-    let compression_methods_len = cursor.read_u8("missing compression methods length")?;
-    cursor.take(compression_methods_len, "truncated compression methods")?;
-    let extensions_length_offset = cursor.offset;
-    let extensions_len = cursor.read_u16("missing extensions length")?;
-    let extensions_end = cursor.checked_end(extensions_len, "truncated extensions")?;
-    if extensions_end != raw.len() {
-        return Err(format!(
-            "extensions length mismatch: ended at {extensions_end} expected raw length {}",
-            raw.len()
-        ));
-    }
-
-    let mut padding = None;
-    while cursor.offset < extensions_end {
-        let extension_type = cursor.read_u16("missing extension type")? as u16;
-        let extension_length_offset = cursor.offset;
-        let extension_len = cursor.read_u16("missing extension length")?;
-        let extension_data_offset = cursor.offset;
-        cursor.take(extension_len, "truncated extension data")?;
-        if extension_type == 0x0015
-            && padding
-                .replace((
-                    extension_length_offset,
-                    extension_data_offset,
-                    cursor.offset,
-                ))
-                .is_some()
-        {
-            return Err("ClientHello contains more than one padding extension".to_owned());
-        }
-    }
-
-    let padding_bytes = padding.map_or(0, |(_, start, end)| end - start);
-    let canonical_handshake_len = raw
-        .len()
-        .checked_sub(4 + cipher_bytes + padding_bytes)
-        .ok_or_else(|| "canonical ClientHello length underflow".to_owned())?;
-    let canonical_extensions_len = extensions_len
-        .checked_sub(padding_bytes)
-        .ok_or_else(|| "canonical extensions length underflow".to_owned())?;
-    if canonical_handshake_len > 0x00ff_ffff || canonical_extensions_len > u16::MAX as usize {
-        return Err("canonical ClientHello length does not fit its wire field".to_owned());
-    }
-
-    canonical[1] = ((canonical_handshake_len >> 16) & 0xff) as u8;
-    canonical[2] = ((canonical_handshake_len >> 8) & 0xff) as u8;
-    canonical[3] = (canonical_handshake_len & 0xff) as u8;
-    canonical[cipher_length_offset..cipher_length_offset + 2].copy_from_slice(&[0, 0]);
-    canonical[extensions_length_offset..extensions_length_offset + 2]
-        .copy_from_slice(&(canonical_extensions_len as u16).to_be_bytes());
-    if let Some((padding_length_offset, _, _)) = padding {
-        canonical[padding_length_offset..padding_length_offset + 2].copy_from_slice(&[0, 0]);
-    }
-
-    let mut ranges = vec![(cipher_data_offset, cipher_data_end)];
-    if let Some((_, padding_start, padding_end)) = padding {
-        ranges.push((padding_start, padding_end));
-    }
-    ranges.sort_unstable_by_key(|(start, _)| *start);
-    for (start, end) in ranges.into_iter().rev() {
-        canonical.drain(start..end);
-    }
-
-    Ok(canonical)
-}
-
 fn raw_client_hello_cipher_suites(raw: &[u8]) -> Result<Vec<u16>, String> {
     let mut cursor = ByteCursor::new(raw);
     let handshake_type = cursor.read_u8("missing handshake type")?;
@@ -978,22 +799,6 @@ fn raw_client_hello_cipher_suites(raw: &[u8]) -> Result<Vec<u16>, String> {
     let session_id_len = cursor.read_u8("missing legacy session id length")?;
     cursor.take(session_id_len, "truncated legacy session id")?;
     cursor.read_u16_list("cipher suites")
-}
-
-fn raw_client_hello_offers_tls13(raw: &[u8]) -> Result<bool, String> {
-    let Some(versions) = raw_client_hello_extension(raw, 0x002b)? else {
-        return Ok(false);
-    };
-    let Some((&listed_len, listed)) = versions.split_first() else {
-        return Err("supported_versions extension is empty".to_owned());
-    };
-    if listed_len as usize != listed.len() || listed.len() % 2 != 0 {
-        return Err(format!(
-            "supported_versions list length is invalid: header={listed_len} payload={}",
-            listed.len()
-        ));
-    }
-    Ok(listed.chunks_exact(2).any(|pair| pair == [0x03, 0x04]))
 }
 
 fn raw_client_hello_padding(raw: &[u8]) -> Result<Option<&[u8]>, String> {
@@ -1320,11 +1125,8 @@ fn collect_fingerprint_parity_results() -> Vec<FingerprintParityResult> {
     xray_utls::XRAY_UTLS_FINGERPRINTS
         .iter()
         .map(|&fingerprint| {
-            let expected = try_utls_client_hello_shape_from_oracle(fingerprint).map(|shape| {
-                let mut shape = without_drawn_order(fingerprint, shape);
-                apply_provider_cipher_filter(&mut shape);
-                shape
-            });
+            let expected = try_utls_client_hello_shape_from_oracle(fingerprint)
+                .map(|shape| without_drawn_order(fingerprint, shape));
             let actual = if DRAWN_PER_PROCESS_FINGERPRINTS.contains(&fingerprint) {
                 Err(
                     "skipped: resolved from a per-process draw over Xray's ModernFingerprints, so it has no fixed shape to compare"
@@ -1484,7 +1286,7 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     .unwrap();
     writeln!(
         report,
-        "- Use this report as the current wire-parity oracle after applying xray-rust's deliberate provider-capability cipher filter to the uTLS expectation. Every other tracked field remains the shaped-rustls byte-shape oracle: advertised versions/groups, real key shares, exact extension payloads, duplicate signature algorithms, ALPS, ECH, and GREASE."
+        "- Use this report as the current wire-parity oracle against the unmodified uTLS expectation. Every tracked field is the shaped-rustls byte-shape oracle: the whole advertised cipher suite list (suites rustls does not implement included), advertised versions/groups, real key shares, exact extension payloads, duplicate signature algorithms, ALPS, ECH, padding, and GREASE."
     )
     .unwrap();
     writeln!(
@@ -1499,7 +1301,7 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     .unwrap();
     writeln!(
         report,
-        "- Acceptance criterion: rerun the reproduce command from this report and get all REALITY-capable provider-filtered fingerprints as `match`, `0` mismatches, `0` Go uTLS oracle errors, `0` Rust generation errors, and keep the known TLS1.2-only rows as `not-reality-capable`.\n"
+        "- Acceptance criterion: rerun the reproduce command from this report and get all REALITY-capable fingerprints as `match`, `0` mismatches, `0` Go uTLS oracle errors, `0` Rust generation errors, and keep the known TLS1.2-only rows as `not-reality-capable`.\n"
     )
     .unwrap();
     writeln!(report, "## Current Findings\n").unwrap();
@@ -1510,7 +1312,7 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     .unwrap();
     writeln!(
         report,
-        "- All REALITY-capable xray-core/uTLS fingerprints currently match the provider-filtered Go uTLS byte-shape fields tracked by this report."
+        "- All REALITY-capable xray-core/uTLS fingerprints currently match the Go uTLS byte-shape fields tracked by this report, cipher suite list and padding included: xray-rust advertises each profile's full uTLS cipher suite list through shaped-rustls' advertise-only cipher suites, and negotiates only the suites its provider implements."
     )
     .unwrap();
     writeln!(

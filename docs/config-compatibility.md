@@ -3325,14 +3325,28 @@ extensions, padding and pre_shared_key staying in place. Other profiles keep
 their fixed order. The Chrome profiles draw their ECH GREASE payload length
 per hello too (see [ECH GREASE](#ech-grease)).
 
+Every profile advertises its whole uTLS cipher suite list, in uTLS's order
+and with the GREASE value where uTLS puts it, on TLS and REALITY alike. That
+includes the CBC and RSA key exchange suites rustls does not implement:
+Chrome's `0xc013`, `0xc014`, `0x009c`, `0x009d`, `0x002f` and `0x0035`, so
+`chrome` sends the fifteen suites Chrome sends, Firefox's `0xc00a` and
+`0xc009` on top of those, for seventeen, and Safari's and iOS's longer tails.
+Up to 0.10.0 those suites were left off the wire, which gave every profile a
+cipher list, and so a JA3/JA4, that no browser sends. They are advertised
+only: the handshake negotiates nothing but a suite this build implements, and
+a server that picks one of the others fails it with a TLS alert and the error
+`SelectedUnofferedCipherSuite`, where Xray-core would complete it. A server
+that prefers a CBC suite over every AEAD one Chrome offers is rare, and real
+Chrome reaches it on the CBC suite. A profile offering no suite this build
+implements is refused before the handshake (`hello360_7_5`, below).
+
 A profile with BoringSSL's padding extension pads as BoringSSL does, and uTLS
 with it (`BoringPaddingStyle`): a hello of 256 to 511 bytes before padding is
 padded to 512, by a single byte when only the extension's header would fit
 below 512, and any other hello goes out without the extension. What decides
 is the length uTLS's own hello has: shaped-rustls measures each ClientHello as
-it encodes it and adds what uTLS's hello has on top -- the suites this build
-cannot negotiate, less the `supported_versions` rustls adds to a TLS-1.2-era
-hello -- so a padded hello is exactly as long as uTLS's.
+it encodes it, less the `supported_versions` rustls adds to a TLS-1.2-era
+hello, so a padded hello is exactly as long as uTLS's, byte for byte.
 
 A HelloRetryRequest is answered as uTLS answers it. A retry that names a
 group gets that group's key share alone, without the GREASE share and any

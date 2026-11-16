@@ -29,6 +29,22 @@ long-term supported release series.
   task, and a system DNS lookup in `getaddrinfo` cannot be cancelled, so a
   host stopping or restarting its tunnel could hang until the lookup gave up.
   Such a lookup now finishes on its own thread after the call returns.
+- Every TLS and REALITY fingerprint now advertises its profile's whole uTLS
+  cipher suite list, in uTLS's order with GREASE where uTLS puts it. The
+  suites rustls does not implement, the CBC and RSA key exchange ones, were
+  left off the wire, so `chrome` sent nine suites where Chrome sends fifteen
+  (without `0xc013`, `0xc014`, `0x009c`, `0x009d`, `0x002f` and `0x0035`),
+  `firefox` nine where Firefox sends seventeen (also without `0xc009` and
+  `0xc00a`), and `safari` nine of twenty: a JA3/JA4 no browser produces,
+  which a DPI can pick out. BoringSSL padding grew to make up the missing
+  bytes, so padded hellos had the right length and the wrong layout. The
+  suites go out through shaped-rustls' advertise-only cipher suites, so
+  negotiation still takes only a suite rustls implements: a server that picks
+  one of the others fails the handshake with `SelectedUnofferedCipherSuite`,
+  where Xray-core would complete it on that suite; a server that prefers an
+  AEAD suite is unaffected. Padding is now uTLS's to the byte, and the oracle
+  tests compare against the unfiltered uTLS hellos instead of filtering the
+  reference the same way.
 
 ## 0.10.0 - 2026-11-15
 
