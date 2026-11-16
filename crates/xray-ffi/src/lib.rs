@@ -3790,6 +3790,10 @@ pub unsafe extern "C" fn xray_core_free(handle: *mut XrayCoreHandle) {
     }));
 }
 
+/// How long `xray_core_free` waits for work left on the handle's runtime
+/// once the core has stopped.
+const RUNTIME_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(500);
+
 unsafe fn xray_core_free_inner(handle: *mut XrayCoreHandle) {
     if !handle.is_null() {
         let mut handle = unsafe { Box::from_raw(handle) };
@@ -3802,6 +3806,15 @@ unsafe fn xray_core_free_inner(handle: *mut XrayCoreHandle) {
         if let Some(config) = handle.tun_fd_config.take() {
             config.close_if_owned();
         }
+        // The core goes before its runtime, as in the handle's field order.
+        drop(handle.core.take());
+        // Dropping the runtime would wait for every blocking task, and a
+        // system DNS lookup in `getaddrinfo` cannot be cancelled: a host
+        // stopping or restarting its tunnel hung until the lookup gave up.
+        // The workers still drop their tasks within the timeout; a blocking
+        // task past it finishes on its own thread, and none calls the host.
+        let XrayCoreHandle { runtime, .. } = *handle;
+        runtime.shutdown_timeout(RUNTIME_SHUTDOWN_TIMEOUT);
     }
 }
 
@@ -4428,7 +4441,42 @@ mod tests {
         xray_core_load_config_json, xray_core_new, xray_core_replace_routing_policy_json,
         xray_core_routing_policy_snapshot_json, xray_core_set_dns_bootstrap_mode, DnsBootstrapMode,
         OutStrArgs, OutStrBuf, XrayCoreHandle, XrayDnsBootstrapMode, XrayError, XrayStatus,
+        RUNTIME_SHUTDOWN_TIMEOUT,
     };
+
+    /// A system DNS lookup runs `getaddrinfo` on the runtime's blocking
+    /// pool, where nothing can cancel it. Freeing the handle gives such work
+    /// a moment and then returns, where dropping the runtime waited for it.
+    #[test]
+    fn free_does_not_wait_for_a_blocking_lookup() {
+        use std::sync::mpsc;
+        use std::time::{Duration, Instant};
+
+        let (entered_tx, entered) = mpsc::channel();
+        let (release, released) = mpsc::channel::<()>();
+        unsafe {
+            let mut error = ptr::null_mut();
+            let handle = xray_core_new(&mut error);
+            assert!(!handle.is_null());
+            let config = CString::new(r#"{"outbounds":[{"protocol":"freedom"}]}"#).unwrap();
+            assert_eq!(
+                xray_core_load_config_json(handle, config.as_ptr(), &mut error),
+                XrayStatus::Ok
+            );
+            let lookup = (*handle).runtime.spawn_blocking(move || {
+                entered_tx.send(()).unwrap();
+                let _ = released.recv_timeout(Duration::from_secs(30));
+            });
+            entered.recv().unwrap();
+            let start = Instant::now();
+            xray_core_free(handle);
+            let elapsed = start.elapsed();
+            let _ = release.send(());
+            drop(lookup);
+            assert!(elapsed >= RUNTIME_SHUTDOWN_TIMEOUT, "{elapsed:?}");
+            assert!(elapsed < Duration::from_secs(5), "{elapsed:?}");
+        }
+    }
 
     #[test]
     fn tun_mtu_is_validated_atomically_and_frozen_at_config_load() {

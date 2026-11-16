@@ -24,6 +24,11 @@ long-term supported release series.
   UDP and the SOCKS and HTTP inbounds already sniffed every flow. `routeOnly`,
   `domainsExcluded`, `ipsExcluded` and the 250 ms wait for the first bytes
   apply as before, and a fake IP the fake DNS knows keeps its domain.
+- `xray_core_free` waits at most 500 ms for work left on the handle's runtime
+  once the core has stopped. Dropping the runtime waited for every blocking
+  task, and a system DNS lookup in `getaddrinfo` cannot be cancelled, so a
+  host stopping or restarting its tunnel could hang until the lookup gave up.
+  Such a lookup now finishes on its own thread after the call returns.
 
 ## 0.10.0 - 2026-11-15
 
