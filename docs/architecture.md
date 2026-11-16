@@ -172,6 +172,11 @@ as well. With these an idle TUN TCP flow holds about 80 KiB of heap, 64 KiB
 of it the socket's two buffers, against about 146 KiB before
 (`crates/xray-core-rs/tests/tun_flow_memory.rs` measures it).
 
+The smoltcp device computes IPv4 and TCP checksums for what it sends but does
+not verify them on what the host writes: the host's own stack computed them,
+and `valid_tun_ip_packet` checks each IPv4 header checksum before a packet
+reaches smoltcp. UDP is parsed outside smoltcp and keeps its check.
+
 ### DNS
 
 DNS is split at the wire-transport boundary instead of being owned by TUN.

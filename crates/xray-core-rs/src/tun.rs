@@ -15,7 +15,9 @@ use smoltcp::iface::{
     Config as InterfaceConfig, Interface, PollIngressSingleResult, PollResult, SocketHandle,
     SocketSet,
 };
-use smoltcp::phy::{ChecksumCapabilities, Device, DeviceCapabilities, Medium, RxToken, TxToken};
+use smoltcp::phy::{
+    Checksum, ChecksumCapabilities, Device, DeviceCapabilities, Medium, RxToken, TxToken,
+};
 use smoltcp::socket::tcp;
 use smoltcp::time::Instant;
 use smoltcp::wire::{HardwareAddress, IpAddress, IpEndpoint};
@@ -6654,9 +6656,21 @@ impl Device for PacketDevice {
         capabilities.medium = Medium::Ip;
         capabilities.max_transmission_unit = self.mtu;
         capabilities.max_burst_size = None;
-        capabilities.checksum = ChecksumCapabilities::default();
+        capabilities.checksum = packet_device_checksums();
         capabilities
     }
+}
+
+/// Checksums the TUN stack computes for what it sends and does not verify
+/// again for what it receives. Packets come from the host's own network
+/// stack, which computed them, through memory; `valid_tun_ip_packet` has
+/// checked the IPv4 header checksum before a packet reaches the stack, and
+/// verifying TCP's again would cost a pass over every uploaded byte.
+fn packet_device_checksums() -> ChecksumCapabilities {
+    let mut checksums = ChecksumCapabilities::default();
+    checksums.ipv4 = Checksum::Tx;
+    checksums.tcp = Checksum::Tx;
+    checksums
 }
 
 #[derive(Debug)]
@@ -7445,6 +7459,38 @@ mod tests {
         let (rx, _) = device.receive(Instant::from_millis(0)).unwrap();
 
         rx.consume(|packet| assert_eq!(packet, &[0x45, 0x00, 0x00, 0x14]));
+    }
+
+    #[test]
+    fn tun_tcp_stack_trusts_host_checksums_and_computes_its_own() {
+        let client_ip = Ipv4Addr::new(10, 10, 0, 2);
+        let server_ip = Ipv4Addr::new(203, 0, 113, 7);
+        let endpoint = IpEndpoint::new(IpAddress::Ipv4(server_ip), 443);
+        let mut device = PacketDevice::new(1500);
+        let mut iface_config = InterfaceConfig::new(HardwareAddress::Ip);
+        iface_config.random_seed = DEFAULT_RANDOM_SEED;
+        let mut iface = Interface::new(iface_config, &mut device, Instant::now());
+        iface.set_any_ip(true);
+        let mut sockets = SocketSet::new(Vec::new());
+        let mut listeners = HashMap::new();
+        add_tcp_listener(&mut sockets, &mut listeners, endpoint, 1500);
+
+        let mut syn =
+            build_ipv4_tcp_packet(client_ip, 49_152, server_ip, 443, 1_000, 0, TCP_SYN, &[]);
+        // Not the TCP checksum the SYN needs; the IPv4 header stays valid.
+        syn[36] ^= 0xff;
+        assert!(valid_tun_ip_packet(&syn));
+        device.push_inbound(Bytes::from(syn));
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+
+        let syn_ack = device.pop_outbound().expect("the SYN is answered");
+        assert_eq!(internet_checksum(&syn_ack[..20]), 0, "IPv4 header checksum");
+        let tcp = ipv4_tcp_header_and_payload(&syn_ack).unwrap();
+        assert_eq!(
+            ipv4_tcp_checksum(server_ip, client_ip, tcp),
+            0,
+            "TCP checksum"
+        );
     }
 
     #[test]

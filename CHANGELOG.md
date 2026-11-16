@@ -10,6 +10,12 @@ long-term supported release series.
 
 ## Unreleased
 
+- The TUN stack no longer verifies the checksums of the IPv4 headers and TCP
+  segments the host writes into it a second time: the host's network stack
+  computed them and hands the packets over in memory, and each IPv4 header
+  checksum is still checked once before a packet reaches smoltcp. This saves
+  a pass over every uploaded byte; a TCP segment with a wrong checksum is now
+  taken as it is. Packets the stack sends keep their computed checksums.
 - An idle TUN TCP flow holds about 80 KiB of heap instead of 146 KiB. Its
   bridge kept a 64 KiB read buffer for the flow's whole life and copied every
   read out of it; it now reads into a buffer on the stack and continues in a
