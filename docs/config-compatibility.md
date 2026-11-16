@@ -4663,6 +4663,19 @@ before protobuf decoding. Every expansion is charged against the shared
 per-configuration IP and total matcher budgets, including repeated references
 to a cached category in different rules or DNS selectors.
 
+Compiled categories are cached for the whole process and shared by
+reference: a configuration that names a category another one already
+compiled, such as the next core a host starts after a server switch, reuses
+it without reading the file entry again. The cache key is the file's identity
+(path, device and inode, size, modification and status-change times), the
+code, the attribute filter and, when a name ends with a dot, the name mode,
+so a geodata file the host rewrites or replaces is compiled again. Categories
+no configuration references are kept, most recently used first, up to 4 MiB
+of estimated heap, and released beyond it when a handle is freed or a
+category is compiled; `xray_config::release_unused_geodata` releases all of
+them. The matcher budgets above are charged on every reference, cached or
+not.
+
 This allows large current country sets: for example, Loyalsoldier's
 [202609082347 snapshot](https://github.com/Loyalsoldier/v2ray-rules-dat/releases/tag/202609082347)
 contains 300,531 CIDRs in `geoip:us`, exceeding the earlier limits of 250,000

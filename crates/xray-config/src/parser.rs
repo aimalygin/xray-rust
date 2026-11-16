@@ -36,11 +36,14 @@ use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use crate::surface;
 use serde_json::Value;
-use xray_routing::{DomainMatcherSet, DomainMatcherSetBuilder, IpMatcherSet, IpMatcherSetBuilder};
+use xray_routing::{
+    DomainMatcherSet, DomainMatcherSetBuilder, DomainPatternSet, IpMatcherSet, IpMatcherSetBuilder,
+};
 
 use crate::model::build_domain_matcher_set;
 use crate::{
@@ -1688,19 +1691,9 @@ impl Parser<'_> {
         }
     }
 
-    fn parse_external_geosite_matchers(
-        &mut self,
-        spec: &str,
-        path: &str,
-        max_matchers: usize,
-    ) -> Option<Vec<DomainMatcher>> {
-        let (file_name, code_spec) = self.parse_external_geodata_ref(spec, path)?;
-        self.parse_geosite_matchers(file_name, code_spec, path, max_matchers)
-    }
-
-    /// The domains a geosite code selects. As in Xray-core, a code whose
-    /// attributes select no domain is allowed, and the rule it makes matches
-    /// no domain.
+    /// The domains a geosite code selects, one matcher each. As in
+    /// Xray-core, a code whose attributes select no domain is allowed, and
+    /// the rule it makes matches no domain.
     fn parse_geosite_matchers(
         &mut self,
         file_name: &str,
@@ -1714,6 +1707,29 @@ impl Parser<'_> {
             .load_site_matchers(file_name, code, &attrs, max_matchers)
         {
             Ok(matchers) => Some(matchers),
+            Err(error) => {
+                self.error(path, error.to_string());
+                None
+            }
+        }
+    }
+
+    /// The domains a geosite code selects, compiled for `mode` into one set
+    /// that every rule and core referencing the same category shares.
+    fn parse_geosite_patterns(
+        &mut self,
+        file_name: &str,
+        code_spec: &str,
+        path: &str,
+        max_matchers: usize,
+        mode: DomainNameMode,
+    ) -> Option<Arc<DomainPatternSet>> {
+        let (code, attrs) = self.parse_geosite_code_and_attrs(code_spec, path)?;
+        match self
+            .geodata_loader
+            .load_site_patterns(file_name, code, &attrs, mode, max_matchers)
+        {
+            Ok(patterns) => Some(patterns),
             Err(error) => {
                 self.error(path, error.to_string());
                 None

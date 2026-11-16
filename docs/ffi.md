@@ -178,6 +178,12 @@ it runs on a thread outside the runtime, at most 64 at once. One still in
 `getaddrinfo` is not waited for: it finishes by itself after the call returns
 and calls no host callback.
 
+Compiled geosite and geoip categories are cached for the whole process and
+shared by every handle whose config names them, so the next handle a host
+creates after a server switch reuses them. `xray_core_free` releases the
+categories no other handle references beyond a 4 MiB budget kept for that
+next handle; see [geodata](config-compatibility.md#geodata).
+
 ## Handles and errors
 
 - `XrayCoreHandle *` is an owning opaque pointer returned by

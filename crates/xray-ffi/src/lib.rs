@@ -3808,6 +3808,10 @@ unsafe fn xray_core_free_inner(handle: *mut XrayCoreHandle) {
         // callback, and the host may let go of the callback's context. Work
         // that cannot be cancelled therefore stays off the runtime, as the
         // system DNS lookup does (`xray_transport::SystemDnsResolver`).
+        drop(handle);
+        // The core's geodata categories are now unused unless another handle
+        // shares them; keep only the small budget left for the next core.
+        xray_config::trim_geodata_cache();
     }
 }
 

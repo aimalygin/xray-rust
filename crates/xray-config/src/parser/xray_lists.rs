@@ -209,13 +209,8 @@ impl Parser<'_> {
         max_matchers: usize,
         plain: PlainDomain,
     ) -> Option<Vec<DomainMatcher>> {
-        if let Some(spec) = value.strip_prefix("geosite:") {
-            return self.parse_geosite_matchers("geosite.dat", spec, path, max_matchers);
-        }
-        for prefix in ["ext:", "ext-domain:", "ext-site:"] {
-            if let Some(spec) = value.strip_prefix(prefix) {
-                return self.parse_external_geosite_matchers(spec, path, max_matchers);
-            }
+        if let Some((file_name, spec)) = self.geosite_reference(value, path)? {
+            return self.parse_geosite_matchers(file_name, spec, path, max_matchers);
         }
         let matcher = if let Some(pattern) = value.strip_prefix("regexp:") {
             self.domain_regex(pattern.to_owned(), path)?
@@ -240,10 +235,31 @@ impl Parser<'_> {
         Some(vec![matcher])
     }
 
+    /// The geodata file and `code@attributes` a `geosite:` or `ext:`,
+    /// `ext-domain:` or `ext-site:` rule names. `Some(None)` is a rule that
+    /// names no geodata; `None` is a malformed external reference, already
+    /// reported.
+    fn geosite_reference<'v>(
+        &mut self,
+        value: &'v str,
+        path: &str,
+    ) -> Option<Option<(&'v str, &'v str)>> {
+        if let Some(spec) = value.strip_prefix("geosite:") {
+            return Some(Some(("geosite.dat", spec)));
+        }
+        for prefix in ["ext:", "ext-domain:", "ext-site:"] {
+            if let Some(spec) = value.strip_prefix(prefix) {
+                return self.parse_external_geodata_ref(spec, path).map(Some);
+            }
+        }
+        Some(None)
+    }
+
     /// A `StringList` of domain rules as `geodata.ParseDomainRules` reads
     /// them, plain text being a substring, compiled for `mode`. `None`
     /// inside is an absent, `null` or empty list, which Xray-core treats as
-    /// no condition.
+    /// no condition. A geodata category joins the set as the compiled,
+    /// shared set the geodata cache holds, not as copies of its names.
     pub(super) fn domain_rule_list(
         &mut self,
         raw: Option<&Value>,
@@ -262,6 +278,19 @@ impl Parser<'_> {
             if remaining == 0 {
                 self.domain_matcher_budget_error(&entry.path);
                 return None;
+            }
+            if let Some((file_name, spec)) = self.geosite_reference(entry.text, &entry.path)? {
+                let patterns =
+                    self.parse_geosite_patterns(file_name, spec, &entry.path, remaining, mode)?;
+                if !self
+                    .matcher_budget
+                    .consume_domain_matchers(patterns.source_count())
+                {
+                    self.domain_matcher_budget_error(&entry.path);
+                    return None;
+                }
+                matchers.insert_shared(&patterns);
+                continue;
             }
             let parsed =
                 self.domain_rule(entry.text, &entry.path, remaining, PlainDomain::Substring)?;

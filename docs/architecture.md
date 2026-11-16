@@ -40,7 +40,14 @@ flowchart LR
 2. Unsupported modeled fields become path-aware errors; removed
    security-sensitive choices such as `allowInsecure: true` fail closed.
 3. `geosite` and `geoip` references are resolved during parsing from configured
-   search directories.
+   search directories. A compiled category is cached for the whole process,
+   keyed by the file's identity (path, device and inode, size, modification
+   and status-change times), its code, attribute filter and name mode, and
+   shared by reference with every configuration that names it, so a host that
+   restarts the core on each server switch does not decode and rebuild it
+   again. A rewritten or replaced file gets a new identity. Entries no
+   configuration references are released beyond a 4 MiB budget kept for the
+   next core (`xray_config::trim_geodata_cache`, run by `xray_core_free`).
 4. `Core` builds the DNS resolver, immutable outbound graph and shared outbound
    factory, plus the TUN queues, from the immutable config. Listeners bind when
    the core starts.
@@ -147,9 +154,18 @@ before ordered fallback, with Xray-compatible skip/disable/final behavior; a
 CNAME-only continuation stays on the answering name server. Domain rules are
 compiled once by the config parser into `xray_routing::DomainMatcherSet`, the
 same index used by routing rules and DNS outbound rules: exact names and
-label-boundary suffixes use hash sets probed per label, keywords one
-Aho-Corasick automaton, and regexes a `Vec<Regex>` matched with `any` (a
-`RegexSet` is deliberately avoided: its size limit applies to the whole set).
+label-boundary suffixes live in packed tables (`xray_routing::DomainPatternSet`:
+all names of a table in one buffer, grouped by a keyed SipHash, with an end
+offset and a one-word Bloom filter per bucket of about four names instead of
+one allocation and hash-set slot per name) probed per label,
+keywords one Aho-Corasick automaton, and regexes a `Vec<Regex>` matched with
+`any` (a `RegexSet` is deliberately avoided: its size limit applies to the
+whole set). A geosite category joins a rule's set as the cached, shared
+`DomainPatternSet` rather than as copies of its names, and a GeoIP category
+that is the only entry of its group keeps the cached ranges.
+Geodata entries are read in place from the entry body
+(`xray-config`'s `geodata_wire`), without a `String` per domain; a body that
+is not plain protobuf, such as one with groups, is decoded by prost as before.
 Static `dns.hosts` compile into `xray_routing::DomainHostIndex`, a hash map of
 DNS-normalized `full:` names that wins over the remaining matchers scanned in
 config order; the core converts it once and shares it with every configured

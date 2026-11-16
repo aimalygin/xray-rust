@@ -1,5 +1,7 @@
 mod diagnostic;
 mod geodata;
+mod geodata_cache;
+mod geodata_wire;
 mod model;
 mod parser;
 pub mod profile_import;
@@ -10,6 +12,10 @@ mod xray_uuid;
 pub use xray_vless_encryption::Encryption as VlessEncryption;
 
 pub use diagnostic::{Diagnostic, DiagnosticSeverity};
+pub use geodata_cache::{
+    geodata_cache_stats, release_unused_geodata, trim_geodata_cache, GeodataCacheStats,
+    RETAINED_UNUSED_GEODATA_BYTES,
+};
 pub use model::{
     compile_dns_domain_matchers, compile_domain_matchers, deciding_final_rule, go_lowercase,
     mux_tcp_concurrency, AddressFamilies, AddressPortRecords, AddressPortStrategy,
