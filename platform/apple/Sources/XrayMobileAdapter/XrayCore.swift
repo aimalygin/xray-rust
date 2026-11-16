@@ -169,6 +169,10 @@ public struct XrayFFICapabilities: OptionSet, Equatable, Sendable {
     public static let vlessProfileImport = Self(
         rawValue: UInt64(XRAY_FFI_CAPABILITY_VLESS_PROFILE_IMPORT.rawValue)
     )
+    /// Bit 31 is a 64-bit macro in the header, not an enum constant.
+    public static let runtimeWorkerThreads = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_RUNTIME_WORKER_THREADS)
+    )
 }
 
 /// MTU of the host's TUN interface (ABI 1.16). Give the interface and the core
@@ -966,7 +970,8 @@ public final class XrayCore: @unchecked Sendable {
         fileLogDirectory: URL? = nil,
         hysteriaStreamLimits: XrayHysteriaStreamLimits? = nil,
         tunAdmission: XrayTunAdmissionOptions? = nil,
-        tunMtu: XrayTunMtu = .standard
+        tunMtu: XrayTunMtu = .standard,
+        runtimeWorkerThreads: UInt32? = nil
     ) throws {
         try self.init(
             configJSON: configJSON,
@@ -982,7 +987,8 @@ public final class XrayCore: @unchecked Sendable {
             tunClosePolicy: XRAY_TUN_FD_CLOSE_POLICY_BORROWED,
             hysteriaStreamLimits: hysteriaStreamLimits,
             tunAdmission: tunAdmission,
-            tunMtu: tunMtu
+            tunMtu: tunMtu,
+            runtimeWorkerThreads: runtimeWorkerThreads
         )
     }
 
@@ -1001,7 +1007,8 @@ public final class XrayCore: @unchecked Sendable {
         tunClosePolicy: XrayTunFdClosePolicy = XRAY_TUN_FD_CLOSE_POLICY_BORROWED,
         hysteriaStreamLimits: XrayHysteriaStreamLimits? = nil,
         tunAdmission: XrayTunAdmissionOptions? = nil,
-        tunMtu: XrayTunMtu = .standard
+        tunMtu: XrayTunMtu = .standard,
+        runtimeWorkerThreads: UInt32? = nil
     ) throws {
         let ffiInfo = Self.ffiInfo
         try Self.validateFFIVersion(
@@ -1111,6 +1118,18 @@ public final class XrayCore: @unchecked Sendable {
                 ),
                 error: error
             )
+            // Before the profile, which then keeps the host's count: the
+            // runtime is rebuilt once at most.
+            if let runtimeWorkerThreads {
+                guard ffiInfo.version.minor >= 18 else {
+                    throw XrayCoreError.incompatibleFFIMinorVersion(required: 18, actual: ffiInfo.version.minor)
+                }
+                try requireCapability(.runtimeWorkerThreads)
+                try check(
+                    xray_core_set_runtime_worker_threads(handle, runtimeWorkerThreads, &error),
+                    error: error
+                )
+            }
             try check(
                 xray_core_set_tun_runtime_profile(
                     handle,

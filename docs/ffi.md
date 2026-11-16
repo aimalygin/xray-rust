@@ -8,7 +8,7 @@ source of truth for declarations and enum values.
 ## ABI version
 
 Call `xray_ffi_version_major()` and `xray_ffi_version_minor()` before creating a
-handle. The current ABI version is `1.17`. The checked-in Swift and JNI adapters
+handle. The current ABI version is `1.18`. The checked-in Swift and JNI adapters
 reject any major other than `1` and require minor `1` or newer. Their selector
 and health methods require the corresponding ABI 1.2 capability bits; their
 connection-management methods require the ABI 1.3 capability bit, and routing
@@ -30,6 +30,8 @@ Startup-probe preflight requires minor >=12 and `STARTUP_PROBE_PREFLIGHT` (bit 2
 A TUN MTU other than 1500 requires minor >=16 and `TUN_MTU` (bit 29).
 VLESS link import requires minor >=17, `PROFILE_IMPORT` and
 `VLESS_PROFILE_IMPORT` (bit 30); see the [format contract](vless-profile-import.md).
+Setting the runtime's worker threads requires minor >=18 and
+`RUNTIME_WORKER_THREADS` (bit 31); see [runtime worker threads](#runtime-worker-threads).
 
 An incompatible function signature, enum representation, ownership rule, or
 required struct layout requires a major version change. Consumers should
@@ -44,7 +46,10 @@ size negotiation rule. It does not remove or reinterpret an older surface.
 surfaces present in the loaded library. Use the `XRAY_FFI_CAPABILITY_*` values
 from the header and preserve/ignore unknown bits. A capability bit is added in
 the same change as its optional API; it does not override major/minor
-compatibility checks.
+compatibility checks. Bits 0 to 30 are constants of the `XrayFfiCapability`
+enum. A C enum constant is an `int`, so bits from 31 on are 64-bit macros
+instead (`#define XRAY_FFI_CAPABILITY_RUNTIME_WORKER_THREADS 0x80000000ULL`),
+which Swift imports as `UInt64`.
 
 ## Offline profile import
 
@@ -141,6 +146,29 @@ Omission preserves the existing defaults. An explicit value
 requires ABI 1.10 and the new capability. Rust hosts set
 `TunRuntimeOptions.hysteria_stream_limits` using validated `HysteriaStreamLimits`.
 
+### Runtime worker threads
+
+Each handle runs its core on its own multi-threaded Tokio runtime. Its worker
+threads follow the TUN runtime profile: 2 for `MOBILE`, `MOBILE_PLUS` and
+`LOW_MEMORY`, and for `DEFAULT` on Android, iOS, tvOS and watchOS; the available
+parallelism within 2..=6 for `DESKTOP`, `THROUGHPUT` and `DEFAULT` elsewhere,
+as before ABI 1.18. Two workers are what the CLI runs: measured with eight
+flows, they moved 72-74 Gbit/s for 330-360 ms of CPU where six workers moved
+55-58 Gbit/s for 590-660 ms, and a packet tunnel running all day has fewer
+threads to wake.
+
+ABI 1.18 adds `xray_core_set_runtime_worker_threads(handle, worker_threads,
+error)` and capability bit 31, `RUNTIME_WORKER_THREADS`. Call it before config
+load with 1..=64 workers, or 0 to return to the profile's count. A count set
+this way outlives later `xray_core_set_tun_runtime_profile` calls. Selecting a
+profile or a count before config load replaces the handle's still idle runtime
+when the count changes; invalid values, a loaded handle and a runtime that
+cannot be built leave the previous runtime and settings in place.
+
+Swift `XrayCore` initializers take an optional `runtimeWorkerThreads: UInt32?`.
+Omission keeps the profile's count; an explicit value requires ABI 1.18 and the
+capability.
+
 ### Core lifecycle
 
 1. Verify `xray_ffi_version_major()` and require a sufficient
@@ -154,7 +182,8 @@ requires ABI 1.10 and the new capability. Rust hosts set
    - socket-protection callback;
    - direct TUN fd and its ownership;
    - TCP timing collection;
-   - TUN runtime profile.
+   - TUN runtime profile;
+   - runtime worker threads.
 5. Call `xray_core_load_config_json` exactly once successfully.
 6. Read `xray_core_config_warnings` and surface non-empty diagnostics.
 7. Optionally call `xray_core_preflight_startup_probe` before changing host network
