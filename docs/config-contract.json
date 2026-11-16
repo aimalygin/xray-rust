@@ -1259,7 +1259,29 @@
         "response"
       ],
       "id": "RAW_HEADER",
-      "notes": "type may be absent, empty or none; request and response are ignored."
+      "notes": "type may be absent, empty, none or http. With none request and response are ignored. http is Xray-core's HTTP header obfuscation on the raw transport (rawSettings wins over tcpSettings): every connection sends a request head before its first bytes, above TLS or REALITY when set, and drops the response head, at most 8192 bytes, before its first read. Vision cannot ride on it."
+    },
+    {
+      "context": "tcpSettings.header.request; rawSettings.header.request (http)",
+      "fields": [
+        "version",
+        "method",
+        "path",
+        "headers"
+      ],
+      "id": "RAW_HTTP_REQUEST",
+      "notes": "version (default 1.1) and method (default GET) are strings; path is a StringList, one entry drawn per connection, / by default; headers maps names to StringLists, one value drawn per connection and sent sorted by name. Without headers Xray-core's Chrome browser headers go out, Host drawn from www.baidu.com and www.bing.com. A null value, an empty name, or a carriage return or line feed anywhere fails."
+    },
+    {
+      "context": "tcpSettings.header.response; rawSettings.header.response (http)",
+      "fields": [
+        "version",
+        "status",
+        "reason",
+        "headers"
+      ],
+      "id": "RAW_HTTP_RESPONSE",
+      "notes": "The server's response, which the client skips whatever it holds: checked as Xray-core builds it and otherwise unused."
     },
     {
       "context": "$",

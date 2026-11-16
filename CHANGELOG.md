@@ -10,6 +10,14 @@ long-term supported release series.
 
 ## Unreleased
 
+- RAW's `http` header obfuscation works (`tcpSettings`/`rawSettings`
+  `header.type: "http"`), where it was refused: every connection sends a
+  request head built as Xray-core builds it (method, a drawn path, headers
+  sorted by name with drawn values, or Xray-core's Chrome headers by default)
+  before its first bytes, above TLS or REALITY when set, and drops the
+  server's response head, at most 8192 bytes, before its first read. Vision
+  is refused on it, as in Xray-core. Request text with a carriage return or
+  line feed fails.
 - Xray-core's FakeDNS works: a `fakedns` entry in `dns.servers`, refused
   until now, turns on `dns.fakeIp` with the first IPv4 pool of root
   `fakeDns` (an object or an array, also spelled `fakedns`) and its

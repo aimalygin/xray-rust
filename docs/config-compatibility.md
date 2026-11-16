@@ -1015,8 +1015,32 @@ TCP transport to `raw` and XHTTP from `splithttp`; both pairs are accepted alias
   delay as in Xray-core, within the bounds listed in
   [REALITY real-certificate crawl](xray-core-differences.md#reality-real-certificate-crawl).
 
-`tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
-empty, or `none`. Generic HTTP/2 and QUIC transports are not supported; HTTP/2
+`tcpSettings.header.type` — equally `rawSettings.header.type`, which wins
+when both are set — may be absent, empty, `none` or `http`. `http` is
+Xray-core's HTTP header obfuscation (`transport/internet/headers/http`) on
+the raw transport. The first write of every connection goes out after a
+request head, and the first read drops the server's response head, at most
+8192 bytes, through the blank line that ends it; nothing else is framed. As
+in Xray-core the layer sits above TLS or REALITY when one is set, and Vision
+cannot ride on it. The head is built as Xray-core's `AuthenticatorRequest`
+builds it:
+
+- `request.method` (default `GET`) and `request.version` (default `1.1`)
+  form the request line with a `path` drawn per connection from the
+  `request.path` `StringList` (default `/`);
+- `request.headers` maps names to `StringList`s, one value drawn per
+  connection and the names sent sorted; a string value splits at commas, as
+  Go's `StringList` does, so `"gzip, deflate"` is two values. Without
+  `headers` Xray-core's defaults go out: `Host` drawn from `www.baidu.com`
+  and `www.bing.com`, the same Chrome `User-Agent` and `Sec-CH-UA` the other
+  masqueraded requests of the process claim, then its `Sec-Fetch-*`,
+  `Accept-Encoding`, `Connection` and `Pragma` headers;
+- `response` is checked as Xray-core builds it and otherwise unused, since
+  the client skips whatever head the server sends.
+
+A `null` header value fails, as in Xray-core. Stricter than Xray-core, a
+carriage return or line feed anywhere in the request or an empty header name
+fails rather than breaking the head. Generic HTTP/2 and QUIC transports are not supported; HTTP/2
 and QUIC v1 are available only as XHTTP's selected wire engines. [mKCP](#mkcp)
 is described below. VLESS supports the shared [Mux](#vless-mux); `sendThrough`, multiple
 VLESS servers, and protocol-layer chaining remain unsupported. The supported chaining subset

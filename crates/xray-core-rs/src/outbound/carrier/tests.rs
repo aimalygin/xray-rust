@@ -622,3 +622,34 @@ async fn a_proxy_server_resolves_with_its_domain_strategy() {
         [SERVER_V6]
     );
 }
+
+#[test]
+fn an_http_header_wraps_the_raw_carrier_and_keeps_vision_off_it() {
+    let header = json!({"header": {"type": "http", "request": {"path": ["/v"]}}});
+    let stream = json!({"security": "tls", "tlsSettings": {"serverName": "server.example"},
+        "tcpSettings": header});
+    let built = super::super::build_vless_tcp_outbound(&vless(stream.clone())).unwrap();
+    let TransportLayer::RawHttpHeader(config) = &built.payload.carrier.transport_layer else {
+        panic!("expected the HTTP header layer");
+    };
+    assert_eq!(config.paths, ["/v"]);
+    assert_eq!(config.method, "GET");
+    // Without configured headers, Xray-core's browser headers go out.
+    assert_eq!(
+        config.headers,
+        xray_transport::stream::RawHttpHeaderConfig::default_headers()
+    );
+
+    // Vision needs the TLS connection itself, which the header now hides,
+    // as Xray-core's header connection hides it: the dial refuses it.
+    let mut outbound = vless(stream);
+    let xray_config::OutboundSettings::Vless(settings) = &mut outbound.settings else {
+        unreachable!()
+    };
+    settings.users[0].flow = Some("xtls-rprx-vision".to_owned());
+    let built = super::super::build_vless_tcp_outbound(&outbound).unwrap();
+    assert!(matches!(
+        super::super::validate_outbound_flow(&built),
+        Err(CoreError::UnsupportedOutboundFlow)
+    ));
+}

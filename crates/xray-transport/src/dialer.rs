@@ -450,6 +450,20 @@ impl TransportDialer {
                 )
                 .await
             }
+            TransportLayer::RawHttpHeader(header) => {
+                let stream = self
+                    .connect_resolved_with_alpn_policy(
+                        config,
+                        original_target,
+                        candidates,
+                        happy_eyeballs,
+                        TlsAlpnPolicy::Raw,
+                    )
+                    .await?;
+                Ok(Box::new(crate::stream::RawHttpHeaderStream::client(
+                    stream, header,
+                )))
+            }
             TransportLayer::WebSocket(websocket) => {
                 connect_websocket(
                     self.connect_resolved_with_alpn_policy(

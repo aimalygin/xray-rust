@@ -1871,6 +1871,8 @@ pub struct StreamSettings {
     /// The `header-custom` TCP mask: the handshake every TCP carrier sends
     /// and checks before anything else.
     pub tcp_header_custom: Option<HeaderCustomTcp>,
+    /// RAW's `http` header obfuscation; only the raw transport has one.
+    pub raw_http_header: Option<RawHttpHeader>,
     /// The `header-custom` UDP mask, at its place among the stream's UDP
     /// masks.
     pub udp_header_custom: Option<HeaderCustomUdp>,
@@ -1897,6 +1899,25 @@ pub struct StreamSettings {
     /// [`HysteriaSettings`].
     pub udp_salamander: Option<SalamanderMask>,
     pub socket_options: Option<SocketOptions>,
+}
+
+/// RAW's `header` of type `http`, Xray-core's HTTP header obfuscation: each
+/// connection sends a request head before its first bytes and drops the
+/// server's response head before its first read, as
+/// `transport/internet/headers/http` does on the client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawHttpHeader {
+    /// `request.method`; `GET` when absent or empty.
+    pub method: String,
+    /// `request.version`; `1.1` when absent or empty.
+    pub version: String,
+    /// `request.path`, a `StringList` one entry of which each connection
+    /// draws; `/` when absent or empty.
+    pub paths: Vec<String>,
+    /// `request.headers` in the order Xray-core sends them, by name, each
+    /// with the values one is drawn from. `None` sends Xray-core's default
+    /// browser headers.
+    pub headers: Option<Vec<(String, Vec<String>)>>,
 }
 
 /// A `salamander` UDP mask: every datagram behind a random salt and XORed

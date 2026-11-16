@@ -1,6 +1,6 @@
 //! Transport selection, carrier settings and TLS/REALITY security.
 use super::*;
-use crate::KcpSettings;
+use crate::{KcpSettings, RawHttpHeader};
 
 impl Parser<'_> {
     pub(super) fn parse_stream_settings(
@@ -336,6 +336,9 @@ impl Parser<'_> {
             }
             salamander
         };
+        let raw_http_header = matches!(transport, StreamTransport::Raw)
+            .then(|| self.parse_raw_http_header(stream))
+            .flatten();
         Some(StreamSettings {
             // Native Hysteria owns a UDP carrier; other transports retain
             // their existing TCP classification (XHTTP selects H3 later).
@@ -349,6 +352,7 @@ impl Parser<'_> {
             quic_params,
             tcp_fragment: tcp_masks.fragment,
             tcp_header_custom: tcp_masks.header,
+            raw_http_header,
             udp_header_custom,
             tcp_sudoku: tcp_masks.sudoku,
             udp_sudoku,
@@ -1971,13 +1975,152 @@ impl Parser<'_> {
         if let Some(header_type) =
             self.optional_string_at(header, "type", format!("{header_path}.type"))
         {
-            if !header_type.is_empty() && header_type != "none" {
+            if header_type == "http" {
+                self.validate_raw_http_header(header, &header_path);
+            } else if !header_type.is_empty() && header_type != "none" {
                 self.error(
                     format!("{header_path}.type"),
                     format!("unsupported tcp header type `{header_type}`"),
                 );
             }
         }
+    }
+
+    /// An `http` header's `request` and `response` as Xray-core's
+    /// `Authenticator` decodes and builds them. The client sends the request
+    /// and only skips the response, but both must build. A carriage return or
+    /// line feed anywhere, or an empty header name, would break the head the
+    /// request is written into, and fails.
+    fn validate_raw_http_header(&mut self, header: &Value, path: &str) {
+        for (key, fields) in [
+            ("request", &surface::RAW_HTTP_REQUEST),
+            ("response", &surface::RAW_HTTP_RESPONSE),
+        ] {
+            let part_path = format!("{path}.{key}");
+            let part = match header.get(key) {
+                None | Some(Value::Null) => continue,
+                Some(part) if part.is_object() => part,
+                Some(_) => {
+                    self.error(part_path, format!("http header `{key}` must be an object"));
+                    continue;
+                }
+            };
+            self.reject_unknown_fields(part, &part_path, fields);
+            for field in ["version", "method", "status", "reason"] {
+                match part.get(field) {
+                    None | Some(Value::Null) => {}
+                    Some(Value::String(text)) => {
+                        self.reject_http_head_breaks(text, &format!("{part_path}.{field}"))
+                    }
+                    Some(_) => self.error(
+                        format!("{part_path}.{field}"),
+                        format!("http header `{field}` must be a string"),
+                    ),
+                }
+            }
+            if let Some(paths) = part.get("path") {
+                let paths_path = format!("{part_path}.path");
+                if let Some(Some(entries)) = self.string_list(Some(paths), &paths_path) {
+                    for entry in entries {
+                        self.reject_http_head_breaks(entry.text, &entry.path);
+                    }
+                }
+            }
+            let headers_path = format!("{part_path}.headers");
+            match part.get("headers") {
+                None | Some(Value::Null) => {}
+                Some(Value::Object(headers)) => {
+                    for (name, values) in headers {
+                        let value_path = child_path(&headers_path, name);
+                        if name.is_empty() {
+                            self.error(&value_path, "http header names must not be empty");
+                        }
+                        self.reject_http_head_breaks(name, &value_path);
+                        if values.is_null() {
+                            self.error(&value_path, format!("empty HTTP header value: {name}"));
+                            continue;
+                        }
+                        if let Some(Some(entries)) = self.string_list(Some(values), &value_path) {
+                            for entry in entries {
+                                self.reject_http_head_breaks(entry.text, &entry.path);
+                            }
+                        }
+                    }
+                }
+                Some(_) => self.error(headers_path, "http header `headers` must be an object"),
+            }
+        }
+    }
+
+    fn reject_http_head_breaks(&mut self, text: &str, path: &str) {
+        if text.contains(['\r', '\n']) {
+            self.error(
+                path,
+                "http header text must not contain a carriage return or line feed",
+            );
+        }
+    }
+
+    /// The `http` header of the RAW settings Xray-core reads, `rawSettings`
+    /// unless null, else `tcpSettings`, as `StreamConfig.Build` picks them.
+    /// `validate_tcp_settings` has checked both.
+    pub(super) fn parse_raw_http_header(
+        &mut self,
+        stream: Option<&Value>,
+    ) -> Option<RawHttpHeader> {
+        let stream = stream?;
+        let settings = stream
+            .get("rawSettings")
+            .filter(|settings| !settings.is_null())
+            .or_else(|| stream.get("tcpSettings"))?;
+        let header = settings.get("header")?;
+        if header.get("type").and_then(Value::as_str) != Some("http") {
+            return None;
+        }
+        let request = header.get("request").filter(|request| request.is_object());
+        let text = |key: &str| {
+            request
+                .and_then(|request| request.get(key))
+                .and_then(Value::as_str)
+                .filter(|text| !text.is_empty())
+        };
+        // Go's StringList: an array, or one string split at commas.
+        let list = |value: &Value| -> Vec<String> {
+            match value {
+                Value::String(text) => text.split(',').map(str::to_owned).collect(),
+                Value::Array(items) => items
+                    .iter()
+                    .map(|item| item.as_str().unwrap_or_default().to_owned())
+                    .collect(),
+                _ => Vec::new(),
+            }
+        };
+        let mut paths = request
+            .and_then(|request| request.get("path"))
+            .map(list)
+            .unwrap_or_default();
+        if paths.is_empty() {
+            paths.push("/".to_owned());
+        }
+        // Xray-core sends configured headers sorted by name.
+        let headers = request
+            .and_then(|request| request.get("headers"))
+            .and_then(Value::as_object)
+            .filter(|headers| !headers.is_empty())
+            .map(|headers| {
+                let mut headers: Vec<(String, Vec<String>)> = headers
+                    .iter()
+                    .map(|(name, values)| (name.clone(), list(values)))
+                    .collect();
+                headers.sort_by(|left, right| left.0.cmp(&right.0));
+                headers
+            });
+        Some(RawHttpHeader {
+            method: text("method").unwrap_or("GET").to_owned(),
+            version: text("version").unwrap_or("1.1").to_owned(),
+            paths,
+            headers,
+        })
     }
 
     pub(super) fn parse_reality_settings(

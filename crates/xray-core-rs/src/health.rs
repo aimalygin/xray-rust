@@ -640,6 +640,7 @@ mod tests {
                 udp_realm: None,
                 udp_xicmp: None,
                 udp_salamander: None,
+                raw_http_header: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,

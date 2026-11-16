@@ -5912,6 +5912,80 @@
       "set": {
         "/fakeDns/0/ipPool": "198.18.0.0/24"
       }
+    },
+    {
+      "name": "raw-http-header",
+      "config": {
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "192.168.1.10",
+                  "port": 80,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "tcp",
+              "tcpSettings": {
+                "header": {
+                  "type": "http",
+                  "request": {
+                    "version": "1.1",
+                    "method": "GET",
+                    "path": [
+                      "/"
+                    ],
+                    "headers": {
+                      "Host": [
+                        "www.example.com"
+                      ],
+                      "Connection": [
+                        "keep-alive"
+                      ]
+                    }
+                  },
+                  "response": {
+                    "version": "1.1",
+                    "status": "200",
+                    "reason": "OK",
+                    "headers": {
+                      "Content-Type": [
+                        "application/octet-stream"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "accepted": true,
+      "objects": {
+        "RAW_HTTP_REQUEST": "/outbounds/0/streamSettings/tcpSettings/header/request",
+        "RAW_HTTP_RESPONSE": "/outbounds/0/streamSettings/tcpSettings/header/response"
+      }
+    },
+    {
+      "name": "raw-http-header-injection",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.tcpSettings.header.request.path[0]",
+      "base": "raw-http-header",
+      "set": {
+        "/outbounds/0/streamSettings/tcpSettings/header/request/path": [
+          "/\r\nX-Injected: 1"
+        ]
+      }
     }
   ]
 }

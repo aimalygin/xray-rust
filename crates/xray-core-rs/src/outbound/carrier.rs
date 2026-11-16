@@ -314,7 +314,19 @@ fn build_transport_layer(
     };
 
     Ok(match &stream.transport {
-        StreamTransport::Raw => TransportLayer::Raw,
+        StreamTransport::Raw => match &stream.raw_http_header {
+            None => TransportLayer::Raw,
+            Some(header) => TransportLayer::RawHttpHeader(Arc::new(
+                xray_transport::stream::RawHttpHeaderConfig {
+                    method: header.method.clone(),
+                    version: header.version.clone(),
+                    paths: header.paths.clone(),
+                    headers: header.headers.clone().unwrap_or_else(
+                        xray_transport::stream::RawHttpHeaderConfig::default_headers,
+                    ),
+                },
+            )),
+        },
         StreamTransport::Hysteria(_) | StreamTransport::Masque(_) => {
             return Err(CoreError::UnsupportedOutboundNetwork)
         }

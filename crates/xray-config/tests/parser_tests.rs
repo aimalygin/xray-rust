@@ -2513,7 +2513,7 @@ fn rejects_non_string_tls_alpn_entry_with_path() {
 
 #[test]
 fn rejects_tcp_header_type_with_path() {
-    let raw = raw_with_tcp_settings(r#""header": { "type": "http" }"#);
+    let raw = raw_with_tcp_settings(r#""header": { "type": "srtp" }"#);
 
     assert_parse_error_path(
         &raw,
@@ -2532,7 +2532,7 @@ fn parses_raw_settings_alias() {
 
 #[test]
 fn rejects_raw_header_type_with_path() {
-    let raw = raw_with_raw_settings(r#""header": { "type": "http" }"#);
+    let raw = raw_with_raw_settings(r#""header": { "type": "srtp" }"#);
 
     assert_parse_error_path(
         &raw,

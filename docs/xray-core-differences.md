@@ -1367,6 +1367,22 @@ differences:
   ask again for every connection; addresses stay stable across restarts as
   described below.
 
+## RAW `http` header
+
+`tcpSettings.header` (or `rawSettings.header`) of type `http` frames the raw
+transport as Xray-core's `transport/internet/headers/http` client does
+([details](config-compatibility.md#outbounds-and-streams)): a request head
+before the first write, the response head dropped before the first read.
+Source-derived and covered by transport tests against the head Xray-core's
+server reads and writes, not by interop. Deliberate differences:
+
+- The response head is read until its blank line, at most 8192 bytes,
+  whatever it holds. Xray-core's client parses a head that arrives in more
+  than one read with `http.ReadRequest`, which a response line fails, so a
+  split head fails there and is read here.
+- A carriage return or line feed in the request, or an empty header name,
+  fails parsing; Xray-core writes it into the head.
+
 ## Fake-IP allocation across restarts
 
 `dns.fakeIp` places a new domain at a stable FNV-1a hash of its name within the
