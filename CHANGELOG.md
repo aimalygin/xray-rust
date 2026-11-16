@@ -39,6 +39,12 @@ qualification are pending.
 - `scripts/check-vendored-advisories.sh`, run in the supply-chain CI job,
   audits the upstream release under each vendored crate and every git
   dependency against RustSec, which `cargo audit` does not see.
+- The DNS resolver and the system SRV/TXT lookups refuse a name longer than
+  255 octets, as Xray-core does through Go's `dnsmessage`. A name was read
+  for up to 32 labels and pointers, about 2 KB, so a forged 64 KB answer over
+  TCP, DoH or DoQ whose 4,000 records all pointed at one such name held some
+  8 MB while it was parsed, a sizeable share of an iOS tunnel extension's
+  memory limit.
 - The release fuzz campaign also covers the parsers an on-path censor or a
   hostile server can feed and that had no target: DNS responses (A/AAAA and
   SRV/TXT), the HTTP, TLS ClientHello, BitTorrent and uTP sniffers, mKCP
