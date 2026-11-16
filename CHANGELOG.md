@@ -12,8 +12,9 @@ long-term supported release series.
 
 ## 0.10.0 - 2026-11-15
 
-Release candidate preparation; publication and exact-candidate release
-qualification are pending.
+Published on 2026-11-15 with exact-candidate release evidence and the
+owner-accepted limitations in the
+[0.10.0 release](https://github.com/aimalygin/xray-rust/releases/tag/v0.10.0).
 
 - A QUIC connection that takes a fresh socket when the OS network changes
   goes on receiving on the socket it left, for three seconds after the first
