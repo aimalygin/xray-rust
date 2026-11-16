@@ -4008,9 +4008,20 @@ reported. The outbound a balancer with an observed member falls back to, its
 through a member or that fallback reaches a balancer none of whose observed
 members is healthy, all of them are probed again, at most once every 15
 seconds, so that a server which came back is found. Reports only bring probes
-forward: without failures, probes follow the interval as before, the
-scheduled round is not moved, and re-probes use the same concurrency bound.
-Startup and on-demand probes report nothing.
+forward: the scheduled round is not moved, and re-probes use the same
+concurrency bound. Startup and on-demand probes report nothing.
+
+Unlike Xray-core, the observer also skips the scheduled probe of an observed
+member of a balancer when no flow was routed through any of its balancers since
+that member's last probe, so a device nobody uses sends no probes and does not
+wake its radio every `probeInterval`. The first round probes every observed
+outbound. The first flow through a balancer whose members were skipped wakes
+the observer, which probes them at once, as a reported failure would; failure
+re-probes run whether or not the balancer was used. An observed outbound
+outside every balancer keeps the interval. A selection, including one that
+ends at the balancer's fallback or an override, is a use; a flow routed to a
+member by tag is not. The health snapshot's last-try time of a skipped
+outbound stays at its last probe.
 
 The observer starts only after the core and any configured startup probe have
 started successfully. It dials each leaf directly by tag, so routing rules and

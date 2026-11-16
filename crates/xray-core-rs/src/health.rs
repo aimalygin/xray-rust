@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::io;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -143,6 +143,82 @@ impl FailureReports {
     }
 }
 
+/// Which balancers carried traffic, recorded by the flows that select
+/// through them and read by the observatory: one slot per balancer.
+///
+/// A scheduled probe of an observed member is skipped unless one of its
+/// balancers was used since the member's last probe, so that a device nobody
+/// uses does not wake its radio every `probeInterval`. Uses are told apart by
+/// epoch: the observatory starts one with each batch of probes, and a slot
+/// keeps the epoch of its balancer's latest use. A use is one atomic load
+/// once its epoch is recorded; the first use after a skip wakes the
+/// observatory, which then probes the skipped members at once.
+#[derive(Debug)]
+pub(crate) struct BalancerUse {
+    epoch: AtomicU64,
+    slots: Box<[BalancerUseSlot]>,
+    wake: Notify,
+}
+
+#[derive(Debug, Default)]
+struct BalancerUseSlot {
+    /// The epoch of the balancer's latest use; 0 before any probe.
+    last_used: AtomicU64,
+    /// The observatory skipped members of the balancer and waits for its
+    /// next use.
+    armed: AtomicBool,
+}
+
+impl BalancerUse {
+    pub(crate) fn new(balancer_count: usize) -> Self {
+        Self {
+            epoch: AtomicU64::new(0),
+            slots: (0..balancer_count)
+                .map(|_| BalancerUseSlot::default())
+                .collect(),
+            wake: Notify::new(),
+        }
+    }
+
+    /// Records that a flow selected through balancer `index`.
+    pub(crate) fn record(&self, index: usize) {
+        let Some(slot) = self.slots.get(index) else {
+            return;
+        };
+        let epoch = self.epoch.load(Ordering::Acquire);
+        if slot.last_used.load(Ordering::Acquire) >= epoch {
+            return;
+        }
+        slot.last_used.fetch_max(epoch, Ordering::SeqCst);
+        // Either this sees the observatory arm the slot, or the observatory
+        // sees this use when it checks again after arming.
+        if slot.armed.swap(false, Ordering::SeqCst) {
+            self.wake.notify_one();
+        }
+    }
+
+    /// Starts the epoch of a batch of probes, and returns it.
+    fn begin_probes(&self) -> u64 {
+        self.epoch.fetch_add(1, Ordering::AcqRel) + 1
+    }
+
+    fn last_used(&self, index: usize) -> u64 {
+        self.slots
+            .get(index)
+            .map_or(0, |slot| slot.last_used.load(Ordering::SeqCst))
+    }
+
+    fn arm(&self, index: usize, armed: bool) {
+        if let Some(slot) = self.slots.get(index) {
+            slot.armed.store(armed, Ordering::SeqCst);
+        }
+    }
+
+    fn notified(&self) -> Notified<'_> {
+        self.wake.notified()
+    }
+}
+
 /// Whether `error`, from opening a flow through an outbound, says that the
 /// outbound's server could not be reached or failed its handshake: a refused,
 /// reset or timed-out connection, a TLS, REALITY or transport handshake that
@@ -220,7 +296,8 @@ pub(crate) async fn run_observatory(
 
     loop {
         let completed = if runtime.config.enable_concurrency {
-            probe_nodes(&runtime, &runtime.nodes, &mut reprobes, &mut shutdown).await
+            let nodes = reprobes.scheduled(&runtime.nodes);
+            probe_nodes(&runtime, &nodes, &mut reprobes, &mut shutdown).await
                 && idle(&runtime, &mut reprobes, &mut shutdown).await
         } else {
             run_sequential_round(&runtime, &mut reprobes, &mut shutdown).await
@@ -237,7 +314,8 @@ async fn run_sequential_round(
     shutdown: &mut watch::Receiver<bool>,
 ) -> bool {
     for node in &runtime.nodes {
-        if !probe_nodes(runtime, std::slice::from_ref(node), reprobes, shutdown).await
+        let nodes = reprobes.scheduled(std::slice::from_ref(node));
+        if !probe_nodes(runtime, &nodes, reprobes, shutdown).await
             || !idle(runtime, reprobes, shutdown).await
         {
             return false;
@@ -261,9 +339,10 @@ async fn probe_nodes(
     };
     for chunk in nodes.chunks(concurrency) {
         let started = Instant::now();
+        let epoch = runtime.selection.balancer_use().begin_probes();
         let mut tasks = JoinSet::new();
         for node in chunk.iter().copied() {
-            reprobes.probe_started(node, started);
+            reprobes.probe_started(node, started, epoch);
             let config = runtime.config.clone();
             let outbound_router = Arc::clone(&runtime.outbound_router);
             let destination_resolver = Arc::clone(&runtime.destination_resolver);
@@ -303,8 +382,10 @@ async fn probe_nodes(
 
 /// Waits out the probe interval. A failure that real traffic reports wakes
 /// the wait, and the outbounds it concerns are probed as soon as their
-/// cooldowns allow, without moving the next scheduled probe. Returns false
-/// when the core shuts down meanwhile.
+/// cooldowns allow, without moving the next scheduled probe. So does the
+/// first use of a balancer whose members a scheduled probe skipped, which
+/// has them probed at once. Returns false when the core shuts down
+/// meanwhile.
 async fn idle(
     runtime: &ObservatoryRuntime,
     reprobes: &mut Reprobes,
@@ -313,7 +394,10 @@ async fn idle(
     let deadline = Instant::now() + runtime.config.probe_interval;
     loop {
         let now = Instant::now();
-        let due = reprobes.take_due(now);
+        let mut due = reprobes.take_due(now);
+        for node in reprobes.take_resumed() {
+            push_unique(&mut due, node);
+        }
         if !due.is_empty() {
             if !probe_nodes(runtime, &due, reprobes, shutdown).await {
                 return false;
@@ -330,6 +414,7 @@ async fn idle(
             biased;
             () = wait_for_shutdown(shutdown) => return false,
             () = runtime.selection.failure_reports().notified() => {}
+            () = runtime.selection.balancer_use().notified() => {}
             () = tokio::time::sleep_until(wake_at) => {}
         }
     }
@@ -360,9 +445,17 @@ struct WatchedLeaf {
     last: Option<Instant>,
     /// The balancers whose flows may reach it, as indexes into `groups`.
     groups: Vec<usize>,
+    /// The balancers it is an observed member of, as indexes into `groups`.
+    member_of: Vec<usize>,
+    /// The [`BalancerUse`] epoch of its last probe; 0 before the first.
+    probed: u64,
+    /// A scheduled probe of it was skipped, and none ran since.
+    skipped: bool,
 }
 
 struct WatchedGroup {
+    /// Its slot in [`BalancerUse`], its index among the graph's balancers.
+    slot: usize,
     /// Its observed members.
     members: Vec<OutboundNodeId>,
     last_reprobe: Option<Instant>,
@@ -386,7 +479,7 @@ impl Reprobes {
             reprobes.watch(*node, true);
         }
         let observed = observed.iter().copied().collect::<HashSet<_>>();
-        for group in graph.selector_groups() {
+        for (slot, group) in graph.selector_groups().iter().enumerate() {
             let members = group
                 .members()
                 .iter()
@@ -409,7 +502,16 @@ impl Reprobes {
                     }
                 }
             }
+            for node in &members {
+                if let Some(position) = reprobes.positions.get(node) {
+                    let member_of = &mut reprobes.leaves[*position].member_of;
+                    if !member_of.contains(&group_index) {
+                        member_of.push(group_index);
+                    }
+                }
+            }
             reprobes.groups.push(WatchedGroup {
+                slot,
                 members,
                 last_reprobe: None,
             });
@@ -431,19 +533,77 @@ impl Reprobes {
             observed,
             last: None,
             groups: Vec::new(),
+            member_of: Vec::new(),
+            probed: 0,
+            skipped: false,
         });
         self.positions.insert(node, position);
         Some(position)
     }
 
-    /// Records that a probe of `node` started at `now`, which answers the
-    /// reports made before it.
-    fn probe_started(&mut self, node: OutboundNodeId, now: Instant) {
+    /// Records that a probe of `node` started at `now` in balancer use
+    /// `epoch`, which answers the reports and uses made before it.
+    fn probe_started(&mut self, node: OutboundNodeId, now: Instant, epoch: u64) {
         if let Some(position) = self.positions.get(&node) {
             let leaf = &mut self.leaves[*position];
             self.selection.failure_reports().clear(leaf.slot);
             leaf.last = Some(now);
+            leaf.probed = epoch;
+            leaf.skipped = false;
         }
+    }
+
+    /// Of `nodes`, the ones a scheduled probe is for: each one never probed,
+    /// outside every balancer, or a member of a balancer used since its
+    /// last probe. A skipped one waits for the next use of its balancers,
+    /// see [`Self::take_resumed`].
+    fn scheduled(&mut self, nodes: &[OutboundNodeId]) -> Vec<OutboundNodeId> {
+        let mut due = Vec::new();
+        for node in nodes.iter().copied() {
+            let Some(position) = self.positions.get(&node).copied() else {
+                due.push(node);
+                continue;
+            };
+            if !self.used_since_probe(position) {
+                for group in &self.leaves[position].member_of {
+                    self.selection
+                        .balancer_use()
+                        .arm(self.groups[*group].slot, true);
+                }
+                // A use that missed the arming is seen here.
+                if !self.used_since_probe(position) {
+                    self.leaves[position].skipped = true;
+                    continue;
+                }
+            }
+            due.push(node);
+        }
+        due
+    }
+
+    /// Whether leaf `position` needs its scheduled probe.
+    fn used_since_probe(&self, position: usize) -> bool {
+        let leaf = &self.leaves[position];
+        leaf.probed == 0
+            || leaf.member_of.is_empty()
+            || leaf.member_of.iter().any(|group| {
+                self.selection
+                    .balancer_use()
+                    .last_used(self.groups[*group].slot)
+                    >= leaf.probed
+            })
+    }
+
+    /// The skipped outbounds whose balancers have been used since.
+    fn take_resumed(&mut self) -> Vec<OutboundNodeId> {
+        let mut nodes = Vec::new();
+        for position in 0..self.leaves.len() {
+            if self.leaves[position].skipped && self.used_since_probe(position) {
+                self.leaves[position].skipped = false;
+                nodes.push(self.leaves[position].node);
+            }
+        }
+        nodes
     }
 
     /// When, from `now` on, the earliest report still waiting can be
@@ -530,6 +690,9 @@ impl Drop for Reprobes {
     fn drop(&mut self) {
         for leaf in &self.leaves {
             self.selection.failure_reports().watch(leaf.slot, false);
+        }
+        for group in &self.groups {
+            self.selection.balancer_use().arm(group.slot, false);
         }
     }
 }
@@ -718,11 +881,29 @@ mod tests {
                 &self.observed(),
                 REPROBE_COOLDOWNS,
             );
+            assert_eq!(
+                reprobes.scheduled(&self.observed()),
+                vec![self.proxy_a, self.proxy_b],
+                "a first round probes everything"
+            );
+            self.round(&mut reprobes, &[self.proxy_a, self.proxy_b], start);
             for node in [self.proxy_a, self.proxy_b] {
-                reprobes.probe_started(node, start);
                 self.healthy(node);
             }
             reprobes
+        }
+
+        /// Starts probes of `nodes` at `now`, as `probe_nodes` does.
+        fn round(&self, reprobes: &mut Reprobes, nodes: &[OutboundNodeId], now: Instant) {
+            let epoch = self.router.selection().balancer_use().begin_probes();
+            for node in nodes {
+                reprobes.probe_started(*node, now, epoch);
+            }
+        }
+
+        /// A flow routed to the `auto` balancer.
+        fn use_balancer(&self) {
+            self.router.selection().select("auto").unwrap();
         }
 
         fn healthy(&self, node: OutboundNodeId) {
@@ -793,7 +974,7 @@ mod tests {
         fixture.report(fixture.proxy_a);
         assert_eq!(reprobes.next_due(now), Some(now));
         assert_eq!(reprobes.take_due(now), vec![fixture.proxy_a]);
-        reprobes.probe_started(fixture.proxy_a, now);
+        fixture.round(&mut reprobes, &[fixture.proxy_a], now);
         assert!(!fixture.pending(fixture.proxy_a));
         assert_eq!(reprobes.next_due(now), None);
     }
@@ -817,7 +998,7 @@ mod tests {
 
         let due = start + FAILURE_REPROBE_COOLDOWN;
         assert_eq!(reprobes.take_due(due), vec![fixture.proxy_a]);
-        reprobes.probe_started(fixture.proxy_a, due);
+        fixture.round(&mut reprobes, &[fixture.proxy_a], due);
 
         // So does a report made while that probe runs.
         fixture.report(fixture.proxy_a);
@@ -846,9 +1027,7 @@ mod tests {
             reprobes.take_due(first),
             vec![fixture.proxy_a, fixture.proxy_b]
         );
-        for node in [fixture.proxy_a, fixture.proxy_b] {
-            reprobes.probe_started(node, first);
-        }
+        fixture.round(&mut reprobes, &[fixture.proxy_a, fixture.proxy_b], first);
 
         // Within the group cooldown only the reported leaf is, once its own
         // cooldown passed.
@@ -856,7 +1035,7 @@ mod tests {
         let leaf_due = first + FAILURE_REPROBE_COOLDOWN;
         assert_eq!(reprobes.next_due(first), Some(leaf_due));
         assert_eq!(reprobes.take_due(leaf_due), vec![fixture.proxy_a]);
-        reprobes.probe_started(fixture.proxy_a, leaf_due);
+        fixture.round(&mut reprobes, &[fixture.proxy_a], leaf_due);
 
         // The fallback failing too has the whole group probed again once the
         // group cooldown passed.
@@ -888,6 +1067,95 @@ mod tests {
             fixture.router.selection().health_state_of(fixture.proxy_b),
             OutboundHealthState::Healthy
         );
+    }
+
+    #[test]
+    fn scheduled_probes_skip_a_balancer_nothing_used() {
+        let fixture = Fixture::new();
+        let start = Instant::now();
+        let mut reprobes = fixture.reprobes(start);
+        let observed = fixture.observed();
+
+        // Nothing went through `auto` since its members' probes.
+        assert!(reprobes.scheduled(&observed).is_empty());
+        assert!(reprobes.scheduled(&observed).is_empty());
+
+        // One flow has both members probed at the next round, once.
+        fixture.use_balancer();
+        assert_eq!(reprobes.scheduled(&observed), observed);
+        fixture.round(&mut reprobes, &observed, start + Duration::from_secs(600));
+        assert!(reprobes.scheduled(&observed).is_empty());
+
+        // A use while a round probes counts for the next one.
+        fixture.round(&mut reprobes, &observed, start + Duration::from_secs(1_200));
+        fixture.use_balancer();
+        assert_eq!(reprobes.scheduled(&observed), observed);
+    }
+
+    #[test]
+    fn a_skipped_balancer_is_probed_at_its_next_use() {
+        use futures_util::FutureExt as _;
+
+        let fixture = Fixture::new();
+        let mut reprobes = fixture.reprobes(Instant::now());
+        let usage = fixture.router.selection().balancer_use();
+        assert!(reprobes.scheduled(&fixture.observed()).is_empty());
+        assert!(reprobes.take_resumed().is_empty());
+        assert!(usage.notified().now_or_never().is_none());
+
+        // The first use wakes the observatory, which probes them at once.
+        fixture.use_balancer();
+        assert!(usage.notified().now_or_never().is_some());
+        assert_eq!(reprobes.take_resumed(), fixture.observed());
+        assert!(reprobes.take_resumed().is_empty());
+
+        // Later uses cost an atomic load and wake nothing.
+        fixture.use_balancer();
+        fixture.use_balancer();
+        assert!(usage.notified().now_or_never().is_none());
+
+        // A watcher that stops leaves nothing armed.
+        fixture.round(&mut reprobes, &fixture.observed(), Instant::now());
+        assert!(reprobes.scheduled(&fixture.observed()).is_empty());
+        drop(reprobes);
+        fixture.use_balancer();
+        assert!(usage.notified().now_or_never().is_none());
+    }
+
+    #[test]
+    fn failures_reprobe_members_whose_scheduled_probes_were_skipped() {
+        let fixture = Fixture::new();
+        let start = Instant::now();
+        let mut reprobes = fixture.reprobes(start);
+        assert!(reprobes.scheduled(&fixture.observed()).is_empty());
+
+        fixture.report(fixture.proxy_a);
+        let due = start + FAILURE_REPROBE_COOLDOWN;
+        assert_eq!(reprobes.take_due(due), vec![fixture.proxy_a]);
+    }
+
+    #[test]
+    fn an_observed_outbound_outside_every_balancer_keeps_its_schedule() {
+        let mut config = config("http://192.0.2.1/generate_204".to_owned());
+        config.observatory.as_mut().unwrap().subject_selectors =
+            vec!["proxy-".to_owned(), "other".to_owned()];
+        let router = Arc::new(OutboundRouter::new(Arc::new(config)));
+        let observed = router
+            .graph()
+            .leaf_nodes_matching_prefixes(&["proxy-".to_owned(), "other".to_owned()]);
+        let other = router.graph().node_for_tag("other").unwrap();
+        let mut reprobes = Reprobes::new(
+            router.selection_handle(),
+            router.graph(),
+            &observed,
+            REPROBE_COOLDOWNS,
+        );
+        let epoch = router.selection().balancer_use().begin_probes();
+        for node in &observed {
+            reprobes.probe_started(*node, Instant::now(), epoch);
+        }
+
+        assert_eq!(reprobes.scheduled(&observed), vec![other]);
     }
 
     #[test]
@@ -948,6 +1216,32 @@ mod tests {
             }
         });
         (url, server)
+    }
+
+    /// Answers every probe with `204` and counts them.
+    async fn counting_probe_server() -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind probe server");
+        let url = format!(
+            "http://127.0.0.1:{}/generate_204",
+            listener.local_addr().expect("probe server address").port()
+        );
+        let probes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = Arc::clone(&probes);
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                counted.fetch_add(1, Ordering::SeqCst);
+                tokio::spawn(async move {
+                    let mut request = [0u8; 1024];
+                    let _ = stream.read(&mut request).await;
+                    let _ = stream
+                        .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                        .await;
+                });
+            }
+        });
+        (url, probes)
     }
 
     async fn wait_for_state(
@@ -1018,5 +1312,57 @@ mod tests {
         router.selection().report_dial_failure(proxy_b);
         let slot = selection.leaf_index(proxy_b).unwrap();
         assert!(!selection.failure_reports().is_pending(slot));
+    }
+
+    /// A phone nobody uses sends no probe after the first round however
+    /// short the interval, and its first flow has the balancer probed again
+    /// at once.
+    #[tokio::test]
+    async fn unused_balancer_is_not_probed_until_traffic_returns() {
+        let (url, probes) = counting_probe_server().await;
+        let mut config = config(url);
+        config.observatory.as_mut().unwrap().probe_interval = Duration::from_millis(50);
+        let observatory = config.observatory.clone().unwrap();
+        let router = Arc::new(OutboundRouter::new(Arc::new(config)));
+        let nodes = router
+            .graph()
+            .leaf_nodes_matching_prefixes(&observatory.subject_selectors);
+        let resolver = crate::system_dns_resolver();
+        let runtime = ObservatoryRuntime::new(
+            observatory,
+            nodes,
+            Arc::clone(&router),
+            router.selection_handle(),
+            Arc::clone(&resolver),
+            resolver,
+            Arc::new(TransportDialer::system().expect("system dialer")),
+        );
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let observer = tokio::spawn(run_observatory(runtime, shutdown_rx));
+        let wait_for_probes = |count: usize| {
+            let probes = Arc::clone(&probes);
+            async move {
+                tokio::time::timeout(Duration::from_secs(4), async {
+                    while probes.load(Ordering::SeqCst) < count {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .unwrap_or_else(|_| panic!("{count} probes should have run"));
+            }
+        };
+        wait_for_probes(2).await;
+
+        // Ten intervals without a flow: no probe.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert_eq!(probes.load(Ordering::SeqCst), 2);
+
+        router.selection().select("auto").unwrap();
+        wait_for_probes(4).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert_eq!(probes.load(Ordering::SeqCst), 4);
+
+        shutdown_tx.send(true).expect("observer listens");
+        observer.await.expect("observer stops");
     }
 }
