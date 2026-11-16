@@ -907,17 +907,6 @@ behavior.
   is. When the destination is an IP it matches, a sniffed domain never
   replaces it. A destination given as a name is not checked against it.
 
-As in Xray-core's dispatcher, `destOverride` applies to every flow whatever
-its destination, so an app that connects to an IP address, from its own DoH
-lookup or a cached address, is routed by the name it sends. A sniffed domain
-routes the flow, and is dialed too unless `routeOnly` keeps the original
-destination. A fake IP whose domain the fake DNS knows keeps that domain, and
-a fake IP it does not know dials the sniffed domain even under `routeOnly`,
-since its address leads nowhere. On TUN a TCP flow is accepted before it is
-routed so that its first bytes can be read; it waits at most 250 ms for them,
-then is routed on its original destination. A protocol in which the server
-speaks first, such as SMTP, waits that long before it is dialed.
-
 QUIC sniffing reads the SNI from a client's Initial packets (QUIC v1, v2 and
 draft-29). A ClientHello larger than one datagram, such as Chrome's with a
 post-quantum key share, is reassembled from the CRYPTO frames of several
@@ -3871,7 +3860,7 @@ rule. A request the HTTP inbound forwards, rather than tunnels, is
 `http/1.1`, as in Xray-core. When a rule has `protocol`, flows are sniffed for it even where
 `destOverride` would not read them, though only `destOverride` decides whether
 a sniffed domain replaces the destination. On TUN that opens a TCP flow
-before routing it, as `destOverride` does. A flow is read only until every
+before routing it, as for an unmapped fake IP. A flow is read only until every
 sniffer has ruled it out, as in Xray-core, so a protocol no sniffer knows is
 routed as soon as its first bytes arrive.
 

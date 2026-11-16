@@ -3342,19 +3342,15 @@ impl OutboundRouter {
         self.select_dns_outbound_for_route_with_resolver(
             &RouteContext::inbound(inbound_tag),
             target,
-            target,
             dns_resolver,
         )
         .await
     }
 
-    /// The DNS outbound routing picks for `target`, dialing `dial_target`,
-    /// which differs from it when a `routeOnly` sniffed domain routes a flow.
     pub(crate) async fn select_dns_outbound_for_route_with_resolver(
         &self,
         route: &RouteContext<'_>,
         target: &Target,
-        dial_target: &Target,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<Option<DnsOutbound>, CoreError> {
         let policy = self.routing_policy_state();
@@ -3366,7 +3362,7 @@ impl OutboundRouter {
                 &policy,
                 route,
                 target,
-                dial_target,
+                target,
                 dns_resolver,
             )
             .await?;
