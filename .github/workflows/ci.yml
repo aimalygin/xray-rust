@@ -930,6 +930,9 @@ jobs:
       - name: Audit RustSec advisories
         run: cargo audit
 
+      - name: Audit vendored and git dependencies against RustSec advisories
+        run: bash scripts/check-vendored-advisories.sh
+
       - name: Enforce dependency policy
         run: cargo deny --locked check advisories bans licenses sources
 

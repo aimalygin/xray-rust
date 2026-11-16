@@ -162,12 +162,28 @@ XRAY_CORE_CHECKOUT=/absolute/path/to/pinned/Xray-core \
 The supply-chain CI job additionally runs:
 
 ```sh
+bash scripts/check-vendored-sources.sh
 cargo audit
+bash scripts/check-vendored-advisories.sh
 cargo deny --locked check advisories bans licenses sources
 ```
 
 CI installs `cargo-audit` 0.22.2 and `cargo-deny` 0.19.4. Install those tools
 before reproducing this part locally.
+
+`cargo audit` matches advisories only against registry packages, and the
+crates in `vendor/` are path dependencies (a git dependency would be skipped
+the same way). `check-vendored-sources.sh` proves each vendored crate is its
+pinned upstream release plus `XRAY-PATCH.diff`;
+`check-vendored-advisories.sh` then audits those upstream releases, and any
+git dependency in `Cargo.lock`, as if they were crates.io packages. It fails
+on an advisory unless the script acknowledges it with the vendored directory
+and the upstream fix the copy carries, and it reports an acknowledgement that
+no longer matches, so a rebase onto a fixed release can drop it. Extra
+arguments go to `cargo audit`, for example `--no-fetch` offline. Rebase a
+vendored crate onto the fixed release where its local patch allows; backport
+and acknowledge only when it does not, as for the rustls fork in
+`vendor/shaped-rustls/XRAY-PATCH.md`.
 
 The dedicated secret-scan job checks the complete reachable history. On a tag
 push it scans only the tag's ancestry (`--log-opts=HEAD`) with the policy the
