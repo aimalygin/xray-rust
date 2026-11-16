@@ -413,6 +413,7 @@ impl Parser<'_> {
         {
             self.error("$.meta", "field `meta` must be an object or null");
         }
+        self.warn_ignored_root_apps();
         // Xray-core v26.10.31 refuses any legacy reverse proxy, bridges and
         // portals alike, before reading it.
         if self
@@ -424,6 +425,69 @@ impl Parser<'_> {
                 "$.reverse",
                 "The feature \"legacy reverse\" has been removed and migrated to \"VLESS Reverse Proxy\". Please update your config(s) according to release note and documentation.",
             );
+        }
+    }
+
+    /// Root apps that Xray-core v26.10.31 builds and xray-rust has no runtime
+    /// for. Each decodes into a Go struct pointer there, so a value other
+    /// than an object or null fails; an object is accepted with a warning and
+    /// changes nothing here. None of them alters how traffic is carried.
+    fn warn_ignored_root_apps(&mut self) {
+        const IGNORED: [(&str, &str); 5] = [
+            (
+                "stats",
+                "`stats` is ignored: xray-rust keeps no Xray traffic counters",
+            ),
+            (
+                "api",
+                "`api` is ignored: xray-rust runs no Xray gRPC API service, so its tag and inbound reach nothing",
+            ),
+            (
+                "metrics",
+                "`metrics` is ignored: xray-rust serves no metrics endpoint",
+            ),
+            (
+                "version",
+                "`version` is ignored: xray-rust does not check the config's Xray-core version range",
+            ),
+            (
+                "geodata",
+                "`geodata` is ignored: xray-rust never downloads or refreshes geodata files; it reads the geosite and geoip files it finds",
+            ),
+        ];
+        for (key, message) in IGNORED {
+            let Some(value) = self.root.get(key).filter(|value| !value.is_null()) else {
+                continue;
+            };
+            let path = format!("$.{key}");
+            if !value.is_object() {
+                self.error(path, format!("field `{key}` must be an object or null"));
+                continue;
+            }
+            if key == "version" {
+                // `min` and `max` decode into Go strings.
+                for bound in ["min", "max"] {
+                    if value
+                        .get(bound)
+                        .is_some_and(|bound| !bound.is_string() && !bound.is_null())
+                    {
+                        self.error(
+                            format!("$.version.{bound}"),
+                            format!("field `{bound}` must be a string or null"),
+                        );
+                    }
+                }
+            }
+            self.warning(path, message);
+        }
+    }
+
+    /// A key Xray-core v26.10.31 does not decode, which older releases read
+    /// and current subscriptions still write: Go's JSON decoding skips it, so
+    /// it is accepted with `message` as a warning, whatever its value.
+    fn warn_inert_key(&mut self, value: &Value, key: &str, base_path: &str, message: &str) {
+        if value.get(key).is_some() {
+            self.warning(child_path(base_path, key), message);
         }
     }
 

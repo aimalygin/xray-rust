@@ -5820,6 +5820,50 @@
       "set": {
         "/outbounds/0/mux/enabled": false
       }
+    },
+    {
+      "name": "inert-xray-root-apps",
+      "accepted": true,
+      "warningPath": "$.stats",
+      "base": "loopback-policy",
+      "set": {
+        "/stats": {},
+        "/api": {
+          "tag": "api",
+          "services": [
+            "StatsService"
+          ]
+        },
+        "/metrics": {
+          "tag": "metrics_out"
+        },
+        "/version": {
+          "min": "25.1.1"
+        },
+        "/geodata": {
+          "cron": "0 4 * * *",
+          "assets": []
+        }
+      }
+    },
+    {
+      "name": "tls-ech-config-list-ignored",
+      "accepted": true,
+      "warningPath": "$.outbounds[0].streamSettings.tlsSettings.echConfigList",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/streamSettings/tlsSettings/echConfigList": "AEX+DQBBpQAgACBzeW50aGV0aWM=",
+        "/outbounds/0/streamSettings/tlsSettings/minVersion": "1.2"
+      }
+    },
+    {
+      "name": "tls-disable-system-root-without-pin",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.tlsSettings.disableSystemRoot",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/streamSettings/tlsSettings/disableSystemRoot": true
+      }
     }
   ]
 }

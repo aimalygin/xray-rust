@@ -1163,6 +1163,12 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(socket_options, &socket_options_path, &surface::SOCKOPT);
+        self.warn_inert_key(
+            socket_options,
+            "tcpNoDelay",
+            &socket_options_path,
+            "`tcpNoDelay` is ignored, as Xray-core v26.10.31 ignores it: every TCP socket already has TCP_NODELAY set",
+        );
         let at = |key: &str| format!("{socket_options_path}.{key}");
         // Chaining is parsed on the outbound; dedicated freedom fragment
         // handlers are normalized across outbounds after parsing.
@@ -1667,6 +1673,7 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(settings, &settings_path, &surface::TLS);
+        self.validate_ignored_tls_fields(settings, &settings_path);
 
         if settings
             .get("serverName")
@@ -1743,6 +1750,111 @@ impl Parser<'_> {
                 }
             }
         }
+    }
+
+    /// `tlsSettings` fields Xray-core accepts that change nothing here.
+    ///
+    /// `minVersion`, `maxVersion`, `cipherSuites` and `curvePreferences`
+    /// reach only Go's own crypto/tls: with a uTLS fingerprint, the default,
+    /// Xray-core's `copyConfig` drops them and the fingerprint's hello decides
+    /// all four. An unshaped rustls handshake (`unsafe`, QUIC) keeps its own
+    /// versions, suites and groups. `useSystemCA` picks the operating system's
+    /// store over Go's bundled roots; the bundled Mozilla roots stay in use
+    /// here. `show` is REALITY's debug switch and no TLS field. `echConfigList`
+    /// asks for Encrypted Client Hello, which is not implemented: the
+    /// handshake goes out without it, `serverName` in the clear.
+    ///
+    /// `disableSystemRoot: true` leaves Xray-core no trust anchor besides
+    /// `certificates`, which are refused here, so only a pinned certificate
+    /// can verify the server. With `pinnedPeerCertSha256` the pins decide
+    /// here as there, and it is accepted with a warning; without, ignoring it
+    /// would trust the system roots that the config turned off, so it fails.
+    fn validate_ignored_tls_fields(&mut self, settings: &Value, settings_path: &str) {
+        let at = |key: &str| format!("{settings_path}.{key}");
+        for key in ["minVersion", "maxVersion", "cipherSuites"] {
+            match settings.get(key) {
+                None | Some(Value::Null) => {}
+                Some(Value::String(text)) if text.is_empty() => {}
+                Some(Value::String(_)) => self.warning(
+                    at(key),
+                    format!(
+                        "tls `{key}` is ignored: a uTLS fingerprint's ClientHello decides it, as in Xray-core, and an unshaped rustls handshake keeps its own TLS versions and suites"
+                    ),
+                ),
+                Some(_) => self.error(at(key), format!("field `{key}` must be a string or null")),
+            }
+        }
+        match settings.get("curvePreferences") {
+            None | Some(Value::Null) => {}
+            Some(Value::String(_)) => self.warning(
+                at("curvePreferences"),
+                "tls `curvePreferences` is ignored: a uTLS fingerprint's ClientHello decides the key shares, as in Xray-core",
+            ),
+            Some(Value::Array(curves)) => {
+                if curves.iter().any(|curve| !curve.is_string() && !curve.is_null()) {
+                    self.error(
+                        at("curvePreferences"),
+                        "tls curvePreferences entries must be strings",
+                    );
+                } else if !curves.is_empty() {
+                    self.warning(
+                        at("curvePreferences"),
+                        "tls `curvePreferences` is ignored: a uTLS fingerprint's ClientHello decides the key shares, as in Xray-core",
+                    );
+                }
+            }
+            Some(_) => self.error(
+                at("curvePreferences"),
+                "field `curvePreferences` must be a string or an array of strings",
+            ),
+        }
+        match settings.get("useSystemCA") {
+            None | Some(Value::Null | Value::Bool(false)) => {}
+            Some(Value::Bool(true)) => self.warning(
+                at("useSystemCA"),
+                "tls `useSystemCA` is ignored: the server is verified against the bundled Mozilla roots",
+            ),
+            Some(_) => self.error(at("useSystemCA"), "field `useSystemCA` must be a boolean"),
+        }
+        match settings.get("disableSystemRoot") {
+            None | Some(Value::Null | Value::Bool(false)) => {}
+            Some(Value::Bool(true)) => {
+                let pinned = settings
+                    .get("pinnedPeerCertSha256")
+                    .and_then(Value::as_str)
+                    .is_some_and(|pins| pins.split(',').any(|pin| !pin.trim().is_empty()));
+                if pinned {
+                    self.warning(
+                        at("disableSystemRoot"),
+                        "tls `disableSystemRoot` is ignored: `pinnedPeerCertSha256` decides which certificates are trusted, as in Xray-core",
+                    );
+                } else {
+                    self.error(
+                        at("disableSystemRoot"),
+                        "tls `disableSystemRoot: true` without `pinnedPeerCertSha256` leaves no trust anchor, and custom `certificates` are unsupported; ignoring it would trust the system roots it turns off",
+                    );
+                }
+            }
+            Some(_) => self.error(
+                at("disableSystemRoot"),
+                "field `disableSystemRoot` must be a boolean",
+            ),
+        }
+        match settings.get("echConfigList") {
+            None | Some(Value::Null) => {}
+            Some(Value::String(list)) if list.is_empty() => {}
+            Some(Value::String(_)) => self.warning(
+                at("echConfigList"),
+                "tls `echConfigList` is ignored: Encrypted Client Hello is not supported, so the handshake sends `serverName` in the clear, where on-path observers and filters see it",
+            ),
+            Some(_) => self.error(at("echConfigList"), "field `echConfigList` must be a string or null"),
+        }
+        self.warn_inert_key(
+            settings,
+            "show",
+            settings_path,
+            "tls `show` is ignored, as Xray-core ignores it: it is REALITY's debug switch",
+        );
     }
 
     pub(super) fn parse_tls_pinned_peer_cert_sha256(

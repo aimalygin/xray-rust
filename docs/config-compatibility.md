@@ -731,6 +731,7 @@ exposes an unauthenticated proxy to the network.
 | `log` | Accepted for input compatibility, but runtime file logging is configured through the embedding API |
 | `reverse` | The legacy reverse proxy, refused unless `null` with Xray-core's message: upstream removed it for the [VLESS reverse proxy](#vless-reverse-proxy) |
 | `remarks`, `meta` | Subscription labels, such as those in Remnawave's XRAY_JSON format; `remarks` must be a string and `meta` an object (or null), and both are ignored, as in Xray-core |
+| `stats`, `api`, `metrics`, `version`, `geodata` | Xray-core apps with no runtime here: an object is accepted with a warning and ignored, `null` silently; any other value fails, as Go's decoding fails. `version`'s `min` and `max` must be strings. No traffic counters are kept, no gRPC API or metrics endpoint listens (a routing rule to the API's tag reaches no outbound), the config's version range is not checked, and `geodata` never downloads or refreshes files: the geosite and geoip files present are read as they are |
 
 Other top-level keys are rejected.
 
@@ -2344,7 +2345,9 @@ block and each field keep the default.
 | `cwndMultiplier` | 1 | Multiplies what one flush may send; at least 1 |
 | `maxSendingWindow` | 2 MiB | Bytes waiting for acks before writes wait; at least `mtu` |
 
-`header` and `seed` are read and ignored, as Xray-core v26 ignores them, with a
+`congestion`, `readBufferSize` and `writeBufferSize`, which releases before
+v26 read and v26 no longer decodes, are accepted with a warning and ignored,
+whatever their value. `header` and `seed` are read and ignored, as Xray-core v26 ignores them, with a
 warning when they ask for something: since v26 the old header and seed are
 `mkcp-legacy` masks. Both ends need the same masks, in the same order:
 
@@ -3377,6 +3380,38 @@ same, because its uTLS path does not pass the session cache on to uTLS. With
 rustls keeps its session cache whatever the value, while Xray-core resumes
 there only when the value is `true`.
 
+Panel and client exports write TLS fields that only Xray-core's server side,
+or only Go's own crypto/tls, reads. They are type-checked as Go decodes them
+and accepted with a warning; empty strings, empty lists and `false` say
+nothing:
+
+- `minVersion`, `maxVersion` and `cipherSuites` (strings) and
+  `curvePreferences` (a string or an array of strings). With a uTLS
+  fingerprint, the default, Xray-core's `copyConfig` drops all four and the
+  fingerprint's ClientHello decides them; here the same profile does. With
+  `fingerprint: "unsafe"` and on QUIC, rustls keeps its own versions (TLS 1.2
+  and 1.3), suites and groups, where Xray-core's crypto/tls would apply them:
+  a `maxVersion` of `1.2` still negotiates TLS 1.3, and a `minVersion` of
+  `1.3` still accepts a TLS 1.2 server.
+- `useSystemCA: true`, which in Xray-core trusts the operating system's store
+  instead of Go's bundled roots. Here the bundled Mozilla roots stay in use,
+  so a server whose chain needs a privately installed CA fails verification.
+- `show`, REALITY's debug switch, which `TLSConfig` does not have.
+- `echConfigList`: Encrypted Client Hello is not implemented. The handshake
+  goes out without ECH, so `serverName` travels in the clear where Xray-core
+  would hide it in the encrypted inner hello: an on-path observer or filter
+  sees the real name, and a front that blocks or only serves the name through
+  ECH may refuse the connection. Remove the field, or use REALITY, where the
+  real name must not be visible.
+- `disableSystemRoot: true` beside a nonempty `pinnedPeerCertSha256`, where
+  the pins decide which certificates are trusted, here as in Xray-core.
+  Without a pin it fails: Xray-core would then trust only `certificates`,
+  which this client does not support, and ignoring the field would trust the
+  system roots the config turned off.
+
+Other TLS fields Xray-core reads, such as `certificates`, `masterKeyLog`,
+`echServerKeys` and `echSockopt`, are still rejected.
+
 `tlsSettings.alpn` is an array of strings; a non-string entry is rejected with
 an indexed path. Where the configured list lands follows Xray rather than
 approximating it: uTLS takes ALPN from the fingerprint profile and overwrites
@@ -3648,7 +3683,9 @@ Differences from Xray-core:
 ### Socket options
 
 The rest of `streamSettings.sockopt` is read as Xray-core v26.10.31 reads it
-and set on every socket the outbound opens:
+and set on every socket the outbound opens. `tcpNoDelay`, which Xray-core
+no longer reads, is accepted with a warning and ignored, whatever its value:
+every TCP socket here, as in Go, already has `TCP_NODELAY` set.
 
 - the TCP carrier of VLESS, Trojan, VMess, Shadowsocks, SOCKS and HTTP, over
   every transport;
@@ -3797,6 +3834,9 @@ Not supported yet:
 Supported routing configuration:
 
 - `domainStrategy`: `AsIs`, `IPIfNonMatch`, or `IPOnDemand` (since `0.6.0-dev.0`);
+- `domainMatcher` (`hybrid` or `linear` in older releases): accepted with a
+  warning and ignored, whatever its value, as Xray-core v26.10.31 does not
+  read it; either matcher matched the same names;
 - rule `type`: not read, as in Xray-core v26.10.31, so it may be absent or
   hold anything;
 - selectors: `inboundTag`, `domain`/`domains`, `ip`, `network`, `port`,

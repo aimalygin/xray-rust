@@ -1435,7 +1435,34 @@ v26.10.31:
   rustls keeps its session cache whatever the value, while Xray-core resumes
   only when the value is `true`.
 
-Other panel TLS fields, such as `cipherSuites` and `echConfigList`, are still
+Other fields these exports write, which Xray-core accepts and which change
+nothing for this client, are accepted with a warning (source-derived from
+v26.10.31):
+
+- root `stats`, `api`, `metrics`, `version` and `geodata` build Xray-core apps
+  (`infra/conf/xray.go`) that have no runtime here. They are type-checked as
+  the Go structs decode them. `geodata` is v26's scheduled downloader
+  (`infra/conf/geodata.go`), which this client does not run.
+- `routing.domainMatcher`, `sockopt.tcpNoDelay`, `tlsSettings.show` and
+  mKCP's `congestion`, `readBufferSize` and `writeBufferSize` are absent from
+  `RouterConfig`, `SocketConfig`, `TLSConfig` and `KCPConfig`
+  (`infra/conf/router.go`, `transport_sockopt.go`, `transport_security.go`,
+  `transport_method.go`), so Go's decoding skips them.
+- `minVersion`, `maxVersion`, `cipherSuites` and `curvePreferences` reach Go's
+  crypto/tls only (`transport/internet/tls/config.go`); `copyConfig`
+  (`transport/internet/tls/tls.go`) leaves them out of every uTLS handshake.
+  The known difference is `fingerprint: "unsafe"`, where Xray-core applies
+  them and rustls keeps its own.
+- `useSystemCA` selects Go's root store (`config_other.go`); the bundled
+  Mozilla roots stay in use here.
+- `echConfigList` is accepted without ECH. This is a real difference: the
+  server name goes out in the clear (see the
+  [TLS section of the compatibility guide](config-compatibility.md#tls-clienthello-shaping)).
+- `disableSystemRoot: true` is accepted only beside `pinnedPeerCertSha256`,
+  where pins decide trust in both cores; without a pin it fails rather than
+  trusting roots the config turned off.
+
+`certificates`, `masterKeyLog`, `echServerKeys` and `echSockopt` are still
 rejected.
 
 ## REALITY real-certificate crawl

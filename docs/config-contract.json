@@ -1264,20 +1264,26 @@
         "policy",
         "reverse",
         "remarks",
-        "meta"
+        "meta",
+        "stats",
+        "api",
+        "metrics",
+        "version",
+        "geodata"
       ],
       "id": "ROOT",
-      "notes": "log is accepted and ignored. reverse, the legacy reverse proxy with bridges and portals, is refused unless null, with Xray-core v26.10.31's message: it removed the feature for the VLESS reverse proxy (an outbound's reverse). remarks (a string) and meta (an object) are subscription labels, such as Remnawave's, which Xray-core does not read; they are type-checked and ignored. Missing/non-array inbounds and outbounds currently normalize to empty lists. Non-object JSON roots also normalize to an empty model. Parse success alone does not establish runtime usability."
+      "notes": "log is accepted and ignored. stats, api, metrics, version and geodata are Xray-core apps with no runtime here: an object is accepted with a warning and ignored, any other value but null fails, as Go's decoding does; version's min and max are strings. geodata never downloads files. reverse, the legacy reverse proxy with bridges and portals, is refused unless null, with Xray-core v26.10.31's message: it removed the feature for the VLESS reverse proxy (an outbound's reverse). remarks (a string) and meta (an object) are subscription labels, such as Remnawave's, which Xray-core does not read; they are type-checked and ignored. Missing/non-array inbounds and outbounds currently normalize to empty lists. Non-object JSON roots also normalize to an empty model. Parse success alone does not establish runtime usability."
     },
     {
       "context": "$.routing",
       "fields": [
         "domainStrategy",
         "rules",
-        "balancers"
+        "balancers",
+        "domainMatcher"
       ],
       "id": "ROUTING",
-      "notes": "AsIs, IPIfNonMatch and IPOnDemand. Ordered field rules and bounded balancers only."
+      "notes": "AsIs, IPIfNonMatch and IPOnDemand. domainMatcher, which Xray-core v26.10.31 does not read, is accepted with a warning. Ordered field rules and bounded balancers only."
     },
     {
       "context": "$.routing.rules[]",
@@ -1341,10 +1347,11 @@
         "customSockopt",
         "addressPortStrategy",
         "happyEyeballs",
-        "trustedXForwardedFor"
+        "trustedXForwardedFor",
+        "tcpNoDelay"
       ],
       "id": "SOCKOPT",
-      "notes": "Read and applied as Xray-core v26.10.31 does, to every socket the outbound opens, on Linux and Android or on Apple platforms. Every outbound TCP socket keeps alive after 45 seconds idle and every 45 seconds, unless tcpKeepAliveIdle or tcpKeepAliveInterval sets another number of seconds or a negative value turns keepalive off; a positive value with a negative one fails each TCP dial. On Linux and Android: mark, interface, tcpFastOpen, tcpCongestion, tcpWindowClamp, tcpUserTimeout, tcpMaxSeg, customSockopt and tproxy, in that order; tcpMptcp asks for Multipath TCP and falls back to TCP. On Apple platforms: tcpFastOpen, which their kernels refuse on a client socket, the keepalive settings, interface and customSockopt. The first option that fails stops the rest and is only logged, except interface, whose failure fails the dial. penetrate gives an XHTTP downloadSettings these options instead of its own. acceptProxyProtocol, v6only and trustedXForwardedFor are inbound options, type-checked and ignored. addressPortStrategy takes Xray-core's names, ignoring case: before a domain server is dialed, the first usable SRV or TXT record of its name, looked up as Go's resolver does from /etc/resolv.conf, replaces its address, its port or both; freedom and chained outbounds refuse it, and WireGuard's endpoint does not read it, as in Xray-core. dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser. domainStrategy takes Xray-core's eleven names, ignoring case; freedom, WireGuard and MASQUE read it, and other outbounds accept only AsIs."
+      "notes": "tcpNoDelay, which Xray-core v26.10.31 does not read, is accepted with a warning: every TCP socket has TCP_NODELAY. Read and applied as Xray-core v26.10.31 does, to every socket the outbound opens, on Linux and Android or on Apple platforms. Every outbound TCP socket keeps alive after 45 seconds idle and every 45 seconds, unless tcpKeepAliveIdle or tcpKeepAliveInterval sets another number of seconds or a negative value turns keepalive off; a positive value with a negative one fails each TCP dial. On Linux and Android: mark, interface, tcpFastOpen, tcpCongestion, tcpWindowClamp, tcpUserTimeout, tcpMaxSeg, customSockopt and tproxy, in that order; tcpMptcp asks for Multipath TCP and falls back to TCP. On Apple platforms: tcpFastOpen, which their kernels refuse on a client socket, the keepalive settings, interface and customSockopt. The first option that fails stops the rest and is only logged, except interface, whose failure fails the dial. penetrate gives an XHTTP downloadSettings these options instead of its own. acceptProxyProtocol, v6only and trustedXForwardedFor are inbound options, type-checked and ignored. addressPortStrategy takes Xray-core's names, ignoring case: before a domain server is dialed, the first usable SRV or TXT record of its name, looked up as Go's resolver does from /etc/resolv.conf, replaces its address, its port or both; freedom and chained outbounds refuse it, and WireGuard's endpoint does not read it, as in Xray-core. dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser. domainStrategy takes Xray-core's eleven names, ignoring case; freedom, WireGuard and MASQUE read it, and other outbounds accept only AsIs."
     },
     {
       "context": "streamSettings.sockopt.customSockopt[]",
@@ -1453,10 +1460,18 @@
         "alpn",
         "pinnedPeerCertSha256",
         "verifyPeerCertByName",
-        "enableSessionResumption"
+        "enableSessionResumption",
+        "minVersion",
+        "maxVersion",
+        "cipherSuites",
+        "curvePreferences",
+        "disableSystemRoot",
+        "useSystemCA",
+        "show",
+        "echConfigList"
       ],
       "id": "TLS",
-      "notes": "allowInsecure=true is rejected. fromMitm is unsupported. Fingerprints, certificate pins and name constraints use parser validation. enableSessionResumption is a boolean with no effect on a uTLS-shaped handshake, which never resumes here or in Xray-core; with fingerprint unsafe, and on QUIC, rustls resumes sessions whatever its value."
+      "notes": "allowInsecure=true is rejected. minVersion, maxVersion, cipherSuites and curvePreferences are type-checked and ignored with a warning: a uTLS fingerprint's hello decides them, as in Xray-core. useSystemCA and show are ignored with a warning. echConfigList is ignored with a warning: there is no ECH, so serverName goes out in the clear. disableSystemRoot true is ignored with a warning beside pinnedPeerCertSha256 and refused without it. fromMitm is unsupported. Fingerprints, certificate pins and name constraints use parser validation. enableSessionResumption is a boolean with no effect on a uTLS-shaped handshake, which never resumes here or in Xray-core; with fingerprint unsafe, and on QUIC, rustls resumes sessions whatever its value."
     },
     {
       "context": "$.outbounds[].settings (wireguard)",
@@ -1539,10 +1554,13 @@
         "cwndMultiplier",
         "maxSendingWindow",
         "header",
-        "seed"
+        "seed",
+        "congestion",
+        "readBufferSize",
+        "writeBufferSize"
       ],
       "id": "KCP_SETTINGS",
-      "notes": "Absent or null keeps the defaults (mtu 1350, tti 50, uplinkCapacity 5, downlinkCapacity 20, cwndMultiplier 1, maxSendingWindow 2 MiB); null fields keep theirs. mtu 21..=8192, tti 10..=1000, cwndMultiplier at least 1, maxSendingWindow at least mtu. header and seed are ignored, as by Xray-core v26: mkcp-legacy masks replace them."
+      "notes": "Absent or null keeps the defaults (mtu 1350, tti 50, uplinkCapacity 5, downlinkCapacity 20, cwndMultiplier 1, maxSendingWindow 2 MiB); null fields keep theirs. mtu 21..=8192, tti 10..=1000, cwndMultiplier at least 1, maxSendingWindow at least mtu. header and seed are ignored, as by Xray-core v26: mkcp-legacy masks replace them. congestion, readBufferSize and writeBufferSize, which v26 no longer reads, are accepted with a warning."
     },
     {
       "context": "streamSettings.hysteriaSettings",

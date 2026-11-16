@@ -213,7 +213,6 @@ fn unsupported_modern_tls_fields_fail_closed_on_apple_xhttp_shape() {
     .unwrap();
 
     for (key, value) in [
-        ("echConfigList", "unsupported-ech"),
         ("disableSystemRoot", "unsupported-root-policy"),
         ("certificates", "unsupported-custom-trust"),
         ("pinnedPeerCertChainSha256", "unsupported-chain-pin"),
@@ -2634,9 +2633,9 @@ fn rejects_non_object_sockopt_with_path() {
 
 #[test]
 fn rejects_unknown_sockopt_field_with_path() {
-    let raw = raw_with_sockopt(r#"{ "tcpNoDelay": true }"#);
+    let raw = raw_with_sockopt(r#"{ "tcpQuickAck": true }"#);
 
-    assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.sockopt.tcpNoDelay");
+    assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.sockopt.tcpQuickAck");
 }
 
 fn parsed_sockopt(sockopt: &str) -> xray_config::SocketOptions {
