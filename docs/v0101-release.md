@@ -13,7 +13,7 @@ tree it merges as.
 
 ## Scope
 
-A patch release: four fixes by a new contributor, two fixes on top of them, two
+A patch release: four fixes by a new contributor, one fix on top of them, two
 dependency updates. No configuration field, C ABI function or header changes.
 
 - **TLS and REALITY fingerprints** advertise their uTLS profile's whole cipher
@@ -32,12 +32,6 @@ dependency updates. No configuration field, C ABI function or header changes.
   [#312](https://github.com/aimalygin/xray-rust/pull/312) replaced its bounded
   wait, so that freeing a handle still waits for the runtime's threads without
   a limit).
-- **The SDK's VLESS importers** (`XrayVlessURLImporter`, `XrayVlessUrlImporter`)
-  set `routeOnly` on the sniffing of the profiles they build. Those profiles
-  enable sniffing to recover the domain of a fake IP the fake DNS no longer
-  knows. With TUN now sniffing TCP flows to real addresses, a profile without
-  `routeOnly` would have dialed such a flow by the name it sends: found while
-  preparing this release, before any build of it left the repository.
 - **Dependencies**: async-compression 0.4.52 and regex 1.13.0.
 
 Behaviour that changes for users and hosts:
@@ -54,14 +48,9 @@ Behaviour that changes for users and hosts:
 - A Hysteria dial to a server with one address can take up to eight seconds
   before it fails, where it failed after three.
 - System DNS lookups run on their own threads, at most 64 at once.
-- A profile built by the SDK's VLESS importers dials a QUIC flow to a real IP
-  address by that address, where it dialed it by the sniffed name. Its TCP
-  flows to real addresses are dialed by address as in 0.10.0, and its LAN
-  flows still take the private-address rule.
 
-The C header and the SDK's adapters do not change. Of the Swift and Kotlin
-sources only the two VLESS importers do, by the `routeOnly` line; the SDK
-re-pin synchronizes them with the new core.
+The SDK's adapters, the C header and the Swift and Kotlin sources do not
+change. The SDK re-pin carries the new core only.
 
 ## Qualification
 
@@ -87,7 +76,6 @@ What the changes of this release touch on a device:
 | Cipher suite lists (#307) | every case that dials with a TLS or REALITY fingerprint, the REALITY and TLS cases of `legacy-regression` first of all |
 | Hysteria connect time (#309) | the Hysteria2 case of `legacy-regression` |
 | TUN TCP sniffing (#310) | every TUN TCP flow of a configuration with `sniffing` and `http` or `tls` in `destOverride`; a flow to a fake IP the fake DNS knows is unchanged |
-| `routeOnly` in the importers' profiles | every profile imported through the SDK's VLESS importers: the `vless-link` case of `profile-import` |
 | System DNS off the runtime (#311, #312) | none on the SDK's hosts, which set `XRAY_DNS_BOOTSTRAP_MODE_STATIC_ONLY` and never ask the system resolver |
 
 The 0.10.0 known limitations stay as they are: this release fixes none of

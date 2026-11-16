@@ -1539,9 +1539,6 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(sniffing["enabled"] as? Bool, true)
         XCTAssertEqual(sniffing["destOverride"] as? [String], ["http", "tls", "quic"])
         XCTAssertEqual(sniffing["metadataOnly"] as? Bool, false)
-        // A flow to a real address is routed with its sniffed name but dialed
-        // by the address its app chose.
-        XCTAssertEqual(sniffing["routeOnly"] as? Bool, true)
 
         let dns = try XCTUnwrap(root["dns"] as? [String: Any])
         XCTAssertEqual(dns["queryStrategy"] as? String, "UseIPv4")

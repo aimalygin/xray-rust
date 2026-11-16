@@ -38,9 +38,6 @@ class XrayVlessUrlImporterTest {
             listOf("http", "tls", "quic"),
             inbound.getJSONObject("sniffing").getJSONArray("destOverride").strings(),
         )
-        // A flow to a real address is routed with its sniffed name but dialed
-        // by the address its app chose.
-        assertTrue(inbound.getJSONObject("sniffing").getBoolean("routeOnly"))
 
         val outbounds = root.getJSONArray("outbounds")
         assertEquals(2, outbounds.length())
