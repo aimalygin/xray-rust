@@ -136,6 +136,26 @@ It sizes the smoltcp device, the fd reads and the TCP receive buffers
 is dropped alone with an ICMP packet-too-big back to the host instead of ending
 the flow ([TUN MTU](ffi.md#tun-mtu)).
 
+Packets read from a TUN descriptor are carved out of shared 64 KiB read
+buffers, so anything that keeps a packet past its turn keeps the whole buffer
+alive. What the runtime holds on to is therefore copied out first: a datagram
+queued for a UDP flow's bridge, the first packet a UDP flow keeps for an ICMP
+reply, a DNS query the TUN answers itself, and a datagram held while a TUN
+admission callback decides. Each UDP flow's queue holds at most 256 datagrams
+and is also bounded in payload bytes, per flow and across all flows, by the
+runtime profile:
+
+| Profile | Per flow | All flows |
+| --- | ---: | ---: |
+| `LowMemory` | 64 KiB | 2 MiB |
+| `Mobile` | 128 KiB | 4 MiB |
+| `MobilePlus` | 256 KiB | 8 MiB |
+| `Desktop` | 512 KiB | 64 MiB |
+| `Throughput` | 1 MiB | 128 MiB |
+
+A datagram over a limit is dropped, as one that finds its queue full, and
+counted in `udp_channel_dropped_packets`; the flow stays up.
+
 ### DNS
 
 DNS is split at the wire-transport boundary instead of being owned by TUN.

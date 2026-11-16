@@ -525,24 +525,30 @@ fn fin_waits_for_deferred_tail_before_closing_the_local_tcp_socket() {
     assert_eq!(budget.pending_total_bytes(), 0);
 }
 
-#[test]
-fn full_udp_queue_drops_the_datagram_but_keeps_the_flow() {
+fn test_udp_flow(
+    budget: &FlowBudgetState,
+) -> (UdpFlowKey, UdpFlow, mpsc::Receiver<QueuedDatagram>) {
     let key = UdpFlowKey::new(
         IpEndpoint::new(IpAddress::v4(198, 18, 0, 2), 12000),
         IpEndpoint::new(IpAddress::v4(192, 0, 2, 1), 443),
     );
-    let (to_remote, mut from_stack) = mpsc::channel(UDP_BRIDGE_CHANNEL_DEPTH);
-    let mut flows = HashMap::from([(
-        key,
-        UdpFlow {
-            to_remote,
-            generation: 7,
-            last_used_sequence: 0,
-            task: None,
-            permit: None,
-        },
-    )]);
+    let (to_remote, from_stack) = mpsc::channel(UDP_BRIDGE_CHANNEL_DEPTH);
+    let flow = UdpFlow {
+        to_remote,
+        queued: budget.udp_queued_bytes_for_new_flow(),
+        generation: 7,
+        last_used_sequence: 0,
+        task: None,
+        permit: None,
+    };
+    (key, flow, from_stack)
+}
+
+#[test]
+fn full_udp_queue_drops_the_datagram_but_keeps_the_flow() {
     let mut budget = FlowBudgetState::new(MOBILE_FLOW_BUDGET_POLICY);
+    let (key, flow, mut from_stack) = test_udp_flow(&budget);
+    let mut flows = HashMap::from([(key, flow)]);
     for _ in 0..UDP_BRIDGE_CHANNEL_DEPTH {
         forward_udp_payload(&mut flows, key, Bytes::from_static(b"burst"), &mut budget);
     }
@@ -561,10 +567,13 @@ fn full_udp_queue_drops_the_datagram_but_keeps_the_flow() {
         "the next datagram must reuse the flow instead of opening a new one"
     );
     forward_udp_payload(&mut flows, key, Bytes::from_static(b"later"), &mut budget);
-    let queued: Vec<_> = std::iter::from_fn(|| from_stack.try_recv().ok()).collect();
+    let queued: Vec<_> = std::iter::from_fn(|| from_stack.try_recv().ok())
+        .map(QueuedDatagram::into_payload)
+        .collect();
     assert_eq!(queued.len(), UDP_BRIDGE_CHANNEL_DEPTH);
     assert_eq!(queued.last().unwrap().as_ref(), b"later");
     assert_eq!(budget.udp_channel_dropped_packets(), 1);
+    assert_eq!(budget.udp_queued_bytes.load(Ordering::Acquire), 0);
 
     drop(from_stack);
     forward_udp_payload(&mut flows, key, Bytes::from_static(b"closed"), &mut budget);
@@ -573,4 +582,104 @@ fn full_udp_queue_drops_the_datagram_but_keeps_the_flow() {
         "a closed queue means the bridge ended, so the flow is forgotten"
     );
     assert_eq!(budget.udp_channel_dropped_packets(), 2);
+    assert_eq!(budget.udp_queued_bytes.load(Ordering::Acquire), 0);
+}
+
+#[test]
+fn udp_queues_are_bounded_in_bytes_per_flow_and_in_total() {
+    let policy = LOW_MEMORY_FLOW_BUDGET_POLICY;
+    let per_flow = policy.udp.max_queued_bytes_per_flow;
+    let total = policy.udp.max_queued_bytes_total;
+    let datagram = 1200;
+    let mut budget = FlowBudgetState::new(policy);
+    let (key, flow, mut from_stack) = test_udp_flow(&budget);
+    let mut flows = HashMap::from([(key, flow)]);
+
+    // Far fewer datagrams than the queue's depth fill its bytes.
+    let fit = per_flow / datagram;
+    assert!(fit < UDP_BRIDGE_CHANNEL_DEPTH);
+    for _ in 0..fit + 1 {
+        forward_udp_payload(&mut flows, key, Bytes::from(vec![7; datagram]), &mut budget);
+    }
+    assert_eq!(budget.udp_channel_dropped_packets(), 1);
+    assert_eq!(flows[&key].queued.flow(), fit * datagram);
+    assert_eq!(
+        budget.udp_queued_bytes.load(Ordering::Acquire),
+        fit * datagram
+    );
+
+    // Taking a datagram out of the queue makes room for another.
+    let first = from_stack.try_recv().unwrap().into_payload();
+    assert_eq!(first.len(), datagram);
+    forward_udp_payload(&mut flows, key, Bytes::from(vec![8; datagram]), &mut budget);
+    assert_eq!(budget.udp_channel_dropped_packets(), 1);
+
+    // Other flows share the total.
+    let mut others = Vec::new();
+    let mut opened = 0;
+    while budget.udp_queued_bytes.load(Ordering::Acquire) + per_flow <= total {
+        let (_, mut flow, receiver) = test_udp_flow(&budget);
+        let other_key = UdpFlowKey::new(
+            IpEndpoint::new(IpAddress::v4(198, 18, 0, 2), 20000 + opened),
+            IpEndpoint::new(IpAddress::v4(192, 0, 2, 1), 443),
+        );
+        flow.generation = u64::from(opened);
+        flows.insert(other_key, flow);
+        others.push(receiver);
+        for _ in 0..fit {
+            forward_udp_payload(
+                &mut flows,
+                other_key,
+                Bytes::from(vec![9; datagram]),
+                &mut budget,
+            );
+        }
+        opened += 1;
+    }
+    let drops = budget.udp_channel_dropped_packets();
+    let queued = budget.udp_queued_bytes.load(Ordering::Acquire);
+    let room = total - queued;
+    let last_key = UdpFlowKey::new(
+        IpEndpoint::new(IpAddress::v4(198, 18, 0, 2), 30000),
+        IpEndpoint::new(IpAddress::v4(192, 0, 2, 1), 443),
+    );
+    let (_, last_flow, last_receiver) = test_udp_flow(&budget);
+    flows.insert(last_key, last_flow);
+    for _ in 0..fit {
+        forward_udp_payload(
+            &mut flows,
+            last_key,
+            Bytes::from(vec![1; datagram]),
+            &mut budget,
+        );
+    }
+    assert_eq!(flows[&last_key].queued.flow(), room / datagram * datagram);
+    assert_eq!(
+        budget.udp_channel_dropped_packets() - drops,
+        (fit - room / datagram) as u64,
+        "the total is shared by every flow"
+    );
+    assert!(budget.udp_queued_bytes.load(Ordering::Acquire) <= total);
+
+    // Queues that end give back what they held.
+    drop(others);
+    drop(last_receiver);
+    drop(from_stack);
+    assert_eq!(budget.udp_queued_bytes.load(Ordering::Acquire), 0);
+}
+
+#[test]
+fn queued_udp_datagrams_do_not_share_the_tun_read_buffer() {
+    let mut budget = FlowBudgetState::new(MOBILE_FLOW_BUDGET_POLICY);
+    let (key, flow, mut from_stack) = test_udp_flow(&budget);
+    let mut flows = HashMap::from([(key, flow)]);
+    let read_buffer = Bytes::from(vec![3; 64 * 1024]);
+    let payload = read_buffer.slice(100..1300);
+    forward_udp_payload(&mut flows, key, payload.clone(), &mut budget);
+    let queued = from_stack.try_recv().unwrap().into_payload();
+    assert_eq!(queued, payload);
+    assert!(
+        !std::ptr::eq(queued.as_ptr(), payload.as_ptr()),
+        "a queued datagram must not keep the 64 KiB read buffer alive"
+    );
 }

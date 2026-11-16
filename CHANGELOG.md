@@ -10,6 +10,21 @@ long-term supported release series.
 
 ## Unreleased
 
+- A TUN UDP flow's queue to its outbound is bounded in bytes as well as in
+  datagrams: 64 KiB per flow and 2 MiB across flows on the `LowMemory` TUN
+  profile, 128 KiB and 4 MiB on `Mobile`, 256 KiB and 8 MiB on `MobilePlus`,
+  512 KiB and 64 MiB on `Desktop`, 1 MiB and 128 MiB on `Throughput`. A flow
+  could queue 256 datagrams, and every queued datagram was a slice of the
+  64 KiB buffer the TUN descriptor had been read into, so it kept that whole
+  buffer alive: a slow outbound let one flow hold up to 16 MiB, and a burst
+  over many flows enough to pass the 50 MB an iOS Network Extension may use.
+  A datagram over a limit is dropped, as one that finds its queue full, and
+  counted in `udp_channel_dropped_packets`; the flow stays up. Queued
+  datagrams now have allocations of their own, and so do the first packet a
+  UDP flow kept for an ICMP reply for as long as the flow lasted (it is now
+  released once the flow is routed), a DNS query the TUN answers itself, and
+  a datagram held while a TUN admission callback decides.
+
 ## 0.10.1 - 2026-11-16
 
 Release candidate preparation; publication and exact-candidate release
