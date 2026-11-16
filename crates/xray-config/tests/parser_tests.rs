@@ -4340,49 +4340,33 @@ fn rejects_non_string_or_array_dns_host_target_with_path() {
     assert_parse_error_path(&raw, "$.dns.hosts.full:server.example");
 }
 
-#[test]
-fn accepts_eight_dns_servers() {
-    let raw = raw_with_dns_servers(
-        r#"
-          "192.0.2.1",
-          "192.0.2.2",
-          "192.0.2.3",
-          "192.0.2.4",
-          "192.0.2.5",
-          "192.0.2.6",
-          "192.0.2.7",
-          "192.0.2.8"
-        "#,
-    );
-
-    let parsed = parse_xray_json(&raw).expect("eight DNS servers should be supported");
-
-    assert_eq!(parsed.config.dns.servers.len(), 8);
+fn numbered_dns_servers(count: usize) -> String {
+    (1..=count)
+        .map(|index| format!(r#""192.0.2.{index}""#))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[test]
-fn rejects_more_than_eight_dns_servers() {
-    let raw = raw_with_dns_servers(
-        r#"
-          "192.0.2.1",
-          "192.0.2.2",
-          "192.0.2.3",
-          "192.0.2.4",
-          "192.0.2.5",
-          "192.0.2.6",
-          "192.0.2.7",
-          "192.0.2.8",
-          "192.0.2.9"
-        "#,
-    );
+fn accepts_thirty_two_dns_servers() {
+    let raw = raw_with_dns_servers(&numbered_dns_servers(32));
+
+    let parsed = parse_xray_json(&raw).expect("32 DNS servers should be supported");
+
+    assert_eq!(parsed.config.dns.servers.len(), 32);
+}
+
+#[test]
+fn rejects_more_than_thirty_two_dns_servers() {
+    let raw = raw_with_dns_servers(&numbered_dns_servers(33));
 
     let error = parse_xray_json(&raw).unwrap_err();
 
     assert_eq!(error.diagnostics[0].path.as_deref(), Some("$.dns.servers"));
-    assert!(error.diagnostics[0].message.contains("9 servers"));
+    assert!(error.diagnostics[0].message.contains("33 servers"));
     assert!(error.diagnostics[0]
         .message
-        .contains("maximum supported per configuration is 8"));
+        .contains("maximum supported per configuration is 32"));
 }
 
 #[test]

@@ -10,6 +10,11 @@ long-term supported release series.
 
 ## Unreleased
 
+- `dns.servers` takes up to 32 entries, where more than eight failed to
+  parse. Xray-core sets no limit, and full subscriptions list more than
+  eight. Destination lookups use every server; the TUN DNS proxy at
+  `198.18.0.1` still forwards to the first eight distinct ones, which share
+  its five-second budget.
 - RAW's `http` header obfuscation works (`tcpSettings`/`rawSettings`
   `header.type: "http"`), where it was refused: every connection sends a
   request head built as Xray-core builds it (method, a drawn path, headers

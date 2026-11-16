@@ -4183,7 +4183,8 @@ system has a route for, as Xray-core v26.10.31's `checkSystem` narrows them:
   hijacked from TUN and fake IP answers follow the same routes. Bootstrap
   resolution keeps ignoring the global strategy.
 
-`dns.servers` accepts at most eight string or object entries. String shorthand
+`dns.servers` accepts at most 32 string or object entries; Xray-core sets
+no limit, and the bound only keeps a server list small. String shorthand
 accepts IP addresses, socket addresses, domain names with an optional nonzero
 port, `tcp://host[:port]` / `tcp+local://host[:port]`, routed
 `tls://host[:port]`, and `https://host[:port][/path][?query]` /
@@ -4445,7 +4446,9 @@ resolver to find the upstream itself, but never to retry the original qname.
 
 When fake-IP is disabled and at least one usable server is present, TUN clients
 can use `198.18.0.1:53` as a local UDP/TCP DNS proxy. The proxy keeps
-server order and removes duplicates by endpoint, effective tag, and transport.
+server order and removes duplicates by endpoint, effective tag, and transport,
+and forwards to the first eight that remain: its five-second budget is shared
+among the servers it tries. Destination lookups use every server.
 Classic, `tcp://`, and `tls://` attempts enter the normal outbound router, so Freedom
 sockets retain platform socket protection and VLESS routes do not gain a
 hidden direct-DNS bypass. `tcp+local://` deliberately skips route selection and

@@ -74,7 +74,10 @@ const MAX_CONFIG_IP_MATCHERS: usize = 750_000;
 const MAX_CONFIG_MATCHERS: usize = 1_000_000;
 const MAX_CONFIG_GEODATA_ATTR_FILTERS: usize = 32;
 const MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE: usize = 256;
-const MAX_DNS_SERVERS: usize = 8;
+/// Xray-core sets no limit; full subscriptions list a dozen or two
+/// servers. Each entry costs one compiled policy, so the bound only keeps
+/// a config's server list small.
+const MAX_DNS_SERVERS: usize = 32;
 const DEFAULT_FAKE_IP_POOL_SIZE: u32 = 32_768;
 const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
 const TUN_CLIENT_IPV4: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 2);
