@@ -36,16 +36,16 @@ download_and_verify \
   h3-quinn 0.0.10 \
   8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4
 download_and_verify \
-  quinn-proto 0.11.16 \
-  2f4bfc015262b9df63c8845072ce59068853ff5872180c2ce2f13038b970e560
+  quinn-proto 0.11.19 \
+  0e750cca55fe4f0439a15d0bb529da9651e79993e8e72c61a899a36d462befbe
 download_and_verify \
-  quinn 0.11.9 \
-  b9e20a958963c291dc322d98411f541009df2ced7b5a4f2bd52337638cfccf20
+  quinn 0.11.12 \
+  4051e23e9185c255a7e33ef59cdbca87a22d359052eecd22fc6b901fb37d9d11
 patch --batch --fuzz=0 -p1 \
-  -d "$temporary/quinn-0.11.9" \
+  -d "$temporary/quinn-0.11.12" \
   <"$ROOT/vendor/quinn/XRAY-PATCH.diff"
 diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
-  "$temporary/quinn-0.11.9" "$ROOT/vendor/quinn"
+  "$temporary/quinn-0.11.12" "$ROOT/vendor/quinn"
 
 patch --batch --fuzz=0 -p1 \
   -d "$temporary/blake3-1.8.5" \
@@ -79,23 +79,23 @@ diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
 cargo test --locked --manifest-path "$temporary/h3-0.0.8/Cargo.toml" --lib
 
 patch --batch --fuzz=0 -p1 \
-  -d "$temporary/quinn-proto-0.11.16" \
+  -d "$temporary/quinn-proto-0.11.19" \
   <"$ROOT/vendor/quinn-proto/XRAY-PATCH.diff"
 diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
-  "$temporary/quinn-proto-0.11.16" "$ROOT/vendor/quinn-proto"
-cargo test --locked --manifest-path "$temporary/quinn-proto-0.11.16/Cargo.toml" \
+  "$temporary/quinn-proto-0.11.19" "$ROOT/vendor/quinn-proto"
+cargo test --locked --manifest-path "$temporary/quinn-proto-0.11.19/Cargo.toml" \
   --no-default-features --features rustls-ring --lib
 
 # The quinn patch calls quinn-proto's patched `set_stream_receive_window`, so
 # quinn is tested against the reconstruction above. Its published lockfile
-# pins crates.io quinn-proto 0.11.13: move that entry, and only what 0.11.16
+# pins crates.io quinn-proto 0.11.18: move that entry, and only what 0.11.19
 # needs, before the locked test.
-quinn_proto_patch="patch.crates-io.quinn-proto.path=\"$temporary/quinn-proto-0.11.16\""
+quinn_proto_patch="patch.crates-io.quinn-proto.path=\"$temporary/quinn-proto-0.11.19\""
 cargo update --config "$quinn_proto_patch" \
-  --manifest-path "$temporary/quinn-0.11.9/Cargo.toml" \
-  -p quinn-proto --precise 0.11.16
+  --manifest-path "$temporary/quinn-0.11.12/Cargo.toml" \
+  -p quinn-proto --precise 0.11.19
 cargo test --locked --config "$quinn_proto_patch" \
-  --manifest-path "$temporary/quinn-0.11.9/Cargo.toml" \
+  --manifest-path "$temporary/quinn-0.11.12/Cargo.toml" \
   --no-default-features --features runtime-tokio,rustls-ring --lib
 
 download_and_verify \

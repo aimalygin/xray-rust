@@ -1,8 +1,14 @@
-# Quinn 0.11.9: bounded transmit quantum, receive batch and the socket before a rebind
+# Quinn 0.11.12: bounded transmit quantum, receive batch and the socket before a rebind
 
-Canonical archive: https://static.crates.io/crates/quinn/quinn-0.11.9.crate
+Canonical archive: https://static.crates.io/crates/quinn/quinn-0.11.12.crate
 
-SHA256: `b9e20a958963c291dc322d98411f541009df2ced7b5a4f2bd52337638cfccf20`. Upstream licenses and complete source are retained.
+SHA256: `4051e23e9185c255a7e33ef59cdbca87a22d359052eecd22fc6b901fb37d9d11`. Upstream licenses and complete source are retained.
+
+Rebased from 0.11.9 with the vendored quinn-proto's move to 0.11.19; the
+patch applied without conflicts. 0.11.12 also bounds `read_to_end` by the
+cumulative size of what it reads, fixes the connection and endpoint handle
+reference counts, and handles a timer whose deadline has passed without
+polling it.
 
 The connection driver yields after its datagram counter reaches 64 instead of 20.
 A final GSO group may exceed that threshold by up to nine datagrams.
