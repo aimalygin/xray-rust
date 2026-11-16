@@ -10,6 +10,18 @@ long-term supported release series.
 
 ## Unreleased
 
+- Flows that fail to open through an outbound the observatory watches now
+  have it probed again within seconds instead of at the next `probeInterval`.
+  A refused, reset or timed-out connection, or a failed TLS, REALITY or
+  transport handshake, on a TCP flow from SOCKS, HTTP or TUN or a UDP flow
+  from TUN wakes the observer, which probes that outbound again at most once
+  every 10 seconds; when no observed member of a balancer is healthy, a
+  failure through a member or the balancer's fallback has all of them probed
+  again, at most once every 15 seconds. A dead server behind a `leastPing`
+  balancer with `probeInterval: "10m"` was kept for up to ten minutes; it is
+  now left after one failed open and one probe. Without failures the
+  observatory probes as before.
+
 ## 0.10.1 - 2026-11-16
 
 Release candidate preparation; publication and exact-candidate release
