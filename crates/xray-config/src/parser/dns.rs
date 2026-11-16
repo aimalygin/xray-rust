@@ -8,6 +8,33 @@ fn is_special_dns_server(address: &str) -> bool {
     address.eq_ignore_ascii_case("localhost") || address.eq_ignore_ascii_case("fakedns")
 }
 
+/// Xray-core's `localhost` client, which asks the system resolver.
+fn is_system_dns_server(address: &str) -> bool {
+    address.eq_ignore_ascii_case("localhost")
+}
+
+/// The rules Xray-core's `localTLDsAndDotlessDomainsRules` adds to a
+/// `localhost` client's `domains`, so that dotless names and the local and
+/// reserved suffixes are asked of the system resolver first.
+const LOCAL_DNS_DOMAIN_RULES: [&str; 9] = [
+    "regexp:^[^.]+$",
+    "domain:local",
+    "domain:localdomain",
+    "domain:localhost",
+    "domain:lan",
+    "domain:home.arpa",
+    "domain:example",
+    "domain:invalid",
+    "domain:test",
+];
+
+fn system_dns_endpoint() -> DnsServerEndpoint {
+    DnsServerEndpoint::Domain {
+        domain: "localhost".to_owned(),
+        port: 53,
+    }
+}
+
 pub(super) fn is_tun_reserved_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => matches!(ip, TUN_DNS_ANCHOR | TUN_CLIENT_IPV4),
@@ -543,26 +570,33 @@ impl Parser<'_> {
             53
         };
         let port = if port == 0 { 53 } else { port };
-        let (transport, endpoint, https_path) = match parse_dns_https_server_uri(address) {
-            Ok(Some((transport, endpoint, https_path))) => (transport, endpoint, Some(https_path)),
-            Ok(None) => match parse_dns_tcp_server_uri(address) {
-                Ok(Some((transport, endpoint))) => (transport, endpoint, None),
-                Ok(None) => (
-                    DnsServerTransport::Classic,
-                    self.parse_dns_server_endpoint(address, port, &address_path)?,
-                    None,
-                ),
+        let system = is_system_dns_server(address);
+        let (transport, endpoint, https_path) = if system {
+            (DnsServerTransport::System, system_dns_endpoint(), None)
+        } else {
+            match parse_dns_https_server_uri(address) {
+                Ok(Some((transport, endpoint, https_path))) => {
+                    (transport, endpoint, Some(https_path))
+                }
+                Ok(None) => match parse_dns_tcp_server_uri(address) {
+                    Ok(Some((transport, endpoint))) => (transport, endpoint, None),
+                    Ok(None) => (
+                        DnsServerTransport::Classic,
+                        self.parse_dns_server_endpoint(address, port, &address_path)?,
+                        None,
+                    ),
+                    Err(message) => {
+                        self.error(&address_path, message);
+                        return None;
+                    }
+                },
                 Err(message) => {
                     self.error(&address_path, message);
                     return None;
                 }
-            },
-            Err(message) => {
-                self.error(&address_path, message);
-                return None;
             }
         };
-        let domains = self.parse_dns_server_domains(server, path)?;
+        let domains = self.parse_dns_server_domains(server, path, system)?;
         let (expected_ips, unexpected_ips) = self.parse_dns_server_ip_filters(server, path)?;
         let timeout_path = format!("{path}.timeoutMs");
         let timeout_ms = match server.get("timeoutMs") {
@@ -808,10 +842,16 @@ impl Parser<'_> {
         &mut self,
         server: &Value,
         path: &str,
+        system: bool,
     ) -> Option<DomainMatcherSet> {
         let domains_path = format!("{path}.domains");
-        let domains =
-            self.domain_rule_list(server.get("domains"), &domains_path, DomainNameMode::Dns)?;
+        let local_rules: &[&str] = if system { &LOCAL_DNS_DOMAIN_RULES } else { &[] };
+        let domains = self.domain_rule_list_with(
+            server.get("domains"),
+            &domains_path,
+            DomainNameMode::Dns,
+            local_rules,
+        )?;
         Some(domains.unwrap_or_default())
     }
 
@@ -837,6 +877,21 @@ impl Parser<'_> {
         if server.trim() != server {
             self.error(path, "dns server must not contain surrounding whitespace");
             return None;
+        }
+        if is_system_dns_server(server) {
+            let mut policy =
+                dns_stream_server_policy(DnsServerTransport::System, system_dns_endpoint(), None);
+            if let DnsServerConfig::Policy(policy) = &mut policy {
+                policy.domains = self
+                    .domain_rule_list_with(
+                        None,
+                        path,
+                        DomainNameMode::Dns,
+                        &LOCAL_DNS_DOMAIN_RULES,
+                    )?
+                    .unwrap_or_default();
+            }
+            return Some(policy);
         }
         if is_special_dns_server(server) {
             self.error(

@@ -1330,6 +1330,40 @@ Deliberate differences, source-derived:
 - The fixed TUN FakeDNS mode (`dns.fakeIp` without a DNS outbound) does not
   read `dns.hosts`, for IP values as for `"#N"`.
 
+## DNS `localhost` client
+
+A `localhost` DNS server asks the platform resolver, as Xray-core v26.10.31's
+`LocalNameServer` (`app/dns/nameserver_local.go`) does, with the same local
+domain rules (`app/dns/config.go`) and the same 300-second TTL
+(`features/dns/client.go`) ([details](config-compatibility.md#dns)).
+Source-derived; covered by parser, resolver and TUN proxy unit tests, not by
+interop.
+
+Deliberate differences:
+
+- Answers enter the destination cache like other servers'. Xray-core's
+  `IsDisableCache` keeps this client out of its cache and asks the platform
+  each time.
+- The platform resolver is the core's bootstrap resolver, behind
+  `dns.hosts`. Under `StaticOnly`, where it would loop through the tunnel,
+  only `dns.hosts` answers, and other names fail over to the next server.
+  Xray-core's `MayUseSystemResolver` leaves that loop to its embedder.
+- A lookup that finds no address is a failure, not an empty answer, so the
+  next server is asked; Xray-core's `ErrEmptyResponse` reaches the same next
+  server.
+
+## Fake-IP allocation across restarts
+
+`dns.fakeIp` places a new domain at a stable FNV-1a hash of its name within the
+pool and probes forward on collision, and a `Core` adopts the mappings the
+`Core` stopped last in the same process left for the same pool
+([details](config-compatibility.md#dns-outbound)). Source-derived: Xray-core's
+FakeDNS places a new domain at the current time in milliseconds within the
+pool and starts every instance with an empty table, so after a restart an
+address an application still holds can name another domain. Covered by
+`fake_dns` unit tests and a `Core` stop/start test; not yet checked on a
+device.
+
 ## UDP-hop modes
 
 The `udphop` UDP mask reads Xray-core v26.10.31's `intervalLocal`,

@@ -4183,9 +4183,29 @@ requires caching plus an explicit `serveExpiredTTL` from 1 through 86400
 seconds. Xray treats zero as an unbounded stale lifetime; this mobile-oriented
 core rejects that value rather than silently retaining records forever.
 Per-server cache/stale overrides remain unsupported because the current cache
-is owned once per Core rather than once per upstream. Special
-`localhost`/`fakedns` clients and routed DoQ are rejected until their
-runtime semantics exist; they are not silently approximated as classic UDP.
+is owned once per Core rather than once per upstream. The special `fakedns`
+client and routed DoQ are rejected until their runtime semantics exist; they
+are not silently approximated as classic UDP.
+
+`localhost`, as a string entry or an object's `address` and in any case, is
+Xray-core's system-resolver client. It sends nothing on the wire: it asks the
+resolver the core bootstraps with, which is `dns.hosts` and then the platform
+resolver under the `System` bootstrap mode, bypassing routing. An object's
+`port` is ignored, and its other fields apply as to any server. As in
+Xray-core, its `domains` gain `regexp:^[^.]+$` and the `domain:` rules
+`local`, `localdomain`, `localhost`, `lan`, `home.arpa`, `example`, `invalid`
+and `test`, so dotless and local names are asked of it first. An A or AAAA
+lookup returns the platform's addresses of that family; the answer carries
+the platform's TTL, or Xray-core's 300 seconds when it reports none, as
+`getaddrinfo` never does. It enters the destination cache like any other
+server's answer, where Xray-core keeps no cache of its own for this client
+and asks the platform each time; the platform's own cache applies in both. A
+lookup that fails or finds nothing moves on to the next server, as in
+Xray-core. Under the `StaticOnly` bootstrap mode, which a mobile VPN uses
+because the platform resolver would ask the tunnel itself, `localhost` can
+answer only names `dns.hosts` maps and fails every other, so the next server
+is asked. The TUN DNS proxy asks a `localhost` upstream the same way, locally,
+over UDP and TCP.
 
 `enableParallelQuery: true` asks every server a lookup selects at once, as
 Xray-core v26.10.31's parallel query does, instead of one after another. The

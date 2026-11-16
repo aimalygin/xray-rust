@@ -46,7 +46,7 @@ objects! {
         "Read as Xray-core v26.10.31 reads it. qType is a number or a comma-separated string of types and ranges; a reversed range adds no type, and a rule with no type answers every type. domain takes an array or a comma-separated string of domain rules, plain text being a substring; an empty list sets no condition. qtype and Reject are deprecated aliases with warnings; qType/qtype cannot both be non-null."),
     DNS_SERVER: ("$.dns.servers[] (object entries)",
         ["address", "port", "domains", "expectedIPs", "expectIPs", "unexpectedIPs", "tag", "timeoutMs", "skipFallback", "queryStrategy", "finalQuery", "clientIp"],
-        "expectedIPs is an alias of expectIPs. clientIp replaces dns.clientIp for this server. domains takes an array or a comma-separated string of domain rules as Xray-core reads them, plain text being a substring. URL, address/port, query-family and domain/IP-filter combinations are checked by the parser."),
+        "expectedIPs is an alias of expectIPs. clientIp replaces dns.clientIp for this server. address localhost, in any case, asks the core's bootstrap resolver (dns.hosts, then the platform resolver) instead of the wire, with Xray-core's local domain rules added to domains; its port is ignored. domains takes an array or a comma-separated string of domain rules as Xray-core reads them, plain text being a substring. URL, address/port, query-family and domain/IP-filter combinations are checked by the parser."),
     FAKE_IP: ("$.dns.fakeIp",
         ["enabled", "ipv4Pool", "poolSize", "ttl"],
         "IPv4 only. Positive poolSize must fit the usable pool after reserved addresses; ttl is positive."),

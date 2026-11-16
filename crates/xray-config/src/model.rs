@@ -184,6 +184,10 @@ pub enum DnsServerTransport {
     HttpsLocal,
     /// DNS over QUIC dialed directly through the local network stack.
     QuicLocal,
+    /// Xray-core's `localhost`: the platform resolver the core bootstraps
+    /// with, asked directly rather than over the wire. Its endpoint is the
+    /// placeholder `localhost:53`, which nothing dials.
+    System,
 }
 
 pub const DEFAULT_DNS_SERVER_TIMEOUT_MS: u64 = 4_000;

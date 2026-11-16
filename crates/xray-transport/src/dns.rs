@@ -855,6 +855,10 @@ pub enum DnsQueryTransportKind {
     Https,
     /// DNS over QUIC with one RFC 9250 stream per query.
     Quic,
+    /// No wire at all: the query is answered from the platform resolver, as
+    /// Xray-core's `localhost` name server answers. See
+    /// [`exchange_system_dns_query`].
+    System,
 }
 
 /// Determines whether a DNS exchange enters the routing layer.
@@ -925,6 +929,10 @@ pub enum NameServerTransport {
     HttpsLocal,
     /// Start immediately with local DNS over QUIC.
     QuicLocal,
+    /// Xray-core's `localhost`: ask the platform resolver the core
+    /// bootstraps with, bypassing configured routing. The policy's server is
+    /// a placeholder that is never dialed.
+    System,
 }
 
 /// Exchanges already encoded DNS messages with a configured name server.
@@ -996,8 +1004,12 @@ impl DnsQueryTransport for DirectDnsQueryTransport {
         metadata: DnsQueryMetadata<'_>,
         query: &[u8],
     ) -> io::Result<Vec<u8>> {
+        if transport == DnsQueryTransportKind::System {
+            return exchange_system_dns_query(self.bootstrap_resolver.as_ref(), query).await;
+        }
         let server_addrs = self.server_addrs(server).await?;
         match transport {
+            DnsQueryTransportKind::System => unreachable!("answered above"),
             DnsQueryTransportKind::Udp => {
                 exchange_direct_udp(server_addrs[0], query, self.socket_protector.as_deref()).await
             }
@@ -1910,6 +1922,10 @@ impl ConfiguredDnsResolver {
             ),
             NameServerTransport::QuicLocal => (
                 DnsQueryTransportKind::Quic,
+                DnsQueryMetadata::local(name_server.tag.as_deref()),
+            ),
+            NameServerTransport::System => (
+                DnsQueryTransportKind::System,
                 DnsQueryMetadata::local(name_server.tag.as_deref()),
             ),
         };
@@ -2835,6 +2851,102 @@ fn build_dns_query_with_id(
         query.extend_from_slice(edns);
     }
     Ok(query)
+}
+
+/// Answers one encoded query from `resolver`, as Xray-core's `localhost`
+/// name server answers from the system resolver.
+///
+/// `resolver` is the core's bootstrap resolver: `dns.hosts`, then the
+/// platform resolver, or nothing more under a static-only bootstrap. An A or
+/// AAAA question of class IN is looked up for that family, any other single
+/// question gets an empty answer. The response repeats the question, keeps
+/// the query's RD bit and sets RA, and gives every address the lookup's
+/// remaining TTL, or Xray-core's 300-second `dns.DefaultTTL` when the
+/// platform reports none, as `getaddrinfo` never does. An answer found to be
+/// empty is NOERROR without records; a lookup that fails, including one that
+/// finds no address at all, is an error, so a resolver moves on to its next
+/// server, as Xray-core's moves on when its local lookup fails.
+pub async fn exchange_system_dns_query(
+    resolver: &dyn DnsResolver,
+    query: &[u8],
+) -> io::Result<Vec<u8>> {
+    const RCODE_NXDOMAIN: u16 = 3;
+    if query.len() < 12 {
+        return Err(invalid_dns_response("dns query is shorter than its header"));
+    }
+    let flags = read_u16(query, 2)?;
+    if flags & 0x8000 != 0 || flags & 0x7800 != 0 {
+        return Err(invalid_dns_response(
+            "system DNS answers standard queries only",
+        ));
+    }
+    if read_u16(query, 4)? != 1 {
+        return Err(invalid_dns_response("dns query must have one question"));
+    }
+    let mut question_end = 12;
+    let (name, record_type, record_class) = read_dns_question(query, &mut question_end)?;
+    let strategy = match (record_class, record_type) {
+        (1, code) if code == DnsRecordType::A.code() => Some(DnsQueryStrategy::UseIpv4),
+        (1, code) if code == DnsRecordType::Aaaa.code() => Some(DnsQueryStrategy::UseIpv6),
+        _ => None,
+    };
+    let domain = name.trim_end_matches('.');
+    let (rcode, addresses, ttl) = match strategy {
+        Some(strategy) if !domain.is_empty() => {
+            match resolver
+                .resolve_all_with_strategy(domain, 0, strategy)
+                .await
+            {
+                Ok(lookup) => {
+                    let ttl = lookup.ttl().map_or(DNS_DEFAULT_TTL.as_secs(), |ttl| {
+                        ttl.as_secs() + u64::from(ttl.subsec_nanos() != 0)
+                    });
+                    let want_ipv4 = strategy == DnsQueryStrategy::UseIpv4;
+                    let addresses: Vec<IpAddr> = lookup
+                        .ips()
+                        .map(|address| address.to_canonical())
+                        .filter(|address| address.is_ipv4() == want_ipv4)
+                        .collect();
+                    (0, addresses, u32::try_from(ttl).unwrap_or(u32::MAX))
+                }
+                Err(TransportError::DnsNoData(_, _)) => (0, Vec::new(), 0),
+                Err(TransportError::DnsNameError(_, _)) => (RCODE_NXDOMAIN, Vec::new(), 0),
+                Err(TransportError::DnsRcode(_, _, rcode)) => {
+                    (u16::from(rcode & 0x0f), Vec::new(), 0)
+                }
+                Err(error) => return Err(io::Error::other(error)),
+            }
+        }
+        _ => (0, Vec::new(), 0),
+    };
+    let answer_count = u16::try_from(addresses.len())
+        .map_err(|_| invalid_dns_response("system DNS answer has too many addresses"))?;
+    let mut response = Vec::with_capacity(question_end + addresses.len() * 28);
+    response.extend_from_slice(&query[0..2]);
+    response.extend_from_slice(&(0x8000 | (flags & 0x0100) | 0x0080 | rcode).to_be_bytes());
+    response.extend_from_slice(&1_u16.to_be_bytes());
+    response.extend_from_slice(&answer_count.to_be_bytes());
+    response.extend_from_slice(&0_u16.to_be_bytes());
+    response.extend_from_slice(&0_u16.to_be_bytes());
+    response.extend_from_slice(&query[12..question_end]);
+    for address in addresses {
+        // A pointer to the question's name at offset 12.
+        response.extend_from_slice(&[0xc0, 0x0c]);
+        response.extend_from_slice(&record_type.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&ttl.to_be_bytes());
+        match address {
+            IpAddr::V4(address) => {
+                response.extend_from_slice(&4_u16.to_be_bytes());
+                response.extend_from_slice(&address.octets());
+            }
+            IpAddr::V6(address) => {
+                response.extend_from_slice(&16_u16.to_be_bytes());
+                response.extend_from_slice(&address.octets());
+            }
+        }
+    }
+    Ok(response)
 }
 
 /// Returns whether a DNS response belongs to the supplied query.
@@ -3918,7 +4030,9 @@ mod tests {
                 DnsQueryTransportKind::Quic => {
                     Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 49)))
                 }
-                DnsQueryTransportKind::Udp | DnsQueryTransportKind::Tcp => {
+                DnsQueryTransportKind::Udp
+                | DnsQueryTransportKind::Tcp
+                | DnsQueryTransportKind::System => {
                     panic!("encrypted DNS fault matrix must not downgrade to plaintext")
                 }
             }
@@ -6366,7 +6480,8 @@ mod tests {
                 DnsQueryTransportKind::Tcp
                 | DnsQueryTransportKind::Tls
                 | DnsQueryTransportKind::Https
-                | DnsQueryTransportKind::Quic => {
+                | DnsQueryTransportKind::Quic
+                | DnsQueryTransportKind::System => {
                     Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 25)))
                 }
             }
@@ -7729,7 +7844,8 @@ mod tests {
                 DnsQueryTransportKind::Tcp
                 | DnsQueryTransportKind::Tls
                 | DnsQueryTransportKind::Https
-                | DnsQueryTransportKind::Quic => {
+                | DnsQueryTransportKind::Quic
+                | DnsQueryTransportKind::System => {
                     Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 66)))
                 }
             }
