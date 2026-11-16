@@ -1870,6 +1870,7 @@ impl TunRuntimeContext {
             .select_dns_outbound_for_route_with_resolver(
                 &self.app_route(client),
                 &target,
+                &target,
                 self.dns_resolver.as_ref(),
             )
             .await
@@ -1928,7 +1929,13 @@ struct TcpListenerState {
 
 #[derive(Clone)]
 enum TcpBridgeDestination {
-    Standard(RestoredClientTarget),
+    Standard {
+        /// The target dialed, and what it was before fake-IP restoration.
+        restored: RestoredClientTarget,
+        /// The sniffed domain routing sees in place of the dialed target,
+        /// when `routeOnly` keeps an IP address dialed.
+        route_target: Option<Target>,
+    },
     DnsProxy {
         client_target: Target,
         plan: Arc<dns_proxy::DnsProxyPlan>,
@@ -1964,13 +1971,22 @@ struct TcpBridgePermits {
 
 struct TcpDialCandidate {
     target: Target,
+    /// What routing sees, when it is not `target`.
+    route_target: Option<Target>,
     dns_upstream: Option<dns_proxy::DnsProxyUpstream>,
 }
 
 impl TcpBridgeDestination {
+    fn standard(restored: RestoredClientTarget) -> Self {
+        Self::Standard {
+            restored,
+            route_target: None,
+        }
+    }
+
     fn client_target(&self) -> &Target {
         match self {
-            Self::Standard(restored) => &restored.target,
+            Self::Standard { restored, .. } => &restored.target,
             Self::DnsProxy {
                 client_target: target,
                 ..
@@ -1984,8 +2000,12 @@ impl TcpBridgeDestination {
 
     fn dial_candidates(&self) -> Vec<TcpDialCandidate> {
         match self {
-            Self::Standard(restored) => vec![TcpDialCandidate {
+            Self::Standard {
+                restored,
+                route_target,
+            } => vec![TcpDialCandidate {
                 target: restored.target.clone(),
+                route_target: route_target.clone(),
                 dns_upstream: None,
             }],
             Self::DnsProxy { plan, .. } => plan
@@ -1993,6 +2013,7 @@ impl TcpBridgeDestination {
                 .iter()
                 .map(|upstream| TcpDialCandidate {
                     target: upstream.target(RoutingNetwork::Tcp),
+                    route_target: None,
                     dns_upstream: Some(upstream.clone()),
                 })
                 .collect(),
@@ -2216,7 +2237,7 @@ fn open_ready_tcp_flows(
                     match dns_proxy::tcp_action(&context.dns_mode, local_endpoint, dns_outbound) {
                         DnsTcpAction::Pass => context
                             .restored_target_from_endpoint(local_endpoint, RoutingNetwork::Tcp)
-                            .map(TcpBridgeDestination::Standard)
+                            .map(TcpBridgeDestination::standard)
                             .map(ReadyTcpFlow::Bridge)
                             .unwrap_or(ReadyTcpFlow::Reject(
                                 "TUN TCP target mapping is unavailable",
@@ -3318,7 +3339,7 @@ async fn bridge_tcp_flow(
     let mut initial_upload = VecDeque::new();
     let mut protocol = None;
     let mut attributes = None;
-    if let TcpBridgeDestination::Standard(restored) = &destination {
+    if let TcpBridgeDestination::Standard { restored, .. } = &destination {
         let provenance = restored.provenance;
         let sniffed_routing = context.outbound_router.sniffed_routing();
         let sniffing_config = context
@@ -3356,16 +3377,11 @@ async fn bridge_tcp_flow(
             attributes = sniffed.attributes;
             if let Some(sniffed) = sniffed.sniffed {
                 protocol = Some(sniffed.protocol);
-                // Only an unmapped fake IP takes its sniffed domain; other
-                // flows are sniffed for their protocol alone.
-                if let Some(target) = sniffed
+                if let Some(sniffed) = sniffed
                     .target
-                    .filter(|_| provenance == FakeIpTargetProvenance::InPoolUnmapped)
+                    .and_then(|target| sniffed_tun_tcp_destination(restored, target))
                 {
-                    destination = TcpBridgeDestination::Standard(RestoredClientTarget {
-                        target: target.route_target,
-                        provenance: FakeIpTargetProvenance::InPoolUnmapped,
-                    });
+                    destination = sniffed;
                 }
             }
         }
@@ -3376,7 +3392,11 @@ async fn bridge_tcp_flow(
         );
     }
 
-    if let TcpBridgeDestination::Standard(restored) = &destination {
+    if let TcpBridgeDestination::Standard {
+        restored,
+        route_target,
+    } = &destination
+    {
         let client_target = &restored.target;
         let route = xray_config::RouteContext {
             protocol: protocol.map(crate::sniffing::SniffedProtocol::name),
@@ -3390,6 +3410,7 @@ async fn bridge_tcp_flow(
                 .outbound_router
                 .select_dns_outbound_for_route_with_resolver(
                     &route,
+                    route_target.as_ref().unwrap_or(client_target),
                     client_target,
                     context.dns_resolver.as_ref(),
                 ) => result,
@@ -3472,15 +3493,43 @@ async fn bridge_tcp_flow(
     .await;
 }
 
-/// TUN opens a TCP flow before routing only to sniff an unmapped fake IP's
-/// domain, or any flow's protocol and attributes when routing asks for them.
+/// TUN opens a TCP flow before routing to sniff it, as Xray-core's
+/// dispatcher sniffs every flow: for `destOverride` whatever its destination,
+/// unless it is a fake IP whose domain the fake DNS knows, and for its
+/// protocol and attributes when routing asks for them.
 fn should_sniff_tun_tcp(
     config: Option<&InboundSniffingConfig>,
     provenance: FakeIpTargetProvenance,
     routes_by_sniffing: bool,
 ) -> bool {
-    (provenance == FakeIpTargetProvenance::InPoolUnmapped || routes_by_sniffing)
+    (crate::socks::fake_ip_allows_content_sniffing(provenance) || routes_by_sniffing)
         && crate::sniffing::should_sniff_tcp(config, routes_by_sniffing)
+}
+
+/// The destination a TCP flow takes from the domain sniffing named, or
+/// `None` to keep its own. As in Xray-core, the sniffed domain routes the
+/// flow and is dialed unless `routeOnly` keeps the original. A fake IP whose
+/// domain the fake DNS knows keeps that domain, and one it does not know
+/// dials the sniffed domain even under `routeOnly`, its address leading
+/// nowhere.
+fn sniffed_tun_tcp_destination(
+    restored: &RestoredClientTarget,
+    sniffed: crate::sniffing::SniffedTarget,
+) -> Option<TcpBridgeDestination> {
+    let provenance = restored.provenance;
+    if !crate::socks::fake_ip_allows_content_sniffing(provenance) {
+        return None;
+    }
+    let sniffed = crate::socks::apply_fake_ip_sniffed_dial_precedence(provenance, sniffed);
+    let route_target =
+        (sniffed.route_target != sniffed.dial_target).then_some(sniffed.route_target);
+    Some(TcpBridgeDestination::Standard {
+        restored: RestoredClientTarget {
+            target: sniffed.dial_target,
+            provenance,
+        },
+        route_target,
+    })
 }
 
 async fn read_tun_tcp_sniff_payload(
@@ -3634,6 +3683,7 @@ async fn bridge_tcp_flow_inner(
     let dial_candidate_count = dial_candidates.len();
     for (candidate_index, candidate) in dial_candidates.into_iter().enumerate() {
         let dial_target = candidate.target;
+        let route_target = candidate.route_target;
         let dns_upstream = candidate.dns_upstream;
         let routing_inbound_tag = dns_upstream
             .as_ref()
@@ -3698,7 +3748,7 @@ async fn bridge_tcp_flow_inner(
                             context.outbound_router
                                 .select_tcp_session_outbound_with_tag_and_resolver(
                                     &route,
-                                    &dial_target,
+                                    route_target.as_ref().unwrap_or(&dial_target),
                                     &dial_target,
                                     true,
                                     context.dns_resolver.as_ref(),
@@ -3833,6 +3883,7 @@ async fn bridge_tcp_flow_inner(
                     outbound,
                     outbound_tag,
                     dial_target,
+                    route_target,
                     routing_inbound_tag.map(ToOwned::to_owned),
                     connection,
                     connection_close,
@@ -3867,6 +3918,7 @@ async fn bridge_tcp_flow_inner(
         outbound,
         outbound_tag,
         dial_target,
+        route_target,
         routing_inbound_tag,
         connection,
         mut connection_close,
@@ -3955,7 +4007,7 @@ async fn bridge_tcp_flow_inner(
                 network: client_target.network,
                 original_target: &client_target,
                 sniffed_protocol: None,
-                route_target: &dial_target,
+                route_target: route_target.as_ref().unwrap_or(&dial_target),
                 dial_target: &dial_target,
                 selected_outbound: outbound_label,
             },
@@ -10111,6 +10163,167 @@ mod tests {
             FakeIpTargetProvenance::Outside,
             true,
         ));
+    }
+
+    #[test]
+    fn tun_tcp_flows_to_ip_addresses_are_sniffed_for_dest_override() {
+        let config = InboundSniffingConfig {
+            enabled: true,
+            dest_override: vec![xray_config::SniffingDestination::Tls],
+            ..Default::default()
+        };
+        // As Xray-core's dispatcher sniffs every flow, not only fake IPs.
+        assert!(should_sniff_tun_tcp(
+            Some(&config),
+            FakeIpTargetProvenance::Outside,
+            false,
+        ));
+        // Without an HTTP or TLS override, or with `metadataOnly`, a flow
+        // routing does not ask about is not held for its first bytes.
+        let quic_only = InboundSniffingConfig {
+            dest_override: vec![xray_config::SniffingDestination::Quic],
+            ..config.clone()
+        };
+        assert!(!should_sniff_tun_tcp(
+            Some(&quic_only),
+            FakeIpTargetProvenance::Outside,
+            false,
+        ));
+        let metadata_only = InboundSniffingConfig {
+            metadata_only: true,
+            ..config.clone()
+        };
+        assert!(!should_sniff_tun_tcp(
+            Some(&metadata_only),
+            FakeIpTargetProvenance::Outside,
+            false,
+        ));
+        let disabled = InboundSniffingConfig {
+            enabled: false,
+            ..config
+        };
+        assert!(!should_sniff_tun_tcp(
+            Some(&disabled),
+            FakeIpTargetProvenance::Outside,
+            false,
+        ));
+        assert!(!should_sniff_tun_tcp(
+            None,
+            FakeIpTargetProvenance::Outside,
+            false,
+        ));
+    }
+
+    /// The destination a TUN TCP flow to `original` takes from an HTTP
+    /// request for `routed.example`, sniffed with `config`.
+    fn sniffed_tun_tcp_flow(
+        config: &InboundSniffingConfig,
+        original: &Target,
+        provenance: FakeIpTargetProvenance,
+    ) -> Option<(Target, Option<Target>)> {
+        let sniffed = crate::sniffing::sniff_tcp_initial_payload(
+            config,
+            original,
+            b"GET / HTTP/1.1\r\nHost: routed.example\r\n\r\n",
+            false,
+            false,
+        )
+        .done()
+        .sniffed?;
+        assert_eq!(sniffed.protocol, crate::sniffing::SniffedProtocol::Http1);
+        let restored = RestoredClientTarget {
+            target: original.clone(),
+            provenance,
+        };
+        match sniffed_tun_tcp_destination(&restored, sniffed.target?)? {
+            TcpBridgeDestination::Standard {
+                restored: dialed,
+                route_target,
+            } => {
+                assert_eq!(dialed.provenance, provenance);
+                Some((dialed.target, route_target))
+            }
+            _ => unreachable!("a sniffed TUN TCP flow stays a standard flow"),
+        }
+    }
+
+    #[test]
+    fn tun_tcp_flows_to_ip_addresses_take_the_sniffed_domain() {
+        let ip = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10))),
+            80,
+            RoutingNetwork::Tcp,
+        );
+        let domain = Target::new(
+            RoutingTargetAddr::Domain("routed.example".to_owned()),
+            80,
+            RoutingNetwork::Tcp,
+        );
+        let sniffing = |route_only| InboundSniffingConfig {
+            enabled: true,
+            dest_override: vec![xray_config::SniffingDestination::Http],
+            route_only,
+            ..Default::default()
+        };
+
+        // The domain routes the flow, and is dialed unless `routeOnly`
+        // keeps the address.
+        assert_eq!(
+            sniffed_tun_tcp_flow(&sniffing(false), &ip, FakeIpTargetProvenance::Outside),
+            Some((domain.clone(), None))
+        );
+        assert_eq!(
+            sniffed_tun_tcp_flow(&sniffing(true), &ip, FakeIpTargetProvenance::Outside),
+            Some((ip.clone(), Some(domain.clone())))
+        );
+
+        // An unknown fake IP dials the domain even under `routeOnly`, and a
+        // known one keeps the domain the fake DNS gave it.
+        let fake = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(198, 18, 1, 7))),
+            80,
+            RoutingNetwork::Tcp,
+        );
+        assert_eq!(
+            sniffed_tun_tcp_flow(
+                &sniffing(true),
+                &fake,
+                FakeIpTargetProvenance::InPoolUnmapped
+            ),
+            Some((domain.clone(), None))
+        );
+        let mapped = Target::new(
+            RoutingTargetAddr::Domain("mapped.example".to_owned()),
+            80,
+            RoutingNetwork::Tcp,
+        );
+        assert_eq!(
+            sniffed_tun_tcp_flow(&sniffing(false), &mapped, FakeIpTargetProvenance::Mapped),
+            None
+        );
+
+        // `ipsExcluded` and `domainsExcluded` keep the original destination.
+        let mut ips_excluded = xray_config::IpMatcherSet::builder();
+        ips_excluded.insert_ip("192.0.2.10".parse().unwrap(), false);
+        let excluding_ip = InboundSniffingConfig {
+            ips_excluded: ips_excluded.build(),
+            ..sniffing(true)
+        };
+        assert_eq!(
+            sniffed_tun_tcp_flow(&excluding_ip, &ip, FakeIpTargetProvenance::Outside),
+            None
+        );
+        let excluding_domain = InboundSniffingConfig {
+            domains_excluded: xray_config::compile_domain_matchers(&[
+                xray_config::DomainMatcher::Full("routed.example".to_owned()),
+            ])
+            .unwrap(),
+            ..sniffing(false)
+        };
+        assert_eq!(
+            sniffed_tun_tcp_flow(&excluding_domain, &ip, FakeIpTargetProvenance::Outside),
+            None
+        );
     }
 
     #[test]

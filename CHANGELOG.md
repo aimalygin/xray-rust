@@ -444,6 +444,13 @@ long-term supported release series.
   or null keeps the library's default. A host on either integration could
   not set the count before, since only a host that creates `XrayCore`
   itself reaches the initializer's parameter.
+- TUN sniffs a TCP flow to an IP address for `destOverride`'s `http` and
+  `tls`, as Xray-core's dispatcher sniffs every flow, so an app that connects
+  to an address from its own DoH lookup or a cache is routed by the name it
+  sends. TUN sniffed TCP only to a fake IP the fake DNS did not know, while
+  UDP and the SOCKS and HTTP inbounds already sniffed every flow. `routeOnly`,
+  `domainsExcluded`, `ipsExcluded` and the 250 ms wait for the first bytes
+  apply as before, and a fake IP the fake DNS knows keeps its domain.
 
 ## 0.10.1 - 2026-11-16
 
