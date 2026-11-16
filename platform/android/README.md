@@ -167,7 +167,10 @@ Apple importer: `tcp`/`raw` with TLS (optionally Vision) or REALITY,
 (`serviceName`, `authority`, `mode=gun|multi`). A JSON-object `fm` (Remnawave's
 percent-encoded `streamSettings.finalmask`) is copied unchanged and validated
 by the core when the profile loads. The generated profile uses the TUN inbound, VLESS
-`proxy`, private-address Freedom split, and bounded IPv4 fake-IP defaults.
+`proxy`, private-address Freedom split, and bounded IPv4 fake-IP defaults. Its
+TUN inbound sniffs with `routeOnly`: a flow to a fake IP the fake DNS no longer
+knows recovers its domain, and every other flow is dialed by the address its
+app chose.
 
 Development `0.6` also imports bounded
 `mlkem768x25519plus.{native|xorpub|random}.{1rtt|0rtt}` with one-to-eight

@@ -565,7 +565,13 @@ object XrayVlessUrlImporter {
                     JSONObject()
                         .put("enabled", true)
                         .put("destOverride", JSONArray(listOf("http", "tls", "quic")))
-                        .put("metadataOnly", false),
+                        .put("metadataOnly", false)
+                        // A flow to an address the fake DNS does not know still
+                        // dials its sniffed name. Every other flow keeps the
+                        // address its app chose: routing sees the name beside
+                        // it, so the private-address rule still sends LAN flows
+                        // direct, and a decoy name is never dialed.
+                        .put("routeOnly", true),
                 )
             val proxy = JSONObject()
                 .put("tag", "proxy")
