@@ -29,6 +29,19 @@ qualification are pending.
   UDP and the SOCKS and HTTP inbounds already sniffed every flow. `routeOnly`,
   `domainsExcluded`, `ipsExcluded` and the 250 ms wait for the first bytes
   apply as before, and a fake IP the fake DNS knows keeps its domain.
+- The profiles `XrayVlessURLImporter` (Swift) and `XrayVlessUrlImporter`
+  (Kotlin) build set `routeOnly` on the TUN inbound's sniffing. They enable
+  sniffing so that a flow to a fake IP the fake DNS no longer knows recovers
+  its domain, and such a flow dials its sniffed name with `routeOnly` too.
+  Without it, now that TUN sniffs TCP flows to real addresses, an imported
+  profile would have dialed every such flow by the name it sends: a flow to a
+  device on the local network would have missed the profile's private-address
+  rule and gone to the server, and an app that connects to an address under a
+  name it sends only as a decoy would have been taken to that name. With
+  `routeOnly` routing sees the name beside the address, and the flow is
+  dialed by the address its app chose, as before this release. A QUIC flow to
+  a real address, which these profiles dialed by its sniffed name, is dialed
+  by its address as well.
 - A system DNS lookup no longer holds `xray_core_free`. The lookup ran
   `getaddrinfo`, which cannot be cancelled, on the runtime's blocking pool,
   and freeing a handle waits for the handle's runtime, so a host stopping or
