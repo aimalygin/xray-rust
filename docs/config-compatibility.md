@@ -3994,6 +3994,24 @@ Sequential mode sleeps for the interval after each outbound, matching Xray's
 pacing. Concurrent mode probes at most four outbounds at once, then sleeps for
 the interval after the full round.
 
+Real traffic also feeds the observer, which Xray-core's does not. When a TCP
+flow from a SOCKS, HTTP or TUN inbound, or a UDP flow from TUN, fails to open
+through an observed outbound because its server refused, reset or timed out
+the connection or failed the TLS, REALITY or transport handshake, the observer
+wakes from its interval and probes that outbound again, at most once every 10
+seconds counted from its last probe. A failed probe marks it unhealthy, so
+`leastPing` and `leastLoad` move new flows to the next healthy member at once,
+and a successful one keeps it. A remote close, a target the server refuses, a
+destination that does not resolve or a local network that is down is not
+reported. The outbound a balancer with an observed member falls back to, its
+`fallbackTag` or else the default outbound, is watched too: when a report
+through a member or that fallback reaches a balancer none of whose observed
+members is healthy, all of them are probed again, at most once every 15
+seconds, so that a server which came back is found. Reports only bring probes
+forward: without failures, probes follow the interval as before, the
+scheduled round is not moved, and re-probes use the same concurrency bound.
+Startup and on-demand probes report nothing.
+
 The observer starts only after the core and any configured startup probe have
 started successfully. It dials each leaf directly by tag, so routing rules and
 selector state cannot redirect its measurement. Stop cancels the observer with
