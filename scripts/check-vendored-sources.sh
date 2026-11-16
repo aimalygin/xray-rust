@@ -7,7 +7,7 @@ trap 'rm -rf "$temporary"' EXIT
 
 # Include ignored files here: an upstream .gitignore can hide crate files on
 # the developer's filesystem even though a clean checkout will omit them.
-untracked="$(git -C "$ROOT" ls-files --others -- vendor/blake3 vendor/h2 vendor/h3 vendor/h3-quinn vendor/quinn vendor/quinn-proto vendor/gotatun vendor/smoltcp)"
+untracked="$(git -C "$ROOT" ls-files --others -- vendor/blake3 vendor/h2 vendor/h3 vendor/h3-quinn vendor/quinn vendor/quinn-proto vendor/gotatun vendor/smoltcp vendor/shaped-rustls)"
 if [[ -n "$untracked" ]]; then
   echo 'vendored source files are absent from the Git index:' >&2
   printf '%s\n' "$untracked" >&2
@@ -122,6 +122,44 @@ diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
 cargo test --locked --manifest-path "$temporary/h2-0.4.20/Cargo.toml" \
   --lib -- --skip hpack::test::fixture
 
+# shaped-rustls is the rustls fork at a pinned commit, not a crates.io
+# release. The vendored crate is its `rustls` directory (manifest, build
+# script and sources) and the fork's license files; XRAY-PATCH.diff expands
+# the workspace manifest and carries the backported security fixes.
+shaped_rustls_rev=ca91d48c385f7d16ad3993ecaf26fa9b84882dbc
+curl --fail --location --silent --show-error \
+  --proto '=https' --tlsv1.2 --retry 3 \
+  --user-agent 'xray-rust-vendor-provenance/1.0' \
+  --output "$temporary/shaped-rustls.tar.gz" \
+  "https://codeload.github.com/aimalygin/shaped-rustls/tar.gz/$shaped_rustls_rev"
+echo "797e1851f8511d2d6d9ddb17006b17c8fe5c1726bb4521437fcbf43d7dfb8467  $temporary/shaped-rustls.tar.gz" |
+  sha256sum --check -
+tar -xzf "$temporary/shaped-rustls.tar.gz" -C "$temporary"
+shaped_rustls_checkout="$temporary/shaped-rustls-$shaped_rustls_rev"
+mkdir "$temporary/shaped-rustls"
+cp "$shaped_rustls_checkout/rustls/Cargo.toml" "$shaped_rustls_checkout/rustls/build.rs" \
+  "$temporary/shaped-rustls/"
+cp -R "$shaped_rustls_checkout/rustls/src" "$temporary/shaped-rustls/src"
+for license in LICENSE LICENSE-APACHE LICENSE-ISC LICENSE-MIT; do
+  cp "$shaped_rustls_checkout/$license" "$temporary/shaped-rustls/"
+done
+patch --batch --fuzz=0 -p1 \
+  -d "$temporary/shaped-rustls" \
+  <"$ROOT/vendor/shaped-rustls/XRAY-PATCH.diff"
+diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
+  "$temporary/shaped-rustls" "$ROOT/vendor/shaped-rustls"
+# The fork's unit tests need its workspace (dev-dependencies, lockfile), so
+# they run there against the vendored sources. With brotli and zlib enabled,
+# seven ClientHello shaping tests of the fork expect no compress_certificate
+# extension and fail at the pinned commit already; the compression tests run
+# with those features on their own.
+rm -rf "$shaped_rustls_checkout/rustls/src"
+cp -R "$ROOT/vendor/shaped-rustls/src" "$shaped_rustls_checkout/rustls/src"
+cargo test --locked --manifest-path "$shaped_rustls_checkout/Cargo.toml" \
+  -p rustls --features ring --lib
+cargo test --locked --manifest-path "$shaped_rustls_checkout/Cargo.toml" \
+  -p rustls --features ring,brotli,zlib --lib -- compress::
+
 bash "$ROOT/scripts/check-wireguard-adapter-prototype.sh" --verify-vendor-only
 
 # Vendored crates are path dependencies, so Cargo enforces their own lint
@@ -130,5 +168,5 @@ bash "$ROOT/scripts/check-wireguard-adapter-prototype.sh" --verify-vendor-only
 # fuzz job compiles.
 RUSTFLAGS="--cfg fuzzing" cargo check --locked \
   --manifest-path "$ROOT/Cargo.toml" --target-dir "$temporary/fuzzing-target" \
-  -p blake3 -p gotatun -p h2 -p h3 -p h3-quinn -p quinn -p quinn-proto -p smoltcp
+  -p blake3 -p gotatun -p h2 -p h3 -p h3-quinn -p quinn -p quinn-proto -p rustls -p smoltcp
 echo "verified vendored sources against checksum-pinned archives"

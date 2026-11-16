@@ -21,6 +21,16 @@ long-term supported release series.
   10 GiB and abort (0524). Initial datagrams are now padded to `min_mtu`,
   which XHTTP H3 sets from `initialPacketSize`, rather than 1,200 bytes;
   ChromeParrot handshakes are unchanged.
+- Security: rustls is now the vendored shaped-rustls fork at the same commit
+  with upstream rustls 0.23.45/0.23.46 fixes. A server, or anyone answering
+  in its place, could make a client whose hello offers brotli certificate
+  compression (Chrome-shaped ones do) allocate 1 GiB with a five-byte
+  header (RUSTSEC-2026-0348); the decompressor now refuses brotli's
+  large-window extension. The server's key exchange group is remembered for
+  later hellos only after the server is authenticated (0349), handshake
+  messages that span a key change are refused (0285), and `Debug` of
+  session values no longer prints secrets (0346). No ClientHello byte
+  changes.
 - A Hysteria connect attempt to the last of the server's addresses, the only
   one for a server with one address, gets what is left of the dial's ten
   seconds, at most eight, where every attempt had three. Quinn's first probe

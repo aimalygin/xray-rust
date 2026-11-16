@@ -1680,6 +1680,87 @@ mod utls_tls_shaping_tests {
 
     static ZSTD_CERTIFICATE_COMPRESSOR: ZstdCertificateCompressor = ZstdCertificateCompressor;
 
+    /// Writes the certificate as brotli "stored" data: one uncompressed
+    /// meta-block, then an empty last one (RFC 7932 sections 9.1 and 9.2).
+    /// `large_window` selects the stream header of brotli's nonstandard
+    /// large-window extension, which lets the peer pick a history window of
+    /// up to 1 GiB, instead of the standard header, with the same 16 MiB
+    /// window either way.
+    #[derive(Debug)]
+    struct StoredBrotliCertificateCompressor {
+        large_window: bool,
+    }
+
+    impl rustls::compress::CertCompressor for StoredBrotliCertificateCompressor {
+        fn compress(
+            &self,
+            input: Vec<u8>,
+            _level: rustls::compress::CompressionLevel,
+        ) -> Result<Vec<u8>, rustls::compress::CompressionFailed> {
+            const WINDOW_BITS: u64 = 24;
+            let length = u64::try_from(input.len())
+                .ok()
+                .filter(|length| (1..=1 << 16).contains(length))
+                .ok_or(rustls::compress::CompressionFailed)?;
+
+            let mut stream = BrotliBits::default();
+            if self.large_window {
+                // 0x11 is the large-window marker, followed by a reserved
+                // zero bit and six bits of window size.
+                stream.push(WINDOW_BITS << 8 | 0x11, 14);
+            } else {
+                stream.push((WINDOW_BITS - 17) << 1 | 1, 4);
+            }
+            // ISLAST = 0, MNIBBLES = 4, MLEN - 1, ISUNCOMPRESSED = 1.
+            stream.push(0, 1);
+            stream.push(0, 2);
+            stream.push(length - 1, 16);
+            stream.push(1, 1);
+            stream.extend_aligned(&input);
+            // ISLAST = 1, ISLASTEMPTY = 1.
+            stream.push(0b11, 2);
+            Ok(stream.bytes)
+        }
+
+        fn algorithm(&self) -> rustls::CertificateCompressionAlgorithm {
+            rustls::CertificateCompressionAlgorithm::Brotli
+        }
+    }
+
+    /// Bits in brotli's order, least significant first.
+    #[derive(Default)]
+    struct BrotliBits {
+        bytes: Vec<u8>,
+        /// The next bit in the last byte; zero starts a new byte
+        bit: u8,
+    }
+
+    impl BrotliBits {
+        fn push(&mut self, value: u64, bits: u32) {
+            for index in 0..bits {
+                if self.bit == 0 {
+                    self.bytes.push(0);
+                }
+                let last = self.bytes.len() - 1;
+                self.bytes[last] |= u8::from(value >> index & 1 == 1) << self.bit;
+                self.bit = (self.bit + 1) % 8;
+            }
+        }
+
+        /// Pads the last byte with zero bits, then appends `bytes`.
+        fn extend_aligned(&mut self, bytes: &[u8]) {
+            self.bit = 0;
+            self.bytes.extend_from_slice(bytes);
+        }
+    }
+
+    static STANDARD_WINDOW_BROTLI: StoredBrotliCertificateCompressor =
+        StoredBrotliCertificateCompressor {
+            large_window: false,
+        };
+    static LARGE_WINDOW_BROTLI: StoredBrotliCertificateCompressor =
+        StoredBrotliCertificateCompressor { large_window: true };
+
     /// Dials `addr` with one fingerprint through the shaping path.
     ///
     /// `system()` plus `allow_insecure: true` for the reason
@@ -1913,6 +1994,37 @@ mod utls_tls_shaping_tests {
             .await
             .expect("the server task must finish")
             .unwrap_or_else(|error| panic!("server handshake: {error}"));
+    }
+
+    /// RUSTSEC-2026-0348. Chrome's hello offers brotli, and the certificate
+    /// is decompressed before it is authenticated, so whoever answers the
+    /// hello picks the decoder's window. With brotli's large-window extension
+    /// a five-byte header made rustls allocate up to 1 GiB. The same stored
+    /// certificate decodes under a standard header and is refused under the
+    /// large-window one.
+    #[tokio::test]
+    async fn chrome_refuses_a_large_window_brotli_certificate() {
+        let (addr, served) = spawn_compressed_certificate_tls_server(&STANDARD_WINDOW_BROTLI).await;
+        dial_shaped("chrome", addr)
+            .await
+            .unwrap_or_else(|error| panic!("brotli-compressed handshake: {error}"));
+        served
+            .await
+            .expect("the server task must finish")
+            .unwrap_or_else(|error| panic!("server handshake: {error}"));
+
+        let (addr, served) = spawn_compressed_certificate_tls_server(&LARGE_WINDOW_BROTLI).await;
+        let error = dial_shaped("chrome", addr)
+            .await
+            .expect_err("a large-window brotli certificate must be refused");
+        assert!(
+            error.to_string().contains("InvalidCertCompression"),
+            "the refusal must name the certificate compression, got: {error}"
+        );
+        served
+            .await
+            .expect("the server task must finish")
+            .expect_err("the client must abort the server's handshake");
     }
 
     /// uTLS puts 32 random bytes in the legacy session id of every ClientHello,
