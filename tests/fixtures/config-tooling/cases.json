@@ -5863,6 +5863,55 @@
       "set": {
         "/outbounds/0/streamSettings/tlsSettings/disableSystemRoot": true
       }
+    },
+    {
+      "name": "xray-fakedns-pools",
+      "config": {
+        "fakeDns": [
+          {
+            "ipPool": "198.18.0.0/15",
+            "poolSize": 65535
+          }
+        ],
+        "dns": {
+          "servers": [
+            "fakedns",
+            "192.0.2.53"
+          ]
+        },
+        "inbounds": [
+          {
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {},
+            "sniffing": {
+              "enabled": true,
+              "destOverride": [
+                "fakedns"
+              ]
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "freedom",
+            "tag": "direct"
+          }
+        ]
+      },
+      "accepted": true,
+      "objects": {
+        "FAKE_DNS_POOL": "/fakeDns/0"
+      }
+    },
+    {
+      "name": "xray-fakedns-pool-too-large",
+      "accepted": false,
+      "errorPath": "$.fakeDns[0].poolSize",
+      "base": "xray-fakedns-pools",
+      "set": {
+        "/fakeDns/0/ipPool": "198.18.0.0/24"
+      }
     }
   ]
 }

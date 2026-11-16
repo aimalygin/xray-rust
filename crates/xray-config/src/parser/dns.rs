@@ -4,10 +4,6 @@ use super::*;
 /// DNS RCODE values that fit the 4-bit header field without an EDNS OPT record.
 const MAX_DNS_HOST_RCODE: u8 = 15;
 
-fn is_special_dns_server(address: &str) -> bool {
-    address.eq_ignore_ascii_case("localhost") || address.eq_ignore_ascii_case("fakedns")
-}
-
 /// Xray-core's `localhost` client, which asks the system resolver.
 fn is_system_dns_server(address: &str) -> bool {
     address.eq_ignore_ascii_case("localhost")
@@ -362,9 +358,42 @@ pub(super) fn fake_ip_usable_address_count(pool: IpCidr) -> u64 {
     usable
 }
 
+/// Xray-core's root `fakeDns`: one pool object or an array of them.
+struct RootFakeDns {
+    path: String,
+    pools: Vec<RootFakeDnsPool>,
+}
+
+struct RootFakeDnsPool {
+    path: String,
+    pool: IpCidr,
+    /// `poolSize`, absent, null or zero being none.
+    pool_size: Option<u32>,
+}
+
+/// The first `fakedns` entry of `dns.servers`.
+struct FakeDnsServer {
+    path: String,
+    /// The entry would get every name in Xray-core: it comes first, it has
+    /// no `domains`, and no other server has any to take names before it.
+    every_name: bool,
+}
+
+/// Xray-core's automatic pool when `fakedns` is used without `fakeDns`,
+/// `198.18.0.0/15`.
+const XRAY_FAKE_DNS_IPV4_POOL: std::net::Ipv4Addr = std::net::Ipv4Addr::new(198, 18, 0, 0);
+/// Xray-core's `poolSize` for that pool alone, and beside an IPv6 one.
+const XRAY_FAKE_DNS_IPV4_ONLY_POOL_SIZE: u32 = 65_535;
+const XRAY_FAKE_DNS_DUAL_POOL_SIZE: u32 = 32_768;
+/// The answer TTL of a fake address mapped from Xray-core's FakeDNS, the
+/// default of `dns.fakeIp`.
+const XRAY_FAKE_DNS_TTL: u32 = 60;
+
 impl Parser<'_> {
     pub(super) fn parse_dns(&mut self) -> DnsConfig {
+        let root_fake_dns = self.parse_root_fake_dns();
         let Some(dns) = self.root.get("dns") else {
+            self.warn_unused_root_fake_dns(root_fake_dns);
             return DnsConfig::default();
         };
         let dns_path = "$.dns";
@@ -404,9 +433,17 @@ impl Parser<'_> {
                 ),
             );
         }
+        let explicit_fake_ip = self.parse_dns_fake_ip(dns);
+        let (servers, fake_dns_server) = self.parse_dns_servers(dns, query_strategy);
+        let fake_ip = self.xray_fake_dns(
+            explicit_fake_ip,
+            root_fake_dns,
+            fake_dns_server,
+            query_strategy,
+        );
         DnsConfig {
-            fake_ip: self.parse_dns_fake_ip(dns),
-            servers: self.parse_dns_servers(dns, query_strategy),
+            fake_ip,
+            servers,
             hosts: self.parse_dns_hosts(dns),
             tag: self
                 .nullable_string_at(dns, "tag", "$.dns.tag".to_owned())
@@ -505,17 +542,235 @@ impl Parser<'_> {
         }
     }
 
-    pub(super) fn parse_dns_servers(
+    /// Root `fakeDns` (Go's case-insensitive decoding also takes `fakedns`):
+    /// a pool object or an array of them, each an `ipPool` CIDR and a
+    /// `poolSize`, decoded as Xray-core's `FakeDNSConfig` decodes them.
+    fn parse_root_fake_dns(&mut self) -> Option<RootFakeDns> {
+        let (key, value) = match (self.root.get("fakeDns"), self.root.get("fakedns")) {
+            (Some(_), Some(_)) => {
+                self.error(
+                    "$.fakedns",
+                    "`fakeDns` and `fakedns` name the same field; keep one",
+                );
+                return None;
+            }
+            (Some(value), None) => ("fakeDns", value),
+            (None, Some(value)) => ("fakedns", value),
+            (None, None) => return None,
+        };
+        let path = format!("$.{key}");
+        let entries: Vec<(&Value, String)> = match value {
+            Value::Null => return None,
+            Value::Object(_) => vec![(value, path.clone())],
+            Value::Array(items) => items
+                .iter()
+                .enumerate()
+                .map(|(index, item)| (item, format!("{path}[{index}]")))
+                .collect(),
+            _ => {
+                self.error(
+                    path,
+                    "fakeDns must be a pool object, an array of them, or null",
+                );
+                return None;
+            }
+        };
+        let mut pools = Vec::with_capacity(entries.len());
+        let mut valid = true;
+        for (entry, entry_path) in entries {
+            match self.parse_root_fake_dns_pool(entry, &entry_path) {
+                Some(pool) => pools.push(pool),
+                None => valid = false,
+            }
+        }
+        valid.then_some(RootFakeDns { path, pools })
+    }
+
+    fn parse_root_fake_dns_pool(&mut self, entry: &Value, path: &str) -> Option<RootFakeDnsPool> {
+        if !entry.is_object() {
+            self.error(path, "a fakeDns pool must be an object");
+            return None;
+        }
+        self.reject_unknown_fields(entry, path, &surface::FAKE_DNS_POOL);
+        let pool_path = format!("{path}.ipPool");
+        let raw_pool = match entry.get("ipPool") {
+            Some(Value::String(raw_pool)) => raw_pool,
+            None | Some(Value::Null) => {
+                self.error(pool_path, "missing fakeDns ipPool");
+                return None;
+            }
+            Some(_) => {
+                self.error(pool_path, "fakeDns ipPool must be a string");
+                return None;
+            }
+        };
+        // Go's net.ParseCIDR wants a prefix.
+        if !raw_pool.contains('/') {
+            self.error(
+                pool_path,
+                format!("fakeDns ipPool `{raw_pool}` must be a CIDR"),
+            );
+            return None;
+        }
+        let pool = self.parse_ip_cidr(raw_pool, &pool_path)?;
+        let size_path = format!("{path}.poolSize");
+        let pool_size = match entry.get("poolSize") {
+            None | Some(Value::Null) => None,
+            Some(Value::Number(size)) => match size.as_u64().map(u32::try_from) {
+                Some(Ok(0)) => None,
+                Some(Ok(size)) => Some(size),
+                _ => {
+                    self.error(
+                        size_path,
+                        "fakeDns poolSize must be a whole number from 0 to 4294967295",
+                    );
+                    return None;
+                }
+            },
+            Some(_) => {
+                self.error(size_path, "fakeDns poolSize must be a number");
+                return None;
+            }
+        };
+        Some(RootFakeDnsPool {
+            path: path.to_owned(),
+            pool,
+            pool_size,
+        })
+    }
+
+    fn warn_unused_root_fake_dns(&mut self, root: Option<RootFakeDns>) {
+        if let Some(root) = root {
+            self.warning(
+                root.path,
+                "`fakeDns` is ignored: no dns server is `fakedns`, so Xray-core hands out no fake address either",
+            );
+        }
+    }
+
+    /// Xray-core's FakeDNS, a `fakedns` entry in `dns.servers` with the pools
+    /// of root `fakeDns`, as the core's `dns.fakeIp`: the first IPv4 pool,
+    /// or Xray-core's automatic `198.18.0.0/15` without `fakeDns`.
+    fn xray_fake_dns(
+        &mut self,
+        explicit: Option<DnsFakeIpConfig>,
+        root: Option<RootFakeDns>,
+        server: Option<FakeDnsServer>,
+        query_strategy: DnsQueryStrategy,
+    ) -> Option<DnsFakeIpConfig> {
+        let Some(server) = server else {
+            self.warn_unused_root_fake_dns(root);
+            return explicit;
+        };
+        if explicit.is_some() {
+            self.warning(
+                server.path,
+                "`fakedns` hands out the addresses of dns.fakeIp, which is set; root fakeDns pools are not used",
+            );
+            return explicit;
+        }
+        let (pool, pool_size, size_path) = match root {
+            Some(root) => {
+                let mut ipv4 = None;
+                for pool in root.pools {
+                    if matches!(pool.pool.network(), IpAddr::V6(_)) {
+                        self.warning(
+                            &pool.path,
+                            "IPv6 fake pool is ignored: fake addresses are IPv4 only here, and AAAA queries are answered empty",
+                        );
+                    } else if ipv4.is_none() {
+                        ipv4 = Some(pool);
+                    } else {
+                        self.warning(&pool.path, "only the first IPv4 fake pool is used");
+                    }
+                }
+                let Some(pool) = ipv4 else {
+                    self.warning(
+                        server.path,
+                        "`fakedns` is skipped: fakeDns has no IPv4 pool, and fake addresses are IPv4 only here",
+                    );
+                    return None;
+                };
+                (pool.pool, pool.pool_size, format!("{}.poolSize", pool.path))
+            }
+            None => {
+                let size = match query_strategy {
+                    DnsQueryStrategy::UseIpv6 => {
+                        self.warning(
+                            server.path,
+                            "`fakedns` is skipped: under queryStrategy UseIPv6 Xray-core hands out IPv6 fake addresses, which are not supported here",
+                        );
+                        return None;
+                    }
+                    DnsQueryStrategy::UseIpv4 => XRAY_FAKE_DNS_IPV4_ONLY_POOL_SIZE,
+                    DnsQueryStrategy::UseIp => XRAY_FAKE_DNS_DUAL_POOL_SIZE,
+                };
+                let pool = IpCidr::new(IpAddr::V4(XRAY_FAKE_DNS_IPV4_POOL), 15)
+                    .expect("Xray-core's fake IPv4 pool is a CIDR");
+                (pool, Some(size), server.path.clone())
+            }
+        };
+        let usable = fake_ip_usable_address_count(pool);
+        if usable == 0 {
+            self.error(size_path, "fakeDns ipPool has no usable addresses");
+            return None;
+        }
+        let pool_size = match pool_size {
+            Some(size) if u64::from(size) > usable => {
+                self.error(
+                    size_path,
+                    format!("fakeDns poolSize exceeds the {usable} usable addresses in ipPool"),
+                );
+                return None;
+            }
+            Some(size) => size,
+            None => u32::try_from(usable.min(u64::from(XRAY_FAKE_DNS_IPV4_ONLY_POOL_SIZE)))
+                .unwrap_or(XRAY_FAKE_DNS_IPV4_ONLY_POOL_SIZE),
+        };
+        if !server.every_name {
+            self.warning(
+                server.path,
+                "`fakedns` hands out fake addresses for every name here; Xray-core hands them out only to names its server plan reaches `fakedns` for",
+            );
+        }
+        Some(DnsFakeIpConfig {
+            enabled: true,
+            ipv4_pool: pool,
+            pool_size,
+            ttl: XRAY_FAKE_DNS_TTL,
+        })
+    }
+
+    /// A `fakedns` server entry, checked as an object entry is, and whether
+    /// it has `domains`. `None` for any other entry.
+    fn fake_dns_server_entry(&mut self, server: &Value, path: &str) -> Option<bool> {
+        match server {
+            Value::String(address) if address.eq_ignore_ascii_case("fakedns") => Some(false),
+            Value::Object(_)
+                if server
+                    .get("address")
+                    .and_then(Value::as_str)
+                    .is_some_and(|address| address.eq_ignore_ascii_case("fakedns")) =>
+            {
+                self.reject_unknown_fields(server, path, &surface::DNS_SERVER);
+                let domains = self.parse_dns_server_domains(server, path, false);
+                Some(domains.is_some_and(|domains| !domains.is_empty()))
+            }
+            _ => None,
+        }
+    }
+
+    fn parse_dns_servers(
         &mut self,
         dns: &Value,
         global_query_strategy: DnsQueryStrategy,
-    ) -> Vec<DnsServerConfig> {
+    ) -> (Vec<DnsServerConfig>, Option<FakeDnsServer>) {
         let Some(raw_servers) = dns.get("servers") else {
-            return Vec::new();
+            return (Vec::new(), None);
         };
         let Some(servers) = raw_servers.as_array() else {
             self.error("$.dns.servers", "field `servers` must be an array");
-            return Vec::new();
+            return (Vec::new(), None);
         };
         if servers.len() > MAX_DNS_SERVERS {
             self.error(
@@ -526,26 +781,41 @@ impl Parser<'_> {
                     MAX_DNS_SERVERS
                 ),
             );
-            return Vec::new();
+            return (Vec::new(), None);
         }
 
-        servers
-            .iter()
-            .enumerate()
-            .filter_map(|(index, server)| {
-                let path = format!("$.dns.servers[{index}]");
-                match server {
-                    Value::String(server) => self.parse_dns_server(server, &path),
-                    Value::Object(_) => {
-                        self.parse_dns_name_server(server, &path, global_query_strategy)
-                    }
-                    _ => {
-                        self.error(path, "dns server must be a string or an object");
-                        None
-                    }
+        // Xray-core's `fakedns` client is no wire server: it maps onto
+        // `dns.fakeIp`, and destination lookups never ask it, as Xray-core's
+        // internal lookups skip it.
+        let mut fake_dns: Option<(String, usize, bool)> = None;
+        let mut others_have_domains = false;
+        let mut parsed = Vec::with_capacity(servers.len());
+        for (index, server) in servers.iter().enumerate() {
+            let path = format!("$.dns.servers[{index}]");
+            if let Some(has_domains) = self.fake_dns_server_entry(server, &path) {
+                fake_dns.get_or_insert((path, index, has_domains));
+                continue;
+            }
+            others_have_domains |= server
+                .get("domains")
+                .is_some_and(|domains| !go_string_list(Some(domains)).is_empty());
+            let server = match server {
+                Value::String(server) => self.parse_dns_server(server, &path),
+                Value::Object(_) => {
+                    self.parse_dns_name_server(server, &path, global_query_strategy)
                 }
-            })
-            .collect()
+                _ => {
+                    self.error(path, "dns server must be a string or an object");
+                    None
+                }
+            };
+            parsed.extend(server);
+        }
+        let fake_dns = fake_dns.map(|(path, index, has_domains)| FakeDnsServer {
+            path,
+            every_name: index == 0 && !has_domains && !others_have_domains,
+        });
+        (parsed, fake_dns)
     }
 
     pub(super) fn parse_dns_name_server(
@@ -815,13 +1085,6 @@ impl Parser<'_> {
             }
             return Some(DnsServerEndpoint::Ip(SocketAddr::new(ip, port)));
         }
-        if is_special_dns_server(address) {
-            self.error(
-                path,
-                format!("special dns server `{address}` is not supported yet"),
-            );
-            return None;
-        }
         if address.parse::<SocketAddr>().is_ok() || address.contains(':') {
             self.error(
                 path,
@@ -893,14 +1156,6 @@ impl Parser<'_> {
             }
             return Some(policy);
         }
-        if is_special_dns_server(server) {
-            self.error(
-                path,
-                format!("special dns server `{server}` is not supported yet"),
-            );
-            return None;
-        }
-
         match parse_dns_https_server_uri(server) {
             Ok(Some((transport, endpoint, https_path))) => {
                 return Some(dns_stream_server_policy(

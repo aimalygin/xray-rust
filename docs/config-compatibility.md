@@ -731,6 +731,7 @@ exposes an unauthenticated proxy to the network.
 | `log` | Accepted for input compatibility, but runtime file logging is configured through the embedding API |
 | `reverse` | The legacy reverse proxy, refused unless `null` with Xray-core's message: upstream removed it for the [VLESS reverse proxy](#vless-reverse-proxy) |
 | `remarks`, `meta` | Subscription labels, such as those in Remnawave's XRAY_JSON format; `remarks` must be a string and `meta` an object (or null), and both are ignored, as in Xray-core |
+| `fakeDns` (or `fakedns`) | Xray-core's FakeDNS pools, read as `dns.fakeIp` while `dns.servers` has a `fakedns` entry; see [DNS](#dns) |
 | `stats`, `api`, `metrics`, `version`, `geodata` | Xray-core apps with no runtime here: an object is accepted with a warning and ignored, `null` silently; any other value fails, as Go's decoding fails. `version`'s `min` and `max` must be strings. No traffic counters are kept, no gRPC API or metrics endpoint listens (a routing rule to the API's tag reaches no outbound), the config's version range is not checked, and `geodata` never downloads or refreshes files: the geosite and geoip files present are read as they are |
 
 Other top-level keys are rejected.
@@ -4198,9 +4199,35 @@ requires caching plus an explicit `serveExpiredTTL` from 1 through 86400
 seconds. Xray treats zero as an unbounded stale lifetime; this mobile-oriented
 core rejects that value rather than silently retaining records forever.
 Per-server cache/stale overrides remain unsupported because the current cache
-is owned once per Core rather than once per upstream. The special `fakedns`
-client and routed DoQ are rejected until their runtime semantics exist; they
-are not silently approximated as classic UDP.
+is owned once per Core rather than once per upstream. Routed DoQ is
+rejected until its runtime semantics exist; it is not silently approximated
+as classic UDP.
+
+Xray-core's FakeDNS, a `fakedns` entry in `dns.servers` (a string or an
+object's `address`, in any case) with the pools of root `fakeDns`, turns on
+`dns.fakeIp`, described [below](#dns-outbound):
+
+- The pool is the first IPv4 `ipPool` of `fakeDns`, an object or an array of
+  them (Go also reads the key spelled `fakedns`; both at once fail), with its
+  `poolSize`; an absent or zero `poolSize` takes up to 65535 addresses, and
+  one larger than the pool's usable addresses fails. Without `fakeDns` it is
+  Xray-core's automatic `198.18.0.0/15`, with 65535 addresses under
+  `queryStrategy: "UseIPv4"` and 32768 otherwise.
+- Fake addresses are IPv4 only. IPv6 pools are ignored with a warning, AAAA
+  queries are answered empty, and a `fakeDns` with no IPv4 pool, or
+  `UseIPv6` without `fakeDns`, leaves FakeDNS off with a warning.
+- Answers carry `dns.fakeIp`'s 60-second TTL, not Xray-core's 1 second.
+- The `fakedns` entry itself is dropped from the servers: destination
+  lookups never ask it, as Xray-core's internal lookups skip it. An object
+  entry is checked like any other, and its other fields are not used.
+- Every name the TUN or a DNS outbound asks is answered with a fake address.
+  Xray-core answers so only the names whose server plan reaches `fakedns`
+  before another server answers; when that can leave some names out (the
+  entry is not first, it has `domains`, or another server has them), a
+  warning says so and those names get fake addresses here too.
+- `fakeDns` without a `fakedns` server is ignored with a warning, as it hands
+  out nothing in Xray-core either. An explicit `dns.fakeIp` wins over the
+  mapping, with a warning.
 
 `localhost`, as a string entry or an object's `address` and in any case, is
 Xray-core's system-resolver client. It sends nothing on the wire: it asks the

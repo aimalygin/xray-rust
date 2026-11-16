@@ -4105,20 +4105,6 @@ fn parses_localhost_dns_servers_as_system_resolver_clients() {
 }
 
 #[test]
-fn rejects_special_xray_dns_clients_until_their_transport_is_implemented() {
-    for address in ["fakedns", "FakeDns"] {
-        let raw = raw_with_dns_servers(&format!(r#"{{ "address": "{address}" }}"#));
-        assert_parse_error_path(&raw, "$.dns.servers[0].address");
-
-        let raw = raw_with_dns_servers(&format!(r#""{address}""#));
-        assert_parse_error_path(&raw, "$.dns.servers[0]");
-
-        let raw = raw_with_dns_servers(&format!(r#""192.0.2.53", "{address}""#));
-        assert_parse_error_path(&raw, "$.dns.servers[1]");
-    }
-}
-
-#[test]
 fn accepts_explicit_dns_transports_and_domains_containing_special_names() {
     for address in [
         "tcp://localhost",

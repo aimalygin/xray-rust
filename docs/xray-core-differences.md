@@ -1352,6 +1352,21 @@ Deliberate differences:
   next server is asked; Xray-core's `ErrEmptyResponse` reaches the same next
   server.
 
+## Xray-core's FakeDNS as `dns.fakeIp`
+
+A `fakedns` DNS server with root `fakeDns` pools runs as `dns.fakeIp`
+([details](config-compatibility.md#dns)), source-derived from
+`infra/conf/fakedns.go` and `app/dns/nameserver_fakedns.go`. Deliberate
+differences:
+
+- Fake addresses are IPv4 only; IPv6 pools are ignored with a warning.
+- Every name is answered with a fake address. Xray-core answers so only
+  names its server plan reaches `fakedns` for; the parser warns when the
+  plan could leave names out.
+- The answer TTL is 60 seconds where Xray-core's is 1, so applications do not
+  ask again for every connection; addresses stay stable across restarts as
+  described below.
+
 ## Fake-IP allocation across restarts
 
 `dns.fakeIp` places a new domain at a stable FNV-1a hash of its name within the

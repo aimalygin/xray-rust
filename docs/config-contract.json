@@ -634,7 +634,16 @@
         "clientIp"
       ],
       "id": "DNS_SERVER",
-      "notes": "expectedIPs is an alias of expectIPs. clientIp replaces dns.clientIp for this server. address localhost, in any case, asks the core's bootstrap resolver (dns.hosts, then the platform resolver) instead of the wire, with Xray-core's local domain rules added to domains; its port is ignored. domains takes an array or a comma-separated string of domain rules as Xray-core reads them, plain text being a substring. URL, address/port, query-family and domain/IP-filter combinations are checked by the parser."
+      "notes": "expectedIPs is an alias of expectIPs. clientIp replaces dns.clientIp for this server. address localhost, in any case, asks the core's bootstrap resolver (dns.hosts, then the platform resolver) instead of the wire, with Xray-core's local domain rules added to domains; its port is ignored. address fakedns is Xray-core's FakeDNS and no server: it turns on dns.fakeIp from the root fakeDns pools. domains takes an array or a comma-separated string of domain rules as Xray-core reads them, plain text being a substring. URL, address/port, query-family and domain/IP-filter combinations are checked by the parser."
+    },
+    {
+      "context": "$.fakeDns; $.fakeDns[]",
+      "fields": [
+        "ipPool",
+        "poolSize"
+      ],
+      "id": "FAKE_DNS_POOL",
+      "notes": "Xray-core's FakeDNS pools, one object or an array; fakedns is the same key. Used only while dns.servers has a fakedns entry, and then as dns.fakeIp with a 60-second TTL: the first IPv4 pool, with poolSize (absent or 0: up to 65535) within its usable addresses. IPv6 pools are ignored with a warning, as fake addresses are IPv4 only. Without fakeDns, fakedns takes Xray-core's 198.18.0.0/15. dns.fakeIp, when set, wins."
     },
     {
       "context": "$.dns.fakeIp",
@@ -1269,10 +1278,12 @@
         "api",
         "metrics",
         "version",
-        "geodata"
+        "geodata",
+        "fakeDns",
+        "fakedns"
       ],
       "id": "ROOT",
-      "notes": "log is accepted and ignored. stats, api, metrics, version and geodata are Xray-core apps with no runtime here: an object is accepted with a warning and ignored, any other value but null fails, as Go's decoding does; version's min and max are strings. geodata never downloads files. reverse, the legacy reverse proxy with bridges and portals, is refused unless null, with Xray-core v26.10.31's message: it removed the feature for the VLESS reverse proxy (an outbound's reverse). remarks (a string) and meta (an object) are subscription labels, such as Remnawave's, which Xray-core does not read; they are type-checked and ignored. Missing/non-array inbounds and outbounds currently normalize to empty lists. Non-object JSON roots also normalize to an empty model. Parse success alone does not establish runtime usability."
+      "notes": "log is accepted and ignored. fakeDns (or fakedns, Go reading keys case-insensitively) holds Xray-core's FakeDNS pools, used while a dns server is fakedns. stats, api, metrics, version and geodata are Xray-core apps with no runtime here: an object is accepted with a warning and ignored, any other value but null fails, as Go's decoding does; version's min and max are strings. geodata never downloads files. reverse, the legacy reverse proxy with bridges and portals, is refused unless null, with Xray-core v26.10.31's message: it removed the feature for the VLESS reverse proxy (an outbound's reverse). remarks (a string) and meta (an object) are subscription labels, such as Remnawave's, which Xray-core does not read; they are type-checked and ignored. Missing/non-array inbounds and outbounds currently normalize to empty lists. Non-object JSON roots also normalize to an empty model. Parse success alone does not establish runtime usability."
     },
     {
       "context": "$.routing",
