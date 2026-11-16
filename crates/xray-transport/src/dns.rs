@@ -226,7 +226,7 @@ impl DnsResolver for SystemDnsResolver {
     }
 
     async fn resolve_all(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
-        let addrs = tokio::net::lookup_host((domain, port))
+        let addrs = system_lookup(domain, port)
             .await
             .map_err(|source| TransportError::Dns {
                 domain: domain.to_owned(),
@@ -236,6 +236,58 @@ impl DnsResolver for SystemDnsResolver {
 
         DnsLookup::new(addrs, None).ensure_non_empty(domain, port)
     }
+}
+
+/// System lookups in flight at once. Each holds a thread until `getaddrinfo`
+/// returns, which nothing can hurry, so the rest wait their turn.
+const MAX_SYSTEM_LOOKUPS: usize = 64;
+
+static SYSTEM_LOOKUPS: tokio::sync::Semaphore =
+    tokio::sync::Semaphore::const_new(MAX_SYSTEM_LOOKUPS);
+
+/// Asks the platform resolver for `domain`, on a thread of its own.
+///
+/// `getaddrinfo` cannot be cancelled. `tokio::net::lookup_host` runs it on
+/// the runtime's blocking pool, and a runtime that is dropped waits for that
+/// pool: a lookup against a network that had gone away kept `xray_core_free`
+/// from returning until the lookup gave up. That wait has to stay as it is,
+/// without a limit, because it is what tells a host that no thread of the
+/// core is inside its socket-protect callback any more. So the lookup leaves
+/// the runtime instead. Its caller may stop waiting at any time; the thread
+/// then ends by itself, having touched nothing of the core.
+async fn system_lookup(domain: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
+    // As `lookup_host` does, an address needs no lookup.
+    if let Ok(ip) = domain.parse::<IpAddr>() {
+        return Ok(vec![SocketAddr::new(ip, port)]);
+    }
+    let domain = domain.to_owned();
+    on_lookup_thread(move || {
+        std::net::ToSocketAddrs::to_socket_addrs(&(domain.as_str(), port))
+            .map(Iterator::collect::<Vec<_>>)
+    })
+    .await?
+}
+
+/// Runs `lookup` on a thread no runtime waits for and returns what it
+/// answers. At most [`MAX_SYSTEM_LOOKUPS`] such threads live at once.
+async fn on_lookup_thread<T: Send + 'static>(
+    lookup: impl FnOnce() -> T + Send + 'static,
+) -> io::Result<T> {
+    let permit = SYSTEM_LOOKUPS
+        .acquire()
+        .await
+        .map_err(|_| io::Error::other("system DNS lookups are closed"))?;
+    let (answer, answered) = tokio::sync::oneshot::channel();
+    std::thread::Builder::new()
+        .name("xray-system-dns".to_owned())
+        .spawn(move || {
+            // Nobody may be waiting any more.
+            let _ = answer.send(lookup());
+            drop(permit);
+        })?;
+    answered
+        .await
+        .map_err(|_| io::Error::other("the system DNS lookup ended without an answer"))
 }
 
 const DNS_DEFAULT_TTL: Duration = Duration::from_secs(300);
@@ -3194,6 +3246,48 @@ mod tests {
     use crate::{
         RouteFamilies, RouteProbe, SocketHandle, SocketProtector, TlsConnector, TransportError,
     };
+
+    /// `getaddrinfo` cannot be cancelled, and a runtime waits for its
+    /// blocking pool when it is dropped: a lookup there held `xray_core_free`
+    /// until it gave up. On its own thread it holds nothing.
+    #[test]
+    fn a_system_lookup_in_flight_does_not_hold_its_runtime() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let (entered, has_entered) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let lookup = runtime.spawn(super::on_lookup_thread(move || {
+            entered.send(()).unwrap();
+            let _ = released.recv_timeout(Duration::from_secs(30));
+        }));
+        has_entered.recv().unwrap();
+
+        let start = std::time::Instant::now();
+        drop(runtime);
+        let elapsed = start.elapsed();
+
+        let _ = release.send(());
+        drop(lookup);
+        assert!(elapsed < Duration::from_secs(5), "{elapsed:?}");
+    }
+
+    #[tokio::test]
+    async fn a_system_lookup_of_an_address_asks_nobody() {
+        assert_eq!(
+            super::system_lookup("192.0.2.7", 443).await.unwrap(),
+            [SocketAddr::from(([192, 0, 2, 7], 443))]
+        );
+        assert_eq!(
+            super::system_lookup("2001:db8::7", 53).await.unwrap(),
+            [SocketAddr::new(
+                IpAddr::V6("2001:db8::7".parse().unwrap()),
+                53
+            )]
+        );
+    }
 
     #[test]
     fn build_dns_query_uses_injected_transaction_id() {

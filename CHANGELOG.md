@@ -24,11 +24,16 @@ long-term supported release series.
   UDP and the SOCKS and HTTP inbounds already sniffed every flow. `routeOnly`,
   `domainsExcluded`, `ipsExcluded` and the 250 ms wait for the first bytes
   apply as before, and a fake IP the fake DNS knows keeps its domain.
-- `xray_core_free` waits at most 500 ms for work left on the handle's runtime
-  once the core has stopped. Dropping the runtime waited for every blocking
-  task, and a system DNS lookup in `getaddrinfo` cannot be cancelled, so a
-  host stopping or restarting its tunnel could hang until the lookup gave up.
-  Such a lookup now finishes on its own thread after the call returns.
+- A system DNS lookup no longer holds `xray_core_free`. The lookup ran
+  `getaddrinfo`, which cannot be cancelled, on the runtime's blocking pool,
+  and freeing a handle waits for the handle's runtime, so a host stopping or
+  restarting its tunnel on a network that had gone away could hang until the
+  lookup gave up. The lookup now runs on a thread of its own, at most 64 at
+  once: one still in flight finishes by itself after the call returns and
+  calls no host callback. `xray_core_free` goes on waiting for the runtime's
+  threads without a limit, so none of them is inside the socket-protect
+  callback once it returns. Only a core that asks the system resolver was
+  affected, as under the default `XRAY_DNS_BOOTSTRAP_MODE_SYSTEM`.
 - Every TLS and REALITY fingerprint now advertises its profile's whole uTLS
   cipher suite list, in uTLS's order with GREASE where uTLS puts it. The
   suites rustls does not implement, the CBC and RSA key exchange ones, were
@@ -45,6 +50,8 @@ long-term supported release series.
   AEAD suite is unaffected. Padding is now uTLS's to the byte, and the oracle
   tests compare against the unfiltered uTLS hellos instead of filtering the
   reference the same way.
+- Update async-compression to 0.4.52, with compression-codecs 0.4.47 and
+  compression-core 0.4.34, and regex to 1.13.0.
 
 ## 0.10.0 - 2026-11-15
 
