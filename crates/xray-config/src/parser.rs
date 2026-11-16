@@ -1250,18 +1250,51 @@ impl Parser<'_> {
                     "targetStrategy is supported only on freedom outbounds",
                 );
             }
-            // WireGuard reads it for its peer endpoints, MASQUE for its server.
-            if !matches!(
-                protocol,
-                OutboundProtocol::Wireguard | OutboundProtocol::Masque
-            ) && stream
+            // WireGuard reads it for its peer endpoints, MASQUE for its
+            // server, and the proxies for their server's address, as
+            // Xray-core's `DialSystem` resolves a domain server before dialing.
+            let strategy = stream
                 .socket_options
                 .as_ref()
-                .is_some_and(|options| options.domain_strategy.has_strategy())
+                .is_some_and(|options| options.domain_strategy.has_strategy());
+            let strategy_path =
+                format!("$.outbounds[{index}].streamSettings.sockopt.domainStrategy");
+            if strategy
+                && !matches!(
+                    protocol,
+                    OutboundProtocol::Wireguard
+                        | OutboundProtocol::Masque
+                        | OutboundProtocol::Vless
+                        | OutboundProtocol::Vmess
+                        | OutboundProtocol::Trojan
+                        | OutboundProtocol::Shadowsocks2022
+                        | OutboundProtocol::Socks
+                        | OutboundProtocol::Http
+                        | OutboundProtocol::Hysteria
+                )
             {
                 self.error(
-                    format!("$.outbounds[{index}].streamSettings.sockopt.domainStrategy"),
-                    "sockopt.domainStrategy is supported only on freedom, WireGuard and MASQUE outbounds",
+                    strategy_path,
+                    "sockopt.domainStrategy is supported only on outbounds that dial a server",
+                );
+            } else if strategy
+                && !matches!(
+                    protocol,
+                    OutboundProtocol::Wireguard | OutboundProtocol::Masque
+                )
+                && (outbound
+                    .pointer("/streamSettings/sockopt/dialerProxy")
+                    .and_then(Value::as_str)
+                    .is_some_and(|tag| !tag.is_empty())
+                    || outbound
+                        .get("proxySettings")
+                        .is_some_and(|proxy| !proxy.is_null()))
+            {
+                // Xray-core resolves the server here and hands the chain an
+                // address; a chain here carries the server's name instead.
+                self.error(
+                    strategy_path,
+                    "sockopt.domainStrategy cannot be combined with dialerProxy or proxySettings on a proxy outbound: the chain receives the server's name, which the strategy would not resolve",
                 );
             }
         }

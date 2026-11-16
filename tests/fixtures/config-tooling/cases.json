@@ -4325,8 +4325,7 @@
           "domainStrategy": "UseIPv6"
         }
       },
-      "accepted": false,
-      "errorPath": "$.outbounds[0].streamSettings.xhttpSettings.downloadSettings.sockopt.domainStrategy"
+      "accepted": true
     },
     {
       "name": "freedom-settings-domainStrategy",

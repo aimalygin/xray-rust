@@ -3651,6 +3651,18 @@ looks the domain up for both families, and the strategy keeps:
 `Use` and `Force` do not differ there: with no address kept, the connection
 fails. An endpoint written as an IP address is dialed as it is.
 
+On VLESS, VMess, Trojan, Shadowsocks, SOCKS, HTTP and Hysteria it decides
+which addresses a domain server resolves to before it is dialed, as
+Xray-core's `DialSystem` resolves it, after `addressPortStrategy` has
+replaced the server: the same families, order and `Use`/`Force` fallback as
+on freedom, through the bootstrap resolver that looks the server up without
+a strategy (`dns.hosts`, then the platform resolver or nothing more under
+`StaticOnly`). An XHTTP download leg takes the strategy of its own `sockopt`,
+or of the outbound's under `penetrate`. A server written as an IP address is
+dialed as it is. Such an outbound refuses a strategy beside `dialerProxy` or
+`proxySettings`: Xray-core resolves the server and hands the chain an
+address, while a chain here carries the server's name.
+
 Xray-core v26.10.31 deprecates freedom's own `settings.domainStrategy` (and
 `settings.targetStrategy`, which wins when nonempty), as well as an outbound
 `targetStrategy` on freedom, and migrates them into `sockopt.domainStrategy`.
@@ -3672,13 +3684,16 @@ Differences from Xray-core:
 - Xray-core's WireGuard picks one of the addresses kept at random.
   xray-rust's takes the first. MASQUE reads it for its server's address the
   same way.
+- Xray-core resolves a proxy's server with its DNS client (`dns.servers`);
+  xray-rust resolves it with the bootstrap resolver, as it does without a
+  strategy, so a server lookup never waits on a DNS server reached through
+  that same proxy.
 - Outbounds other than freedom accept only `AsIs` in `targetStrategy`, and
-  those other than freedom, WireGuard and MASQUE only `AsIs` in
-  `sockopt.domainStrategy`. A different value on VLESS, Trojan and the other
-  proxies fails parsing, because their server lookup and target resolution do
-  not read a strategy yet. For the same reason, `dialerProxy` refuses a
-  dedicated freedom fragment handler that has a strategy, since inlining it
-  would drop the strategy.
+  `blackhole`, `dns`, `loopback` and XDRIVE only `AsIs` in
+  `sockopt.domainStrategy`, as no server address of theirs is resolved for
+  dialing.
+- `dialerProxy` refuses a dedicated freedom fragment handler that has a
+  strategy, since inlining it would drop the strategy.
 
 ### Socket options
 

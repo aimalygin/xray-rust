@@ -10,6 +10,15 @@ long-term supported release series.
 
 ## Unreleased
 
+- `sockopt.domainStrategy` works on VLESS, VMess, Trojan, Shadowsocks, SOCKS,
+  HTTP and Hysteria outbounds and on an XHTTP download leg, where any value
+  but `AsIs` was refused. A domain server resolves to the families the
+  strategy asks for before it is dialed, as Xray-core's `DialSystem` resolves
+  it: `UseIPv4` dials only IPv4 addresses and falls back to all of them when
+  there is none, `ForceIPv4` fails instead, and the `v4v6`/`v6v4` forms try
+  one family, then the other. The bootstrap resolver answers, as without a
+  strategy. A strategy beside `dialerProxy` or `proxySettings` on such an
+  outbound is refused, since the chain would carry the server's name.
 - `localhost` works as a DNS server, as Xray-core's system-resolver client,
   where it was refused. It asks the resolver the core bootstraps with
   (`dns.hosts`, then the platform resolver) instead of the wire, bypassing

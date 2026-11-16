@@ -263,7 +263,7 @@ fn an_outbound_target_strategy_wins_on_freedom() {
 }
 
 #[test]
-fn other_outbounds_accept_only_as_is() {
+fn proxies_take_a_domain_strategy_for_their_server() {
     let vless: Value = serde_json::from_str(VLESS).unwrap();
     for name in ["AsIs", "asis", ""] {
         let mut outbound = vless.clone();
@@ -272,11 +272,41 @@ fn other_outbounds_accept_only_as_is() {
         parse(outbound);
     }
 
+    for (name, expected) in [
+        ("UseIPv4", DomainStrategy::UseIpv4),
+        ("forceipv6", DomainStrategy::ForceIpv6),
+        ("UseIPv4v6", DomainStrategy::UseIpv4v6),
+    ] {
+        let mut outbound = vless.clone();
+        outbound["streamSettings"]["sockopt"] = json!({"domainStrategy": name});
+        assert_eq!(strategy(outbound), expected, "{name}");
+    }
+    for outbound in [
+        json!({"protocol":"trojan","settings":{"address":"example.com","port":443,"password":"synthetic"},
+               "streamSettings":{"security":"tls","sockopt":{"domainStrategy":"UseIPv4"}}}),
+        json!({"protocol":"vmess","settings":{"address":"example.com","port":443,"id":"00010203-0405-0607-0809-0a0b0c0d0e0f"},
+               "streamSettings":{"security":"tls","sockopt":{"domainStrategy":"UseIPv6"}}}),
+        json!({"protocol":"socks","settings":{"address":"192.0.2.10","port":1080},
+               "streamSettings":{"sockopt":{"domainStrategy":"ForceIPv4"}}}),
+    ] {
+        assert!(strategy(outbound.clone()).has_strategy(), "{outbound}");
+    }
+
+    // Xray-core resolves the server before a chain sees it; a chain here
+    // gets the name, so the two are refused together.
     let mut outbound = vless.clone();
-    outbound["streamSettings"]["sockopt"] = json!({"domainStrategy":"UseIPv4"});
-    let (path, message) = rejection(json!([outbound]));
+    outbound["streamSettings"]["sockopt"] =
+        json!({"domainStrategy":"UseIPv4","dialerProxy":"direct"});
+    let direct = json!({"protocol":"freedom","tag":"direct"});
+    let (path, message) = rejection(json!([outbound, direct]));
     assert_eq!(path, "$.outbounds[0].streamSettings.sockopt.domainStrategy");
-    assert!(message.contains("only on freedom"));
+    assert!(message.contains("dialerProxy"), "{message}");
+
+    // An outbound that dials no server of its own takes only AsIs.
+    let dns = json!({"protocol":"dns","streamSettings":{"sockopt":{"domainStrategy":"UseIPv4"}}});
+    let (path, message) = rejection(json!([dns]));
+    assert_eq!(path, "$.outbounds[0].streamSettings.sockopt.domainStrategy");
+    assert!(message.contains("dial a server"), "{message}");
 
     let mut outbound = vless.clone();
     outbound["targetStrategy"] = json!("UseIP");

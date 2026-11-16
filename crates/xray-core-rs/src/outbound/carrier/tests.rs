@@ -539,3 +539,86 @@ fn xicmp_reaches_mkcp_and_xhttp_h3_and_needs_an_address_to_send_to() {
     let literal = TargetAddr::Ip("192.0.2.9".parse().unwrap());
     assert!(build_transport_layer(&bare.stream, &literal, 443, &transport, VLESS_PATHS).is_ok());
 }
+
+/// A server name with an IPv6 and an IPv4 address, or only the IPv6 one.
+struct ServerNames {
+    ipv4: bool,
+}
+
+const SERVER_V4: SocketAddr = SocketAddr::new(
+    std::net::IpAddr::V4(std::net::Ipv4Addr::new(192, 0, 2, 41)),
+    443,
+);
+const SERVER_V6: SocketAddr = SocketAddr::new(
+    std::net::IpAddr::V6(std::net::Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 41)),
+    443,
+);
+
+#[async_trait::async_trait]
+impl DnsResolver for ServerNames {
+    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
+    }
+
+    async fn resolve_all(
+        &self,
+        _domain: &str,
+        _port: u16,
+    ) -> Result<xray_transport::DnsLookup, TransportError> {
+        let addresses = if self.ipv4 {
+            vec![SERVER_V6, SERVER_V4]
+        } else {
+            vec![SERVER_V6]
+        };
+        Ok(xray_transport::DnsLookup::new(addresses, None))
+    }
+}
+
+#[tokio::test]
+async fn a_proxy_server_resolves_with_its_domain_strategy() {
+    let dialer = TransportDialer::system().unwrap();
+    let dual = ServerNames { ipv4: true };
+    let v6_only = ServerNames { ipv4: false };
+    let tls = json!({"serverName": "server.example"});
+    for (strategy, resolver, expected) in [
+        ("AsIs", &dual, Some(vec![SERVER_V6, SERVER_V4])),
+        ("UseIPv4", &dual, Some(vec![SERVER_V4])),
+        ("UseIPv6", &dual, Some(vec![SERVER_V6])),
+        ("UseIPv4v6", &dual, Some(vec![SERVER_V4])),
+        ("UseIPv6v4", &v6_only, Some(vec![SERVER_V6])),
+        // `Use` falls back to every address, `Force` fails the dial.
+        ("UseIPv4", &v6_only, Some(vec![SERVER_V6])),
+        ("ForceIPv4", &v6_only, None),
+    ] {
+        let outbound = vless(json!({"security": "tls", "tlsSettings": tls,
+            "sockopt": {"domainStrategy": strategy}}));
+        let built = super::super::build_vless_tcp_outbound(&outbound).unwrap();
+        let candidates = built
+            .payload
+            .carrier
+            .resolve_server(resolver, &dialer)
+            .await;
+        match expected {
+            Some(expected) => assert_eq!(candidates.unwrap(), expected, "{strategy}"),
+            None => assert!(candidates.is_err(), "{strategy}"),
+        }
+    }
+
+    // An XHTTP download leg resolves with the strategy of its own sockopt.
+    let outbound = vless(
+        json!({"network": "xhttp", "security": "tls", "tlsSettings": tls,
+        "xhttpSettings": {"downloadSettings": {"address": "down.example", "port": 443,
+            "network": "xhttp", "security": "tls", "tlsSettings": tls,
+            "sockopt": {"domainStrategy": "ForceIPv6"}}}}),
+    );
+    let built = super::super::build_vless_tcp_outbound(&outbound).unwrap();
+    let carrier = &built.payload.carrier;
+    assert_eq!(
+        carrier.resolve_server(&dual, &dialer).await.unwrap(),
+        [SERVER_V6, SERVER_V4]
+    );
+    assert_eq!(
+        carrier.resolve_download(&dual, &dialer).await.unwrap(),
+        [SERVER_V6]
+    );
+}

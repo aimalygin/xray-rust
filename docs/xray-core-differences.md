@@ -1428,6 +1428,14 @@ differences:
   `dialerProxy` outbound.
 - A WireGuard peer endpoint that is a domain dials the first address its
   `domainStrategy` keeps. Xray-core picks one of them at random.
+- A proxy outbound's `domainStrategy` (VLESS, VMess, Trojan, Shadowsocks,
+  SOCKS, HTTP, Hysteria) resolves its domain server through the bootstrap
+  resolver and dials the kept addresses in order, or races them under
+  `happyEyeballs`. Xray-core's `DialSystem` resolves through its DNS client
+  and dials one at random. Source-derived from `transport/internet/dialer.go`;
+  covered by a carrier unit test, not by interop. Beside `dialerProxy` or
+  `proxySettings` it fails parsing, where Xray-core hands the chain the
+  resolved address.
 - An option that fails is logged at debug level; Xray-core logs it at info,
   a level the runtime log here does not have.
 - Xray-core's outbound UDP sockets are IPv6 sockets that also carry IPv4, so
