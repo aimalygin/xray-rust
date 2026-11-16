@@ -1,12 +1,9 @@
-use std::borrow::Cow;
-use std::collections::HashSet;
 use std::fmt;
 use std::sync::Arc;
 
-use aho_corasick::{AhoCorasick, AhoCorasickKind, StartKind};
-use regex::Regex;
 use thiserror::Error;
 
+use crate::domain_pattern_set::{lowercase_ascii, DomainPatternSet, DomainPatternSetBuilder};
 use crate::{DomainMatcher, DomainNameMode};
 
 /// Small routing rules are more common than geosite-sized matcher sets. A
@@ -21,9 +18,15 @@ const LINEAR_MATCHER_LIMIT: usize = 8;
 /// matches `a.test` and `b.a.test` but not `ba.test`. Trailing dots are kept
 /// as-is on both sides, so DNS callers normalize names before matching.
 ///
+/// A set holds the rule's own matchers, scanned linearly when there are at
+/// most a few of them and packed into a [`DomainPatternSet`] otherwise, plus
+/// any number of already compiled [`DomainPatternSet`]s inserted with
+/// [`DomainMatcherSetBuilder::insert_shared`]: geodata categories that other
+/// rules and cores share instead of copying.
+///
 /// The compiled state is immutable and shared behind an `Arc`, so cloning a
-/// set only bumps a reference count instead of copying its hash tables,
-/// automaton and regexes.
+/// set only bumps a reference count instead of copying its tables, automaton
+/// and regexes.
 #[derive(Clone, Default)]
 pub struct DomainMatcherSet {
     inner: Option<Arc<DomainMatcherSetInner>>,
@@ -31,12 +34,12 @@ pub struct DomainMatcherSet {
 }
 
 struct DomainMatcherSetInner {
-    linear: Option<Box<[DomainMatcher]>>,
-    full: HashSet<Box<str>>,
-    suffix: HashSet<Box<str>>,
-    keywords: Vec<Box<str>>,
-    keyword_automaton: Option<AhoCorasick>,
-    regex: Vec<Regex>,
+    /// At most [`LINEAR_MATCHER_LIMIT`] rule-local matchers, normalized.
+    linear: Box<[DomainMatcher]>,
+    /// Rule-local matchers above the linear limit.
+    patterns: Option<DomainPatternSet>,
+    /// Compiled sets shared with other rules and cores.
+    shared: Box<[Arc<DomainPatternSet>]>,
 }
 
 impl DomainMatcherSet {
@@ -62,136 +65,147 @@ impl DomainMatcherSet {
     }
 
     /// Returns the number of source matchers inserted, duplicates included.
+    /// A shared set counts its own source patterns.
     pub fn matcher_count(&self) -> usize {
         self.matcher_count
     }
 
-    /// Returns the retained pattern payload in bytes, excluding hash-table,
-    /// automaton and regex-engine overhead.
+    /// Returns the retained pattern payload in bytes, excluding table,
+    /// automaton and regex-engine overhead. Shared sets count in full.
     pub fn pattern_bytes(&self) -> usize {
         self.inner.as_ref().map_or(0, |inner| inner.pattern_bytes())
+    }
+
+    /// The compiled sets inserted with
+    /// [`DomainMatcherSetBuilder::insert_shared`], without duplicates.
+    pub fn shared_sets(&self) -> &[Arc<DomainPatternSet>] {
+        self.inner.as_ref().map_or(&[], |inner| &inner.shared)
     }
 
     pub fn matches(&self, domain: &str) -> bool {
         let Some(inner) = &self.inner else {
             return false;
         };
-        if let Some(matchers) = &inner.linear {
-            return matchers.iter().any(|matcher| matcher.matches(domain));
+        if inner.linear.iter().any(|matcher| matcher.matches(domain)) {
+            return true;
+        }
+        if inner.patterns.is_none() && inner.shared.is_empty() {
+            return false;
         }
         let domain = lowercase_ascii(domain);
-        inner.full.contains(domain.as_ref())
-            || inner.matches_suffix(&domain)
-            || inner.matches_keyword(&domain)
-            || inner.matches_regex(&domain)
+        inner
+            .patterns
+            .as_ref()
+            .is_some_and(|patterns| patterns.matches_lowercase(&domain))
+            || inner
+                .shared
+                .iter()
+                .any(|patterns| patterns.matches_lowercase(&domain))
     }
 }
 
 impl DomainMatcherSetInner {
+    fn pattern_sets(&self) -> impl Iterator<Item = &DomainPatternSet> {
+        self.patterns
+            .iter()
+            .chain(self.shared.iter().map(|patterns| patterns.as_ref()))
+    }
+
     fn pattern_bytes(&self) -> usize {
-        if let Some(matchers) = &self.linear {
-            return matchers.iter().map(matcher_pattern_bytes).sum();
+        self.linear.iter().map(matcher_pattern_bytes).sum::<usize>()
+            + self
+                .pattern_sets()
+                .map(DomainPatternSet::pattern_bytes)
+                .sum::<usize>()
+    }
+
+    /// Distinct `full`, `suffix`, `keyword` and `regex` patterns per stored
+    /// table, as `Debug` reports them.
+    fn kind_counts(&self) -> [usize; 4] {
+        let mut counts = [0; 4];
+        for matcher in self.linear.iter() {
+            counts[match matcher {
+                DomainMatcher::Full(_) => 0,
+                DomainMatcher::Suffix(_) => 1,
+                DomainMatcher::Keyword(_) => 2,
+                DomainMatcher::Regex(_) => 3,
+            }] += 1;
         }
-        self.full.iter().map(|name| name.len()).sum::<usize>()
-            + self.suffix.iter().map(|name| name.len()).sum::<usize>()
-            + self
-                .keywords
-                .iter()
-                .map(|keyword| keyword.len())
-                .sum::<usize>()
-            + self
-                .regex
-                .iter()
-                .map(|regex| regex.as_str().len())
-                .sum::<usize>()
+        for patterns in self.pattern_sets() {
+            counts[0] += patterns.full_count();
+            counts[1] += patterns.suffix_count();
+            counts[2] += patterns.keyword_count();
+            counts[3] += patterns.regex_count();
+        }
+        counts
     }
 
-    fn matches_suffix(&self, domain: &str) -> bool {
-        !self.suffix.is_empty()
-            && (self.suffix.contains(domain)
-                || domain
-                    .rmatch_indices('.')
-                    .any(|(index, _)| self.suffix.contains(&domain[index + 1..])))
+    /// Every normalized pattern, sorted and deduplicated per kind, whichever
+    /// table holds it.
+    fn summary(&self) -> PatternSummary<'_> {
+        let mut summary = PatternSummary::default();
+        for matcher in self.linear.iter() {
+            match matcher {
+                DomainMatcher::Full(name) => summary.full.push(name.as_bytes()),
+                DomainMatcher::Suffix(name) => summary.suffix.push(name.as_bytes()),
+                DomainMatcher::Keyword(keyword) => summary.keywords.push(keyword.as_bytes()),
+                DomainMatcher::Regex(matcher) => summary.regex.push(matcher.pattern()),
+            }
+        }
+        for patterns in self.pattern_sets() {
+            summary.full.extend(patterns.full_names());
+            summary.suffix.extend(patterns.suffix_names());
+            summary.keywords.extend(patterns.keywords());
+            summary.regex.extend(patterns.regex_patterns());
+        }
+        for names in [
+            &mut summary.full,
+            &mut summary.suffix,
+            &mut summary.keywords,
+        ] {
+            names.sort_unstable();
+            names.dedup();
+        }
+        summary.regex.sort_unstable();
+        summary.regex.dedup();
+        summary
     }
+}
 
-    fn matches_keyword(&self, domain: &str) -> bool {
-        self.keyword_automaton
-            .as_ref()
-            .is_some_and(|automaton| automaton.is_match(domain))
-    }
-
-    fn matches_regex(&self, domain: &str) -> bool {
-        self.regex.iter().any(|regex| regex.is_match(domain))
-    }
-
-    fn matcher_kind_count(&self, select: fn(&DomainMatcher) -> bool) -> usize {
-        self.linear.as_deref().map_or(0, |matchers| {
-            matchers.iter().filter(|matcher| select(matcher)).count()
-        })
-    }
+#[derive(Default, PartialEq, Eq)]
+struct PatternSummary<'a> {
+    full: Vec<&'a [u8]>,
+    suffix: Vec<&'a [u8]>,
+    keywords: Vec<&'a [u8]>,
+    regex: Vec<&'a str>,
 }
 
 impl fmt::Debug for DomainMatcherSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let counts = |select: fn(&DomainMatcherSetInner) -> usize| {
-            self.inner.as_ref().map_or(0, |inner| select(inner))
-        };
+        let [full, suffix, keyword, regex] = self
+            .inner
+            .as_ref()
+            .map_or([0; 4], |inner| inner.kind_counts());
         f.debug_struct("DomainMatcherSet")
-            .field(
-                "full",
-                &counts(|inner| {
-                    inner.full.len()
-                        + inner
-                            .matcher_kind_count(|matcher| matches!(matcher, DomainMatcher::Full(_)))
-                }),
-            )
-            .field(
-                "suffix",
-                &counts(|inner| {
-                    inner.suffix.len()
-                        + inner.matcher_kind_count(|matcher| {
-                            matches!(matcher, DomainMatcher::Suffix(_))
-                        })
-                }),
-            )
-            .field(
-                "keyword",
-                &counts(|inner| {
-                    inner.keywords.len()
-                        + inner.matcher_kind_count(|matcher| {
-                            matches!(matcher, DomainMatcher::Keyword(_))
-                        })
-                }),
-            )
-            .field(
-                "regex",
-                &counts(|inner| {
-                    inner.regex.len()
-                        + inner.matcher_kind_count(|matcher| {
-                            matches!(matcher, DomainMatcher::Regex(_))
-                        })
-                }),
-            )
+            .field("full", &full)
+            .field("suffix", &suffix)
+            .field("keyword", &keyword)
+            .field("regex", &regex)
             .field("matcher_count", &self.matcher_count)
             .finish()
     }
 }
 
+/// Two sets are equal when they hold the same number of source matchers and
+/// the same normalized patterns, however the patterns are stored: a geodata
+/// category inserted as a shared set equals the same names inserted one by
+/// one.
 impl PartialEq for DomainMatcherSet {
     fn eq(&self, other: &Self) -> bool {
         self.matcher_count == other.matcher_count
             && match (&self.inner, &other.inner) {
                 (None, None) => true,
-                (Some(a), Some(b)) => {
-                    a.linear == b.linear
-                        && a.full == b.full
-                        && a.suffix == b.suffix
-                        && a.keywords == b.keywords
-                        && a.regex
-                            .iter()
-                            .map(Regex::as_str)
-                            .eq(b.regex.iter().map(Regex::as_str))
-                }
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b) || a.summary() == b.summary(),
                 (Some(_), None) | (None, Some(_)) => false,
             }
     }
@@ -203,56 +217,52 @@ impl Eq for DomainMatcherSet {}
 pub enum DomainMatcherSetError {
     #[error("keyword matchers exceed the automaton limits: {0}")]
     Keyword(#[from] aho_corasick::BuildError),
+    #[error("{names} domain patterns of {bytes} bytes exceed the packed table limits")]
+    TooLarge { names: usize, bytes: usize },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DomainMatcherSetBuilder {
+    /// The rule-local matchers while there are at most
+    /// [`LINEAR_MATCHER_LIMIT`]; `None` once there are more.
     linear: Option<Vec<DomainMatcher>>,
-    full: HashSet<Box<str>>,
-    suffix: HashSet<Box<str>>,
-    keywords: Vec<Box<str>>,
-    regex: Vec<Regex>,
+    patterns: DomainPatternSetBuilder,
+    shared: Vec<Arc<DomainPatternSet>>,
     matcher_count: usize,
-}
-
-impl Default for DomainMatcherSetBuilder {
-    fn default() -> Self {
-        Self {
-            linear: Some(Vec::new()),
-            full: HashSet::new(),
-            suffix: HashSet::new(),
-            keywords: Vec::new(),
-            regex: Vec::new(),
-            matcher_count: 0,
-        }
-    }
 }
 
 impl DomainMatcherSetBuilder {
     /// Adds one matcher; the already compiled regex of a `regexp:` matcher is
     /// shared, not recompiled.
     pub fn insert(&mut self, matcher: &DomainMatcher, mode: DomainNameMode) {
-        if let Some(linear) = &mut self.linear {
-            if self.matcher_count < LINEAR_MATCHER_LIMIT {
-                let matcher = normalize_linear_matcher(matcher, mode);
-                if !linear.contains(&matcher) {
-                    linear.push(matcher);
-                }
-            } else {
-                self.linear = None;
+        if self.patterns.source_count() < LINEAR_MATCHER_LIMIT {
+            let linear = self.linear.get_or_insert_with(Vec::new);
+            let matcher = normalize_linear_matcher(matcher, mode);
+            if !linear.contains(&matcher) {
+                linear.push(matcher);
             }
+        } else {
+            self.linear = None;
         }
-        match matcher {
-            DomainMatcher::Keyword(keyword) => self.keywords.push(lowercase_boxed(keyword)),
-            DomainMatcher::Full(domain) => {
-                self.full.insert(lowercase_boxed(mode.pattern(domain)));
-            }
-            DomainMatcher::Suffix(suffix) => {
-                self.suffix.insert(lowercase_boxed(mode.pattern(suffix)));
-            }
-            DomainMatcher::Regex(matcher) => self.regex.push(matcher.regex().clone()),
-        }
+        self.patterns.insert(matcher, mode);
         self.matcher_count += 1;
+    }
+
+    /// Adds an already compiled set, such as a geodata category, by
+    /// reference: matching consults it as it is, and its source patterns count
+    /// toward [`Self::matcher_count`]. Inserting the same set again only adds
+    /// to the count.
+    pub fn insert_shared(&mut self, patterns: &Arc<DomainPatternSet>) {
+        self.matcher_count += patterns.source_count();
+        if patterns.is_empty()
+            || self
+                .shared
+                .iter()
+                .any(|existing| Arc::ptr_eq(existing, patterns))
+        {
+            return;
+        }
+        self.shared.push(Arc::clone(patterns));
     }
 
     pub fn matcher_count(&self) -> usize {
@@ -264,52 +274,20 @@ impl DomainMatcherSetBuilder {
             return Ok(DomainMatcherSet::default());
         }
         let matcher_count = self.matcher_count;
-        let (linear, full, suffix, keywords, keyword_automaton, regex) =
-            if let Some(linear) = self.linear {
-                (
-                    Some(linear.into_boxed_slice()),
-                    HashSet::new(),
-                    HashSet::new(),
-                    Vec::new(),
-                    None,
-                    Vec::new(),
-                )
-            } else {
-                let keyword_automaton = if self.keywords.is_empty() {
-                    None
-                } else {
-                    Some(
-                        AhoCorasick::builder()
-                            .kind(Some(AhoCorasickKind::ContiguousNFA))
-                            .start_kind(StartKind::Unanchored)
-                            .build(self.keywords.iter().map(|keyword| keyword.as_bytes()))?,
-                    )
-                };
-                (
-                    None,
-                    self.full,
-                    self.suffix,
-                    self.keywords,
-                    keyword_automaton,
-                    self.regex,
-                )
-            };
+        let (linear, patterns) = match self.linear {
+            _ if self.patterns.source_count() == 0 => (Box::default(), None),
+            Some(linear) => (linear.into_boxed_slice(), None),
+            None => (Box::default(), Some(self.patterns.build()?)),
+        };
         Ok(DomainMatcherSet {
             inner: Some(Arc::new(DomainMatcherSetInner {
                 linear,
-                full,
-                suffix,
-                keywords,
-                keyword_automaton,
-                regex,
+                patterns,
+                shared: self.shared.into_boxed_slice(),
             })),
             matcher_count,
         })
     }
-}
-
-fn lowercase_boxed(value: &str) -> Box<str> {
-    value.to_ascii_lowercase().into_boxed_str()
 }
 
 fn normalize_linear_matcher(matcher: &DomainMatcher, mode: DomainNameMode) -> DomainMatcher {
@@ -334,16 +312,9 @@ fn matcher_pattern_bytes(matcher: &DomainMatcher) -> usize {
     }
 }
 
-fn lowercase_ascii(value: &str) -> Cow<'_, str> {
-    if value.bytes().any(|byte| byte.is_ascii_uppercase()) {
-        Cow::Owned(value.to_ascii_lowercase())
-    } else {
-        Cow::Borrowed(value)
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::mem::size_of;
 
     use super::*;
@@ -388,17 +359,23 @@ mod tests {
         .unwrap()
     }
 
-    fn table_bytes(set: &HashSet<Box<str>>) -> usize {
-        let buckets = if set.capacity() == 0 {
-            0
-        } else {
-            (set.capacity() * 8).div_ceil(7).next_power_of_two()
-        };
-        buckets * (size_of::<Box<str>>() + 1)
+    /// The bytes a `HashSet<Box<str>>` of the same names would hold, the
+    /// representation before the packed tables: its slots plus one heap
+    /// allocation per name, rounded to the 16-byte allocator quantum.
+    fn boxed_hash_set_bytes(names: usize, name_bytes: usize) -> usize {
+        let buckets = (names * 8).div_ceil(7).next_power_of_two();
+        buckets * (size_of::<Box<str>>() + 1) + name_bytes + names * 8
     }
 
-    fn heap_bytes(set: &HashSet<Box<str>>) -> usize {
-        set.iter().map(|name| name.len()).sum()
+    fn shared(full: &[&str], suffix: &[&str]) -> Arc<DomainPatternSet> {
+        let mut builder = DomainPatternSet::builder();
+        for name in full {
+            builder.insert_full(name, DomainNameMode::Routing);
+        }
+        for name in suffix {
+            builder.insert_suffix(name, DomainNameMode::Routing);
+        }
+        Arc::new(builder.build().unwrap())
     }
 
     #[test]
@@ -418,12 +395,9 @@ mod tests {
         let set = compile(&["a.test", "b.test"], &["suffix.test"], &["kw"], &["^rx$"]);
         let inner = set.inner.as_deref().unwrap();
 
-        assert_eq!(inner.linear.as_deref().unwrap().len(), 5);
-        assert!(inner.full.is_empty());
-        assert!(inner.suffix.is_empty());
-        assert!(inner.keywords.is_empty());
-        assert!(inner.keyword_automaton.is_none());
-        assert!(inner.regex.is_empty());
+        assert_eq!(inner.linear.len(), 5);
+        assert!(inner.patterns.is_none());
+        assert!(inner.shared.is_empty());
         assert!(set.matches("B.TEST"));
         assert!(set.matches("deep.SUFFIX.test"));
         assert!(set.matches("prefix-KW-suffix"));
@@ -442,8 +416,11 @@ mod tests {
         let set = DomainMatcherSet::compile(&matchers, DomainNameMode::Routing).unwrap();
         let inner = set.inner.as_deref().unwrap();
 
-        assert!(inner.linear.is_none());
-        assert_eq!(inner.full.len(), LINEAR_MATCHER_LIMIT + 1);
+        assert!(inner.linear.is_empty());
+        assert_eq!(
+            inner.patterns.as_ref().unwrap().full_count(),
+            LINEAR_MATCHER_LIMIT + 1
+        );
         assert!(set.matches("HOST-8.TEST"));
         assert!(!set.matches("missing.test"));
     }
@@ -621,31 +598,25 @@ mod tests {
         }
         let set = builder.build().unwrap();
         assert_eq!(set.matcher_count(), 122_200);
-        let inner = set.inner.as_deref().unwrap();
+        let patterns = set.inner.as_deref().unwrap().patterns.as_ref().unwrap();
 
-        let name_table_bytes = table_bytes(&inner.full) + table_bytes(&inner.suffix);
-        let name_heap_bytes = heap_bytes(&inner.full) + heap_bytes(&inner.suffix);
-        let keyword_list_bytes = inner.keywords.capacity() * size_of::<Box<str>>()
-            + inner
-                .keywords
-                .iter()
-                .map(|keyword| keyword.len())
-                .sum::<usize>();
-        let automaton_bytes = inner
-            .keyword_automaton
-            .as_ref()
-            .map_or(0, AhoCorasick::memory_usage);
-        let regex_pattern_bytes = inner
-            .regex
-            .iter()
-            .map(|regex| regex.as_str().len())
+        let names = patterns.full_count() + patterns.suffix_count();
+        let name_bytes = patterns
+            .full_names()
+            .chain(patterns.suffix_names())
+            .map(<[u8]>::len)
             .sum::<usize>();
+        let name_table_bytes = patterns.name_table_heap_bytes();
+        let automaton_bytes = patterns.keyword_automaton_bytes();
+        let boxed_bytes = boxed_hash_set_bytes(names, name_bytes);
         eprintln!(
-            "names: tables {name_table_bytes} B + heap {name_heap_bytes} B; keywords: list {keyword_list_bytes} B + automaton {automaton_bytes} B; regex patterns {regex_pattern_bytes} B"
+            "names: {names} names of {name_bytes} B in packed tables of {name_table_bytes} B (boxed hash sets: {boxed_bytes} B); keyword automaton {automaton_bytes} B"
         );
 
-        let flat_vec_name_bytes = 120_000 * 32 + name_heap_bytes;
-        assert!(name_table_bytes + name_heap_bytes <= flat_vec_name_bytes);
+        assert_eq!(names, 120_000);
+        // A length byte per name plus at most eight bytes of buckets each.
+        assert!(name_table_bytes <= name_bytes + names + names * 8);
+        assert!(name_table_bytes * 2 <= boxed_bytes);
         assert!(automaton_bytes <= 1024 * 1024);
 
         assert!(set.matches("www.site-77777.geosite-suffix.example"));
@@ -654,5 +625,138 @@ mod tests {
         assert!(set.matches("cdn.keyword-1999.test"));
         assert!(set.matches("ad42-199.tracker.example"));
         assert!(!set.matches("clean.example"));
+    }
+
+    #[test]
+    fn shared_sets_are_consulted_by_reference() {
+        let category = shared(&["exact.example"], &["blocked.example", "other.example"]);
+        let mut builder = DomainMatcherSet::builder();
+        builder.insert(
+            &DomainMatcher::Full("local.test".to_owned()),
+            DomainNameMode::Routing,
+        );
+        builder.insert_shared(&category);
+        builder.insert_shared(&category);
+        let set = builder.build().unwrap();
+
+        assert_eq!(set.matcher_count(), 7);
+        assert_eq!(set.shared_sets().len(), 1);
+        assert!(Arc::ptr_eq(&set.shared_sets()[0], &category));
+        assert_eq!(Arc::strong_count(&category), 2);
+        assert!(set.matches("local.test"));
+        assert!(set.matches("EXACT.example"));
+        assert!(!set.matches("www.exact.example"));
+        assert!(set.matches("www.Blocked.example"));
+        assert!(!set.matches("unblocked.example"));
+        assert_eq!(
+            set.pattern_bytes(),
+            "local.test".len()
+                + "exact.example".len()
+                + "blocked.example".len()
+                + "other.example".len()
+        );
+        assert_eq!(
+            format!("{set:?}"),
+            "DomainMatcherSet { full: 2, suffix: 2, keyword: 0, regex: 0, matcher_count: 7 }"
+        );
+
+        drop(set);
+        assert_eq!(Arc::strong_count(&category), 1);
+    }
+
+    #[test]
+    fn empty_shared_sets_add_nothing() {
+        let mut builder = DomainMatcherSet::builder();
+        builder.insert_shared(&shared(&[], &[]));
+        let set = builder.build().unwrap();
+        assert_eq!(set, DomainMatcherSet::default());
+        assert!(set.shared_sets().is_empty());
+        assert!(!set.matches(""));
+
+        let mut builder = DomainMatcherSet::builder();
+        builder.insert_shared(&shared(&[], &["only.example"]));
+        let set = builder.build().unwrap();
+        assert!(set.inner.as_ref().unwrap().patterns.is_none());
+        assert!(set.matches("a.only.example"));
+    }
+
+    #[test]
+    fn sets_compare_by_patterns_whichever_table_holds_them() {
+        let names = (0..20)
+            .map(|index| format!("host-{index}.example"))
+            .collect::<Vec<_>>();
+        let names = names.iter().map(String::as_str).collect::<Vec<_>>();
+        let local = compile(&[], &names, &[], &[]);
+        let mut builder = DomainMatcherSet::builder();
+        builder.insert_shared(&shared(&[], &names));
+        let from_shared = builder.build().unwrap();
+        assert_eq!(from_shared, local);
+        assert_ne!(from_shared, compile(&names, &[], &[], &[]));
+
+        let small = compile(&["a.test"], &["b.test"], &[], &[]);
+        let mut builder = DomainMatcherSet::builder();
+        builder.insert_shared(&shared(&["A.TEST"], &["b.test"]));
+        assert_eq!(builder.build().unwrap(), small);
+    }
+
+    #[test]
+    fn mixed_sets_match_like_the_linear_reference() {
+        let category = shared(
+            &["exact.example", "Upper.Example"],
+            &["blocked.example", "", "corp"],
+        );
+        let local = matchers(
+            &["one.test"],
+            &["two.test"],
+            &["kw"],
+            &[r"^rx[0-9]+\.test$"],
+        );
+        let mut builder = DomainMatcherSet::builder();
+        for matcher in &local {
+            builder.insert(matcher, DomainNameMode::Routing);
+        }
+        builder.insert_shared(&category);
+        let set = builder.build().unwrap();
+
+        let reference = local
+            .iter()
+            .cloned()
+            .chain(
+                ["exact.example", "Upper.Example"].map(|name| DomainMatcher::Full(name.to_owned())),
+            )
+            .chain(
+                ["blocked.example", "", "corp"].map(|name| DomainMatcher::Suffix(name.to_owned())),
+            )
+            .collect::<Vec<_>>();
+        let unique = HashSet::<&str>::from_iter([
+            "",
+            ".",
+            "one.test",
+            "x.one.test",
+            "two.test",
+            "a.two.test",
+            "akwb",
+            "rx7.test",
+            "RX7.TEST",
+            "rx.test",
+            "exact.example",
+            "a.exact.example",
+            "upper.example",
+            "blocked.example",
+            "deep.Blocked.EXAMPLE",
+            "notblocked.example",
+            "corp",
+            "intranet.corp",
+            "corp.example",
+            "trailing.",
+            "plain",
+        ]);
+        for name in unique {
+            assert_eq!(
+                set.matches(name),
+                reference.iter().any(|matcher| matcher.matches(name)),
+                "{name}"
+            );
+        }
     }
 }
