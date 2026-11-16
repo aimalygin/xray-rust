@@ -1,8 +1,9 @@
 # 0.10.0 release preparation
 
 Preparation started on 2026-11-11 on the owner's word, with `main` at
-`fb3a27f57595e140128e219209bc0ca2a02d51a0`. The candidate's evidence is
-published; the tag and the packages are pending.
+`fb3a27f57595e140128e219209bc0ca2a02d51a0`. 0.10.0 is published: the core
+on 2026-11-15, the SDK and the KMP library on 2026-11-16. See
+[Publication](#publication).
 The shared steps are in the [release process](release-process.md); this page
 holds what is specific to 0.10.0.
 
@@ -352,6 +353,72 @@ after the SDK publishes, since it pins the published SDK.
    [v0.10 evidence collection](v010-release-evidence.md) does not list yet.
 7. ~~`v010-release-evidence.yml` on the candidate, with the published
    archive.~~ Passed on `7eb199bb`, run 43768546896.
-8. Tag the candidate, publish the core release, the SDK and then the KMP
-   library, and resolve the packages from clean consumers. Each waits for the
-   owner's word.
+8. ~~Tag the candidate, publish the core release, the SDK and then the KMP
+   library, and resolve the packages from clean consumers.~~ Done; see
+   "Publication".
+
+## Publication
+
+On 2026-11-15 the owner authorized the rest of the sequence in one word
+(«вливай и делай все по порядку, можешь через подсессии»).
+
+**Core.**
+
+- Evidence on `main`: [#302](https://github.com/aimalygin/xray-rust/pull/302),
+  merge `b9eebe06c5999a5033db16c95ee1cc9481a927a0`.
+- Tag `v0.10.0`: annotated, tag object
+  `f8155747923cf2a35f0ef231179f328d157a4298`, at the candidate
+  `7eb199bba2562659fdbf0bcde9820e016dd8530c`.
+- Tag CI, run 43769140895, passed its four gates: the tag and changelog, the
+  tag's own history, the device evidence again, and the binding to candidate
+  CI run 43748376213.
+- [GitHub release](https://github.com/aimalygin/xray-rust/releases/tag/v0.10.0),
+  published 2026-11-15 22:33Z: the source archive, the evidence archive, the
+  report, the validation records and `SHA256SUMS`, made by
+  `scripts/make-release-records.py`. Every uploaded file was downloaded again
+  and checked before publishing.
+
+**SDK (xray-rust-mobile).**
+
+- The pin moved to the core tag in
+  [#53](https://github.com/aimalygin/xray-rust-mobile/pull/53). Prepare
+  release, run 43770265684, built the Apple artifact; its lock is
+  [#54](https://github.com/aimalygin/xray-rust-mobile/pull/54).
+- Tag `v0.10.0`: tag object `73357d33d2ddd8a0648d70c8d9f875e4a14f71d5`, commit
+  `af77304f17aefe3fb817fbb1a868d203b697434e`.
+- Release run 43774414001 published the
+  [GitHub release](https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.10.0)
+  on 2026-11-16 00:12Z and the GitHub Packages coordinate.
+- Maven Central has `io.github.aimalygin:xray-rust-mobile:0.10.0`. The owner
+  approved the `maven-central` environment on 2026-11-16 («Я одобряю, делай»).
+  The run's `maven-central / publish` job is marked failed: its ten-minute
+  wait ended before Central finished publishing a bundle it had accepted.
+  The version is published and must not be retried. Central's AAR is
+  byte-identical to the GitHub release asset.
+- Clean consumers passed: SwiftPM at exactly 0.10.0 (the tagged commit, the
+  locked checksum, C ABI 1.17), and a minified Gradle build that resolves the
+  coordinate from Maven Central alone, with all four ABIs in the APK.
+
+**KMP (xray-rust-kmp).** The owner chose a tag and a GitHub release, without
+Maven Central («Тег и GitHub-релиз»).
+
+- [xray-rust-kmp#2](https://github.com/aimalygin/xray-rust-kmp/pull/2) pins
+  SDK 0.10.0 and makes the library version 0.10.0; merge
+  `053780c6b6ddb69d4cad00352da80d80f8185429`.
+- Tag `v0.10.0`: tag object `0092e2b54cd8192ea2c38c44ae10eebffc61f6f9`.
+  [GitHub release](https://github.com/aimalygin/xray-rust-kmp/releases/tag/v0.10.0),
+  published 2026-11-16 01:29Z.
+- The library is consumed from a checkout of the tag. It has not run on a
+  device.
+
+## After 0.10.0
+
+- A MASQUE or WireGuard tunnel should let a TCP flow past its 16-flow bound
+  wait for a place instead of refusing it at once.
+- The SDK's Maven Central job should wait longer than ten minutes, so a slow
+  publication does not end a successful release run as failed.
+- Lua noise scripts, `xdns` over DNS over HTTPS and `realm`'s `portMapping`
+  ([#235](https://github.com/aimalygin/xray-rust/issues/235)).
+- The measurements the release accepted as limitations: memory against 0.9.0,
+  MASQUE's one-flow download, and the slow first exchange after an iOS tunnel
+  start.

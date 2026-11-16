@@ -117,7 +117,7 @@ Mirrors the notable unsupported areas in [project status](docs/status.md#configu
 | Security and flow | TLS and REALITY with uTLS-shaped ClientHellos, `xtls-rprx-vision`, VLESS UDP and XUDP paths, and bounded Mux.Cool/XUDP pooling for VLESS, Trojan, Shadowsocks (2022 and AEAD) and VMess | Only the documented config subset; REALITY rejects the 14 fingerprints that carry no X25519 key share and warns on those without the X25519MLKEM768 share v26.10.21 servers require, while plain TLS accepts all 61 |
 | Routing and DNS | Field rules with domain/IP/network/port matchers, `geosite`/`geoip`, atomic rule/geodata snapshot replacement, Xray `routing.balancers` plus bounded `observatory` URL health checks and `leastLoad`, cycle-free TCP outbound graph edges, Xray-style DNS server selection including routed `tls://` DoT, routed/local HTTP/2 DoH, and provider-local `quic+local://` DoQ, routed multi-address resolution, TTL-aware positive/negative cache with bounded stale-while-revalidate, `dns.hosts`, bounded fake IP, and DNS-outbound Direct/Drop/Return/Hijack policy | Full config and outbound/balancer topology replacement still requires a new core; no UDP/protocol-layer outbound chaining, per-server cache policy, or full Xray DNS/routing parity |
 | Mobile | Swift Package/Xcode sample for iOS, tvOS, and macOS; Android library and `VpnService` adapter | Signing, entitlements, VPN consent, foreground policy, and release packaging remain host-app responsibilities |
-| Management | Development ABI 1.15 plus Swift/Kotlin expose protocol capability discovery, shared profile import, on-demand outbound probes and cancellation of probes in flight alongside routing-policy replacement/snapshots, typed SOCKS TCP/UDP, HTTP TCP, and TUN TCP/UDP connection inventory, addressable close, per-outbound accounting with live bytes of active flows, and equivalent typed TUN diagnostic queues | Policy updates affect new flows only; inventory is live and accounting is process-lifetime cumulative, with live bytes of active flows reported separately; no persistent connection history |
+| Management | Development ABI 1.17 plus Swift/Kotlin expose protocol capability discovery, shared profile import, on-demand outbound probes and cancellation of probes in flight alongside routing-policy replacement/snapshots, typed SOCKS TCP/UDP, HTTP TCP, and TUN TCP/UDP connection inventory, addressable close, per-outbound accounting with live bytes of active flows, and equivalent typed TUN diagnostic queues | Policy updates affect new flows only; inventory is live and accounting is process-lifetime cumulative, with live bytes of active flows reported separately; no persistent connection history |
 
 The [0.8 implementation and acceptance record](docs/v08-implementation-plan.md)
 distinguishes passing host/CI checks from remaining physical-device gates, and
@@ -319,7 +319,7 @@ release also carries the standalone AAR:
 
 ```kotlin
 dependencies {
-    implementation("io.github.aimalygin:xray-rust-mobile:0.9.0")
+    implementation("io.github.aimalygin:xray-rust-mobile:0.10.0")
 }
 ```
 
@@ -352,7 +352,7 @@ Add the Swift Package:
 dependencies: [
     .package(
         url: "https://github.com/aimalygin/xray-rust-mobile.git",
-        exact: "0.9.0"
+        exact: "0.10.0"
     ),
 ]
 ```

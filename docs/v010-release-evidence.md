@@ -318,9 +318,10 @@ must return to the app after unlocking.
 
 ## Performance
 
-Two collectors, both run from the candidate's checkout on one quiet machine.
-Neither starts while a compiler runs, and both stop at the first failed run,
-keeping what they measured.
+Three collectors, all run from the candidate's checkout on one quiet machine.
+The two below do not start while a compiler runs, and stop at the first
+failed run, keeping what they measured. The third is the common one every
+profile since v0.6 has needed; see "The four common measurements".
 
 ### Builds
 
@@ -387,6 +388,27 @@ paired Xray-core, at least), `-latency` (% of paired Xray-core p95, at most)
 and `-memory` (MiB, at most) the way the 0.9.0 campaign's
 `summarize_protocols_v09.py` computed them.
 `run-v08-comparison-blocks.py` still collects the `v08` profiles only.
+
+### The four common measurements
+
+The gate takes exactly ten measurements: the six `mkcp-` and `masque-` rows
+above and four that every profile shares, `process-throughput`,
+`vless-encryption-throughput`, `ip-on-demand-latency` and `xhttp-memory`
+(`MEASUREMENT_COMPARISONS` in `check-v06-release-evidence.py`). An archive
+without them is refused. They come from the feature collector, as in 0.9.0:
+
+```sh
+python3 scripts/run-v06-feature-benchmarks.py "$C/features"
+```
+
+Run it from a clean checkout of the candidate that has the pinned Xray-core
+cloned into its git-ignored `Xray-core/` directory. It builds its own CLI and
+reference there, so their hashes differ from the isolated builds'; its
+`build-manifest.json` records both. It takes five samples of each metric and
+writes the thresholds it applied: at least 10 MiB/s, at least half of plain
+VLESS's median, at most the direct median plus 1 ms, and at most 64 MiB. The
+0.10.0 campaign ran it after the other two, when the archive's assembler
+found the four missing.
 
 ### The comparison against 0.9.0
 
