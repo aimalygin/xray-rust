@@ -322,6 +322,7 @@ struct RuntimeState {
     inbounds: Vec<BoundInbound>,
     tasks: Vec<JoinHandle<()>>,
     probe_dns: ProbeDnsResolvers,
+    fake_ip_carry_over: Option<fake_dns::FakeIpCarryOver>,
 }
 
 /// Runtime DNS resolvers shared by the startup probe, the observatory, and
@@ -1398,6 +1399,20 @@ impl Core {
         let has_tun_inbound = !tun_inbounds.is_empty();
         let runtime_dns_resolvers =
             self.runtime_dns_resolvers(&config, &outbound_router, has_tun_inbound);
+        // The fresh fake-IP mapper takes over the mappings the core stopped
+        // last left, before any inbound can ask it for an address.
+        let fake_ip_carry_over = runtime_dns_resolvers
+            .outbound
+            .fake_ip_mapper()
+            .map(fake_dns::FakeIpCarryOver::adopt);
+        if let Some(adopted) = fake_ip_carry_over
+            .as_ref()
+            .map(fake_dns::FakeIpCarryOver::adopted)
+            .filter(|adopted| *adopted > 0)
+        {
+            self.runtime_logger
+                .debug(|| format!("Debug fakeIp adopted mappings={adopted}"));
+        }
         let mut inbounds = Vec::with_capacity(bound_listeners.len());
         let mut tasks = Vec::with_capacity(
             bound_listeners.len() + usize::from(has_tun_inbound) + usize::from(has_tun_inbound),
@@ -1526,6 +1541,7 @@ impl Core {
                 destination: Arc::clone(&runtime_dns_resolvers.destination),
                 bootstrap: Arc::clone(&runtime_dns_resolvers.bootstrap),
             },
+            fake_ip_carry_over,
         });
         self.state = CoreState::Running;
 
@@ -1599,6 +1615,9 @@ impl Core {
                 // drain and let stop return while children are still closing.
                 let _ = task.await;
             }
+            // With nothing left to serve it, the mapper's state is final:
+            // leave it to the next core this process starts with its pool.
+            drop(runtime.fake_ip_carry_over);
         }
         self.outbound_factory().join_sessions().await;
         self.tun.close();
@@ -1975,12 +1994,59 @@ mod tests {
                 destination: Arc::new(StaticResolver),
                 bootstrap: Arc::new(StaticResolver),
             },
+            fake_ip_carry_over: None,
         });
         tokio::time::timeout(Duration::from_secs(1), core.stop())
             .await
             .unwrap()
             .unwrap();
         assert!(cleaned.load(Ordering::Acquire));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_core_started_after_another_stopped_keeps_its_fake_ip_mappings() {
+        // No other test of this binary starts a core with fake IP, so the
+        // process-wide carry-over belongs to this test.
+        let config = || {
+            parse_xray_json(
+                r#"{"inbounds":[{"protocol":"socks","listen":"127.0.0.1","port":0}],
+                    "outbounds":[{"protocol":"freedom"}],
+                    "dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.18.0.0/16",
+                                     "poolSize":4099,"ttl":60}}}"#,
+            )
+            .unwrap()
+            .config
+        };
+        let carry_over = |core: &Core| -> (Arc<Mutex<crate::fake_dns::FakeIpMapper>>, usize) {
+            let carry_over = core
+                .runtime
+                .as_ref()
+                .and_then(|runtime| runtime.fake_ip_carry_over.as_ref())
+                .unwrap();
+            (Arc::clone(carry_over.mapper()), carry_over.adopted())
+        };
+
+        let mut stopped = Core::new(config()).unwrap();
+        stopped.start().await.unwrap();
+        let (mapper, adopted) = carry_over(&stopped);
+        assert_eq!(adopted, 0);
+        let ip = mapper
+            .lock()
+            .unwrap()
+            .allocate_ipv4("carried.example")
+            .unwrap();
+        stopped.stop().await.unwrap();
+
+        let mut started = Core::new(config()).unwrap();
+        started.start().await.unwrap();
+        let (mapper, adopted) = carry_over(&started);
+
+        assert_eq!(adopted, 1);
+        assert_eq!(
+            mapper.lock().unwrap().domain_for_ipv4(ip).as_deref(),
+            Some("carried.example")
+        );
+        started.stop().await.unwrap();
     }
 
     struct StaticResolver;

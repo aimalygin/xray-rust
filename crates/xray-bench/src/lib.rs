@@ -127,8 +127,10 @@ const DNS_TYPE_HTTPS: u16 = 65;
 const DNS_CLASS_IN: u16 = 1;
 #[cfg(unix)]
 const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
+/// The fake IP of `TUN_FAKE_DNS_DOMAIN` in the workload's `198.19.0.0/16`
+/// pool: its FNV-1a 64 hash over the pool's allocatable addresses.
 #[cfg(unix)]
-const TUN_FAKE_DNS_FIRST_IPV4: Ipv4Addr = Ipv4Addr::new(198, 19, 0, 1);
+const TUN_FAKE_DNS_IPV4: Ipv4Addr = Ipv4Addr::new(198, 19, 41, 78);
 #[cfg(unix)]
 const TUN_FAKE_DNS_DOMAIN: &str = "bench.example";
 #[cfg(unix)]
@@ -3043,13 +3045,7 @@ pub async fn run_tun_fake_dns_workload(
     tun_fd: RawFd,
     options: &BenchOptions,
 ) -> Result<WorkloadOutcome, BenchError> {
-    run_tun_dns_udp_workload(
-        tun_fd,
-        options,
-        TUN_FAKE_DNS_DOMAIN,
-        TUN_FAKE_DNS_FIRST_IPV4,
-    )
-    .await
+    run_tun_dns_udp_workload(tun_fd, options, TUN_FAKE_DNS_DOMAIN, TUN_FAKE_DNS_IPV4).await
 }
 
 #[cfg(unix)]
@@ -3243,13 +3239,7 @@ async fn run_tun_fake_dns_tcp_workload(
     tun_fd: RawFd,
     options: &BenchOptions,
 ) -> Result<WorkloadOutcome, BenchError> {
-    run_tun_dns_tcp_workload(
-        tun_fd,
-        options,
-        TUN_FAKE_DNS_DOMAIN,
-        TUN_FAKE_DNS_FIRST_IPV4,
-    )
-    .await
+    run_tun_dns_tcp_workload(tun_fd, options, TUN_FAKE_DNS_DOMAIN, TUN_FAKE_DNS_IPV4).await
 }
 
 #[cfg(unix)]
@@ -13066,11 +13056,12 @@ mod tests {
         let mut a_response = a_query.clone();
         a_response[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
         a_response[6..8].copy_from_slice(&1_u16.to_be_bytes());
-        a_response.extend_from_slice(&[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 198, 19, 0, 1]);
+        a_response.extend_from_slice(&[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4]);
+        a_response.extend_from_slice(&TUN_FAKE_DNS_IPV4.octets());
         validate_tun_fake_dns_response(
             &a_query,
             &a_response,
-            TunFakeDnsExpectation::A(TUN_FAKE_DNS_FIRST_IPV4),
+            TunFakeDnsExpectation::A(TUN_FAKE_DNS_IPV4),
         )
         .unwrap();
 
@@ -13590,7 +13581,8 @@ mod tests {
         response[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
         if query_type == DNS_TYPE_A {
             response[6..8].copy_from_slice(&1_u16.to_be_bytes());
-            response.extend_from_slice(&[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 198, 19, 0, 1]);
+            response.extend_from_slice(&[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4]);
+            response.extend_from_slice(&TUN_FAKE_DNS_IPV4.octets());
         }
         let response_packet = ipv4_udp_packet(
             datagram.destination,
