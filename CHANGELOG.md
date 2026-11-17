@@ -10,6 +10,26 @@ long-term supported release series.
 
 ## Unreleased
 
+- The DNS resolver and the system SRV/TXT lookups refuse a name longer than
+  255 octets, the limit Xray-core's DNS client applies through Go's
+  `dnsmessage`. A name was read for up to 32 labels and pointers, about 2 KB,
+  so a forged 64 KB answer over TCP, DoH or DoQ whose 4,000 records all
+  pointed at one such name held some 8 MB while it was parsed, a sizeable
+  share of an iOS tunnel extension's memory limit. The outcome differs from
+  Xray-core's: its client logs the bad record and keeps the answers it read
+  before it, while here, as for any other malformed answer, the whole
+  response is dropped and the next server is asked. A name now follows at
+  most 10 compression pointers, as in `dnsmessage`, and its labels count only
+  toward the 255 octets, so a valid name of 32 labels or more is no longer
+  refused as a pointer loop.
+- The release fuzz campaign also covers the parsers an on-path censor or a
+  hostile server can feed and that had no target: DNS responses (A/AAAA and
+  SRV/TXT), the HTTP, TLS ClientHello, BitTorrent and uTP sniffers, mKCP
+  segments under every mask stack, MASQUE capsules, and the finalmask
+  decoders (Salamander with Gecko reassembly, `header-custom` over UDP and
+  TCP, sudoku datagrams and streams, xdns, xicmp, realm and xmc). Six targets
+  join the campaign and the seed-corpus replay.
+
 ## 0.10.1 - 2026-11-16
 
 Release candidate preparation; publication and exact-candidate release
@@ -39,25 +59,7 @@ qualification are pending.
 - `scripts/check-vendored-advisories.sh`, run in the supply-chain CI job,
   audits the upstream release under each vendored crate and every git
   dependency against RustSec, which `cargo audit` does not see.
-- The DNS resolver and the system SRV/TXT lookups refuse a name longer than
-  255 octets, the limit Xray-core's DNS client applies through Go's
-  `dnsmessage`. A name was read for up to 32 labels and pointers, about 2 KB,
-  so a forged 64 KB answer over TCP, DoH or DoQ whose 4,000 records all
-  pointed at one such name held some 8 MB while it was parsed, a sizeable
-  share of an iOS tunnel extension's memory limit. The outcome differs from
-  Xray-core's: its client logs the bad record and keeps the answers it read
-  before it, while here, as for any other malformed answer, the whole
-  response is dropped and the next server is asked. A name now follows at
-  most 10 compression pointers, as in `dnsmessage`, and its labels count only
-  toward the 255 octets, so a valid name of 32 labels or more is no longer
-  refused as a pointer loop.
-- The release fuzz campaign also covers the parsers an on-path censor or a
-  hostile server can feed and that had no target: DNS responses (A/AAAA and
-  SRV/TXT), the HTTP, TLS ClientHello, BitTorrent and uTP sniffers, mKCP
-  segments under every mask stack, MASQUE capsules, and the finalmask
-  decoders (Salamander with Gecko reassembly, `header-custom` over UDP and
-  TCP, sudoku datagrams and streams, xdns, xicmp, realm and xmc). Six targets
-  join the campaign and the seed-corpus replay.
+
 - A Hysteria connect attempt to the last of the server's addresses, the only
   one for a server with one address, gets what is left of the dial's ten
   seconds, at most eight, where every attempt had three. Quinn's first probe
