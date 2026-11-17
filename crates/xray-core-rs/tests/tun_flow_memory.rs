@@ -1,11 +1,13 @@
 //! Heap the TUN runtime keeps for each idle TCP flow.
 //!
-//! A counting allocator tracks the bytes live on the heap. The test opens a
-//! number of TCP flows through the TUN to a loopback server, exchanges a few
-//! bytes on each, lets them go idle, and divides the heap the runtime gained
-//! by the number of flows. The client stack and the server sockets are set up
-//! before the first sample, so what remains is the runtime's share: the
-//! smoltcp socket, the bridge task and its buffers, and the outbound stream.
+//! A counting allocator tracks the bytes live on the heap. Each test opens a
+//! number of TCP flows through the TUN to a loopback server, lets them go
+//! idle, and divides the heap the runtime gained by the number of flows. The
+//! client stack and the server sockets are set up before the first sample, so
+//! what remains is the runtime's share: the smoltcp socket, the bridge task
+//! and its buffers, and the outbound stream. One test exchanges a few bytes
+//! on each flow, so its socket buffers have grown; the other sends nothing
+//! either way, so they have not. The tests measure one at a time.
 //!
 //! The measurement is printed with `--nocapture`:
 //!
@@ -24,9 +26,9 @@
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::collections::VecDeque;
-use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::atomic::{AtomicIsize, Ordering};
-use std::sync::Arc;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::sync::atomic::{AtomicIsize, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use bytes::Bytes;
 use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
@@ -87,6 +89,9 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 fn live_bytes() -> isize {
     LIVE_BYTES.load(Ordering::Relaxed)
 }
+
+/// Held by a test while it measures, so another's allocations do not count.
+static MEASURING: Mutex<()> = Mutex::new(());
 
 struct ClientDevice {
     inbound: VecDeque<Bytes>,
@@ -224,9 +229,22 @@ impl Client {
     }
 }
 
-/// Accepts every flow, answers its request with a short reply, and keeps the
-/// connection open until the test ends.
-async fn spawn_reply_server(release: Arc<Notify>) -> SocketAddr {
+/// What the flows of a measurement carry before they go idle.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Traffic {
+    /// A four-byte request and a four-byte reply.
+    Exchange,
+    /// Nothing either way: the flow is opened and stays silent.
+    Silent,
+}
+
+/// Accepts every flow and keeps the connection open until the test ends,
+/// answering its request with a short reply under [`Traffic::Exchange`].
+async fn spawn_server(
+    traffic: Traffic,
+    release: Arc<Notify>,
+    accepted: Arc<AtomicUsize>,
+) -> SocketAddr {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
@@ -234,14 +252,18 @@ async fn spawn_reply_server(release: Arc<Notify>) -> SocketAddr {
             let Ok((mut stream, _)) = listener.accept().await else {
                 return;
             };
+            accepted.fetch_add(1, Ordering::SeqCst);
             let release = Arc::clone(&release);
             tokio::spawn(async move {
-                let mut request = [0; 4];
-                if stream.read_exact(&mut request).await.is_err() {
-                    return;
+                if traffic == Traffic::Exchange {
+                    let mut request = [0; 4];
+                    if stream.read_exact(&mut request).await.is_err() {
+                        return;
+                    }
+                    let _ = stream.write_all(b"pong").await;
                 }
-                let _ = stream.write_all(b"pong").await;
                 release.notified().await;
+                drop(stream);
             });
         }
     });
@@ -262,8 +284,33 @@ fn profile_from_env() -> (TunRuntimeProfile, &'static str) {
 /// receive and send buffers.
 const IDLE_TCP_FLOW_HEAP_LIMIT: isize = 96 * 1024;
 
+/// Upper bound for a flow that has carried nothing: its socket keeps the
+/// 8 KiB receive buffer it starts with and has no send buffer. It measured
+/// about 24 KiB in a release build; with the two full buffers it would be
+/// about 80 KiB.
+const SILENT_TCP_FLOW_HEAP_LIMIT: isize = 32 * 1024;
+
 #[test]
 fn idle_tun_tcp_flow_heap() {
+    let per_flow = measure_idle_flows(Traffic::Exchange, "idle");
+    assert!(
+        per_flow <= IDLE_TCP_FLOW_HEAP_LIMIT,
+        "an idle TUN TCP flow holds {per_flow} bytes of heap"
+    );
+}
+
+#[test]
+fn silent_tun_tcp_flow_heap() {
+    let per_flow = measure_idle_flows(Traffic::Silent, "silent");
+    assert!(
+        per_flow <= SILENT_TCP_FLOW_HEAP_LIMIT,
+        "a TUN TCP flow that carried nothing holds {per_flow} bytes of heap"
+    );
+}
+
+/// Heap the runtime gains per flow, for flows that carried `traffic`.
+fn measure_idle_flows(traffic: Traffic, label: &str) -> isize {
+    let _measuring = MEASURING.lock().unwrap_or_else(PoisonError::into_inner);
     let flows: usize = std::env::var("TUN_MEMORY_FLOWS")
         .ok()
         .and_then(|value| value.parse().ok())
@@ -276,7 +323,8 @@ fn idle_tun_tcp_flow_heap() {
         .unwrap();
     let per_flow = runtime.block_on(async move {
         let release = Arc::new(Notify::new());
-        let server = spawn_reply_server(Arc::clone(&release)).await;
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let server = spawn_server(traffic, Arc::clone(&release), Arc::clone(&accepted)).await;
         let config = parse_xray_json(
             r#"{"inbounds":[{"protocol":"tun"}],"outbounds":[{"protocol":"freedom"}]}"#,
         )
@@ -298,28 +346,16 @@ fn idle_tun_tcp_flow_heap() {
         // One flow first, so lazily created runtime state (the flow tables,
         // the outbound's resolver, tokio's I/O driver slabs) is in place
         // before the baseline.
-        let warmup = |client: &mut Client, index: usize| {
-            let context = client.iface.context();
-            let handle = client.flows[index];
-            client
-                .sockets
-                .get_mut::<tcp::Socket>(handle)
-                .connect(context, (*target.ip(), target.port()), 40000 + index as u16)
-                .unwrap();
-        };
-        warmup(&mut client, 0);
-        exchange(&mut client, core.tun(), 0..1).await;
-        settle(&mut client, core.tun()).await;
+        let tun = core.tun();
+        open_flows(&mut client, tun, target, 0..1, traffic, &accepted).await;
+        settle(&mut client, tun).await;
 
         let before = live_bytes();
         // In batches below every profile's limit on flows waiting for their
         // outbound.
         for start in (1..flows).step_by(16) {
             let batch = start..(start + 16).min(flows);
-            for index in batch.clone() {
-                warmup(&mut client, index);
-            }
-            exchange(&mut client, core.tun(), batch).await;
+            open_flows(&mut client, tun, target, batch, traffic, &accepted).await;
         }
         settle(&mut client, core.tun()).await;
         let after = live_bytes();
@@ -331,13 +367,34 @@ fn idle_tun_tcp_flow_heap() {
         (after - before) / (flows as isize - 1)
     });
     println!(
-        "profile {profile_name}: {flows} idle TUN TCP flows, {:.1} KiB of heap per flow",
+        "profile {profile_name}: {flows} {label} TUN TCP flows, {:.1} KiB of heap per flow",
         per_flow as f64 / 1024.0
     );
-    assert!(
-        per_flow <= IDLE_TCP_FLOW_HEAP_LIMIT,
-        "an idle TUN TCP flow holds {per_flow} bytes of heap"
-    );
+    per_flow
+}
+
+/// Opens `flows` and lets them carry `traffic`.
+async fn open_flows(
+    client: &mut Client,
+    tun: &TunEndpoint,
+    target: SocketAddrV4,
+    flows: std::ops::Range<usize>,
+    traffic: Traffic,
+    accepted: &AtomicUsize,
+) {
+    for index in flows.clone() {
+        let context = client.iface.context();
+        let handle = client.flows[index];
+        client
+            .sockets
+            .get_mut::<tcp::Socket>(handle)
+            .connect(context, (*target.ip(), target.port()), 40000 + index as u16)
+            .unwrap();
+    }
+    match traffic {
+        Traffic::Exchange => exchange(client, tun, flows).await,
+        Traffic::Silent => establish(client, tun, flows, accepted).await,
+    }
 }
 
 /// Sends each flow's request and waits for its reply.
@@ -368,6 +425,28 @@ async fn exchange(client: &mut Client, tun: &TunEndpoint, flows: std::ops::Range
     }
 }
 
+/// Waits until each flow is established and its outbound connected to the
+/// server, without sending anything.
+async fn establish(
+    client: &mut Client,
+    tun: &TunEndpoint,
+    flows: std::ops::Range<usize>,
+    accepted: &AtomicUsize,
+) {
+    let deadline = TokioInstant::now() + Duration::from_secs(10);
+    loop {
+        client.pump(tun).await;
+        let established = flows
+            .clone()
+            .all(|index| client.socket(index).state() == tcp::State::Established);
+        if established && accepted.load(Ordering::SeqCst) >= flows.end {
+            return;
+        }
+        assert!(TokioInstant::now() < deadline, "flows were not established");
+        sleep(Duration::from_millis(1)).await;
+    }
+}
+
 /// Lets the acknowledgements and the runtime's bookkeeping finish.
 async fn settle(client: &mut Client, tun: &TunEndpoint) {
     for _ in 0..50 {
@@ -381,6 +460,7 @@ async fn settle(client: &mut Client, tun: &TunEndpoint) {
 #[test]
 #[ignore = "throughput measurement, run explicitly"]
 fn tun_tcp_download_throughput() {
+    let _measuring = MEASURING.lock().unwrap_or_else(PoisonError::into_inner);
     let bytes: usize = std::env::var("TUN_BENCH_BYTES")
         .ok()
         .and_then(|value| value.parse().ok())

@@ -372,8 +372,8 @@ by the MTU; the adapters do this from `tunMtu`.
 
 What grows with the MTU:
 
-- each TUN TCP socket's receive buffer is `max(32 KiB, 4 × MSS)` once its
-  flow carries data (it starts at `max(8 KiB, 2 × MSS)`), because
+- each TUN TCP socket's receive buffer is `max(32 KiB, 4 × MSS)` once the
+  client has sent data on it (it starts at `max(8 KiB, 2 × MSS)`), because
   Linux, Android and Darwin senders only put whole segments into the window.
   32 KiB already covers MTUs up to 8232; at 9000 it is 35 KiB, at most
   768 KiB more on the `Mobile` profile (256 flows) and 1.1 MiB on `MobilePlus`;
@@ -557,6 +557,18 @@ outbound sockets.
 ## Packet APIs
 
 `xray_tun_push_packet` copies one raw IP packet into the bounded inbound queue.
+
+What the host writes into the TUN, through `xray_tun_push_packet` or a
+[direct TUN descriptor](#direct-tun-file-descriptors), is taken to come from
+the host's own network stack, which computed its checksums. The core checks
+each IPv4 header checksum and each UDP checksum, but not the checksum of a TCP
+segment, as Xray-core's TUN inbound checks none
+([TUN checksums](xray-core-differences.md#tun-checksums)). IPv6 has no header
+checksum, so nothing of an IPv6 TCP segment is checked. A host that writes
+packets other devices sent it, such as tethering through the tunnel or a
+gateway for a network, relies on their link layer and its own stack to have
+checked them: a segment corrupted after that becomes stream data rather than
+being sent again.
 
 `xray_tun_poll_packet` is nonblocking:
 

@@ -91,6 +91,15 @@ const PACKET_TRANSPORT_UPLOAD_BATCH_BYTES: usize = 64 * 1024;
 // channel and surfaces as udp_channel_dropped_packets. The profile's byte
 // limits (`UdpFlowBudgetPolicy`) bound the same queues by size.
 const UDP_BRIDGE_CHANNEL_DEPTH: usize = 256;
+/// What one UDP flow's queue may hold on the mobile profiles: the whole
+/// channel of datagrams from a 1500-byte MTU (1,472 payload bytes each over
+/// IPv4), so the byte limit takes away none of the burst the queue absorbs
+/// there. The runtime-wide limit is what bounds memory.
+const UDP_FLOW_QUEUE_BYTES: usize = 384 * 1024;
+/// What every UDP flow may queue whatever the other flows hold: a few
+/// datagrams, so flows that fill the runtime-wide limit do not starve the
+/// rest. An empty queue also takes one datagram larger than this.
+const UDP_FLOW_QUEUE_FLOOR_BYTES: usize = 8 * 1024;
 const BRIDGE_READ_BUFFER_SIZE: usize = 16 * 1024;
 // A small pipeline hides stack/task scheduling latency without allowing an
 // unread application to fill a multi-megabyte queue for every TCP flow.
@@ -113,6 +122,9 @@ const MOBILE_TCP_BRIDGE_FLOW_MAX_BYTES: usize = 256 * 1024;
 const LOW_MEMORY_TCP_BRIDGE_FLOW_MAX_BYTES: usize = 128 * 1024;
 // Upload chunks are coalesced into writes of at most this many bytes.
 const TCP_BRIDGE_COALESCE_BYTES: usize = 64 * 1024;
+/// How long a TCP flow's upload may be quiet before its bridge gives back
+/// the buffer it coalesces chunks in.
+const TCP_BRIDGE_COALESCE_BUFFER_IDLE: Duration = Duration::from_secs(1);
 const MAX_TUN_INBOUND_DRAIN_PER_TICK: usize = 256;
 const MAX_BRIDGE_TASK_COMPLETIONS_PER_TICK: usize = 64;
 const MAX_UDP_TASK_COMPLETIONS_PER_TICK: usize = MAX_TUN_INBOUND_DRAIN_PER_TICK + 1;
@@ -195,8 +207,9 @@ struct UdpFlowBudgetPolicy {
     max_active_flows: usize,
     /// Payload bytes one flow's queue to its bridge may hold.
     max_queued_bytes_per_flow: usize,
-    /// Payload bytes the queues of all flows may hold together. A datagram
-    /// over either limit is dropped like one that finds its queue full.
+    /// Payload bytes the queues of all flows may hold together, except what
+    /// each flow may hold below [`UDP_FLOW_QUEUE_FLOOR_BYTES`]. A datagram
+    /// over a limit is dropped like one that finds its queue full.
     max_queued_bytes_total: usize,
 }
 
@@ -240,9 +253,8 @@ const MOBILE_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
         // Speedtests and DNS-heavy bursts easily exceed 256 concurrent UDP
         // flows; dropping fresh flows shows up as failed probes.
         max_active_flows: 512,
-        // 256 queued datagrams of a 1500-byte MTU are about 360 KiB per flow,
-        // and 512 such flows about 180 MiB.
-        max_queued_bytes_per_flow: 128 * 1024,
+        // 512 full queues would hold 192 MiB.
+        max_queued_bytes_per_flow: UDP_FLOW_QUEUE_BYTES,
         max_queued_bytes_total: 4 * 1024 * 1024,
     },
 };
@@ -255,7 +267,7 @@ const MOBILE_PLUS_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
     },
     udp: UdpFlowBudgetPolicy {
         max_active_flows: 512,
-        max_queued_bytes_per_flow: 256 * 1024,
+        max_queued_bytes_per_flow: UDP_FLOW_QUEUE_BYTES,
         max_queued_bytes_total: 8 * 1024 * 1024,
     },
 };
@@ -268,7 +280,6 @@ const DESKTOP_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
     },
     udp: UdpFlowBudgetPolicy {
         max_active_flows: 1024,
-        // Above the 256 datagrams a 1500-byte MTU fits in.
         max_queued_bytes_per_flow: 512 * 1024,
         max_queued_bytes_total: 64 * 1024 * 1024,
     },
@@ -288,7 +299,7 @@ const LOW_MEMORY_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
     },
     udp: UdpFlowBudgetPolicy {
         max_active_flows: 128,
-        max_queued_bytes_per_flow: 64 * 1024,
+        max_queued_bytes_per_flow: UDP_FLOW_QUEUE_BYTES,
         max_queued_bytes_total: 2 * 1024 * 1024,
     },
 };
@@ -918,11 +929,19 @@ impl FlowBudgetState {
     }
 
     /// Whether `len` more payload bytes fit in a flow's queue that holds
-    /// `queued`, and in the queues of all flows.
+    /// `queued`. The flow's own limit always applies. Below it, the queue
+    /// may fill to [`UDP_FLOW_QUEUE_FLOOR_BYTES`], and an empty one take a
+    /// datagram, whatever the other flows hold; past that, the queues of all
+    /// flows share the runtime-wide limit. A few flows that fill it, such as
+    /// a bulk QUIC upload to a slow outbound, so leave the others a queue.
     fn udp_queue_has_room(&self, queued: &QueuedBytes, len: usize) -> bool {
         let policy = self.policy.udp;
-        queued.flow().saturating_add(len) <= policy.max_queued_bytes_per_flow
-            && queued.total().saturating_add(len) <= policy.max_queued_bytes_total
+        let flow = queued.flow();
+        let after = flow.saturating_add(len);
+        after <= policy.max_queued_bytes_per_flow
+            && (flow == 0
+                || after <= UDP_FLOW_QUEUE_FLOOR_BYTES
+                || queued.total().saturating_add(len) <= policy.max_queued_bytes_total)
     }
 
     fn record_udp_budget_drop(&mut self) {
@@ -2837,7 +2856,9 @@ fn read_socket_data_to_remote(
             continue;
         };
         let socket = sockets.get_mut::<tcp::Socket>(*handle);
-        grow_tcp_recv_buffer(socket, rx_buffer_size);
+        if socket.can_recv() {
+            grow_tcp_recv_buffer(socket, rx_buffer_size);
+        }
         while socket.can_recv() {
             if flow.upload_queue_full() {
                 flow_budget_state
@@ -4002,7 +4023,7 @@ where
 
     let termination = 'bridge: loop {
         let upload = async {
-            let Some(data) = from_stack.recv().await else {
+            let Some(data) = recv_stack_upload(&mut from_stack, &mut upload_batch).await else {
                 // Half-close the transport after its queued upload drains. Keep
                 // reading: a server may generate its response only after EOF.
                 return match await_with_optional_timeout(
@@ -4485,6 +4506,26 @@ impl UdpFirstResponseTiming for UdpFirstResponseTimingEnabled {
     }
 }
 
+/// The client's next upload chunk. The buffer `batch` coalesces chunks in is
+/// kept while chunks keep coming, and given back once none has come for
+/// [`TCP_BRIDGE_COALESCE_BUFFER_IDLE`] or the upload ends, so a flow whose
+/// upload is idle holds none.
+async fn recv_stack_upload(
+    from_stack: &mut mpsc::Receiver<StackToRemoteData>,
+    batch: &mut BytesMut,
+) -> Option<StackToRemoteData> {
+    if batch.capacity() > 0 {
+        // `recv` is cancel safe: a chunk is never lost to the timeout.
+        if let Ok(Some(data)) =
+            tokio::time::timeout(TCP_BRIDGE_COALESCE_BUFFER_IDLE, from_stack.recv()).await
+        {
+            return Some(data);
+        }
+        *batch = BytesMut::new();
+    }
+    from_stack.recv().await
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "upload batching keeps reusable scratch state and diagnostics explicit"
@@ -4575,12 +4616,7 @@ where
     if write_result.is_ok() && !batch.is_empty() {
         write_result = remote_writer.write_all(batch).await;
     }
-    if from_stack.is_empty() {
-        // Nothing waits to be coalesced: an idle flow keeps no copy buffer.
-        *batch = BytesMut::new();
-    } else {
-        batch.clear();
-    }
+    batch.clear();
     let write_duration_ms = elapsed_ms_since(&write_start);
     tun.record_tcp_remote_write_wait(write_duration_ms);
     record_tcp_remote_write_slow_event(
@@ -5867,8 +5903,10 @@ fn tcp_initial_rx_buffer_size(mtu: usize) -> usize {
         .min(full)
 }
 
-/// Gives a socket whose bridge reads the client's data its full receive
-/// buffer. The larger window goes out as a window update.
+/// Gives a socket its full receive buffer once its bridge reads the client's
+/// first data. A flow whose client has sent nothing, such as a SYN that is
+/// never completed, keeps the initial one. The larger window goes out as a
+/// window update.
 fn grow_tcp_recv_buffer(socket: &mut tcp::Socket<'static>, size: usize) {
     if socket.recv_capacity() < size {
         socket.grow_recv_buffer(vec![0; size]);
@@ -6666,6 +6704,9 @@ impl Device for PacketDevice {
 /// stack, which computed them, through memory; `valid_tun_ip_packet` has
 /// checked the IPv4 header checksum before a packet reaches the stack, and
 /// verifying TCP's again would cost a pass over every uploaded byte.
+/// Xray-core's TUN inbound verifies neither; a host that writes packets
+/// other devices sent it must rely on their links to have checked them
+/// (docs/ffi.md, "Packet APIs").
 fn packet_device_checksums() -> ChecksumCapabilities {
     let mut checksums = ChecksumCapabilities::default();
     checksums.ipv4 = Checksum::Tx;
@@ -8168,11 +8209,18 @@ mod tests {
             let udp = tun_runtime_policy_for_options(TunRuntimeOptions::with_profile(profile))
                 .flows
                 .udp;
-            // A flow can take up to a 64 KiB datagram, and a full queue of
-            // MTU-sized ones on desktop profiles.
-            assert!(udp.max_queued_bytes_per_flow >= 64 * 1024, "{profile:?}");
+            // A flow's queue holds a full channel of datagrams from a
+            // 1500-byte MTU, as it did before it was bounded in bytes.
+            assert!(
+                udp.max_queued_bytes_per_flow >= UDP_BRIDGE_CHANNEL_DEPTH * (1500 - 28),
+                "{profile:?}"
+            );
             assert!(
                 udp.max_queued_bytes_per_flow < UDP_BRIDGE_CHANNEL_DEPTH * 64 * 1024,
+                "{profile:?}"
+            );
+            assert!(
+                UDP_FLOW_QUEUE_FLOOR_BYTES < udp.max_queued_bytes_per_flow,
                 "{profile:?}"
             );
             // The total binds well before every flow fills its queue.
@@ -8186,16 +8234,15 @@ mod tests {
             }
             last = Some((udp.max_queued_bytes_per_flow, udp.max_queued_bytes_total));
         }
-        // Inside the 50 MB an iOS Network Extension may use.
+        // With every flow holding its floor beside the total, inside the
+        // 50 MB an iOS Network Extension may use (at a 1500-byte MTU; an
+        // empty queue may take one datagram larger than the floor).
+        const fn most_queued(udp: UdpFlowBudgetPolicy) -> usize {
+            udp.max_queued_bytes_total + udp.max_active_flows * UDP_FLOW_QUEUE_FLOOR_BYTES
+        }
         const {
-            assert!(MOBILE_TUN_RUNTIME_POLICY.flows.udp.max_queued_bytes_total <= 8 * 1024 * 1024);
-            assert!(
-                MOBILE_PLUS_TUN_RUNTIME_POLICY
-                    .flows
-                    .udp
-                    .max_queued_bytes_total
-                    <= 8 * 1024 * 1024
-            );
+            assert!(most_queued(MOBILE_TUN_RUNTIME_POLICY.flows.udp) <= 8 * 1024 * 1024);
+            assert!(most_queued(MOBILE_PLUS_TUN_RUNTIME_POLICY.flows.udp) <= 12 * 1024 * 1024);
         }
     }
 
@@ -8308,13 +8355,12 @@ mod tests {
         assert_eq!(writer.written.len(), 8 * 32 * 1024);
         assert_eq!(writer.writes, 4);
         assert_eq!(writer.flushes, 1);
-        // Chunks still wait, so the copy buffer is kept for them.
         let capacity = batch.capacity();
         assert!(capacity > 0);
         assert!(capacity <= 2 * TCP_BRIDGE_COALESCE_BYTES);
 
-        // The next batch reuses the same buffer, and releases it once
-        // nothing is left to coalesce.
+        // The next batch reuses the same buffer, also when it empties the
+        // queue: a steady upload does not allocate it again for every batch.
         write_stack_batch_to_remote(
             &mut writer,
             &target,
@@ -8330,8 +8376,48 @@ mod tests {
         .await
         .unwrap();
         assert!(rx.is_empty());
-        assert_eq!(batch.capacity(), 0, "an idle flow keeps no copy buffer");
+        assert_eq!(batch.capacity(), capacity);
         assert_eq!(writer.written.len(), 13 * 32 * 1024);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_idle_upload_gives_back_its_coalescing_buffer() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let mut batch = BytesMut::with_capacity(TCP_BRIDGE_COALESCE_BYTES);
+
+        // A chunk that comes within the idle time keeps the buffer.
+        let sender = tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(TCP_BRIDGE_COALESCE_BUFFER_IDLE / 2).await;
+            sender
+                .send(stack_to_remote_data(Bytes::from_static(b"soon")))
+                .await
+                .unwrap();
+        });
+        let data = recv_stack_upload(&mut rx, &mut batch).await.unwrap();
+        assert_eq!(data.data.as_ref(), b"soon");
+        assert!(batch.capacity() >= TCP_BRIDGE_COALESCE_BYTES);
+
+        // A quiet upload gives it back and still takes the next chunk.
+        let sender = tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(TCP_BRIDGE_COALESCE_BUFFER_IDLE * 3).await;
+            sender
+                .send(stack_to_remote_data(Bytes::from_static(b"later")))
+                .await
+                .unwrap();
+        });
+        let started = tokio::time::Instant::now();
+        let data = recv_stack_upload(&mut rx, &mut batch).await.unwrap();
+        assert_eq!(data.data.as_ref(), b"later");
+        assert_eq!(started.elapsed(), TCP_BRIDGE_COALESCE_BUFFER_IDLE * 3);
+        assert_eq!(batch.capacity(), 0);
+
+        // So does an upload that ends.
+        let mut batch = BytesMut::with_capacity(TCP_BRIDGE_COALESCE_BYTES);
+        drop(tx);
+        assert!(recv_stack_upload(&mut rx, &mut batch).await.is_none());
+        assert_eq!(batch.capacity(), 0);
     }
 
     #[test]

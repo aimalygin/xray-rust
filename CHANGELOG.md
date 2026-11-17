@@ -15,34 +15,40 @@ long-term supported release series.
   computed them and hands the packets over in memory, and each IPv4 header
   checksum is still checked once before a packet reaches smoltcp. This saves
   a pass over every uploaded byte; a TCP segment with a wrong checksum is now
-  taken as it is. Packets the stack sends keep their computed checksums.
-- An idle TUN TCP flow holds about 80 KiB of heap instead of 146 KiB. Its
-  bridge kept a 64 KiB read buffer for the flow's whole life and copied every
-  read out of it; it now reads into a buffer on the stack and continues in a
-  heap chunk only when more is ready, which goes to the stack without the
-  copy. The smoltcp socket no longer takes its two 32 KiB buffers at the SYN:
-  it starts with an 8 KiB receive buffer (two segments at least) and no send
-  buffer, and grows them when the flow's bridge starts reading the client's
-  data and when the remote sends its first bytes, so SYNs that are never
-  completed and flows whose outbound is still connecting cost a few KiB each.
-  A grown receive window is announced at once. The vendored smoltcp gains
+  taken as it is, as Xray-core's TUN inbound takes it. A host that writes
+  packets other devices sent it relies on their links to have checked them
+  (see Packet APIs in `docs/ffi.md`). Packets the stack sends keep their
+  computed checksums, and UDP checksums are still checked.
+- An idle TUN TCP flow holds about 80 KiB of heap instead of 146 KiB, and
+  one that has carried nothing about 24 KiB. Its bridge kept a 64 KiB read
+  buffer for the flow's whole life; it now reads into a buffer on the stack
+  of the poll that reads and hands on a copy at the read's size, as before.
+  The smoltcp socket no longer takes its two 32 KiB buffers at the SYN: it
+  starts with an 8 KiB receive buffer (two segments at least) and no send
+  buffer, and grows them with the client's first data and with the remote's
+  first bytes, so SYNs that are never completed, flows whose outbound is
+  still connecting and flows that carry nothing cost a few KiB each. A grown
+  receive window is announced at once. The vendored smoltcp gains
   `Socket::grow_recv_buffer` and `Socket::grow_send_buffer` for this. The
-  upload side releases its coalescing buffer once nothing waits to be written,
-  and a freedom UDP flow no longer keeps a 16 KiB receive buffer.
+  upload side gives back its coalescing buffer after a second without a
+  chunk, and a freedom UDP flow no longer keeps a 16 KiB receive buffer.
 - A TUN UDP flow's queue to its outbound is bounded in bytes as well as in
-  datagrams: 64 KiB per flow and 2 MiB across flows on the `LowMemory` TUN
-  profile, 128 KiB and 4 MiB on `Mobile`, 256 KiB and 8 MiB on `MobilePlus`,
-  512 KiB and 64 MiB on `Desktop`, 1 MiB and 128 MiB on `Throughput`. A flow
-  could queue 256 datagrams, and every queued datagram was a slice of the
-  64 KiB buffer the TUN descriptor had been read into, so it kept that whole
-  buffer alive: a slow outbound let one flow hold up to 16 MiB, and a burst
-  over many flows enough to pass the 50 MB an iOS Network Extension may use.
-  A datagram over a limit is dropped, as one that finds its queue full, and
-  counted in `udp_channel_dropped_packets`; the flow stays up. Queued
-  datagrams now have allocations of their own, and so do the first packet a
-  UDP flow kept for an ICMP reply for as long as the flow lasted (it is now
-  released once the flow is routed), a DNS query the TUN answers itself, and
-  a datagram held while a TUN admission callback decides.
+  datagrams: 384 KiB per flow, the 256 datagrams of a 1500-byte MTU, and
+  2 MiB across flows on the `LowMemory` TUN profile, 4 MiB on `Mobile` and
+  8 MiB on `MobilePlus`; 512 KiB and 64 MiB on `Desktop`, 1 MiB and 128 MiB
+  on `Throughput`. A flow could queue 256 datagrams, and every queued
+  datagram was a slice of the 64 KiB buffer the TUN descriptor had been read
+  into, so it kept that whole buffer alive: a slow outbound let one flow hold
+  up to 16 MiB, and a burst over many flows enough to pass the 50 MB an iOS
+  Network Extension may use. Every flow may queue 8 KiB, and an empty queue
+  one datagram, beyond the limit across flows, so a few flows that fill it
+  do not starve the rest. A datagram over a limit is dropped, as one that
+  finds its queue full, and counted in `udp_channel_dropped_packets`; the
+  flow stays up. Queued datagrams now have allocations of their own, and so
+  do the first packet a UDP flow kept for an ICMP reply for as long as the
+  flow lasted (it is now released once the flow is routed), a DNS query the
+  TUN answers itself, and a datagram held while a TUN admission callback
+  decides.
 
 ## 0.10.1 - 2026-11-16
 

@@ -83,16 +83,16 @@ async fn batching_keeps_tail_bytes_before_eof_or_error_and_respects_capacity() {
 }
 
 #[tokio::test]
-async fn a_pending_download_read_holds_no_buffer_and_large_reads_continue_in_one_chunk() {
-    // Nothing ready: the read waits without a chunk of its own.
+async fn a_pending_download_read_holds_no_buffer_and_coalesces_up_to_a_chunk() {
+    // Nothing ready: the read waits without a buffer of its own.
     let mut reader = FramedReader(VecDeque::from([ReadStep::Pending]));
     let mut batch = Box::pin(read_remote_batch(&mut reader, TCP_DOWNLOAD_CHUNK_SIZE));
     let mut cx = Context::from_waker(Waker::noop());
     assert!(batch.as_mut().poll(&mut cx).is_pending());
     drop(batch);
 
-    // More than the stack buffer: the frames continue in one chunk, up to
-    // the limit, whatever their sizes.
+    // Ready frames are coalesced up to the chunk size, whatever their sizes,
+    // and handed on at the size they came to.
     let frames: Vec<Bytes> = (0..5u8)
         .map(|i| Bytes::from(vec![i; 20 * 1024 + usize::from(i)]))
         .collect();
@@ -102,15 +102,12 @@ async fn a_pending_download_read_holds_no_buffer_and_large_reads_continue_in_one
     let mut reader = FramedReader(steps);
     let (first, end) = read_remote_batch(&mut reader, TCP_DOWNLOAD_CHUNK_SIZE).await;
     assert_eq!(end, None);
-    assert_eq!(first.len(), TCP_DOWNLOAD_CHUNK_SIZE);
     assert_eq!(first.as_ref(), &expected[..TCP_DOWNLOAD_CHUNK_SIZE]);
     let (rest, end) = read_remote_batch(&mut reader, TCP_DOWNLOAD_CHUNK_SIZE).await;
     assert_eq!(end, None);
     assert_eq!(rest.as_ref(), &expected[TCP_DOWNLOAD_CHUNK_SIZE..]);
 
-    // A chunk that ends up less than half full is handed on at its own size;
-    // one at least half full as it is.
-    for len in [12 * 1024, TCP_DOWNLOAD_CHUNK_SIZE / 2 + 1] {
+    for len in [16 * 1024, TCP_DOWNLOAD_CHUNK_SIZE / 2 + 1] {
         let mut reader = FramedReader(VecDeque::from([
             ReadStep::Data(Bytes::from(vec![0x5a; len])),
             ReadStep::End(RemoteReadEnd::Closed),
@@ -624,22 +621,60 @@ fn full_udp_queue_drops_the_datagram_but_keeps_the_flow() {
     assert_eq!(budget.udp_queued_bytes.load(Ordering::Acquire), 0);
 }
 
+fn other_udp_flow(
+    budget: &FlowBudgetState,
+    flows: &mut HashMap<UdpFlowKey, UdpFlow>,
+    port: u16,
+) -> (UdpFlowKey, mpsc::Receiver<QueuedDatagram>) {
+    let key = UdpFlowKey::new(
+        IpEndpoint::new(IpAddress::v4(198, 18, 0, 2), port),
+        IpEndpoint::new(IpAddress::v4(192, 0, 2, 1), 443),
+    );
+    let (_, mut flow, receiver) = test_udp_flow(budget);
+    flow.generation = u64::from(port);
+    flows.insert(key, flow);
+    (key, receiver)
+}
+
+fn forward_udp_datagrams(
+    flows: &mut HashMap<UdpFlowKey, UdpFlow>,
+    key: UdpFlowKey,
+    count: usize,
+    len: usize,
+    budget: &mut FlowBudgetState,
+) {
+    for _ in 0..count {
+        forward_udp_payload(flows, key, Bytes::from(vec![7; len]), budget);
+    }
+}
+
 #[test]
 fn udp_queues_are_bounded_in_bytes_per_flow_and_in_total() {
     let policy = LOW_MEMORY_FLOW_BUDGET_POLICY;
     let per_flow = policy.udp.max_queued_bytes_per_flow;
     let total = policy.udp.max_queued_bytes_total;
-    let datagram = 1200;
     let mut budget = FlowBudgetState::new(policy);
     let (key, flow, mut from_stack) = test_udp_flow(&budget);
     let mut flows = HashMap::from([(key, flow)]);
 
-    // Far fewer datagrams than the queue's depth fill its bytes.
+    // A full channel of datagrams from a 1500-byte MTU fits in the bytes.
+    let full_mtu = 1500 - 28;
+    forward_udp_datagrams(
+        &mut flows,
+        key,
+        UDP_BRIDGE_CHANNEL_DEPTH,
+        full_mtu,
+        &mut budget,
+    );
+    assert_eq!(budget.udp_channel_dropped_packets(), 0);
+    while from_stack.try_recv().is_ok() {}
+    assert_eq!(budget.udp_queued_bytes.load(Ordering::Acquire), 0);
+
+    // Datagrams from a 9000-byte MTU fill the bytes first.
+    let datagram = 9000 - 28;
     let fit = per_flow / datagram;
     assert!(fit < UDP_BRIDGE_CHANNEL_DEPTH);
-    for _ in 0..fit + 1 {
-        forward_udp_payload(&mut flows, key, Bytes::from(vec![7; datagram]), &mut budget);
-    }
+    forward_udp_datagrams(&mut flows, key, fit + 1, datagram, &mut budget);
     assert_eq!(budget.udp_channel_dropped_packets(), 1);
     assert_eq!(flows[&key].queued.flow(), fit * datagram);
     assert_eq!(
@@ -650,48 +685,26 @@ fn udp_queues_are_bounded_in_bytes_per_flow_and_in_total() {
     // Taking a datagram out of the queue makes room for another.
     let first = from_stack.try_recv().unwrap().into_payload();
     assert_eq!(first.len(), datagram);
-    forward_udp_payload(&mut flows, key, Bytes::from(vec![8; datagram]), &mut budget);
+    forward_udp_datagrams(&mut flows, key, 1, datagram, &mut budget);
     assert_eq!(budget.udp_channel_dropped_packets(), 1);
 
     // Other flows share the total.
     let mut others = Vec::new();
-    let mut opened = 0;
+    let mut port = 20000;
     while budget.udp_queued_bytes.load(Ordering::Acquire) + per_flow <= total {
-        let (_, mut flow, receiver) = test_udp_flow(&budget);
-        let other_key = UdpFlowKey::new(
-            IpEndpoint::new(IpAddress::v4(198, 18, 0, 2), 20000 + opened),
-            IpEndpoint::new(IpAddress::v4(192, 0, 2, 1), 443),
-        );
-        flow.generation = u64::from(opened);
-        flows.insert(other_key, flow);
+        let (other_key, receiver) = other_udp_flow(&budget, &mut flows, port);
         others.push(receiver);
-        for _ in 0..fit {
-            forward_udp_payload(
-                &mut flows,
-                other_key,
-                Bytes::from(vec![9; datagram]),
-                &mut budget,
-            );
-        }
-        opened += 1;
+        forward_udp_datagrams(&mut flows, other_key, fit, datagram, &mut budget);
+        port += 1;
     }
     let drops = budget.udp_channel_dropped_packets();
-    let queued = budget.udp_queued_bytes.load(Ordering::Acquire);
-    let room = total - queued;
-    let last_key = UdpFlowKey::new(
-        IpEndpoint::new(IpAddress::v4(198, 18, 0, 2), 30000),
-        IpEndpoint::new(IpAddress::v4(192, 0, 2, 1), 443),
+    let room = total - budget.udp_queued_bytes.load(Ordering::Acquire);
+    assert!(
+        room >= datagram,
+        "the last flow below takes some by the total"
     );
-    let (_, last_flow, last_receiver) = test_udp_flow(&budget);
-    flows.insert(last_key, last_flow);
-    for _ in 0..fit {
-        forward_udp_payload(
-            &mut flows,
-            last_key,
-            Bytes::from(vec![1; datagram]),
-            &mut budget,
-        );
-    }
+    let (last_key, last_receiver) = other_udp_flow(&budget, &mut flows, port);
+    forward_udp_datagrams(&mut flows, last_key, fit, datagram, &mut budget);
     assert_eq!(flows[&last_key].queued.flow(), room / datagram * datagram);
     assert_eq!(
         budget.udp_channel_dropped_packets() - drops,
@@ -705,6 +718,56 @@ fn udp_queues_are_bounded_in_bytes_per_flow_and_in_total() {
     drop(last_receiver);
     drop(from_stack);
     assert_eq!(budget.udp_queued_bytes.load(Ordering::Acquire), 0);
+}
+
+#[test]
+fn a_udp_flow_keeps_a_floor_when_other_flows_fill_the_total() {
+    let policy = MOBILE_FLOW_BUDGET_POLICY;
+    let total = policy.udp.max_queued_bytes_total;
+    let mut budget = FlowBudgetState::new(policy);
+    let mut flows = HashMap::new();
+
+    // Bulk flows to a slow outbound fill the total, with room left in
+    // their channels.
+    let mut bulk = Vec::new();
+    let mut port = 20000;
+    while budget.udp_queued_bytes.load(Ordering::Acquire) < total {
+        let (key, receiver) = other_udp_flow(&budget, &mut flows, port);
+        bulk.push((key, receiver));
+        forward_udp_datagrams(&mut flows, key, 200, 1200, &mut budget);
+        port += 1;
+    }
+    let (bulk_key, _) = bulk[0];
+    let drops = budget.udp_channel_dropped_packets();
+    forward_udp_datagrams(&mut flows, bulk_key, 1, 1200, &mut budget);
+    assert_eq!(
+        budget.udp_channel_dropped_packets(),
+        drops + 1,
+        "a flow past its floor waits for the total"
+    );
+
+    // Another flow still queues a few datagrams of its own.
+    let (quiet, mut quiet_rx) = other_udp_flow(&budget, &mut flows, 30000);
+    let floor = UDP_FLOW_QUEUE_FLOOR_BYTES / 1200;
+    assert!(floor >= 4);
+    forward_udp_datagrams(&mut flows, quiet, floor + 1, 1200, &mut budget);
+    assert_eq!(flows[&quiet].queued.flow(), floor * 1200);
+    assert_eq!(budget.udp_channel_dropped_packets(), drops + 2);
+    assert!(
+        budget.udp_queued_bytes.load(Ordering::Acquire)
+            <= total + flows.len() * UDP_FLOW_QUEUE_FLOOR_BYTES
+    );
+
+    // An empty queue takes a datagram larger than the floor.
+    let (jumbo, _jumbo_rx) = other_udp_flow(&budget, &mut flows, 30001);
+    forward_udp_datagrams(&mut flows, jumbo, 1, 9000 - 28, &mut budget);
+    assert_eq!(flows[&jumbo].queued.flow(), 9000 - 28);
+
+    // Draining frees the floor for the next datagrams.
+    while quiet_rx.try_recv().is_ok() {}
+    forward_udp_datagrams(&mut flows, quiet, 1, 1200, &mut budget);
+    assert_eq!(flows[&quiet].queued.flow(), 1200);
+    assert_eq!(budget.udp_channel_dropped_packets(), drops + 2);
 }
 
 #[test]
@@ -725,6 +788,7 @@ fn queued_udp_datagrams_do_not_share_the_tun_read_buffer() {
 
 #[test]
 fn tun_tcp_socket_buffers_grow_only_when_the_flow_carries_data() {
+    use super::tests::{build_ipv4_tcp_packet, ipv4_tcp_sequence};
     assert_eq!(tcp_initial_rx_buffer_size(1500), TCP_INITIAL_RX_BUFFER_SIZE);
     assert_eq!(tcp_initial_rx_buffer_size(9000), 2 * (9000 - 40));
     assert!(tcp_initial_rx_buffer_size(9000) < tcp_rx_buffer_size(9000));
@@ -733,16 +797,55 @@ fn tun_tcp_socket_buffers_grow_only_when_the_flow_carries_data() {
         mtu: 1500,
         queue_depth: 16,
     });
+    let client_ip = Ipv4Addr::new(10, 10, 0, 2);
+    let server_ip = Ipv4Addr::new(192, 0, 2, 1);
+    let endpoint = IpEndpoint::new(IpAddress::Ipv4(server_ip), 443);
+    let mut device = PacketDevice::new(1500);
+    let mut iface = Interface::new(
+        InterfaceConfig::new(HardwareAddress::Ip),
+        &mut device,
+        Instant::now(),
+    );
+    iface.set_any_ip(true);
     let mut sockets = SocketSet::new(Vec::new());
     let mut listeners = HashMap::new();
-    let endpoint = IpEndpoint::new(IpAddress::v4(192, 0, 2, 1), 443);
     add_tcp_listener(&mut sockets, &mut listeners, endpoint, 1500);
     let handle = listeners[&endpoint].handle;
-    let socket = sockets.get::<tcp::Socket>(handle);
-    assert_eq!(socket.recv_capacity(), TCP_INITIAL_RX_BUFFER_SIZE);
-    assert_eq!(socket.send_capacity(), 0);
+    let capacities = |sockets: &SocketSet<'static>| {
+        let socket = sockets.get::<tcp::Socket>(handle);
+        (socket.recv_capacity(), socket.send_capacity())
+    };
+    assert_eq!(capacities(&sockets), (TCP_INITIAL_RX_BUFFER_SIZE, 0));
 
-    let (to_remote, _from_stack) = mpsc::channel(1);
+    device.push_inbound(Bytes::from(build_ipv4_tcp_packet(
+        client_ip,
+        49152,
+        server_ip,
+        443,
+        1000,
+        0,
+        0x02,
+        &[],
+    )));
+    iface.poll(Instant::now(), &mut device, &mut sockets);
+    let server_seq = ipv4_tcp_sequence(&device.pop_outbound().unwrap()).unwrap();
+    device.push_inbound(Bytes::from(build_ipv4_tcp_packet(
+        client_ip,
+        49152,
+        server_ip,
+        443,
+        1001,
+        server_seq + 1,
+        0x10,
+        &[],
+    )));
+    iface.poll(Instant::now(), &mut device, &mut sockets);
+    assert_eq!(
+        sockets.get::<tcp::Socket>(handle).state(),
+        tcp::State::Established
+    );
+
+    let (to_remote, mut from_stack) = mpsc::channel(1);
     let mut flows = HashMap::from([(
         handle,
         TcpFlow {
@@ -766,16 +869,40 @@ fn tun_tcp_socket_buffers_grow_only_when_the_flow_carries_data() {
     // A flow whose outbound is still opening keeps the small buffers.
     read_socket_data_to_remote(&tun, &mut sockets, &mut flows, &mut budget);
     write_remote_data_to_sockets(&mut sockets, &mut flows, &mut budget);
-    let socket = sockets.get::<tcp::Socket>(handle);
-    assert_eq!(socket.recv_capacity(), TCP_INITIAL_RX_BUFFER_SIZE);
-    assert_eq!(socket.send_capacity(), 0);
+    assert_eq!(capacities(&sockets), (TCP_INITIAL_RX_BUFFER_SIZE, 0));
 
-    // Its bridge reading the client's data gives it the full receive buffer.
+    // So does an open one whose client has sent nothing.
     flows.get_mut(&handle).unwrap().remote_open = true;
     read_socket_data_to_remote(&tun, &mut sockets, &mut flows, &mut budget);
-    let socket = sockets.get::<tcp::Socket>(handle);
-    assert_eq!(socket.recv_capacity(), tcp_rx_buffer_size(1500));
-    assert_eq!(socket.send_capacity(), 0);
+    write_remote_data_to_sockets(&mut sockets, &mut flows, &mut budget);
+    assert_eq!(capacities(&sockets), (TCP_INITIAL_RX_BUFFER_SIZE, 0));
+
+    // The client's first data gives it the full receive buffer, and the
+    // larger window goes out at once.
+    while device.pop_outbound().is_some() {}
+    device.push_inbound(Bytes::from(build_ipv4_tcp_packet(
+        client_ip,
+        49152,
+        server_ip,
+        443,
+        1001,
+        server_seq + 1,
+        0x18,
+        b"hello",
+    )));
+    iface.poll(Instant::now(), &mut device, &mut sockets);
+    read_socket_data_to_remote(&tun, &mut sockets, &mut flows, &mut budget);
+    assert_eq!(capacities(&sockets), (tcp_rx_buffer_size(1500), 0));
+    assert_eq!(from_stack.try_recv().unwrap().data.as_ref(), b"hello");
+    iface.poll(Instant::now(), &mut device, &mut sockets);
+    let window = std::iter::from_fn(|| device.pop_outbound())
+        .last()
+        .map(|packet| u16::from_be_bytes([packet[34], packet[35]]))
+        .expect("the stack acknowledges the data");
+    assert!(
+        usize::from(window) > TCP_INITIAL_RX_BUFFER_SIZE,
+        "window {window}"
+    );
 
     // The remote's first bytes give it the send buffer.
     let flow = flows.get_mut(&handle).unwrap();
@@ -785,7 +912,7 @@ fn tun_tcp_socket_buffers_grow_only_when_the_flow_carries_data() {
     budget.record_pending_remote_enqueue(0, 8);
     write_remote_data_to_sockets(&mut sockets, &mut flows, &mut budget);
     assert_eq!(
-        sockets.get::<tcp::Socket>(handle).send_capacity(),
-        TCP_BUFFER_SIZE
+        capacities(&sockets),
+        (tcp_rx_buffer_size(1500), TCP_BUFFER_SIZE)
     );
 }
