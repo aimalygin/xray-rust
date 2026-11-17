@@ -7,7 +7,7 @@ trap 'rm -rf "$temporary"' EXIT
 
 # Include ignored files here: an upstream .gitignore can hide crate files on
 # the developer's filesystem even though a clean checkout will omit them.
-untracked="$(git -C "$ROOT" ls-files --others -- vendor/blake3 vendor/h2 vendor/h3 vendor/h3-quinn vendor/quinn vendor/quinn-proto vendor/gotatun vendor/smoltcp)"
+untracked="$(git -C "$ROOT" ls-files --others -- vendor/blake3 vendor/h2 vendor/h3 vendor/h3-quinn vendor/quinn vendor/quinn-proto vendor/gotatun vendor/smoltcp vendor/shaped-rustls)"
 if [[ -n "$untracked" ]]; then
   echo 'vendored source files are absent from the Git index:' >&2
   printf '%s\n' "$untracked" >&2
@@ -36,16 +36,16 @@ download_and_verify \
   h3-quinn 0.0.10 \
   8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4
 download_and_verify \
-  quinn-proto 0.11.16 \
-  2f4bfc015262b9df63c8845072ce59068853ff5872180c2ce2f13038b970e560
+  quinn-proto 0.11.19 \
+  0e750cca55fe4f0439a15d0bb529da9651e79993e8e72c61a899a36d462befbe
 download_and_verify \
-  quinn 0.11.9 \
-  b9e20a958963c291dc322d98411f541009df2ced7b5a4f2bd52337638cfccf20
+  quinn 0.11.12 \
+  4051e23e9185c255a7e33ef59cdbca87a22d359052eecd22fc6b901fb37d9d11
 patch --batch --fuzz=0 -p1 \
-  -d "$temporary/quinn-0.11.9" \
+  -d "$temporary/quinn-0.11.12" \
   <"$ROOT/vendor/quinn/XRAY-PATCH.diff"
 diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
-  "$temporary/quinn-0.11.9" "$ROOT/vendor/quinn"
+  "$temporary/quinn-0.11.12" "$ROOT/vendor/quinn"
 
 patch --batch --fuzz=0 -p1 \
   -d "$temporary/blake3-1.8.5" \
@@ -79,23 +79,23 @@ diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
 cargo test --locked --manifest-path "$temporary/h3-0.0.8/Cargo.toml" --lib
 
 patch --batch --fuzz=0 -p1 \
-  -d "$temporary/quinn-proto-0.11.16" \
+  -d "$temporary/quinn-proto-0.11.19" \
   <"$ROOT/vendor/quinn-proto/XRAY-PATCH.diff"
 diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
-  "$temporary/quinn-proto-0.11.16" "$ROOT/vendor/quinn-proto"
-cargo test --locked --manifest-path "$temporary/quinn-proto-0.11.16/Cargo.toml" \
+  "$temporary/quinn-proto-0.11.19" "$ROOT/vendor/quinn-proto"
+cargo test --locked --manifest-path "$temporary/quinn-proto-0.11.19/Cargo.toml" \
   --no-default-features --features rustls-ring --lib
 
 # The quinn patch calls quinn-proto's patched `set_stream_receive_window`, so
 # quinn is tested against the reconstruction above. Its published lockfile
-# pins crates.io quinn-proto 0.11.13: move that entry, and only what 0.11.16
+# pins crates.io quinn-proto 0.11.18: move that entry, and only what 0.11.19
 # needs, before the locked test.
-quinn_proto_patch="patch.crates-io.quinn-proto.path=\"$temporary/quinn-proto-0.11.16\""
+quinn_proto_patch="patch.crates-io.quinn-proto.path=\"$temporary/quinn-proto-0.11.19\""
 cargo update --config "$quinn_proto_patch" \
-  --manifest-path "$temporary/quinn-0.11.9/Cargo.toml" \
-  -p quinn-proto --precise 0.11.16
+  --manifest-path "$temporary/quinn-0.11.12/Cargo.toml" \
+  -p quinn-proto --precise 0.11.19
 cargo test --locked --config "$quinn_proto_patch" \
-  --manifest-path "$temporary/quinn-0.11.9/Cargo.toml" \
+  --manifest-path "$temporary/quinn-0.11.12/Cargo.toml" \
   --no-default-features --features runtime-tokio,rustls-ring --lib
 
 download_and_verify \
@@ -122,6 +122,44 @@ diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
 cargo test --locked --manifest-path "$temporary/h2-0.4.20/Cargo.toml" \
   --lib -- --skip hpack::test::fixture
 
+# shaped-rustls is the rustls fork at a pinned commit, not a crates.io
+# release. The vendored crate is its `rustls` directory (manifest, build
+# script and sources) and the fork's license files; XRAY-PATCH.diff expands
+# the workspace manifest and carries the backported security fixes.
+shaped_rustls_rev=ca91d48c385f7d16ad3993ecaf26fa9b84882dbc
+curl --fail --location --silent --show-error \
+  --proto '=https' --tlsv1.2 --retry 3 \
+  --user-agent 'xray-rust-vendor-provenance/1.0' \
+  --output "$temporary/shaped-rustls.tar.gz" \
+  "https://codeload.github.com/aimalygin/shaped-rustls/tar.gz/$shaped_rustls_rev"
+echo "797e1851f8511d2d6d9ddb17006b17c8fe5c1726bb4521437fcbf43d7dfb8467  $temporary/shaped-rustls.tar.gz" |
+  sha256sum --check -
+tar -xzf "$temporary/shaped-rustls.tar.gz" -C "$temporary"
+shaped_rustls_checkout="$temporary/shaped-rustls-$shaped_rustls_rev"
+mkdir "$temporary/shaped-rustls"
+cp "$shaped_rustls_checkout/rustls/Cargo.toml" "$shaped_rustls_checkout/rustls/build.rs" \
+  "$temporary/shaped-rustls/"
+cp -R "$shaped_rustls_checkout/rustls/src" "$temporary/shaped-rustls/src"
+for license in LICENSE LICENSE-APACHE LICENSE-ISC LICENSE-MIT; do
+  cp "$shaped_rustls_checkout/$license" "$temporary/shaped-rustls/"
+done
+patch --batch --fuzz=0 -p1 \
+  -d "$temporary/shaped-rustls" \
+  <"$ROOT/vendor/shaped-rustls/XRAY-PATCH.diff"
+diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
+  "$temporary/shaped-rustls" "$ROOT/vendor/shaped-rustls"
+# The fork's unit tests need its workspace (dev-dependencies, lockfile), so
+# they run there against the vendored sources. With brotli and zlib enabled,
+# seven ClientHello shaping tests of the fork expect no compress_certificate
+# extension and fail at the pinned commit already; the compression tests run
+# with those features on their own.
+rm -rf "$shaped_rustls_checkout/rustls/src"
+cp -R "$ROOT/vendor/shaped-rustls/src" "$shaped_rustls_checkout/rustls/src"
+cargo test --locked --manifest-path "$shaped_rustls_checkout/Cargo.toml" \
+  -p rustls --features ring --lib
+cargo test --locked --manifest-path "$shaped_rustls_checkout/Cargo.toml" \
+  -p rustls --features ring,brotli,zlib --lib -- compress::
+
 bash "$ROOT/scripts/check-wireguard-adapter-prototype.sh" --verify-vendor-only
 
 # Vendored crates are path dependencies, so Cargo enforces their own lint
@@ -130,5 +168,5 @@ bash "$ROOT/scripts/check-wireguard-adapter-prototype.sh" --verify-vendor-only
 # fuzz job compiles.
 RUSTFLAGS="--cfg fuzzing" cargo check --locked \
   --manifest-path "$ROOT/Cargo.toml" --target-dir "$temporary/fuzzing-target" \
-  -p blake3 -p gotatun -p h2 -p h3 -p h3-quinn -p quinn -p quinn-proto -p smoltcp
+  -p blake3 -p gotatun -p h2 -p h3 -p h3-quinn -p quinn -p quinn-proto -p rustls -p smoltcp
 echo "verified vendored sources against checksum-pinned archives"

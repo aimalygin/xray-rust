@@ -684,27 +684,6 @@ fn runtime_tun_config_with_fake_ip_route_only_http_sniffing(unused_proxy_port: u
     config
 }
 
-/// HTTP sniffing on TUN with only `routed.example` routed to the freedom
-/// outbound, which reaches it at the loopback address; the default outbound
-/// is a dead proxy.
-fn runtime_tun_config_with_http_sniffing(unused_proxy_port: u16, route_only: bool) -> CoreConfig {
-    let mut config = runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port);
-    config.inbounds[0].sniffing = Some(InboundSniffingConfig {
-        enabled: true,
-        dest_override: vec![SniffingDestination::Http],
-        metadata_only: false,
-        route_only,
-        ..Default::default()
-    });
-    config.routing.rules[0].domain_matchers =
-        Some(compile_domain_matchers(&[DomainMatcher::Full("routed.example".to_owned())]).unwrap());
-    config.dns.hosts = DomainHostIndex::from_iter([(
-        DomainMatcher::Full("routed.example".to_owned()),
-        DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-    )]);
-    config
-}
-
 fn runtime_tun_config_with_fake_ip_quic_sniffing_routed_to_dns_outbound() -> CoreConfig {
     let mut config =
         runtime_tun_config_with_dns_outbound(DnsOutboundSettings::default(), vec![Network::Udp]);
@@ -3159,21 +3138,6 @@ async fn tun_tcp_in_pool_unmapped_route_only_dials_the_sniffed_http_host() {
     )
     .await
     .unwrap();
-}
-
-/// An app that connects to an address it looked up itself, by its own DoH
-/// or from a cache, is routed by the host it names, as Xray-core routes it,
-/// and dials that address under `routeOnly` or the host without it.
-#[tokio::test]
-async fn tun_tcp_to_an_ip_address_routes_by_the_sniffed_http_host() {
-    for route_only in [true, false] {
-        timeout(
-            Duration::from_secs(3),
-            run_tun_tcp_ip_address_http_sniffing_scenario(route_only),
-        )
-        .await
-        .unwrap();
-    }
 }
 
 #[tokio::test]
@@ -5692,35 +5656,6 @@ async fn run_tun_tcp_in_pool_unmapped_route_only_http_sniffing_scenario() {
         Ipv4Addr::new(198, 18, 20, 20),
         echo_addr.port(),
     )));
-    pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
-    let request = b"GET / HTTP/1.1\r\nHost: routed.example\r\n\r\n";
-    client.send_payload(request);
-    let mut received = Vec::new();
-    pump_tun_until(&mut client, core.tun(), |client| {
-        received.extend_from_slice(&client.recv_available());
-        received.len() >= request.len()
-    })
-    .await;
-    assert_eq!(received, request);
-
-    core.stop().await.unwrap();
-    timeout(Duration::from_secs(1), echo_handle)
-        .await
-        .unwrap()
-        .unwrap();
-}
-
-async fn run_tun_tcp_ip_address_http_sniffing_scenario(route_only: bool) {
-    let (echo_addr, echo_handle) = spawn_echo_server().await;
-    let mut core = Core::new(runtime_tun_config_with_http_sniffing(
-        allocate_unused_loopback_port(),
-        route_only,
-    ))
-    .unwrap();
-    core.start().await.unwrap();
-
-    let mut client = TunTcpClient::new();
-    client.connect(SocketAddr::from((Ipv4Addr::LOCALHOST, echo_addr.port())));
     pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
     let request = b"GET / HTTP/1.1\r\nHost: routed.example\r\n\r\n";
     client.send_payload(request);

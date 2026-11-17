@@ -382,17 +382,10 @@ private struct VlessEndpoint {
                     // Sniffing is the only way a flow recovers its domain when
                     // the fake-IP mapping is missing — after a tunnel restart the
                     // table is empty while clients still hold cached fake IPs.
-                    // Such a flow dials its sniffed name even under `routeOnly`.
-                    // Every other flow keeps the address its app chose: routing
-                    // sees the sniffed name beside that address, so the
-                    // private-address rule below still sends LAN flows direct,
-                    // and the flow is dialed by the address, not by a name the
-                    // app may have sent only as a decoy.
                     "sniffing": [
                         "enabled": true,
                         "destOverride": ["http", "tls", "quic"],
                         "metadataOnly": false,
-                        "routeOnly": true,
                     ],
                 ],
             ],

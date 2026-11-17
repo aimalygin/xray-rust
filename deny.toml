@@ -35,4 +35,4 @@ required-git-spec = "rev"
 allow-registry = [
     "https://github.com/rust-lang/crates.io-index",
 ]
-allow-git = ["https://github.com/aimalygin/shaped-rustls"]
+allow-git = []
