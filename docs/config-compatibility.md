@@ -4246,11 +4246,16 @@ object's `address`, in any case) with the pools of root `fakeDns`, turns on
 - The `fakedns` entry itself is dropped from the servers: destination
   lookups never ask it, as Xray-core's internal lookups skip it. An object
   entry is checked like any other, and its other fields are not used.
-- Every name the TUN or a DNS outbound asks is answered with a fake address.
-  Xray-core answers so only the names whose server plan reaches `fakedns`
-  before another server answers; when that can leave some names out (the
-  entry is not first, it has `domains`, or another server has them), a
-  warning says so and those names get fake addresses here too.
+- Every name the TUN or a DNS outbound asks is answered with a fake address,
+  so the entry is accepted only where Xray-core's server plan reaches it
+  first for every name: it is the first entry, it has no `domains`, and no
+  other server lists `domains` or is `localhost`, which takes Xray-core's
+  local names first. Anywhere else Xray-core fakes only some names, or none
+  while the servers before it answer, and `dns.fakeIp` has no domain filter
+  to match that; faking every name would change what routing sees (`geoip:`
+  rules no longer match names that used to arrive as real addresses, LAN
+  names get fake addresses), so such a `fakedns` entry fails parsing, with or
+  without an explicit `dns.fakeIp`.
 - `fakeDns` without a `fakedns` server is ignored with a warning, as it hands
   out nothing in Xray-core either. An explicit `dns.fakeIp` wins over the
   mapping, with a warning.

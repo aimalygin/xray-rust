@@ -139,23 +139,43 @@ fn the_mapping_is_the_one_dns_fake_ip_spells_out() {
 }
 
 #[test]
-fn a_fakedns_xray_reaches_only_for_some_names_warns_that_every_name_is_faked() {
-    for servers in [
-        json!(["192.0.2.53", "fakedns"]),
-        json!([{"address": "fakedns", "domains": ["domain:lan"]}, "192.0.2.53"]),
-        json!(["fakedns", {"address": "192.0.2.53", "domains": ["domain:example.net"]}]),
+fn a_fakedns_xray_reaches_only_for_some_names_fails() {
+    // dns.fakeIp fakes every name. Where Xray-core's plan sends `fakedns`
+    // only some names, or none while an earlier server answers, faking all
+    // of them would change what routing sees, so the config is refused.
+    for (servers, path) in [
+        (json!(["192.0.2.53", "fakedns"]), "$.dns.servers[1]"),
+        (
+            json!([{"address": "fakedns", "domains": ["domain:lan"]}, "192.0.2.53"]),
+            "$.dns.servers[0]",
+        ),
+        (
+            json!(["fakedns", {"address": "192.0.2.53", "domains": ["domain:example.net"]}]),
+            "$.dns.servers[0]",
+        ),
+        // `localhost` takes Xray-core's local names first.
+        (json!(["fakedns", "localhost"]), "$.dns.servers[0]"),
+        (
+            json!([{"address": "FakeDNS"}, {"address": "LocalHost"}]),
+            "$.dns.servers[0]",
+        ),
     ] {
-        let parsed = parse(&profile(json!({"dns": {"servers": servers}})));
-        assert!(parsed.config.dns.fake_ip.is_some(), "{servers}");
+        let raw = profile(json!({"dns": {"servers": servers}}));
+        assert_eq!(error_paths(&raw), [path], "{servers}");
+        let error = parse_xray_json(&raw.to_string()).unwrap_err();
         assert!(
-            warnings(&parsed)
-                .iter()
-                .any(|(path, message)| path.starts_with("$.dns.servers[")
-                    && message.contains("every name")),
+            error.diagnostics[0].message.contains("every name"),
             "{servers}: {:?}",
-            warnings(&parsed)
+            error.diagnostics
         );
     }
+
+    // Scoped the same way beside an explicit dns.fakeIp, it still fails.
+    let raw = profile(json!({"dns": {
+        "fakeIp": {"enabled": true, "ipv4Pool": "198.20.0.0/16", "poolSize": 200, "ttl": 30},
+        "servers": ["192.0.2.53", "fakedns"]
+    }}));
+    assert_eq!(error_paths(&raw), ["$.dns.servers[1]"]);
 }
 
 #[test]

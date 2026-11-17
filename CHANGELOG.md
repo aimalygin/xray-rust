@@ -28,9 +28,11 @@ long-term supported release series.
   `fakeDns` (an object or an array, also spelled `fakedns`) and its
   `poolSize`, or Xray-core's automatic `198.18.0.0/15` without one.
   Destination lookups never ask the entry. IPv6 pools are ignored with a
-  warning, as fake addresses are IPv4 only, and every name gets a fake
-  address, with a warning where Xray-core's server plan would have left some
-  names to other servers. An explicit `dns.fakeIp` wins.
+  warning, as fake addresses are IPv4 only. Every name gets a fake address,
+  so the entry is accepted only where Xray-core sends it every name: first,
+  without `domains`, while no other server has `domains` or is `localhost`.
+  Elsewhere it still fails, since Xray-core would fake only some names. An
+  explicit `dns.fakeIp` wins.
 - `sockopt.domainStrategy` works on VLESS, VMess, Trojan, Shadowsocks, SOCKS,
   HTTP and Hysteria outbounds and on an XHTTP download leg, where any value
   but `AsIs` was refused. A domain server resolves to the families the

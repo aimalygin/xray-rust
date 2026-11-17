@@ -375,7 +375,8 @@ struct RootFakeDnsPool {
 struct FakeDnsServer {
     path: String,
     /// The entry would get every name in Xray-core: it comes first, it has
-    /// no `domains`, and no other server has any to take names before it.
+    /// no `domains`, and no other server has any to take names before it,
+    /// a `localhost` one included, which has Xray-core's local rules.
     every_name: bool,
 }
 
@@ -651,6 +652,12 @@ impl Parser<'_> {
     /// Xray-core's FakeDNS, a `fakedns` entry in `dns.servers` with the pools
     /// of root `fakeDns`, as the core's `dns.fakeIp`: the first IPv4 pool,
     /// or Xray-core's automatic `198.18.0.0/15` without `fakeDns`.
+    ///
+    /// Only an entry Xray-core sends every name to maps: `dns.fakeIp` fakes
+    /// every name and has no domain filter. Anywhere else Xray-core fakes
+    /// some names, or none while the servers before it answer, and faking
+    /// all of them would change what routing sees (`geoip:` rules, LAN
+    /// names, applications that need a real address), so it fails.
     fn xray_fake_dns(
         &mut self,
         explicit: Option<DnsFakeIpConfig>,
@@ -662,6 +669,13 @@ impl Parser<'_> {
             self.warn_unused_root_fake_dns(root);
             return explicit;
         };
+        if !server.every_name {
+            self.error(
+                server.path,
+                "`fakedns` is supported only as the server every name reaches: the first entry, without `domains`, while no other server lists `domains`; elsewhere Xray-core fakes only some names, which dns.fakeIp cannot limit",
+            );
+            return None;
+        }
         if explicit.is_some() {
             self.warning(
                 server.path,
@@ -727,12 +741,6 @@ impl Parser<'_> {
             None => u32::try_from(usable.min(u64::from(XRAY_FAKE_DNS_IPV4_ONLY_POOL_SIZE)))
                 .unwrap_or(XRAY_FAKE_DNS_IPV4_ONLY_POOL_SIZE),
         };
-        if !server.every_name {
-            self.warning(
-                server.path,
-                "`fakedns` hands out fake addresses for every name here; Xray-core hands them out only to names its server plan reaches `fakedns` for",
-            );
-        }
         Some(DnsFakeIpConfig {
             enabled: true,
             ipv4_pool: pool,
@@ -796,9 +804,16 @@ impl Parser<'_> {
                 fake_dns.get_or_insert((path, index, has_domains));
                 continue;
             }
-            others_have_domains |= server
-                .get("domains")
-                .is_some_and(|domains| !go_string_list(Some(domains)).is_empty());
+            // A `localhost` server has Xray-core's local rules as domains
+            // even without its own, so local names go to it first.
+            let address = match server {
+                Value::String(address) => Some(address.as_str()),
+                _ => server.get("address").and_then(Value::as_str),
+            };
+            others_have_domains |= address.is_some_and(is_system_dns_server)
+                || server
+                    .get("domains")
+                    .is_some_and(|domains| !go_string_list(Some(domains)).is_empty());
             let server = match server {
                 Value::String(server) => self.parse_dns_server(server, &path),
                 Value::Object(_) => {

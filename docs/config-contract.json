@@ -634,7 +634,7 @@
         "clientIp"
       ],
       "id": "DNS_SERVER",
-      "notes": "expectedIPs is an alias of expectIPs. clientIp replaces dns.clientIp for this server. address localhost, in any case, asks the core's bootstrap resolver (dns.hosts, then the platform resolver) instead of the wire, with Xray-core's local domain rules added to domains; its port is ignored. address fakedns is Xray-core's FakeDNS and no server: it turns on dns.fakeIp from the root fakeDns pools. domains takes an array or a comma-separated string of domain rules as Xray-core reads them, plain text being a substring. URL, address/port, query-family and domain/IP-filter combinations are checked by the parser."
+      "notes": "expectedIPs is an alias of expectIPs. clientIp replaces dns.clientIp for this server. address localhost, in any case, asks the core's bootstrap resolver (dns.hosts, then the platform resolver) instead of the wire, with Xray-core's local domain rules added to domains; its port is ignored. address fakedns is Xray-core's FakeDNS and no server: it turns on dns.fakeIp from the root fakeDns pools, and only as the first entry, without domains, while no other server lists domains or is localhost; dns.fakeIp fakes every name, so a fakedns Xray-core reaches for some names only fails. domains takes an array or a comma-separated string of domain rules as Xray-core reads them, plain text being a substring. URL, address/port, query-family and domain/IP-filter combinations are checked by the parser."
     },
     {
       "context": "$.fakeDns; $.fakeDns[]",

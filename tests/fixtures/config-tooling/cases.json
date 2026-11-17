@@ -5923,6 +5923,18 @@
       }
     },
     {
+      "name": "xray-fakedns-after-another-server",
+      "accepted": false,
+      "errorPath": "$.dns.servers[1]",
+      "base": "xray-fakedns-pools",
+      "set": {
+        "/dns/servers": [
+          "192.0.2.53",
+          "fakedns"
+        ]
+      }
+    },
+    {
       "name": "raw-http-header",
       "config": {
         "outbounds": [

@@ -1360,9 +1360,12 @@ A `fakedns` DNS server with root `fakeDns` pools runs as `dns.fakeIp`
 differences:
 
 - Fake addresses are IPv4 only; IPv6 pools are ignored with a warning.
-- Every name is answered with a fake address. Xray-core answers so only
-  names its server plan reaches `fakedns` for; the parser warns when the
-  plan could leave names out.
+- Every name is answered with a fake address, so only a `fakedns` entry
+  that Xray-core's plan (`sortClients` in `app/dns/dns.go`) reaches first for
+  every name is accepted: first, without `domains`, beside no server with
+  `domains` and no `localhost`. A `fakedns` Xray-core asks for some names
+  only, or only after another server fails, is refused, since `dns.fakeIp`
+  has no domain filter.
 - The answer TTL is 60 seconds where Xray-core's is 1, so applications do not
   ask again for every connection; addresses stay stable across restarts as
   described below.
