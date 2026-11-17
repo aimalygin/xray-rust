@@ -1118,8 +1118,7 @@ public final class XrayCore: @unchecked Sendable {
                 ),
                 error: error
             )
-            // Before the profile, which then keeps the host's count: the
-            // runtime is rebuilt once at most.
+            // Omitted, the library's default count stays.
             if let runtimeWorkerThreads {
                 guard ffiInfo.version.minor >= 18 else {
                     throw XrayCoreError.incompatibleFFIMinorVersion(required: 18, actual: ffiInfo.version.minor)

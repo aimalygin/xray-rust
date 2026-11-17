@@ -148,26 +148,24 @@ requires ABI 1.10 and the new capability. Rust hosts set
 
 ### Runtime worker threads
 
-Each handle runs its core on its own multi-threaded Tokio runtime. Its worker
-threads follow the TUN runtime profile: 2 for `MOBILE`, `MOBILE_PLUS` and
-`LOW_MEMORY`, and for `DEFAULT` on Android, iOS, tvOS and watchOS; the available
-parallelism within 2..=6 for `DESKTOP`, `THROUGHPUT` and `DEFAULT` elsewhere,
-as before ABI 1.18. Two workers are what the CLI runs: measured with eight
-flows, they moved 72-74 Gbit/s for 330-360 ms of CPU where six workers moved
-55-58 Gbit/s for 590-660 ms, and a packet tunnel running all day has fewer
-threads to wake.
+Each handle runs its core on its own multi-threaded Tokio runtime, by default
+with the available parallelism within 2..=6 worker threads whatever the TUN
+runtime profile, as before ABI 1.18.
 
 ABI 1.18 adds `xray_core_set_runtime_worker_threads(handle, worker_threads,
 error)` and capability bit 31, `RUNTIME_WORKER_THREADS`. Call it before config
-load with 1..=64 workers, or 0 to return to the profile's count. A count set
-this way outlives later `xray_core_set_tun_runtime_profile` calls. Selecting a
-profile or a count before config load replaces the handle's still idle runtime
-when the count changes; invalid values, a loaded handle and a runtime that
-cannot be built leave the previous runtime and settings in place.
+load with 1..=64 workers, or 0 to return to the default. A count that differs
+from the current one replaces the handle's still idle runtime; invalid values,
+a loaded handle and a runtime that cannot be built leave the previous runtime
+and settings in place. The CLI runs 2 workers. A host may choose fewer workers
+to wake on a battery-bound device, but on Android the socket-protect callback
+runs inline on a runtime worker, so a burst of new outbound sockets can occupy
+every worker of a small runtime; measure throughput and CPU with protection in
+the path before lowering it.
 
-Swift `XrayCore` initializers take an optional `runtimeWorkerThreads: UInt32?`.
-Omission keeps the profile's count; an explicit value requires ABI 1.18 and the
-capability.
+Swift `XrayCore` initializers take an optional `runtimeWorkerThreads: UInt32?`
+and Kotlin `XrayCore.create` an optional `runtimeWorkerThreads: Int?`. Omission
+keeps the default; an explicit value requires ABI 1.18 and the capability.
 
 ### Core lifecycle
 
