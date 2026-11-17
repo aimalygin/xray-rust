@@ -208,7 +208,7 @@ objects! {
         "acceptProxyProtocol is ignored on the client."),
     RAW_HEADER: ("tcpSettings.header; rawSettings.header",
         ["type", "request", "response"],
-        "type may be absent, empty, none or http. With none request and response are ignored. http is Xray-core's HTTP header obfuscation on the raw transport (rawSettings wins over tcpSettings): every connection sends a request head before its first bytes, above TLS or REALITY when set, and drops the response head, at most 8192 bytes, before its first read. Vision cannot ride on it."),
+        "type may be absent, empty, none or http. With none request and response are ignored. http is Xray-core's HTTP header obfuscation on the raw transport (rawSettings wins over tcpSettings): every connection sends a request head before its first bytes, above TLS or REALITY when set, and drops the response head, at most 8192 bytes, before its first read. Vision cannot ride on it. Freedom and DNS outbounds, which dial without it, refuse it."),
     RAW_HTTP_REQUEST: ("tcpSettings.header.request; rawSettings.header.request (http)",
         ["version", "method", "path", "headers"],
         "version (default 1.1) and method (default GET) are strings; path is a StringList, one entry drawn per connection, / by default; headers maps names to StringLists, one value drawn per connection and sent sorted by name. Without headers Xray-core's Chrome browser headers go out, Host drawn from www.baidu.com and www.bing.com. A null value, an empty name, or a carriage return or line feed anywhere fails."),

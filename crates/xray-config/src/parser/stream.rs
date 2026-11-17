@@ -339,6 +339,32 @@ impl Parser<'_> {
         let raw_http_header = matches!(transport, StreamTransport::Raw)
             .then(|| self.parse_raw_http_header(stream))
             .flatten();
+        // Freedom and DNS dial their sockets without the carrier that frames
+        // the header, where Xray-core frames every TCP dial with it; ignoring
+        // it would send the bytes bare.
+        if raw_http_header.is_some()
+            && matches!(
+                outbound
+                    .get("protocol")
+                    .and_then(Value::as_str)
+                    .map(str::to_ascii_lowercase)
+                    .as_deref(),
+                Some("freedom" | "direct" | "dns")
+            )
+        {
+            let key = if stream
+                .and_then(|stream| stream.get("rawSettings"))
+                .is_some_and(|settings| !settings.is_null())
+            {
+                "rawSettings"
+            } else {
+                "tcpSettings"
+            };
+            self.error(
+                format!("$.outbounds[{index}].streamSettings.{key}.header.type"),
+                "RAW's http header is not supported on freedom or DNS outbounds, which dial without it; Xray-core sends it on their TCP connections",
+            );
+        }
         Some(StreamSettings {
             // Native Hysteria owns a UDP carrier; other transports retain
             // their existing TCP classification (XHTTP selects H3 later).

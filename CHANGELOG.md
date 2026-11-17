@@ -22,7 +22,8 @@ long-term supported release series.
   before its first bytes, above TLS or REALITY when set, and drops the
   server's response head, at most 8192 bytes, before its first read. Vision
   is refused on it, as in Xray-core. Request text with a carriage return or
-  line feed fails.
+  line feed fails, and so does the header on a freedom or DNS outbound,
+  which would dial without it.
 - Xray-core's FakeDNS works: a `fakedns` entry in `dns.servers`, refused
   until now, turns on `dns.fakeIp` with the first IPv4 pool of root
   `fakeDns` (an object or an array, also spelled `fakedns`) and its

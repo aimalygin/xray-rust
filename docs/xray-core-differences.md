@@ -1388,6 +1388,8 @@ server reads and writes, not by interop. Deliberate differences:
   split head fails there and is read here.
 - A carriage return or line feed in the request, or an empty header name,
   fails parsing; Xray-core writes it into the head.
+- Freedom and DNS outbounds refuse the header: they dial without it here,
+  while Xray-core's TCP dialer frames their connections with it as well.
 
 ## Fake-IP allocation across restarts
 

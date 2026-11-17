@@ -1022,7 +1022,9 @@ the raw transport. The first write of every connection goes out after a
 request head, and the first read drops the server's response head, at most
 8192 bytes, through the blank line that ends it; nothing else is framed. As
 in Xray-core the layer sits above TLS or REALITY when one is set, and Vision
-cannot ride on it. The head is built as Xray-core's `AuthenticatorRequest`
+cannot ride on it. Freedom and DNS outbounds dial their sockets without it,
+where Xray-core frames their TCP connections too, so on them it fails parsing
+rather than be ignored. The head is built as Xray-core's `AuthenticatorRequest`
 builds it:
 
 - `request.method` (default `GET`) and `request.version` (default `1.1`)

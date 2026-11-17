@@ -1259,7 +1259,7 @@
         "response"
       ],
       "id": "RAW_HEADER",
-      "notes": "type may be absent, empty, none or http. With none request and response are ignored. http is Xray-core's HTTP header obfuscation on the raw transport (rawSettings wins over tcpSettings): every connection sends a request head before its first bytes, above TLS or REALITY when set, and drops the response head, at most 8192 bytes, before its first read. Vision cannot ride on it."
+      "notes": "type may be absent, empty, none or http. With none request and response are ignored. http is Xray-core's HTTP header obfuscation on the raw transport (rawSettings wins over tcpSettings): every connection sends a request head before its first bytes, above TLS or REALITY when set, and drops the response head, at most 8192 bytes, before its first read. Vision cannot ride on it. Freedom and DNS outbounds, which dial without it, refuse it."
     },
     {
       "context": "tcpSettings.header.request; rawSettings.header.request (http)",

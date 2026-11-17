@@ -168,3 +168,39 @@ fn malformed_requests_and_responses_fail() {
         assert_eq!(error_paths(&raw), [path], "{header}");
     }
 }
+
+#[test]
+fn freedom_and_dns_outbounds_refuse_the_header_they_would_not_send() {
+    // Both dial without the carrier that frames the header, where Xray-core
+    // frames their TCP connections with it.
+    for (protocol, settings) in [
+        ("freedom", json!({})),
+        ("direct", json!({})),
+        ("dns", json!({"address": "192.0.2.53", "port": 53})),
+    ] {
+        for (key, network) in [("tcpSettings", "tcp"), ("rawSettings", "raw")] {
+            let raw = json!({"outbounds": [{
+                "tag": "out",
+                "protocol": protocol,
+                "settings": settings,
+                "streamSettings": {
+                    "network": network,
+                    key: {"header": {"type": "http"}}
+                }
+            }]});
+            assert_eq!(
+                error_paths(&raw),
+                [format!("$.outbounds[0].streamSettings.{key}.header.type")],
+                "{protocol} {key}"
+            );
+        }
+        // A header of type none is no header.
+        let raw = json!({"outbounds": [{
+            "tag": "out",
+            "protocol": protocol,
+            "settings": settings,
+            "streamSettings": {"tcpSettings": {"header": {"type": "none"}}}
+        }]});
+        assert!(parse_xray_json(&raw.to_string()).is_ok(), "{protocol}");
+    }
+}

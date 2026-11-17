@@ -5998,6 +5998,16 @@
       }
     },
     {
+      "name": "raw-http-header-on-freedom",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.tcpSettings.header.type",
+      "base": "raw-http-header",
+      "set": {
+        "/outbounds/0/protocol": "freedom",
+        "/outbounds/0/settings": {}
+      }
+    },
+    {
       "name": "raw-http-header-injection",
       "accepted": false,
       "errorPath": "$.outbounds[0].streamSettings.tcpSettings.header.request.path[0]",
