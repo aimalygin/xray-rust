@@ -297,8 +297,18 @@ pub(crate) async fn run_observatory(
     loop {
         let completed = if runtime.config.enable_concurrency {
             let nodes = reprobes.scheduled(&runtime.nodes);
-            probe_nodes(&runtime, &nodes, &mut reprobes, &mut shutdown).await
-                && idle(&runtime, &mut reprobes, &mut shutdown).await
+            // A round that skipped every observed outbound has armed all
+            // their balancers.
+            let asleep = nodes.is_empty();
+            probe_nodes(
+                &runtime,
+                &nodes,
+                MAX_CONCURRENT_HEALTH_PROBES,
+                &mut reprobes,
+                &mut shutdown,
+            )
+            .await
+                && idle(&runtime, &mut reprobes, &mut shutdown, asleep).await
         } else {
             run_sequential_round(&runtime, &mut reprobes, &mut shutdown).await
         };
@@ -315,8 +325,11 @@ async fn run_sequential_round(
 ) -> bool {
     for node in &runtime.nodes {
         let nodes = reprobes.scheduled(std::slice::from_ref(node));
-        if !probe_nodes(runtime, &nodes, reprobes, shutdown).await
-            || !idle(runtime, reprobes, shutdown).await
+        // The round stops here without a deadline only while no observed
+        // outbound is due at all; checking that arms all their balancers.
+        let asleep = nodes.is_empty() && reprobes.scheduled(&runtime.nodes).is_empty();
+        if !probe_nodes(runtime, &nodes, 1, reprobes, shutdown).await
+            || !idle(runtime, reprobes, shutdown, asleep).await
         {
             return false;
         }
@@ -324,20 +337,16 @@ async fn run_sequential_round(
     true
 }
 
-/// Probes `nodes`, at most four at once in concurrent mode and one at a time
-/// otherwise. Returns false when the core shuts down meanwhile.
+/// Probes `nodes`, at most `concurrency` at once. Returns false when the core
+/// shuts down meanwhile.
 async fn probe_nodes(
     runtime: &ObservatoryRuntime,
     nodes: &[OutboundNodeId],
+    concurrency: usize,
     reprobes: &mut Reprobes,
     shutdown: &mut watch::Receiver<bool>,
 ) -> bool {
-    let concurrency = if runtime.config.enable_concurrency {
-        MAX_CONCURRENT_HEALTH_PROBES
-    } else {
-        1
-    };
-    for chunk in nodes.chunks(concurrency) {
+    for chunk in nodes.chunks(concurrency.max(1)) {
         let started = Instant::now();
         let epoch = runtime.selection.balancer_use().begin_probes();
         let mut tasks = JoinSet::new();
@@ -384,39 +393,68 @@ async fn probe_nodes(
 /// the wait, and the outbounds it concerns are probed as soon as their
 /// cooldowns allow, without moving the next scheduled probe. So does the
 /// first use of a balancer whose members a scheduled probe skipped, which
-/// has them probed at once. Returns false when the core shuts down
-/// meanwhile.
+/// has them probed at once.
+///
+/// `asleep`: the scheduled probes skipped every observed outbound, and there
+/// is no interval to wait out until a balancer is used again. Only a
+/// reported failure or that use wakes the observer, and the interval starts
+/// once the use had the skipped members probed. Returns false when the core
+/// shuts down meanwhile.
 async fn idle(
     runtime: &ObservatoryRuntime,
     reprobes: &mut Reprobes,
     shutdown: &mut watch::Receiver<bool>,
+    asleep: bool,
 ) -> bool {
-    let deadline = Instant::now() + runtime.config.probe_interval;
+    let concurrency = if runtime.config.enable_concurrency {
+        MAX_CONCURRENT_HEALTH_PROBES
+    } else {
+        1
+    };
+    let mut deadline = (!asleep).then(|| Instant::now() + runtime.config.probe_interval);
     loop {
-        let now = Instant::now();
-        let mut due = reprobes.take_due(now);
-        for node in reprobes.take_resumed() {
-            push_unique(&mut due, node);
+        let resumed = reprobes.take_resumed();
+        if !resumed.is_empty() {
+            // Whatever the mode, so that the first flows after a long idle
+            // wait for one probe timeout rather than one per dead member.
+            if !probe_nodes(
+                runtime,
+                &resumed,
+                MAX_CONCURRENT_HEALTH_PROBES,
+                reprobes,
+                shutdown,
+            )
+            .await
+            {
+                return false;
+            }
+            deadline.get_or_insert_with(|| Instant::now() + runtime.config.probe_interval);
+            continue;
         }
+        let now = Instant::now();
+        let due = reprobes.take_due(now);
         if !due.is_empty() {
-            if !probe_nodes(runtime, &due, reprobes, shutdown).await {
+            if !probe_nodes(runtime, &due, concurrency, reprobes, shutdown).await {
                 return false;
             }
             continue;
         }
-        if now >= deadline {
+        if deadline.is_some_and(|deadline| now >= deadline) {
             return true;
         }
-        let wake_at = reprobes
-            .next_due(now)
-            .map_or(deadline, |due| due.min(deadline));
+        let wake_at = match (reprobes.next_due(now), deadline) {
+            (Some(due), Some(deadline)) => Some(due.min(deadline)),
+            (due, deadline) => due.or(deadline),
+        };
         tokio::select! {
             biased;
             () = wait_for_shutdown(shutdown) => return false,
             () = runtime.selection.failure_reports().notified() => {}
             () = runtime.selection.balancer_use().notified() => {}
-            () = tokio::time::sleep_until(wake_at) => {}
+            () = tokio::time::sleep_until(wake_at.unwrap_or(now)), if wake_at.is_some() => {}
         }
+        #[cfg(test)]
+        tests::count_observer_wake();
     }
 }
 
@@ -764,6 +802,7 @@ async fn wait_for_shutdown(shutdown: &mut watch::Receiver<bool>) {
 mod tests {
     use super::*;
     use crate::outbound::OutboundHealthFailure;
+    use std::cell::Cell;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
     use xray_config::{
@@ -1218,30 +1257,123 @@ mod tests {
         (url, server)
     }
 
-    /// Answers every probe with `204` and counts them.
-    async fn counting_probe_server() -> (String, Arc<std::sync::atomic::AtomicUsize>) {
-        let listener = TcpListener::bind("127.0.0.1:0")
+    thread_local! {
+        /// Wakes of the observers running on this thread. A `#[tokio::test]`
+        /// runtime runs its tasks on the test's own thread.
+        static OBSERVER_WAKES: Cell<u64> = const { Cell::new(0) };
+    }
+
+    pub(super) fn count_observer_wake() {
+        OBSERVER_WAKES.with(|wakes| wakes.set(wakes.get() + 1));
+    }
+
+    fn observer_wakes() -> u64 {
+        OBSERVER_WAKES.with(Cell::get)
+    }
+
+    /// Counts probes, and answers each with `204` unless told to hold them
+    /// unanswered.
+    struct ProbeServer {
+        url: String,
+        probes: Arc<std::sync::atomic::AtomicUsize>,
+        hold: Arc<AtomicBool>,
+    }
+
+    impl ProbeServer {
+        async fn start() -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind probe server");
+            let url = format!(
+                "http://127.0.0.1:{}/generate_204",
+                listener.local_addr().expect("probe server address").port()
+            );
+            let probes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let hold = Arc::new(AtomicBool::new(false));
+            let (counted, held) = (Arc::clone(&probes), Arc::clone(&hold));
+            tokio::spawn(async move {
+                while let Ok((mut stream, _)) = listener.accept().await {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    let held = held.load(Ordering::SeqCst);
+                    tokio::spawn(async move {
+                        let mut request = [0u8; 1024];
+                        let _ = stream.read(&mut request).await;
+                        if held {
+                            // Until the prober gives up.
+                            let _ = stream.read(&mut request).await;
+                            return;
+                        }
+                        let _ = stream
+                            .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                            .await;
+                    });
+                }
+            });
+            Self { url, probes, hold }
+        }
+
+        fn probes(&self) -> usize {
+            self.probes.load(Ordering::SeqCst)
+        }
+
+        /// Waits up to `within` for `count` probes in all.
+        async fn wait_for_probes(&self, count: usize, within: Duration) {
+            tokio::time::timeout(within, async {
+                while self.probes() < count {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
             .await
-            .expect("bind probe server");
-        let url = format!(
-            "http://127.0.0.1:{}/generate_204",
-            listener.local_addr().expect("probe server address").port()
-        );
-        let probes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let counted = Arc::clone(&probes);
-        tokio::spawn(async move {
-            while let Ok((mut stream, _)) = listener.accept().await {
-                counted.fetch_add(1, Ordering::SeqCst);
-                tokio::spawn(async move {
-                    let mut request = [0u8; 1024];
-                    let _ = stream.read(&mut request).await;
-                    let _ = stream
-                        .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
-                        .await;
-                });
+            .unwrap_or_else(|_| panic!("{count} probes should have run, not {}", self.probes()));
+        }
+    }
+
+    struct LiveObserver {
+        router: Arc<OutboundRouter>,
+        shutdown: watch::Sender<bool>,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    impl LiveObserver {
+        /// Runs the observatory of [`config`], probing `url` every 50 ms.
+        fn start(url: String, enable_concurrency: bool) -> Self {
+            let mut config = config(url);
+            let observatory = config.observatory.as_mut().unwrap();
+            observatory.probe_interval = Duration::from_millis(50);
+            observatory.enable_concurrency = enable_concurrency;
+            let observatory = observatory.clone();
+            let router = Arc::new(OutboundRouter::new(Arc::new(config)));
+            let nodes = router
+                .graph()
+                .leaf_nodes_matching_prefixes(&observatory.subject_selectors);
+            let resolver = crate::system_dns_resolver();
+            let runtime = ObservatoryRuntime::new(
+                observatory,
+                nodes,
+                Arc::clone(&router),
+                router.selection_handle(),
+                Arc::clone(&resolver),
+                resolver,
+                Arc::new(TransportDialer::system().expect("system dialer")),
+            );
+            let (shutdown, shutdown_rx) = watch::channel(false);
+            let task = tokio::spawn(run_observatory(runtime, shutdown_rx));
+            Self {
+                router,
+                shutdown,
+                task,
             }
-        });
-        (url, probes)
+        }
+
+        /// A flow routed to the `auto` balancer.
+        fn use_balancer(&self) {
+            self.router.selection().select("auto").unwrap();
+        }
+
+        async fn stop(self) {
+            self.shutdown.send(true).expect("observer listens");
+            self.task.await.expect("observer stops");
+        }
     }
 
     async fn wait_for_state(
@@ -1319,50 +1451,68 @@ mod tests {
     /// at once.
     #[tokio::test]
     async fn unused_balancer_is_not_probed_until_traffic_returns() {
-        let (url, probes) = counting_probe_server().await;
-        let mut config = config(url);
-        config.observatory.as_mut().unwrap().probe_interval = Duration::from_millis(50);
-        let observatory = config.observatory.clone().unwrap();
-        let router = Arc::new(OutboundRouter::new(Arc::new(config)));
-        let nodes = router
-            .graph()
-            .leaf_nodes_matching_prefixes(&observatory.subject_selectors);
-        let resolver = crate::system_dns_resolver();
-        let runtime = ObservatoryRuntime::new(
-            observatory,
-            nodes,
-            Arc::clone(&router),
-            router.selection_handle(),
-            Arc::clone(&resolver),
-            resolver,
-            Arc::new(TransportDialer::system().expect("system dialer")),
-        );
-        let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        let observer = tokio::spawn(run_observatory(runtime, shutdown_rx));
-        let wait_for_probes = |count: usize| {
-            let probes = Arc::clone(&probes);
-            async move {
-                tokio::time::timeout(Duration::from_secs(4), async {
-                    while probes.load(Ordering::SeqCst) < count {
-                        tokio::time::sleep(Duration::from_millis(10)).await;
-                    }
-                })
-                .await
-                .unwrap_or_else(|_| panic!("{count} probes should have run"));
-            }
-        };
-        wait_for_probes(2).await;
+        let server = ProbeServer::start().await;
+        let observer = LiveObserver::start(server.url.clone(), true);
+        server.wait_for_probes(2, Duration::from_secs(4)).await;
 
         // Ten intervals without a flow: no probe.
         tokio::time::sleep(Duration::from_millis(500)).await;
-        assert_eq!(probes.load(Ordering::SeqCst), 2);
+        assert_eq!(server.probes(), 2);
 
-        router.selection().select("auto").unwrap();
-        wait_for_probes(4).await;
+        observer.use_balancer();
+        server.wait_for_probes(4, Duration::from_secs(4)).await;
         tokio::time::sleep(Duration::from_millis(500)).await;
-        assert_eq!(probes.load(Ordering::SeqCst), 4);
+        assert_eq!(server.probes(), 4);
+        observer.stop().await;
+    }
 
-        shutdown_tx.send(true).expect("observer listens");
-        observer.await.expect("observer stops");
+    /// Once a round skipped every observed outbound, nothing but traffic is
+    /// due: the observer sets no timer, so no interval wakes the process.
+    #[tokio::test]
+    async fn observer_with_nothing_due_sleeps_without_a_timer() {
+        for enable_concurrency in [true, false] {
+            let server = ProbeServer::start().await;
+            let observer = LiveObserver::start(server.url.clone(), enable_concurrency);
+            server.wait_for_probes(2, Duration::from_secs(4)).await;
+            // The next scheduled step finds nothing used since.
+            tokio::time::sleep(Duration::from_millis(300)).await;
+
+            tokio::time::pause();
+            let wakes = observer_wakes();
+            // 12,000 intervals of 50 ms.
+            tokio::time::sleep(Duration::from_secs(600)).await;
+            assert_eq!(
+                observer_wakes() - wakes,
+                0,
+                "an idle observer woke (concurrency {enable_concurrency})"
+            );
+            assert_eq!(server.probes(), 2);
+            tokio::time::resume();
+
+            observer.use_balancer();
+            server.wait_for_probes(4, Duration::from_secs(4)).await;
+            observer.stop().await;
+        }
+    }
+
+    /// The members a balancer's next use resumes are probed together even in
+    /// sequential mode, so that a dead one delays the refresh by one probe
+    /// timeout, not one per member.
+    #[tokio::test]
+    async fn resumed_members_are_probed_together_in_sequential_mode() {
+        let server = ProbeServer::start().await;
+        let observer = LiveObserver::start(server.url.clone(), false);
+        server.wait_for_probes(2, Duration::from_secs(4)).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(server.probes(), 2);
+
+        // Neither answers now: one at a time, the second probe would start
+        // only when the first timed out.
+        server.hold.store(true, Ordering::SeqCst);
+        observer.use_balancer();
+        server
+            .wait_for_probes(4, OBSERVATORY_PROBE_TIMEOUT / 2)
+            .await;
+        observer.stop().await;
     }
 }

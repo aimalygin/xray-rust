@@ -26,10 +26,12 @@ long-term supported release series.
   so a phone nobody uses no longer wakes its radio every `probeInterval`
   (10 seconds by default). The first round probes every observed outbound;
   the first flow through a balancer whose members were skipped has them
-  probed at once, and failure re-probes run as before. Observed outbounds
-  outside every balancer keep the interval. Selecting through a balancer
-  records its use: one atomic load per flow once the current round has seen
-  one.
+  probed at once, up to four at a time even with `enableConcurrency: false`,
+  and failure re-probes run as before. While nothing is due the observer sets
+  no timer, so it no longer wakes every `probeInterval` either. Observed
+  outbounds outside every balancer keep the interval. Selecting through a
+  balancer records its use: one atomic load per flow once the current round
+  has seen one.
 - ABI 1.18 adds `xray_core_set_runtime_worker_threads`
   (`RUNTIME_WORKER_THREADS`, bit 31, the first capability defined as a 64-bit
   macro since a C enum constant cannot hold it) to set the FFI handle's Tokio

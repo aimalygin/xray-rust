@@ -4016,9 +4016,15 @@ member of a balancer when no flow was routed through any of its balancers since
 that member's last probe, so a device nobody uses sends no probes and does not
 wake its radio every `probeInterval`. The first round probes every observed
 outbound. The first flow through a balancer whose members were skipped wakes
-the observer, which probes them at once, as a reported failure would; failure
-re-probes run whether or not the balancer was used. An observed outbound
-outside every balancer keeps the interval. A selection, including one that
+the observer, which probes them at once, as a reported failure would, up to
+four at a time even with `enableConcurrency: false`, so that a member that
+died meanwhile delays the refresh by one probe timeout rather than one per
+member; until those probes finish, flows are routed by the results from before
+the skip. Failure re-probes run whether or not the balancer was used. While no
+observed outbound is due, the observer sets no timer at all: only a flow
+through a balancer or a reported failure wakes it, and the interval starts
+again after the probes that flow brings. An observed outbound outside every
+balancer is always due and keeps the interval. A selection, including one that
 ends at the balancer's fallback or an override, is a use; a flow routed to a
 member by tag is not. The health snapshot's last-try time of a skipped
 outbound stays at its last probe.

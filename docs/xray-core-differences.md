@@ -1532,7 +1532,8 @@ outbound again, at most every 10 seconds, when real traffic fails to dial it
 or to complete its handshake. Xray-core probes every observed outbound each
 round; xray-rust skips a balancer member's scheduled probe while no flow has
 used its balancers since the member's last probe, and probes it at the next
-such flow. Both are described under
+such flow, so after a long idle the first flows are routed by results older
+than one interval. Both are described under
 [Observatory and outbound health](config-compatibility.md#observatory-and-outbound-health).
 
 ## XHTTP HTTP/2 connection preface
