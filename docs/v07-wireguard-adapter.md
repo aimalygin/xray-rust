@@ -174,11 +174,12 @@ admitted and how large their buffers are
 ([flow limits](config-compatibility.md#wireguard-flow-limits)): 32 flows of
 256 KiB each way (16 MiB) on `LowMemory`, 64 of 256 KiB (32 MiB, and 8 MiB of
 bridges) on the phone profiles, 128 of 1 MiB (256 MiB) on the desktop ones.
-Flows past the limit wait for a place in a bounded queue instead of being
-refused; the adapter admitted 16 flows of 1 MiB through 0.10.0. These are
-storage capacity bounds, separate from sampled process RSS. New flows start
-with a 64 KiB receive advertisement. The adapter divides a 1 MiB receive allowance among bulk-active
-flows and a 1 MiB transmit allowance among flows with queued data. Idle open
+Flows past the limit wait up to three seconds for a place in a bounded queue
+instead of being refused at once; the adapter admitted 16 flows of 1 MiB
+through 0.10.0. These are storage capacity bounds, separate from sampled
+process RSS. New flows start with a 64 KiB receive advertisement. The
+adapter divides a 1 MiB receive allowance among bulk-active flows and a
+1 MiB transmit allowance among flows with queued data. Idle open
 connections do not divide a transferring flow's allowance. Newly active flows
 receive bounded initial credit; a one-second receive activity grace interval
 avoids reallocating the window between every small read.

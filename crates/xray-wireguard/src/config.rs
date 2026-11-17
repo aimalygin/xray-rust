@@ -65,10 +65,16 @@ impl Config {
 /// [`Self::tcp_buffer`] bytes for as long as it is open, idle or not, and a
 /// long transfer touches all of it, so the admitted flows' buffers are bounded
 /// by `2 × tcp × tcp_buffer`. A flow past [`Self::tcp`] waits, in arrival
-/// order, for an earlier one to close, for at most the ten-second open
-/// deadline; giving up its wait leaves the queue at once. One that would make
-/// more than [`Self::tcp_waiting`] waiters is refused at once with
-/// [`Error::Busy`], and so is one whose wait runs out.
+/// order, for an earlier one to close, for at most three seconds; giving up
+/// its wait leaves the queue at once. One that would make more than
+/// [`Self::tcp_waiting`] waiters is refused at once with [`Error::Busy`], and
+/// so is one whose wait runs out. Nothing closes an idle flow to make room,
+/// so the wait helps a burst of short flows; once idle connections hold
+/// every place, a new flow waits its three seconds and is refused.
+///
+/// The presets let at most half as many flows wait as the TUN runtime
+/// profile of the same name lets TCP opens be pending: a waiting TUN flow
+/// holds one of those, and the rest stay for other outbounds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FlowLimits {
     tcp: usize,
@@ -87,18 +93,20 @@ impl FlowLimits {
     /// credit among its flows, so a larger buffer would never fill.
     pub const MAX_TCP_BUFFER: usize = 1024 * 1024;
 
-    /// 32 TCP flows of 256 KiB each way, 16 MiB in all; 64 may wait.
+    /// 32 TCP flows of 256 KiB each way, 16 MiB in all; 16 may wait.
     pub const LOW_MEMORY: Self = Self {
         tcp: 32,
-        tcp_waiting: 64,
+        tcp_waiting: 16,
         tcp_buffer: 256 * 1024,
     };
     /// 64 TCP flows of 256 KiB each way: 32 MiB in all, what 16 flows of
-    /// 1 MiB took before; 128 may wait. A phone browser opens more than 16
-    /// connections for one page and keeps them open while idle.
+    /// 1 MiB took before; 32 may wait. A phone browser opens more than 16
+    /// connections for one page and keeps them open while idle. One flow's
+    /// receive window, and so its download, is at most 256 KiB a round trip:
+    /// about 21 Mbit/s at 100 ms, where 1 MiB allowed about 84.
     pub const MOBILE: Self = Self {
         tcp: 64,
-        tcp_waiting: 128,
+        tcp_waiting: 32,
         tcp_buffer: 256 * 1024,
     };
     /// 128 TCP flows of 1 MiB each way, 256 MiB in all; 256 may wait.

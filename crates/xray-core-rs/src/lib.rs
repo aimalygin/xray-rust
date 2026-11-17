@@ -280,12 +280,17 @@ impl TunRuntimeProfile {
     /// desktop sizes them for throughput. `Default` follows the target.
     fn tunnel_flow_limits(self) -> xray_wireguard::FlowLimits {
         use xray_wireguard::FlowLimits;
-        match self {
+        let limits = match self {
             Self::Default => FlowLimits::default(),
             Self::LowMemory => FlowLimits::LOW_MEMORY,
             Self::Mobile | Self::MobilePlus => FlowLimits::MOBILE,
             Self::Desktop | Self::Throughput => FlowLimits::DESKTOP,
-        }
+        };
+        // A TUN flow waiting for a place holds one of the TUN's pending-open
+        // permits, which flows to every outbound share: one tunnel's queue
+        // takes at most half of them.
+        let waiting = (tun::tcp_pending_open_limit(self) / 2).min(FlowLimits::MAX_TCP_WAITING);
+        FlowLimits::new(limits.tcp(), waiting, limits.tcp_buffer()).unwrap_or(limits)
     }
 }
 
@@ -2127,26 +2132,57 @@ mod tests {
     fn tunnel_flow_limits_follow_the_device_class_a_profile_names() {
         use xray_wireguard::FlowLimits;
 
-        for (profile, limits, tcp) in [
+        for (profile, preset, tcp_and_waiting) in [
             (TunRuntimeProfile::Default, FlowLimits::default(), None),
             (
                 TunRuntimeProfile::LowMemory,
                 FlowLimits::LOW_MEMORY,
-                Some(32),
+                Some((32, 16)),
             ),
-            (TunRuntimeProfile::Mobile, FlowLimits::MOBILE, Some(64)),
-            (TunRuntimeProfile::MobilePlus, FlowLimits::MOBILE, Some(64)),
-            (TunRuntimeProfile::Desktop, FlowLimits::DESKTOP, Some(128)),
+            (
+                TunRuntimeProfile::Mobile,
+                FlowLimits::MOBILE,
+                Some((64, 32)),
+            ),
+            (
+                TunRuntimeProfile::MobilePlus,
+                FlowLimits::MOBILE,
+                Some((64, 48)),
+            ),
+            (
+                TunRuntimeProfile::Desktop,
+                FlowLimits::DESKTOP,
+                Some((128, 256)),
+            ),
             (
                 TunRuntimeProfile::Throughput,
                 FlowLimits::DESKTOP,
-                Some(128),
+                Some((128, 512)),
             ),
         ] {
-            assert_eq!(profile.tunnel_flow_limits(), limits, "{profile:?}");
-            if let Some(tcp) = tcp {
-                assert_eq!(limits.tcp(), tcp, "{profile:?}");
+            let limits = profile.tunnel_flow_limits();
+            assert_eq!(limits.tcp(), preset.tcp(), "{profile:?}");
+            assert_eq!(limits.tcp_buffer(), preset.tcp_buffer(), "{profile:?}");
+            // Waiting flows leave half of the TUN's pending opens to other
+            // outbounds.
+            let pending_opens = crate::tun::tcp_pending_open_limit(profile);
+            assert_eq!(limits.tcp_waiting(), pending_opens / 2, "{profile:?}");
+            if let Some((tcp, waiting)) = tcp_and_waiting {
+                assert_eq!(
+                    (limits.tcp(), limits.tcp_waiting()),
+                    (tcp, waiting),
+                    "{profile:?}"
+                );
             }
+        }
+        // The presets match the TUN profiles of their name.
+        for (profile, preset) in [
+            (TunRuntimeProfile::Default, FlowLimits::default()),
+            (TunRuntimeProfile::LowMemory, FlowLimits::LOW_MEMORY),
+            (TunRuntimeProfile::Mobile, FlowLimits::MOBILE),
+            (TunRuntimeProfile::Desktop, FlowLimits::DESKTOP),
+        ] {
+            assert_eq!(profile.tunnel_flow_limits(), preset, "{profile:?}");
         }
     }
 

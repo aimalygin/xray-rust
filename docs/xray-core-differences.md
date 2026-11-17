@@ -1398,7 +1398,8 @@ differences:
   `domainStrategy` keeps. Xray-core picks one of them at random.
 - A WireGuard device carries 512 UDP flows and 32 to 128 TCP flows at once,
   by runtime profile, with fixed buffers; a TCP flow past them waits up to
-  ten seconds for a place ([flow limits](config-compatibility.md#wireguard-flow-limits)).
+  three seconds for a place and is then refused, and an idle flow is never
+  closed to make room ([flow limits](config-compatibility.md#wireguard-flow-limits)).
   Xray-core's gVisor stack sets no such bound.
 - An option that fails is logged at debug level; Xray-core logs it at info,
   a level the runtime log here does not have.

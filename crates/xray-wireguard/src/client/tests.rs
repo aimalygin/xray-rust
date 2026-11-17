@@ -400,16 +400,19 @@ async fn tcp_flows_past_the_limit_wait_in_turn_and_a_full_queue_is_busy() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_tcp_flow_that_waits_out_the_open_deadline_is_busy_and_leaves_the_queue() {
+async fn a_tcp_flow_that_waits_out_its_wait_is_busy_and_leaves_the_queue() {
     let (client, requests) = limited_client(small(1, 1));
     let mut places = open_every_tcp_flow(requests);
     let target = TARGET.parse().unwrap();
     let _stream = client.connect(target).await.unwrap();
     let place = places.recv().await.unwrap();
 
+    // The wait gives up as Busy before the open deadlines around it, the
+    // outbound's ten seconds and the handshake timeout, would time it out.
     let started = tokio::time::Instant::now();
     assert!(matches!(client.connect(target).await, Err(Error::Busy)));
     assert!(started.elapsed() >= TCP_SLOT_WAIT);
+    assert!(started.elapsed() < OPEN_TIMEOUT);
     assert_eq!(client.waiting_tcp_flows(), 0);
     assert_eq!(client.available_tcp_slots(), 0);
 
@@ -474,7 +477,7 @@ fn flow_limits_bound_their_memory_and_reject_what_the_stack_cannot_hold() {
             limits
         );
         assert!(limits.tcp() > 16, "a browser opens more than 16 at once");
-        assert!(limits.tcp_waiting() >= limits.tcp());
+        assert!(limits.tcp_waiting() > 0);
     }
     let buffers = |limits: FlowLimits| 2 * limits.tcp() * limits.tcp_buffer();
     assert_eq!(buffers(FlowLimits::LOW_MEMORY), 16 << 20);

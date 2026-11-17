@@ -29,9 +29,16 @@ pub(crate) const IP_PACKET_QUEUE: usize = 32;
 pub(crate) const COMMAND_QUEUE: usize = 32;
 pub(crate) const STREAM_BUFFER: usize = 64 * 1024;
 pub(crate) const OPEN_TIMEOUT: Duration = Duration::from_secs(10);
-/// How long a TCP flow waits for a place when every one is taken: as long as
-/// its open may take once it has one.
-pub(crate) const TCP_SLOT_WAIT: Duration = OPEN_TIMEOUT;
+/// How long a TCP flow waits for a place when every one is taken. It ends
+/// well inside the deadlines around an open, the outbound's ten seconds and
+/// the inbound's handshake timeout (ten by default), which start earlier: a
+/// wait that runs out is `Busy`, not the caller's timeout. It is short
+/// because a waiting TUN flow holds one of the TUN's pending-open permits,
+/// which every outbound shares. A place held by an idle connection is not
+/// taken back, so waiting helps a burst of short flows, not a stack whose
+/// places idle connections hold.
+pub(crate) const TCP_SLOT_WAIT: Duration = Duration::from_secs(3);
+const _: () = assert!(TCP_SLOT_WAIT.as_millis() < OPEN_TIMEOUT.as_millis());
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -40,7 +47,7 @@ pub enum Error {
     #[error("WireGuard client is closed")]
     Closed,
     /// No flow slot: every UDP one is taken, or every TCP one is and the
-    /// queue for them is full or was waited in for the whole open deadline.
+    /// queue for them is full or was waited in for its three seconds.
     #[error("WireGuard flow budget exhausted")]
     Busy,
     #[error("WireGuard destination is outside allowed IPs or has no local address")]

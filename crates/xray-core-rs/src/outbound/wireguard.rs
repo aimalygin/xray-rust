@@ -287,7 +287,9 @@ impl WireguardOutbound {
             let last = addresses.len() - 1;
             for (index, address) in addresses.into_iter().enumerate() {
                 // Past the device's TCP limit a flow waits for a place, which
-                // is none of an address's time: it waits before the attempt.
+                // is none of an address's time: it waits before the attempt,
+                // up to three seconds, well inside this bound and the default
+                // handshake timeout, so a full device is Busy, not Timeout.
                 let slot = client.tcp_slot().await?;
                 // A freshly restarted identity can hit the peer's handshake
                 // rate limit. Let the final candidate wait for WireGuard's

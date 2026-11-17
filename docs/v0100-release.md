@@ -415,10 +415,17 @@ Maven Central («Тег и GitHub-релиз»).
 
 ## After 0.10.0
 
-- Done: a MASQUE or WireGuard tunnel lets a TCP flow past its bound wait for
-  a place instead of refusing it at once, and takes 32, 64 or 128 TCP flows by
-  runtime profile ([flow limits](config-compatibility.md#wireguard-flow-limits)).
-  Android's MASQUE resource stress can go back to 32 connections at once.
+- Done: a MASQUE or WireGuard tunnel takes 32, 64 or 128 TCP flows by
+  runtime profile and lets a TCP flow past its bound wait up to three seconds
+  for a place instead of refusing it at once
+  ([flow limits](config-compatibility.md#wireguard-flow-limits)). Android's
+  MASQUE resource stress can go back to 32 connections at once.
+- Open: nothing closes an idle tunnel flow to make room, so once idle
+  keep-alive connections hold every place a new flow waits and is refused.
+  Closing the longest-idle flow while one waits, or a limit as large as the
+  TUN's active flows, would cover that. A single download over a phone
+  profile is bounded by its 256 KiB window (about 21 Mbit/s at 100 ms) and
+  wants a measurement on a device.
 - The SDK's Maven Central job should wait longer than ten minutes, so a slow
   publication does not end a successful release run as failed.
 - Lua noise scripts, `xdns` over DNS over HTTPS and `realm`'s `portMapping`
