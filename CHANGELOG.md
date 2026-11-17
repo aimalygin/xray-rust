@@ -10,20 +10,18 @@ long-term supported release series.
 
 ## Unreleased
 
-- Fake IP keeps a domain's address across a core restart. A host that
-  restarts the core to switch servers left apps holding fake IPs in their
-  caches and connection pools past the DNS TTL, and each new core began with
-  an empty table at a random pool address: such an address was dialled
-  literally as `198.19.x.y`, or handed to another domain, until the apps were
-  restarted. A domain's address is now the FNV-1a hash of its name within the
-  pool, probing up to 64 addresses forward past reserved ones and other
-  domains' live leases, so it is the same in every core and every process.
-  A stopping core also leaves its mappings, at most `poolSize`, for the next
-  core the process starts with the same `ipv4Pool` and `poolSize`, which
-  extends their running leases to a full `ttl`. At capacity a new domain
-  still fails closed until the earliest lease expires, and then takes its own
-  address when that is free rather than the expired one. The `tun-fake-dns`
-  benchmark expects the hash-derived address of `bench.example`.
+- A `Core` started with fake IP adopts the mappings the `Core` stopped last
+  left, so an address an app still holds keeps naming its domain across a
+  restart. Apps keep fake IPs in caches and connection pools past the DNS TTL,
+  and a host that restarts the core to switch servers found those addresses
+  unmapped in the new core, so a flow whose name sniffing could not recover
+  failed until the apps were restarted. A stopping `Core` leaves at most
+  `poolSize` mappings in a `FakeIpStore`, a new public type: the process-wide
+  one unless `Core::with_fake_ip_store` gives the core another. The next
+  `Core` started with that store adopts them when its `ipv4Pool` and `poolSize` are the same, extending
+  running leases to a full `ttl`, and drops them otherwise or without fake IP.
+  Allocation of new domains is unchanged. Nothing is written to disk; no FFI
+  or ABI change.
 
 ## 0.10.1 - 2026-11-16
 

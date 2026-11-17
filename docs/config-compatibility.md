@@ -4579,32 +4579,11 @@ not from the pattern, so there such a pattern never matches.
 `poolSize`, and a positive `ttl` for the core-wide DNS runtime. `poolSize`
 defaults to the smaller of 32768 and the usable pool capacity. The bounded
 mapping table retains each address lease until the TTL most recently advertised
-for that domain has elapsed. A new domain takes its home address, the FNV-1a 64
-hash of its lowercased name without the terminal dot modulo the pool's
-allocatable addresses, or the first free one of the 64 from there; failing
-that, the one of them whose lease expired earliest. Reserved addresses and
-other domains' unexpired leases are skipped. Below capacity, past those 64 the
-search goes on around the pool. A domain therefore gets the same address in
-every `Core` and every process whatever order names are asked in, unless a
-colliding domain was given it first. At capacity, a new domain fails closed
-until the earliest lease expires; that mapping then makes room, and the domain
-still takes its home address when that is free. An ordered deadline index
-keeps the capacity check O(log `poolSize`), probing stays within 64 addresses
-until the pool is nearly full, and total state is O(`poolSize`).
+for that domain has elapsed. At capacity, a new domain fails closed until the
+earliest lease expires; the address is then safe to reuse. An ordered deadline
+index keeps allocation O(log `poolSize`) and total state O(`poolSize`).
 `198.18.0.1` and `198.18.0.2` are always reserved for the DNS anchor and TUN
-client address.
-
-A `Core` that stops, or is dropped while running, leaves its mappings in the
-process, and the next `Core` started with the same `ipv4Pool` and `poolSize`
-adopts them before it answers anything. A lease still running is extended to
-at least a full `ttl` from that start; one already expired stays mapped but
-reusable, so a table of stale mappings cannot fail the new `Core` closed. The
-process keeps one such set, at most `poolSize` mappings, replaced at each stop.
-Applications keep fake IPs in caches and connection pools beyond the DNS TTL,
-and a host that restarts the core to switch servers otherwise left those
-addresses unmapped or meaning another domain. Clash's `store-fake-ip` and
-sing-box's `store_fakeip` persist the mapping in a file; nothing here is
-written to disk, so a new process relies on the hash alone. The fixed TUN FakeDNS mode synthesizes A records over UDP and
+client address. The fixed TUN FakeDNS mode synthesizes A records over UDP and
 length-prefixed TCP for both the anchor and hard-coded port-53 destinations;
 DNS-outbound Hijack uses the same mapper from TUN, SOCKS, or HTTP. With
 `UseIPv6`, its IPv4-only pool returns NODATA for A without allocating a mapping.
@@ -4622,6 +4601,23 @@ carries every candidate and TTL metadata. An explicitly enabled
 `sockopt.happyEyeballs` policy consumes those candidates through the bounded
 raw-TCP race described above; its Xray-compatible zero-delay default leaves the
 race disabled and dials the candidates the way Go's `net.Dialer` does.
+
+A `Core` that stops, or is dropped while running, leaves its fake-IP mappings
+in its `FakeIpStore`: the process-wide one unless the embedding gave the `Core`
+another with `Core::with_fake_ip_store`; every C ABI handle uses the process
+store. The next `Core` started with that store takes them before it answers
+anything, and adopts them when its `ipv4Pool` and `poolSize` are the same; a
+`Core` started without fake IP or with another pool drops them. A lease still
+running is extended to at least a full `ttl` from that start; one already
+expired stays mapped but reusable, so a table of stale mappings cannot fail the
+new `Core` closed. New domains are still allocated sequentially from the new
+`Core`'s random start, past the adopted addresses. A store holds at most one
+set, at most `poolSize` mappings, until a `Core` started with it takes them or
+`FakeIpStore::clear` drops them. Applications keep fake IPs in caches and
+connection pools beyond the DNS TTL, and a host that restarts the core to
+switch servers otherwise found those addresses unmapped. Clash's
+`store-fake-ip` and sing-box's `store_fakeip` persist the mapping in a file;
+nothing here is written to disk, so a new process starts with an empty table.
 
 A fake-IP profile does not inherently need `dns.servers` when its restored
 domains always use VLESS, because VLESS preserves them for remote resolution.

@@ -124,7 +124,9 @@ async fn denied_dns_cannot_get_local_fake_dns_answer_or_query_upstream() {
         };
         let calls = Arc::new(Mutex::new(Vec::new()));
         let capture = Arc::clone(&calls);
-        let mut core = Core::new(config).unwrap();
+        let mut core = Core::new(config)
+            .unwrap()
+            .with_fake_ip_store(own_fake_ip_store());
         core.set_tun_admission(Some(policy(move |flow| {
             capture.lock().unwrap().push(flow);
             false
@@ -168,7 +170,8 @@ async fn fake_dns_is_allowed_but_mapped_tcp_and_udp_are_checked_as_raw_ip() {
     let mut core = Core::new(runtime_tun_config_with_mobile_fake_dns_freedom(
         "127.0.0.1:9".parse().unwrap(),
     ))
-    .unwrap();
+    .unwrap()
+    .with_fake_ip_store(own_fake_ip_store());
     core.set_tun_admission(Some(policy(move |flow| {
         capture.lock().unwrap().push(flow);
         flow.destination.port() == 53
@@ -214,7 +217,8 @@ async fn denied_dns_tcp_is_reset_before_local_fake_dns_answer() {
     let mut core = Core::new(runtime_tun_config_with_mobile_fake_dns_freedom(
         "127.0.0.1:9".parse().unwrap(),
     ))
-    .unwrap();
+    .unwrap()
+    .with_fake_ip_store(own_fake_ip_store());
     let seen = Arc::new(Mutex::new(None));
     let capture = Arc::clone(&seen);
     core.set_tun_admission(Some(policy(move |flow| {

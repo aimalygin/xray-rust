@@ -61,6 +61,7 @@ pub use dns_outbound::{
     build_refused_response, build_return_response, parse_dns_query, CompiledDnsOutboundPolicy,
     DnsHijackUnsafe, DnsOutboundDecision, DnsOutboundQuery, DnsQueryParseError,
 };
+pub use fake_dns::FakeIpStore;
 pub use outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,
     open_vless_tcp_stream_with_resolver, open_vless_tcp_stream_with_resolver_and_dialer,
@@ -531,6 +532,7 @@ pub struct Core {
     tun_admission: Option<TunAdmissionPolicy>,
     startup_probe: Option<StartupProbeOptions>,
     runtime_logger: RuntimeLogger,
+    fake_ip_store: FakeIpStore,
 }
 
 struct CoreDnsDependencies {
@@ -925,6 +927,7 @@ impl Core {
             tun_admission: None,
             startup_probe: None,
             runtime_logger: RuntimeLogger::disabled(),
+            fake_ip_store: FakeIpStore::process(),
         })
     }
 
@@ -934,6 +937,13 @@ impl Core {
 
     pub fn with_startup_probe(mut self, options: StartupProbeOptions) -> Self {
         self.startup_probe = Some(options);
+        self
+    }
+
+    /// Sets the store this core takes fake-IP mappings from as it starts and
+    /// leaves its own in as it stops, in place of [`FakeIpStore::process`].
+    pub fn with_fake_ip_store(mut self, store: FakeIpStore) -> Self {
+        self.fake_ip_store = store;
         self
     }
 
@@ -1400,11 +1410,12 @@ impl Core {
         let runtime_dns_resolvers =
             self.runtime_dns_resolvers(&config, &outbound_router, has_tun_inbound);
         // The fresh fake-IP mapper takes over the mappings the core stopped
-        // last left, before any inbound can ask it for an address.
-        let fake_ip_carry_over = runtime_dns_resolvers
-            .outbound
-            .fake_ip_mapper()
-            .map(fake_dns::FakeIpCarryOver::adopt);
+        // last left, before any inbound can ask it for an address; a core
+        // without fake IP or with another pool drops them.
+        let fake_ip_carry_over = fake_dns::FakeIpCarryOver::adopt(
+            &self.fake_ip_store,
+            runtime_dns_resolvers.outbound.fake_ip_mapper(),
+        );
         if let Some(adopted) = fake_ip_carry_over
             .as_ref()
             .map(fake_dns::FakeIpCarryOver::adopted)
@@ -1616,7 +1627,7 @@ impl Core {
                 let _ = task.await;
             }
             // With nothing left to serve it, the mapper's state is final:
-            // leave it to the next core this process starts with its pool.
+            // leave it to the next core started with this store.
             drop(runtime.fake_ip_carry_over);
         }
         self.outbound_factory().join_sessions().await;
@@ -1964,7 +1975,7 @@ mod tests {
         configured_dns_resolver_for_config, configured_dns_resolver_from_config_with_transport,
         destination_dns_cache_for_config, host_only_dns_resolver_for_config, static_host_index,
         static_only_dns_resolver_for_config, take_name_server_policy_set, Core, DnsBootstrapMode,
-        DnsRules, DnsRuntimeLimits, TransportDnsQueryStrategy, TunRuntimeOptions,
+        DnsRules, DnsRuntimeLimits, FakeIpStore, TransportDnsQueryStrategy, TunRuntimeOptions,
         TunRuntimeProfile,
     };
 
@@ -2005,17 +2016,23 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_core_started_after_another_stopped_keeps_its_fake_ip_mappings() {
-        // No other test of this binary starts a core with fake IP, so the
-        // process-wide carry-over belongs to this test.
-        let config = || {
-            parse_xray_json(
-                r#"{"inbounds":[{"protocol":"socks","listen":"127.0.0.1","port":0}],
-                    "outbounds":[{"protocol":"freedom"}],
-                    "dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.18.0.0/16",
-                                     "poolSize":4099,"ttl":60}}}"#,
-            )
+        let config = |dns: &str| {
+            parse_xray_json(&format!(
+                r#"{{"inbounds":[{{"protocol":"socks","listen":"127.0.0.1","port":0}}],
+                     "outbounds":[{{"protocol":"freedom"}}]{dns}}}"#
+            ))
             .unwrap()
             .config
+        };
+        let fake_ip = r#","dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.18.0.0/16",
+                                           "poolSize":4099,"ttl":60}}"#;
+        // A store of the test's own: the process-wide one is shared by every
+        // core of this binary.
+        let store = FakeIpStore::new();
+        let core = |dns: &str| {
+            Core::new(config(dns))
+                .unwrap()
+                .with_fake_ip_store(store.clone())
         };
         let carry_over = |core: &Core| -> (Arc<Mutex<crate::fake_dns::FakeIpMapper>>, usize) {
             let carry_over = core
@@ -2026,7 +2043,7 @@ mod tests {
             (Arc::clone(carry_over.mapper()), carry_over.adopted())
         };
 
-        let mut stopped = Core::new(config()).unwrap();
+        let mut stopped = core(fake_ip);
         stopped.start().await.unwrap();
         let (mapper, adopted) = carry_over(&stopped);
         assert_eq!(adopted, 0);
@@ -2036,17 +2053,27 @@ mod tests {
             .allocate_ipv4("carried.example")
             .unwrap();
         stopped.stop().await.unwrap();
+        assert_eq!(store.held(), 1);
 
-        let mut started = Core::new(config()).unwrap();
+        let mut started = core(fake_ip);
         started.start().await.unwrap();
         let (mapper, adopted) = carry_over(&started);
-
         assert_eq!(adopted, 1);
+        assert_eq!(store.held(), 0);
         assert_eq!(
             mapper.lock().unwrap().domain_for_ipv4(ip).as_deref(),
             Some("carried.example")
         );
-        started.stop().await.unwrap();
+        // A core dropped while running leaves its mappings too.
+        drop(started);
+        assert_eq!(store.held(), 1);
+
+        // A core started without fake IP drops them.
+        let mut plain = core("");
+        plain.start().await.unwrap();
+        assert_eq!(store.held(), 0);
+        plain.stop().await.unwrap();
+        assert_eq!(store.held(), 0);
     }
 
     struct StaticResolver;

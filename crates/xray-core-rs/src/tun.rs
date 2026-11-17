@@ -6608,8 +6608,13 @@ mod tests {
             pool_size,
             ttl,
         };
-        FakeIpMapper::from_config(&config, query_strategy, &[TUN_DNS_ANCHOR, TUN_CLIENT_IPV4])
-            .unwrap()
+        FakeIpMapper::from_config_with_start(
+            &config,
+            query_strategy,
+            &[TUN_DNS_ANCHOR, TUN_CLIENT_IPV4],
+            0,
+        )
+        .unwrap()
     }
 
     #[derive(Debug, Default)]
@@ -9340,7 +9345,7 @@ mod tests {
         let second = mapper.allocate_ipv4("example.com").unwrap();
         let domain = mapper.domain_for_ipv4(first).unwrap();
 
-        assert!(![TUN_DNS_ANCHOR, TUN_CLIENT_IPV4].contains(&first));
+        assert_eq!(first, Ipv4Addr::new(198, 18, 0, 3));
         assert_eq!(second, first);
         assert_eq!(domain.as_ref(), "example.com");
     }
@@ -9494,14 +9499,14 @@ mod tests {
         let query = build_dns_a_query(0x1203, "www.example.com");
 
         let response = mapper.fake_dns_response(&query, false).unwrap();
-        let answer = dns_response_answer_ipv4(&response).unwrap();
+        let fake_ip = mapper.domain_for_ipv4(Ipv4Addr::new(198, 18, 0, 3));
 
         assert_eq!(dns_response_id(&response), Some(0x1203));
-        assert_eq!(mapper.allocate_ipv4("www.example.com"), Some(answer));
         assert_eq!(
-            mapper.domain_for_ipv4(answer).as_deref(),
-            Some("www.example.com")
+            dns_response_answer_ipv4(&response),
+            Some(Ipv4Addr::new(198, 18, 0, 3))
         );
+        assert_eq!(fake_ip.as_deref(), Some("www.example.com"));
     }
 
     #[test]
@@ -9639,7 +9644,7 @@ mod tests {
             ipv4_udp_payload_for_destination(&reply, 53_000)
                 .as_deref()
                 .and_then(dns_response_answer_ipv4),
-            mapper.allocate_ipv4("www.example.com")
+            Some(Ipv4Addr::new(198, 18, 0, 3))
         );
     }
 

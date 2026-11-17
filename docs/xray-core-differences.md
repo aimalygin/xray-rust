@@ -1330,17 +1330,15 @@ Deliberate differences, source-derived:
 - The fixed TUN FakeDNS mode (`dns.fakeIp` without a DNS outbound) does not
   read `dns.hosts`, for IP values as for `"#N"`.
 
-## Fake-IP allocation across restarts
+## Fake-IP mappings across restarts
 
-`dns.fakeIp` places a new domain at a stable FNV-1a hash of its name within the
-pool and probes forward on collision, and a `Core` adopts the mappings the
-`Core` stopped last in the same process left for the same pool
-([details](config-compatibility.md#dns-outbound)). Source-derived: Xray-core's
-FakeDNS places a new domain at the current time in milliseconds within the
-pool and starts every instance with an empty table, so after a restart an
-address an application still holds can name another domain. Covered by
-`fake_dns` unit tests and a `Core` stop/start test; not yet checked on a
-device.
+A `Core` started with `dns.fakeIp` adopts the mappings that the `Core` stopped
+last in the same process left for the same pool
+([details](config-compatibility.md#dns-outbound)), so an address an application
+still holds keeps naming its domain. Source-derived: Xray-core's FakeDNS starts
+every instance with an empty table, so after a restart such an address is
+unmapped. Covered by `fake_dns` unit tests and a `Core` stop/start test; not
+yet checked on a device.
 
 ## UDP-hop modes
 

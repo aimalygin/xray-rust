@@ -53,9 +53,9 @@ use xray_config::{
     VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{
-    ConnectionState, Core, CoreError, DnsBootstrapMode, OutboundAccounting, OutboundRouter,
-    RuntimeLogConfig, RuntimeLogger, TcpOutbound, TunMtu, TunRuntimeOptions, TunRuntimeProfile,
-    VlessTcpOutbound,
+    ConnectionState, Core, CoreError, DnsBootstrapMode, FakeIpStore, OutboundAccounting,
+    OutboundRouter, RuntimeLogConfig, RuntimeLogger, TcpOutbound, TunMtu, TunRuntimeOptions,
+    TunRuntimeProfile, VlessTcpOutbound,
 };
 use xray_proxy::inbound::{
     encode_socks5_udp_datagram, parse_socks5_udp_datagram, SocksAccount, SocksInboundAuth,
@@ -511,6 +511,13 @@ fn runtime_socks_config_with_level_0_policy(policy: PolicyLevelConfig) -> CoreCo
         system: Default::default(),
     };
     config
+}
+
+/// A store of its own for a core this binary starts with fake IP. The tests
+/// share one process, and through the process-wide store a core would adopt
+/// the fake-IP mappings another test's core left.
+fn own_fake_ip_store() -> FakeIpStore {
+    FakeIpStore::new()
 }
 
 /// Fake IP allocation starts at a random point of the pool, so a test can
@@ -5648,7 +5655,8 @@ async fn run_tun_tcp_in_pool_unmapped_route_only_http_sniffing_scenario() {
     let mut core = Core::new(runtime_tun_config_with_fake_ip_route_only_http_sniffing(
         allocate_unused_loopback_port(),
     ))
-    .unwrap();
+    .unwrap()
+    .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
 
     let mut client = TunTcpClient::new();
@@ -5676,7 +5684,9 @@ async fn run_tun_tcp_in_pool_unmapped_route_only_http_sniffing_scenario() {
 
 async fn run_tun_in_pool_unmapped_quic_sniffing_to_dns_outbound_scenario() {
     let mut core =
-        Core::new(runtime_tun_config_with_fake_ip_quic_sniffing_routed_to_dns_outbound()).unwrap();
+        Core::new(runtime_tun_config_with_fake_ip_quic_sniffing_routed_to_dns_outbound())
+            .unwrap()
+            .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
 
     let client_addr = Ipv4Addr::new(10, 10, 0, 2);
@@ -5712,7 +5722,8 @@ async fn run_tun_fake_dns_udp_domain_routing_scenario() {
             addr: echo_addr,
         }),
     )
-    .unwrap();
+    .unwrap()
+    .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
 
     let client_addr = Ipv4Addr::new(10, 10, 0, 2);
@@ -5841,7 +5852,8 @@ async fn run_tun_fake_dns_static_only_udp_freedom_scenario() {
             ..TunRuntimeOptions::default()
         },
     )
-    .unwrap();
+    .unwrap()
+    .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
 
     let fake_ip = request_tun_fake_ip(&core, 53_020, "mobile-udp.example").await;
@@ -5895,7 +5907,8 @@ async fn run_tun_fake_dns_static_only_ipv6_udp_freedom_scenario() {
             ..TunRuntimeOptions::default()
         },
     )
-    .unwrap();
+    .unwrap()
+    .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
 
     let fake_ip = request_tun_fake_ip(&core, 53_024, "mobile-udp-v6.example").await;
@@ -5949,7 +5962,8 @@ async fn run_tun_fake_dns_static_only_tcp_freedom_scenario() {
             ..TunRuntimeOptions::default()
         },
     )
-    .unwrap();
+    .unwrap()
+    .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
 
     let fake_ip = request_tun_fake_ip(&core, 53_021, "mobile-tcp.example").await;
@@ -6001,7 +6015,8 @@ async fn run_tun_fake_dns_domain_upstream_vless_scenario() {
             ..TunRuntimeOptions::default()
         },
     )
-    .unwrap();
+    .unwrap()
+    .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
 
     let fake_ip = request_tun_fake_ip(&core, 53_022, "www.example.com").await;
@@ -6066,7 +6081,8 @@ async fn run_tun_fake_dns_static_only_vless_remote_resolution_scenario() {
             ..TunRuntimeOptions::default()
         },
     )
-    .unwrap();
+    .unwrap()
+    .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
 
     let fake_ip = request_tun_fake_ip(&core, 53_023, domain).await;
@@ -6130,7 +6146,9 @@ async fn request_tun_fake_ip(core: &Core, client_port: u16, domain: &str) -> Ipv
 async fn run_tun_fake_dns_https_nodata_scenario() {
     let unused_proxy_port = allocate_unused_loopback_port();
     let config = runtime_tun_config_with_fake_ip_domain_routed_freedom_outbound(unused_proxy_port);
-    let mut core = Core::new(config).unwrap();
+    let mut core = Core::new(config)
+        .unwrap()
+        .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
 
     let client_addr = Ipv4Addr::new(10, 10, 0, 2);
@@ -6168,7 +6186,9 @@ async fn run_tun_fake_dns_full_pool_fail_closed_scenario() {
     let fake_ip = config.dns.fake_ip.as_mut().unwrap();
     fake_ip.ipv4_pool = IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 19, 0, 1)), 32).unwrap();
     fake_ip.pool_size = 1;
-    let mut core = Core::new(config).unwrap();
+    let mut core = Core::new(config)
+        .unwrap()
+        .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
 
     let client_addr = Ipv4Addr::new(10, 10, 0, 2);
@@ -6923,7 +6943,9 @@ async fn run_core_wide_fake_dns_socks_to_http_scenario() {
         DomainMatcher::Full(domain.to_owned()),
         DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
     );
-    let mut core = Core::new(config).unwrap();
+    let mut core = Core::new(config)
+        .unwrap()
+        .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
 
     let mut dns_client = TcpStream::connect(core.inbound_addr(Some("socks-in")).unwrap())
@@ -7044,7 +7066,8 @@ async fn run_tun_dns_outbound_fake_ip_domain_scenario(strategy: RoutingDomainStr
             addr: upstream,
         }),
     )
-    .unwrap();
+    .unwrap()
+    .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
     let fake_ip = request_tun_fake_ip(&core, 53_056, domain).await;
     core.tun()
@@ -7124,7 +7147,8 @@ async fn run_tun_dns_outbound_tcp_fake_ip_domain_scenario(strategy: RoutingDomai
             addr: upstream,
         }),
     )
-    .unwrap();
+    .unwrap()
+    .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
     let fake_ip = request_tun_fake_ip(&core, 53_058, domain).await;
     let mut client = TunTcpClient::new();
@@ -9640,7 +9664,9 @@ async fn run_tun_fake_dns_tcp_scenario(dns_destination: Ipv4Addr) {
         pool_size: 32_768,
         ttl: 60,
     });
-    let mut core = Core::new(config).unwrap();
+    let mut core = Core::new(config)
+        .unwrap()
+        .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
 
     let dns_endpoint = SocketAddr::from((dns_destination, 53));
@@ -9729,7 +9755,8 @@ async fn run_tun_fake_dns_udp_resolved_ip_routed_freedom_scenario(strategy: Rout
             ..TunRuntimeOptions::default()
         },
     )
-    .unwrap();
+    .unwrap()
+    .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
 
     let client_addr = Ipv4Addr::new(10, 10, 0, 2);
@@ -10192,7 +10219,9 @@ async fn run_socks_mapped_fake_ip_http_sniffing_precedence_scenario() {
         domain: mapped_domain,
         addr: echo_addr,
     };
-    let mut core = Core::with_dns_resolver(config, Arc::new(resolver)).unwrap();
+    let mut core = Core::with_dns_resolver(config, Arc::new(resolver))
+        .unwrap()
+        .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
     let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
 
@@ -10243,7 +10272,9 @@ async fn run_socks_in_pool_unmapped_route_only_http_sniffing_scenario() {
         DomainMatcher::Full("routed.example".to_owned()),
         DnsHostTarget::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
     )]);
-    let mut core = Core::new(config).unwrap();
+    let mut core = Core::new(config)
+        .unwrap()
+        .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
     let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
 

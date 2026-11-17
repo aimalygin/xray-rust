@@ -1,30 +1,16 @@
 use std::collections::{BTreeSet, HashMap};
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use xray_config::{DnsFakeIpConfig, DnsQueryStrategy};
 use xray_transport::RouteProbe;
-
-/// Pool positions a new name probes from its home address for a free or
-/// expired one. Past them, and only below capacity, the search for a free
-/// address goes on around the pool.
-const PROBE_WINDOW: u64 = 64;
-
-/// The mappings the last stopped core left for the next core this process
-/// starts with the same pool.
-static PROCESS_CARRY_OVER: FakeIpCarryOverStore = FakeIpCarryOverStore::new();
 
 /// Stateful, bounded mapping between DNS names and synthetic IPv4 addresses.
 ///
 /// The mapper owns no ingress or transport concerns. Callers decide how DNS
 /// messages are parsed and synthesized, and which addresses must be reserved
 /// by their embedding.
-///
-/// A name's address derives from a stable hash of the name, so a fresh
-/// mapper, in a restarted core or a restarted process, gives a name the
-/// address an application may still hold from before instead of handing that
-/// address to another name.
 #[derive(Debug)]
 pub(crate) struct FakeIpMapper {
     query_strategy: DnsQueryStrategy,
@@ -32,16 +18,17 @@ pub(crate) struct FakeIpMapper {
     /// no answers, as Xray-core's `checkSystem` leaves it.
     route_probe: Option<Arc<dyn RouteProbe>>,
     ttl: u32,
-    pool: FakeIpPool,
     network_base: u32,
     address_count: u64,
     first_offset: u64,
     allocation_span: u64,
     max_mappings: usize,
     reserved_ipv4: Box<[Ipv4Addr]>,
-    lease_index: BTreeSet<(Instant, Ipv4Addr)>,
-    by_domain: HashMap<Arc<str>, Ipv4Addr>,
-    by_ipv4: HashMap<Ipv4Addr, FakeIpEntry>,
+    next_offset: u64,
+    entries: Vec<Option<FakeIpEntry>>,
+    lease_index: BTreeSet<(Instant, usize)>,
+    by_domain: HashMap<Arc<str>, usize>,
+    by_ipv4: HashMap<Ipv4Addr, usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +41,7 @@ pub(crate) enum FakeIpLookup {
 #[derive(Debug)]
 struct FakeIpEntry {
     domain: Arc<str>,
+    ip: Ipv4Addr,
     reusable_after: Instant,
 }
 
@@ -61,12 +49,16 @@ struct FakeIpEntry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FakeIpPool {
     network_base: u32,
-    prefix: u8,
-    pool_size: u32,
+    address_count: u64,
+    max_mappings: usize,
 }
 
 impl FakeIpMapper {
     /// Builds a mapper from core DNS configuration.
+    ///
+    /// Sequential allocation starts at a random point of the pool, so a core
+    /// restart does not hand the same first addresses to different domains
+    /// while applications may still hold previously advertised fake IPs.
     ///
     /// Returns `None` when TTL is zero, the pool is not IPv4, has no
     /// allocatable address, or is smaller than the configured mapping capacity
@@ -75,6 +67,17 @@ impl FakeIpMapper {
         config: &DnsFakeIpConfig,
         query_strategy: DnsQueryStrategy,
         reserved_ipv4: &[Ipv4Addr],
+    ) -> Option<Self> {
+        Self::from_config_with_start(config, query_strategy, reserved_ipv4, rand::random())
+    }
+
+    /// Same as [`Self::from_config`], with allocation starting at
+    /// `start % allocatable addresses` past the first allocatable address.
+    pub(crate) fn from_config_with_start(
+        config: &DnsFakeIpConfig,
+        query_strategy: DnsQueryStrategy,
+        reserved_ipv4: &[Ipv4Addr],
+        start: u64,
     ) -> Option<Self> {
         if !config.enabled || config.ttl == 0 {
             return None;
@@ -126,17 +129,14 @@ impl FakeIpMapper {
             query_strategy,
             route_probe: None,
             ttl: config.ttl,
-            pool: FakeIpPool {
-                network_base,
-                prefix: ipv4_prefix,
-                pool_size: config.pool_size,
-            },
             network_base,
             address_count,
             first_offset,
             allocation_span,
             max_mappings: usize::try_from(config.pool_size).ok()?,
             reserved_ipv4: reserved_ipv4.into_boxed_slice(),
+            next_offset: start % allocation_span,
+            entries: Vec::new(),
             lease_index: BTreeSet::new(),
             by_domain: HashMap::new(),
             by_ipv4: HashMap::new(),
@@ -180,12 +180,9 @@ impl FakeIpMapper {
 
     /// Returns a stable synthetic IPv4 address for a normalized DNS name.
     ///
-    /// A new name takes its home address, a stable hash of the name over the
-    /// pool, or the first free address the probe finds after it, else the
-    /// probed address whose lease ran out earliest. A mapping is never
-    /// reassigned before the TTL most recently advertised for it has elapsed.
-    /// Capacity exhaustion therefore fails closed until the earliest lease
-    /// becomes reusable.
+    /// A mapping is never reassigned before the TTL most recently advertised
+    /// for it has elapsed. Capacity exhaustion therefore fails closed until
+    /// the earliest lease becomes reusable.
     pub(crate) fn allocate_ipv4(&mut self, domain: &str) -> Option<Ipv4Addr> {
         self.allocate_ipv4_at(domain, Instant::now())
     }
@@ -193,105 +190,32 @@ impl FakeIpMapper {
     fn allocate_ipv4_at(&mut self, domain: &str, now: Instant) -> Option<Ipv4Addr> {
         let domain = normalize_dns_domain(domain)?;
         let reusable_after = now.checked_add(Duration::from_secs(u64::from(self.ttl)))?;
-        if let Some(&ip) = self.by_domain.get(domain.as_str()) {
-            let entry = self.by_ipv4.get_mut(&ip)?;
-            self.lease_index.remove(&(entry.reusable_after, ip));
+        if let Some(&slot) = self.by_domain.get(domain.as_str()) {
+            let entry = self.entries.get_mut(slot)?.as_mut()?;
+            let ip = entry.ip;
+            self.lease_index.remove(&(entry.reusable_after, slot));
             entry.reusable_after = reusable_after;
-            self.lease_index.insert((reusable_after, ip));
+            self.lease_index.insert((reusable_after, slot));
             return Some(ip);
-        }
-
-        let ip = self.assign_ipv4(&domain, now)?;
-        self.insert_mapping(Arc::from(domain), ip, reusable_after);
-        Some(ip)
-    }
-
-    /// Picks the address for a name without one, removing at most one
-    /// mapping whose lease has run out.
-    fn assign_ipv4(&mut self, domain: &str, now: Instant) -> Option<Ipv4Addr> {
-        let home = fnv1a_64(domain.as_bytes()) % self.allocation_span;
-        let window = self.allocation_span.min(PROBE_WINDOW);
-        let mut free = None;
-        let mut expired: Option<(Instant, Ipv4Addr)> = None;
-        for step in 0..window {
-            let Some(ip) = self.address_at(home + step) else {
-                continue;
-            };
-            match self.by_ipv4.get(&ip) {
-                None => {
-                    free = Some(ip);
-                    break;
-                }
-                Some(entry)
-                    if entry.reusable_after <= now
-                        && expired.is_none_or(|(lease, _)| entry.reusable_after < lease) =>
-                {
-                    expired = Some((entry.reusable_after, ip));
-                }
-                Some(_) => {}
-            }
         }
 
         if self.by_domain.len() >= self.max_mappings {
-            // Some mapping must go, and only one whose lease ran out may.
-            let &(earliest, earliest_ip) = self.lease_index.first()?;
-            if earliest > now {
-                return None;
-            }
-            let ip = match (free, expired) {
-                (Some(free), _) => {
-                    self.remove_mapping(earliest_ip);
-                    free
-                }
-                (None, Some((_, expired))) => {
-                    self.remove_mapping(expired);
-                    expired
-                }
-                (None, None) => {
-                    self.remove_mapping(earliest_ip);
-                    earliest_ip
-                }
-            };
+            let (slot, ip) = self.remove_earliest_expired(now)?;
+            self.insert_mapping(slot, Arc::from(domain), ip, reusable_after)?;
             return Some(ip);
         }
 
-        if let Some(ip) = free {
-            return Some(ip);
-        }
-        if let Some((_, ip)) = expired {
-            self.remove_mapping(ip);
-            return Some(ip);
-        }
-        // Below capacity a free address exists: `poolSize` never exceeds the
-        // allocatable addresses.
-        (window..self.allocation_span).find_map(|step| {
-            self.address_at(home + step)
-                .filter(|ip| !self.by_ipv4.contains_key(ip))
-        })
-    }
-
-    /// The allocatable address `position` places after the first one,
-    /// wrapping around the pool, unless the embedding reserved it.
-    fn address_at(&self, position: u64) -> Option<Ipv4Addr> {
-        let offset = self.first_offset + position % self.allocation_span;
-        let raw_ip = self.network_base.checked_add(u32::try_from(offset).ok()?)?;
-        let ip = Ipv4Addr::from(raw_ip);
-        self.reserved_ipv4.binary_search(&ip).is_err().then_some(ip)
-    }
-
-    fn is_allocatable(&self, ip: Ipv4Addr) -> bool {
-        u32::from(ip)
-            .checked_sub(self.network_base)
-            .map(u64::from)
-            .and_then(|offset| offset.checked_sub(self.first_offset))
-            .is_some_and(|position| position < self.allocation_span)
-            && self.reserved_ipv4.binary_search(&ip).is_err()
+        let slot = self.entries.len();
+        let ip = self.next_available_ipv4()?;
+        self.insert_mapping(slot, Arc::from(domain), ip, reusable_after)?;
+        Some(ip)
     }
 
     /// Resolves a synthetic IPv4 address back to its DNS name. Reverse lookups
     /// deliberately do not extend the lease because they advertise no DNS TTL.
     pub(crate) fn domain_for_ipv4(&mut self, ip: Ipv4Addr) -> Option<Arc<str>> {
-        Some(Arc::clone(&self.by_ipv4.get(&ip)?.domain))
+        let slot = *self.by_ipv4.get(&ip)?;
+        Some(Arc::clone(&self.entries.get(slot)?.as_ref()?.domain))
     }
 
     /// Classifies a client-supplied IPv4 address without erasing whether an
@@ -314,42 +238,100 @@ impl FakeIpMapper {
             .is_some_and(|offset| offset < self.address_count)
     }
 
-    fn insert_mapping(&mut self, domain: Arc<str>, ip: Ipv4Addr, reusable_after: Instant) {
-        self.by_domain.insert(Arc::clone(&domain), ip);
-        self.by_ipv4.insert(
-            ip,
-            FakeIpEntry {
-                domain,
-                reusable_after,
-            },
-        );
-        self.lease_index.insert((reusable_after, ip));
+    fn next_available_ipv4(&mut self) -> Option<Ipv4Addr> {
+        for _ in 0..self.allocation_span {
+            let offset = self.first_offset + (self.next_offset % self.allocation_span);
+            self.next_offset = (self.next_offset + 1) % self.allocation_span;
+            let raw_ip = self.network_base.checked_add(u32::try_from(offset).ok()?)?;
+            let ip = Ipv4Addr::from(raw_ip);
+            if self.reserved_ipv4.binary_search(&ip).is_ok() {
+                continue;
+            }
+            if !self.by_ipv4.contains_key(&ip) {
+                return Some(ip);
+            }
+        }
+        None
     }
 
-    fn remove_mapping(&mut self, ip: Ipv4Addr) {
-        if let Some(entry) = self.by_ipv4.remove(&ip) {
-            self.by_domain.remove(entry.domain.as_ref());
-            self.lease_index.remove(&(entry.reusable_after, ip));
+    fn insert_mapping(
+        &mut self,
+        slot: usize,
+        domain: Arc<str>,
+        ip: Ipv4Addr,
+        reusable_after: Instant,
+    ) -> Option<()> {
+        let entry = FakeIpEntry {
+            domain: Arc::clone(&domain),
+            ip,
+            reusable_after,
+        };
+        if slot == self.entries.len() {
+            self.entries.push(Some(entry));
+        } else {
+            *self.entries.get_mut(slot)? = Some(entry);
         }
+        self.by_domain.insert(domain, slot);
+        self.by_ipv4.insert(ip, slot);
+        self.lease_index
+            .insert((reusable_after, slot))
+            .then_some(())
+    }
+
+    fn remove_earliest_expired(&mut self, now: Instant) -> Option<(usize, Ipv4Addr)> {
+        let &(reusable_after, slot) = self.lease_index.first()?;
+        if reusable_after > now {
+            return None;
+        }
+        self.lease_index.remove(&(reusable_after, slot));
+        let entry = self.entries.get_mut(slot)?.take()?;
+        self.by_domain.remove(entry.domain.as_ref());
+        self.by_ipv4.remove(&entry.ip);
+        Some((slot, entry.ip))
+    }
+
+    fn pool(&self) -> FakeIpPool {
+        FakeIpPool {
+            network_base: self.network_base,
+            address_count: self.address_count,
+            max_mappings: self.max_mappings,
+        }
+    }
+
+    /// Whether this mapper could have handed out `ip`: an allocatable pool
+    /// address the embedding did not reserve.
+    fn is_allocatable(&self, ip: Ipv4Addr) -> bool {
+        u32::from(ip)
+            .checked_sub(self.network_base)
+            .map(u64::from)
+            .and_then(|offset| offset.checked_sub(self.first_offset))
+            .is_some_and(|position| position < self.allocation_span)
+            && self.reserved_ipv4.binary_search(&ip).is_err()
     }
 
     fn snapshot(&self) -> FakeIpSnapshot {
         FakeIpSnapshot {
-            pool: self.pool,
+            pool: self.pool(),
             entries: self
-                .by_ipv4
+                .entries
                 .iter()
-                .map(|(ip, entry)| (Arc::clone(&entry.domain), *ip, entry.reusable_after))
+                .flatten()
+                .map(|entry| (Arc::clone(&entry.domain), entry.ip, entry.reusable_after))
                 .collect(),
         }
     }
 
-    /// Adopts carried-over mappings, returning how many. A lease still
-    /// running is extended to at least a full TTL from `now`, since
-    /// applications keep addresses past it; one already run out stays
-    /// reusable, so a table full of stale mappings cannot fail the new core
-    /// closed.
+    /// Adopts the mappings of a stopped mapper with the same pool, returning
+    /// how many. A lease still running is extended to at least a full TTL
+    /// from `now`, since applications keep addresses past it; one already
+    /// run out stays reusable, so a table full of stale mappings cannot fail
+    /// the new mapper closed. Allocation goes on from this mapper's own
+    /// random start and skips the adopted addresses as it skips any mapped
+    /// one.
     fn restore(&mut self, snapshot: FakeIpSnapshot, now: Instant) -> usize {
+        if snapshot.pool != self.pool() {
+            return 0;
+        }
         let extended = now.checked_add(Duration::from_secs(u64::from(self.ttl)));
         let mut restored = 0;
         for (domain, ip, saved) in snapshot.entries {
@@ -366,87 +348,119 @@ impl FakeIpMapper {
                 Some(extended) if saved > now => saved.max(extended),
                 _ => saved,
             };
-            self.insert_mapping(domain, ip, reusable_after);
-            restored += 1;
+            if self
+                .insert_mapping(self.entries.len(), domain, ip, reusable_after)
+                .is_some()
+            {
+                restored += 1;
+            }
         }
         restored
     }
 }
 
-/// The mappings of a stopped core, at most `poolSize` of them.
-#[derive(Debug)]
+/// The mappings of a stopped mapper, at most `poolSize` of them.
 struct FakeIpSnapshot {
     pool: FakeIpPool,
     entries: Vec<(Arc<str>, Ipv4Addr, Instant)>,
 }
 
-/// Holds the mappings of the core stopped last until a core with the same
-/// pool adopts them. One snapshot at most, replaced by each stop.
-#[derive(Debug)]
-struct FakeIpCarryOverStore(Mutex<Option<FakeIpSnapshot>>);
+static PROCESS_FAKE_IP_STORE: LazyLock<FakeIpStore> = LazyLock::new(FakeIpStore::new);
 
-impl FakeIpCarryOverStore {
-    const fn new() -> Self {
-        Self(Mutex::new(None))
+/// Where a stopping [`Core`](crate::Core) leaves its fake-IP mappings for
+/// the next `Core` started with the same store.
+///
+/// Applications keep the fake IPs they were given in caches and connection
+/// pools past the DNS TTL. A `Core` started with fake IP takes the mappings
+/// held here and, when they come from the same `ipv4Pool` and `poolSize`,
+/// adopts them, so those addresses keep naming the same domains instead of
+/// being unmapped. Any other `Core` started with the store drops them. A
+/// store holds at most one set, at most `poolSize` mappings, replaced each
+/// time a `Core` using it stops; nothing is written to disk.
+///
+/// Every `Core` uses [`FakeIpStore::process`] unless given another with
+/// [`Core::with_fake_ip_store`](crate::Core::with_fake_ip_store). Clones
+/// share what is held.
+#[derive(Clone, Default)]
+pub struct FakeIpStore(Arc<Mutex<Option<FakeIpSnapshot>>>);
+
+impl FakeIpStore {
+    /// An empty store of its own, shared only by the cores given it or one
+    /// of its clones.
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Keeps `mapper`'s mappings in place of any held before. A mapper
-    /// with none leaves the held ones.
-    fn save(&self, mapper: &FakeIpMapper) {
-        if mapper.by_ipv4.is_empty() {
-            return;
-        }
-        let snapshot = mapper.snapshot();
+    /// The process-wide store every `Core` uses by default.
+    pub fn process() -> Self {
+        PROCESS_FAKE_IP_STORE.clone()
+    }
+
+    /// Drops the held mappings, for a host done with fake IP before it is
+    /// done with the process.
+    pub fn clear(&self) {
+        drop(self.take());
+    }
+
+    fn take(&self) -> Option<FakeIpSnapshot> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).take()
+    }
+
+    fn save(&self, snapshot: FakeIpSnapshot) {
         *self.0.lock().unwrap_or_else(PoisonError::into_inner) = Some(snapshot);
     }
 
-    /// Moves the held mappings into `mapper` when they come from the same
-    /// pool, returning how many it took. Another pool's stay held.
-    fn restore(&self, mapper: &mut FakeIpMapper, now: Instant) -> usize {
-        let snapshot = {
-            let mut held = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-            if held
-                .as_ref()
-                .is_none_or(|snapshot| snapshot.pool != mapper.pool)
-            {
-                return 0;
-            }
-            held.take()
-        };
-        snapshot.map_or(0, |snapshot| mapper.restore(snapshot, now))
+    /// How many mappings the store holds.
+    #[cfg(test)]
+    pub(crate) fn held(&self) -> usize {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .map_or(0, |snapshot| snapshot.entries.len())
     }
 }
 
-/// Carries a running core's fake-IP mappings across a restart in the same
-/// process.
+impl std::fmt::Debug for FakeIpStore {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("FakeIpStore")
+            .finish_non_exhaustive()
+    }
+}
+
+/// Carries a running core's fake-IP mappings across a restart.
 ///
-/// Built as the core starts, it moves the mappings the core stopped last
-/// left into the new mapper. Dropped as the core stops, or with a running
-/// core, it leaves the mapper's mappings for the next core with the same
-/// pool. Applications keep the addresses they were given past the DNS TTL,
-/// and a mapping that outlives its core keeps those addresses meaning the
-/// same names.
+/// Built as the core starts, it moves the mappings its store holds into the
+/// new mapper. Dropped as the core stops, or with a running core, it leaves
+/// the mapper's mappings in the store for the next core.
 pub(crate) struct FakeIpCarryOver {
     mapper: Arc<Mutex<FakeIpMapper>>,
-    store: &'static FakeIpCarryOverStore,
+    store: FakeIpStore,
     adopted: usize,
 }
 
 impl FakeIpCarryOver {
-    pub(crate) fn adopt(mapper: Arc<Mutex<FakeIpMapper>>) -> Self {
-        Self::adopt_from(&PROCESS_CARRY_OVER, mapper)
-    }
-
-    fn adopt_from(store: &'static FakeIpCarryOverStore, mapper: Arc<Mutex<FakeIpMapper>>) -> Self {
-        let adopted = store.restore(
-            &mut mapper.lock().unwrap_or_else(PoisonError::into_inner),
-            Instant::now(),
-        );
-        Self {
+    /// Takes what `store` holds: `mapper` adopts the mappings when they come
+    /// from its pool, and they are dropped otherwise, as they are by a core
+    /// without fake IP (`None`), which carries nothing over.
+    pub(crate) fn adopt(
+        store: &FakeIpStore,
+        mapper: Option<Arc<Mutex<FakeIpMapper>>>,
+    ) -> Option<Self> {
+        let held = store.take();
+        let mapper = mapper?;
+        let adopted = held.map_or(0, |snapshot| {
+            mapper
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .restore(snapshot, Instant::now())
+        });
+        Some(Self {
             mapper,
-            store,
+            store: store.clone(),
             adopted,
-        }
+        })
     }
 
     /// How many mappings the mapper took over as the core started.
@@ -463,7 +477,13 @@ impl FakeIpCarryOver {
 impl Drop for FakeIpCarryOver {
     fn drop(&mut self) {
         let mapper = self.mapper.lock().unwrap_or_else(PoisonError::into_inner);
-        self.store.save(&mapper);
+        // A mapper without mappings leaves what another core saved meanwhile.
+        if mapper.by_domain.is_empty() {
+            return;
+        }
+        let snapshot = mapper.snapshot();
+        drop(mapper);
+        self.store.save(snapshot);
     }
 }
 
@@ -476,14 +496,6 @@ impl std::fmt::Debug for FakeIpCarryOver {
     }
 }
 
-/// FNV-1a 64: stable across processes, builds and platforms, unlike the
-/// randomly keyed standard hasher.
-fn fnv1a_64(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash: u64, byte| {
-        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
-    })
-}
-
 fn normalize_dns_domain(domain: &str) -> Option<String> {
     let domain = domain.trim_end_matches('.').to_ascii_lowercase();
     (!domain.is_empty()).then_some(domain)
@@ -494,9 +506,6 @@ mod tests {
     use super::*;
     use xray_config::IpCidr;
 
-    const TUN_RESERVED: [Ipv4Addr; 2] =
-        [Ipv4Addr::new(198, 18, 0, 1), Ipv4Addr::new(198, 18, 0, 2)];
-
     fn config(network: Ipv4Addr, prefix: u8, pool_size: u32, ttl: u32) -> DnsFakeIpConfig {
         DnsFakeIpConfig {
             enabled: true,
@@ -506,159 +515,26 @@ mod tests {
         }
     }
 
-    fn mapper(config: &DnsFakeIpConfig, reserved: &[Ipv4Addr]) -> FakeIpMapper {
-        FakeIpMapper::from_config(config, DnsQueryStrategy::UseIp, reserved).unwrap()
-    }
-
-    fn home_position(mapper: &FakeIpMapper, domain: &str) -> u64 {
-        fnv1a_64(domain.as_bytes()) % mapper.allocation_span
-    }
-
-    fn position_of(mapper: &FakeIpMapper, ip: Ipv4Addr) -> u64 {
-        u64::from(u32::from(ip) - mapper.network_base) - mapper.first_offset
-    }
-
-    /// The first `count` generated names whose home is `position`.
-    fn names_at_home(mapper: &FakeIpMapper, position: u64, count: usize) -> Vec<String> {
-        (0..)
-            .map(|index| format!("n{index}.example"))
-            .filter(|name| home_position(mapper, name) == position)
-            .take(count)
-            .collect()
-    }
-
-    #[test]
-    fn fnv1a_64_matches_the_reference_vectors() {
-        assert_eq!(fnv1a_64(b""), 0xcbf2_9ce4_8422_2325);
-        assert_eq!(fnv1a_64(b"a"), 0xaf63_dc4c_8601_ec8c);
-        assert_eq!(fnv1a_64(b"foobar"), 0x8594_4171_f739_67e8);
-    }
-
     #[test]
     fn allocation_is_stable_and_reverse_lookup_normalizes_domain() {
         let config = config(Ipv4Addr::new(198, 18, 0, 0), 15, 32_768, 60);
-        let mut mapper = mapper(&config, &TUN_RESERVED);
+        let mut mapper = FakeIpMapper::from_config(
+            &config,
+            DnsQueryStrategy::UseIp,
+            &[Ipv4Addr::new(198, 18, 0, 1), Ipv4Addr::new(198, 18, 0, 2)],
+        )
+        .unwrap();
 
         let first = mapper.allocate_ipv4("Example.COM.").unwrap();
         let second = mapper.allocate_ipv4("example.com").unwrap();
 
         assert_ne!(mapper.lookup_ipv4(first), FakeIpLookup::Outside);
-        assert!(!TUN_RESERVED.contains(&first));
+        assert!(![Ipv4Addr::new(198, 18, 0, 1), Ipv4Addr::new(198, 18, 0, 2)].contains(&first));
         assert_eq!(second, first);
         assert_eq!(
             mapper.domain_for_ipv4(first).as_deref(),
             Some("example.com")
         );
-    }
-
-    #[test]
-    fn fresh_mappers_give_each_name_the_same_address_whatever_the_query_order() {
-        let config = config(Ipv4Addr::new(198, 18, 0, 0), 15, 32_768, 60);
-        let names = [
-            "example.com",
-            "www.example.com",
-            "api.example.net",
-            "cdn.example.org",
-            "Mail.Example.COM.",
-            "a.b.c.example",
-            "xn--bcher-kva.example",
-            "198.51.100.7.example",
-        ];
-        let mut forward = mapper(&config, &TUN_RESERVED);
-        let mut backward = mapper(&config, &TUN_RESERVED);
-
-        let forward_ips: Vec<_> = names
-            .iter()
-            .map(|name| forward.allocate_ipv4(name).unwrap())
-            .collect();
-        let mut backward_ips: Vec<_> = names
-            .iter()
-            .rev()
-            .map(|name| backward.allocate_ipv4(name).unwrap())
-            .collect();
-        backward_ips.reverse();
-
-        assert_eq!(forward_ips, backward_ips);
-        let distinct: BTreeSet<_> = forward_ips.iter().collect();
-        assert_eq!(distinct.len(), names.len());
-    }
-
-    #[test]
-    fn home_addresses_stay_what_earlier_releases_gave() {
-        // A release that changed the hash would move every name to another
-        // address across an app upgrade. xray-bench's fake-DNS workload
-        // expects the second address.
-        let cases = [
-            (
-                Ipv4Addr::new(198, 18, 0, 0),
-                15,
-                "example.com",
-                [198, 19, 0, 185],
-            ),
-            (
-                Ipv4Addr::new(198, 19, 0, 0),
-                16,
-                "bench.example",
-                [198, 19, 41, 78],
-            ),
-        ];
-        for (network, prefix, name, expected) in cases {
-            let mut mapper = mapper(&config(network, prefix, 32_768, 60), &TUN_RESERVED);
-
-            assert_eq!(mapper.allocate_ipv4(name), Some(Ipv4Addr::from(expected)));
-        }
-    }
-
-    #[test]
-    fn a_name_whose_home_is_taken_probes_forward_past_reservations() {
-        // Allocatable .1 to .6, positions 0 to 5; .3 is reserved.
-        let config = config(Ipv4Addr::new(192, 0, 2, 0), 29, 5, 60);
-        let reserved = [Ipv4Addr::new(192, 0, 2, 3)];
-        let mut mapper = mapper(&config, &reserved);
-        let colliding = names_at_home(&mapper, 1, 2);
-        let reserved_home = names_at_home(&mapper, 2, 1).remove(0);
-
-        let first = mapper.allocate_ipv4(&colliding[0]).unwrap();
-        let second = mapper.allocate_ipv4(&colliding[1]).unwrap();
-        let third = mapper.allocate_ipv4(&reserved_home).unwrap();
-
-        assert_eq!(first, Ipv4Addr::new(192, 0, 2, 2));
-        assert_eq!(second, Ipv4Addr::new(192, 0, 2, 4));
-        assert_eq!(third, Ipv4Addr::new(192, 0, 2, 5));
-        assert_eq!(
-            mapper.lookup_ipv4(second),
-            FakeIpLookup::Mapped(Arc::from(colliding[1].as_str()))
-        );
-        assert_eq!(
-            mapper.allocate_ipv4(&colliding[0]),
-            Some(first),
-            "a name keeps the address it was given"
-        );
-    }
-
-    #[test]
-    fn reserved_tun_addresses_are_never_handed_out_even_as_a_home() {
-        let config = config(Ipv4Addr::new(198, 18, 0, 0), 29, 4, 60);
-        let mut mapper = mapper(&config, &TUN_RESERVED);
-        let anchor_home = names_at_home(&mapper, 0, 1).remove(0);
-
-        assert_eq!(
-            mapper.allocate_ipv4(&anchor_home),
-            Some(Ipv4Addr::new(198, 18, 0, 3))
-        );
-        let allocated: BTreeSet<_> = (0..3)
-            .map(|index| {
-                mapper
-                    .allocate_ipv4(&format!("fill{index}.example"))
-                    .unwrap()
-            })
-            .chain([Ipv4Addr::new(198, 18, 0, 3)])
-            .collect();
-
-        assert_eq!(allocated.len(), 4);
-        assert!(allocated.iter().all(|ip| !TUN_RESERVED.contains(ip)));
-        assert!(allocated.iter().all(|ip| mapper.is_allocatable(*ip)));
-        assert_eq!(mapper.allocate_ipv4("one-too-many.example"), None);
     }
 
     #[test]
@@ -669,51 +545,22 @@ mod tests {
             Ipv4Addr::new(192, 0, 2, 1),
             Ipv4Addr::new(192, 0, 2, 3),
         ];
-        let mut mapper = mapper(&config, &reserved);
+        let mut mapper =
+            FakeIpMapper::from_config_with_start(&config, DnsQueryStrategy::UseIp, &reserved, 0)
+                .unwrap();
 
-        let allocated: BTreeSet<_> = ["a.example", "b.example", "c.example", "d.example"]
-            .into_iter()
-            .map(|domain| mapper.allocate_ipv4(domain).unwrap())
-            .collect();
+        let first = mapper.allocate_ipv4("first.example").unwrap();
+        let second = mapper.allocate_ipv4("second.example").unwrap();
 
-        assert_eq!(
-            allocated.into_iter().collect::<Vec<_>>(),
-            [
-                Ipv4Addr::new(192, 0, 2, 2),
-                Ipv4Addr::new(192, 0, 2, 4),
-                Ipv4Addr::new(192, 0, 2, 5),
-                Ipv4Addr::new(192, 0, 2, 6),
-            ]
-        );
-    }
-
-    #[test]
-    fn a_full_probe_window_falls_back_to_any_free_address_below_capacity() {
-        let config = config(Ipv4Addr::new(192, 0, 2, 0), 24, 254, 60);
-        let mut mapper = mapper(&config, &[]);
-        let start = Instant::now();
-
-        let mut farthest = 0;
-        let mut allocated = BTreeSet::new();
-        for index in 0..254 {
-            let name = format!("n{index}.example");
-            let ip = mapper.allocate_ipv4_at(&name, start).unwrap();
-            let distance = (position_of(&mapper, ip) + mapper.allocation_span
-                - home_position(&mapper, &name))
-                % mapper.allocation_span;
-            farthest = farthest.max(distance);
-            allocated.insert(ip);
-        }
-
-        assert_eq!(allocated.len(), 254);
-        assert!(farthest >= PROBE_WINDOW, "{farthest}");
-        assert_eq!(mapper.allocate_ipv4_at("n254.example", start), None);
+        assert_eq!(first, Ipv4Addr::new(192, 0, 2, 2));
+        assert_eq!(second, Ipv4Addr::new(192, 0, 2, 4));
     }
 
     #[test]
     fn capacity_fails_closed_until_the_earliest_advertised_lease_expires() {
         let config = config(Ipv4Addr::new(198, 18, 0, 0), 15, 2, 120);
-        let mut mapper = mapper(&config, &[]);
+        let mut mapper =
+            FakeIpMapper::from_config_with_start(&config, DnsQueryStrategy::UseIp, &[], 0).unwrap();
         let start = Instant::now();
         let first = mapper.allocate_ipv4_at("first.example", start).unwrap();
         let second = mapper
@@ -736,24 +583,12 @@ mod tests {
             .allocate_ipv4_at("third.example", start + Duration::from_secs(121))
             .unwrap();
 
-        // The earliest lease, second's, made room; third still takes its own
-        // home address rather than second's.
-        assert_eq!(mapper.mapping_count(), 2);
+        assert_eq!(first, Ipv4Addr::new(198, 18, 0, 1));
+        assert_eq!(second, Ipv4Addr::new(198, 18, 0, 2));
+        assert_eq!(third, second);
         assert_eq!(
-            third,
-            FakeIpMapper::from_config(&config, DnsQueryStrategy::UseIp, &[])
-                .unwrap()
-                .allocate_ipv4("third.example")
-                .unwrap()
-        );
-        assert_eq!(
-            mapper.lookup_ipv4(third),
+            mapper.lookup_ipv4(second),
             FakeIpLookup::Mapped(Arc::from("third.example"))
-        );
-        assert_eq!(mapper.lookup_ipv4(second), FakeIpLookup::InPoolUnmapped);
-        assert_eq!(
-            mapper.lookup_ipv4(first),
-            FakeIpLookup::Mapped(Arc::from("first.example"))
         );
         assert_eq!(
             mapper.lookup_ipv4(Ipv4Addr::new(203, 0, 113, 1)),
@@ -762,42 +597,9 @@ mod tests {
     }
 
     #[test]
-    fn a_full_pool_reuses_the_address_whose_lease_ran_out_first() {
-        // Allocatable .1 to .6, all of them mappings.
-        let config = config(Ipv4Addr::new(192, 0, 2, 0), 29, 6, 60);
-        let mut mapper = mapper(&config, &[]);
-        let start = Instant::now();
-        let ips: Vec<_> = (0..6_u64)
-            .map(|index| {
-                mapper
-                    .allocate_ipv4_at(
-                        &format!("n{index}.example"),
-                        start + Duration::from_secs(index),
-                    )
-                    .unwrap()
-            })
-            .collect();
-
-        assert_eq!(
-            mapper.allocate_ipv4_at("late.example", start + Duration::from_secs(59)),
-            None
-        );
-        let late = mapper
-            .allocate_ipv4_at("late.example", start + Duration::from_secs(63))
-            .unwrap();
-
-        assert_eq!(late, ips[0]);
-        assert_eq!(mapper.mapping_count(), 6);
-        assert_eq!(
-            mapper.lookup_ipv4(ips[1]),
-            FakeIpLookup::Mapped(Arc::from("n1.example"))
-        );
-    }
-
-    #[test]
     fn full_single_address_pool_never_reassigns_before_refreshed_ttl() {
         let config = config(Ipv4Addr::new(198, 19, 0, 1), 32, 1, 60);
-        let mut mapper = mapper(&config, &[]);
+        let mut mapper = FakeIpMapper::from_config(&config, DnsQueryStrategy::UseIp, &[]).unwrap();
         let start = Instant::now();
         let first_ip = mapper.allocate_ipv4_at("first.example", start).unwrap();
 
@@ -827,7 +629,12 @@ mod tests {
     #[test]
     fn lookup_distinguishes_live_mapping_from_unmapped_pool_addresses() {
         let config = config(Ipv4Addr::new(198, 18, 0, 0), 30, 1, 60);
-        let mut mapper = mapper(&config, &[Ipv4Addr::new(198, 18, 0, 1)]);
+        let mut mapper = FakeIpMapper::from_config(
+            &config,
+            DnsQueryStrategy::UseIp,
+            &[Ipv4Addr::new(198, 18, 0, 1)],
+        )
+        .unwrap();
         let mapped = mapper.allocate_ipv4("mapped.example").unwrap();
 
         assert_eq!(
@@ -849,118 +656,165 @@ mod tests {
     }
 
     #[test]
-    fn a_restarted_mapper_adopts_the_mappings_and_extends_running_leases() {
-        static STORE: FakeIpCarryOverStore = FakeIpCarryOverStore::new();
-        let config = config(Ipv4Addr::new(198, 18, 0, 0), 15, 3, 60);
+    fn allocation_start_differs_between_mappers_so_restarts_do_not_reuse_addresses() {
+        let config = config(Ipv4Addr::new(198, 18, 0, 0), 15, 32_768, 60);
+        let reserved = [Ipv4Addr::new(198, 18, 0, 1), Ipv4Addr::new(198, 18, 0, 2)];
+        let firsts: Vec<_> = (0..8)
+            .map(|_| {
+                FakeIpMapper::from_config(&config, DnsQueryStrategy::UseIp, &reserved)
+                    .unwrap()
+                    .allocate_ipv4("example.com")
+                    .unwrap()
+            })
+            .collect();
+
+        assert!(firsts.iter().any(|ip| *ip != firsts[0]), "{firsts:?}");
+    }
+
+    #[test]
+    fn seeded_start_allocates_sequentially_and_wraps_past_reservations() {
+        let config = config(Ipv4Addr::new(192, 0, 2, 0), 29, 4, 60);
+        let reserved = [Ipv4Addr::new(192, 0, 2, 1), Ipv4Addr::new(192, 0, 2, 3)];
+        // Allocatable offsets are .1..=.6; start 4 points at .5.
+        let mut mapper =
+            FakeIpMapper::from_config_with_start(&config, DnsQueryStrategy::UseIp, &reserved, 4)
+                .unwrap();
+
+        let allocated: Vec<_> = ["a.example", "b.example", "c.example", "d.example"]
+            .into_iter()
+            .map(|domain| mapper.allocate_ipv4(domain).unwrap())
+            .collect();
+
+        assert_eq!(
+            allocated,
+            [
+                Ipv4Addr::new(192, 0, 2, 5),
+                Ipv4Addr::new(192, 0, 2, 6),
+                Ipv4Addr::new(192, 0, 2, 2),
+                Ipv4Addr::new(192, 0, 2, 4),
+            ]
+        );
+    }
+
+    #[test]
+    fn restore_adopts_a_stopped_mappers_mappings_and_extends_only_running_leases() {
+        let config = config(Ipv4Addr::new(198, 18, 0, 0), 15, 2, 60);
         let start = Instant::now();
-        let mut stopped = mapper(&config, &TUN_RESERVED);
-        let first = stopped.allocate_ipv4_at("first.example", start).unwrap();
-        let second = stopped.allocate_ipv4_at("second.example", start).unwrap();
-        STORE.save(&stopped);
-        drop(stopped);
+        let mut stopped = FakeIpMapper::from_config(&config, DnsQueryStrategy::UseIp, &[]).unwrap();
+        let expired = stopped.allocate_ipv4_at("expired.example", start).unwrap();
+        let running = stopped
+            .allocate_ipv4_at("running.example", start + Duration::from_secs(40))
+            .unwrap();
 
-        let restart = start + Duration::from_secs(30);
-        let mut started = mapper(&config, &TUN_RESERVED);
-        assert_eq!(STORE.restore(&mut started, restart), 2);
-        assert_eq!(STORE.restore(&mut started, restart), 0, "adopted once");
+        let mut started = FakeIpMapper::from_config(&config, DnsQueryStrategy::UseIp, &[]).unwrap();
+        let now = start + Duration::from_secs(70);
+        assert_eq!(started.restore(stopped.snapshot(), now), 2);
 
         assert_eq!(
-            started.lookup_ipv4(second),
-            FakeIpLookup::Mapped(Arc::from("second.example"))
+            started.lookup_ipv4(expired),
+            FakeIpLookup::Mapped(Arc::from("expired.example"))
         );
-        let third = started.allocate_ipv4_at("third.example", restart).unwrap();
-        assert!(![first, second].contains(&third));
         assert_eq!(
-            started.allocate_ipv4_at("first.example", restart),
-            Some(first)
+            started.lookup_ipv4(running),
+            FakeIpLookup::Mapped(Arc::from("running.example"))
         );
-        // second's lease ran to start + 60 and now runs a full TTL from the
-        // restart, so the full pool stays closed until then.
+        // The expired lease makes room at once; the running one was extended
+        // from its own deadline at 100 s to a full TTL from the restore.
         assert_eq!(
-            started.allocate_ipv4_at("fourth.example", restart + Duration::from_secs(59)),
+            started.allocate_ipv4_at("new.example", start + Duration::from_secs(75)),
+            Some(expired)
+        );
+        assert_eq!(
+            started.allocate_ipv4_at("newer.example", start + Duration::from_secs(129)),
             None
         );
-        assert!(started
-            .allocate_ipv4_at("fourth.example", restart + Duration::from_secs(60))
-            .is_some());
-    }
-
-    #[test]
-    fn carried_over_mappings_whose_lease_ran_out_stay_mapped_but_reusable() {
-        static STORE: FakeIpCarryOverStore = FakeIpCarryOverStore::new();
-        let config = config(Ipv4Addr::new(198, 19, 0, 1), 32, 1, 60);
-        let start = Instant::now();
-        let mut stopped = mapper(&config, &[]);
-        let ip = stopped.allocate_ipv4_at("old.example", start).unwrap();
-        STORE.save(&stopped);
-
-        let restart = start + Duration::from_secs(120);
-        let mut started = mapper(&config, &[]);
-        assert_eq!(STORE.restore(&mut started, restart), 1);
-
         assert_eq!(
-            started.lookup_ipv4(ip),
-            FakeIpLookup::Mapped(Arc::from("old.example"))
-        );
-        assert_eq!(started.allocate_ipv4_at("new.example", restart), Some(ip));
-    }
-
-    #[test]
-    fn another_pool_leaves_the_carried_over_mappings_held() {
-        static STORE: FakeIpCarryOverStore = FakeIpCarryOverStore::new();
-        let saved = config(Ipv4Addr::new(198, 18, 0, 0), 15, 32_768, 60);
-        let mut stopped = mapper(&saved, &TUN_RESERVED);
-        let ip = stopped.allocate_ipv4("kept.example").unwrap();
-        STORE.save(&stopped);
-        let now = Instant::now();
-
-        let mut other_size = mapper(
-            &config(Ipv4Addr::new(198, 18, 0, 0), 15, 1_024, 60),
-            &TUN_RESERVED,
-        );
-        let mut other_network = mapper(
-            &config(Ipv4Addr::new(198, 19, 0, 0), 16, 32_768, 60),
-            &TUN_RESERVED,
-        );
-        assert_eq!(STORE.restore(&mut other_size, now), 0);
-        assert_eq!(STORE.restore(&mut other_network, now), 0);
-        STORE.save(&mapper(&saved, &TUN_RESERVED));
-
-        let mut same = mapper(&saved, &TUN_RESERVED);
-        assert_eq!(STORE.restore(&mut same, now), 1);
-        assert_eq!(
-            same.lookup_ipv4(ip),
-            FakeIpLookup::Mapped(Arc::from("kept.example"))
+            started.allocate_ipv4_at("newer.example", start + Duration::from_secs(130)),
+            Some(running)
         );
     }
 
     #[test]
-    fn a_carry_over_leaves_its_mappings_when_dropped() {
-        static STORE: FakeIpCarryOverStore = FakeIpCarryOverStore::new();
-        let config = config(Ipv4Addr::new(198, 18, 0, 0), 15, 32_768, 60);
-        let first = FakeIpCarryOver::adopt_from(
-            &STORE,
-            Arc::new(Mutex::new(mapper(&config, &TUN_RESERVED))),
-        );
-        assert_eq!(first.adopted(), 0);
-        let ip = first
-            .mapper()
-            .lock()
-            .unwrap()
-            .allocate_ipv4("carried.example")
-            .unwrap();
-        drop(first);
+    fn restore_skips_another_pool_and_addresses_the_new_mapper_reserves() {
+        let config_a = config(Ipv4Addr::new(192, 0, 2, 0), 29, 4, 60);
+        let mut stopped =
+            FakeIpMapper::from_config_with_start(&config_a, DnsQueryStrategy::UseIp, &[], 0)
+                .unwrap();
+        let first = stopped.allocate_ipv4("first.example").unwrap();
+        let second = stopped.allocate_ipv4("second.example").unwrap();
+        assert_eq!(first, Ipv4Addr::new(192, 0, 2, 1));
 
-        let second = FakeIpCarryOver::adopt_from(
-            &STORE,
-            Arc::new(Mutex::new(mapper(&config, &TUN_RESERVED))),
-        );
+        let other_size = config(Ipv4Addr::new(192, 0, 2, 0), 29, 3, 60);
+        let mut other =
+            FakeIpMapper::from_config(&other_size, DnsQueryStrategy::UseIp, &[]).unwrap();
+        assert_eq!(other.restore(stopped.snapshot(), Instant::now()), 0);
+        assert_eq!(other.mapping_count(), 0);
 
-        assert_eq!(second.adopted(), 1);
+        let mut reserving =
+            FakeIpMapper::from_config(&config_a, DnsQueryStrategy::UseIp, &[first]).unwrap();
+        assert_eq!(reserving.restore(stopped.snapshot(), Instant::now()), 1);
+        assert_eq!(reserving.lookup_ipv4(first), FakeIpLookup::InPoolUnmapped);
         assert_eq!(
-            second.mapper().lock().unwrap().lookup_ipv4(ip),
-            FakeIpLookup::Mapped(Arc::from("carried.example"))
+            reserving.domain_for_ipv4(second).as_deref(),
+            Some("second.example")
         );
+        assert_ne!(reserving.allocate_ipv4("first.example"), Some(first));
+    }
+
+    #[test]
+    fn a_store_hands_its_mappings_to_the_next_mapper_of_the_pool_and_drops_them_otherwise() {
+        let config_a = config(Ipv4Addr::new(198, 18, 0, 0), 15, 64, 60);
+        let config_b = config(Ipv4Addr::new(198, 20, 0, 0), 15, 64, 60);
+        let mapper = |config: &DnsFakeIpConfig| {
+            Some(Arc::new(Mutex::new(
+                FakeIpMapper::from_config(config, DnsQueryStrategy::UseIp, &[]).unwrap(),
+            )))
+        };
+        let store = FakeIpStore::new();
+        let leave = |config: &DnsFakeIpConfig| {
+            let carry_over = FakeIpCarryOver::adopt(&store, mapper(config)).unwrap();
+            let ip = carry_over
+                .mapper()
+                .lock()
+                .unwrap()
+                .allocate_ipv4("carried.example")
+                .unwrap();
+            drop(carry_over);
+            ip
+        };
+
+        let ip = leave(&config_a);
+        assert_eq!(store.held(), 1);
+        let carry_over = FakeIpCarryOver::adopt(&store, mapper(&config_a)).unwrap();
+        assert_eq!(carry_over.adopted(), 1);
+        assert_eq!(store.held(), 0);
+        assert_eq!(
+            carry_over
+                .mapper()
+                .lock()
+                .unwrap()
+                .domain_for_ipv4(ip)
+                .as_deref(),
+            Some("carried.example")
+        );
+        drop(carry_over);
+        assert_eq!(store.held(), 1);
+
+        // A core without fake IP, or with another pool, drops them.
+        assert!(FakeIpCarryOver::adopt(&store, None).is_none());
+        assert_eq!(store.held(), 0);
+        leave(&config_a);
+        let carry_over = FakeIpCarryOver::adopt(&store, mapper(&config_b)).unwrap();
+        assert_eq!(carry_over.adopted(), 0);
+        assert_eq!(store.held(), 0);
+        // Its mapper made no mapping, so stopping it leaves nothing.
+        drop(carry_over);
+        assert_eq!(store.held(), 0);
+
+        leave(&config_a);
+        store.clear();
+        assert_eq!(store.held(), 0);
+        assert_eq!(FakeIpStore::new().held(), 0);
     }
 
     #[test]
