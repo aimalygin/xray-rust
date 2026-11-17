@@ -1,13 +1,18 @@
 //! RAW's `http` header obfuscation on the client, against the bytes Xray-core's
 //! `transport/internet/headers/http` server reads and writes.
 
+use std::collections::VecDeque;
+use std::io;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpListener;
 use xray_routing::{Network, Target, TargetAddr};
 use xray_transport::stream::{RawHttpHeaderConfig, RawHttpHeaderStream, TransportLayer};
-use xray_transport::{ConnectorConfig, TransportDialer};
+use xray_transport::{ConnectorConfig, TransportDialer, TransportStream};
 
 fn config() -> Arc<RawHttpHeaderConfig> {
     Arc::new(RawHttpHeaderConfig {
@@ -26,8 +31,87 @@ const REQUEST_HEAD: &[u8] =
 const RESPONSE_HEAD: &[u8] =
     b"HTTP/1.1 200 OK\r\nContent-Type: video/mpeg\r\nTransfer-Encoding: chunked\r\n\r\n";
 
+/// A carrier that returns each scripted piece from a read of its own, as a
+/// socket returns segments, then end of stream, and takes every write.
+struct Pieces {
+    pieces: VecDeque<Vec<u8>>,
+    reads: Arc<AtomicUsize>,
+}
+
+impl Pieces {
+    fn new(pieces: &[&[u8]]) -> (Self, Arc<AtomicUsize>) {
+        let reads = Arc::new(AtomicUsize::new(0));
+        let carrier = Self {
+            pieces: pieces.iter().map(|piece| piece.to_vec()).collect(),
+            reads: Arc::clone(&reads),
+        };
+        (carrier, reads)
+    }
+}
+
+impl AsyncRead for Pieces {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        self.reads.fetch_add(1, Ordering::Relaxed);
+        if let Some(piece) = self.pieces.pop_front() {
+            assert!(piece.len() <= output.remaining(), "a piece fits one read");
+            output.put_slice(&piece);
+        }
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl AsyncWrite for Pieces {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Poll::Ready(Ok(input.len()))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl TransportStream for Pieces {
+    fn poll_read_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        AsyncRead::poll_read(self, cx, output)
+    }
+
+    fn poll_write_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        AsyncWrite::poll_write(self, cx, input)
+    }
+}
+
+/// What the client reads when the server's bytes arrive in `pieces`, one
+/// read each, and how many reads of the carrier that took.
+async fn read_through(pieces: &[&[u8]]) -> (Vec<u8>, usize) {
+    let (carrier, reads) = Pieces::new(pieces);
+    let mut stream = RawHttpHeaderStream::client(Box::new(carrier), &config());
+    let mut received = Vec::new();
+    stream.read_to_end(&mut received).await.unwrap();
+    (received, reads.load(Ordering::Relaxed))
+}
+
 #[tokio::test]
-async fn the_first_write_follows_a_request_head_and_the_response_head_is_dropped() {
+async fn the_first_write_follows_a_request_head() {
     let (client, mut server) = tokio::io::duplex(1 << 16);
     let mut stream = RawHttpHeaderStream::client(Box::new(client), &config());
 
@@ -38,23 +122,38 @@ async fn the_first_write_follows_a_request_head_and_the_response_head_is_dropped
     server.read_exact(&mut sent).await.unwrap();
     assert_eq!(&sent[..REQUEST_HEAD.len()], REQUEST_HEAD);
     assert_eq!(&sent[REQUEST_HEAD.len()..], b"firstsecond");
+}
 
-    // The head arrives in pieces, split inside its end, and the first bytes
-    // after it come with its last piece.
-    server.write_all(&RESPONSE_HEAD[..20]).await.unwrap();
-    server
-        .write_all(&RESPONSE_HEAD[20..RESPONSE_HEAD.len() - 2])
-        .await
-        .unwrap();
-    let mut tail = RESPONSE_HEAD[RESPONSE_HEAD.len() - 2..].to_vec();
-    tail.extend_from_slice(b"reply");
-    server.write_all(&tail).await.unwrap();
-    server.write_all(b" more").await.unwrap();
-    drop(server);
+#[tokio::test]
+async fn a_response_head_split_across_reads_is_dropped() {
+    // Split at every byte, the first bytes after the head coming with its
+    // last piece: the end is found across reads wherever the cut falls,
+    // inside the blank line included.
+    for cut in 1..RESPONSE_HEAD.len() {
+        let mut tail = RESPONSE_HEAD[cut..].to_vec();
+        tail.extend_from_slice(b"reply");
+        let (received, reads) = read_through(&[&RESPONSE_HEAD[..cut], &tail, b" more"]).await;
+        assert_eq!(received, b"reply more", "cut at {cut}");
+        assert_eq!(reads, 4, "cut at {cut}: one read per piece, then the end");
+    }
 
-    let mut received = Vec::new();
-    stream.read_to_end(&mut received).await.unwrap();
-    assert_eq!(received, b"reply more");
+    // One byte per read, and the head ending exactly at a read's end.
+    let mut pieces: Vec<&[u8]> = RESPONSE_HEAD.chunks(1).collect();
+    pieces.push(b"reply");
+    let (received, reads) = read_through(&pieces).await;
+    assert_eq!(received, b"reply");
+    assert_eq!(reads, RESPONSE_HEAD.len() + 2);
+
+    // The blank line's halves in reads of their own.
+    let end = RESPONSE_HEAD.len() - 4;
+    let (received, _) = read_through(&[
+        &RESPONSE_HEAD[..end + 1],
+        &RESPONSE_HEAD[end + 1..end + 3],
+        &RESPONSE_HEAD[end + 3..],
+        b"reply",
+    ])
+    .await;
+    assert_eq!(received, b"reply");
 }
 
 #[tokio::test]
