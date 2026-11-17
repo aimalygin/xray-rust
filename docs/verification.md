@@ -125,7 +125,8 @@ ServerHello capture. Further targets read what a server, a resolver or
 anyone on the path sends: `dns_response` the resolver's A/AAAA answers (raw,
 and forged onto the query's ID and question) and the system resolver's
 SRV/TXT answers; `sniff_payload` the HTTP, TLS ClientHello and BitTorrent
-sniffers on growing prefixes and the uTP sniffer; `kcp_segments` mKCP
+sniffers on growing prefixes of the 8 KiB a TCP flow's reader collects, at
+most 256 of them, and the uTP sniffer; `kcp_segments` mKCP
 datagrams through each `mkcp-legacy`, Salamander, `header-custom` and sudoku
 mask stack into the connection engine; `masque_capsules` the CONNECT-IP
 capsule stream and the packets it carries; `finalmask_udp` Salamander with
