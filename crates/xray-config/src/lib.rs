@@ -13,8 +13,7 @@ pub use xray_vless_encryption::Encryption as VlessEncryption;
 
 pub use diagnostic::{Diagnostic, DiagnosticSeverity};
 pub use geodata_cache::{
-    geodata_cache_stats, release_unused_geodata, trim_geodata_cache, GeodataCacheStats,
-    RETAINED_UNUSED_GEODATA_BYTES,
+    geodata_cache_stats, trim_geodata_cache, GeodataCacheStats, RETAINED_UNUSED_GEODATA_BYTES,
 };
 pub use model::{
     compile_dns_domain_matchers, compile_domain_matchers, deciding_final_rule, go_lowercase,

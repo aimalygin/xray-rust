@@ -4663,18 +4663,28 @@ before protobuf decoding. Every expansion is charged against the shared
 per-configuration IP and total matcher budgets, including repeated references
 to a cached category in different rules or DNS selectors.
 
-Compiled categories are cached for the whole process and shared by
-reference: a configuration that names a category another one already
-compiled, such as the next core a host starts after a server switch, reuses
-it without reading the file entry again. The cache key is the file's identity
-(path, device and inode, size, modification and status-change times), the
-code, the attribute filter and, when a name ends with a dot, the name mode,
-so a geodata file the host rewrites or replaces is compiled again. Categories
-no configuration references are kept, most recently used first, up to 4 MiB
-of estimated heap, and released beyond it when a handle is freed or a
-category is compiled; `xray_config::release_unused_geodata` releases all of
-them. The matcher budgets above are charged on every reference, cached or
-not.
+Compiled categories are cached for the whole process: a configuration that
+names a category another one already compiled, such as the next core a host
+starts after a server switch, reuses it without reading the file entry again.
+The cache key is the file's identity (path, device and inode, size,
+modification and status-change times), the code, the attribute filter and,
+when a name ends with a dot, the name mode, so a geodata file the host
+rewrites or replaces is compiled again. A file whose modification or
+status-change time is within two seconds of when the configuration opens it
+is compiled for that configuration only and not cached, because a rewrite in
+place that keeps its size within one timestamp tick would keep its identity.
+Categories no configuration references are kept, most recently used first,
+up to 4 MiB of estimated heap; the C API releases those beyond it after every
+call that loads a configuration, replaces a routing policy or frees a handle.
+The matcher budgets above are charged on every reference, cached or not.
+
+A geosite category is shared by reference with every rule that names it. A
+GeoIP category is shared only by a rule in which it is the only entry of its
+group (the positive entries are one group, the negated GeoIP codes another);
+with other entries beside it, such as `"ip": ["geoip:private", "geoip:ru"]`
+or a code next to a CIDR, the rule merges a copy of its ranges with theirs, as
+before; the cached category is then unused, and kept for the next
+configuration only within the 4 MiB.
 
 This allows large current country sets: for example, Loyalsoldier's
 [202609082347 snapshot](https://github.com/Loyalsoldier/v2ray-rules-dat/releases/tag/202609082347)

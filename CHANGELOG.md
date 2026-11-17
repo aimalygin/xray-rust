@@ -10,16 +10,22 @@ long-term supported release series.
 
 ## Unreleased
 
-- A geosite or geoip category is compiled once per process and shared by
+- A geosite or geoip category is compiled once per process and reused by
   every configuration that names it, so a host that restarts the core with a
   new handle on each server switch no longer decodes and rebuilds the same
   categories each time. The cache key is the file's identity (path, device
   and inode, size, modification and status-change times), the code, the
   attribute filter and, when a name ends with a dot, the name mode: a geodata
-  file the host rewrites or replaces is compiled again. Categories no
-  configuration references are kept up to 4 MiB for the next core and
-  released beyond that when a handle is freed; `xray_config` adds
-  `geodata_cache_stats`, `trim_geodata_cache` and `release_unused_geodata`.
+  file the host rewrites or replaces is compiled again. A file whose
+  timestamps are within two seconds of when it is opened is not cached, as a
+  same-size rewrite within one timestamp tick would keep its identity.
+  Categories no configuration references are kept up to 4 MiB for the next
+  core; loading a configuration, replacing a routing policy and freeing a
+  handle release those beyond that. `xray_config` adds `geodata_cache_stats`
+  and `trim_geodata_cache`. A geosite category is shared by reference with
+  every rule that names it; a GeoIP category only with a rule in which it is
+  the only entry of its group, and a rule that merges it with other entries,
+  as `"ip": ["geoip:private", "geoip:ru"]` does, holds a copy as before.
   Domain matchers also take less memory: the `full:` and `domain:` names of a
   set are packed into one buffer grouped by a keyed hash
   (`xray_routing::DomainPatternSet`) instead of one heap allocation and

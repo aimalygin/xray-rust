@@ -45,9 +45,13 @@ flowchart LR
    and status-change times), its code, attribute filter and name mode, and
    shared by reference with every configuration that names it, so a host that
    restarts the core on each server switch does not decode and rebuild it
-   again. A rewritten or replaced file gets a new identity. Entries no
-   configuration references are released beyond a 4 MiB budget kept for the
-   next core (`xray_config::trim_geodata_cache`, run by `xray_core_free`).
+   again. A rewritten or replaced file gets a new identity; a file whose
+   timestamps are within two seconds of when it is opened is compiled for that
+   configuration only, as a same-size rewrite within one timestamp tick would
+   keep its identity. Entries no configuration references are released beyond
+   a 4 MiB budget kept for the next core (`xray_config::trim_geodata_cache`,
+   run at the end of every FFI call that loads a configuration, replaces a
+   routing policy or frees a handle).
 4. `Core` builds the DNS resolver, immutable outbound graph and shared outbound
    factory, plus the TUN queues, from the immutable config. Listeners bind when
    the core starts.

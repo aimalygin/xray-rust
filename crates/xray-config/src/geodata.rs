@@ -5,6 +5,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::{Component, Path, PathBuf},
     sync::Arc,
+    time::{Duration, SystemTime},
 };
 
 use prost::Message;
@@ -43,6 +44,10 @@ pub(crate) struct GeodataLoader {
     search_dirs: Vec<PathBuf>,
     files: HashMap<String, OpenedGeodataFile>,
     cache: Arc<GeodataCache>,
+    /// Categories of files that changed too recently for `cache`, kept for
+    /// this configuration only so that its repeated references still compile
+    /// once.
+    recent: GeodataCache,
     #[cfg(test)]
     index_builds: usize,
     #[cfg(test)]
@@ -67,6 +72,7 @@ impl GeodataLoader {
             search_dirs,
             files: HashMap::new(),
             cache,
+            recent: GeodataCache::new(usize::MAX, Duration::ZERO),
             #[cfg(test)]
             index_builds: 0,
             #[cfg(test)]
@@ -90,7 +96,7 @@ impl GeodataLoader {
         let code = normalize_code(code);
         let identity = self.opened_file(file_name)?.identity.clone();
         let key = SiteKey::new(identity, &code, attrs, mode);
-        if let Some(patterns) = self.cache.site(&key) {
+        if let Some(patterns) = self.cache.site(&key).or_else(|| self.recent.site(&key)) {
             ensure_domain_matcher_budget(file_name, &code, patterns.source_count(), max_matchers)?;
             return Ok(patterns);
         }
@@ -120,11 +126,11 @@ impl GeodataLoader {
                 source: domain_matcher_set_error(error),
             })?;
         let patterns = Arc::new(patterns);
-        if !self.opened_file(file_name)?.unchanged()? {
+        let Some(cache) = self.cache_for(file_name)? else {
             return Ok(patterns);
-        }
+        };
         let key = if dotted { key } else { key.mode_independent() };
-        Ok(self.cache.insert_site(key, patterns))
+        Ok(cache.insert_site(key, patterns))
     }
 
     /// The domains `file_name:code@attrs` selects, one matcher each, for the
@@ -221,7 +227,7 @@ impl GeodataLoader {
     ) -> Result<GeoIpEntry, GeodataError> {
         let identity = self.opened_file(file_name)?.identity.clone();
         let key = IpKey::new(identity, code);
-        if let Some(geoip) = self.cache.ip(&key) {
+        if let Some(geoip) = self.cache.ip(&key).or_else(|| self.recent.ip(&key)) {
             ensure_ip_matcher_budget(file_name, code, geoip.cidr_count, max_matchers)?;
             return Ok(geoip);
         }
@@ -255,10 +261,23 @@ impl GeodataLoader {
             reverse_match: geoip.reverse_match(),
         };
         drop(body);
-        if !self.opened_file(file_name)?.unchanged()? {
+        let Some(cache) = self.cache_for(file_name)? else {
             return Ok(geoip);
+        };
+        Ok(cache.insert_ip(key, geoip))
+    }
+
+    /// Where a category just read from `file_name` is cached: the process
+    /// cache when the file had settled when it was opened, this loader's own
+    /// otherwise, and nowhere when the file changed since it was opened.
+    fn cache_for(&mut self, file_name: &str) -> Result<Option<&GeodataCache>, GeodataError> {
+        self.opened_file(file_name)?;
+        let file = &self.files[file_name];
+        if !file.unchanged()? {
+            return Ok(None);
         }
-        Ok(self.cache.insert_ip(key, geoip))
+        let settled = self.cache.accepts(&file.identity, file.identified_at);
+        Ok(Some(if settled { &self.cache } else { &self.recent }))
     }
 
     /// Checks that `file_name` holds `code`, as Xray-core's `checkFile` does
@@ -537,11 +556,14 @@ struct OpenedGeodataFile {
     file: File,
     path: PathBuf,
     identity: FileIdentity,
+    /// The time just before `identity` was taken.
+    identified_at: SystemTime,
     entries: Option<HashMap<String, GeodataEntryLocation>>,
 }
 
 impl OpenedGeodataFile {
     fn new(file: File, path: PathBuf) -> Result<Self, GeodataError> {
+        let identified_at = SystemTime::now();
         let metadata = file.metadata().map_err(|source| GeodataError::Read {
             path: path.clone(),
             source,
@@ -551,6 +573,7 @@ impl OpenedGeodataFile {
             file,
             path,
             identity,
+            identified_at,
             entries: None,
         })
     }
@@ -618,7 +641,13 @@ fn index_geodata_file(
             ),
         });
     }
-    let file = file.try_clone().map_err(|source| GeodataError::Read {
+    let mut file = file.try_clone().map_err(|source| GeodataError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    // The clone shares the descriptor's offset, which an entry read or an
+    // index that failed part-way left elsewhere.
+    file.rewind().map_err(|source| GeodataError::Read {
         path: path.to_path_buf(),
         source,
     })?;
@@ -1435,7 +1464,7 @@ mod tests {
         io::{self, BufReader, Cursor, Read, Seek, SeekFrom},
         path::PathBuf,
         sync::Arc,
-        time::{Instant, SystemTime, UNIX_EPOCH},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
 
     use prost::Message;
@@ -1703,7 +1732,7 @@ mod tests {
     }
 
     fn private_cache() -> Arc<GeodataCache> {
-        Arc::new(GeodataCache::new(usize::MAX))
+        Arc::new(GeodataCache::new(usize::MAX, Duration::ZERO))
     }
 
     fn suffix_domain(value: &str, attrs: &[&str]) -> GeoDomain {
@@ -2163,6 +2192,98 @@ mod tests {
             assert!(patterns.matches(&format!("{}.example", code.to_ascii_lowercase())));
         }
         assert_eq!(loader.index_builds, 1);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The parser reports a geodata error and goes on, so a file whose index
+    /// failed part-way is indexed again for its next reference. That index
+    /// starts from the beginning, not where the failed one left the shared
+    /// descriptor's offset.
+    #[test]
+    fn an_index_that_failed_part_way_fails_alike_when_built_again() {
+        let root = unique_temp_dir("index-retry");
+        let body = GeoSite {
+            code: "FIRST".to_owned(),
+            domain: vec![suffix_domain("first.example", &[])],
+        }
+        .encode_to_vec();
+        let mut bytes = vec![0x0a];
+        encode_varint(body.len() as u64, &mut bytes);
+        bytes.extend_from_slice(&body);
+        // A second entry whose length runs past the end of the file.
+        bytes.extend_from_slice(&[0x0a, 0x7f, 0x0a]);
+        fs::write(root.join("geosite.dat"), bytes).unwrap();
+        let mut loader = GeodataLoader::with_cache(vec![root.clone()], private_cache());
+
+        for _ in 0..2 {
+            let error = loader
+                .load_site_patterns("geosite.dat", "FIRST", &[], DomainNameMode::Routing, 10)
+                .unwrap_err();
+            assert!(
+                matches!(&error, GeodataError::InvalidFile { message, .. } if message.contains("beyond the end")),
+                "{error}"
+            );
+        }
+        assert!(matches!(
+            loader.check_code("geosite.dat", "FIRST"),
+            Err(GeodataError::InvalidFile { .. })
+        ));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A same-size rewrite within one timestamp tick would keep the file's
+    /// identity, so a file that changed just before it was opened is
+    /// compiled for its configuration but not cached for the process.
+    #[test]
+    fn a_recently_changed_file_is_cached_for_its_configuration_only() {
+        let root = unique_temp_dir("recent-file");
+        let path = root.join("geosite.dat");
+        write_sites(&path, &[three_domain_site()]);
+        write_geoips(
+            &root.join("geoip.dat"),
+            &[GeoIp {
+                code: "TEST".to_owned(),
+                cidr: vec![v4_cidr(192, 0, 2, 24)],
+                reverse_match: false,
+            }],
+        );
+        // Every file written by this test changed within the hour.
+        let cache = Arc::new(GeodataCache::new(usize::MAX, Duration::from_secs(3600)));
+        let mut loader = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
+
+        let first = loader
+            .load_site_patterns("geosite.dat", "TEST", &[], DomainNameMode::Routing, 10)
+            .unwrap();
+        let second = loader
+            .load_site_patterns("geosite.dat", "TEST", &[], DomainNameMode::Dns, 10)
+            .unwrap();
+        assert!(Arc::ptr_eq(&first, &second));
+        for _ in 0..2 {
+            loader
+                .load_ip_matchers("geoip.dat", "TEST", false, 10, &mut IpMatcherSet::builder())
+                .unwrap();
+        }
+        assert_eq!((loader.site_decodes, loader.ip_decodes), (1, 1));
+        assert_eq!(cache.stats().entries, 0);
+
+        // Setting the modification time back does not settle the file: the
+        // status-change time records the write.
+        #[cfg(unix)]
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(7200))
+            .unwrap();
+        let mut next = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
+        let again = next
+            .load_site_patterns("geosite.dat", "TEST", &[], DomainNameMode::Routing, 10)
+            .unwrap();
+        assert!(!Arc::ptr_eq(&first, &again));
+        assert_eq!(next.site_decodes, 1);
+        assert_eq!(cache.stats().entries, 0);
 
         fs::remove_dir_all(root).unwrap();
     }
