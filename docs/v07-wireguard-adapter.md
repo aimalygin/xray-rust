@@ -166,13 +166,18 @@ families, the two 32-packet inner queues, one bounded 32-packet IP batch,
 in-flight operations and the handshake backlog have headroom inside 248 data
 reservations. The IP reader drains already available packets into a reused vector
 and notifies newly available capacity once per batch; it never waits to fill a
-batch. Each TCP application bridge has 64 KiB per direction (2 MiB maximum across
-16 admitted flows), separate from the TCP socket buffers below. A decrypted
-packet no longer holds the peer/device locks while waiting for inner delivery.
-TCP uses Reno with 1 MiB send and receive backing buffers per admitted flow
-(32 MiB maximum across the existing 16 TCP slots). These are storage capacity
-bounds, separate from sampled process RSS. New flows start with a 64 KiB receive
-advertisement. The adapter divides a 1 MiB receive allowance among bulk-active
+batch. Each TCP application bridge has 64 KiB per direction, separate from the
+TCP socket buffers below. A decrypted packet no longer holds the peer/device
+locks while waiting for inner delivery. TCP uses Reno with send and receive
+backing buffers per admitted flow. The runtime profile sets how many flows are
+admitted and how large their buffers are
+([flow limits](config-compatibility.md#wireguard-flow-limits)): 32 flows of
+256 KiB each way (16 MiB) on `LowMemory`, 64 of 256 KiB (32 MiB, and 8 MiB of
+bridges) on the phone profiles, 128 of 1 MiB (256 MiB) on the desktop ones.
+Flows past the limit wait for a place in a bounded queue instead of being
+refused; the adapter admitted 16 flows of 1 MiB through 0.10.0. These are
+storage capacity bounds, separate from sampled process RSS. New flows start
+with a 64 KiB receive advertisement. The adapter divides a 1 MiB receive allowance among bulk-active
 flows and a 1 MiB transmit allowance among flows with queued data. Idle open
 connections do not divide a transferring flow's allowance. Newly active flows
 receive bounded initial credit; a one-second receive activity grace interval

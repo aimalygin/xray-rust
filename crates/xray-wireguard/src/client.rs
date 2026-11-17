@@ -1,5 +1,5 @@
-use crate::Config;
 use crate::{io as transport, stack};
+use crate::{Config, FlowLimits};
 use bytes::Bytes;
 use std::{
     fmt, io,
@@ -18,7 +18,6 @@ use tokio::{
 };
 use xray_transport::{SocketProtector, TransportStream};
 
-pub(crate) const TCP_LIMIT: usize = 16;
 // Match the normal mobile TUN UDP budget. A TUN cannot observe a caller closing
 // a UDP socket, so one-shot requests retain slots until the 60-second idle
 // timeout. Sixteen slots caused ordinary source-port churn to reject new flows.
@@ -30,6 +29,9 @@ pub(crate) const IP_PACKET_QUEUE: usize = 32;
 pub(crate) const COMMAND_QUEUE: usize = 32;
 pub(crate) const STREAM_BUFFER: usize = 64 * 1024;
 pub(crate) const OPEN_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long a TCP flow waits for a place when every one is taken: as long as
+/// its open may take once it has one.
+pub(crate) const TCP_SLOT_WAIT: Duration = OPEN_TIMEOUT;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -37,6 +39,8 @@ pub enum Error {
     Configuration,
     #[error("WireGuard client is closed")]
     Closed,
+    /// No flow slot: every UDP one is taken, or every TCP one is and the
+    /// queue for them is full or was waited in for the whole open deadline.
     #[error("WireGuard flow budget exhausted")]
     Busy,
     #[error("WireGuard destination is outside allowed IPs or has no local address")]
@@ -107,7 +111,12 @@ pub(crate) struct Flows {
     pub(crate) commands: mpsc::Sender<Command>,
     pub(crate) stop: Stop,
     pub(crate) wake: Arc<Notify>,
+    /// Places for open TCP flows. Tokio hands a released place to the
+    /// longest waiter, and an abandoned wait leaves the queue.
     pub(crate) tcp: Arc<Semaphore>,
+    /// Places in the queue for `tcp`, its hard bound.
+    pub(crate) tcp_waiting: Arc<Semaphore>,
+    pub(crate) tcp_waiting_limit: usize,
     pub(crate) udp: Arc<Semaphore>,
     pub(crate) next: AtomicU64,
 }
@@ -154,6 +163,16 @@ impl Client {
         masks: Option<Arc<xray_transport::hysteria::HysteriaCarrierConfig>>,
         protector: Option<Arc<dyn SocketProtector>>,
     ) -> Result<Self, Error> {
+        Self::start_with_limits(config, masks, FlowLimits::default(), protector).await
+    }
+
+    /// [`Self::start_with_masks`] with the flow limits of a runtime profile.
+    pub async fn start_with_limits(
+        config: Config,
+        masks: Option<Arc<xray_transport::hysteria::HysteriaCarrierConfig>>,
+        limits: FlowLimits,
+        protector: Option<Arc<dyn SocketProtector>>,
+    ) -> Result<Self, Error> {
         config.validate()?;
         if let Some(masks) = &masks {
             if config.peers.len() != 1 || xray_transport::MaskedUdpSocket::validate(masks).is_err()
@@ -171,6 +190,7 @@ impl Client {
         let stack = stack::Stack::new(
             &config.addresses,
             config.mtu,
+            limits.tcp_buffer(),
             to_engine,
             from_engine,
             requests,
@@ -206,19 +226,19 @@ impl Client {
                 peer: config.peers[0].endpoint,
             }),
         };
-        let mut limits = gotatun::device::DeviceLimits::mobile();
+        let mut device_limits = gotatun::device::DeviceLimits::mobile();
         // Keep queue storage bounded while allowing larger batches to cross
         // the TCP/encryption boundary without waking the actor for each 8 KiB.
         // 248 data reservations cover five sixteen-packet engine queues, both
         // 32-packet inner queues, one IP batch, the handshake backlog and I/O.
-        limits.packet_reservations = 256;
-        limits.io_queue_packets = 16;
+        device_limits.packet_reservations = 256;
+        device_limits.io_queue_packets = 16;
         // Let one peer retain all 16 SYNs, while reserving an equal share for
         // every configured peer. An unreachable peer must not consume the
         // entire global handshake backlog and starve healthy peers' first UDP.
-        limits.pending_packets_per_peer = limits.pending_packets / config.peers.len();
+        device_limits.pending_packets_per_peer = device_limits.pending_packets / config.peers.len();
         let mut device = gotatun::device::DeviceBuilder::new()
-            .with_limits(limits)
+            .with_limits(device_limits)
             .with_private_key(x25519_dalek::StaticSecret::from(
                 *config.secret_key.expose_bytes(),
             ))
@@ -274,24 +294,23 @@ impl Client {
         });
         // Drop must no longer cancel after the owner has taken responsibility.
         guard.0 = None;
+        let routes = Routes::AllowedIps(
+            config
+                .peers
+                .iter()
+                .flat_map(|peer| peer.allowed_ips.iter().cloned())
+                .collect(),
+        );
         Ok(Self(Arc::new(Owner {
-            flows: Flows {
-                routes: Routes::AllowedIps(
-                    config
-                        .peers
-                        .iter()
-                        .flat_map(|peer| peer.allowed_ips.iter().cloned())
-                        .collect(),
-                ),
-                addresses: config.addresses,
-                mtu: config.mtu,
+            flows: Flows::new(
+                config.addresses,
+                config.mtu,
+                routes,
                 commands,
                 stop,
                 wake,
-                tcp: Arc::new(Semaphore::new(TCP_LIMIT)),
-                udp: Arc::new(Semaphore::new(UDP_LIMIT)),
-                next: AtomicU64::new(1),
-            },
+                limits,
+            ),
             finished: done,
             rebind,
         })))
@@ -325,17 +344,69 @@ impl Client {
     pub fn available_tcp_slots(&self) -> usize {
         self.0.flows.tcp.available_permits()
     }
+    /// TCP flows waiting for a place.
+    pub fn waiting_tcp_flows(&self) -> usize {
+        self.0.flows.waiting_tcp_flows()
+    }
     pub fn available_udp_slots(&self) -> usize {
         self.0.flows.udp.available_permits()
     }
+    /// Waits for a place, then opens a TCP flow in it.
     pub async fn connect(&self, remote: SocketAddr) -> Result<TcpStream, Error> {
         self.0.flows.connect(remote).await
+    }
+    /// Waits for a TCP place, as [`Self::connect`] does, without opening a
+    /// flow in it yet: a caller that tries several addresses in turn, each
+    /// under its own deadline, waits outside them.
+    pub async fn tcp_slot(&self) -> Result<TcpSlot, Error> {
+        self.0.flows.tcp_slot().await
+    }
+    /// Opens a TCP flow in a place [`Self::tcp_slot`] gave. The place is
+    /// spent: the flow keeps it while open, a failed open gives it back.
+    pub async fn connect_with_slot(
+        &self,
+        slot: TcpSlot,
+        remote: SocketAddr,
+    ) -> Result<TcpStream, Error> {
+        self.0.flows.connect_with_slot(slot, remote).await
     }
     pub async fn open_udp(&self, remote: SocketAddr) -> Result<UdpSession, Error> {
         self.0.flows.open_udp(remote).await
     }
 }
+
+/// A place for one TCP flow, from [`Client::tcp_slot`] or
+/// [`crate::Netstack::tcp_slot`]; dropping it gives it back.
+#[derive(Debug)]
+pub struct TcpSlot(OwnedSemaphorePermit);
+
 impl Flows {
+    pub(crate) fn new(
+        addresses: Vec<IpAddr>,
+        mtu: u16,
+        routes: Routes,
+        commands: mpsc::Sender<Command>,
+        stop: Stop,
+        wake: Arc<Notify>,
+        limits: FlowLimits,
+    ) -> Self {
+        Self {
+            addresses,
+            mtu,
+            routes,
+            commands,
+            stop,
+            wake,
+            tcp: Arc::new(Semaphore::new(limits.tcp())),
+            tcp_waiting: Arc::new(Semaphore::new(limits.tcp_waiting())),
+            tcp_waiting_limit: limits.tcp_waiting(),
+            udp: Arc::new(Semaphore::new(UDP_LIMIT)),
+            next: AtomicU64::new(1),
+        }
+    }
+    pub(crate) fn waiting_tcp_flows(&self) -> usize {
+        self.tcp_waiting_limit - self.tcp_waiting.available_permits()
+    }
     pub(crate) fn is_live(&self) -> bool {
         !self.stop.is_closed()
     }
@@ -357,22 +428,40 @@ impl Flows {
             .find(|ip| ip.is_ipv4() == remote.is_ipv4())
             .ok_or(Error::NoRoute)
     }
-    fn lease(&self, tcp: bool) -> Result<(Arc<Flow>, OwnedSemaphorePermit), Error> {
-        if !self.is_live() {
-            return Err(Error::Closed);
-        }
-        let semaphore = if tcp { &self.tcp } else { &self.udp };
-        let permit = semaphore
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| Error::Busy)?;
-        let flow = Arc::new(Flow {
+    fn flow(&self) -> Arc<Flow> {
+        Arc::new(Flow {
             id: self.next.fetch_add(1, Ordering::Relaxed),
             closed: AtomicBool::new(false),
             reset: AtomicBool::new(false),
             wake: self.wake.clone(),
-        });
-        Ok((flow, permit))
+        })
+    }
+    /// A place for a TCP flow: a free one, or the next one freed, waited for
+    /// behind earlier waiters for up to [`TCP_SLOT_WAIT`]. A full queue, or
+    /// a wait that runs out, is `Busy`.
+    pub(crate) async fn tcp_slot(&self) -> Result<TcpSlot, Error> {
+        if !self.is_live() {
+            return Err(Error::Closed);
+        }
+        // A freed place goes to the longest waiter, never back to the free
+        // count while anyone waits, so this cannot jump the queue.
+        if let Ok(permit) = self.tcp.clone().try_acquire_owned() {
+            return Ok(TcpSlot(permit));
+        }
+        // Held for the wait alone; a caller that gives up drops both.
+        let _queued = self
+            .tcp_waiting
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Error::Busy)?;
+        tokio::select! { biased;
+            _ = self.stop.cancelled() => Err(Error::Closed),
+            permit = tokio::time::timeout(TCP_SLOT_WAIT, self.tcp.clone().acquire_owned()) => match permit {
+                Ok(Ok(permit)) => Ok(TcpSlot(permit)),
+                Ok(Err(_)) => Err(Error::Closed),
+                Err(_) => Err(Error::Busy),
+            },
+        }
     }
     /// Hands an open to the actor and waits for its reply. The command queue
     /// is shared with UDP sends, so a full queue is waited out within the open
@@ -394,8 +483,25 @@ impl Flows {
         }
     }
     pub(crate) async fn connect(&self, remote: SocketAddr) -> Result<TcpStream, Error> {
+        // An unroutable flow is refused before it takes or waits for a place.
+        self.local_for(remote)?;
+        let slot = self.tcp_slot().await?;
+        self.connect_with_slot(slot, remote).await
+    }
+    pub(crate) async fn connect_with_slot(
+        &self,
+        slot: TcpSlot,
+        remote: SocketAddr,
+    ) -> Result<TcpStream, Error> {
+        let TcpSlot(permit) = slot;
+        if !Arc::ptr_eq(permit.semaphore(), &self.tcp) {
+            return Err(Error::Configuration);
+        }
+        if !self.is_live() {
+            return Err(Error::Closed);
+        }
         let local = self.local_for(remote)?;
-        let (flow, permit) = self.lease(true)?;
+        let flow = self.flow();
         let guard = FlowGuard(flow.clone());
         let (reply, ready) = oneshot::channel();
         let (stream, bridge) = tokio::io::duplex(STREAM_BUFFER);
@@ -418,7 +524,15 @@ impl Flows {
     }
     pub(crate) async fn open_udp(&self, remote: SocketAddr) -> Result<UdpSession, Error> {
         let local = self.local_for(remote)?;
-        let (flow, permit) = self.lease(false)?;
+        if !self.is_live() {
+            return Err(Error::Closed);
+        }
+        let permit = self
+            .udp
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Error::Busy)?;
+        let flow = self.flow();
         let guard = FlowGuard(flow.clone());
         let (reply, ready) = oneshot::channel();
         let (incoming, packets) = mpsc::channel(PACKET_QUEUE);

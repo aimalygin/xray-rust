@@ -1493,7 +1493,7 @@
         "remoteDNS"
       ],
       "id": "MASQUE",
-      "notes": "A nonempty address and a nonzero port, as Xray-core requires. remoteDNS takes up to 8 IP addresses, scoped IPv6 ones refused; absent, null or empty means Cloudflare's 1.1.1.1, 1.0.0.1, 2606:4700:4700::1111 and 2606:4700:4700::1001. Destination domains resolve through the tunnel with the servers of the families the tunnel has an address of, IPv6 first when it has one. Requires network masque, security tls and no chaining or Mux; every TCP and UDP flow rides a CONNECT-IP tunnel through a userspace TCP/IP stack of MTU 1280, 16 TCP and 512 UDP flows a tunnel."
+      "notes": "A nonempty address and a nonzero port, as Xray-core requires. remoteDNS takes up to 8 IP addresses, scoped IPv6 ones refused; absent, null or empty means Cloudflare's 1.1.1.1, 1.0.0.1, 2606:4700:4700::1111 and 2606:4700:4700::1001. Destination domains resolve through the tunnel with the servers of the families the tunnel has an address of, IPv6 first when it has one. Requires network masque, security tls and no chaining or Mux; every TCP and UDP flow rides a CONNECT-IP tunnel through a userspace TCP/IP stack of MTU 1280: per tunnel 512 UDP flows and the runtime profile's TCP flows (32 LowMemory, 64 Mobile, 128 Desktop), a TCP flow past them waiting up to ten seconds for a place."
     },
     {
       "context": "streamSettings.masqueSettings",

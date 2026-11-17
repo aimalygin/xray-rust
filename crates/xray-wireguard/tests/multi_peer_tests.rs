@@ -113,7 +113,10 @@ async fn overlapping_peers_route_and_reject_authenticated_source_spoofing_in_bot
             "sockets are shared by endpoint family"
         );
         client.shutdown().await;
-        assert_eq!(client.available_tcp_slots(), 16);
+        assert_eq!(
+            client.available_tcp_slots(),
+            xray_wireguard::FlowLimits::default().tcp()
+        );
         assert_eq!(client.available_udp_slots(), 512);
         for peer in &mut peers {
             peer.shutdown().await;

@@ -71,7 +71,10 @@ async fn shutdown(client: &Client, protector: &Protector) {
     );
     timeout(WAIT, client.shutdown()).await.unwrap();
     assert!(!client.is_live());
-    assert_eq!(client.available_tcp_slots(), 16);
+    assert_eq!(
+        client.available_tcp_slots(),
+        xray_wireguard::FlowLimits::default().tcp()
+    );
     assert_eq!(client.available_udp_slots(), 512);
 }
 

@@ -273,6 +273,20 @@ impl TunRuntimeProfile {
             Self::Desktop | Self::Throughput => Some(xray_transport::MemoryClass::Standard),
         }
     }
+
+    /// The TCP flows each WireGuard device and MASQUE tunnel carries at
+    /// once, the queue for more, and each flow's buffers: phones keep the
+    /// 32 MiB that 16 flows of 1 MiB took before, in 64 smaller flows; a
+    /// desktop sizes them for throughput. `Default` follows the target.
+    fn tunnel_flow_limits(self) -> xray_wireguard::FlowLimits {
+        use xray_wireguard::FlowLimits;
+        match self {
+            Self::Default => FlowLimits::default(),
+            Self::LowMemory => FlowLimits::LOW_MEMORY,
+            Self::Mobile | Self::MobilePlus => FlowLimits::MOBILE,
+            Self::Desktop | Self::Throughput => FlowLimits::DESKTOP,
+        }
+    }
 }
 
 impl TunRuntimeOptions {
@@ -880,10 +894,13 @@ impl Core {
         xray_transport::set_memory_class(tun_runtime_options.profile.transport_memory_class());
         let outbound_graph = Arc::new(OutboundGraph::new(Arc::clone(&config)));
         outbound_graph.validate_proxy_chains()?;
-        let outbound_factory = Arc::new(OutboundFactory::with_hysteria_stream_limits(
-            outbound_graph,
-            tun_runtime_options.hysteria_stream_limits,
-        ));
+        let outbound_factory = Arc::new(
+            OutboundFactory::with_hysteria_stream_limits(
+                outbound_graph,
+                tun_runtime_options.hysteria_stream_limits,
+            )
+            .with_tunnel_flow_limits(tun_runtime_options.profile.tunnel_flow_limits()),
+        );
         let outbound_router = Arc::new(OutboundRouter::from_factory(outbound_factory));
         // A bridge's outbound is dialed from the start, so its refusals
         // belong to the start too.
@@ -2103,6 +2120,33 @@ mod tests {
             (TunRuntimeProfile::Throughput, Some(MemoryClass::Standard)),
         ] {
             assert_eq!(profile.transport_memory_class(), class, "{profile:?}");
+        }
+    }
+
+    #[test]
+    fn tunnel_flow_limits_follow_the_device_class_a_profile_names() {
+        use xray_wireguard::FlowLimits;
+
+        for (profile, limits, tcp) in [
+            (TunRuntimeProfile::Default, FlowLimits::default(), None),
+            (
+                TunRuntimeProfile::LowMemory,
+                FlowLimits::LOW_MEMORY,
+                Some(32),
+            ),
+            (TunRuntimeProfile::Mobile, FlowLimits::MOBILE, Some(64)),
+            (TunRuntimeProfile::MobilePlus, FlowLimits::MOBILE, Some(64)),
+            (TunRuntimeProfile::Desktop, FlowLimits::DESKTOP, Some(128)),
+            (
+                TunRuntimeProfile::Throughput,
+                FlowLimits::DESKTOP,
+                Some(128),
+            ),
+        ] {
+            assert_eq!(profile.tunnel_flow_limits(), limits, "{profile:?}");
+            if let Some(tcp) = tcp {
+                assert_eq!(limits.tcp(), tcp, "{profile:?}");
+            }
         }
     }
 

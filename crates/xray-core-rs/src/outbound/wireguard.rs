@@ -2,7 +2,7 @@
 pub(super) mod dns;
 use super::*;
 use xray_config::{AddressFamilies, WireguardOutboundSettings};
-use xray_wireguard::{Client, Config, Error, PeerConfig};
+use xray_wireguard::{Client, Config, Error, FlowLimits, PeerConfig};
 
 #[derive(Clone, Debug)]
 pub struct WireguardOutbound(Arc<Owner>);
@@ -15,6 +15,8 @@ struct Owner {
     masks: Option<Arc<xray_transport::hysteria::HysteriaCarrierConfig>>,
     /// `sockopt.domainStrategy`, which picks a domain endpoint's address.
     endpoint_strategy: DomainStrategy,
+    /// The runtime profile's flow limits for the device.
+    flow_limits: FlowLimits,
     /// The dialer given and the one made from it with `socket_options`,
     /// kept so its protector, which a cached session is matched by, stays
     /// the same.
@@ -43,6 +45,12 @@ impl Drop for Cached {
 }
 impl WireguardOutbound {
     pub(crate) fn new(outbound: &OutboundConfig) -> Result<Self, CoreError> {
+        Self::with_flow_limits(outbound, FlowLimits::default())
+    }
+    pub(crate) fn with_flow_limits(
+        outbound: &OutboundConfig,
+        flow_limits: FlowLimits,
+    ) -> Result<Self, CoreError> {
         let OutboundSettings::Wireguard(settings) = &outbound.settings else {
             return Err(CoreError::UnsupportedOutboundNetwork);
         };
@@ -79,6 +87,7 @@ impl WireguardOutbound {
                 .as_ref()
                 .map(|options| options.domain_strategy)
                 .unwrap_or_default(),
+            flow_limits,
             socket_dialer: Mutex::new(None),
             session: Mutex::new(None),
             connecting: tokio::sync::Mutex::new(()),
@@ -179,8 +188,13 @@ impl WireguardOutbound {
             .ok_or(Error::NoRoute)?;
         }
         let generation = self.0.network_generation.load(Ordering::Acquire);
-        let client =
-            Client::start_with_masks(config, self.0.masks.clone(), protector.clone()).await?;
+        let client = Client::start_with_limits(
+            config,
+            self.0.masks.clone(),
+            self.0.flow_limits,
+            protector.clone(),
+        )
+        .await?;
         let mut slot = self.0.session.lock().unwrap_or_else(|e| e.into_inner());
         if *self.0.shutdown.borrow() {
             client.close();
@@ -272,13 +286,19 @@ impl WireguardOutbound {
             let mut error = Error::NoRoute;
             let last = addresses.len() - 1;
             for (index, address) in addresses.into_iter().enumerate() {
+                // Past the device's TCP limit a flow waits for a place, which
+                // is none of an address's time: it waits before the attempt.
+                let slot = client.tcp_slot().await?;
                 // A freshly restarted identity can hit the peer's handshake
                 // rate limit. Let the final candidate wait for WireGuard's
                 // retransmission; the enclosing deadline still caps all work.
                 let attempt = if index == last { 10 } else { 3 };
-                match tokio::time::timeout(Duration::from_secs(attempt), client.connect(address))
-                    .await
-                    .unwrap_or(Err(Error::Timeout))
+                match tokio::time::timeout(
+                    Duration::from_secs(attempt),
+                    client.connect_with_slot(slot, address),
+                )
+                .await
+                .unwrap_or(Err(Error::Timeout))
                 {
                     Ok(stream) => return Ok(Box::new(stream) as BoxedTransportStream),
                     Err(e @ (Error::Closed | Error::Busy | Error::SocketProtection)) => {
