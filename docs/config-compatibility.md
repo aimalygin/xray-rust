@@ -3996,21 +3996,40 @@ the interval after the full round.
 
 Real traffic also feeds the observer, which Xray-core's does not. When a TCP
 flow from a SOCKS, HTTP or TUN inbound, or a UDP flow from TUN, fails to open
-through an observed outbound because its server refused, reset or timed out
-the connection or failed the TLS, REALITY or transport handshake, the observer
-wakes from its interval and probes that outbound again, at most once every 10
-seconds counted from its last probe. A failed probe marks it unhealthy, so
-`leastPing` and `leastLoad` move new flows to the next healthy member at once,
-and a successful one keeps it. A remote close, a target the server refuses, a
-destination that does not resolve or a local network that is down is not
-reported. The outbound a balancer with an observed member falls back to, its
-`fallbackTag` or else the default outbound, is watched too: when a report
-through a member or that fallback reaches a balancer none of whose observed
-members is healthy, all of them are probed again, at most once every 15
-seconds, so that a server which came back is found. Reports only bring probes
-forward: without failures, probes follow the interval as before, the
-scheduled round is not moved, and re-probes use the same concurrency bound.
-Startup and on-demand probes report nothing.
+through an observed outbound, the observer wakes from its interval and probes
+that outbound again once 10 seconds have passed since its last probe finished.
+A failure is reported when the open timed out, when the connection was
+refused, reset or timed out, when the TLS or REALITY handshake was broken off
+or failed, or when a Hysteria, MASQUE or WireGuard handshake timed out or a
+Hysteria server refused its credentials. A remote close, a target the server
+refuses, a destination that does not resolve and the local network errors
+`NetworkDown`, `NetworkUnreachable`, `HostUnreachable`, `ConnectionAborted`
+and `AddrNotAvailable` are not reported. Neither are XHTTP, gRPC, XDRIVE,
+WebSocket, HTTP upgrade, HTTP/2 CONNECT and chained-hop errors, which carry
+only a message whatever the cause; such an outbound is reported only when its
+open times out. Only outbounds with a server of their own are watched:
+freedom, blackhole, DNS and loopback outbounds are never reported.
+
+A timeout is also what a local network that is down or changing produces, and
+re-probes run exactly when traffic fails, so one failed re-probe of an
+outbound that is not unhealthy is not recorded: the outbound is probed again
+10 seconds after that probe finished, and only that second result counts.
+When it fails too the outbound is marked unhealthy, so `leastPing` and
+`leastLoad` move new flows to the next healthy member: a dead server is left
+after one failed open and two failed probes 10 seconds apart. An outbound
+re-probes marked unhealthy gets no flows that could report it again, so it is
+probed again 10 seconds later, then at twice the previous wait while it fails,
+up to `probeInterval`, after which the scheduled round takes over. The
+outbound a balancer with an observed member falls back to, its `fallbackTag`
+or else the default outbound, is watched too when it has a server of its own:
+when a report through a member or that fallback reaches a balancer none of
+whose observed members is healthy, all of them are probed again, 15 seconds
+at the earliest after the last such pass finished, and twice the previous
+wait, up to `probeInterval`, after a pass in which every probe failed. Reports
+only bring probes forward: without failures, probes follow the interval as
+before, the scheduled round is not moved and its results are recorded as
+they are, and re-probes use the same concurrency bound. Startup and on-demand
+probes report nothing.
 
 The observer starts only after the core and any configured startup probe have
 started successfully. It dials each leaf directly by tag, so routing rules and

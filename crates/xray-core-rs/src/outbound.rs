@@ -2587,7 +2587,8 @@ impl OutboundSelectionOverlay {
     }
 
     /// Tells the observatory that a flow could not open through leaf `node`.
-    /// Unless the observatory watches `node` this is one atomic load, and it
+    /// Unless the observatory watches `node`, which it does only for an
+    /// outbound with a server of its own, this is one atomic load, and it
     /// never changes health by itself: the observatory probes `node` again.
     pub(crate) fn report_dial_failure(&self, node: OutboundNodeId) {
         if let Some(index) = self.leaf_index(node) {
@@ -3074,8 +3075,9 @@ impl OutboundRouter {
     }
 
     /// Tells the observatory that a flow failed to open through leaf `node`
-    /// with `error`, when the error says the outbound's server could not be
-    /// reached or failed its handshake, so that it probes `node` again soon.
+    /// with `error`, when the error may mean that the outbound's server is
+    /// gone (see [`crate::health::is_dial_failure`]), so that it probes
+    /// `node` again soon.
     pub(crate) fn report_open_error(&self, node: OutboundNodeId, error: &CoreError) {
         if crate::health::is_dial_failure(error) {
             self.selection().report_dial_failure(node);
@@ -3083,7 +3085,11 @@ impl OutboundRouter {
     }
 
     /// Tells the observatory that a flow through leaf `node` did not open
-    /// within its handshake timeout.
+    /// within its handshake timeout. Opens time out on a local network that
+    /// is down or changing as they do on a server that drops packets, and
+    /// nothing here tells the two apart: the observatory probes `node`
+    /// again, and records a failure only when a second probe, a cooldown
+    /// later, fails too.
     pub(crate) fn report_open_timeout(&self, node: OutboundNodeId) {
         self.selection().report_dial_failure(node);
     }
