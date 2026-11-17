@@ -1750,7 +1750,7 @@ dependencies = [
 
 [[package]]
 name = "quinn"
-version = "0.11.9"
+version = "0.11.12"
 dependencies = [
  "bytes",
  "cfg_aliases",
@@ -1769,7 +1769,7 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.16"
+version = "0.11.19"
 dependencies = [
  "bytes",
  "getrandom 0.4.2",
@@ -1999,7 +1999,6 @@ dependencies = [
 [[package]]
 name = "rustls"
 version = "0.23.40"
-source = "git+https://github.com/aimalygin/shaped-rustls?rev=ca91d48c385f7d16ad3993ecaf26fa9b84882dbc#ca91d48c385f7d16ad3993ecaf26fa9b84882dbc"
 dependencies = [
  "aws-lc-rs",
  "brotli",

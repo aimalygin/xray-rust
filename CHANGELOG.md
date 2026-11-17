@@ -15,6 +15,30 @@ long-term supported release series.
 Release candidate preparation; publication and exact-candidate release
 qualification are pending.
 
+- Security: the vendored quinn-proto moves from 0.11.16 to 0.11.19 and quinn
+  from 0.11.9 to 0.11.12, keeping the local patches. 0.11.16 let a peer grow
+  queues without bound with empty DATAGRAM frames (RUSTSEC-2026-0342) or
+  already-retired connection IDs (0339), bypass the stream reassembly cap
+  (0341), open 2^40 streams with one MAX_STREAM_DATA frame (0523) and panic
+  the connection with empty STREAM frames read unordered (0338); a forged
+  Retry with a long token, which anyone who sees the client's first Initial
+  can send, made a Hysteria, MASQUE or XHTTP H3 client try to allocate over
+  10 GiB and abort (0524). Initial datagrams are now padded to `min_mtu`,
+  which XHTTP H3 sets from `initialPacketSize`, rather than 1,200 bytes;
+  ChromeParrot handshakes are unchanged.
+- Security: rustls is now the vendored shaped-rustls fork at the same commit
+  with upstream rustls 0.23.45/0.23.46 fixes. A server, or anyone answering
+  in its place, could make a client whose hello offers brotli certificate
+  compression (Chrome-shaped ones do) allocate 1 GiB with a five-byte
+  header (RUSTSEC-2026-0348); the decompressor now refuses brotli's
+  large-window extension. The server's key exchange group is remembered for
+  later hellos only after the server is authenticated (0349), handshake
+  messages that span a key change are refused (0285), and `Debug` of
+  session values no longer prints secrets (0346). No ClientHello byte
+  changes.
+- `scripts/check-vendored-advisories.sh`, run in the supply-chain CI job,
+  audits the upstream release under each vendored crate and every git
+  dependency against RustSec, which `cargo audit` does not see.
 - A Hysteria connect attempt to the last of the server's addresses, the only
   one for a server with one address, gets what is left of the dial's ten
   seconds, at most eight, where every attempt had three. Quinn's first probe

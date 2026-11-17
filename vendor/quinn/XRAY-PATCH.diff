@@ -1,6 +1,6 @@
 --- a/src/connection.rs
 +++ b/src/connection.rs
-@@ -641,6 +641,13 @@
+@@ -661,6 +661,13 @@
          conn.wake();
      }
  
@@ -14,7 +14,7 @@
      /// Modify the number of remotely initiated bidirectional streams that may be concurrently open
      ///
      /// No streams may be opened by the peer unless fewer than `count` are already open. Large
-@@ -1317,7 +1324,7 @@
+@@ -1331,7 +1338,7 @@
  ///
  /// This limits the amount of CPU resources consumed by datagram generation,
  /// and allows other tasks (like receiving ACKs) to run in between.
@@ -25,7 +25,7 @@
  ///
 --- a/src/endpoint.rs
 +++ b/src/endpoint.rs
-@@ -15,7 +15,7 @@
+@@ -18,7 +18,7 @@
  #[cfg(all(not(wasm_browser), any(feature = "aws-lc-rs", feature = "ring")))]
  use crate::runtime::default_runtime;
  use crate::{
@@ -34,7 +34,7 @@
      runtime::{AsyncUdpSocket, Runtime},
      udp_transmit,
  };
-@@ -251,6 +251,7 @@
+@@ -254,6 +254,7 @@
          let addr = socket.local_addr()?;
          let mut inner = self.inner.state.lock().unwrap();
          inner.prev_socket = Some(mem::replace(&mut inner.socket, socket));
@@ -42,17 +42,16 @@
          inner.ipv6 = addr.is_ipv6();
  
          // Update connection socket references
-@@ -463,13 +464,22 @@
-         state.inner.ignore(incoming);
+@@ -469,12 +470,21 @@
      }
  }
-+
+ 
 +/// How long an abandoned socket still receives after the first packet on
 +/// its successor. The peer's datagrams for the old path arrive for one
 +/// old-path delay after the peer has moved over, and a peer that validates
 +/// the new path first moves over a round trip later.
 +const PREV_SOCKET_GRACE: Duration = Duration::from_secs(3);
- 
++
  #[derive(Debug)]
  pub(crate) struct State {
      socket: Arc<dyn AsyncUdpSocket>,
@@ -66,7 +65,7 @@
      inner: proto::Endpoint,
      recv_state: RecvState,
      driver: Option<Waker>,
-@@ -492,13 +502,27 @@
+@@ -497,13 +507,27 @@
      fn drive_recv(&mut self, cx: &mut Context, now: Instant) -> Result<bool, io::Error> {
          let get_time = || self.runtime.now();
          self.recv_state.recv_limiter.start_cycle(get_time);
@@ -100,7 +99,7 @@
              }
          };
          let poll_res =
-@@ -506,12 +530,18 @@
+@@ -511,12 +535,18 @@
                  .poll_socket(cx, &mut self.inner, &*self.socket, &*self.runtime, now);
          self.recv_state.recv_limiter.finish_cycle(get_time);
          let poll_res = poll_res?;
@@ -124,7 +123,7 @@
      }
  
      fn handle_events(&mut self, cx: &mut Context, shared: &Shared) -> bool {
-@@ -680,7 +710,12 @@
+@@ -685,7 +715,12 @@
          runtime: Arc<dyn Runtime>,
      ) -> Self {
          let (sender, events) = mpsc::unbounded_channel();
@@ -138,7 +137,7 @@
          Self(Arc::new(EndpointInner {
              shared: Shared {
                  incoming: Notify::new(),
-@@ -689,6 +724,7 @@
+@@ -695,6 +730,7 @@
              state: Mutex::new(State {
                  socket,
                  prev_socket: None,
@@ -146,7 +145,7 @@
                  inner,
                  ipv6,
                  events,
-@@ -738,6 +774,8 @@
+@@ -742,6 +778,8 @@
      incoming: VecDeque<proto::Incoming>,
      connections: ConnectionSet,
      recv_buf: Box<[u8]>,
@@ -155,7 +154,7 @@
      recv_limiter: WorkLimiter,
  }
  
-@@ -745,13 +783,15 @@
+@@ -749,13 +787,15 @@
      fn new(
          sender: mpsc::UnboundedSender<(ConnectionHandle, EndpointEvent)>,
          max_receive_segments: usize,
@@ -172,7 +171,7 @@
          ];
          Self {
              connections: ConnectionSet {
-@@ -761,6 +801,7 @@
+@@ -765,6 +805,7 @@
              },
              incoming: VecDeque::new(),
              recv_buf: recv_buf.into(),
@@ -180,7 +179,7 @@
              recv_limiter: WorkLimiter::new(RECV_TIME_BOUND),
          }
      }
-@@ -774,20 +815,20 @@
+@@ -778,20 +819,20 @@
          now: Instant,
      ) -> Result<PollProgress, io::Error> {
          let mut received_connection_packet = false;
@@ -209,7 +208,7 @@
                      for (meta, buf) in metas.iter().zip(iovs.iter()).take(msgs) {
 --- a/src/runtime.rs
 +++ b/src/runtime.rs
-@@ -78,6 +78,16 @@
+@@ -79,6 +79,16 @@
          1
      }
  
