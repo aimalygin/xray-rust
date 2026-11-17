@@ -10,6 +10,13 @@ long-term supported release series.
 
 ## Unreleased
 
+- The Android and Apple VPN integrations start profiles whose `dns.servers`
+  list Xray-core's `localhost` or `fakedns`, as a string or an object's
+  `address`: neither is resolved during DNS bootstrap, where the object form
+  failed preparation and the string form was looked up as a host name. A
+  `fakedns` entry counts as fake-IP, not as an upstream, in the fake-IP
+  routing preflight, and Android accepts up to 32 `dns.servers` entries, as
+  the core does, where it stopped at eight.
 - `dns.servers` takes up to 32 entries, where more than eight failed to
   parse. Xray-core sets no limit, and full subscriptions list more than
   eight. Destination lookups use every server; the TUN DNS proxy at

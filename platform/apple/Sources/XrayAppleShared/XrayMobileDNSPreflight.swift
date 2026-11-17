@@ -43,7 +43,12 @@ public enum XrayMobileDNSPreflight {
         let dns = root?["dns"] as? [String: Any]
         let fakeIPIsEnabled = fakeIPIsEnabled(dns)
         let fakeIPIsAvailable = fakeIPIsAvailable(dns)
-        let hasConfiguredServers = !(dns?["servers"] as? [Any] ?? []).isEmpty
+        let servers = dns?["servers"] as? [Any] ?? []
+        let hasConfiguredServers = !servers.isEmpty
+        // The core maps Xray-core's `fakedns` entry onto fake-IP and asks no
+        // wire server for it: it counts as fake-IP, not as an upstream.
+        let hasFakeDNSServer = servers.contains(where: isFakeDNSServer)
+        let hasWireServers = servers.contains { !isFakeDNSServer($0) }
 
         // Match the provider's fail-closed behavior: an explicitly enabled
         // but unusable FakeIP block is an error even if dns.servers exists.
@@ -55,7 +60,7 @@ public enum XrayMobileDNSPreflight {
         case .invalid:
             throw XrayMobileDNSPreflightError.unavailable
         case .custom:
-            guard !fakeIPIsEnabled else {
+            guard !fakeIPIsEnabled, !hasFakeDNSServer else {
                 throw XrayMobileDNSPreflightError.unavailable
             }
         case .system:
@@ -64,7 +69,7 @@ public enum XrayMobileDNSPreflight {
             }
         }
 
-        guard fakeIPIsEnabled, !hasConfiguredServers else {
+        guard fakeIPIsEnabled || hasFakeDNSServer, !hasWireServers else {
             return
         }
         try validateFakeIPRoutingTopology(root, protocolName: "freedom", error: .unsafeFakeIPFreedomRouting)
@@ -141,6 +146,11 @@ public enum XrayMobileDNSPreflight {
     ) -> Bool {
         let inboundTags = rule["inboundTag"] as? [String] ?? []
         return inboundTags.isEmpty || !tunInboundTags.isDisjoint(with: inboundTags)
+    }
+
+    private static func isFakeDNSServer(_ server: Any) -> Bool {
+        let address = (server as? String) ?? ((server as? [String: Any])?["address"] as? String)
+        return address?.caseInsensitiveCompare("fakedns") == .orderedSame
     }
 
     private static func jsonRoot(_ configJSON: String) -> [String: Any]? {
