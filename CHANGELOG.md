@@ -40,11 +40,17 @@ qualification are pending.
   audits the upstream release under each vendored crate and every git
   dependency against RustSec, which `cargo audit` does not see.
 - The DNS resolver and the system SRV/TXT lookups refuse a name longer than
-  255 octets, as Xray-core does through Go's `dnsmessage`. A name was read
-  for up to 32 labels and pointers, about 2 KB, so a forged 64 KB answer over
-  TCP, DoH or DoQ whose 4,000 records all pointed at one such name held some
-  8 MB while it was parsed, a sizeable share of an iOS tunnel extension's
-  memory limit.
+  255 octets, the limit Xray-core's DNS client applies through Go's
+  `dnsmessage`. A name was read for up to 32 labels and pointers, about 2 KB,
+  so a forged 64 KB answer over TCP, DoH or DoQ whose 4,000 records all
+  pointed at one such name held some 8 MB while it was parsed, a sizeable
+  share of an iOS tunnel extension's memory limit. The outcome differs from
+  Xray-core's: its client logs the bad record and keeps the answers it read
+  before it, while here, as for any other malformed answer, the whole
+  response is dropped and the next server is asked. A name now follows at
+  most 10 compression pointers, as in `dnsmessage`, and its labels count only
+  toward the 255 octets, so a valid name of 32 labels or more is no longer
+  refused as a pointer loop.
 - The release fuzz campaign also covers the parsers an on-path censor or a
   hostile server can feed and that had no target: DNS responses (A/AAAA and
   SRV/TXT), the HTTP, TLS ClientHello, BitTorrent and uTP sniffers, mKCP

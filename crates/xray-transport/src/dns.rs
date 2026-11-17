@@ -3132,7 +3132,13 @@ pub(crate) fn read_dns_name(packet: &[u8], offset: &mut usize) -> io::Result<Str
 
 /// The longest name, its labels each with a dot after it, that Go's
 /// `dnsmessage` reads, as RFC 1035 bounds a name to 255 octets on the wire.
+/// A longer one fails the whole message here, where Xray-core's DNS client
+/// keeps the answers it read before the record that carries it.
 const DNS_NAME_MAX: usize = 254;
+
+/// The most compression pointers one name follows, as in Go's `dnsmessage`.
+/// Labels need no count of their own: `DNS_NAME_MAX` ends them first.
+const DNS_NAME_MAX_POINTERS: usize = 10;
 
 fn read_dns_name_limited(packet: &[u8], offset: &mut usize, limit: usize) -> io::Result<String> {
     if limit > packet.len() || *offset > limit {
@@ -3141,10 +3147,11 @@ fn read_dns_name_limited(packet: &[u8], offset: &mut usize, limit: usize) -> io:
 
     let mut labels = Vec::new();
     let mut name_len = 0;
+    let mut pointers = 0;
     let mut cursor = *offset;
     let mut jumped = false;
 
-    for _ in 0..32 {
+    loop {
         if !jumped && cursor >= limit {
             return Err(invalid_dns_response("truncated dns name"));
         }
@@ -3159,6 +3166,12 @@ fn read_dns_name_limited(packet: &[u8], offset: &mut usize, limit: usize) -> io:
             let Some(&next) = packet.get(cursor + 1) else {
                 return Err(invalid_dns_response("truncated dns name pointer"));
             };
+            // Pointers that only lead to one another add no label, so
+            // nothing else would end their loop.
+            pointers += 1;
+            if pointers > DNS_NAME_MAX_POINTERS {
+                return Err(invalid_dns_response("too many dns name pointers"));
+            }
             if !jumped {
                 *offset = cursor + 2;
             }
@@ -3189,8 +3202,9 @@ fn read_dns_name_limited(packet: &[u8], offset: &mut usize, limit: usize) -> io:
         if label_end > packet.len() {
             return Err(invalid_dns_response("truncated dns label"));
         }
-        // Thirty-odd labels behind one pointer make a name of ~2 KB, which
-        // every record of a 64 KB answer could point at and copy.
+        // This bounds the labels too, as each adds two octets or more.
+        // Without it a name could take as many labels as the message holds,
+        // and every record of a 64 KB answer could point at it and copy it.
         name_len += label_len + 1;
         if name_len > DNS_NAME_MAX {
             return Err(invalid_dns_response("dns name exceeds 255 octets"));
@@ -3200,8 +3214,6 @@ fn read_dns_name_limited(packet: &[u8], offset: &mut usize, limit: usize) -> io:
         labels.push(label.to_ascii_lowercase());
         cursor = label_end;
     }
-
-    Err(invalid_dns_response("dns name pointer loop"))
 }
 
 pub(crate) fn read_u16(packet: &[u8], offset: usize) -> io::Result<u16> {
@@ -4330,6 +4342,85 @@ mod tests {
         let error = parse_dns_response(&query, &response, DnsRecordType::A).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         assert_eq!(error.to_string(), "dns name exceeds 255 octets");
+    }
+
+    #[test]
+    fn dns_name_length_spans_compression_pointers() {
+        // A 129-octet suffix first, then a name of two inline labels and a
+        // pointer to that suffix: neither part reaches 255 octets, but the
+        // name they spell takes 255 or 256.
+        let label = |packet: &mut Vec<u8>, length: usize| {
+            packet.push(length as u8);
+            packet.extend(std::iter::repeat_n(b'b', length));
+        };
+        let packet = |last: usize| {
+            let mut packet = Vec::new();
+            label(&mut packet, 63);
+            label(&mut packet, 63);
+            packet.push(0);
+            let start = packet.len();
+            label(&mut packet, 63);
+            label(&mut packet, last);
+            packet.extend_from_slice(&[0xC0, 0x00]);
+            (packet, start)
+        };
+
+        let (longest, start) = packet(61);
+        // The suffix and the inline labels, without the pointer.
+        assert_eq!((start, longest.len() - 2), (129, 255));
+        let mut offset = start;
+        assert_eq!(
+            super::read_dns_name(&longest, &mut offset).unwrap().len(),
+            253
+        );
+        assert_eq!(offset, longest.len());
+
+        let (too_long, mut start) = packet(62);
+        assert_eq!(super::read_dns_name(&too_long, &mut 0).unwrap().len(), 127);
+        let error = super::read_dns_name(&too_long, &mut start).unwrap_err();
+        assert_eq!(error.to_string(), "dns name exceeds 255 octets");
+    }
+
+    #[test]
+    fn dns_names_count_pointer_jumps_not_labels() {
+        // Forty labels in 161 octets, inline and behind a pointer. An IPv6
+        // reverse name has 34.
+        let mut packet = Vec::new();
+        for _ in 0..40 {
+            packet.extend_from_slice(&[3, b'a', b'b', b'c']);
+        }
+        packet.push(0);
+        let compressed = packet.len();
+        packet.extend_from_slice(&[0xC0, 0x00]);
+        for (start, end) in [(0, compressed), (compressed, packet.len())] {
+            let mut offset = start;
+            let name = super::read_dns_name(&packet, &mut offset).unwrap();
+            assert_eq!(name.split('.').count(), 40);
+            assert!(name.split('.').all(|label| label == "abc"));
+            assert_eq!(offset, end);
+        }
+
+        // A chain of ten pointers to the root name reads, as in Go's
+        // `dnsmessage`; an eleventh pointer is refused.
+        let mut chain = vec![0];
+        let mut pointers = Vec::new();
+        for _ in 0..11 {
+            let target = pointers.last().copied().unwrap_or(0_u16);
+            pointers.push(u16::try_from(chain.len()).unwrap());
+            chain.extend_from_slice(&(0xC000 | target).to_be_bytes());
+        }
+        let mut offset = usize::from(pointers[9]);
+        assert_eq!(super::read_dns_name(&chain, &mut offset).unwrap(), "");
+        assert_eq!(offset, usize::from(pointers[9]) + 2);
+        let error = super::read_dns_name(&chain, &mut usize::from(pointers[10])).unwrap_err();
+        assert_eq!(error.to_string(), "too many dns name pointers");
+
+        // A pointer to itself, and a label with a pointer back to it.
+        for looped in [&[0xC0, 0x00][..], &[1, b'a', 0xC0, 0x00]] {
+            let error = super::read_dns_name(looped, &mut 0).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+            assert_eq!(error.to_string(), "too many dns name pointers");
+        }
     }
 
     #[test]
