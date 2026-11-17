@@ -308,13 +308,9 @@ XrayStatus xray_core_set_hysteria_stream_limits(
 XrayStatus xray_core_set_tun_mtu(
     XrayCoreHandle *handle, uint32_t mtu, XrayError **error);
 /* ABI 1.18, RUNTIME_WORKER_THREADS. Worker threads of the handle's Tokio
- * runtime, 1..=64, or 0 for the TUN runtime profile's default: 2 for the
- * mobile, mobile-plus and low-memory profiles and for the default profile on
- * Android, iOS, tvOS and watchOS; the available parallelism within 2..=6
- * otherwise. Set
- * before config load; a count set here outlives later profile changes.
- * Invalid calls change nothing. Lifecycle call: do not race any other handle
- * call. */
+ * runtime, 1..=64, or 0 for the default: the available parallelism within
+ * 2..=6, whatever the TUN runtime profile. Set before config load. Invalid
+ * calls change nothing. Lifecycle call: do not race any other handle call. */
 XrayStatus xray_core_set_runtime_worker_threads(
     XrayCoreHandle *handle, uint32_t worker_threads, XrayError **error);
 /* Searches dir first, then the process default geodata directories. */
@@ -494,8 +490,6 @@ XrayStatus xray_core_set_tun_collect_tcp_timings(
     XrayCoreHandle *handle,
     int32_t collect_tcp_timings,
     XrayError **error);
-/* Set before config load. Also selects the runtime's default worker threads
- * (see xray_core_set_runtime_worker_threads). */
 XrayStatus xray_core_set_tun_runtime_profile(
     XrayCoreHandle *handle,
     int32_t profile,

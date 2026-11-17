@@ -890,6 +890,21 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetTunMtu(
   check_status(env, status, error);
 } XRAY_JNI_CATCH_VOID(env)
 
+extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeSetRuntimeWorkerThreads(
+    JNIEnv *env, jobject, jlong handle, jint worker_threads) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) return;
+  if (worker_threads < 1 || worker_threads > 64) {
+    throw_illegal_argument(env, "runtime worker threads must be in 1..64");
+    return;
+  }
+  XrayError *error = nullptr;
+  const XrayStatus status = xray_core_set_runtime_worker_threads(
+      native->core, static_cast<uint32_t>(worker_threads), &error);
+  check_status(env, status, error);
+} XRAY_JNI_CATCH_VOID(env)
+
 // Blocks for at most timeout_ms. The Kotlin caller holds the data-path read
 // lock. Lifecycle calls cancel probes, then drain readers before freeing.
 extern "C" JNIEXPORT jlongArray JNICALL

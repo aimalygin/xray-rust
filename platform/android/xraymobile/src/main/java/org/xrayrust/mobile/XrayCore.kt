@@ -47,6 +47,7 @@ enum class XrayFfiCapability(val mask: Long) {
     OutboundProbeCancel(1L shl 28),
     TunMtu(1L shl 29),
     VlessProfileImport(1L shl 30),
+    RuntimeWorkerThreads(1L shl 31),
 }
 
 /** Concurrent flows per Hysteria outbound; all inbounds share one bounded session. */
@@ -572,6 +573,9 @@ private fun JSONObject.optionalInt(name: String): Int? =
 internal const val EXPECTED_XRAY_FFI_MAJOR_VERSION = 1
 internal const val MINIMUM_XRAY_FFI_MINOR_VERSION = 1
 
+/** The most runtime worker threads [XrayCore.create] accepts (ABI 1.18). */
+internal const val MAX_RUNTIME_WORKER_THREADS = 64
+
 internal fun validateXrayFfiVersion(version: XrayFfiVersion) {
     check(version.major == EXPECTED_XRAY_FFI_MAJOR_VERSION) {
         "incompatible xray FFI ABI major: expected " +
@@ -611,8 +615,10 @@ class XrayCore private constructor(handle: Long) : Closeable {
             geodataSearchDirectory: File? = null,
             geodataSearchPolicy: XrayGeodataSearchPolicy = XrayGeodataSearchPolicy.Exclusive,
             tunMtu: Int = XrayTunInterface.MTU,
+            runtimeWorkerThreads: Int? = null,
         ): XrayCore {
             requireTunMtuInRange(tunMtu)
+            requireRuntimeWorkerThreadsInRange(runtimeWorkerThreads)
             val core = XrayCore(nativeNew())
             try {
                 if (vpnService != null) {
@@ -635,6 +641,13 @@ class XrayCore private constructor(handle: Long) : Closeable {
                     core.requireFeature(16, XrayFfiCapability.TunMtu)
                     core.withLifecycleHandle { core.nativeSetTunMtu(it, tunMtu) }
                     core.tunMtu = tunMtu
+                }
+                // Omitted, the library's default count stays.
+                if (runtimeWorkerThreads != null) {
+                    core.requireFeature(18, XrayFfiCapability.RuntimeWorkerThreads)
+                    core.withLifecycleHandle {
+                        core.nativeSetRuntimeWorkerThreads(it, runtimeWorkerThreads)
+                    }
                 }
                 if (tunAdmission != null) {
                     core.requireFeature(11, XrayFfiCapability.TunAdmission)
@@ -693,6 +706,12 @@ class XrayCore private constructor(handle: Long) : Closeable {
         private fun requireTunMtuInRange(mtu: Int) =
             require(mtu in XrayTunInterface.MIN_MTU..XrayTunInterface.MAX_MTU) {
                 "TUN MTU must be in ${XrayTunInterface.MIN_MTU}..${XrayTunInterface.MAX_MTU}, got $mtu"
+            }
+
+        /** Null keeps the library's default count. */
+        private fun requireRuntimeWorkerThreadsInRange(workers: Int?) =
+            require(workers == null || workers in 1..MAX_RUNTIME_WORKER_THREADS) {
+                "runtime worker threads must be in 1..$MAX_RUNTIME_WORKER_THREADS, got $workers"
             }
 
         internal fun importProfileJson(request: ByteArray): ByteArray = nativeImportProfileJson(request)
@@ -1105,6 +1124,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
     private external fun nativeSetTunAdmission(handle: Long, callback: NativeTunAdmission, timeoutMs: Int, failOpen: Boolean)
 
     private external fun nativeSetTunMtu(handle: Long, mtu: Int)
+    private external fun nativeSetRuntimeWorkerThreads(handle: Long, workerThreads: Int)
     private external fun nativeSetHysteriaStreamLimits(handle: Long, maxTcpStreams: Int, maxUdpSessions: Int)
     private external fun nativeProbeOutboundUrl(
         handle: Long,
