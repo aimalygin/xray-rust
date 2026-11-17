@@ -5846,13 +5846,22 @@
       }
     },
     {
-      "name": "tls-ech-config-list-ignored",
+      "name": "tls-min-version-ignored",
       "accepted": true,
-      "warningPath": "$.outbounds[0].streamSettings.tlsSettings.echConfigList",
+      "warningPath": "$.outbounds[0].streamSettings.tlsSettings.minVersion",
       "base": "raw-tls-happy-eyeballs",
       "set": {
-        "/outbounds/0/streamSettings/tlsSettings/echConfigList": "AEX+DQBBpQAgACBzeW50aGV0aWM=",
-        "/outbounds/0/streamSettings/tlsSettings/minVersion": "1.2"
+        "/outbounds/0/streamSettings/tlsSettings/minVersion": "1.2",
+        "/outbounds/0/streamSettings/tlsSettings/echConfigList": ""
+      }
+    },
+    {
+      "name": "tls-ech-config-list-rejected",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.tlsSettings.echConfigList",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/streamSettings/tlsSettings/echConfigList": "AEX+DQBBpQAgACBzeW50aGV0aWM="
       }
     },
     {

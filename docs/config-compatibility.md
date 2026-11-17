@@ -1104,9 +1104,9 @@ pinned CA is the sole root and the same OR list is checked. A matching leaf pin
 still short-circuits every PKI and name check before the list is considered.
 IP literals match IP SANs rather than DNS SANs.
 
-The TLS slice deliberately does not implement the `fromMitm` sentinel, ECH,
-custom certificate stores, or removed chain/SPKI pin fields. They are rejected
-with a path-aware error instead of being ignored. The programmatic
+The TLS slice deliberately does not implement the `fromMitm` sentinel, ECH (a
+nonempty `echConfigList`), custom certificate stores, or removed chain/SPKI pin
+fields. They are rejected with a path-aware error instead of being ignored. The programmatic
 `allow_insecure` model field exists only for hermetic local tests and cannot be
 produced by canonical JSON parsing.
 
@@ -3422,12 +3422,6 @@ nothing:
   instead of Go's bundled roots. Here the bundled Mozilla roots stay in use,
   so a server whose chain needs a privately installed CA fails verification.
 - `show`, REALITY's debug switch, which `TLSConfig` does not have.
-- `echConfigList`: Encrypted Client Hello is not implemented. The handshake
-  goes out without ECH, so `serverName` travels in the clear where Xray-core
-  would hide it in the encrypted inner hello: an on-path observer or filter
-  sees the real name, and a front that blocks or only serves the name through
-  ECH may refuse the connection. Remove the field, or use REALITY, where the
-  real name must not be visible.
 - `disableSystemRoot: true` beside a nonempty `pinnedPeerCertSha256`, where
   the pins decide which certificates are trusted, here as in Xray-core.
   Without a pin it fails: Xray-core would then trust only `certificates`,
@@ -3435,7 +3429,14 @@ nothing:
   system roots the config turned off.
 
 Other TLS fields Xray-core reads, such as `certificates`, `masterKeyLog`,
-`echServerKeys` and `echSockopt`, are still rejected.
+`echServerKeys` and `echSockopt`, are still rejected. So is a nonempty
+`echConfigList`: Encrypted Client Hello is not implemented, and connecting
+without it would send `serverName` in the clear, where Xray-core would hide
+it in the encrypted inner hello. Xray-core fails a connection it cannot give
+ECH (`transport/internet/tls/ech.go` installs an invalid config), so a
+profile that hides a blocked name behind ECH fails here too rather than
+showing the name to on-path filters. An empty string or `null` asks for no
+ECH and is accepted.
 
 `tlsSettings.alpn` is an array of strings; a non-string entry is rejected with
 an indexed path. Where the configured list lands follows Xray rather than

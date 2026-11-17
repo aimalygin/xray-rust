@@ -1528,15 +1528,15 @@ v26.10.31):
   them and rustls keeps its own.
 - `useSystemCA` selects Go's root store (`config_other.go`); the bundled
   Mozilla roots stay in use here.
-- `echConfigList` is accepted without ECH. This is a real difference: the
-  server name goes out in the clear (see the
-  [TLS section of the compatibility guide](config-compatibility.md#tls-clienthello-shaping)).
 - `disableSystemRoot: true` is accepted only beside `pinnedPeerCertSha256`,
   where pins decide trust in both cores; without a pin it fails rather than
   trusting roots the config turned off.
 
 `certificates`, `masterKeyLog`, `echServerKeys` and `echSockopt` are still
-rejected.
+rejected, and so is a nonempty `echConfigList`: ECH is not implemented, and
+where Xray-core cannot apply ECH it fails the connection
+(`transport/internet/tls/ech.go`) rather than send the server name in the
+clear.
 
 ## REALITY real-certificate crawl
 

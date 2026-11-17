@@ -1764,9 +1764,12 @@ impl Parser<'_> {
     /// all four. An unshaped rustls handshake (`unsafe`, QUIC) keeps its own
     /// versions, suites and groups. `useSystemCA` picks the operating system's
     /// store over Go's bundled roots; the bundled Mozilla roots stay in use
-    /// here. `show` is REALITY's debug switch and no TLS field. `echConfigList`
-    /// asks for Encrypted Client Hello, which is not implemented: the
-    /// handshake goes out without it, `serverName` in the clear.
+    /// here. `show` is REALITY's debug switch and no TLS field.
+    ///
+    /// A nonempty `echConfigList` asks for Encrypted Client Hello, which is
+    /// not implemented, and fails: connecting without it would send
+    /// `serverName` in the clear, where Xray-core fails the connection
+    /// instead (`ech.go` installs an invalid config when it has none).
     ///
     /// `disableSystemRoot: true` leaves Xray-core no trust anchor besides
     /// `certificates`, which are refused here, so only a pinned certificate
@@ -1847,9 +1850,9 @@ impl Parser<'_> {
         match settings.get("echConfigList") {
             None | Some(Value::Null) => {}
             Some(Value::String(list)) if list.is_empty() => {}
-            Some(Value::String(_)) => self.warning(
+            Some(Value::String(_)) => self.error(
                 at("echConfigList"),
-                "tls `echConfigList` is ignored: Encrypted Client Hello is not supported, so the handshake sends `serverName` in the clear, where on-path observers and filters see it",
+                "tls `echConfigList` is not supported: Encrypted Client Hello is not implemented, and connecting without it would send `serverName` in the clear, where Xray-core fails the connection",
             ),
             Some(_) => self.error(at("echConfigList"), "field `echConfigList` must be a string or null"),
         }

@@ -1504,7 +1504,7 @@
         "echConfigList"
       ],
       "id": "TLS",
-      "notes": "allowInsecure=true is rejected. minVersion, maxVersion, cipherSuites and curvePreferences are type-checked and ignored with a warning: a uTLS fingerprint's hello decides them, as in Xray-core. useSystemCA and show are ignored with a warning. echConfigList is ignored with a warning: there is no ECH, so serverName goes out in the clear. disableSystemRoot true is ignored with a warning beside pinnedPeerCertSha256 and refused without it. fromMitm is unsupported. Fingerprints, certificate pins and name constraints use parser validation. enableSessionResumption is a boolean with no effect on a uTLS-shaped handshake, which never resumes here or in Xray-core; with fingerprint unsafe, and on QUIC, rustls resumes sessions whatever its value."
+      "notes": "allowInsecure=true is rejected. minVersion, maxVersion, cipherSuites and curvePreferences are type-checked and ignored with a warning: a uTLS fingerprint's hello decides them, as in Xray-core. useSystemCA and show are ignored with a warning. echConfigList is refused unless empty or null: there is no ECH, and connecting without it would send serverName in the clear, where Xray-core fails the connection. disableSystemRoot true is ignored with a warning beside pinnedPeerCertSha256 and refused without it. fromMitm is unsupported. Fingerprints, certificate pins and name constraints use parser validation. enableSessionResumption is a boolean with no effect on a uTLS-shaped handshake, which never resumes here or in Xray-core; with fingerprint unsafe, and on QUIC, rustls resumes sessions whatever its value."
     },
     {
       "context": "$.outbounds[].settings (wireguard)",

@@ -166,18 +166,27 @@ fn client_side_tls_knobs_are_type_checked_and_ignored_with_warnings() {
 }
 
 #[test]
-fn ech_config_list_connects_without_ech_and_says_so() {
+fn ech_config_list_fails_rather_than_connecting_without_ech() {
+    // Xray-core fails a connection it cannot give ECH; connecting without it
+    // would send the server name in the clear, so the config is refused.
     let raw = tls_profile(json!({
         "serverName": "proxy.example",
         "echConfigList": "AEX+DQBBpQAgACB/synthetic/ech/config/list/AAQAAQABAA5wdWJsaWMuZXhhbXBsZQAA"
     }));
-    let warnings = warnings_of(&raw);
-    let message = warning_at(
-        &warnings,
-        "$.outbounds[0].streamSettings.tlsSettings.echConfigList",
+    let error = parse_xray_json(&raw.to_string()).expect_err("ECH must not be dropped");
+    let path = "$.outbounds[0].streamSettings.tlsSettings.echConfigList";
+    let diagnostic = error
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.path.as_deref() == Some(path))
+        .unwrap_or_else(|| panic!("no error at {path}: {:?}", error.diagnostics));
+    assert_eq!(diagnostic.severity, DiagnosticSeverity::Error);
+    assert!(
+        diagnostic.message.contains("Encrypted Client Hello"),
+        "{}",
+        diagnostic.message
     );
-    assert!(message.contains("Encrypted Client Hello"), "{message}");
-    assert!(message.contains("in the clear"), "{message}");
+    assert_eq!(error_paths(&raw), [path]);
 }
 
 #[test]

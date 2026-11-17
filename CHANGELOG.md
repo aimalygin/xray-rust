@@ -55,13 +55,13 @@ long-term supported release series.
   `routing.domainMatcher`, `sockopt.tcpNoDelay`, mKCP `congestion`,
   `readBufferSize` and `writeBufferSize`, and TLS `minVersion`, `maxVersion`,
   `cipherSuites`, `curvePreferences`, `useSystemCA` and `show`. A uTLS
-  fingerprint decides the TLS four, as in Xray-core. `echConfigList` is
-  accepted without ECH, so the server name goes out in the clear, as its
-  warning says. `disableSystemRoot: true` is accepted only beside
+  fingerprint decides the TLS four, as in Xray-core. A nonempty
+  `echConfigList` still fails: ECH is not implemented, and connecting without
+  it would send the server name in the clear, where Xray-core fails the
+  connection. `disableSystemRoot: true` is accepted only beside
   `pinnedPeerCertSha256` and still fails without one, since ignoring it would
   trust roots the config turned off. Values Go's decoding refuses, and
   unknown keys, still fail.
-
 - Flows that fail to open through an outbound the observatory watches now
   have it probed again within seconds instead of at the next `probeInterval`.
   A refused, reset or timed-out connection, or a failed TLS, REALITY or
