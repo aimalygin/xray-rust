@@ -532,13 +532,35 @@ async fn system_dns_query_answers_each_family_from_the_platform_resolver() {
 
 #[tokio::test]
 async fn system_dns_query_reports_negative_answers_and_fails_failed_lookups() {
-    // Other types get an empty answer without a lookup.
-    let query = dns_query(0x5353, "printer.lan", 16, 0x0100);
-    let response = xray_transport::exchange_system_dns_query(&PlatformResolver, &query)
-        .await
-        .unwrap();
-    assert_eq!(&response[2..4], &0x8180_u16.to_be_bytes());
-    assert_eq!(&response[6..8], &0_u16.to_be_bytes());
+    // Other types, which the platform resolver cannot answer, fail without
+    // a lookup, so a DNS proxy asks its next upstream rather than taking
+    // NOERROR without records as final: TXT, SRV, MX, PTR, HTTPS, and A
+    // outside class IN or for the root.
+    for (record_type, domain, class) in [
+        (16, "printer.lan", 1),
+        (33, "_ipp._tcp.printer.lan", 1),
+        (15, "printer.lan", 1),
+        (12, "7.2.0.192.in-addr.arpa", 1),
+        (65, "printer.lan", 1),
+        (1, "printer.lan", 3),
+        (1, "", 1),
+    ] {
+        let mut query = dns_query(0x5353, domain, record_type, 0x0100);
+        if domain.is_empty() {
+            // The root name is one zero byte, not an empty label before it.
+            query.remove(12);
+        }
+        let class_at = query.len() - 2;
+        query[class_at..].copy_from_slice(&u16::to_be_bytes(class));
+        let error = xray_transport::exchange_system_dns_query(&PlatformResolver, &query)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.kind(),
+            std::io::ErrorKind::Unsupported,
+            "type {record_type} {domain:?}"
+        );
+    }
 
     let query = dns_query(0x5454, "gone.lan", 1, 0x0100);
     let response = xray_transport::exchange_system_dns_query(&PlatformResolver, &query)

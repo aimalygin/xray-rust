@@ -50,7 +50,8 @@ long-term supported release series.
   first. Answers carry the platform's TTL or Xray-core's 300 seconds and are
   cached like other servers'. Under the `StaticOnly` bootstrap mode it answers
   only from `dns.hosts`, and the next server takes the other names. The TUN
-  DNS proxy asks it locally over UDP and TCP.
+  DNS proxy asks it locally over UDP and TCP, for A and AAAA questions; any
+  other question goes on to the next upstream.
 - Full Xray JSON subscriptions with fields Xray-core accepts and that change
   nothing here now start, with a warning for each, where they failed to
   parse: root `stats`, `api`, `metrics`, `version` and `geodata` objects,

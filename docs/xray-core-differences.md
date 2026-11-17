@@ -1351,6 +1351,9 @@ Deliberate differences:
 - A lookup that finds no address is a failure, not an empty answer, so the
   next server is asked; Xray-core's `ErrEmptyResponse` reaches the same next
   server.
+- The TUN DNS proxy also forwards questions other than A and AAAA. A
+  `localhost` upstream fails them, so the next upstream answers; Xray-core's
+  app DNS asks this client for addresses only.
 
 ## Xray-core's FakeDNS as `dns.fakeIp`
 

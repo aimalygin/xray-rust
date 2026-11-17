@@ -2858,11 +2858,14 @@ fn build_dns_query_with_id(
 ///
 /// `resolver` is the core's bootstrap resolver: `dns.hosts`, then the
 /// platform resolver, or nothing more under a static-only bootstrap. An A or
-/// AAAA question of class IN is looked up for that family, any other single
-/// question gets an empty answer. The response repeats the question, keeps
-/// the query's RD bit and sets RA, and gives every address the lookup's
-/// remaining TTL, or Xray-core's 300-second `dns.DefaultTTL` when the
-/// platform reports none, as `getaddrinfo` never does. An answer found to be
+/// AAAA question of class IN is looked up for that family. Any other
+/// question fails, as does the root name: the platform resolver answers
+/// addresses only, and a NOERROR without records would end a DNS proxy's
+/// walk over its upstreams, so the next server gets the question instead.
+/// The response repeats the question, keeps the query's RD bit and sets RA,
+/// and gives every address the lookup's remaining TTL, or Xray-core's
+/// 300-second `dns.DefaultTTL` when the platform reports none, as
+/// `getaddrinfo` never does. An answer found to be
 /// empty is NOERROR without records; a lookup that fails, including one that
 /// finds no address at all, is an error, so a resolver moves on to its next
 /// server, as Xray-core's moves on when its local lookup fails.
@@ -2885,39 +2888,41 @@ pub async fn exchange_system_dns_query(
     }
     let mut question_end = 12;
     let (name, record_type, record_class) = read_dns_question(query, &mut question_end)?;
-    let strategy = match (record_class, record_type) {
-        (1, code) if code == DnsRecordType::A.code() => Some(DnsQueryStrategy::UseIpv4),
-        (1, code) if code == DnsRecordType::Aaaa.code() => Some(DnsQueryStrategy::UseIpv6),
-        _ => None,
-    };
     let domain = name.trim_end_matches('.');
-    let (rcode, addresses, ttl) = match strategy {
-        Some(strategy) if !domain.is_empty() => {
-            match resolver
-                .resolve_all_with_strategy(domain, 0, strategy)
-                .await
-            {
-                Ok(lookup) => {
-                    let ttl = lookup.ttl().map_or(DNS_DEFAULT_TTL.as_secs(), |ttl| {
-                        ttl.as_secs() + u64::from(ttl.subsec_nanos() != 0)
-                    });
-                    let want_ipv4 = strategy == DnsQueryStrategy::UseIpv4;
-                    let addresses: Vec<IpAddr> = lookup
-                        .ips()
-                        .map(|address| address.to_canonical())
-                        .filter(|address| address.is_ipv4() == want_ipv4)
-                        .collect();
-                    (0, addresses, u32::try_from(ttl).unwrap_or(u32::MAX))
-                }
-                Err(TransportError::DnsNoData(_, _)) => (0, Vec::new(), 0),
-                Err(TransportError::DnsNameError(_, _)) => (RCODE_NXDOMAIN, Vec::new(), 0),
-                Err(TransportError::DnsRcode(_, _, rcode)) => {
-                    (u16::from(rcode & 0x0f), Vec::new(), 0)
-                }
-                Err(error) => return Err(io::Error::other(error)),
-            }
+    let strategy = match (record_class, record_type) {
+        (1, code) if code == DnsRecordType::A.code() && !domain.is_empty() => {
+            DnsQueryStrategy::UseIpv4
         }
-        _ => (0, Vec::new(), 0),
+        (1, code) if code == DnsRecordType::Aaaa.code() && !domain.is_empty() => {
+            DnsQueryStrategy::UseIpv6
+        }
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "system DNS answers A and AAAA questions for a name only",
+            ))
+        }
+    };
+    let (rcode, addresses, ttl) = match resolver
+        .resolve_all_with_strategy(domain, 0, strategy)
+        .await
+    {
+        Ok(lookup) => {
+            let ttl = lookup.ttl().map_or(DNS_DEFAULT_TTL.as_secs(), |ttl| {
+                ttl.as_secs() + u64::from(ttl.subsec_nanos() != 0)
+            });
+            let want_ipv4 = strategy == DnsQueryStrategy::UseIpv4;
+            let addresses: Vec<IpAddr> = lookup
+                .ips()
+                .map(|address| address.to_canonical())
+                .filter(|address| address.is_ipv4() == want_ipv4)
+                .collect();
+            (0, addresses, u32::try_from(ttl).unwrap_or(u32::MAX))
+        }
+        Err(TransportError::DnsNoData(_, _)) => (0, Vec::new(), 0),
+        Err(TransportError::DnsNameError(_, _)) => (RCODE_NXDOMAIN, Vec::new(), 0),
+        Err(TransportError::DnsRcode(_, _, rcode)) => (u16::from(rcode & 0x0f), Vec::new(), 0),
+        Err(error) => return Err(io::Error::other(error)),
     };
     let answer_count = u16::try_from(addresses.len())
         .map_err(|_| invalid_dns_response("system DNS answer has too many addresses"))?;

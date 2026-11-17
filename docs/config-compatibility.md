@@ -4278,7 +4278,10 @@ Xray-core. Under the `StaticOnly` bootstrap mode, which a mobile VPN uses
 because the platform resolver would ask the tunnel itself, `localhost` can
 answer only names `dns.hosts` maps and fails every other, so the next server
 is asked. The TUN DNS proxy asks a `localhost` upstream the same way, locally,
-over UDP and TCP.
+over UDP and TCP. The platform resolver answers addresses only, so any other
+question (SRV, TXT, MX, PTR, HTTPS, or a class other than IN) fails at a
+`localhost` upstream and the proxy asks the next one, rather than taking an
+empty answer as final.
 
 `enableParallelQuery: true` asks every server a lookup selects at once, as
 Xray-core v26.10.31's parallel query does, instead of one after another. The
