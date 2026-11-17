@@ -14,7 +14,9 @@ long-term supported release series.
   parse. Xray-core sets no limit, and full subscriptions list more than
   eight. Destination lookups use every server; the TUN DNS proxy at
   `198.18.0.1` still forwards to the first eight distinct ones, which share
-  its five-second budget.
+  its five-second budget. With `enableParallelQuery` a lookup asks at most
+  eight servers at a time, the next starting as one settles, so one lookup
+  over 32 servers stays within the managed resolver's exchange limit.
 - RAW's `http` header obfuscation works (`tcpSettings`/`rawSettings`
   `header.type: "http"`), where it was refused: every connection sends a
   request head built as Xray-core builds it (method, a drawn path, headers

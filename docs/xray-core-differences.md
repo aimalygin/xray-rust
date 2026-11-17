@@ -1330,6 +1330,18 @@ Deliberate differences, source-derived:
 - The fixed TUN FakeDNS mode (`dns.fakeIp` without a DNS outbound) does not
   read `dns.hosts`, for IP values as for `"#N"`.
 
+## DNS parallel query
+
+`dns.enableParallelQuery` asks the servers of a lookup's plan at once and
+settles groups as Xray-core v26.10.31's `parallelQuery` does
+([details](config-compatibility.md#dns)). Deliberate difference: at most
+eight servers are asked at a time, the next in plan order starting as each
+settles, where Xray-core starts them all. `dns.servers` takes up to 32
+entries, and every server is two exchanges under `UseIP`, so asking all of
+them would exceed the managed resolver's exchange limit (eight running and
+four waiting per place on the low-memory profile) within a single lookup.
+Covered by resolver unit tests.
+
 ## DNS `localhost` client
 
 A `localhost` DNS server asks the platform resolver, as Xray-core v26.10.31's

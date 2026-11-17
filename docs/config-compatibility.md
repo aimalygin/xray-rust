@@ -4285,9 +4285,13 @@ question (SRV, TXT, MX, PTR, HTTPS, or a class other than IN) fails at a
 `localhost` upstream and the proxy asks the next one, rather than taking an
 empty answer as final.
 
-`enableParallelQuery: true` asks every server a lookup selects at once, as
-Xray-core v26.10.31's parallel query does, instead of one after another. The
-selection is the serial one. Servers next to each other in it that share a
+`enableParallelQuery: true` asks the servers a lookup selects at once, as
+Xray-core v26.10.31's parallel query does, instead of one after another, but
+at most eight at a time: the next server in selection order starts as each
+one settles. Xray-core starts every one; with up to 32 servers, and an A and
+an AAAA exchange each under `UseIP`, that would be 64 exchanges for one
+lookup, more than the managed resolver admits at once on the low-memory and
+mobile profiles. The selection is the serial one. Servers next to each other in it that share a
 policy race as a group: the first of them, in selection order, to answer with
 addresses gives the answer. Groups settle in order, so a later group's answer
 waits until every member of the earlier groups failed, and the remaining

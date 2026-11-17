@@ -76,7 +76,8 @@ const MAX_CONFIG_GEODATA_ATTR_FILTERS: usize = 32;
 const MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE: usize = 256;
 /// Xray-core sets no limit; full subscriptions list a dozen or two
 /// servers. Each entry costs one compiled policy, so the bound only keeps
-/// a config's server list small.
+/// a config's server list small. A parallel lookup asks at most eight of
+/// them at a time, and the TUN DNS proxy forwards to the first eight.
 const MAX_DNS_SERVERS: usize = 32;
 const DEFAULT_FAKE_IP_POOL_SIZE: u32 = 32_768;
 const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);

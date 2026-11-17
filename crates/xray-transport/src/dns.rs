@@ -299,6 +299,12 @@ const MAX_DNS_HTTPS_RESPONSE_SIZE: usize = u16::MAX as usize;
 const DNS_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(5);
 const DNS_LOCAL_TCP_FALLBACK_DELAY: Duration = Duration::from_millis(300);
 const MAX_DNS_ALIAS_DEPTH: usize = 8;
+/// Servers a parallel lookup asks at once; each that settles lets the next
+/// in plan order start. Eight, the server bound before it rose to 32, keeps
+/// a lookup's exchanges (two per server under `UseIP`) within what the
+/// smallest runtime profile admits at once, eight places and four waiters
+/// for each, where 32 servers would ask 64 exchanges of one lookup.
+const MAX_PARALLEL_DNS_SERVER_LOOKUPS: usize = 8;
 
 /// TTL cache over another resolver. Proxy clients open a new outbound
 /// connection per session; resolving the (usually single) server domain on
@@ -1741,12 +1747,14 @@ impl ConfiguredDnsResolver {
         )
     }
 
-    /// Xray-core's `parallelQuery`: every server of the plan is asked at
-    /// once. The plan's adjacent servers with the same policy id race as one
-    /// group, and groups settle in plan order: a group's answer is that of
-    /// its first member, in plan order, to have answered with addresses, and
-    /// a group whose members all failed passes the lookup on. The rest of the
-    /// lookups are dropped once an answer is found.
+    /// Xray-core's `parallelQuery`: the servers of the plan are asked at
+    /// once, at most [`MAX_PARALLEL_DNS_SERVER_LOOKUPS`] at a time, the next
+    /// in plan order starting as each one settles. The plan's adjacent
+    /// servers with the same policy id race as one group, and groups settle
+    /// in plan order: a group's answer is that of its first member, in plan
+    /// order, to have answered with addresses, and a group whose members all
+    /// failed passes the lookup on. The rest of the lookups are dropped once
+    /// an answer is found.
     async fn query_configured_servers_parallel(
         &self,
         domain: &str,
@@ -1758,7 +1766,7 @@ impl ConfiguredDnsResolver {
             .filter_map(|&index| self.name_servers.get(index))
             .collect();
         let mut outcomes: Vec<Option<ServerLookup>> = Vec::with_capacity(plan.len());
-        let mut lookups = FuturesUnordered::new();
+        let mut queued = Vec::with_capacity(plan.len());
         let mut saw_compatible_server = false;
         let mut saw_incompatible_server = false;
         for (position, name_server) in plan.iter().copied().enumerate() {
@@ -1773,13 +1781,27 @@ impl ConfiguredDnsResolver {
             }
             saw_compatible_server = true;
             outcomes.push(None);
-            lookups.push(async move {
+            queued.push(position);
+        }
+        // Lookups start in plan order, so the ones in flight are always the
+        // earliest unsettled: the group being settled never waits on a
+        // lookup that has not started.
+        let plan_ref = &plan;
+        let lookup = move |position: usize| {
+            let name_server = plan_ref[position];
+            async move {
                 let outcome = self
                     .query_server_lookup(name_server, domain, query_strategy)
                     .await;
                 (position, outcome)
-            });
-        }
+            }
+        };
+        let mut queued = queued.into_iter();
+        let mut lookups: FuturesUnordered<_> = queued
+            .by_ref()
+            .take(MAX_PARALLEL_DNS_SERVER_LOOKUPS)
+            .map(lookup)
+            .collect();
 
         let mut group_start = 0;
         while group_start < plan.len() {
@@ -1801,6 +1823,7 @@ impl ConfiguredDnsResolver {
                 break;
             };
             outcomes[position] = Some(outcome);
+            lookups.extend(queued.next().map(lookup));
         }
 
         if !saw_compatible_server && saw_incompatible_server {
@@ -4801,6 +4824,18 @@ mod tests {
         script: HashMap<u8, Scripted>,
         barrier: Option<Arc<Barrier>>,
         asked: Mutex<Vec<u8>>,
+        /// Exchanges under way now, and the most there have been at once.
+        in_flight: std::sync::atomic::AtomicUsize,
+        peak: std::sync::atomic::AtomicUsize,
+    }
+
+    /// Counts an exchange in flight until dropped.
+    struct InFlight<'a>(&'a std::sync::atomic::AtomicUsize);
+
+    impl Drop for InFlight<'_> {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        }
     }
 
     #[async_trait::async_trait]
@@ -4817,6 +4852,13 @@ mod tests {
             };
             let octet = address.ip().octets()[3];
             self.asked.lock().unwrap().push(octet);
+            let now = self
+                .in_flight
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                + 1;
+            self.peak
+                .fetch_max(now, std::sync::atomic::Ordering::SeqCst);
+            let _in_flight = InFlight(&self.in_flight);
             if let Some(barrier) = &self.barrier {
                 barrier.wait().await;
             }
@@ -4850,6 +4892,8 @@ mod tests {
                 .collect(),
             barrier: barrier.map(|count| Arc::new(Barrier::new(count))),
             asked: Mutex::new(Vec::new()),
+            in_flight: Default::default(),
+            peak: Default::default(),
         });
         let policies = servers
             .iter()
@@ -4903,6 +4947,59 @@ mod tests {
         let mut asked = transport.asked.lock().unwrap().clone();
         asked.sort_unstable();
         assert_eq!(asked, [1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn parallel_query_asks_at_most_eight_servers_at_a_time() {
+        // Twelve servers, each in a group of its own, the first eleven
+        // failing: every one is asked, never more than eight at once, and
+        // the last one's answer still wins.
+        let mut servers: Vec<(u8, u32, Scripted)> = (1..=11)
+            .map(|octet| {
+                (
+                    octet,
+                    u32::from(octet),
+                    Scripted::Error(Duration::from_millis(20)),
+                )
+            })
+            .collect();
+        servers.push((
+            12,
+            12,
+            Scripted::Address(FAST, Ipv4Addr::new(192, 0, 2, 112)),
+        ));
+        let (resolver, transport) = parallel_resolver(&servers, None);
+        assert_eq!(
+            answer_of(&resolver).await.unwrap(),
+            IpAddr::from([192, 0, 2, 112])
+        );
+        let mut asked = transport.asked.lock().unwrap().clone();
+        asked.sort_unstable();
+        assert_eq!(asked, (1..=12).collect::<Vec<u8>>());
+        assert_eq!(
+            transport.peak.load(std::sync::atomic::Ordering::SeqCst),
+            super::MAX_PARALLEL_DNS_SERVER_LOOKUPS
+        );
+
+        // One group of twelve: the first answer wins even when its member
+        // could start only after others settled.
+        let mut servers: Vec<(u8, u32, Scripted)> = (1..=11)
+            .map(|octet| (octet, 1, Scripted::Error(Duration::from_millis(20))))
+            .collect();
+        servers.push((
+            12,
+            1,
+            Scripted::Address(FAST, Ipv4Addr::new(192, 0, 2, 112)),
+        ));
+        let (resolver, transport) = parallel_resolver(&servers, None);
+        assert_eq!(
+            answer_of(&resolver).await.unwrap(),
+            IpAddr::from([192, 0, 2, 112])
+        );
+        assert_eq!(
+            transport.peak.load(std::sync::atomic::Ordering::SeqCst),
+            super::MAX_PARALLEL_DNS_SERVER_LOOKUPS
+        );
     }
 
     #[tokio::test]
