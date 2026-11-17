@@ -5,7 +5,7 @@ use super::*;
 use std::cell::Cell;
 use std::net::SocketAddrV4;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tokio::net::TcpListener;
 use tokio::time::timeout;
 
@@ -27,6 +27,7 @@ const CLIENT: Ipv4Addr = Ipv4Addr::new(10, 10, 0, 2);
 const CLIENT_PORT: u16 = 49_152;
 const TCP_FIN: u8 = 0x01;
 const TCP_SYN: u8 = 0x02;
+const TCP_RST: u8 = 0x04;
 const TCP_PSH: u8 = 0x08;
 const TCP_ACK: u8 = 0x10;
 
@@ -37,6 +38,54 @@ async fn started_core(outbound: &str) -> crate::Core {
         .expect("TUN config parses")
         .config;
     let mut core = crate::Core::new(config).expect("core builds");
+    core.start().await.expect("core starts");
+    core
+}
+
+/// Hands each outbound TCP dial the next stream, so that a test sees the
+/// other end of every connection and paused time sees no socket.
+struct DuplexConnector(Mutex<Vec<DuplexStream>>);
+
+#[async_trait::async_trait]
+impl xray_transport::ResolvedTcpConnector for DuplexConnector {
+    async fn connect_resolved(
+        &self,
+        _: &Target,
+        _: &[SocketAddr],
+        _: Option<&xray_transport::HappyEyeballsConfig>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        let stream = self.0.lock().unwrap().pop().ok_or_else(|| {
+            TransportError::Tcp(std::io::Error::from(std::io::ErrorKind::ConnectionRefused))
+        })?;
+        Ok(Box::new(stream))
+    }
+}
+
+/// A started core with a freedom outbound, whose first outbound TCP
+/// connection is `stream`, and `extra` JSON fields.
+async fn core_dialing(
+    stream: DuplexStream,
+    extra: &str,
+    profile: TunRuntimeProfile,
+) -> crate::Core {
+    let raw = format!(
+        r#"{{{extra}"inbounds":[{{"tag":"tun-in","protocol":"tun"}}],"outbounds":[{{"protocol":"freedom","tag":"direct"}}]}}"#
+    );
+    let config = xray_config::parse_xray_json(&raw)
+        .expect("TUN config parses")
+        .config;
+    let dialer = TransportDialer::system()
+        .expect("system dialer")
+        .with_resolved_tcp_connector(Arc::new(DuplexConnector(Mutex::new(vec![stream]))));
+    let mut core = crate::Core::with_transport_dialer_and_tun_options(
+        config,
+        Arc::new(dialer),
+        TunRuntimeOptions {
+            profile,
+            ..Default::default()
+        },
+    )
+    .expect("core builds");
     core.start().await.expect("core starts");
     core
 }
@@ -261,4 +310,217 @@ async fn idle_tcp_flow_leaves_the_loop_asleep_until_its_next_segment() {
 
     core.stop().await.unwrap();
     echo_task.abort();
+}
+
+/// Opens a TCP flow from the app to `server`. Returns the app's next
+/// sequence number and the stack's, which the app acknowledged.
+async fn open_tcp_flow(tun: &TunEndpoint, server: SocketAddrV4) -> (u32, u32) {
+    let sequence = 1_000u32;
+    tun.push_inbound(tcp_segment(server, sequence, 0, TCP_SYN, &[]))
+        .await
+        .unwrap();
+    let (_, server_syn, _) = receive_segment(tun, |flags, _| {
+        flags & (TCP_SYN | TCP_ACK) == TCP_SYN | TCP_ACK
+    })
+    .await;
+    let acknowledged = server_syn.wrapping_add(1);
+    tun.push_inbound(tcp_segment(
+        server,
+        sequence + 1,
+        acknowledged,
+        TCP_ACK,
+        &[],
+    ))
+    .await
+    .unwrap();
+    (sequence + 1, acknowledged)
+}
+
+/// Takes every packet the TUN holds for the app; true if a reset was among
+/// them.
+async fn drain_reset(tun: &TunEndpoint) -> bool {
+    let mut reset = false;
+    while let Some(packet) = tun.try_poll_outbound().await.unwrap() {
+        reset |= received_segment(&packet).is_some_and(|(flags, _, _)| flags & TCP_RST != 0);
+    }
+    reset
+}
+
+/// A flow the remote closed and the app keeps half open in FIN-WAIT-2 has
+/// nothing but the close-wait deadline to end it: with no other input, the
+/// loop sleeps through the linger and wakes at its end to reset the flow.
+#[tokio::test]
+async fn fin_wait_2_flow_is_reset_at_the_linger_with_no_other_input() {
+    let (stream, peer) = tokio::io::duplex(1_024);
+    let mut core = core_dialing(stream, "", TunRuntimeProfile::Default).await;
+    let tun = core.tun();
+    let server = SocketAddrV4::new(Ipv4Addr::new(192, 0, 2, 20), 443);
+
+    // In real time: smoltcp's timers run on the system clock.
+    timeout(Duration::from_secs(10), async {
+        let (sequence, _) = open_tcp_flow(tun, server).await;
+        // The remote closes. The stack sends its FIN, and the app
+        // acknowledges it without closing its own side.
+        drop(peer);
+        let (_, fin, _) = receive_segment(tun, |flags, _| flags & TCP_FIN != 0).await;
+        tun.push_inbound(tcp_segment(
+            server,
+            sequence,
+            fin.wrapping_add(1),
+            TCP_ACK,
+            &[],
+        ))
+        .await
+        .unwrap();
+    })
+    .await
+    .expect("the flow reaches FIN-WAIT-2");
+
+    // Nothing else happens from here on.
+    tokio::time::pause();
+    let start = TokioInstant::now();
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    let settled = loop_turns();
+    tokio::time::sleep_until(start + TUN_TCP_LINGER - Duration::from_secs(1)).await;
+    assert_eq!(loop_turns() - settled, 0, "the loop woke during the linger");
+    assert!(
+        !drain_reset(tun).await,
+        "the flow was reset before the linger ran out"
+    );
+    assert_eq!(tun.stats().await.active_tcp_flows, 1);
+
+    // The turn that saw FIN-WAIT-2 ran within a second of the app's ACK.
+    tokio::time::sleep_until(start + TUN_TCP_LINGER + Duration::from_secs(2)).await;
+    assert!(
+        drain_reset(tun).await,
+        "the app was not told the flow is gone"
+    );
+    assert_eq!(tun.stats().await.active_tcp_flows, 0);
+    core.stop().await.unwrap();
+}
+
+/// Upload bytes waiting for their outbound show in the statistics, and their
+/// release by the outbound wakes nothing: the loop looks every second while
+/// bytes wait, records them gone, and then sleeps.
+#[tokio::test]
+async fn released_upload_bytes_leave_the_statistics_with_no_other_input() {
+    let (stream, mut peer) = tokio::io::duplex(32);
+    let mut core = core_dialing(stream, "", TunRuntimeProfile::Default).await;
+    let tun = core.tun();
+    let server = SocketAddrV4::new(Ipv4Addr::new(192, 0, 2, 21), 443);
+    let upload = [0x55; 1_000];
+
+    timeout(Duration::from_secs(10), async {
+        let (sequence, acknowledged) = open_tcp_flow(tun, server).await;
+        tun.push_inbound(tcp_segment(
+            server,
+            sequence,
+            acknowledged,
+            TCP_PSH | TCP_ACK,
+            &upload,
+        ))
+        .await
+        .unwrap();
+        // The stack acknowledges the bytes, so that no smoltcp timer is left,
+        // and the outbound takes what fits its 32-byte pipe.
+        receive_segment(tun, |flags, data| flags & TCP_ACK != 0 && data.is_empty()).await;
+        let mut first = [0; 32];
+        peer.read_exact(&mut first).await.unwrap();
+    })
+    .await
+    .expect("the upload reaches the outbound");
+
+    tokio::time::pause();
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    assert!(
+        tun.stats().await.tcp_pending_upload_bytes > 0,
+        "the waiting bytes did not reach the statistics"
+    );
+
+    // The outbound takes the rest, which tells the loop nothing.
+    let mut rest = [0; 1_000 - 32];
+    peer.read_exact(&mut rest).await.unwrap();
+    tokio::time::sleep(TUN_FLOW_STATS_INTERVAL + Duration::from_millis(100)).await;
+    assert_eq!(
+        tun.stats().await.tcp_pending_upload_bytes,
+        0,
+        "the released bytes stayed in the statistics"
+    );
+
+    let settled = loop_turns();
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    assert_eq!(loop_turns() - settled, 0, "the loop kept looking");
+    core.stop().await.unwrap();
+}
+
+/// A DNS query for the HTTPS records (type 65) of `name`. The TUN relays it
+/// through its DNS-over-TCP pool; A and AAAA go to the core's resolver.
+fn dns_query(id: u16, name: &str) -> Vec<u8> {
+    let mut query = Vec::new();
+    query.extend_from_slice(&id.to_be_bytes());
+    query.extend_from_slice(&[0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0]);
+    for label in name.split('.') {
+        query.push(label.len() as u8);
+        query.extend_from_slice(label.as_bytes());
+    }
+    query.extend_from_slice(&[0, 0, 65, 0, 1]);
+    query
+}
+
+/// A DNS-over-TCP connection the pool keeps idle has nothing but its expiry
+/// to close it: with no other input, the loop sleeps until then.
+#[tokio::test(start_paused = true)]
+async fn pooled_dns_connection_is_closed_at_its_expiry_with_no_other_input() {
+    // The pool's idle TTL of the low-memory profile.
+    const IDLE_TTL: Duration = Duration::from_secs(15);
+    let (stream, mut upstream) = tokio::io::duplex(1_024);
+    let mut core = core_dialing(
+        stream,
+        r#""dns":{"servers":["tcp+local://192.0.2.53"]},"#,
+        TunRuntimeProfile::LowMemory,
+    )
+    .await;
+    let upstream = tokio::spawn(async move {
+        let len = upstream.read_u16().await.unwrap();
+        let mut message = vec![0; usize::from(len)];
+        upstream.read_exact(&mut message).await.unwrap();
+        message[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+        upstream.write_u16(len).await.unwrap();
+        upstream.write_all(&message).await.unwrap();
+        // The pool keeps the connection open until it expires.
+        let mut more = [0; 1];
+        assert_eq!(upstream.read(&mut more).await.unwrap(), 0);
+        TokioInstant::now()
+    });
+
+    let query = dns_query(0x5151, "pool.example");
+    let packet = build_ipv4_udp_packet(CLIENT, CLIENT_PORT, TUN_DNS_ANCHOR, 53, &query).unwrap();
+    core.tun().push_inbound(packet).await.unwrap();
+    let reply = core.tun().poll_outbound().await.unwrap();
+    assert_eq!(reply.get(28..30), Some(&query[..2]), "not the DNS answer");
+    let answered = TokioInstant::now();
+
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let settled = loop_turns();
+    tokio::time::sleep_until(answered + IDLE_TTL - Duration::from_secs(1)).await;
+    assert_eq!(
+        loop_turns() - settled,
+        0,
+        "the loop woke while the connection idled"
+    );
+    assert!(
+        !upstream.is_finished(),
+        "the connection closed before it expired"
+    );
+
+    let closed = timeout(Duration::from_secs(5), upstream)
+        .await
+        .expect("the pool did not close its expired connection")
+        .unwrap();
+    assert!(
+        closed <= answered + IDLE_TTL + TUN_FLOW_STATS_INTERVAL,
+        "closed {:?} after the answer",
+        closed - answered
+    );
+    core.stop().await.unwrap();
 }
