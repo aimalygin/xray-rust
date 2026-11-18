@@ -123,7 +123,9 @@ Android's xicmp run over from the 0.10.0 release's build, on the owner's
 behind every transition and keeps every failed attempt. The candidate's
 `check-v010-release-evidence.py` accepts the
 [archive](releases/v0.10.1-device-evidence.zip) (SHA-256
-`108330e340fd33b6aa357adc8814342d07deb4dffb79a97794076c865f805652`). Asked on
+`108330e340fd33b6aa357adc8814342d07deb4dffb79a97794076c865f805652`), locally
+and in `v010-release-evidence.yml` on the candidate (run
+[44335212229](https://github.com/aimalygin/xray-rust/actions/runs/44335212229)). Asked on
 2026-11-18 «Выпускать 0.10.1 с этими ограничениями и публиковать
 свидетельства?», the owner answered «Да, публикуй»; the
 [decision record](releases/v0.10.1-owner-decisions.json) holds the owner's
@@ -159,7 +161,7 @@ In order, as in the [release process](release-process.md):
 1. Full CI on the candidate: passed (run 44003926752).
 2. The SDK pinned to the candidate commit: done (xray-rust-mobile#56).
 3. The evidence and its publication on `main`: this change; the evidence
-   workflow is pending.
+   workflow passed on the candidate (run 44335212229).
 4. The annotated tag `v0.10.1` and its GitHub release: pending.
 5. The SDK's Prepare release, tag and packages, the KMP library, and the
    README install snippets: pending.
