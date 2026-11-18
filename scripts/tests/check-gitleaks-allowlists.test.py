@@ -24,6 +24,56 @@ ARCHIVE_ALLOWLIST = "Nine verified file digests in the v0.7 automated evidence i
 
 
 class EvidenceAllowlists(unittest.TestCase):
+    def test_v0101_evidence_exceptions_are_narrow(self):
+        base = "docs/device-results/2026-11-17-v0101-candidate/"
+        feature = base + "performance-features/build-manifest.json"
+        manifests = (base + "performance-protocols/manifest.json",
+                     base + "release-comparison/manifest.json")
+        collector = base + "tools/campaign/shared/udp_cancel_v09.py"
+        inventory = json.loads((ROOT / base / "inventory.json").read_text())
+        hashes = {item["path"]: item["publishedSHA256"] for item in inventory["files"]}
+        reviewed = {}
+        for path in (feature, *manifests, collector):
+            content = (ROOT / path).read_bytes()
+            self.assertEqual(hashlib.sha256(content).hexdigest(), hashes[path[len(base):]])
+            reviewed[path] = content.decode()
+        self.assertEqual(self.scan(reviewed), set())
+
+        # Another value on the same line is a finding again.
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        digests = json.loads(reviewed[feature])["binarySha256"]
+        reference = "799824a3005d4a5d699cfdf9634e7601a48c33028884142e0fccf783692f322d"
+        for path, digest in [(feature, digests["xray-core"]), (feature, digests["xray-rust"]),
+                             (manifests[0], reference), (manifests[1], reference)]:
+            self.assertIn(digest, reviewed[path])
+            self.assertIn((path, "jfrog-identity-token"),
+                          self.scan({path: reviewed[path].replace(digest, other)}))
+        self.assertIn((feature, "generic-api-key"),
+                      self.scan({feature: reviewed[feature].replace(digests["keys"], other)}))
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertIn((collector, "generic-api-key"), self.scan(
+            {collector: reviewed[collector].replace("shadowsocks-aead-aes-256-gcm", synthetic)}))
+
+        # The same digest under a credential's name is a finding.
+        self.assertIn((feature, "generic-api-key"),
+                      self.scan({feature: json.dumps({"api_key": digests["keys"]})}))
+
+        # The same content anywhere else is a finding.
+        outside = {"unreviewed/" + path: content for path, content in reviewed.items()}
+        findings = self.scan(outside)
+        for path in (feature, *manifests):
+            self.assertIn(("unreviewed/" + path, "jfrog-identity-token"), findings)
+        for path in (feature, collector):
+            self.assertIn(("unreviewed/" + path, "generic-api-key"), findings)
+
+        # Real credential shapes are still found in the reviewed paths.
+        token = "ghp_" + "aB7cD9eF2gH4iJ6kL8mN0oP1qR3sT5uV7wX9"
+        controls = {path: json.dumps({"api_key": synthetic, "token": token}) for path in reviewed}
+        findings = self.scan(controls)
+        for path in controls:
+            self.assertIn((path, "generic-api-key"), findings)
+            self.assertIn((path, "github-pat"), findings)
+
     def test_v0100_evidence_exceptions_are_narrow(self):
         base = "docs/device-results/2026-11-15-v0100-candidate/"
         feature = base + "performance-features/build-manifest.json"

@@ -1,0 +1,108 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 17,
+    "protocol" : "setup",
+    "time" : "2026-11-17T02:42:50Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-17T02:42:50Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "ip-on-demand",
+    "seconds" : 0.24625897407531738,
+    "time" : "2026-11-17T02:42:50Z"
+  },
+  {
+    "event" : "dns-fakeip-anchor",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-17T02:42:50Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-17T02:42:51Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.39579329165280797,
+    "host" : "198.51.100.7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-17T02:42:51Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-17T02:42:51Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.098556083321454935,
+    "host" : "2001:db8::7",
+    "protocol" : "ip-on-demand",
+    "result" : "passed",
+    "time" : "2026-11-17T02:42:51Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-71af93a6b042.test",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-17T02:42:51Z"
+  },
+  {
+    "code" : 54,
+    "domain" : "Network.NWError",
+    "event" : "failure",
+    "protocol" : "ip-on-demand",
+    "time" : "2026-11-17T02:42:51Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "98343.82759525001"
+      }
+    ],
+    "protocol" : "ip-on-demand",
+    "stage" : "failure",
+    "time" : "2026-11-17T02:42:51Z"
+  },
+  {
+    "cycle" : 0,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4343456,
+    "inboundPackets" : 139,
+    "outboundPackets" : 118,
+    "protocol" : "ip-on-demand",
+    "rss" : 29982720,
+    "runtime" : "e8c8675a-1a93-47d3-bdc4-39b75fe1bb6b",
+    "stage" : "failure",
+    "tcp" : 2,
+    "threads" : 10,
+    "time" : "2026-11-17T02:42:51Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "complete",
+    "protocol" : "ip-on-demand",
+    "result" : "failed",
+    "time" : "2026-11-17T02:42:52Z"
+  }
+]

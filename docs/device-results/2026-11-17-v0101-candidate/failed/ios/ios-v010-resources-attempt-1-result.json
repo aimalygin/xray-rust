@@ -1,0 +1,70 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 17,
+    "protocol" : "setup",
+    "time" : "2026-11-17T01:41:32Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "mkcp:vless",
+    "result" : "not-applicable",
+    "time" : "2026-11-17T01:41:32Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-17T01:41:32Z"
+  },
+  {
+    "code" : 0,
+    "domain" : "XrayProtocolDeviceProbe.Network",
+    "event" : "failure",
+    "protocol" : "mkcp:vless",
+    "time" : "2026-11-17T01:41:43Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "94665.54696908334"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "94667.45623191667"
+      }
+    ],
+    "protocol" : "mkcp:vless",
+    "stage" : "failure",
+    "time" : "2026-11-17T01:41:43Z"
+  },
+  {
+    "cycle" : 0,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4638368,
+    "inboundPackets" : 103,
+    "outboundPackets" : 55,
+    "protocol" : "mkcp:vless",
+    "rss" : 31031296,
+    "runtime" : "40c9d219-bec0-4f4e-9d0d-7ba1e8015e0c",
+    "stage" : "failure",
+    "tcp" : 1,
+    "threads" : 9,
+    "time" : "2026-11-17T01:41:43Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "complete",
+    "protocol" : "mkcp:vless",
+    "result" : "failed",
+    "time" : "2026-11-17T01:41:43Z"
+  }
+]
