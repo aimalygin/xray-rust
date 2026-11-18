@@ -1,0 +1,138 @@
+{
+  "summary": {
+    "fixtureArgs": "--suite v09 --protocol v09",
+    "rows": 14,
+    "failed": 0,
+    "boundSeconds": 3,
+    "fixtureSecretsRemoved": true,
+    "scope": "host loopback through SOCKS ingress; not device evidence"
+  },
+  "rows": [
+    {
+      "case": "socks-password",
+      "mode": "socket-close",
+      "id": 7001,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.003,
+      "result": "passed"
+    },
+    {
+      "case": "socks-password",
+      "mode": "process-stop",
+      "id": 7002,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.002,
+      "result": "passed"
+    },
+    {
+      "case": "http-plain",
+      "mode": "socket-close",
+      "id": 7003,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.002,
+      "result": "passed"
+    },
+    {
+      "case": "http-plain",
+      "mode": "process-stop",
+      "id": 7004,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.003,
+      "result": "passed"
+    },
+    {
+      "case": "http-tls",
+      "mode": "socket-close",
+      "id": 7005,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.003,
+      "result": "passed"
+    },
+    {
+      "case": "http-tls",
+      "mode": "process-stop",
+      "id": 7006,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.004,
+      "result": "passed"
+    },
+    {
+      "case": "shadowsocks-aead-aes-256-gcm",
+      "mode": "socket-close",
+      "id": 7007,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.003,
+      "result": "passed"
+    },
+    {
+      "case": "shadowsocks-aead-aes-256-gcm",
+      "mode": "process-stop",
+      "id": 7008,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.002,
+      "result": "passed"
+    },
+    {
+      "case": "shadowsocks-aead-aes-128-gcm",
+      "mode": "socket-close",
+      "id": 7009,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.003,
+      "result": "passed"
+    },
+    {
+      "case": "shadowsocks-aead-aes-128-gcm",
+      "mode": "process-stop",
+      "id": 7010,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.001,
+      "result": "passed"
+    },
+    {
+      "case": "shadowsocks-aead-chacha20-poly1305",
+      "mode": "socket-close",
+      "id": 7011,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.001,
+      "result": "passed"
+    },
+    {
+      "case": "shadowsocks-aead-chacha20-poly1305",
+      "mode": "process-stop",
+      "id": 7012,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.002,
+      "result": "passed"
+    },
+    {
+      "case": "shadowsocks-aead-xchacha20-poly1305",
+      "mode": "socket-close",
+      "id": 7013,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.003,
+      "result": "passed"
+    },
+    {
+      "case": "shadowsocks-aead-xchacha20-poly1305",
+      "mode": "process-stop",
+      "id": 7014,
+      "openedToRequest": 0.0,
+      "reason": "eof",
+      "closeAfterRequest": 1.001,
+      "result": "passed"
+    }
+  ]
+}

@@ -1,0 +1,246 @@
+{
+  "complete": true,
+  "trialCount": 200,
+  "profiles": [
+    {
+      "profile": "masque-h3",
+      "throughputMiBs": {
+        "candidate": [
+          259.33401941904077,
+          260.6840582266926,
+          262.0090909908385,
+          263.56967738184,
+          280.8479523743308
+        ],
+        "xray": [
+          176.1329831543594,
+          173.44194005650075,
+          167.59012162390894,
+          176.5580965458101,
+          169.3658802510452
+        ]
+      },
+      "p95LatencyUs": {
+        "candidate": [
+          227,
+          223,
+          226,
+          197,
+          223
+        ],
+        "xray": [
+          254,
+          224,
+          250,
+          253,
+          256
+        ]
+      },
+      "sampledPeakRSSMiB": {
+        "candidate": [
+          12.578125,
+          12.75,
+          12.59375,
+          12.578125,
+          12.546875
+        ],
+        "xray": [
+          44.25,
+          46.0,
+          44.671875,
+          44.984375,
+          45.84375
+        ]
+      },
+      "pairedRatiosVsXray": {
+        "throughput": [
+          1.4723762396720759,
+          1.5030047411933454,
+          1.5633922122141324,
+          1.4928212443287965,
+          1.6582321773313466
+        ],
+        "latency": [
+          0.8937007874015748,
+          0.9955357142857143,
+          0.904,
+          0.7786561264822134,
+          0.87109375
+        ],
+        "memory": [
+          0.2842514124293785,
+          0.27717391304347827,
+          0.28191675410982864,
+          0.2796109760333449,
+          0.2736877982276755
+        ]
+      },
+      "checks": {
+        "throughputVsXray": true,
+        "latencyVsXray": true,
+        "memoryWithin64MiB": true
+      }
+    },
+    {
+      "profile": "mkcp-vless",
+      "throughputMiBs": {
+        "candidate": [
+          7.072173980342035,
+          9.076518918670502,
+          9.550856367977916,
+          6.808726066390613,
+          9.69542412149942
+        ],
+        "xray": [
+          8.364854885022496,
+          6.4968989742868475,
+          6.153201275869592,
+          5.817269410147712,
+          5.896916146861409
+        ]
+      },
+      "p95LatencyUs": {
+        "candidate": [
+          105963,
+          106049,
+          106056,
+          104399,
+          104302
+        ],
+        "xray": [
+          104751,
+          104934,
+          104847,
+          104528,
+          103070
+        ]
+      },
+      "sampledPeakRSSMiB": {
+        "candidate": [
+          11.046875,
+          11.390625,
+          11.1875,
+          11.046875,
+          11.09375
+        ],
+        "xray": [
+          59.328125,
+          60.625,
+          60.359375,
+          63.546875,
+          63.34375
+        ]
+      },
+      "pairedRatiosVsXray": {
+        "throughput": [
+          0.8454628415616581,
+          1.3970540337156487,
+          1.552176816551179,
+          1.1704333401704574,
+          1.6441516006056383
+        ],
+        "latency": [
+          1.011570295271644,
+          1.0106257266472258,
+          1.0115310881570287,
+          0.9987658809122915,
+          1.0119530416221985
+        ],
+        "memory": [
+          0.18619963128785882,
+          0.18788659793814433,
+          0.18534817499352835,
+          0.1738382099827883,
+          0.17513566847557968
+        ]
+      },
+      "checks": {
+        "throughputVsXray": true,
+        "latencyVsXray": true,
+        "memoryWithin64MiB": true
+      }
+    }
+  ],
+  "schema5Measurements": [
+    {
+      "id": "masque-throughput",
+      "unit": "% of paired Xray throughput",
+      "samples": [
+        147.23762396720758,
+        150.30047411933452,
+        156.33922122141323,
+        149.28212443287964,
+        165.82321773313467
+      ],
+      "comparison": "at-least",
+      "threshold": 50
+    },
+    {
+      "id": "masque-latency",
+      "unit": "% of paired Xray p95 latency",
+      "samples": [
+        89.37007874015748,
+        99.55357142857143,
+        90.4,
+        77.86561264822134,
+        87.109375
+      ],
+      "comparison": "at-most",
+      "threshold": 200
+    },
+    {
+      "id": "masque-memory",
+      "unit": "MiB sampled peak RSS",
+      "samples": [
+        12.578125,
+        12.75,
+        12.59375,
+        12.578125,
+        12.546875
+      ],
+      "comparison": "at-most",
+      "threshold": 64
+    },
+    {
+      "id": "mkcp-throughput",
+      "unit": "% of paired Xray throughput",
+      "samples": [
+        84.54628415616581,
+        139.70540337156487,
+        155.2176816551179,
+        117.04333401704574,
+        164.41516006056384
+      ],
+      "comparison": "at-least",
+      "threshold": 50
+    },
+    {
+      "id": "mkcp-latency",
+      "unit": "% of paired Xray p95 latency",
+      "samples": [
+        101.15702952716441,
+        101.06257266472258,
+        101.15310881570288,
+        99.87658809122915,
+        101.19530416221984
+      ],
+      "comparison": "at-most",
+      "threshold": 200
+    },
+    {
+      "id": "mkcp-memory",
+      "unit": "MiB sampled peak RSS",
+      "samples": [
+        11.046875,
+        11.390625,
+        11.1875,
+        11.046875,
+        11.09375
+      ],
+      "comparison": "at-most",
+      "threshold": 64
+    }
+  ],
+  "allProfilesPassed": true,
+  "scope": "Single-flow loopback SOCKS ingress, five rotating-order paired repetitions against pinned Xray-core v26.11.9 over a common Xray-core server; native release profile; sing-box implements neither carrier. The suite's eight-flow and upload/download/UDP cases stay in benchmark-raw.json and are not gate rows. Original outliers retained."
+}

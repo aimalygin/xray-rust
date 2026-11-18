@@ -1,0 +1,394 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 17,
+    "protocol" : "setup",
+    "time" : "2026-11-17T01:51:32Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "xdns:mkcp",
+    "result" : "not-applicable",
+    "time" : "2026-11-17T01:51:33Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "xdns:mkcp",
+    "seconds" : 0.23690998554229736,
+    "time" : "2026-11-17T01:51:33Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "xdns:mkcp",
+    "time" : "2026-11-17T01:51:33Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.87555033332318999,
+    "host" : "198.51.100.7",
+    "protocol" : "xdns:mkcp",
+    "result" : "passed",
+    "time" : "2026-11-17T01:51:34Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "xdns:mkcp",
+    "time" : "2026-11-17T01:51:34Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.66384612501133233,
+    "host" : "2001:db8::7",
+    "protocol" : "xdns:mkcp",
+    "result" : "passed",
+    "time" : "2026-11-17T01:51:34Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-84babe0c2328.test",
+    "protocol" : "xdns:mkcp",
+    "time" : "2026-11-17T01:51:34Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.2900665833440144,
+    "host" : "v07-probe-84babe0c2328.test",
+    "protocol" : "xdns:mkcp",
+    "result" : "passed",
+    "time" : "2026-11-17T01:51:36Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "xdns:mkcp",
+    "time" : "2026-11-17T01:51:36Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.57287425000686198,
+    "host" : "198.51.100.7",
+    "protocol" : "xdns:mkcp",
+    "result" : "passed",
+    "time" : "2026-11-17T01:51:36Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "xdns:mkcp",
+    "time" : "2026-11-17T01:51:36Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.56373366666957736,
+    "host" : "2001:db8::7",
+    "protocol" : "xdns:mkcp",
+    "result" : "passed",
+    "time" : "2026-11-17T01:51:37Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "xdns:mkcp",
+    "result" : "passed",
+    "time" : "2026-11-17T01:51:37Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "95266.18758308335"
+      }
+    ],
+    "protocol" : "xdns:mkcp",
+    "stage" : "after-traffic",
+    "time" : "2026-11-17T01:51:37Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 5162632,
+    "inboundPackets" : 219,
+    "outboundPackets" : 181,
+    "protocol" : "xdns:mkcp",
+    "rss" : 32325632,
+    "runtime" : "9c8ea1e0-83f5-41b1-9b4a-2ce8c8828d85",
+    "stage" : "after-traffic",
+    "tcp" : 2,
+    "threads" : 11,
+    "time" : "2026-11-17T01:51:37Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 1,
+    "event" : "connection-close-request",
+    "ids" : [
+      2,
+      3,
+      6,
+      7
+    ],
+    "protocol" : "xdns:mkcp",
+    "time" : "2026-11-17T01:51:37Z"
+  },
+  {
+    "closedIDs" : [
+      2,
+      3,
+      6,
+      7
+    ],
+    "cycle" : 1,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "xdns:mkcp",
+    "seconds" : 2.0638113333407091,
+    "time" : "2026-11-17T01:51:39Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "95266.18758308335"
+      }
+    ],
+    "protocol" : "xdns:mkcp",
+    "stage" : "after-close",
+    "time" : "2026-11-17T01:51:39Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4998792,
+    "inboundPackets" : 225,
+    "outboundPackets" : 189,
+    "protocol" : "xdns:mkcp",
+    "rss" : 32768000,
+    "runtime" : "9c8ea1e0-83f5-41b1-9b4a-2ce8c8828d85",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 11,
+    "time" : "2026-11-17T01:51:39Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "xdns:mkcp",
+    "time" : "2026-11-17T01:51:39Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.58937595832685474,
+    "host" : "198.51.100.7",
+    "protocol" : "xdns:mkcp",
+    "result" : "passed",
+    "time" : "2026-11-17T01:51:40Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "xdns:mkcp",
+    "time" : "2026-11-17T01:51:40Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.3394137499999488,
+    "host" : "2001:db8::7",
+    "protocol" : "xdns:mkcp",
+    "result" : "passed",
+    "time" : "2026-11-17T01:51:41Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-84babe0c2328.test",
+    "protocol" : "xdns:mkcp",
+    "time" : "2026-11-17T01:51:41Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.3037869166582823,
+    "host" : "v07-probe-84babe0c2328.test",
+    "protocol" : "xdns:mkcp",
+    "result" : "passed",
+    "time" : "2026-11-17T01:51:43Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "xdns:mkcp",
+    "time" : "2026-11-17T01:51:43Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.57706883334321901,
+    "host" : "198.51.100.7",
+    "protocol" : "xdns:mkcp",
+    "result" : "passed",
+    "time" : "2026-11-17T01:51:43Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "xdns:mkcp",
+    "time" : "2026-11-17T01:51:43Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.56311025000468362,
+    "host" : "2001:db8::7",
+    "protocol" : "xdns:mkcp",
+    "result" : "passed",
+    "time" : "2026-11-17T01:51:44Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "xdns:mkcp",
+    "result" : "passed",
+    "time" : "2026-11-17T01:51:45Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "traffic-after-close",
+    "protocol" : "xdns:mkcp",
+    "result" : "passed",
+    "time" : "2026-11-17T01:51:45Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "95266.18758308335"
+      }
+    ],
+    "protocol" : "xdns:mkcp",
+    "stage" : "after-recovery",
+    "time" : "2026-11-17T01:51:45Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4949640,
+    "inboundPackets" : 427,
+    "outboundPackets" : 367,
+    "protocol" : "xdns:mkcp",
+    "rss" : 33177600,
+    "runtime" : "9c8ea1e0-83f5-41b1-9b4a-2ce8c8828d85",
+    "stage" : "after-recovery",
+    "tcp" : 0,
+    "threads" : 11,
+    "time" : "2026-11-17T01:51:45Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 1,
+    "event" : "disconnected",
+    "protocol" : "xdns:mkcp",
+    "result" : "passed",
+    "time" : "2026-11-17T01:51:45Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "connected",
+    "protocol" : "xdns:mkcp",
+    "seconds" : 0.24669897556304932,
+    "time" : "2026-11-17T01:51:46Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "xdns:mkcp",
+    "time" : "2026-11-17T01:51:46Z"
+  },
+  {
+    "code" : 0,
+    "domain" : "XrayProtocolDeviceProbe.Network",
+    "event" : "failure",
+    "protocol" : "xdns:mkcp",
+    "time" : "2026-11-17T01:51:56Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "95278.96883154167"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "95283.75916279167"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "95288.76203258334"
+      }
+    ],
+    "protocol" : "xdns:mkcp",
+    "stage" : "failure",
+    "time" : "2026-11-17T01:51:56Z"
+  },
+  {
+    "cycle" : 0,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4736648,
+    "inboundPackets" : 96,
+    "outboundPackets" : 49,
+    "protocol" : "xdns:mkcp",
+    "rss" : 31457280,
+    "runtime" : "527e9150-e141-4e5d-8ae6-b717b3bb0341",
+    "stage" : "failure",
+    "tcp" : 1,
+    "threads" : 9,
+    "time" : "2026-11-17T01:51:56Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "complete",
+    "protocol" : "xdns:mkcp",
+    "result" : "failed",
+    "time" : "2026-11-17T01:51:57Z"
+  }
+]

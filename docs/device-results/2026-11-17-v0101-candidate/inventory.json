@@ -1,0 +1,671 @@
+{
+  "candidate": "3cef7c42c2fd296afd27ab0b6435c632842e1a26",
+  "files": [
+    {
+      "path": "README.md",
+      "sourcePath": "(generated)",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "e9181591e52f7407412f7681bfeeca6b07bbe6685b9e5125b870d80b89aa294c",
+      "publishedSHA256": "e9181591e52f7407412f7681bfeeca6b07bbe6685b9e5125b870d80b89aa294c"
+    },
+    {
+      "path": "android-7eb199bb/android-xicmp/events.jsonl",
+      "sourcePath": "<stand-0100>/results/android/android-xicmp/attempt-1/device/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "28b455063a85b7ed7980db62fffa8e4e0d1517bff74346e4c58586b9aae60060",
+      "publishedSHA256": "28b455063a85b7ed7980db62fffa8e4e0d1517bff74346e4c58586b9aae60060"
+    },
+    {
+      "path": "android/android-cancel-tcp-v09/events.jsonl",
+      "sourcePath": "<stand>/results/android/android-cancel-tcp-v09/attempt-1/device/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "91c4ffbacba1a98beccb69ac980f7441eb3d18b2c1da60391a53783cd7189793",
+      "publishedSHA256": "91c4ffbacba1a98beccb69ac980f7441eb3d18b2c1da60391a53783cd7189793"
+    },
+    {
+      "path": "android/android-cancel-tcp/events.jsonl",
+      "sourcePath": "<stand>/results/android/android-cancel-tcp/attempt-1/device/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "2c6cf1ae7d74e4f32975f95cd54771df434c6fe089f318d8df31931b50409f6d",
+      "publishedSHA256": "2c6cf1ae7d74e4f32975f95cd54771df434c6fe089f318d8df31931b50409f6d"
+    },
+    {
+      "path": "android/android-cancel-udp-v09/events.jsonl",
+      "sourcePath": "<stand>/results/android/android-cancel-udp-v09/attempt-1/device/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "b54fa8708ee9439adf2957a8ad4c8d069babf2c32fea7a412f0217e0ebd306cd",
+      "publishedSHA256": "b54fa8708ee9439adf2957a8ad4c8d069babf2c32fea7a412f0217e0ebd306cd"
+    },
+    {
+      "path": "android/android-cancel-udp/events.jsonl",
+      "sourcePath": "<stand>/results/android/android-cancel-udp/attempt-1/device/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "57529257517753eb4f62c6d1748616b8c8ebd9d05c3964eb75f00c3c4829d3f9",
+      "publishedSHA256": "57529257517753eb4f62c6d1748616b8c8ebd9d05c3964eb75f00c3c4829d3f9"
+    },
+    {
+      "path": "android/android-import-v010/events.jsonl",
+      "sourcePath": "<stand>/results/android/android-import-v010/attempt-1/device/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "4b8e8140d9b00895f52da9274f8b14272905e1f93f9656e97d01217485998380",
+      "publishedSHA256": "4b8e8140d9b00895f52da9274f8b14272905e1f93f9656e97d01217485998380"
+    },
+    {
+      "path": "android/android-legacy-v010/events.jsonl",
+      "sourcePath": "<stand>/results/android/android-legacy-v010/attempt-1/device/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "5e26c58ed2eb8005654aabb2798533625805e447f86d0cdb8f24b22268fe23ef",
+      "publishedSHA256": "5e26c58ed2eb8005654aabb2798533625805e447f86d0cdb8f24b22268fe23ef"
+    },
+    {
+      "path": "android/android-resources/events.jsonl",
+      "sourcePath": "<stand>/results/android/android-resources/attempt-1/device/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "7ef5e1edf73c95b2d185d18503a5fc0d863645fc7383a27e0518a2fbb4452982",
+      "publishedSHA256": "7ef5e1edf73c95b2d185d18503a5fc0d863645fc7383a27e0518a2fbb4452982"
+    },
+    {
+      "path": "android/android-shared/events.jsonl",
+      "sourcePath": "<stand>/results/android/android-shared/attempt-1/device/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "a90fde6ec482b18e95687fd62171a76c9f60ec987606a58ebc2579c2076cb7d7",
+      "publishedSHA256": "a90fde6ec482b18e95687fd62171a76c9f60ec987606a58ebc2579c2076cb7d7"
+    },
+    {
+      "path": "android/android-smoke-v010/events.jsonl",
+      "sourcePath": "<stand>/results/android/android-smoke-v010/attempt-1/device/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "20de7fdeff46fa4072603a950ff26e373f2da1d18901525c81195c70c0481e13",
+      "publishedSHA256": "20de7fdeff46fa4072603a950ff26e373f2da1d18901525c81195c70c0481e13"
+    },
+    {
+      "path": "android/android-v010/events.jsonl",
+      "sourcePath": "<stand>/results/android/android-v010/attempt-1/device/events.jsonl",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "9b41de2164b71b7fe047274fbf88a810ef2e7e0bf5fff1727b6243f02f3b257e",
+      "publishedSHA256": "9b41de2164b71b7fe047274fbf88a810ef2e7e0bf5fff1727b6243f02f3b257e"
+    },
+    {
+      "path": "diagnostics/arp-first-exchange.md",
+      "sourcePath": "<stand>/results/ios/diagnostics/arp-first-exchange/README.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "afc28afac1549edc999b2b0100f11f1b88e9cbc6c6f5efe87109f8d365cdfb44",
+      "publishedSHA256": "afc28afac1549edc999b2b0100f11f1b88e9cbc6c6f5efe87109f8d365cdfb44"
+    },
+    {
+      "path": "failed/README.md",
+      "sourcePath": "<evidence>/report/failed-README.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "5dacebe5978409360ae549c876b7c75ff64c0522f05e8a895941c3cff9a42f33",
+      "publishedSHA256": "5dacebe5978409360ae549c876b7c75ff64c0522f05e8a895941c3cff9a42f33"
+    },
+    {
+      "path": "failed/ios/ios-shared-attempt-1-result.json",
+      "sourcePath": "<stand>/results/ios/ios-shared/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "7e40e42425274193131ed7f7d346d2a11e713e2b6719c5935ceb9172a749197c",
+      "publishedSHA256": "7e40e42425274193131ed7f7d346d2a11e713e2b6719c5935ceb9172a749197c"
+    },
+    {
+      "path": "failed/ios/ios-smoke-v010-attempt-1-result.json",
+      "sourcePath": "<stand>/results/ios/ios-smoke-v010/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "d3f3afe882b7bd903e5d8103984cd4bf676db2819b8294cda441621f55e9b466",
+      "publishedSHA256": "d3f3afe882b7bd903e5d8103984cd4bf676db2819b8294cda441621f55e9b466"
+    },
+    {
+      "path": "failed/ios/ios-smoke-v010-attempt-2-result.json",
+      "sourcePath": "<stand>/results/ios/ios-smoke-v010/attempt-2/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "7923f1462f3491cc6a1e638db327a4d0933ccddb35d543f22dc92731dbf491ba",
+      "publishedSHA256": "7923f1462f3491cc6a1e638db327a4d0933ccddb35d543f22dc92731dbf491ba"
+    },
+    {
+      "path": "failed/ios/ios-v010-resources-attempt-1-result.json",
+      "sourcePath": "<stand>/results/ios/ios-v010-resources/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "dd7f68d32a946ee5bb991b54b3431014eae7c3f7b37ab69952fbe29d4c1668c0",
+      "publishedSHA256": "dd7f68d32a946ee5bb991b54b3431014eae7c3f7b37ab69952fbe29d4c1668c0"
+    },
+    {
+      "path": "failed/ios/ios-wan-masque-attempt-1-result.json",
+      "sourcePath": "<stand>/results/ios/ios-wan-masque/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "6a87ad2907bc6fc75f72f07b646e078d3f1015fc38c6580c0b07cf0ed813739e",
+      "publishedSHA256": "6a87ad2907bc6fc75f72f07b646e078d3f1015fc38c6580c0b07cf0ed813739e"
+    },
+    {
+      "path": "host-loopback/import-v010.json",
+      "sourcePath": "<stand>/loopback/import-v010/results.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "4295c43bf6acb9c9312120dc935f106633eff8be98d5822f28e2ed18753b4548",
+      "publishedSHA256": "4295c43bf6acb9c9312120dc935f106633eff8be98d5822f28e2ed18753b4548"
+    },
+    {
+      "path": "host-loopback/legacy-v010.json",
+      "sourcePath": "<stand>/loopback/legacy-v010/results.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "57646915de1ff9e581be5d3bd10a5fa129a0ac19ee276a835463672cd000a837",
+      "publishedSHA256": "57646915de1ff9e581be5d3bd10a5fa129a0ac19ee276a835463672cd000a837"
+    },
+    {
+      "path": "host-loopback/shared/apple-shared-asis.json",
+      "sourcePath": "<stand>/loopback/shared/apple-shared-asis/results.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "a709397f682278b91a5801a60877cee671434fcabc167f4dd577089bbffc7d43",
+      "publishedSHA256": "a709397f682278b91a5801a60877cee671434fcabc167f4dd577089bbffc7d43"
+    },
+    {
+      "path": "host-loopback/shared/apple-shared.json",
+      "sourcePath": "<stand>/loopback/shared/apple-shared/results.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "f9a7d2341ad75f21ec89fa1374bfd0e8be1c91b5dc2d013ff674b0200130c8a2",
+      "publishedSHA256": "f9a7d2341ad75f21ec89fa1374bfd0e8be1c91b5dc2d013ff674b0200130c8a2"
+    },
+    {
+      "path": "host-loopback/shared/hold-close-v010-xray-client.json",
+      "sourcePath": "<stand>/loopback/shared/hold-close-v010-xray-client/results.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "b4303b8cd49654a9da4711f42be83579ec6100fabf4f241db5a0cbcd845b0ded",
+      "publishedSHA256": "b4303b8cd49654a9da4711f42be83579ec6100fabf4f241db5a0cbcd845b0ded"
+    },
+    {
+      "path": "host-loopback/shared/hold-close-v010.json",
+      "sourcePath": "<stand>/loopback/shared/hold-close-v010/results.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "815f6fd56f02a97a0fd14cc003468f4d48ae629c7f6994f2aaa1e5c813eb969e",
+      "publishedSHA256": "815f6fd56f02a97a0fd14cc003468f4d48ae629c7f6994f2aaa1e5c813eb969e"
+    },
+    {
+      "path": "host-loopback/shared/hold-close-v09.json",
+      "sourcePath": "<stand>/loopback/shared/hold-close-v09/results.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "6828db58d6a754f32c4b13237d958bcc912d9f2697f539090b7dcefae2fc0971",
+      "publishedSHA256": "6828db58d6a754f32c4b13237d958bcc912d9f2697f539090b7dcefae2fc0971"
+    },
+    {
+      "path": "host-loopback/shared/v09-protocols.json",
+      "sourcePath": "<stand>/loopback/shared/v09-protocols/results.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "ab744a3b5f67befb9e386980ba77558e2b901993368cc00ac5d6f5f879e7bc22",
+      "publishedSHA256": "ab744a3b5f67befb9e386980ba77558e2b901993368cc00ac5d6f5f879e7bc22"
+    },
+    {
+      "path": "host-loopback/smoke-v010-vlessenc.json",
+      "sourcePath": "<stand>/loopback/smoke-v010-vlessenc/results.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "5fd6b81d0cb3482c7baf535454dfda8ea00217c0edc51d15d9a20840355beefa",
+      "publishedSHA256": "5fd6b81d0cb3482c7baf535454dfda8ea00217c0edc51d15d9a20840355beefa"
+    },
+    {
+      "path": "host-loopback/smoke-v010.json",
+      "sourcePath": "<stand>/loopback/smoke-v010/results.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "5fd6b81d0cb3482c7baf535454dfda8ea00217c0edc51d15d9a20840355beefa",
+      "publishedSHA256": "5fd6b81d0cb3482c7baf535454dfda8ea00217c0edc51d15d9a20840355beefa"
+    },
+    {
+      "path": "host-loopback/v010-vlessenc.json",
+      "sourcePath": "<stand>/loopback/v010-vlessenc/results.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "d27a1edd98e1f30f9ad3119f7ea6a62db759539b071aa1ee509ba0c92cb64492",
+      "publishedSHA256": "d27a1edd98e1f30f9ad3119f7ea6a62db759539b071aa1ee509ba0c92cb64492"
+    },
+    {
+      "path": "host-loopback/v010.json",
+      "sourcePath": "<stand>/loopback/v010/results.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "d27a1edd98e1f30f9ad3119f7ea6a62db759539b071aa1ee509ba0c92cb64492",
+      "publishedSHA256": "d27a1edd98e1f30f9ad3119f7ea6a62db759539b071aa1ee509ba0c92cb64492"
+    },
+    {
+      "path": "host-loopback/xhttp-h3-v010.json",
+      "sourcePath": "<stand>/loopback/xhttp-h3-v010/results.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "b62a2647c40c4fc00e541a13cfeb5ba5c37c4c034f30b30bde54fce4683df34c",
+      "publishedSHA256": "b62a2647c40c4fc00e541a13cfeb5ba5c37c4c034f30b30bde54fce4683df34c"
+    },
+    {
+      "path": "ios-7eb199bb/ios-wan-mkcp-result.json",
+      "sourcePath": "<stand-0100>/results/ios/ios-wan-mkcp/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "bb419523f96404f14860c3406d7f38472e5b8e9339eb90158f5134ba20a02b49",
+      "publishedSHA256": "bb419523f96404f14860c3406d7f38472e5b8e9339eb90158f5134ba20a02b49"
+    },
+    {
+      "path": "ios-7eb199bb/ios-xicmp-result.json",
+      "sourcePath": "<stand-0100>/results/ios/ios-xicmp/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "fe184466fcd3816b647422902beeb7ebc7c45b0aef7a6555315eff2a756d98f8",
+      "publishedSHA256": "fe184466fcd3816b647422902beeb7ebc7c45b0aef7a6555315eff2a756d98f8"
+    },
+    {
+      "path": "ios/ios-fakedns-negative-result.json",
+      "sourcePath": "<stand>/results/ios/ios-fakedns-negative/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "068a11af82ef996d215ee0c96ef9720096b65d3d8f7d6e81e67894b73ef6e3c2",
+      "publishedSHA256": "068a11af82ef996d215ee0c96ef9720096b65d3d8f7d6e81e67894b73ef6e3c2"
+    },
+    {
+      "path": "ios/ios-fakedns-recovery-result.json",
+      "sourcePath": "<stand>/results/ios/ios-fakedns-recovery/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "bf0babc642f8aafbef78cd248932b5bf9af3e34b291f5e8b2e9044091b0bc08e",
+      "publishedSHA256": "bf0babc642f8aafbef78cd248932b5bf9af3e34b291f5e8b2e9044091b0bc08e"
+    },
+    {
+      "path": "ios/ios-import-v010-result.json",
+      "sourcePath": "<stand>/results/ios/ios-import-v010/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "2dbbb1176699cb6cb71086149a13230dd9f47cee1c7cbd206b8612e2367e5495",
+      "publishedSHA256": "2dbbb1176699cb6cb71086149a13230dd9f47cee1c7cbd206b8612e2367e5495"
+    },
+    {
+      "path": "ios/ios-legacy-v010-result.json",
+      "sourcePath": "<stand>/results/ios/ios-legacy-v010/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "5c8a645bded36b3a4aa55c4a1d6e868f94b53990cedd9f1ef6a6e56f27ff485a",
+      "publishedSHA256": "5c8a645bded36b3a4aa55c4a1d6e868f94b53990cedd9f1ef6a6e56f27ff485a"
+    },
+    {
+      "path": "ios/ios-projection-file-descriptor-result.json",
+      "sourcePath": "<stand>/results/ios/ios-projection-file-descriptor/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "806523608c08e6fb3a5ac3d65dc41fdbccf648897c4492c5a4b6cf139f3424cd",
+      "publishedSHA256": "806523608c08e6fb3a5ac3d65dc41fdbccf648897c4492c5a4b6cf139f3424cd"
+    },
+    {
+      "path": "ios/ios-projection-packet-pump-result.json",
+      "sourcePath": "<stand>/results/ios/ios-projection-packet-pump/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "8556f0515b297ffdd7ac4103ceab9fd9521966c9b219bee3e4407eecce72078a",
+      "publishedSHA256": "8556f0515b297ffdd7ac4103ceab9fd9521966c9b219bee3e4407eecce72078a"
+    },
+    {
+      "path": "ios/ios-shared-result.json",
+      "sourcePath": "<stand>/results/ios/ios-shared/attempt-2/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "1e49195bc32c0ac7dc7921a713d79d7276cdb1c8c84cf68db1c1028789cfbe8d",
+      "publishedSHA256": "1e49195bc32c0ac7dc7921a713d79d7276cdb1c8c84cf68db1c1028789cfbe8d"
+    },
+    {
+      "path": "ios/ios-smoke-v010-result.json",
+      "sourcePath": "<stand>/results/ios/ios-smoke-v010/attempt-3/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "0689d886fb8f914bdc1ffa82d5f329c702c3676f8f3e14abed22ef1d4c541d55",
+      "publishedSHA256": "0689d886fb8f914bdc1ffa82d5f329c702c3676f8f3e14abed22ef1d4c541d55"
+    },
+    {
+      "path": "ios/ios-v010-lifecycle-result.json",
+      "sourcePath": "<stand>/results/ios/ios-v010-lifecycle/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "6af955b90fdd82affd47d9a5f60cc7384dc692141e62f8e064395f6c94270ade",
+      "publishedSHA256": "6af955b90fdd82affd47d9a5f60cc7384dc692141e62f8e064395f6c94270ade"
+    },
+    {
+      "path": "ios/ios-v010-resources-result.json",
+      "sourcePath": "<stand>/results/ios/ios-v010-resources/attempt-2/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "0516c4612a59c14f0a9b7963d384f6d43108fe41313c5a49c0f08f7fc0af960b",
+      "publishedSHA256": "0516c4612a59c14f0a9b7963d384f6d43108fe41313c5a49c0f08f7fc0af960b"
+    },
+    {
+      "path": "ios/ios-v010-smoke-result.json",
+      "sourcePath": "<stand>/results/ios/ios-v010-smoke/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "74053abcad91c8b8881aeb7380006e3a3fdd37cee0f5647ab7e690e271ce01e1",
+      "publishedSHA256": "74053abcad91c8b8881aeb7380006e3a3fdd37cee0f5647ab7e690e271ce01e1"
+    },
+    {
+      "path": "ios/ios-wan-masque-result.json",
+      "sourcePath": "<stand>/results/ios/ios-wan-masque/attempt-2/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "bd7f95d2b16e6c621bb567fa661d5db1092e3626f1ca3d8d598bf92f7f287d33",
+      "publishedSHA256": "bd7f95d2b16e6c621bb567fa661d5db1092e3626f1ca3d8d598bf92f7f287d33"
+    },
+    {
+      "path": "ios/ios-wan-xhttp-h3-result.json",
+      "sourcePath": "<stand>/results/ios/ios-wan-xhttp-h3/attempt-1/result.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "6f790d25328c22f6a7fdf874e2f7172d3770842f5e96bcb00e9aeff17965120e",
+      "publishedSHA256": "6f790d25328c22f6a7fdf874e2f7172d3770842f5e96bcb00e9aeff17965120e"
+    },
+    {
+      "path": "ios/wan-host-after.txt",
+      "sourcePath": "<stand>/results/wan-host-after.txt",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "cd510f7af097eab49bf2dcfcb5073b6bbdd776ebf14da8a95576be7172717e64",
+      "publishedSHA256": "cd510f7af097eab49bf2dcfcb5073b6bbdd776ebf14da8a95576be7172717e64"
+    },
+    {
+      "path": "ios/wan-host-before.txt",
+      "sourcePath": "<stand>/results/wan-host-before.txt",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "b67b5463335df6d0b94c832eb7a1435a1a89bd7a490347eec6a254c31b045a29",
+      "publishedSHA256": "b67b5463335df6d0b94c832eb7a1435a1a89bd7a490347eec6a254c31b045a29"
+    },
+    {
+      "path": "performance-builds/NOTES.md",
+      "sourcePath": "<perf>/NOTES.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "cc8aaa59a483a1d540386131193bd9682155ad22c936fb6a4604d518468c1e31",
+      "publishedSHA256": "cc8aaa59a483a1d540386131193bd9682155ad22c936fb6a4604d518468c1e31"
+    },
+    {
+      "path": "performance-builds/baseline.json",
+      "sourcePath": "<perf>/build/baseline.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "db099c06a80003a5fe256a7358d3966f08ca9d0991633f02e29f78e256071dd2",
+      "publishedSHA256": "caf2c69d0757d1b5898be539d135302680f53a5c5e671c75bf615946349880b7"
+    },
+    {
+      "path": "performance-builds/candidate.json",
+      "sourcePath": "<perf>/build/candidate.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "bdb4d8436ff59858fe5f5de7be58de849b3bc96d6c9e881aefb630d4669a4f53",
+      "publishedSHA256": "4cf07068c2f641572c796438fb99ef6432375b70832d69a75ba997912e1cee50"
+    },
+    {
+      "path": "performance-builds/harness.json",
+      "sourcePath": "<perf>/build/harness.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "358b2d7384a60231808d6d045ae5cf2e018865a21623075e43b15afb1ed927fa",
+      "publishedSHA256": "eac90b3f021f858918bad33ff8ec78682d5fd27bc6d9ebe67c92d9b9f13c497e"
+    },
+    {
+      "path": "performance-features/benchmark-raw.json",
+      "sourcePath": "<perf>/features/benchmark-raw.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "0f639cc813d703c7ab482c725f5898858c0697ffa12edad74c2aa5b2df589296",
+      "publishedSHA256": "0f639cc813d703c7ab482c725f5898858c0697ffa12edad74c2aa5b2df589296"
+    },
+    {
+      "path": "performance-features/build-manifest.json",
+      "sourcePath": "<perf>/features/build-manifest.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "dfdfa5d1cbac552d934b2a2bccffa0efb9074672d56bdb3eea7d8c8435a6a5aa",
+      "publishedSHA256": "dfdfa5d1cbac552d934b2a2bccffa0efb9074672d56bdb3eea7d8c8435a6a5aa"
+    },
+    {
+      "path": "performance-features/performance.json",
+      "sourcePath": "<perf>/features/performance.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "835e10759ea8c2d414d892fcf24ae813a1687f98345d1b07228fd4cc1e6f6c84",
+      "publishedSHA256": "835e10759ea8c2d414d892fcf24ae813a1687f98345d1b07228fd4cc1e6f6c84"
+    },
+    {
+      "path": "performance-protocols/benchmark-raw.json",
+      "sourcePath": "<evidence>/performance-protocols/benchmark-raw.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "9528d94d818f0505ae742e149589ab82cdbe622b3ffce704e47a30d7d055a3c7",
+      "publishedSHA256": "5a43519075a5a50e68bf588ae8eb05629cb9093c7bc46251b89fcea42ffbd3bc"
+    },
+    {
+      "path": "performance-protocols/manifest.json",
+      "sourcePath": "<perf>/v010/manifest.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "50fbc2c4fa52fef2d08794123ed03952aff63b57dbd424dddf235913a6dbbf9b",
+      "publishedSHA256": "84994590ef96f273e3c63b9254ed800366a9191aaf84fd441b7ae0568cd6678a"
+    },
+    {
+      "path": "performance-protocols/protocol-comparisons.json",
+      "sourcePath": "<evidence>/performance-protocols/protocol-comparisons.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "b636101d82fd8382f636a83df4bf259767b17d497a70da325bfcacaa255fac08",
+      "publishedSHA256": "b636101d82fd8382f636a83df4bf259767b17d497a70da325bfcacaa255fac08"
+    },
+    {
+      "path": "release-comparison/manifest.json",
+      "sourcePath": "<perf>/release-comparison/manifest.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "17adbeeda13e78e36fd22159acf8fe41844a7df09dd44bc014d2516535ea64a9",
+      "publishedSHA256": "a028a72aa3284f26adb00d950f2b657e1ad5a7c397544b41ab61e58e7aedf0e7"
+    },
+    {
+      "path": "release-comparison/release-comparison.json",
+      "sourcePath": "<perf>/release-comparison/release-comparison.json",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "b5d5152c0ce843cc92e520746beff5c3e19f068212d0125b09c0afdd1f83034d",
+      "publishedSHA256": "b5d5152c0ce843cc92e520746beff5c3e19f068212d0125b09c0afdd1f83034d"
+    },
+    {
+      "path": "tools/assemble_v0101.py",
+      "sourcePath": "<evidence>/tools/assemble_v0101.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "5642d4313a9cf51116f8b6ccf57fa0ec69c3b2a9a5a04941f51dcc646d2b98f5",
+      "publishedSHA256": "2a04afa76caf16189108aef783ca706e074f99dd1497c29194180081ac3d6f3a"
+    },
+    {
+      "path": "tools/campaign/attempt.sh",
+      "sourcePath": "<stand>/tools/attempt.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "0d2dba51e2f67e8c6f23cfe1b89098ef6c91f184dab1c460a1751636c8b82b74",
+      "publishedSHA256": "53b087df67f2bc038402536b2297bc483fb5666ae6501b0b8b313ec626185ff7"
+    },
+    {
+      "path": "tools/campaign/device_clock.py",
+      "sourcePath": "<stand>/tools/device_clock.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "a97b61e2a5209deed7e7dfb9b9d1f2a694da263094b009405071e9ce3e0b6b09",
+      "publishedSHA256": "a97b61e2a5209deed7e7dfb9b9d1f2a694da263094b009405071e9ce3e0b6b09"
+    },
+    {
+      "path": "tools/campaign/drive.py",
+      "sourcePath": "<stand>/tools/drive.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "843e4334f35fd25bbf518b1b6b5091b7f6b2e1ec5ffda8fea26b7214fe156c93",
+      "publishedSHA256": "241a922151253198e55bf25cc1f4d0d98b552c5935dd577e0caa6e18af183791"
+    },
+    {
+      "path": "tools/campaign/first_exchange.py",
+      "sourcePath": "<stand>/tools/first_exchange.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "19c3984669f36ba8806016372937f5f84cf9195bd733f2a66cda384000665b0f",
+      "publishedSHA256": "19c3984669f36ba8806016372937f5f84cf9195bd733f2a66cda384000665b0f"
+    },
+    {
+      "path": "tools/campaign/fixture_blocked.sh",
+      "sourcePath": "<stand>/tools/fixture_blocked.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "fcee7cd44235c786b870d642ee133fdb1a08ae1132503212636e83259a508b22",
+      "publishedSHA256": "fcee7cd44235c786b870d642ee133fdb1a08ae1132503212636e83259a508b22"
+    },
+    {
+      "path": "tools/campaign/ios_result_summary.py",
+      "sourcePath": "<stand>/tools/ios_result_summary.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "6a3f86ab95c528cf7d187e951f9b65195ea5eee3aeb134075f768722f9ad5a2a",
+      "publishedSHA256": "6a3f86ab95c528cf7d187e951f9b65195ea5eee3aeb134075f768722f9ad5a2a"
+    },
+    {
+      "path": "tools/campaign/local_cancel_v010.py",
+      "sourcePath": "<stand>/tools/local_cancel_v010.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "58ecd25e3d9eff514ae504c6a6c08be90b0ba46895cba656a0ff55fe5940f838",
+      "publishedSHA256": "58ecd25e3d9eff514ae504c6a6c08be90b0ba46895cba656a0ff55fe5940f838"
+    },
+    {
+      "path": "tools/campaign/queue-android-lan.sh",
+      "sourcePath": "<stand>/results/queue-android-lan.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "53ad1b0a04e2527624cf3244dd3b834bbee5896210466627d795882a00005682",
+      "publishedSHA256": "8cfc05ff442125af0ec032d3571ff02bca980f6a5c6762309e150e78118ab146"
+    },
+    {
+      "path": "tools/campaign/queue-ios-lan-keepawake.sh",
+      "sourcePath": "<stand>/results/queue-ios-lan-keepawake.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "7e57a01ba467695fe1f6d577e64e72bf3a41229779e739b67075cc379391b431",
+      "publishedSHA256": "fb90b48f8623d9b7632e675735d26634fd6fa02f0063fd223af90465f7d02e72"
+    },
+    {
+      "path": "tools/campaign/queue-ios-lan.sh",
+      "sourcePath": "<stand>/results/queue-ios-lan.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "57733fbe9effefc4ed8cb8cc876a1a193d770ad975d635c511bfd526f235e7e3",
+      "publishedSHA256": "a9263e134d15216147f1f52bd88435c092f4039e50cd29aa4af9548689b5d6fa"
+    },
+    {
+      "path": "tools/campaign/queue-ios-projection.sh",
+      "sourcePath": "<stand>/results/queue-ios-projection.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "085392bc7ca93576b96504b9f34533506c5b8bf89a91257ced87f32717ff2833",
+      "publishedSHA256": "723ac89bcc9f28aefbe4e29b01618263b168d13b7d87ced65f0f1decead1042b"
+    },
+    {
+      "path": "tools/campaign/resources_v010.py",
+      "sourcePath": "<stand>/tools/resources_v010.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "43b650026a06d395a937225daf1ea90c95b7c061431154c3ea306dc2072dcfcc",
+      "publishedSHA256": "43b650026a06d395a937225daf1ea90c95b7c061431154c3ea306dc2072dcfcc"
+    },
+    {
+      "path": "tools/campaign/resources_v010_masque8.py",
+      "sourcePath": "<stand>/tools/resources_v010_masque8.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "4b5271a9265ab252376239cd018bf391757206aceb712283c4faaca708e19386",
+      "publishedSHA256": "4b5271a9265ab252376239cd018bf391757206aceb712283c4faaca708e19386"
+    },
+    {
+      "path": "tools/campaign/run_android_v010.sh",
+      "sourcePath": "<stand>/tools/run_android_v010.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "4c74c26c9d11de64186dd9fee8a98e93130c19bd5a13a31164bfe6a918a5ab01",
+      "publishedSHA256": "f9e716f3355bc83fc574afbd58e607ecb124b7122f254cf5f6162844aceed4d1"
+    },
+    {
+      "path": "tools/campaign/run_apple_v010.sh",
+      "sourcePath": "<stand>/tools/run_apple_v010.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "e3277d41c849b677c7ce38b1ee7a8c1e0f7bcc801be26a231001faa597e7f1fd",
+      "publishedSHA256": "e1557487dd0d48b7e75383eec474547159b9c0ddb9307b077f1a107e0f5e5ea8"
+    },
+    {
+      "path": "tools/campaign/run_collector_v010.sh",
+      "sourcePath": "<stand>/tools/run_collector_v010.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "33033468fb157c4cf526e67e1fbe76f84d7ace8addbc9f7d854e825ea295cf31",
+      "publishedSHA256": "86be42e736a444f122e2c6f202f8df2ce05909bb9b6e4315329f6025904a725b"
+    },
+    {
+      "path": "tools/campaign/shared/CHANGES.md",
+      "sourcePath": "<stand>/tools/shared/CHANGES.md",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "116f77cd2195376d86811ffb9c9579ed7e4f623589f9da52ff2ead7950f9f44b",
+      "publishedSHA256": "116f77cd2195376d86811ffb9c9579ed7e4f623589f9da52ff2ead7950f9f44b"
+    },
+    {
+      "path": "tools/campaign/shared/apply_ios_projection.py",
+      "sourcePath": "<stand>/tools/shared/apply_ios_projection.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "88fe83b41cddb5765efe7da04b5e20d6672b1f7326f10456ce1425319cf49361",
+      "publishedSHA256": "88fe83b41cddb5765efe7da04b5e20d6672b1f7326f10456ce1425319cf49361"
+    },
+    {
+      "path": "tools/campaign/shared/build-shared-bins.sh",
+      "sourcePath": "<stand>/tools/shared/build-shared-bins.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "583d9eb52574c167b9d5affa6bf9ca43bea89a946f072306b981ba3c4c9566fa",
+      "publishedSHA256": "b4122ae90a239bee4978e2fa696ed1628db6e033bf121b5a1e652f3662e6e05a"
+    },
+    {
+      "path": "tools/campaign/shared/check_hold_close_loopback.py",
+      "sourcePath": "<stand>/tools/shared/check_hold_close_loopback.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "db012624f12104281980c9f783bf0da05e7377fc0626e443661233b34683e2a4",
+      "publishedSHA256": "506e470f9bac518182bf3ae537b2195088f14e484499edc99749e3d3b0a2d3c4"
+    },
+    {
+      "path": "tools/campaign/shared/check_shared_loopback.py",
+      "sourcePath": "<stand>/tools/shared/check_shared_loopback.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "96838b20394785a899acd377a0c17e4cb59f3c0178da35bd8cf8c4ac34a79ac0",
+      "publishedSHA256": "141900bb69536b295322b1d3952b61dc7738f3e4930d3aa918bf0dbf9621724c"
+    },
+    {
+      "path": "tools/campaign/shared/device_clock.py",
+      "sourcePath": "<stand>/tools/shared/device_clock.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "a97b61e2a5209deed7e7dfb9b9d1f2a694da263094b009405071e9ce3e0b6b09",
+      "publishedSHA256": "a97b61e2a5209deed7e7dfb9b9d1f2a694da263094b009405071e9ce3e0b6b09"
+    },
+    {
+      "path": "tools/campaign/shared/drive.py",
+      "sourcePath": "<stand>/tools/shared/drive.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "843e4334f35fd25bbf518b1b6b5091b7f6b2e1ec5ffda8fea26b7214fe156c93",
+      "publishedSHA256": "241a922151253198e55bf25cc1f4d0d98b552c5935dd577e0caa6e18af183791"
+    },
+    {
+      "path": "tools/campaign/shared/local_cancel_v09.py",
+      "sourcePath": "<stand>/tools/shared/local_cancel_v09.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "ba3c4283eda5b804b40976687101f3b6755fc5ddcc3ade6321ebda25757a60be",
+      "publishedSHA256": "ba3c4283eda5b804b40976687101f3b6755fc5ddcc3ade6321ebda25757a60be"
+    },
+    {
+      "path": "tools/campaign/shared/run_android_shared.sh",
+      "sourcePath": "<stand>/tools/shared/run_android_shared.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "826efe45f64afb23324436105705d802e16fb8ee3c4776206822520cf2b9cf08",
+      "publishedSHA256": "ec66c5d431c11af8a1aa47d7037c105b96e78ebced37b9cac5a86aafacf6a7cc"
+    },
+    {
+      "path": "tools/campaign/shared/shared_android_v09.py",
+      "sourcePath": "<stand>/tools/shared/shared_android_v09.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "586d05cf57ffb8fc81298e1a01a8e15e1958e1d955c04f45eb54e2b3d9011ec9",
+      "publishedSHA256": "586d05cf57ffb8fc81298e1a01a8e15e1958e1d955c04f45eb54e2b3d9011ec9"
+    },
+    {
+      "path": "tools/campaign/shared/shared_fixture_v09.py",
+      "sourcePath": "<stand>/tools/shared/shared_fixture_v09.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "fab5cfaeffc4e8995cd43f2f9b9e3f448d006ba61b508cbd103c0883470f99ea",
+      "publishedSHA256": "b6d404075a5c20771865b169686c223e8882902fad3cf5b864e6144b49424ac0"
+    },
+    {
+      "path": "tools/campaign/shared/udp_cancel_v09.py",
+      "sourcePath": "<stand>/tools/shared/udp_cancel_v09.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "5d5e65b31e8633eadf483db5b3b0697d4b26ab97e855e1fad34ddf2eb4179df3",
+      "publishedSHA256": "5d5e65b31e8633eadf483db5b3b0697d4b26ab97e855e1fad34ddf2eb4179df3"
+    },
+    {
+      "path": "tools/campaign/udp_cancel_v010.py",
+      "sourcePath": "<stand>/tools/udp_cancel_v010.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "247f539f2d31853bb72a2f99fc41f34764d6ecf7b998747f0fcbe193cd93f806",
+      "publishedSHA256": "247f539f2d31853bb72a2f99fc41f34764d6ecf7b998747f0fcbe193cd93f806"
+    },
+    {
+      "path": "tools/campaign/wan_run.sh",
+      "sourcePath": "<stand>/tools/wan_run.sh",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "4cefe5a710a54ac83d55e69539a3fcd95ac356fb75e789824d5b81639565e63a",
+      "publishedSHA256": "d04a8d2ce16a0ad5383b306b56544c711a65bf0ecc24c6ab3949c695b700b82a"
+    },
+    {
+      "path": "tools/campaign/wan_stage_summary.py",
+      "sourcePath": "<stand>/tools/wan_stage_summary.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "a9e5272d6a447805ff492ad377a2b389e48abb57e8445a603dd8902d65498ca6",
+      "publishedSHA256": "a9e5272d6a447805ff492ad377a2b389e48abb57e8445a603dd8902d65498ca6"
+    },
+    {
+      "path": "tools/ios-projection-build-v010.patch",
+      "sourcePath": "<stand>/apple/ios-projection-build-v010.patch",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "e64bf0e380ad2a65f1fc68d2aa6287f5f78d56605e3571b5b423fcf1b78e0289",
+      "publishedSHA256": "e64bf0e380ad2a65f1fc68d2aa6287f5f78d56605e3571b5b423fcf1b78e0289"
+    },
+    {
+      "path": "tools/summarize_protocols_v010.py",
+      "sourcePath": "<evidence>/tools/summarize_protocols_v010.py",
+      "encoding": "redacted UTF-8",
+      "sourceSHA256": "73ff45bd706e2efdb0430a7d8e3d49dfc46c6401a12ee7be8e840cafcb1186e5",
+      "publishedSHA256": "73ff45bd706e2efdb0430a7d8e3d49dfc46c6401a12ee7be8e840cafcb1186e5"
+    }
+  ],
+  "scope": "sanitized records of the 0.10.1 candidate's campaign and the runs carried over from the 0.10.0 release's campaign (iPhone xicmp and WAN mKCP, Android xicmp); every failed attempt of a counted run retained"
+}

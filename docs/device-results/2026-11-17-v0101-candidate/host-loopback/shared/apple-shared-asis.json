@@ -1,0 +1,21 @@
+{
+  "summary": {
+    "suite": "shared-asis",
+    "cases": 1,
+    "failed": 0,
+    "fixtureSecretsRemoved": true,
+    "scope": "host loopback through SOCKS ingress; not device evidence"
+  },
+  "results": [
+    {
+      "case": "ip-on-demand",
+      "format": "vless",
+      "checks": [
+        "ipv4-tcp",
+        "routed-dns-fakeip",
+        "domain-destination-not-routed-asis"
+      ],
+      "result": "passed"
+    }
+  ]
+}

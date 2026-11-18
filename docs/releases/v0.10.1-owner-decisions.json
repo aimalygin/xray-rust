@@ -1,0 +1,111 @@
+{
+  "release": "0.10.1",
+  "recordedDate": "2026-11-18",
+  "ownerQuestion": "Выпускать 0.10.1 с этими ограничениями и публиковать свидетельства?",
+  "ownerInstruction": "Да, публикуй",
+  "publicationRequested": true,
+  "status": "accepted by the owner on 2026-11-18 with the decisions and known limitations below",
+  "candidateCommit": "3cef7c42c2fd296afd27ab0b6435c632842e1a26",
+  "candidateTree": "d430ce5f1c106b48ba9ecc55a25455f0a201c50f",
+  "decisions": [
+    {
+      "id": "v0101-autonomy",
+      "recordedDate": "2026-11-16",
+      "ownerWords": "можешь работать автономно пока не сделаешь релиз 0.10.1? я даю тебе необходимые разрешения для этого",
+      "releaseRequirement": "process",
+      "scope": "The owner asked for the 0.10.1 release to be prepared autonomously, with the permissions it needs. The decisions below are the owner's own answers to questions put along the way; Maven Central approval and this record's publication question are asked separately."
+    },
+    {
+      "id": "v0101-scope-tun-tcp-sniffing",
+      "recordedDate": "2026-11-16",
+      "question": "Что делаем с #310 (сниффинг TCP в TUN) в 0.10.1 с учётом сохранённых профилей?",
+      "ownerWords": "Перенести в 0.11.0",
+      "releaseRequirement": "scope",
+      "scope": "TUN TCP sniffing (#310) and routeOnly in the SDK importers' profiles leave 0.10.1: profiles a host saved from 0.10.0's importer enable sniffing without routeOnly, so on a core with #310 they would dial TCP flows to real IPs by the sniffed name. Reverted on main by #321 before the candidate; tun.rs, outbound.rs and the importers are byte-identical to v0.10.0 (docs/v0101-release.md \"Left for 0.11.0\")."
+    },
+    {
+      "id": "v0101-scope-quic-tls-security",
+      "recordedDate": "2026-11-16",
+      "question": "Исправления уязвимостей QUIC из #315 берём в 0.10.1 или следующим релизом?",
+      "ownerWords": "В 0.10.1",
+      "releaseRequirement": "scope",
+      "scope": "#315 is in 0.10.1: the vendored quinn-proto 0.11.19 and quinn 0.11.12 (RUSTSEC-2026-0338, 0339, 0341, 0342, 0523, 0524) and the vendored shaped-rustls with upstream rustls 0.23.45/0.23.46 fixes (RUSTSEC-2026-0285, 0346, 0348, 0349), with scripts/check-vendored-advisories.sh in the supply-chain job. Because it changes the QUIC stack, the iPhone's WAN MASQUE and XHTTP H3 network-change runs were made again on this candidate."
+    },
+    {
+      "id": "v0101-repeat-scope",
+      "recordedDate": "2026-11-16",
+      "question": "Какой объём проверки на устройствах берём для 0.10.1?",
+      "ownerWords": "Только затронутое",
+      "releaseRequirement": "carried-over-evidence",
+      "scope": "What this release touches is made again on the candidate's tree: every LAN run on both phones (all of them dial through TLS, REALITY or QUIC, or the resolver), the iPhone's WAN MASQUE and XHTTP H3 runs (QUIC, after #315), full CI, the SDK pin and every host measurement. Carried over from the 0.10.0 release's build (7eb199bb), which this release changes nothing under: the iPhone's xicmp smoke and WAN mKCP network-change runs and Android's xicmp smoke (mKCP over ICMP or UDP, VLESS without TLS). The report names the build behind every transition."
+    },
+    {
+      "id": "v0101-test-bed",
+      "recordedDate": "2026-11-17",
+      "ownerWords": "все готово, кроме ethernet",
+      "releaseRequirement": "test-bed",
+      "scope": "Both phones attached and unlocked and the VPS session allowed; the fixture Mac stayed on Wi-Fi, without Ethernet. Wi-Fi Assist on the iPhone was off for every WAN attempt, as the owner stated before each («Выключен, запускай», «У телефона, запускай», «Да, запускай»)."
+    }
+  ],
+  "standingDecisions": {
+    "source": "docs/releases/v0.10.0-owner-decisions.json",
+    "ids": [
+      "v010-evidence-contract",
+      "v010-proposals-as-implemented",
+      "v010-masque-download-cap",
+      "v010-mkcp-cancel-criterion",
+      "v010-android-network-change",
+      "v010-android-masque-stress",
+      "v010-apple-resource-bound"
+    ],
+    "scope": "The 0.10.0 decisions that shape this archive stand as the owner took them: the v0.10 evidence contract and its proposals, mKCP's cancellation criterion, Android without the network change and lock-wake, Android's MASQUE stress at 8 connections, and Apple RSS growth bounded by Android's rule. For this candidate that bound was in force before the measurement. 0.10.0's decision v010-fourth-candidate-repeat-scope is replaced by v0101-repeat-scope."
+  },
+  "knownLimitations": [
+    {
+      "id": "comparison-memory-regressions",
+      "scope": "Against a build of 0.9.0 measured in the same run on the same machine (five repeats, one SOCKS flow each), the candidate's sampled peak memory is above the 110% budget for nine protocols, medians 0.9.0 to candidate: http-memory 5.98 to 6.78 MiB (113.3%), shadowsocks-aead-memory 5.97 to 6.86 MiB (114.9%), shadowsocks2022-memory 5.89 to 6.77 MiB (114.9%), socks-memory 5.81 to 6.59 MiB (113.4%), trojan-memory 8.45 to 9.47 MiB (112.0%), vless-reality-memory 8.80 to 9.95 MiB (113.1%), vmess-memory 6.05 to 7.00 MiB (115.8%), xhttp-h2-memory 11.89 to 15.16 MiB (127.5%) and xhttp-h3-memory 12.83 to 14.98 MiB (116.8%). These are 0.10.0's regressions less hysteria2-memory, which is now 96.3% of 0.9.0's. xhttp-h2-memory measured higher than on 0.10.0 (111.2%): this run's candidate samples (13.91-15.80 MiB) overlap 0.10.0's (13.20-15.09) and its 0.9.0 median is lower; vless-reality, over the same rustls, is unchanged. Throughput (94.0-106.2%) and p95 latency (91.6-109.8%) are within the budget for all twelve protocols."
+    },
+    {
+      "id": "android-network-change-and-lock-wake-not-tested",
+      "scope": "Android: wifi-cellular-wifi and xhttp-h3-network-change were not tested, because the Android test device has no cellular data, and lock-wake was not tested either (0.10.0 decisions, standing). Not tested is not passed. The iPhone ran all three."
+    },
+    {
+      "id": "runs-carried-over-from-0100",
+      "scope": "Three runs come from the 0.10.0 release's build (7eb199bb), not this candidate's: the iPhone's xicmp smoke and WAN mKCP network-change runs and Android's xicmp smoke, all against the owner's VPS. They carry mKCP over ICMP or UDP with VLESS and no TLS, REALITY or QUIC, which this release does not change; the owner chose to repeat only what it touches («Только затронутое»)."
+    },
+    {
+      "id": "masque-wireguard-16-tcp-flows",
+      "scope": "A MASQUE or WireGuard tunnel carries at most 16 TCP flows at once, idle ones included, and refuses the next one at once (queueing instead is #314, not in 0.10.1). Android's resource stress therefore ran MASQUE with 8 connections at once where mKCP ran 32; at 8 every burst passed (240 of 240 HTTP, 480 of 480 UDP)."
+    },
+    {
+      "id": "masque-udp-datagram-size",
+      "scope": "MASQUE does not deliver a UDP datagram above 1252 bytes over IPv4 or 1232 bytes over IPv6: the tunnel carries 1280-byte packets and its stack does not fragment, where Xray-core's stack would. The device cases send datagrams of exactly those sizes."
+    },
+    {
+      "id": "masque-one-flow-download",
+      "scope": "On one flow that only downloads, MASQUE is far slower than Xray-core's client: a median 21.0% of its throughput in five paired loopback repeats (66.9, 27.0, 21.0, 17.6 and 19.9%; candidate 18.8-109.2 MiB/s, Xray-core 91.4-169.7 MiB/s; 0.10.0: 11.8%). Upload on one flow (174.4%), full duplex on one flow (150.3%) and download on eight flows (147.1%) are faster than Xray-core's. This case is outside the gate."
+    },
+    {
+      "id": "mkcp-remote-close",
+      "scope": "mKCP: the server learns that a flow was cancelled only about six seconds after the client closes it, as with Xray-core's own client. The remote-close bound therefore fails for mKCP in android-cancel-tcp (0 of 4; MASQUE 4 of 4; local cancellation 8 of 8) and in the host check (hold-close-v010: the two mKCP rows fail with the candidate and with Xray-core's client)."
+    },
+    {
+      "id": "ios-lan-first-exchange-test-bed",
+      "scope": "On the LAN test bed the iPhone's first exchange after a tunnel start sometimes failed or was slow: in the counted attempts made before it was understood, 76 tunnel starts, 3 failed and 8 slow (2 s or more), and the failed first resources attempt; four counted runs needed a second or third attempt for it (failed/README.md). The phone asks for the fixture Mac's hardware address again at every tunnel start, and the Mac, on Wi-Fi, answers that broadcast late or not at all: the packets wait in the phone (diagnostics/arp-first-exchange.md; the capture is the 0.10.0 campaign's, on the same phone, Mac and network). The later attempts, made with the Mac pinging the router, had 58 starts, none failed and 3 slow. The public-host runs, to a server behind the router, had no failed first exchange. 0.10.0 listed the same effect as a sometimes slow first exchange on iOS."
+    },
+    {
+      "id": "apple-masque-rss-above-090-bound",
+      "scope": "In the iPhone resource run (this candidate's build), MASQUE's resident memory grew 8.48 MiB from its pre-load baseline (33.19 MiB), above the 8 MiB RSS bound 0.9.0's evidence used for Apple and inside the bound this archive applies, 0.10.0's rule decided by the owner on 2026-11-15 before this measurement: max(8 MiB, 25% of the RSS after the first cycle's recovery), 9.81 MiB for MASQUE. Measured as Android's rule measures growth, from the first cycle's recovery to the second's, MASQUE grew 2.44 MiB. The documented criterion, physical footprint at most 8 MiB and threads at most 8 above the baseline, passed (+0.19 MiB, +0 threads; mKCP +0.14 MiB, +0). mKCP's RSS grew 3.94 MiB, inside either bound."
+    },
+    {
+      "id": "utls-non-aead-suite-handshake",
+      "scope": "Every TLS and REALITY fingerprint now advertises its uTLS profile's whole cipher suite list (#307), including CBC and RSA key exchange suites rustls does not implement. A server that picks one of those fails the handshake with SelectedUnofferedCipherSuite, where Xray-core would complete it on that suite; a server that prefers an AEAD suite, as current servers do, is unaffected."
+    }
+  ],
+  "unchangedRequirements": [
+    "Preserve all original measurements, failures, fixture conditions and exact build identities.",
+    "Unchanged schema-5 validation with the candidate's check-v010-release-evidence.py and all unrelated CI and interoperability checks.",
+    "Verified immutable annotated tags, exact SDK/core pins and canonical artifact checksums.",
+    "Clean consumers of published Apple and Android packages."
+  ]
+}
