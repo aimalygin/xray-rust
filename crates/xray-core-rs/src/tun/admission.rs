@@ -121,7 +121,7 @@ impl UdpAdmission {
                     if packets.len() < MAX_PACKETS_PER_FLOW
                         && self.buffered_bytes + packet.len() <= MAX_BUFFERED_BYTES
                     {
-                        packets.push(packet.clone());
+                        packets.push(Bytes::copy_from_slice(packet));
                         self.buffered_bytes += packet.len();
                     }
                     false
@@ -147,7 +147,9 @@ impl UdpAdmission {
             Entry {
                 id,
                 last_seen: now,
-                decision: Decision::Pending(vec![packet.clone()]),
+                // A copy, so a held packet does not keep its whole TUN read
+                // buffer alive while the host decides.
+                decision: Decision::Pending(vec![Bytes::copy_from_slice(packet)]),
             },
         );
         false

@@ -198,3 +198,28 @@ waits for the timer, duplicate ACKs after a timeout start a fast retransmit,
 SACK blocks start none, and no FIN is resent for duplicates. Controller tests
 cover the partial ACK. With the adapter's features the library suite runs 471
 tests.
+
+## Buffers that grow with use
+
+`Socket::grow_recv_buffer` and `Socket::grow_send_buffer` replace a socket's
+buffer with a larger one, and `RingBuffer::grow` moves a ring's contents into
+the larger storage. Every byte keeps its offset from the read position, the
+unallocated ones too: the receive ring holds out-of-order data there until
+reassembly. A smaller storage is refused and changes nothing. A socket that
+has not taken a SYN derives its window scale from the new receive capacity,
+as `Socket::new` does; afterwards the negotiated scale stays, and a window
+beyond what it expresses is advertised as the largest one it can. The grown
+window is announced as any window update is, through `window_to_update`.
+
+The TUN stack in `xray-core-rs` uses this so that a socket holds its full
+buffers only while it carries data: a listening socket starts with an 8 KiB
+receive buffer and an empty send buffer, the receive buffer grows once the
+flow's bridge reads the client's data, and the send buffer with the remote's
+first bytes. Nothing changes for a socket that never grows.
+
+Tests cover a wrapped ring with out-of-order bytes beyond its data, a refused
+smaller storage and an empty ring; a receive buffer that grows while
+reassembly waits on a hole, the window it then advertises and the scale before
+and after the SYN; and a send buffer that grows from nothing with data in
+flight, which is then retransmitted from the new storage. The selected-feature
+library suite runs 475 tests and the default-feature suite 705.

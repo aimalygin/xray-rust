@@ -136,6 +136,57 @@ It sizes the smoltcp device, the fd reads and the TCP receive buffers
 is dropped alone with an ICMP packet-too-big back to the host instead of ending
 the flow ([TUN MTU](ffi.md#tun-mtu)).
 
+Packets read from a TUN descriptor are carved out of shared 64 KiB read
+buffers, so anything that keeps a packet past its turn keeps the whole buffer
+alive. What the runtime holds on to is therefore copied out first: a datagram
+queued for a UDP flow's bridge, the first packet a UDP flow keeps for an ICMP
+reply, a DNS query the TUN answers itself, and a datagram held while a TUN
+admission callback decides. Each UDP flow's queue holds at most 256 datagrams
+and is also bounded in payload bytes, per flow and across all flows, by the
+runtime profile:
+
+| Profile | Per flow | All flows |
+| --- | ---: | ---: |
+| `LowMemory` | 384 KiB | 2 MiB |
+| `Mobile` | 384 KiB | 4 MiB |
+| `MobilePlus` | 384 KiB | 8 MiB |
+| `Desktop` | 512 KiB | 64 MiB |
+| `Throughput` | 1 MiB | 128 MiB |
+
+384 KiB holds the 256 datagrams of a 1500-byte MTU, so at that MTU the byte
+limit takes nothing from the burst a queue absorbs; the limit across flows
+is what bounds memory. Below its own limit, every flow may also queue 8 KiB,
+and an empty queue one datagram, whatever the others hold: a few flows that
+fill the shared limit, such as a bulk QUIC upload to a slow outbound, leave
+the others a queue of their own. The queues of all flows so hold at most the
+shared limit plus 8 KiB per flow (8 MiB on `Mobile` at a 1500-byte MTU). A
+datagram over a limit is dropped, as one that finds its queue full, and
+counted in `udp_channel_dropped_packets`; the flow stays up.
+
+A TCP flow holds buffers only for what it carries. Its smoltcp socket starts
+with an 8 KiB receive buffer (two segments at least) and no send buffer, so a
+SYN that is never completed, a flow whose outbound is still connecting and a
+flow that has carried nothing cost a few KiB; the receive buffer grows to its
+full size when the bridge reads the client's first data, the send buffer to
+32 KiB with the remote's first bytes. The bridge reads the remote into a
+64 KiB buffer on the stack of the poll that reads, and hands on a copy of
+what it read at its own size, so a flow waiting for its remote keeps no read
+buffer. The upload side keeps the buffer it coalesces chunks in while the
+client keeps uploading, and gives it back after a second without a chunk. A
+freedom UDP flow reads its replies through the stack as well. With these an
+idle TUN TCP flow holds about 80 KiB of heap, 64 KiB of it the socket's two
+buffers, against about 146 KiB before, and a flow that has carried nothing
+about 24 KiB (`crates/xray-core-rs/tests/tun_flow_memory.rs` measures both).
+
+The smoltcp device computes IPv4 and TCP checksums for what it sends but does
+not verify them on what the host writes, as Xray-core's TUN inbound verifies
+none ([TUN checksums](xray-core-differences.md#tun-checksums)): the host's own
+stack computed them, and `valid_tun_ip_packet` checks each IPv4 header
+checksum before a packet reaches smoltcp. UDP is parsed outside smoltcp and
+keeps its check. A TCP segment corrupted before it reaches the TUN, which a
+host forwarding other devices' packets can write, so becomes stream data;
+[Packet APIs](ffi.md#packet-apis) states the host contract.
+
 ### DNS
 
 DNS is split at the wire-transport boundary instead of being owned by TUN.

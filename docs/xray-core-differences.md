@@ -1750,6 +1750,24 @@ Xray-core. Known limits: at a paced 10 Gbit/s splicing costs the whole
 machine more than copying (as it does for Xray-core); a real network
 interface, x86-64 and a freedom outbound with `fragment` were not measured.
 
+## TUN checksums
+
+Xray-core's TUN inbound checks no checksum of what the system writes into the
+TUN. At the pinned v26.11.9 its stack
+([`proxy/tun/stack.go`](https://github.com/XTLS/Xray-core/blob/676eaf66f8f05d4d558ee7a74b4736623d3feeb9/proxy/tun/stack.go#L222-L234))
+looks at the IPv4 header, TCP and UDP checksums only of a datagram put
+together from fragments, or when `StackOptions.Remote` is set, which the
+WireGuard outbound sets for its tunnel to another system and the
+[TUN handler](https://github.com/XTLS/Xray-core/blob/676eaf66f8f05d4d558ee7a74b4736623d3feeb9/proxy/tun/handler.go#L168-L172)
+does not. The TUN stack here likewise takes a TCP segment's checksum as
+correct, and checks each IPv4 header checksum (`valid_tun_ip_packet`) and each
+UDP checksum (`parse_udp_packet`); it does not reassemble fragments. A TCP
+segment corrupted before it reaches the TUN, which a host forwarding other
+devices' packets can write, so becomes stream data in both; the host contract
+is in [Packet APIs](ffi.md#packet-apis). The WireGuard stack here verifies
+what it receives, as Xray-core's does. Source-derived from the reference;
+`tun_tcp_stack_trusts_host_checksums_and_computes_its_own` covers this side.
+
 ## Follow-up checks
 
 - [x] Integrate the #87 review follow-up, including both relay-address fixes,
