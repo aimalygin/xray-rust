@@ -34,6 +34,14 @@ const QUIC_INITIAL_IV_LEN: usize = 12;
 const QUIC_INITIAL_HP_LEN: usize = 16;
 const QUIC_TAG_LEN: usize = 16;
 const QUIC_HP_SAMPLE_LEN: usize = 16;
+/// The most of a TCP flow's first bytes the inbound and TUN readers hold for
+/// the sniffers; with this much they sniff it as complete.
+pub(crate) const TCP_SNIFF_BUFFER_SIZE: usize = 8 * 1024;
+/// The most prefixes of a TCP payload the fuzz entry point sniffs. Each call
+/// reads its prefix from the start, so a byte at a time over a whole buffer
+/// is quadratic.
+#[cfg(feature = "fuzzing")]
+const FUZZ_TCP_PREFIXES_MAX: usize = 256;
 /// Xray-core reassembles at most 32767 bytes of Initial CRYPTO data.
 pub(crate) const QUIC_MAX_CRYPTO_STREAM_SIZE: usize = 32_767;
 /// Chrome scatters a ClientHello over a handful of CRYPTO frames; more
@@ -657,6 +665,68 @@ pub fn sniff_quic_initial_sni_for_fuzzing<'a>(
         }
     }
     None
+}
+
+/// Exercises the TCP sniffers (HTTP, TLS ClientHello, BitTorrent) and the
+/// first-datagram UDP sniffers (QUIC, uTP) on `payload`, as a flow's reader
+/// feeds them: the TCP sniffers on the first `TCP_SNIFF_BUFFER_SIZE` bytes,
+/// every prefix the flags pick and then all of them, the UDP sniffers on the
+/// whole payload. A domain a sniffer names must be one a target can carry.
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub fn sniff_initial_payload_for_fuzzing(flags: u8, payload: &[u8]) {
+    let config = InboundSniffingConfig {
+        enabled: true,
+        dest_override: vec![
+            SniffingDestination::Http,
+            SniffingDestination::Tls,
+            SniffingDestination::Quic,
+        ],
+        metadata_only: false,
+        route_only: flags & 1 != 0,
+        ..Default::default()
+    };
+    let address = TargetAddr::Ip(IpAddr::from([192, 0, 2, 1]));
+    let tcp = Target::new(address.clone(), 443, xray_routing::Network::Tcp);
+    let record_attributes = flags & 2 != 0;
+    // A step of one byte over libFuzzer's 64 KiB inputs, with an HTTP method
+    // and no blank line to end the headers, took quadratic time past its
+    // per-input timeout under ASan. A reader stops at the sniff buffer, and
+    // a longer payload widens the step to keep the prefixes few.
+    let tcp_payload = &payload[..payload.len().min(TCP_SNIFF_BUFFER_SIZE)];
+    let step = (usize::from(flags >> 2) + 1).max(tcp_payload.len().div_ceil(FUZZ_TCP_PREFIXES_MAX));
+    let check = |sniffed: Option<&Sniffed>| {
+        if let Some(SniffedTarget { route_target, .. }) =
+            sniffed.and_then(|sniffed| sniffed.target.as_ref())
+        {
+            let TargetAddr::Domain(domain) = &route_target.addr else {
+                panic!("a sniffed target is not a domain");
+            };
+            assert!(!domain.is_empty() && !domain.contains(char::is_whitespace));
+        }
+    };
+    let mut end = step.min(tcp_payload.len());
+    loop {
+        let complete = end == tcp_payload.len();
+        match sniff_tcp_initial_payload(
+            &config,
+            &tcp,
+            &tcp_payload[..end],
+            complete,
+            record_attributes,
+        ) {
+            TcpSniff::Done(done) => {
+                check(done.sniffed.as_ref());
+                break;
+            }
+            TcpSniff::NeedMore if complete => panic!("a complete payload needs more"),
+            TcpSniff::NeedMore => end = (end + step).min(tcp_payload.len()),
+        }
+    }
+    let udp = Target::new(address, 443, xray_routing::Network::Udp);
+    if let UdpSniffProgress::Done(sniffed) = UdpSniffer::new(&config, &udp).feed(payload) {
+        check(sniffed.as_ref());
+    }
 }
 
 enum QuicSniff {

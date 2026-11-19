@@ -73,7 +73,6 @@ pub(crate) const TUN_CLIENT_IPV4: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 2);
 const TCP_BUFFER_SIZE: usize = 32 * 1024;
 /// IPv4 and TCP headers without options: the largest MSS a link MTU admits.
 const TCP_IPV4_HEADERS_LEN: usize = 40;
-const TUN_TCP_SNIFF_BUFFER_SIZE: usize = 8 * 1024;
 const TUN_TCP_SNIFF_TIMEOUT: Duration = Duration::from_millis(250);
 const STACK_EVENT_CHANNEL_DEPTH: usize = 64;
 const TCP_BRIDGE_CHANNEL_DEPTH: usize = 256;
@@ -3268,7 +3267,7 @@ async fn read_tun_tcp_sniff_payload(
     record_attributes: bool,
 ) -> Option<(VecDeque<StackToRemoteData>, crate::sniffing::TcpSniffed)> {
     let mut initial_upload = VecDeque::new();
-    let mut sniff_buffer = BytesMut::with_capacity(TUN_TCP_SNIFF_BUFFER_SIZE);
+    let mut sniff_buffer = BytesMut::with_capacity(crate::sniffing::TCP_SNIFF_BUFFER_SIZE);
     let timeout = sleep(TUN_TCP_SNIFF_TIMEOUT);
     tokio::pin!(timeout);
 
@@ -3311,12 +3310,12 @@ async fn read_tun_tcp_sniff_payload(
                         }
                     },
                 };
-        let remaining = TUN_TCP_SNIFF_BUFFER_SIZE.saturating_sub(sniff_buffer.len());
+        let remaining = crate::sniffing::TCP_SNIFF_BUFFER_SIZE.saturating_sub(sniff_buffer.len());
         let inspected = data.data.len().min(remaining);
         sniff_buffer.extend_from_slice(&data.data[..inspected]);
         initial_upload.push_back(data);
 
-        let full = sniff_buffer.len() >= TUN_TCP_SNIFF_BUFFER_SIZE;
+        let full = sniff_buffer.len() >= crate::sniffing::TCP_SNIFF_BUFFER_SIZE;
         if let crate::sniffing::TcpSniff::Done(sniffed) = crate::sniffing::sniff_tcp_initial_payload(
             config,
             target,

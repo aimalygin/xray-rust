@@ -23,6 +23,9 @@ mod dialer;
 mod fragment;
 pub use fragment::{FragmentPackets, TcpFragmentConfig};
 mod dns;
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub mod fuzzing;
 mod happy_eyeballs;
 pub mod header_custom;
 pub mod hysteria;

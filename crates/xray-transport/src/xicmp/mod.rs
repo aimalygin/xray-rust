@@ -31,5 +31,17 @@ pub enum XicmpError {
     Protection(#[source] crate::TransportError),
 }
 
+/// An ICMP message as each kind of socket's reader takes it: a raw IPv4
+/// socket's with its IP header, a datagram one's without, and IPv6's.
+#[cfg(feature = "fuzzing")]
+pub(crate) fn fuzz_reply(data: &[u8]) {
+    const CLIENT_ID: [u8; 8] = [0x95, 0x9a, 0x70, 0x7e, 0x31, 0x9a, 0x15, 0xff];
+    for v6 in [false, true] {
+        for dgram in [false, true] {
+            let _ = client::accept_echo(data, v6, dgram, !dgram, 0x0b18, &CLIENT_ID);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

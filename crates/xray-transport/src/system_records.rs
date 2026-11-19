@@ -710,5 +710,17 @@ fn random_below(bound: u32) -> u32 {
     rand::thread_rng().gen_range(0..bound)
 }
 
+/// Checks `data` as the answer to an SRV and to a TXT query, and orders
+/// the SRV records it carries.
+#[cfg(feature = "fuzzing")]
+pub(crate) fn fuzz_response(data: &[u8]) {
+    let _ = truncated(data);
+    for qtype in [TYPE_SRV, TYPE_TXT] {
+        if let Checked::Answers(Answers::Srv(mut records)) = check_response(data, qtype) {
+            sort_by_priority_weight(&mut records, |sum| sum / 2);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

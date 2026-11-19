@@ -118,3 +118,45 @@ path = "fuzz_targets/stream_decoders.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "dns_response"
+path = "fuzz_targets/dns_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sniff_payload"
+path = "fuzz_targets/sniff_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "kcp_segments"
+path = "fuzz_targets/kcp_segments.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "masque_capsules"
+path = "fuzz_targets/masque_capsules.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "finalmask_udp"
+path = "fuzz_targets/finalmask_udp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "finalmask_tcp"
+path = "fuzz_targets/finalmask_tcp.rs"
+test = false
+doc = false
+bench = false

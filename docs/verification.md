@@ -121,7 +121,21 @@ bounded TUN queue, and the public FFI lifecycle. `stream_decoders` feeds
 server-to-client gRPC Hunk and WebSocket frames, Shadowsocks AEAD and 2022 TCP
 responses, and VLESS responses with Vision unpadding in read sizes chosen by
 the input, and parses the same bytes as REALITY server records for the
-ServerHello capture. The corpus and targets live under `fuzz/`. The release
+ServerHello capture. Further targets read what a server, a resolver or
+anyone on the path sends: `dns_response` the resolver's A/AAAA answers (raw,
+and forged onto the query's ID and question) and the system resolver's
+SRV/TXT answers; `sniff_payload` the HTTP, TLS ClientHello and BitTorrent
+sniffers on growing prefixes of the 8 KiB a TCP flow's reader collects, at
+most 256 of them, and the uTP sniffer; `kcp_segments` mKCP
+datagrams through each `mkcp-legacy`, Salamander, `header-custom` and sudoku
+mask stack into the connection engine; `masque_capsules` the CONNECT-IP
+capsule stream and the packets it carries; `finalmask_udp` Salamander with
+Gecko reassembly, `header-custom` and sudoku stacked over a scripted socket
+as the QUIC carrier stacks them, and the xdns, xicmp and realm decoders; and
+`finalmask_tcp` the `header-custom` handshake, the sudoku stream and the xmc
+login and stream. XHTTP's HTTP/2 and HTTP/3 framing is the `h2` and `h3`
+crates' own, with no parser of this repository's to drive. The corpus and
+targets live under `fuzz/`. The release
 command runs each target for 60 seconds with AddressSanitizer and keeps all
 generated corpus/artifact files outside the worktree:
 

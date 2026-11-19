@@ -361,5 +361,29 @@ async fn punch(
     }
 }
 
+/// What reaches a realm client from others: a STUN server's answer, a
+/// peer's punch packet, and the rendezvous's answer with the candidates it
+/// makes for each family.
+#[cfg(feature = "fuzzing")]
+pub(crate) fn fuzz_answers(data: &[u8]) {
+    let _ = stun::parse_binding_response(data);
+    let meta = punch::PunchMetadata {
+        nonce: [0x11; punch::NONCE_LEN],
+        obfs: [0x22; punch::OBFS_KEY_LEN],
+    };
+    let _ = punch::decode(data, &meta);
+    let Ok(addresses) = rendezvous::decode_connect_response(data) else {
+        return;
+    };
+    let peers = candidates::parse_addr_ports(&addresses);
+    let locals = [
+        SocketAddr::from(([192, 0, 2, 10], 40000)),
+        SocketAddr::from(([0x2001, 0xdb8, 0, 0, 0, 0, 0, 10], 40000)),
+    ];
+    for family in [RealmFamily::Dual, RealmFamily::V4, RealmFamily::V6] {
+        let _ = candidates::punch_candidates(&locals, &peers, family);
+    }
+}
+
 #[cfg(test)]
 mod tests;
