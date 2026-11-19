@@ -359,7 +359,10 @@ separate allocation domain. Pool size, TTL, query strategy, reserved tunnel
 addresses, and the ordered lease-deadline index remain bounded per `Core`
 instance. Each mapper starts allocating at a random pool address and
 continues sequentially, so a restarted `Core` does not hand an address an app
-may still cache to a different domain. Fake-IP addresses are never reassigned
+may still cache to a different domain. A stopping `Core` also leaves its
+mappings in a `FakeIpStore`, by default one per process, and the next `Core`
+started with that store and the same pool adopts them, so those addresses keep
+naming the same domains. Fake-IP addresses are never reassigned
 before their most recently advertised TTL; capacity exhaustion fails closed
 until the earliest lease expires.
 

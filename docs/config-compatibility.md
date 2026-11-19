@@ -4602,6 +4602,23 @@ carries every candidate and TTL metadata. An explicitly enabled
 raw-TCP race described above; its Xray-compatible zero-delay default leaves the
 race disabled and dials the candidates the way Go's `net.Dialer` does.
 
+A `Core` that stops, or is dropped while running, leaves its fake-IP mappings
+in its `FakeIpStore`: the process-wide one unless the embedding gave the `Core`
+another with `Core::with_fake_ip_store`; every C ABI handle uses the process
+store. The next `Core` started with that store takes them before it answers
+anything, and adopts them when its `ipv4Pool` and `poolSize` are the same; a
+`Core` started without fake IP or with another pool drops them. A lease still
+running is extended to at least a full `ttl` from that start; one already
+expired stays mapped but reusable, so a table of stale mappings cannot fail the
+new `Core` closed. New domains are still allocated sequentially from the new
+`Core`'s random start, past the adopted addresses. A store holds at most one
+set, at most `poolSize` mappings, until a `Core` started with it takes them or
+`FakeIpStore::clear` drops them. Applications keep fake IPs in caches and
+connection pools beyond the DNS TTL, and a host that restarts the core to
+switch servers otherwise found those addresses unmapped. Clash's
+`store-fake-ip` and sing-box's `store_fakeip` persist the mapping in a file;
+nothing here is written to disk, so a new process starts with an empty table.
+
 A fake-IP profile does not inherently need `dns.servers` when its restored
 domains always use VLESS, because VLESS preserves them for remote resolution.
 Freedom cannot do that: in `StaticOnly`, a default or domain-routed Freedom

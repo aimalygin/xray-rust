@@ -29,6 +29,18 @@ long-term supported release series.
   decoders (Salamander with Gecko reassembly, `header-custom` over UDP and
   TCP, sudoku datagrams and streams, xdns, xicmp, realm and xmc). Six targets
   join the campaign and the seed-corpus replay.
+- A `Core` started with fake IP adopts the mappings the `Core` stopped last
+  left, so an address an app still holds keeps naming its domain across a
+  restart. Apps keep fake IPs in caches and connection pools past the DNS TTL,
+  and a host that restarts the core to switch servers found those addresses
+  unmapped in the new core, so a flow whose name sniffing could not recover
+  failed until the apps were restarted. A stopping `Core` leaves at most
+  `poolSize` mappings in a `FakeIpStore`, a new public type: the process-wide
+  one unless `Core::with_fake_ip_store` gives the core another. The next
+  `Core` started with that store adopts them when its `ipv4Pool` and `poolSize` are the same, extending
+  running leases to a full `ttl`, and drops them otherwise or without fake IP.
+  Allocation of new domains is unchanged. Nothing is written to disk; no FFI
+  or ABI change.
 
 ## 0.10.1 - 2026-11-16
 
