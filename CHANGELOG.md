@@ -141,7 +141,6 @@ owner-accepted limitations in the
 - `scripts/check-vendored-advisories.sh`, run in the supply-chain CI job,
   audits the upstream release under each vendored crate and every git
   dependency against RustSec, which `cargo audit` does not see.
-
 - A Hysteria connect attempt to the last of the server's addresses, the only
   one for a server with one address, gets what is left of the dial's ten
   seconds, at most eight, where every attempt had three. Quinn's first probe
