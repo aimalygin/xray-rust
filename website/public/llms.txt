@@ -1,19 +1,14 @@
 # xray-rust
 
-> xray-rust is an open-source, embeddable Rust client core for VLESS, REALITY, Vision, TUN, routing, and DNS, with native Apple and Android SDK packages.
+> An embeddable Rust client core for a documented subset of Xray configurations. The native SDK provides Apple and Android tunnel adapters. Kotlin Multiplatform apps can share profile import and tunnel control between Android and iOS.
 
-## Primary links
+## Integration
 
-- [Core repository](https://github.com/aimalygin/xray-rust): Source, compatibility boundary, benchmark methodology, and core documentation.
-- [Mobile SDK repository](https://github.com/aimalygin/xray-rust-mobile): Apple Network Extension and Android VpnService adapters, installation, and release verification.
-- [Benchmark results](https://github.com/aimalygin/xray-rust/blob/main/docs/benchmarks/results.md): Reproducible process-level benchmark results and raw output.
-- [Releases](https://github.com/aimalygin/xray-rust-mobile/releases): Mobile binary releases and checksums.
+- [Core repository](https://github.com/aimalygin/xray-rust) and [0.10.1 compatibility guide](https://github.com/aimalygin/xray-rust/blob/v0.10.1/docs/config-compatibility.md). The release uses Xray-core v26.11.9 as its reference.
+- [Native mobile SDK](https://github.com/aimalygin/xray-rust-mobile). Pin the Swift package to 0.10.1 or add io.github.aimalygin:xray-rust-mobile:0.10.1 from Maven Central.
+- [Kotlin Multiplatform setup](https://github.com/aimalygin/xray-rust-kmp/tree/v0.10.1#use-it-in-your-project). Build the KMP library from tag v0.10.1 as a Gradle composite build. It wraps the native SDK and targets Android and iOS.
+- [Core release and device evidence](https://github.com/aimalygin/xray-rust/releases/tag/v0.10.1), [native SDK binaries and checksums](https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.10.1), [KMP source release](https://github.com/aimalygin/xray-rust-kmp/releases/tag/v0.10.1). The native SDK pins core commit 3cef7c42c2fd296afd27ab0b6435c632842e1a26 and C ABI 1.17.
+- [Published benchmark](https://github.com/aimalygin/xray-rust/blob/v0.9.0/docs/benchmarks/results/2026-10-30-v26.10.21-three-engine/README.md). Localhost comparison from 2026-10-30 at core commit 123b9d8d.
+- [Full project reference](https://xray-rust.aimalygin.chatgpt.site/llms-full.txt). Platforms, protocols, integration and release limitations.
 
-## Key facts
-
-- License: Mozilla Public License 2.0 (MPL-2.0).
-- Language: Rust, with native Apple and Android bindings.
-- Protocol path: VLESS, TLS, REALITY, xtls-rprx-vision, UDP, and XUDP.
-- Mobile packages: SwiftPM, XCFramework, and Android AAR.
-- Platforms: iOS 15+, tvOS 17+, macOS 11+, and Android API 24+.
-- Independence: not affiliated with or endorsed by XTLS or Xray-core.
+The project is independent of XTLS and Xray-core and uses the Mozilla Public License 2.0.

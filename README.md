@@ -12,6 +12,7 @@ SDKs for VPN apps on iOS, tvOS, macOS and Android.**
 
 [Website](https://xray-rust.aimalygin.chatgpt.site) ·
 [Mobile SDK](https://github.com/aimalygin/xray-rust-mobile) ·
+[Kotlin Multiplatform](https://github.com/aimalygin/xray-rust-kmp) ·
 [Status](docs/status.md) ·
 [Config compatibility](docs/config-compatibility.md) ·
 [Benchmarks](#benchmarks) ·
@@ -308,6 +309,15 @@ cargo run --locked -p xray-cli -- run \
 For VLESS, copy a synthetic fixture from `tests/fixtures/configs/` outside the
 repository and replace every placeholder. Never commit a live UUID, key, short
 ID, endpoint, or subscription URL.
+
+### Kotlin Multiplatform (Android and iOS)
+
+Use [`xray-rust-kmp`](https://github.com/aimalygin/xray-rust-kmp) to import
+proxy links, start and stop the VPN tunnel, and observe its state from shared
+Kotlin code. The Android engine uses the mobile SDK's `VpnService`. On iOS,
+the app controls a Swift Packet Tunnel extension. Build tag `v0.10.1` from
+source as a Gradle composite build. The [KMP setup guide](https://github.com/aimalygin/xray-rust-kmp/tree/v0.10.1#use-it-in-your-project)
+includes the Gradle configuration and iOS Swift package requirements.
 
 ### Android
 

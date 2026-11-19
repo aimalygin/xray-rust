@@ -2,7 +2,7 @@
 
 Source for the public [xray-rust project website](https://xray-rust.aimalygin.chatgpt.site).
 
-The site introduces the Rust core and mobile SDK, publishes the benchmark
+The site introduces the Rust core, native mobile SDK and Kotlin Multiplatform library, publishes the benchmark
 summary, and provides structured project information for search engines and LLM
 crawlers through Schema.org, `llms.txt`, and `llms-full.txt`.
 
