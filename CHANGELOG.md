@@ -12,8 +12,9 @@ long-term supported release series.
 
 ## 0.10.1 - 2026-11-16
 
-Release candidate preparation; publication and exact-candidate release
-qualification are pending.
+Published on 2026-11-18 with exact-candidate release evidence and the
+owner-accepted limitations in the
+[0.10.1 release](https://github.com/aimalygin/xray-rust/releases/tag/v0.10.1).
 
 - Security: the vendored quinn-proto moves from 0.11.16 to 0.11.19 and quinn
   from 0.11.9 to 0.11.12, keeping the local patches. 0.11.16 let a peer grow
