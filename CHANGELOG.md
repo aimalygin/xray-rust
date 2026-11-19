@@ -80,6 +80,36 @@ long-term supported release series.
   flow lasted (it is now released once the flow is routed), a DNS query the
   TUN answers itself, and a datagram held while a TUN admission callback
   decides.
+- A geosite or geoip category is compiled once per process and reused by
+  every configuration that names it, so a host that restarts the core with a
+  new handle on each server switch no longer decodes and rebuilds the same
+  categories each time. The cache key is the file's identity (path, device
+  and inode, size, modification and status-change times), the code, the
+  attribute filter and, when a name ends with a dot, the name mode: a geodata
+  file the host rewrites or replaces is compiled again. A file whose
+  timestamps are within two seconds of when it is opened is not cached, as a
+  same-size rewrite within one timestamp tick would keep its identity.
+  Categories no configuration references are kept up to 4 MiB for the next
+  core; loading a configuration, replacing a routing policy and freeing a
+  handle release those beyond that. `xray_config` adds `geodata_cache_stats`
+  and `trim_geodata_cache`. A geosite category is shared by reference with
+  every rule that names it; a GeoIP category only with a rule in which it is
+  the only entry of its group, and a rule that merges it with other entries,
+  as `"ip": ["geoip:private", "geoip:ru"]` does, holds a copy as before.
+  Domain matchers also take less memory: the `full:` and `domain:` names of a
+  set are packed into one buffer grouped by a keyed hash
+  (`xray_routing::DomainPatternSet`) instead of one heap allocation and
+  hash-set slot each, and geodata entries are read in place instead of being
+  decoded into a `String` per domain and a `Vec` per CIDR; a body that is not
+  plain protobuf is still decoded by prost. Matching is unchanged. On macOS
+  with a 73,515-domain `geosite:ru-blocked` and an 88,587-CIDR
+  `geoip:ru-blocked`, the first core start went from +23.0 MiB footprint and
+  44 ms to +3.7 MiB and 26 ms, a restart from +2.9-4.1 MiB and 42 ms to under
+  0.1 MiB and 0.2 ms, and six restarts from +41.9 MiB to +4.1 MiB
+  ([benchmarks](docs/benchmarks.md#geodata-restart-memory)).
+  `DomainMatcherSet` equality now compares normalized patterns, however they
+  are stored, and `DomainMatcherSetError` has a `TooLarge` variant for a
+  table beyond 4 GiB.
 
 ## 0.10.1 - 2026-11-16
 

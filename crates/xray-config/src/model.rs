@@ -812,7 +812,7 @@ pub(crate) fn build_domain_matcher_set(
     builder.build().map_err(domain_matcher_set_error)
 }
 
-fn domain_matcher_set_error(error: DomainMatcherSetError) -> ConfigModelError {
+pub(crate) fn domain_matcher_set_error(error: DomainMatcherSetError) -> ConfigModelError {
     ConfigModelError::InvalidDomainMatcherSet {
         message: error.to_string(),
     }

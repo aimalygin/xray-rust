@@ -4,12 +4,14 @@ use thiserror::Error;
 pub mod domain_host_index;
 pub mod domain_matcher;
 pub mod domain_matcher_set;
+pub mod domain_pattern_set;
 pub mod ip_filter;
 pub mod ip_range_set;
 
 pub use domain_host_index::{DnsHostTarget, DomainHostIndex};
 pub use domain_matcher::{DomainMatcher, DomainNameMode, DomainRegexError, RegexMatcher};
 pub use domain_matcher_set::{DomainMatcherSet, DomainMatcherSetBuilder, DomainMatcherSetError};
+pub use domain_pattern_set::{DomainPatternSet, DomainPatternSetBuilder};
 pub use ip_filter::{DnsIpFilter, DnsIpFilterBuilder};
 pub use ip_range_set::{
     canonicalize_ip, Cidr, InvalidCidrPrefix, IpMatcherSet, IpMatcherSetBuilder, IpRangeSet,
