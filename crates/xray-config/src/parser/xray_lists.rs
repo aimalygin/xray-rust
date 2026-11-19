@@ -250,9 +250,24 @@ impl Parser<'_> {
         path: &str,
         mode: DomainNameMode,
     ) -> Option<Option<DomainMatcherSet>> {
-        let Some(entries) = self.string_list(raw, path)? else {
-            return Some(None);
-        };
+        self.domain_rule_list_with(raw, path, mode, &[])
+    }
+
+    /// [`domain_rule_list`](Self::domain_rule_list) with `implicit` rules
+    /// after the configured ones, as Xray-core adds rules of its own to a
+    /// `localhost` DNS client. They count against the matcher budget too.
+    pub(super) fn domain_rule_list_with(
+        &mut self,
+        raw: Option<&Value>,
+        path: &str,
+        mode: DomainNameMode,
+        implicit: &[&'static str],
+    ) -> Option<Option<DomainMatcherSet>> {
+        let mut entries = self.string_list(raw, path)?.unwrap_or_default();
+        entries.extend(implicit.iter().map(|text| ListEntry {
+            text,
+            path: path.to_owned(),
+        }));
         if entries.is_empty() {
             return Some(None);
         }

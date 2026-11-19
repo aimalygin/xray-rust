@@ -155,7 +155,15 @@ internal fun prepareAndroidVpnConfigWithinDeadline(
         "IPv4 fake-IP DNS cannot be used with an IPv6-only queryStrategy"
     }
     val usesLocalDnsAnchor = usesFakeIp || (dnsServers?.length() ?: 0) > 0
-    if (usesFakeIp && (dnsServers?.length() ?: 0) == 0) {
+    // The core maps a `fakedns` entry onto fake-IP and asks no wire server for
+    // it, so it counts as fake-IP here and not as an upstream.
+    val fakeDnsServers = if (dnsServers == null) {
+        0
+    } else {
+        (0 until dnsServers.length()).count { isFakeDnsServer(dnsServers.opt(it)) }
+    }
+    val wireDnsServers = (dnsServers?.length() ?: 0) - fakeDnsServers
+    if ((usesFakeIp || fakeDnsServers > 0) && wireDnsServers == 0) {
         validateAndroidDnsPreflightTopology(
             androidDnsPreflightTopology(
                 root = root,
@@ -589,6 +597,9 @@ private fun dnsServerBootstrapDomainFromString(server: String): AndroidDnsBootst
         "DNS server must not contain surrounding whitespace"
     }
     require(server.isNotEmpty()) { "DNS server must not be empty" }
+    if (isXrayInternalDnsServer(server)) {
+        return null
+    }
     if (isIpLiteral(server)) {
         validateDirectDnsUpstreamAddress(server, 53)
         return null
@@ -672,16 +683,32 @@ private fun dnsServerBootstrapDomainFromObjectFields(
         validateDirectDnsUpstreamAddress(address, port)
         return null
     }
-    require(
-        !address.equals("localhost", ignoreCase = true) &&
-            !address.equals("fakedns", ignoreCase = true),
-    ) {
-        "special DNS server `$address` is not supported yet"
+    if (isXrayInternalDnsServer(address)) {
+        return null
     }
     require(':' !in address) {
         "object DNS server address must not include a port or unsupported URL scheme"
     }
     return AndroidDnsBootstrapDomain(normalizeBootstrapDomain(address), port)
+}
+
+/**
+ * Xray-core's `localhost` (the system resolver, which the core asks through its
+ * own bootstrap resolver) and `fakedns` (which the core maps onto `dns.fakeIp`)
+ * are no wire servers: they have no address to resolve before the tunnel starts.
+ */
+private fun isXrayInternalDnsServer(address: String): Boolean =
+    address.equals("localhost", ignoreCase = true) ||
+        address.equals("fakedns", ignoreCase = true)
+
+internal fun isFakeDnsServer(server: Any?): Boolean {
+    val address = when (server) {
+        is String -> server
+        is JSONObject -> server.opt("address")
+        is Map<*, *> -> server["address"]
+        else -> null
+    }
+    return address is String && address.equals("fakedns", ignoreCase = true)
 }
 
 private fun hasDnsTcpUrlScheme(server: String): Boolean {
@@ -1221,7 +1248,7 @@ private const val MAX_BOOTSTRAP_ALIAS_DEPTH = 8
 private const val MAX_BLOCKED_DNS_LOOKUP_THREADS = 2
 private const val DNS_LOOKUP_THREAD_KEEP_ALIVE_SECONDS = 30L
 private const val EXACT_DNS_HOST_PREFIX = "full:"
-private const val MAX_DNS_SERVERS = 8
+private const val MAX_DNS_SERVERS = 32
 private const val DNS_FAMILY_IPV4 = 1
 private const val DNS_FAMILY_IPV6 = 2
 

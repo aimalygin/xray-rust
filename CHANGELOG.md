@@ -10,6 +10,83 @@ long-term supported release series.
 
 ## Unreleased
 
+- The Android and Apple VPN integrations start profiles whose `dns.servers`
+  list Xray-core's `localhost` or `fakedns`, as a string or an object's
+  `address`: neither is resolved during DNS bootstrap, where the object form
+  failed preparation and the string form was looked up as a host name. A
+  `fakedns` entry counts as fake-IP, not as an upstream, in the fake-IP
+  routing preflight, and Android accepts up to 32 `dns.servers` entries, as
+  the core does, where it stopped at eight.
+- `dns.servers` takes up to 32 entries, where more than eight failed to
+  parse. Xray-core sets no limit, and full subscriptions list more than
+  eight. Destination lookups use every server; the TUN DNS proxy at
+  `198.18.0.1` still forwards to the first eight distinct ones, which share
+  its five-second budget. With `enableParallelQuery` a lookup asks at most
+  eight servers at a time, the next starting as one settles, so one lookup
+  over 32 servers stays within the managed resolver's exchange limit.
+- RAW's `http` header obfuscation works (`tcpSettings`/`rawSettings`
+  `header.type: "http"`), where it was refused: every connection sends a
+  request head built as Xray-core builds it (method, a drawn path, headers
+  sorted by name with drawn values, or Xray-core's Chrome headers by default)
+  before its first bytes, above TLS or REALITY when set, and drops the
+  server's response head, at most 8192 bytes, before its first read. Vision
+  is refused on it, as in Xray-core. Request text with a carriage return or
+  line feed fails, and so does the header on a freedom or DNS outbound,
+  which would dial without it.
+- Xray-core's FakeDNS works: a `fakedns` entry in `dns.servers`, refused
+  until now, turns on `dns.fakeIp` with the first IPv4 pool of root
+  `fakeDns` (an object or an array, also spelled `fakedns`) and its
+  `poolSize`, or Xray-core's automatic `198.18.0.0/15` without one.
+  Destination lookups never ask the entry. IPv6 pools are ignored with a
+  warning, as fake addresses are IPv4 only. Every name gets a fake address,
+  so the entry is accepted only where Xray-core sends it every name: first,
+  without `domains`, while no other server has `domains` or is `localhost`.
+  Elsewhere it still fails, since Xray-core would fake only some names. An
+  explicit `dns.fakeIp` wins.
+- `sockopt.domainStrategy` works on VLESS, VMess, Trojan, Shadowsocks, SOCKS,
+  HTTP and Hysteria outbounds and on an XHTTP download leg, where any value
+  but `AsIs` was refused. A domain server resolves to the families the
+  strategy asks for before it is dialed, as Xray-core's `DialSystem` resolves
+  it: `UseIPv4` dials only IPv4 addresses and falls back to all of them when
+  there is none, `ForceIPv4` fails instead, and the `v4v6`/`v6v4` forms try
+  one family, then the other. The bootstrap resolver answers, as without a
+  strategy. A strategy beside `dialerProxy` or `proxySettings` on such an
+  outbound is refused, since the chain would carry the server's name.
+- `localhost` works as a DNS server, as Xray-core's system-resolver client,
+  where it was refused. It asks the resolver the core bootstraps with
+  (`dns.hosts`, then the platform resolver) instead of the wire, bypassing
+  routing, and its `domains` gain Xray-core's local rules, so dotless names
+  and `.local`, `.lan`, `.home.arpa` and the reserved suffixes go to it
+  first. Answers carry the platform's TTL or Xray-core's 300 seconds and are
+  cached like other servers'. Under the `StaticOnly` bootstrap mode it answers
+  only from `dns.hosts`, and the next server takes the other names. The TUN
+  DNS proxy asks it locally over UDP and TCP, for A and AAAA questions; any
+  other question goes on to the next upstream.
+- Full Xray JSON subscriptions with fields Xray-core accepts and that change
+  nothing here now start, with a warning for each, where they failed to
+  parse: root `stats`, `api`, `metrics`, `version` and `geodata` objects,
+  `routing.domainMatcher`, `sockopt.tcpNoDelay`, mKCP `congestion`,
+  `readBufferSize` and `writeBufferSize`, and TLS `minVersion`, `maxVersion`,
+  `cipherSuites`, `curvePreferences`, `useSystemCA` and `show`. A uTLS
+  fingerprint decides the TLS four, as in Xray-core. A nonempty
+  `echConfigList` still fails: ECH is not implemented, and connecting without
+  it would send the server name in the clear, where Xray-core fails the
+  connection. `disableSystemRoot: true` is accepted only beside
+  `pinnedPeerCertSha256` and still fails without one, since ignoring it would
+  trust roots the config turned off. Values Go's decoding refuses, and
+  unknown keys, still fail.
+- Flows that fail to open through an outbound the observatory watches now
+  have it probed again within seconds instead of at the next `probeInterval`.
+  A refused, reset or timed-out connection, or a failed TLS, REALITY or
+  transport handshake, on a TCP flow from SOCKS, HTTP or TUN or a UDP flow
+  from TUN wakes the observer, which probes that outbound again at most once
+  every 10 seconds; when no observed member of a balancer is healthy, a
+  failure through a member or the balancer's fallback has all of them probed
+  again, at most once every 15 seconds. A dead server behind a `leastPing`
+  balancer with `probeInterval: "10m"` was kept for up to ten minutes; it is
+  now left after one failed open and one probe. Without failures the
+  observatory probes as before.
+
 ## 0.10.1 - 2026-11-16
 
 Published on 2026-11-18 with exact-candidate release evidence and the

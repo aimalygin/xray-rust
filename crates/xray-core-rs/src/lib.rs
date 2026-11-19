@@ -1703,6 +1703,7 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
                 ConfigDnsServerTransport::HttpsRouted => NameServerTransport::HttpsRouted,
                 ConfigDnsServerTransport::HttpsLocal => NameServerTransport::HttpsLocal,
                 ConfigDnsServerTransport::QuicLocal => NameServerTransport::QuicLocal,
+                ConfigDnsServerTransport::System => NameServerTransport::System,
             };
             let query_strategy = transport_dns_query_strategy(server.query_strategy());
             let final_query = server.final_query();
@@ -2165,6 +2166,59 @@ mod tests {
             [SocketAddr::from((
                 Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 94),
                 443,
+            ))]
+        );
+    }
+
+    #[tokio::test]
+    async fn localhost_dns_servers_answer_from_the_platform_resolver() {
+        let raw = r#"{
+            "dns": {
+              "servers": [
+                "localhost",
+                { "address": "LocalHost", "domains": ["domain:corp.example.net"], "queryStrategy": "UseIPv6" },
+                "192.0.2.53"
+              ]
+            },
+            "inbounds": [],
+            "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+        }"#;
+        let mut config = parse_xray_json(raw)
+            .expect("localhost DNS servers parse")
+            .config;
+        let rules = DnsRules::from_config(&mut config);
+        let policies = rules.name_servers.clone().unwrap();
+        assert_eq!(policies.transport(0), Some(NameServerTransport::System));
+        assert_eq!(policies.transport(1), Some(NameServerTransport::System));
+        assert_eq!(policies.transport(2), Some(NameServerTransport::Classic));
+        let resolver =
+            configured_dns_resolver_for_config(&config, Arc::new(DualStackResolver), rules);
+
+        // The first server answers both families; 192.0.2.53 is never asked.
+        let lookup = resolver.resolve_all("printer.lan", 443).await.unwrap();
+        assert_eq!(
+            lookup.socket_addrs(),
+            [
+                SocketAddr::from(([192, 0, 2, 94], 443)),
+                SocketAddr::from((Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 94), 443)),
+            ]
+        );
+        assert!(lookup
+            .ttl()
+            .is_some_and(|ttl| ttl <= Duration::from_secs(300)));
+
+        // A name its domains match goes to the second, IPv6-only, first.
+        // (`git.corp.example` would not: the first already claims every
+        // name under `example`, as Xray-core's local rules do.)
+        let lookup = resolver
+            .resolve_all("git.corp.example.net", 22)
+            .await
+            .unwrap();
+        assert_eq!(
+            lookup.socket_addrs(),
+            [SocketAddr::from((
+                Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 94),
+                22
             ))]
         );
     }

@@ -299,6 +299,12 @@ const MAX_DNS_HTTPS_RESPONSE_SIZE: usize = u16::MAX as usize;
 const DNS_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(5);
 const DNS_LOCAL_TCP_FALLBACK_DELAY: Duration = Duration::from_millis(300);
 const MAX_DNS_ALIAS_DEPTH: usize = 8;
+/// Servers a parallel lookup asks at once; each that settles lets the next
+/// in plan order start. Eight, the server bound before it rose to 32, keeps
+/// a lookup's exchanges (two per server under `UseIP`) within what the
+/// smallest runtime profile admits at once, eight places and four waiters
+/// for each, where 32 servers would ask 64 exchanges of one lookup.
+const MAX_PARALLEL_DNS_SERVER_LOOKUPS: usize = 8;
 
 /// TTL cache over another resolver. Proxy clients open a new outbound
 /// connection per session; resolving the (usually single) server domain on
@@ -855,6 +861,10 @@ pub enum DnsQueryTransportKind {
     Https,
     /// DNS over QUIC with one RFC 9250 stream per query.
     Quic,
+    /// No wire at all: the query is answered from the platform resolver, as
+    /// Xray-core's `localhost` name server answers. See
+    /// [`exchange_system_dns_query`].
+    System,
 }
 
 /// Determines whether a DNS exchange enters the routing layer.
@@ -925,6 +935,10 @@ pub enum NameServerTransport {
     HttpsLocal,
     /// Start immediately with local DNS over QUIC.
     QuicLocal,
+    /// Xray-core's `localhost`: ask the platform resolver the core
+    /// bootstraps with, bypassing configured routing. The policy's server is
+    /// a placeholder that is never dialed.
+    System,
 }
 
 /// Exchanges already encoded DNS messages with a configured name server.
@@ -996,8 +1010,12 @@ impl DnsQueryTransport for DirectDnsQueryTransport {
         metadata: DnsQueryMetadata<'_>,
         query: &[u8],
     ) -> io::Result<Vec<u8>> {
+        if transport == DnsQueryTransportKind::System {
+            return exchange_system_dns_query(self.bootstrap_resolver.as_ref(), query).await;
+        }
         let server_addrs = self.server_addrs(server).await?;
         match transport {
+            DnsQueryTransportKind::System => unreachable!("answered above"),
             DnsQueryTransportKind::Udp => {
                 exchange_direct_udp(server_addrs[0], query, self.socket_protector.as_deref()).await
             }
@@ -1729,12 +1747,14 @@ impl ConfiguredDnsResolver {
         )
     }
 
-    /// Xray-core's `parallelQuery`: every server of the plan is asked at
-    /// once. The plan's adjacent servers with the same policy id race as one
-    /// group, and groups settle in plan order: a group's answer is that of
-    /// its first member, in plan order, to have answered with addresses, and
-    /// a group whose members all failed passes the lookup on. The rest of the
-    /// lookups are dropped once an answer is found.
+    /// Xray-core's `parallelQuery`: the servers of the plan are asked at
+    /// once, at most [`MAX_PARALLEL_DNS_SERVER_LOOKUPS`] at a time, the next
+    /// in plan order starting as each one settles. The plan's adjacent
+    /// servers with the same policy id race as one group, and groups settle
+    /// in plan order: a group's answer is that of its first member, in plan
+    /// order, to have answered with addresses, and a group whose members all
+    /// failed passes the lookup on. The rest of the lookups are dropped once
+    /// an answer is found.
     async fn query_configured_servers_parallel(
         &self,
         domain: &str,
@@ -1746,7 +1766,7 @@ impl ConfiguredDnsResolver {
             .filter_map(|&index| self.name_servers.get(index))
             .collect();
         let mut outcomes: Vec<Option<ServerLookup>> = Vec::with_capacity(plan.len());
-        let mut lookups = FuturesUnordered::new();
+        let mut queued = Vec::with_capacity(plan.len());
         let mut saw_compatible_server = false;
         let mut saw_incompatible_server = false;
         for (position, name_server) in plan.iter().copied().enumerate() {
@@ -1761,13 +1781,27 @@ impl ConfiguredDnsResolver {
             }
             saw_compatible_server = true;
             outcomes.push(None);
-            lookups.push(async move {
+            queued.push(position);
+        }
+        // Lookups start in plan order, so the ones in flight are always the
+        // earliest unsettled: the group being settled never waits on a
+        // lookup that has not started.
+        let plan_ref = &plan;
+        let lookup = move |position: usize| {
+            let name_server = plan_ref[position];
+            async move {
                 let outcome = self
                     .query_server_lookup(name_server, domain, query_strategy)
                     .await;
                 (position, outcome)
-            });
-        }
+            }
+        };
+        let mut queued = queued.into_iter();
+        let mut lookups: FuturesUnordered<_> = queued
+            .by_ref()
+            .take(MAX_PARALLEL_DNS_SERVER_LOOKUPS)
+            .map(lookup)
+            .collect();
 
         let mut group_start = 0;
         while group_start < plan.len() {
@@ -1789,6 +1823,7 @@ impl ConfiguredDnsResolver {
                 break;
             };
             outcomes[position] = Some(outcome);
+            lookups.extend(queued.next().map(lookup));
         }
 
         if !saw_compatible_server && saw_incompatible_server {
@@ -1910,6 +1945,10 @@ impl ConfiguredDnsResolver {
             ),
             NameServerTransport::QuicLocal => (
                 DnsQueryTransportKind::Quic,
+                DnsQueryMetadata::local(name_server.tag.as_deref()),
+            ),
+            NameServerTransport::System => (
+                DnsQueryTransportKind::System,
                 DnsQueryMetadata::local(name_server.tag.as_deref()),
             ),
         };
@@ -2835,6 +2874,107 @@ fn build_dns_query_with_id(
         query.extend_from_slice(edns);
     }
     Ok(query)
+}
+
+/// Answers one encoded query from `resolver`, as Xray-core's `localhost`
+/// name server answers from the system resolver.
+///
+/// `resolver` is the core's bootstrap resolver: `dns.hosts`, then the
+/// platform resolver, or nothing more under a static-only bootstrap. An A or
+/// AAAA question of class IN is looked up for that family. Any other
+/// question fails, as does the root name: the platform resolver answers
+/// addresses only, and a NOERROR without records would end a DNS proxy's
+/// walk over its upstreams, so the next server gets the question instead.
+/// The response repeats the question, keeps the query's RD bit and sets RA,
+/// and gives every address the lookup's remaining TTL, or Xray-core's
+/// 300-second `dns.DefaultTTL` when the platform reports none, as
+/// `getaddrinfo` never does. An answer found to be
+/// empty is NOERROR without records; a lookup that fails, including one that
+/// finds no address at all, is an error, so a resolver moves on to its next
+/// server, as Xray-core's moves on when its local lookup fails.
+pub async fn exchange_system_dns_query(
+    resolver: &dyn DnsResolver,
+    query: &[u8],
+) -> io::Result<Vec<u8>> {
+    const RCODE_NXDOMAIN: u16 = 3;
+    if query.len() < 12 {
+        return Err(invalid_dns_response("dns query is shorter than its header"));
+    }
+    let flags = read_u16(query, 2)?;
+    if flags & 0x8000 != 0 || flags & 0x7800 != 0 {
+        return Err(invalid_dns_response(
+            "system DNS answers standard queries only",
+        ));
+    }
+    if read_u16(query, 4)? != 1 {
+        return Err(invalid_dns_response("dns query must have one question"));
+    }
+    let mut question_end = 12;
+    let (name, record_type, record_class) = read_dns_question(query, &mut question_end)?;
+    let domain = name.trim_end_matches('.');
+    let strategy = match (record_class, record_type) {
+        (1, code) if code == DnsRecordType::A.code() && !domain.is_empty() => {
+            DnsQueryStrategy::UseIpv4
+        }
+        (1, code) if code == DnsRecordType::Aaaa.code() && !domain.is_empty() => {
+            DnsQueryStrategy::UseIpv6
+        }
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "system DNS answers A and AAAA questions for a name only",
+            ))
+        }
+    };
+    let (rcode, addresses, ttl) = match resolver
+        .resolve_all_with_strategy(domain, 0, strategy)
+        .await
+    {
+        Ok(lookup) => {
+            let ttl = lookup.ttl().map_or(DNS_DEFAULT_TTL.as_secs(), |ttl| {
+                ttl.as_secs() + u64::from(ttl.subsec_nanos() != 0)
+            });
+            let want_ipv4 = strategy == DnsQueryStrategy::UseIpv4;
+            let addresses: Vec<IpAddr> = lookup
+                .ips()
+                .map(|address| address.to_canonical())
+                .filter(|address| address.is_ipv4() == want_ipv4)
+                .collect();
+            (0, addresses, u32::try_from(ttl).unwrap_or(u32::MAX))
+        }
+        Err(TransportError::DnsNoData(_, _)) => (0, Vec::new(), 0),
+        Err(TransportError::DnsNameError(_, _)) => (RCODE_NXDOMAIN, Vec::new(), 0),
+        Err(TransportError::DnsRcode(_, _, rcode)) => (u16::from(rcode & 0x0f), Vec::new(), 0),
+        Err(error) => return Err(io::Error::other(error)),
+    };
+    let answer_count = u16::try_from(addresses.len())
+        .map_err(|_| invalid_dns_response("system DNS answer has too many addresses"))?;
+    let mut response = Vec::with_capacity(question_end + addresses.len() * 28);
+    response.extend_from_slice(&query[0..2]);
+    response.extend_from_slice(&(0x8000 | (flags & 0x0100) | 0x0080 | rcode).to_be_bytes());
+    response.extend_from_slice(&1_u16.to_be_bytes());
+    response.extend_from_slice(&answer_count.to_be_bytes());
+    response.extend_from_slice(&0_u16.to_be_bytes());
+    response.extend_from_slice(&0_u16.to_be_bytes());
+    response.extend_from_slice(&query[12..question_end]);
+    for address in addresses {
+        // A pointer to the question's name at offset 12.
+        response.extend_from_slice(&[0xc0, 0x0c]);
+        response.extend_from_slice(&record_type.to_be_bytes());
+        response.extend_from_slice(&1_u16.to_be_bytes());
+        response.extend_from_slice(&ttl.to_be_bytes());
+        match address {
+            IpAddr::V4(address) => {
+                response.extend_from_slice(&4_u16.to_be_bytes());
+                response.extend_from_slice(&address.octets());
+            }
+            IpAddr::V6(address) => {
+                response.extend_from_slice(&16_u16.to_be_bytes());
+                response.extend_from_slice(&address.octets());
+            }
+        }
+    }
+    Ok(response)
 }
 
 /// Returns whether a DNS response belongs to the supplied query.
@@ -3918,7 +4058,9 @@ mod tests {
                 DnsQueryTransportKind::Quic => {
                     Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 49)))
                 }
-                DnsQueryTransportKind::Udp | DnsQueryTransportKind::Tcp => {
+                DnsQueryTransportKind::Udp
+                | DnsQueryTransportKind::Tcp
+                | DnsQueryTransportKind::System => {
                     panic!("encrypted DNS fault matrix must not downgrade to plaintext")
                 }
             }
@@ -4682,6 +4824,18 @@ mod tests {
         script: HashMap<u8, Scripted>,
         barrier: Option<Arc<Barrier>>,
         asked: Mutex<Vec<u8>>,
+        /// Exchanges under way now, and the most there have been at once.
+        in_flight: std::sync::atomic::AtomicUsize,
+        peak: std::sync::atomic::AtomicUsize,
+    }
+
+    /// Counts an exchange in flight until dropped.
+    struct InFlight<'a>(&'a std::sync::atomic::AtomicUsize);
+
+    impl Drop for InFlight<'_> {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        }
     }
 
     #[async_trait::async_trait]
@@ -4698,6 +4852,13 @@ mod tests {
             };
             let octet = address.ip().octets()[3];
             self.asked.lock().unwrap().push(octet);
+            let now = self
+                .in_flight
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                + 1;
+            self.peak
+                .fetch_max(now, std::sync::atomic::Ordering::SeqCst);
+            let _in_flight = InFlight(&self.in_flight);
             if let Some(barrier) = &self.barrier {
                 barrier.wait().await;
             }
@@ -4731,6 +4892,8 @@ mod tests {
                 .collect(),
             barrier: barrier.map(|count| Arc::new(Barrier::new(count))),
             asked: Mutex::new(Vec::new()),
+            in_flight: Default::default(),
+            peak: Default::default(),
         });
         let policies = servers
             .iter()
@@ -4784,6 +4947,59 @@ mod tests {
         let mut asked = transport.asked.lock().unwrap().clone();
         asked.sort_unstable();
         assert_eq!(asked, [1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn parallel_query_asks_at_most_eight_servers_at_a_time() {
+        // Twelve servers, each in a group of its own, the first eleven
+        // failing: every one is asked, never more than eight at once, and
+        // the last one's answer still wins.
+        let mut servers: Vec<(u8, u32, Scripted)> = (1..=11)
+            .map(|octet| {
+                (
+                    octet,
+                    u32::from(octet),
+                    Scripted::Error(Duration::from_millis(20)),
+                )
+            })
+            .collect();
+        servers.push((
+            12,
+            12,
+            Scripted::Address(FAST, Ipv4Addr::new(192, 0, 2, 112)),
+        ));
+        let (resolver, transport) = parallel_resolver(&servers, None);
+        assert_eq!(
+            answer_of(&resolver).await.unwrap(),
+            IpAddr::from([192, 0, 2, 112])
+        );
+        let mut asked = transport.asked.lock().unwrap().clone();
+        asked.sort_unstable();
+        assert_eq!(asked, (1..=12).collect::<Vec<u8>>());
+        assert_eq!(
+            transport.peak.load(std::sync::atomic::Ordering::SeqCst),
+            super::MAX_PARALLEL_DNS_SERVER_LOOKUPS
+        );
+
+        // One group of twelve: the first answer wins even when its member
+        // could start only after others settled.
+        let mut servers: Vec<(u8, u32, Scripted)> = (1..=11)
+            .map(|octet| (octet, 1, Scripted::Error(Duration::from_millis(20))))
+            .collect();
+        servers.push((
+            12,
+            1,
+            Scripted::Address(FAST, Ipv4Addr::new(192, 0, 2, 112)),
+        ));
+        let (resolver, transport) = parallel_resolver(&servers, None);
+        assert_eq!(
+            answer_of(&resolver).await.unwrap(),
+            IpAddr::from([192, 0, 2, 112])
+        );
+        assert_eq!(
+            transport.peak.load(std::sync::atomic::Ordering::SeqCst),
+            super::MAX_PARALLEL_DNS_SERVER_LOOKUPS
+        );
     }
 
     #[tokio::test]
@@ -6366,7 +6582,8 @@ mod tests {
                 DnsQueryTransportKind::Tcp
                 | DnsQueryTransportKind::Tls
                 | DnsQueryTransportKind::Https
-                | DnsQueryTransportKind::Quic => {
+                | DnsQueryTransportKind::Quic
+                | DnsQueryTransportKind::System => {
                     Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 25)))
                 }
             }
@@ -7729,7 +7946,8 @@ mod tests {
                 DnsQueryTransportKind::Tcp
                 | DnsQueryTransportKind::Tls
                 | DnsQueryTransportKind::Https
-                | DnsQueryTransportKind::Quic => {
+                | DnsQueryTransportKind::Quic
+                | DnsQueryTransportKind::System => {
                     Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 66)))
                 }
             }

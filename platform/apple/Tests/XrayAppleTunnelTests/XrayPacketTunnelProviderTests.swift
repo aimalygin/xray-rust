@@ -743,6 +743,21 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertNil(configuration)
     }
 
+    func testResolvedDnsConfigurationUsesLocalAnchorForLocalhostAndFakeDNSServers() {
+        for servers in [
+            #"["localhost"]"#,
+            #"[{"address":"FakeDNS"}]"#,
+            #"[{"address":"LocalHost","domains":["domain:lan"]},"fakedns","192.0.2.53"]"#,
+        ] {
+            let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+                configJSON: "{\"dns\":{\"servers\":\(servers)}}",
+                explicit: .system
+            )
+
+            XCTAssertEqual(configuration, .localDNSAnchor, "servers=\(servers)")
+        }
+    }
+
     func testResolvedDnsConfigurationFailsClosedWithoutFakeIPOrExplicitServers() {
         let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
             configJSON: #"{"inbounds":[]}"#,
@@ -2391,6 +2406,33 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
         XCTAssertEqual(resolvedDomains, ["object-dns.example", "string-dns.example"])
         XCTAssertEqual(objectServer["tag"] as? String, "dns-route")
+        XCTAssertEqual(prepared.excludedServerAddresses, [])
+    }
+
+    func testConfigPinningSkipsLocalhostAndFakeDNSServers() throws {
+        // The core answers `localhost` from its own bootstrap resolver and
+        // maps `fakedns` onto fake-IP: neither has an address to pin.
+        let resolved = resolvedConfig(
+            json: #"{"dns":{"servers":["localhost",{"address":"FakeDNS"},{"address":"LocalHost","port":53,"domains":["domain:lan"],"tag":"dns-local"},"fakedns","resolver.example"]},"outbounds":[{"protocol":"freedom"}]}"#
+        )
+        var resolvedDomains: [String] = []
+
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolved,
+            resolveAddress: { domain in
+                resolvedDomains.append(domain)
+                return ["192.0.2.53"]
+            }
+        )
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? [String: Any]
+        )
+        let dns = try XCTUnwrap(root["dns"] as? [String: Any])
+        let hosts = try XCTUnwrap(dns["hosts"] as? [String: Any])
+
+        XCTAssertEqual(resolvedDomains, ["resolver.example"])
+        XCTAssertEqual(Set(hosts.keys), ["full:resolver.example"])
+        XCTAssertEqual((dns["servers"] as? [Any])?.count, 5)
         XCTAssertEqual(prepared.excludedServerAddresses, [])
     }
 

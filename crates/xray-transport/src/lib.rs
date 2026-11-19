@@ -61,10 +61,10 @@ mod utls_tls;
 pub use dialer::TransportDialer;
 pub use dns::{
     dns_response_matches_query, exchange_dns_https_h2, exchange_dns_quic_candidates,
-    select_name_server_indices, CachingDnsResolver, CompiledNameServerPolicies,
-    ConfiguredDnsResolver, DnsLookup, DnsQueryDispatch, DnsQueryMetadata, DnsQueryStrategy,
-    DnsQueryTransport, DnsQueryTransportKind, DnsResolver, NameServer, NameServerPolicy,
-    NameServerTransport, SystemDnsResolver, SystemRouteDnsResolver,
+    exchange_system_dns_query, select_name_server_indices, CachingDnsResolver,
+    CompiledNameServerPolicies, ConfiguredDnsResolver, DnsLookup, DnsQueryDispatch,
+    DnsQueryMetadata, DnsQueryStrategy, DnsQueryTransport, DnsQueryTransportKind, DnsResolver,
+    NameServer, NameServerPolicy, NameServerTransport, SystemDnsResolver, SystemRouteDnsResolver,
 };
 pub use happy_eyeballs::{connect_tcp_dual_stack, connect_tcp_happy_eyeballs, HappyEyeballsConfig};
 pub use memory_class::{memory_class, set_memory_class, MemoryClass};

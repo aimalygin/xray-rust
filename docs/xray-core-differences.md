@@ -1330,6 +1330,91 @@ Deliberate differences, source-derived:
 - The fixed TUN FakeDNS mode (`dns.fakeIp` without a DNS outbound) does not
   read `dns.hosts`, for IP values as for `"#N"`.
 
+## DNS parallel query
+
+`dns.enableParallelQuery` asks the servers of a lookup's plan at once and
+settles groups as Xray-core v26.10.31's `parallelQuery` does
+([details](config-compatibility.md#dns)). Deliberate difference: at most
+eight servers are asked at a time, the next in plan order starting as each
+settles, where Xray-core starts them all. `dns.servers` takes up to 32
+entries, and every server is two exchanges under `UseIP`, so asking all of
+them would exceed the managed resolver's exchange limit (eight running and
+four waiting per place on the low-memory profile) within a single lookup.
+Covered by resolver unit tests.
+
+## DNS `localhost` client
+
+A `localhost` DNS server asks the platform resolver, as Xray-core v26.10.31's
+`LocalNameServer` (`app/dns/nameserver_local.go`) does, with the same local
+domain rules (`app/dns/config.go`) and the same 300-second TTL
+(`features/dns/client.go`) ([details](config-compatibility.md#dns)).
+Source-derived; covered by parser, resolver and TUN proxy unit tests, not by
+interop.
+
+Deliberate differences:
+
+- Answers enter the destination cache like other servers'. Xray-core's
+  `IsDisableCache` keeps this client out of its cache and asks the platform
+  each time.
+- The platform resolver is the core's bootstrap resolver, behind
+  `dns.hosts`. Under `StaticOnly`, where it would loop through the tunnel,
+  only `dns.hosts` answers, and other names fail over to the next server.
+  Xray-core's `MayUseSystemResolver` leaves that loop to its embedder.
+- A lookup that finds no address is a failure, not an empty answer, so the
+  next server is asked; Xray-core's `ErrEmptyResponse` reaches the same next
+  server.
+- The TUN DNS proxy also forwards questions other than A and AAAA. A
+  `localhost` upstream fails them, so the next upstream answers; Xray-core's
+  app DNS asks this client for addresses only.
+
+## Xray-core's FakeDNS as `dns.fakeIp`
+
+A `fakedns` DNS server with root `fakeDns` pools runs as `dns.fakeIp`
+([details](config-compatibility.md#dns)), source-derived from
+`infra/conf/fakedns.go` and `app/dns/nameserver_fakedns.go`. Deliberate
+differences:
+
+- Fake addresses are IPv4 only; IPv6 pools are ignored with a warning.
+- Every name is answered with a fake address, so only a `fakedns` entry
+  that Xray-core's plan (`sortClients` in `app/dns/dns.go`) reaches first for
+  every name is accepted: first, without `domains`, beside no server with
+  `domains` and no `localhost`. A `fakedns` Xray-core asks for some names
+  only, or only after another server fails, is refused, since `dns.fakeIp`
+  has no domain filter.
+- The answer TTL is 60 seconds where Xray-core's is 1, so applications do not
+  ask again for every connection; addresses stay stable across restarts as
+  described below.
+
+## RAW `http` header
+
+`tcpSettings.header` (or `rawSettings.header`) of type `http` frames the raw
+transport as Xray-core's `transport/internet/headers/http` client does
+([details](config-compatibility.md#outbounds-and-streams)): a request head
+before the first write, the response head dropped before the first read.
+Source-derived and covered by transport tests against the head Xray-core's
+server reads and writes, not by interop. Deliberate differences:
+
+- The response head is read until its blank line, at most 8192 bytes,
+  whatever it holds. Xray-core's client parses a head that arrives in more
+  than one read with `http.ReadRequest`, which a response line fails, so a
+  split head fails there and is read here.
+- A carriage return or line feed in the request, or an empty header name,
+  fails parsing; Xray-core writes it into the head.
+- Freedom and DNS outbounds refuse the header: they dial without it here,
+  while Xray-core's TCP dialer frames their connections with it as well.
+
+## Fake-IP allocation across restarts
+
+`dns.fakeIp` places a new domain at a stable FNV-1a hash of its name within the
+pool and probes forward on collision, and a `Core` adopts the mappings the
+`Core` stopped last in the same process left for the same pool
+([details](config-compatibility.md#dns-outbound)). Source-derived: Xray-core's
+FakeDNS places a new domain at the current time in milliseconds within the
+pool and starts every instance with an empty table, so after a restart an
+address an application still holds can name another domain. Covered by
+`fake_dns` unit tests and a `Core` stop/start test; not yet checked on a
+device.
+
 ## UDP-hop modes
 
 The `udphop` UDP mask reads Xray-core v26.10.31's `intervalLocal`,
@@ -1394,6 +1479,14 @@ differences:
   `dialerProxy` outbound.
 - A WireGuard peer endpoint that is a domain dials the first address its
   `domainStrategy` keeps. Xray-core picks one of them at random.
+- A proxy outbound's `domainStrategy` (VLESS, VMess, Trojan, Shadowsocks,
+  SOCKS, HTTP, Hysteria) resolves its domain server through the bootstrap
+  resolver and dials the kept addresses in order, or races them under
+  `happyEyeballs`. Xray-core's `DialSystem` resolves through its DNS client
+  and dials one at random. Source-derived from `transport/internet/dialer.go`;
+  covered by a carrier unit test, not by interop. Beside `dialerProxy` or
+  `proxySettings` it fails parsing, where Xray-core hands the chain the
+  resolved address.
 - An option that fails is logged at debug level; Xray-core logs it at info,
   a level the runtime log here does not have.
 - Xray-core's outbound UDP sockets are IPv6 sockets that also carry IPv4, so
@@ -1435,8 +1528,35 @@ v26.10.31:
   rustls keeps its session cache whatever the value, while Xray-core resumes
   only when the value is `true`.
 
-Other panel TLS fields, such as `cipherSuites` and `echConfigList`, are still
-rejected.
+Other fields these exports write, which Xray-core accepts and which change
+nothing for this client, are accepted with a warning (source-derived from
+v26.10.31):
+
+- root `stats`, `api`, `metrics`, `version` and `geodata` build Xray-core apps
+  (`infra/conf/xray.go`) that have no runtime here. They are type-checked as
+  the Go structs decode them. `geodata` is v26's scheduled downloader
+  (`infra/conf/geodata.go`), which this client does not run.
+- `routing.domainMatcher`, `sockopt.tcpNoDelay`, `tlsSettings.show` and
+  mKCP's `congestion`, `readBufferSize` and `writeBufferSize` are absent from
+  `RouterConfig`, `SocketConfig`, `TLSConfig` and `KCPConfig`
+  (`infra/conf/router.go`, `transport_sockopt.go`, `transport_security.go`,
+  `transport_method.go`), so Go's decoding skips them.
+- `minVersion`, `maxVersion`, `cipherSuites` and `curvePreferences` reach Go's
+  crypto/tls only (`transport/internet/tls/config.go`); `copyConfig`
+  (`transport/internet/tls/tls.go`) leaves them out of every uTLS handshake.
+  The known difference is `fingerprint: "unsafe"`, where Xray-core applies
+  them and rustls keeps its own.
+- `useSystemCA` selects Go's root store (`config_other.go`); the bundled
+  Mozilla roots stay in use here.
+- `disableSystemRoot: true` is accepted only beside `pinnedPeerCertSha256`,
+  where pins decide trust in both cores; without a pin it fails rather than
+  trusting roots the config turned off.
+
+`certificates`, `masterKeyLog`, `echServerKeys` and `echSockopt` are still
+rejected, and so is a nonempty `echConfigList`: ECH is not implemented, and
+where Xray-core cannot apply ECH it fails the connection
+(`transport/internet/tls/ech.go`) rather than send the server name in the
+clear.
 
 ## REALITY real-certificate crawl
 
@@ -1526,7 +1646,11 @@ documented 2xx/3xx rule and `HTTP_STATUS` failure.
 
 Differences: probes still speak HTTP/1.1 over a TLS handshake without ALPN,
 where Go's transport offers `h2, http/1.1` for an `https` probe URL, and they
-stop reading after the status line.
+stop reading after the status line. Xray-core's observer learns of a dead
+outbound only from its scheduled probes; xray-rust's also probes an observed
+outbound again, at most every 10 seconds, when real traffic fails to dial it
+or to complete its handshake, as described under
+[Observatory and outbound health](config-compatibility.md#observatory-and-outbound-health).
 
 ## XHTTP HTTP/2 connection preface
 

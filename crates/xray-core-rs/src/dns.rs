@@ -950,6 +950,11 @@ impl DnsQueryTransport for RoutedDnsQueryTransport {
     ) -> io::Result<Vec<u8>> {
         let _operation_permit = self.reserve_operation().await?;
         match transport {
+            // Xray-core's `localhost`: the bootstrap resolver, never routed.
+            DnsQueryTransportKind::System => {
+                xray_transport::exchange_system_dns_query(self.bootstrap_resolver.as_ref(), query)
+                    .await
+            }
             DnsQueryTransportKind::Udp if metadata.dispatch == DnsQueryDispatch::Local => {
                 Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -1284,6 +1289,7 @@ mod tests {
                 udp_realm: None,
                 udp_xicmp: None,
                 udp_salamander: None,
+                raw_http_header: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -1337,6 +1343,7 @@ mod tests {
                 udp_realm: None,
                 udp_xicmp: None,
                 udp_salamander: None,
+                raw_http_header: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -1361,6 +1368,7 @@ mod tests {
                 udp_realm: None,
                 udp_xicmp: None,
                 udp_salamander: None,
+                raw_http_header: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -1424,6 +1432,7 @@ mod tests {
                 udp_realm: None,
                 udp_xicmp: None,
                 udp_salamander: None,
+                raw_http_header: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -1893,6 +1902,7 @@ mod tests {
                     udp_realm: None,
                     udp_xicmp: None,
                     udp_salamander: None,
+                    raw_http_header: None,
                     udp_sudoku: None,
                     udp_noise: None,
                     socket_options: None,
@@ -2137,6 +2147,7 @@ mod tests {
                         udp_realm: None,
                         udp_xicmp: None,
                         udp_salamander: None,
+                        raw_http_header: None,
                         udp_sudoku: None,
                         udp_noise: None,
                         socket_options: Some(xray_config::SocketOptions {
@@ -2474,6 +2485,7 @@ mod tests {
                 udp_realm: None,
                 udp_xicmp: None,
                 udp_salamander: None,
+                raw_http_header: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -2543,6 +2555,7 @@ mod tests {
                 udp_realm: None,
                 udp_xicmp: None,
                 udp_salamander: None,
+                raw_http_header: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -2663,6 +2676,7 @@ mod tests {
                 udp_realm: None,
                 udp_xicmp: None,
                 udp_salamander: None,
+                raw_http_header: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -2741,6 +2755,7 @@ mod tests {
                 udp_realm: None,
                 udp_xicmp: None,
                 udp_salamander: None,
+                raw_http_header: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -3197,6 +3212,7 @@ mod tests {
                     udp_realm: None,
                     udp_xicmp: None,
                     udp_salamander: None,
+                    raw_http_header: None,
                     udp_sudoku: None,
                     udp_noise: None,
                     socket_options: None,
@@ -3507,6 +3523,7 @@ mod tests {
                     udp_realm: None,
                     udp_xicmp: None,
                     udp_salamander: None,
+                    raw_http_header: None,
                     udp_sudoku: None,
                     udp_noise: None,
                     socket_options: None,
@@ -3590,6 +3607,7 @@ mod tests {
                     udp_realm: None,
                     udp_xicmp: None,
                     udp_salamander: None,
+                    raw_http_header: None,
                     udp_sudoku: None,
                     udp_noise: None,
                     socket_options: None,
