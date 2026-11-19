@@ -30,7 +30,7 @@ use xray_tun::TunTcpSlowFlowKind;
 use zeroize::Zeroize;
 
 pub const XRAY_FFI_ABI_MAJOR: u32 = 1;
-pub const XRAY_FFI_ABI_MINOR: u32 = 17;
+pub const XRAY_FFI_ABI_MINOR: u32 = 18;
 
 pub const XRAY_FFI_CAPABILITY_CONFIG_WARNINGS: u64 = 1 << 0;
 pub const XRAY_FFI_CAPABILITY_GEODATA_SEARCH: u64 = 1 << 1;
@@ -64,6 +64,8 @@ pub const XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT: u64 = 1 << 27;
 pub const XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL: u64 = 1 << 28;
 pub const XRAY_FFI_CAPABILITY_TUN_MTU: u64 = 1 << 29;
 pub const XRAY_FFI_CAPABILITY_VLESS_PROFILE_IMPORT: u64 = 1 << 30;
+/// ABI 1.18: `xray_core_set_runtime_worker_threads`.
+pub const XRAY_FFI_CAPABILITY_RUNTIME_WORKER_THREADS: u64 = 1 << 31;
 
 pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_GEODATA_SEARCH
@@ -95,7 +97,8 @@ pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT
     | XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL
     | XRAY_FFI_CAPABILITY_TUN_MTU
-    | XRAY_FFI_CAPABILITY_VLESS_PROFILE_IMPORT;
+    | XRAY_FFI_CAPABILITY_VLESS_PROFILE_IMPORT
+    | XRAY_FFI_CAPABILITY_RUNTIME_WORKER_THREADS;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -525,6 +528,10 @@ pub struct XrayUdpQuicBlockedEvent {
 pub struct XrayCoreHandle {
     core: Option<Core>,
     runtime: Runtime,
+    /// The worker threads `runtime` was built with.
+    runtime_worker_threads: usize,
+    /// The count the host set, which overrides the profile's.
+    requested_runtime_worker_threads: Option<usize>,
     pending_outbound_packets: Mutex<VecDeque<Bytes>>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
     geodata_search: GeodataSearch,
@@ -630,12 +637,8 @@ unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle
         clear_error(error);
     }
 
-    let runtime = match Builder::new_multi_thread()
-        .enable_all()
-        .thread_name("xray-ffi")
-        .worker_threads(runtime_worker_threads())
-        .build()
-    {
+    let runtime_worker_threads = runtime_worker_threads();
+    let runtime = match build_runtime(runtime_worker_threads) {
         Ok(runtime) => runtime,
         Err(err) => {
             unsafe {
@@ -652,6 +655,8 @@ unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle
     Box::into_raw(Box::new(XrayCoreHandle {
         core: None,
         runtime,
+        runtime_worker_threads,
+        requested_runtime_worker_threads: None,
         pending_outbound_packets: Mutex::new(VecDeque::new()),
         socket_protector: None,
         geodata_search: GeodataSearch::Defaults,
@@ -2448,6 +2453,74 @@ unsafe fn xray_core_set_tun_runtime_profile_inner(
 
     handle.tun_runtime_options.profile = profile.into();
     XrayStatus::Ok
+}
+
+/// Sets the worker threads of the handle's Tokio runtime before config load
+/// (ABI 1.18, `RUNTIME_WORKER_THREADS`): 1..=64, or 0 for the default, the
+/// available parallelism within 2..=6 whatever the TUN runtime profile.
+/// Rejection preserves the previous runtime.
+///
+/// # Safety
+/// `handle` must be null or a live handle. This lifecycle call must not race
+/// other handle calls. `error`, when non-null, must be writable.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_runtime_worker_threads(
+    handle: *mut XrayCoreHandle,
+    worker_threads: u32,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            clear_error(error);
+            let Some(handle) = handle.as_mut() else {
+                set_error(error, XrayStatus::NullArgument, "core handle is null");
+                return XrayStatus::NullArgument;
+            };
+            let requested = match worker_threads {
+                0 => None,
+                1..=MAX_RUNTIME_WORKER_THREADS => Some(worker_threads as usize),
+                _ => {
+                    set_error(
+                        error,
+                        XrayStatus::InvalidArgument,
+                        "runtime worker threads must be 0 (default) or 1..=64",
+                    );
+                    return XrayStatus::InvalidArgument;
+                }
+            };
+            if handle.core.is_some() {
+                set_error(
+                    error,
+                    XrayStatus::RuntimeError,
+                    "runtime worker threads must be set before config load",
+                );
+                return XrayStatus::RuntimeError;
+            }
+            if let Err(message) = handle.rebuild_runtime(requested) {
+                set_error(error, XrayStatus::RuntimeError, message);
+                return XrayStatus::RuntimeError;
+            }
+            handle.requested_runtime_worker_threads = requested;
+            XrayStatus::Ok
+        })
+    }
+}
+
+impl XrayCoreHandle {
+    /// Replaces the runtime when `requested`, or else the default, is another
+    /// worker count. Only before config load: nothing runs on the runtime
+    /// yet, and the old one shuts down at once.
+    fn rebuild_runtime(&mut self, requested: Option<usize>) -> Result<(), String> {
+        let worker_threads = requested.unwrap_or_else(runtime_worker_threads);
+        if worker_threads == self.runtime_worker_threads {
+            return Ok(());
+        }
+        let runtime = build_runtime(worker_threads)
+            .map_err(|err| format!("failed to create tokio runtime: {err}"))?;
+        drop(std::mem::replace(&mut self.runtime, runtime));
+        self.runtime_worker_threads = worker_threads;
+        Ok(())
+    }
 }
 
 /// Selects the DNS bootstrap policy used by managed runtime DNS.
@@ -4408,6 +4481,18 @@ fn c_string_lossy_without_nuls(message: &str) -> CString {
     CString::new(filtered).unwrap_or_else(|_| CString::default())
 }
 
+/// The most worker threads `xray_core_set_runtime_worker_threads` accepts.
+const MAX_RUNTIME_WORKER_THREADS: u32 = 64;
+
+fn build_runtime(worker_threads: usize) -> io::Result<Runtime> {
+    Builder::new_multi_thread()
+        .enable_all()
+        .thread_name("xray-ffi")
+        .worker_threads(worker_threads)
+        .build()
+}
+
+/// The default worker count of a handle's runtime, unless the host sets one.
 fn runtime_worker_threads() -> usize {
     let available = std::thread::available_parallelism()
         .map(usize::from)
@@ -4689,6 +4774,84 @@ mod tests {
         assert_eq!(runtime_worker_threads_for_available_parallelism(4), 4);
         assert_eq!(runtime_worker_threads_for_available_parallelism(6), 6);
         assert_eq!(runtime_worker_threads_for_available_parallelism(8), 6);
+    }
+
+    #[test]
+    fn runtime_worker_threads_keep_their_default_unless_the_host_sets_them() {
+        use super::{
+            runtime_worker_threads, xray_core_set_runtime_worker_threads,
+            xray_core_set_tun_runtime_profile,
+        };
+
+        let workers = |handle: *mut XrayCoreHandle| unsafe {
+            let handle = &*handle;
+            let built = handle.runtime.metrics().num_workers();
+            assert_eq!(built, handle.runtime_worker_threads);
+            built
+        };
+        let default = runtime_worker_threads();
+        unsafe {
+            let mut error = ptr::null_mut();
+            let handle = xray_core_new(&mut error);
+            assert!(!handle.is_null());
+            assert_eq!(workers(handle), default);
+
+            // No TUN runtime profile changes the count: mobile (1), desktop
+            // (2), low memory (3), mobile plus (5).
+            for profile in [1, 2, 3, 5] {
+                assert_eq!(
+                    xray_core_set_tun_runtime_profile(handle, profile, &mut error),
+                    XrayStatus::Ok
+                );
+                assert_eq!(workers(handle), default);
+            }
+
+            assert_eq!(
+                xray_core_set_runtime_worker_threads(handle, 3, &mut error),
+                XrayStatus::Ok
+            );
+            assert_eq!(workers(handle), 3);
+            assert_eq!(
+                xray_core_set_tun_runtime_profile(handle, 1, &mut error),
+                XrayStatus::Ok
+            );
+            assert_eq!(workers(handle), 3, "a profile overrode the host's count");
+
+            for rejected in [65, u32::MAX] {
+                assert_eq!(
+                    xray_core_set_runtime_worker_threads(handle, rejected, &mut error),
+                    XrayStatus::InvalidArgument
+                );
+                assert_eq!(workers(handle), 3);
+            }
+            // Zero restores the default.
+            assert_eq!(
+                xray_core_set_runtime_worker_threads(handle, 0, &mut error),
+                XrayStatus::Ok
+            );
+            assert_eq!(workers(handle), default);
+            assert_eq!(
+                xray_core_set_runtime_worker_threads(ptr::null_mut(), 2, &mut error),
+                XrayStatus::NullArgument
+            );
+
+            assert_eq!(
+                xray_core_set_runtime_worker_threads(handle, 2, &mut error),
+                XrayStatus::Ok
+            );
+            let config = CString::new(r#"{"outbounds":[{"protocol":"freedom"}]}"#).unwrap();
+            assert_eq!(
+                xray_core_load_config_json(handle, config.as_ptr(), &mut error),
+                XrayStatus::Ok
+            );
+            assert_eq!(
+                xray_core_set_runtime_worker_threads(handle, 4, &mut error),
+                XrayStatus::RuntimeError
+            );
+            assert_eq!(workers(handle), 2);
+            free_error(error);
+            xray_core_free(handle);
+        }
     }
 
     #[test]

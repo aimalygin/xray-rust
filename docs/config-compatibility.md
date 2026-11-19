@@ -3994,6 +3994,41 @@ Sequential mode sleeps for the interval after each outbound, matching Xray's
 pacing. Concurrent mode probes at most four outbounds at once, then sleeps for
 the interval after the full round.
 
+Real traffic also feeds the observer, which Xray-core's does not. When a TCP
+flow from a SOCKS, HTTP or TUN inbound, or a UDP flow from TUN, fails to open
+through an observed outbound because its server refused, reset or timed out
+the connection or failed the TLS, REALITY or transport handshake, the observer
+wakes from its interval and probes that outbound again, at most once every 10
+seconds counted from its last probe. A failed probe marks it unhealthy, so
+`leastPing` and `leastLoad` move new flows to the next healthy member at once,
+and a successful one keeps it. A remote close, a target the server refuses, a
+destination that does not resolve or a local network that is down is not
+reported. The outbound a balancer with an observed member falls back to, its
+`fallbackTag` or else the default outbound, is watched too: when a report
+through a member or that fallback reaches a balancer none of whose observed
+members is healthy, all of them are probed again, at most once every 15
+seconds, so that a server which came back is found. Reports only bring probes
+forward: the scheduled round is not moved, and re-probes use the same
+concurrency bound. Startup and on-demand probes report nothing.
+
+Unlike Xray-core, the observer also skips the scheduled probe of an observed
+member of a balancer when no flow was routed through any of its balancers since
+that member's last probe, so a device nobody uses sends no probes and does not
+wake its radio every `probeInterval`. The first round probes every observed
+outbound. The first flow through a balancer whose members were skipped wakes
+the observer, which probes them at once, as a reported failure would, up to
+four at a time even with `enableConcurrency: false`, so that a member that
+died meanwhile delays the refresh by one probe timeout rather than one per
+member; until those probes finish, flows are routed by the results from before
+the skip. Failure re-probes run whether or not the balancer was used. While no
+observed outbound is due, the observer sets no timer at all: only a flow
+through a balancer or a reported failure wakes it, and the interval starts
+again after the probes that flow brings. An observed outbound outside every
+balancer is always due and keeps the interval. A selection, including one that
+ends at the balancer's fallback or an override, is a use; a flow routed to a
+member by tag is not. The health snapshot's last-try time of a skipped
+outbound stays at its last probe.
+
 The observer starts only after the core and any configured startup probe have
 started successfully. It dials each leaf directly by tag, so routing rules and
 selector state cannot redirect its measurement. Stop cancels the observer with

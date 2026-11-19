@@ -1526,7 +1526,15 @@ documented 2xx/3xx rule and `HTTP_STATUS` failure.
 
 Differences: probes still speak HTTP/1.1 over a TLS handshake without ALPN,
 where Go's transport offers `h2, http/1.1` for an `https` probe URL, and they
-stop reading after the status line.
+stop reading after the status line. Xray-core's observer learns of a dead
+outbound only from its scheduled probes; xray-rust's also probes an observed
+outbound again, at most every 10 seconds, when real traffic fails to dial it
+or to complete its handshake. Xray-core probes every observed outbound each
+round; xray-rust skips a balancer member's scheduled probe while no flow has
+used its balancers since the member's last probe, and probes it at the next
+such flow, so after a long idle the first flows are routed by results older
+than one interval. Both are described under
+[Observatory and outbound health](config-compatibility.md#observatory-and-outbound-health).
 
 ## XHTTP HTTP/2 connection preface
 

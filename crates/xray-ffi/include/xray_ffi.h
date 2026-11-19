@@ -250,6 +250,11 @@ typedef enum XrayFfiCapability {
   XRAY_FFI_CAPABILITY_VLESS_PROFILE_IMPORT = 1 << 30
 } XrayFfiCapability;
 
+/* A C enum constant is an int, so capability bits from 31 on are 64-bit
+ * macros instead. */
+/* ABI 1.18: xray_core_set_runtime_worker_threads. */
+#define XRAY_FFI_CAPABILITY_RUNTIME_WORKER_THREADS 0x80000000ULL
+
 /* ABI 1.9. Outcome written by xray_core_probe_outbound_url through an int32_t.
  * Failure kinds mirror the outbound health snapshot's lastFailureKind. */
 typedef enum XrayOutboundProbeFailureKind {
@@ -302,6 +307,12 @@ XrayStatus xray_core_set_hysteria_stream_limits(
  * Lifecycle call: do not race any other handle call. */
 XrayStatus xray_core_set_tun_mtu(
     XrayCoreHandle *handle, uint32_t mtu, XrayError **error);
+/* ABI 1.18, RUNTIME_WORKER_THREADS. Worker threads of the handle's Tokio
+ * runtime, 1..=64, or 0 for the default: the available parallelism within
+ * 2..=6, whatever the TUN runtime profile. Set before config load. Invalid
+ * calls change nothing. Lifecycle call: do not race any other handle call. */
+XrayStatus xray_core_set_runtime_worker_threads(
+    XrayCoreHandle *handle, uint32_t worker_threads, XrayError **error);
 /* Searches dir first, then the process default geodata directories. */
 XrayStatus xray_core_set_geodata_search_dir(
     XrayCoreHandle *handle,

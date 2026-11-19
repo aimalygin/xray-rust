@@ -10,6 +10,47 @@ long-term supported release series.
 
 ## Unreleased
 
+- Flows that fail to open through an outbound the observatory watches now
+  have it probed again within seconds instead of at the next `probeInterval`.
+  A refused, reset or timed-out connection, or a failed TLS, REALITY or
+  transport handshake, on a TCP flow from SOCKS, HTTP or TUN or a UDP flow
+  from TUN wakes the observer, which probes that outbound again at most once
+  every 10 seconds; when no observed member of a balancer is healthy, a
+  failure through a member or the balancer's fallback has all of them probed
+  again, at most once every 15 seconds. A dead server behind a `leastPing`
+  balancer with `probeInterval: "10m"` was kept for up to ten minutes; it is
+  now left after one failed open and one probe. Without failures the
+  observatory probes as before.
+- The observatory skips the scheduled probe of a balancer's member while no
+  flow has been routed through the balancer since that member's last probe,
+  so a phone nobody uses no longer wakes its radio every `probeInterval`
+  (10 seconds by default). The first round probes every observed outbound;
+  the first flow through a balancer whose members were skipped has them
+  probed at once, up to four at a time even with `enableConcurrency: false`,
+  and failure re-probes run as before. While nothing is due the observer sets
+  no timer, so it no longer wakes every `probeInterval` either. Observed
+  outbounds outside every balancer keep the interval. Selecting through a
+  balancer records its use: one atomic load per flow once the current round
+  has seen one.
+- ABI 1.18 adds `xray_core_set_runtime_worker_threads`
+  (`RUNTIME_WORKER_THREADS`, bit 31, the first capability defined as a 64-bit
+  macro since a C enum constant cannot hold it) to set the FFI handle's Tokio
+  runtime to 1..=64 worker threads, or 0 for the default, before config load;
+  a count that differs replaces the handle's still idle runtime. Swift
+  `XrayCore` initializers and Kotlin `XrayCore.create` take an optional
+  `runtimeWorkerThreads`. The default stays the available parallelism within
+  2..=6 on every TUN runtime profile.
+- The TUN loop no longer wakes every second. It slept at most a second for
+  its statistics, so an idle VPN, with no flows or only idle ones, woke the
+  process 45 to 50 times a minute where the same core without TUN woke none
+  (measured on macOS). It now sleeps until a packet, a flow event, smoltcp's
+  next timer or a housekeeping deadline: the close-wait sweep, the expiry of
+  a pooled DNS-over-TCP connection, and the TCP buffer statistics, recorded
+  a second after activity and every second while upload bytes wait for their
+  outbound. Retransmissions, delayed ACKs, the 30-second linger, the
+  four-minute give-up and UDP idle eviction keep their timing, and the
+  statistics are still at most a second behind the last activity.
+
 ## 0.10.1 - 2026-11-16
 
 Published on 2026-11-18 with exact-candidate release evidence and the

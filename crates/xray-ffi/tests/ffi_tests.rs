@@ -736,7 +736,8 @@ fn ffi_reports_exact_current_capabilities() {
         | xray_ffi::XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT
         | xray_ffi::XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL
         | xray_ffi::XRAY_FFI_CAPABILITY_TUN_MTU
-        | xray_ffi::XRAY_FFI_CAPABILITY_VLESS_PROFILE_IMPORT;
+        | xray_ffi::XRAY_FFI_CAPABILITY_VLESS_PROFILE_IMPORT
+        | xray_ffi::XRAY_FFI_CAPABILITY_RUNTIME_WORKER_THREADS;
 
     assert_eq!(XRAY_FFI_CAPABILITIES, expected);
     assert_eq!(xray_ffi_capabilities(), expected);
