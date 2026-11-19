@@ -133,6 +133,19 @@ long-term supported release series.
   `Client::start_with_limits`, `Netstack::start_with_limits`, `tcp_slot`,
   `connect_with_slot` and `waiting_tcp_flows`; the existing constructors take
   the target's limits.
+- DNS over HTTPS and DNS over QUIC keep their connection to the server
+  between queries. Every query used to open its own: a TCP, TLS and HTTP/2
+  handshake, or a QUIC one, for each name, which cost a round trip or two
+  of latency, radio time on a phone, and a recognisable burst of short
+  connections. Now a DoH server has one HTTP/2 connection per route that
+  carries queries as parallel streams, and a DoQ server has one QUIC
+  connection with a stream per query. A connection is dropped when a query
+  fails on it, when the server closes it, after Xray-core's idle times (300
+  seconds for DoH, 30 for DoQ) and when the host reports a network change
+  with `rebind_quic`; a query that a kept connection drops unanswered goes
+  once more on a fresh one. A Core keeps at most 8 connections of each kind.
+  `exchange_dns_quic_candidates` in `xray-transport` takes the
+  `DnsConnectionPools` that keep them.
 
 ## 0.10.1 - 2026-11-16
 

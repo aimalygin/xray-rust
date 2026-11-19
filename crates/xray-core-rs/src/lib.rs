@@ -1077,7 +1077,9 @@ impl Core {
     /// with `NetworkDown`, at once if its source address changed and
     /// otherwise unless its peer is heard within seconds. The count
     /// is of connections told, these among them, not of paths validated or
-    /// of connections that survive.
+    /// of connections that survive. The kept DNS-over-HTTPS and
+    /// DNS-over-QUIC connections are not told or counted: they are dropped,
+    /// and the next query dials on the new network.
     pub fn rebind_quic(&self) -> u64 {
         self.transport_dialer.network_changes().notify()
     }
