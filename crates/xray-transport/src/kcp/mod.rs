@@ -972,5 +972,73 @@ impl Shared {
     }
 }
 
+/// The server's datagrams, each a two-byte length and its bytes, through
+/// `masks` and into a connection with data of its own in flight, read and
+/// flushed after each as the driver does. With `seal` each datagram is
+/// mKCP segments that a fresh set of the masks wraps first, so the engine
+/// sees what the fuzzer wrote through keyed and checked masks too.
+#[cfg(feature = "fuzzing")]
+pub(crate) fn fuzz_datagrams(masks: &[KcpMask], seal: bool, data: &[u8]) {
+    let peer = SocketAddr::from(([192, 0, 2, 1], 443));
+    let Ok(mut opener) = Masks::new(masks, None) else {
+        return;
+    };
+    let config = engine::Config {
+        mtu: 1350,
+        tti: 50,
+        uplink_capacity: 5,
+        downlink_capacity: 20,
+        cwnd_multiplier: 1,
+        max_sending_window: 2 * 1024 * 1024,
+    };
+    // The conversation the engine tests and the seed corpus use.
+    let mut engine = Engine::new(7, config);
+    let _ = engine.write(&[0x5a; 4000]);
+    engine.flush(0);
+    engine.out.clear();
+    let now = Instant::now();
+    let mut current = 0u32;
+    let mut rest = data;
+    while let [high, low, tail @ ..] = rest {
+        let length = usize::from(u16::from_be_bytes([*high, *low])).min(tail.len());
+        let (datagram, tail) = tail.split_at(length);
+        rest = tail;
+        current = current.wrapping_add(config.tti);
+        let mut wire = if seal {
+            let Ok(mut sealer) = Masks::new(masks, None) else {
+                return;
+            };
+            sealer.start(datagram.to_vec());
+            let mut sealed = None;
+            while let Some(Action::Send(packet)) = sealer.next(now, None, peer) {
+                sealed = Some(packet);
+            }
+            match sealed {
+                Some(packet) => packet,
+                None => continue,
+            }
+        } else {
+            datagram.to_vec()
+        };
+        let Some(range) = opener.open(&mut wire, peer, now) else {
+            continue;
+        };
+        let segments = segment::read_segments(&wire[range]);
+        if segments.is_empty() {
+            continue;
+        }
+        engine.input(segments, current);
+        let mut buf = [0; 2048];
+        while engine.read(&mut buf).is_some_and(|count| count > 0) {}
+        engine.flush(current);
+        engine.out.clear();
+        if engine.state() == State::Terminated {
+            return;
+        }
+    }
+    engine.close(current);
+    engine.flush(current.wrapping_add(16_000));
+}
+
 #[cfg(test)]
 mod tests;

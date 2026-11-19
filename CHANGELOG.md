@@ -10,6 +10,107 @@ long-term supported release series.
 
 ## Unreleased
 
+- The DNS resolver and the system SRV/TXT lookups refuse a name longer than
+  255 octets, the limit Xray-core's DNS client applies through Go's
+  `dnsmessage`. A name was read for up to 32 labels and pointers, about 2 KB,
+  so a forged 64 KB answer over TCP, DoH or DoQ whose 4,000 records all
+  pointed at one such name held some 8 MB while it was parsed, a sizeable
+  share of an iOS tunnel extension's memory limit. The outcome differs from
+  Xray-core's: its client logs the bad record and keeps the answers it read
+  before it, while here, as for any other malformed answer, the whole
+  response is dropped and the next server is asked. A name now follows at
+  most 10 compression pointers, as in `dnsmessage`, and its labels count only
+  toward the 255 octets, so a valid name of 32 labels or more is no longer
+  refused as a pointer loop.
+- The release fuzz campaign also covers the parsers an on-path censor or a
+  hostile server can feed and that had no target: DNS responses (A/AAAA and
+  SRV/TXT), the HTTP, TLS ClientHello, BitTorrent and uTP sniffers, mKCP
+  segments under every mask stack, MASQUE capsules, and the finalmask
+  decoders (Salamander with Gecko reassembly, `header-custom` over UDP and
+  TCP, sudoku datagrams and streams, xdns, xicmp, realm and xmc). Six targets
+  join the campaign and the seed-corpus replay.
+- A `Core` started with fake IP adopts the mappings the `Core` stopped last
+  left, so an address an app still holds keeps naming its domain across a
+  restart. Apps keep fake IPs in caches and connection pools past the DNS TTL,
+  and a host that restarts the core to switch servers found those addresses
+  unmapped in the new core, so a flow whose name sniffing could not recover
+  failed until the apps were restarted. A stopping `Core` leaves at most
+  `poolSize` mappings in a `FakeIpStore`, a new public type: the process-wide
+  one unless `Core::with_fake_ip_store` gives the core another. The next
+  `Core` started with that store adopts them when its `ipv4Pool` and `poolSize` are the same, extending
+  running leases to a full `ttl`, and drops them otherwise or without fake IP.
+  Allocation of new domains is unchanged. Nothing is written to disk; no FFI
+  or ABI change.
+- The TUN stack no longer verifies the checksums of the IPv4 headers and TCP
+  segments the host writes into it a second time: the host's network stack
+  computed them and hands the packets over in memory, and each IPv4 header
+  checksum is still checked once before a packet reaches smoltcp. This saves
+  a pass over every uploaded byte; a TCP segment with a wrong checksum is now
+  taken as it is, as Xray-core's TUN inbound takes it. A host that writes
+  packets other devices sent it relies on their links to have checked them
+  (see Packet APIs in `docs/ffi.md`). Packets the stack sends keep their
+  computed checksums, and UDP checksums are still checked.
+- An idle TUN TCP flow holds about 80 KiB of heap instead of 146 KiB, and
+  one that has carried nothing about 24 KiB. Its bridge kept a 64 KiB read
+  buffer for the flow's whole life; it now reads into a buffer on the stack
+  of the poll that reads and hands on a copy at the read's size, as before.
+  The smoltcp socket no longer takes its two 32 KiB buffers at the SYN: it
+  starts with an 8 KiB receive buffer (two segments at least) and no send
+  buffer, and grows them with the client's first data and with the remote's
+  first bytes, so SYNs that are never completed, flows whose outbound is
+  still connecting and flows that carry nothing cost a few KiB each. A grown
+  receive window is announced at once. The vendored smoltcp gains
+  `Socket::grow_recv_buffer` and `Socket::grow_send_buffer` for this. The
+  upload side gives back its coalescing buffer after a second without a
+  chunk, and a freedom UDP flow no longer keeps a 16 KiB receive buffer.
+- A TUN UDP flow's queue to its outbound is bounded in bytes as well as in
+  datagrams: 384 KiB per flow, the 256 datagrams of a 1500-byte MTU, and
+  2 MiB across flows on the `LowMemory` TUN profile, 4 MiB on `Mobile` and
+  8 MiB on `MobilePlus`; 512 KiB and 64 MiB on `Desktop`, 1 MiB and 128 MiB
+  on `Throughput`. A flow could queue 256 datagrams, and every queued
+  datagram was a slice of the 64 KiB buffer the TUN descriptor had been read
+  into, so it kept that whole buffer alive: a slow outbound let one flow hold
+  up to 16 MiB, and a burst over many flows enough to pass the 50 MB an iOS
+  Network Extension may use. Every flow may queue 8 KiB, and an empty queue
+  one datagram, beyond the limit across flows, so a few flows that fill it
+  do not starve the rest. A datagram over a limit is dropped, as one that
+  finds its queue full, and counted in `udp_channel_dropped_packets`; the
+  flow stays up. Queued datagrams now have allocations of their own, and so
+  do the first packet a UDP flow kept for an ICMP reply for as long as the
+  flow lasted (it is now released once the flow is routed), a DNS query the
+  TUN answers itself, and a datagram held while a TUN admission callback
+  decides.
+- A geosite or geoip category is compiled once per process and reused by
+  every configuration that names it, so a host that restarts the core with a
+  new handle on each server switch no longer decodes and rebuilds the same
+  categories each time. The cache key is the file's identity (path, device
+  and inode, size, modification and status-change times), the code, the
+  attribute filter and, when a name ends with a dot, the name mode: a geodata
+  file the host rewrites or replaces is compiled again. A file whose
+  timestamps are within two seconds of when it is opened is not cached, as a
+  same-size rewrite within one timestamp tick would keep its identity.
+  Categories no configuration references are kept up to 4 MiB for the next
+  core; loading a configuration, replacing a routing policy and freeing a
+  handle release those beyond that. `xray_config` adds `geodata_cache_stats`
+  and `trim_geodata_cache`. A geosite category is shared by reference with
+  every rule that names it; a GeoIP category only with a rule in which it is
+  the only entry of its group, and a rule that merges it with other entries,
+  as `"ip": ["geoip:private", "geoip:ru"]` does, holds a copy as before.
+  Domain matchers also take less memory: the `full:` and `domain:` names of a
+  set are packed into one buffer grouped by a keyed hash
+  (`xray_routing::DomainPatternSet`) instead of one heap allocation and
+  hash-set slot each, and geodata entries are read in place instead of being
+  decoded into a `String` per domain and a `Vec` per CIDR; a body that is not
+  plain protobuf is still decoded by prost. Matching is unchanged. On macOS
+  with a 73,515-domain `geosite:ru-blocked` and an 88,587-CIDR
+  `geoip:ru-blocked`, the first core start went from +23.0 MiB footprint and
+  44 ms to +3.7 MiB and 26 ms, a restart from +2.9-4.1 MiB and 42 ms to under
+  0.1 MiB and 0.2 ms, and six restarts from +41.9 MiB to +4.1 MiB
+  ([benchmarks](docs/benchmarks.md#geodata-restart-memory)).
+  `DomainMatcherSet` equality now compares normalized patterns, however they
+  are stored, and `DomainMatcherSetError` has a `TooLarge` variant for a
+  table beyond 4 GiB.
+
 ## 0.10.1 - 2026-11-16
 
 Published on 2026-11-18 with exact-candidate release evidence and the

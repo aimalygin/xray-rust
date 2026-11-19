@@ -87,6 +87,12 @@ run_fuzz() (
     quic_sniff \
     xhttp_framing \
     stream_decoders \
+    dns_response \
+    sniff_payload \
+    kcp_segments \
+    masque_capsules \
+    finalmask_udp \
+    finalmask_tcp \
     tun_queue \
     vless_encryption_records \
     vless_encryption_handshake \

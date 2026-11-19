@@ -15,6 +15,7 @@
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::ops::{BitAnd, BitOr, Not};
+use std::sync::Arc;
 
 /// Xray-core's built-in private/reserved address set as of v26.10.21
 /// (`privateIPMatcher` in `common/geodata/consts.go`), in the same order.
@@ -225,8 +226,19 @@ fn ranges_contain<T: AddressBits>(ranges: &[InclusiveRange<T>], address: T) -> b
     insertion > 0 && address <= ranges[insertion - 1].end
 }
 
+/// Merged, sorted IPv4 and IPv6 ranges.
+///
+/// The ranges are immutable and shared behind an `Arc`: cloning a set only
+/// bumps a reference count, so a GeoIP category compiled once can serve every
+/// rule and core that references it (see [`IpRangeSetBuilder::insert_set`]).
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct IpRangeSet {
+    /// `None` for a set without ranges, so empty sets allocate nothing.
+    ranges: Option<Arc<IpRanges>>,
+}
+
+#[derive(PartialEq, Eq)]
+struct IpRanges {
     ipv4: Box<[InclusiveRange<u32>]>,
     ipv6: Box<[InclusiveRange<u128>]>,
 }
@@ -237,37 +249,70 @@ impl IpRangeSet {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.ipv4.is_empty() && self.ipv6.is_empty()
+        self.ranges.is_none()
     }
 
     pub fn range_count(&self) -> usize {
-        self.ipv4.len() + self.ipv6.len()
+        self.ipv4().len() + self.ipv6().len()
+    }
+
+    /// Returns the heap bytes the ranges occupy.
+    pub fn heap_size(&self) -> usize {
+        self.ranges.as_ref().map_or(0, |ranges| {
+            size_of::<IpRanges>()
+                + size_of_val(ranges.ipv4.as_ref())
+                + size_of_val(ranges.ipv6.as_ref())
+        })
+    }
+
+    /// Returns how many sets share these ranges, this one included; `0` for
+    /// an empty set.
+    pub fn share_count(&self) -> usize {
+        self.ranges.as_ref().map_or(0, Arc::strong_count)
+    }
+
+    /// Returns whether both sets use the same shared ranges.
+    pub fn shares_ranges_with(&self, other: &Self) -> bool {
+        match (&self.ranges, &other.ranges) {
+            (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+            _ => false,
+        }
     }
 
     pub fn lookup(&self, address: IpAddr) -> Option<bool> {
         match canonicalize_ip(address) {
             IpAddr::V4(address) => {
-                (!self.ipv4.is_empty()).then(|| ranges_contain(&self.ipv4, u32::from(address)))
+                let ipv4 = self.ipv4();
+                (!ipv4.is_empty()).then(|| ranges_contain(ipv4, u32::from(address)))
             }
             IpAddr::V6(address) => {
-                (!self.ipv6.is_empty()).then(|| ranges_contain(&self.ipv6, u128::from(address)))
+                let ipv6 = self.ipv6();
+                (!ipv6.is_empty()).then(|| ranges_contain(ipv6, u128::from(address)))
             }
         }
     }
 
     pub fn contains(&self, address: IpAddr) -> bool {
         match canonicalize_ip(address) {
-            IpAddr::V4(address) => ranges_contain(&self.ipv4, u32::from(address)),
-            IpAddr::V6(address) => ranges_contain(&self.ipv6, u128::from(address)),
+            IpAddr::V4(address) => ranges_contain(self.ipv4(), u32::from(address)),
+            IpAddr::V6(address) => ranges_contain(self.ipv6(), u128::from(address)),
         }
+    }
+
+    fn ipv4(&self) -> &[InclusiveRange<u32>] {
+        self.ranges.as_ref().map_or(&[], |ranges| &ranges.ipv4)
+    }
+
+    fn ipv6(&self) -> &[InclusiveRange<u128>] {
+        self.ranges.as_ref().map_or(&[], |ranges| &ranges.ipv6)
     }
 }
 
 impl fmt::Debug for IpRangeSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IpRangeSet")
-            .field("ipv4", &self.ipv4)
-            .field("ipv6", &self.ipv6)
+            .field("ipv4", &self.ipv4())
+            .field("ipv6", &self.ipv6())
             .finish()
     }
 }
@@ -276,6 +321,10 @@ impl fmt::Debug for IpRangeSet {
 pub struct IpRangeSetBuilder {
     ipv4: Vec<InclusiveRange<u32>>,
     ipv6: Vec<InclusiveRange<u128>>,
+    /// The one set inserted whole while nothing else was: [`Self::build`]
+    /// returns it as it is, sharing its ranges. Its ranges join the vectors
+    /// as soon as anything else is inserted.
+    whole: Option<IpRangeSet>,
 }
 
 impl IpRangeSetBuilder {
@@ -283,7 +332,45 @@ impl IpRangeSetBuilder {
         Self::default()
     }
 
+    /// Reserves room for `ipv4` IPv4 and `ipv6` IPv6 CIDRs.
+    pub fn with_capacity(ipv4: usize, ipv6: usize) -> Self {
+        Self {
+            ipv4: Vec::with_capacity(ipv4),
+            ipv6: Vec::with_capacity(ipv6),
+            whole: None,
+        }
+    }
+
+    /// Adds every range of an already built set. A set inserted into an
+    /// otherwise empty builder is shared, not copied: [`Self::build`] returns
+    /// a set using the same ranges. Inserting the same set again changes
+    /// nothing.
+    pub fn insert_set(&mut self, set: &IpRangeSet) {
+        let Some(ranges) = &set.ranges else {
+            return;
+        };
+        match &self.whole {
+            Some(whole) if whole.shares_ranges_with(set) => return,
+            None if self.ipv4.is_empty() && self.ipv6.is_empty() => {
+                self.whole = Some(set.clone());
+                return;
+            }
+            _ => {}
+        }
+        self.flatten_whole();
+        self.ipv4.extend_from_slice(&ranges.ipv4);
+        self.ipv6.extend_from_slice(&ranges.ipv6);
+    }
+
+    fn flatten_whole(&mut self) {
+        if let Some(whole) = self.whole.take() {
+            self.ipv4.extend_from_slice(whole.ipv4());
+            self.ipv6.extend_from_slice(whole.ipv6());
+        }
+    }
+
     pub fn insert_cidr(&mut self, cidr: Cidr) {
+        self.flatten_whole();
         match cidr.network {
             IpAddr::V4(network) => self.ipv4.push(InclusiveRange::from_prefix(
                 u32::from(network),
@@ -307,11 +394,19 @@ impl IpRangeSetBuilder {
     }
 
     pub fn build(mut self) -> IpRangeSet {
+        if let Some(whole) = self.whole {
+            return whole;
+        }
+        if self.ipv4.is_empty() && self.ipv6.is_empty() {
+            return IpRangeSet::default();
+        }
         merge_ranges(&mut self.ipv4);
         merge_ranges(&mut self.ipv6);
         IpRangeSet {
-            ipv4: self.ipv4.into_boxed_slice(),
-            ipv6: self.ipv6.into_boxed_slice(),
+            ranges: Some(Arc::new(IpRanges {
+                ipv4: self.ipv4.into_boxed_slice(),
+                ipv6: self.ipv6.into_boxed_slice(),
+            })),
         }
     }
 }
@@ -374,6 +469,14 @@ impl IpMatcherSetBuilder {
     pub fn insert_geoip_cidr(&mut self, cidr: Cidr, inverted: bool) {
         self.ranges(inverted, true).insert_cidr(cidr);
         self.matcher_count += 1;
+    }
+
+    /// Adds every range of a GeoIP code compiled beforehand, `source_count`
+    /// being the CIDRs it was compiled from. A code that is the only entry of
+    /// its group keeps sharing `set`'s ranges.
+    pub fn insert_geoip_set(&mut self, set: &IpRangeSet, source_count: usize, inverted: bool) {
+        self.ranges(inverted, true).insert_set(set);
+        self.matcher_count += source_count;
     }
 
     /// Adds `geoip:private`, a GeoIP code in Xray-core, which reads it from
@@ -670,5 +773,66 @@ mod tests {
         assert!(set.matches(v4(10, 0, 0, 1)));
         assert!(set.matches(v4(93, 184, 216, 34)));
         assert!(set.matches(v4(8, 8, 8, 8)));
+    }
+
+    #[test]
+    fn a_set_inserted_alone_keeps_its_shared_ranges() {
+        let category = build_set(&[
+            (v4(1, 2, 3, 0), 24),
+            (v6([0x2001, 0xdb8, 0, 0, 0, 0, 0, 0]), 32),
+        ]);
+        assert_eq!(category.share_count(), 1);
+        assert!(category.heap_size() > 0);
+
+        let mut builder = IpRangeSet::builder();
+        builder.insert_set(&category);
+        builder.insert_set(&category);
+        let shared = builder.build();
+        assert!(shared.shares_ranges_with(&category));
+        assert_eq!(category.share_count(), 2);
+        assert_eq!(shared, category);
+
+        let mut builder = IpRangeSet::builder();
+        builder.insert_set(&category);
+        builder.insert_cidr(cidr(v4(1, 2, 4, 0), 24));
+        let merged = builder.build();
+        assert!(!merged.shares_ranges_with(&category));
+        assert_eq!(merged.range_count(), 2);
+        assert!(merged.contains(v4(1, 2, 4, 9)));
+        assert!(merged.contains(v4(1, 2, 3, 9)));
+        assert!(merged.contains(v6([0x2001, 0xdb8, 1, 0, 0, 0, 0, 1])));
+
+        let mut builder = IpRangeSet::builder();
+        builder.insert_cidr(cidr(v4(9, 0, 0, 0), 8));
+        builder.insert_set(&category);
+        builder.insert_set(&IpRangeSet::default());
+        let merged = builder.build();
+        assert_eq!(merged.range_count(), 3);
+        assert!(merged.contains(v4(1, 2, 3, 9)) && merged.contains(v4(9, 9, 9, 9)));
+
+        drop(shared);
+        assert_eq!(category.share_count(), 1);
+        assert_eq!(IpRangeSet::default().share_count(), 0);
+        assert_eq!(IpRangeSet::default().heap_size(), 0);
+    }
+
+    #[test]
+    fn geoip_sets_count_their_source_cidrs_and_keep_the_xray_groups() {
+        let category = build_set(&[(v4(1, 2, 3, 0), 24), (v4(5, 6, 0, 0), 16)]);
+        let mut builder = IpMatcherSet::builder();
+        builder.insert_geoip_set(&category, 2, true);
+        builder.insert_cidr(cidr(v4(10, 0, 0, 0), 8), true);
+        assert_eq!(builder.matcher_count(), 3);
+        let set = builder.build();
+        assert!(set.inverse_geoip.shares_ranges_with(&category));
+        assert!(set.matches(v4(1, 2, 3, 4)));
+        assert!(set.matches(v4(8, 8, 8, 8)));
+
+        let mut builder = IpMatcherSet::builder();
+        builder.insert_geoip_set(&category, 2, false);
+        let set = builder.build();
+        assert!(set.positive.shares_ranges_with(&category));
+        assert!(set.matches(v4(5, 6, 7, 8)));
+        assert!(!set.matches(v4(8, 8, 8, 8)));
     }
 }

@@ -72,7 +72,8 @@ async fn start_blackhole_core(tun_sniffing: bool) -> (Core, Arc<CountingSocketPr
         Arc::new(dialer),
         TunRuntimeOptions::default(),
     )
-    .unwrap();
+    .unwrap()
+    .with_fake_ip_store(own_fake_ip_store());
     core.start().await.unwrap();
     (core, protector)
 }

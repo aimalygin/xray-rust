@@ -4602,6 +4602,23 @@ carries every candidate and TTL metadata. An explicitly enabled
 raw-TCP race described above; its Xray-compatible zero-delay default leaves the
 race disabled and dials the candidates the way Go's `net.Dialer` does.
 
+A `Core` that stops, or is dropped while running, leaves its fake-IP mappings
+in its `FakeIpStore`: the process-wide one unless the embedding gave the `Core`
+another with `Core::with_fake_ip_store`; every C ABI handle uses the process
+store. The next `Core` started with that store takes them before it answers
+anything, and adopts them when its `ipv4Pool` and `poolSize` are the same; a
+`Core` started without fake IP or with another pool drops them. A lease still
+running is extended to at least a full `ttl` from that start; one already
+expired stays mapped but reusable, so a table of stale mappings cannot fail the
+new `Core` closed. New domains are still allocated sequentially from the new
+`Core`'s random start, past the adopted addresses. A store holds at most one
+set, at most `poolSize` mappings, until a `Core` started with it takes them or
+`FakeIpStore::clear` drops them. Applications keep fake IPs in caches and
+connection pools beyond the DNS TTL, and a host that restarts the core to
+switch servers otherwise found those addresses unmapped. Clash's
+`store-fake-ip` and sing-box's `store_fakeip` persist the mapping in a file;
+nothing here is written to disk, so a new process starts with an empty table.
+
 A fake-IP profile does not inherently need `dns.servers` when its restored
 domains always use VLESS, because VLESS preserves them for remote resolution.
 Freedom cannot do that: in `StaticOnly`, a default or domain-routed Freedom
@@ -4662,6 +4679,29 @@ A selected GeoIP entry may contain up to 500,000 CIDRs. The entry is checked
 before protobuf decoding. Every expansion is charged against the shared
 per-configuration IP and total matcher budgets, including repeated references
 to a cached category in different rules or DNS selectors.
+
+Compiled categories are cached for the whole process: a configuration that
+names a category another one already compiled, such as the next core a host
+starts after a server switch, reuses it without reading the file entry again.
+The cache key is the file's identity (path, device and inode, size,
+modification and status-change times), the code, the attribute filter and,
+when a name ends with a dot, the name mode, so a geodata file the host
+rewrites or replaces is compiled again. A file whose modification or
+status-change time is within two seconds of when the configuration opens it
+is compiled for that configuration only and not cached, because a rewrite in
+place that keeps its size within one timestamp tick would keep its identity.
+Categories no configuration references are kept, most recently used first,
+up to 4 MiB of estimated heap; the C API releases those beyond it after every
+call that loads a configuration, replaces a routing policy or frees a handle.
+The matcher budgets above are charged on every reference, cached or not.
+
+A geosite category is shared by reference with every rule that names it. A
+GeoIP category is shared only by a rule in which it is the only entry of its
+group (the positive entries are one group, the negated GeoIP codes another);
+with other entries beside it, such as `"ip": ["geoip:private", "geoip:ru"]`
+or a code next to a CIDR, the rule merges a copy of its ranges with theirs, as
+before; the cached category is then unused, and kept for the next
+configuration only within the 4 MiB.
 
 This allows large current country sets: for example, Loyalsoldier's
 [202609082347 snapshot](https://github.com/Loyalsoldier/v2ray-rules-dat/releases/tag/202609082347)

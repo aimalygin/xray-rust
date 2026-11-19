@@ -28,7 +28,7 @@ impl DomainMatcher {
 }
 
 /// Selects how `full:` and `domain:` patterns are normalized when compiled.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DomainNameMode {
     /// Routing targets match label-exactly: a trailing dot on either side is
     /// significant, as in [`DomainMatcher::matches`].

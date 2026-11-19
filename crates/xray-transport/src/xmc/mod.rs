@@ -101,3 +101,29 @@ pub async fn connect(
     .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "xmc login timed out"))??;
     XmcStream::new(conn)
 }
+
+/// A server's bytes as the client reads them: the login's packets before
+/// the ciphers, then, under a known key, the stream of custom payloads and
+/// keep-alives after it. The first byte picks the read sizes.
+#[cfg(feature = "fuzzing")]
+pub(crate) async fn fuzz_server(data: &[u8]) {
+    use tokio::io::AsyncReadExt;
+
+    const SECRET: [u8; 16] = [0x42; 16];
+    let (sizes, data) = crate::fuzzing::read_sizes(data);
+    let mut login = proto::Conn::new(crate::fuzzing::Peer::new(data.to_vec(), sizes));
+    handshake::fuzz_server_packets(&mut login).await;
+
+    // What the server sends after the login, encrypted as it encrypts.
+    let mut wire = data.to_vec();
+    cfb8::Cfb8::new(&SECRET, false).apply(&mut wire);
+    let carrier: BoxedTransportStream = Box::new(crate::fuzzing::Peer::new(wire, sizes));
+    let mut conn = proto::Conn::new(carrier);
+    conn.read_cipher = Some(cfb8::Cfb8::new(&SECRET, true));
+    conn.write_cipher = Some(cfb8::Cfb8::new(&SECRET, false));
+    let Ok(mut stream) = XmcStream::new(conn) else {
+        return;
+    };
+    let mut plain = Vec::new();
+    let _ = stream.read_to_end(&mut plain).await;
+}

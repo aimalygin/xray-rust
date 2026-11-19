@@ -6,34 +6,42 @@ pub(super) enum RemoteReadEnd {
     Failed,
 }
 
-/// Coalesce only immediately available data. H2/TLS readers can return one
-/// small frame per poll even when more frames are ready; handing each frame
-/// to the stack separately adds avoidable task/channel round trips. Preserve
-/// a terminal result following data so the bridge delivers those bytes first.
+/// Coalesce only immediately available data, up to `limit` bytes (at most
+/// [`TCP_DOWNLOAD_CHUNK_SIZE`]). H2/TLS readers can return one small frame
+/// per poll even when more frames are ready; handing each frame to the stack
+/// separately adds avoidable task/channel round trips. Preserve a terminal
+/// result following data so the bridge delivers those bytes first.
+///
+/// The reads go into a buffer on the stack of the poll that makes them, and
+/// what they took is copied out at its own size: one allocation and one copy
+/// per batch, and a flow waiting for its remote keeps no read buffer.
 pub(super) async fn read_remote_batch<R: AsyncRead + Unpin>(
     reader: &mut R,
-    buffer: &mut [u8],
-) -> (usize, Option<RemoteReadEnd>) {
-    debug_assert!(!buffer.is_empty());
+    limit: usize,
+) -> (Bytes, Option<RemoteReadEnd>) {
+    debug_assert!(limit > 0 && limit <= TCP_DOWNLOAD_CHUNK_SIZE);
     std::future::poll_fn(|cx| {
-        let mut total = 0;
-        loop {
-            let mut read = tokio::io::ReadBuf::new(&mut buffer[total..]);
-            match std::pin::Pin::new(&mut *reader).poll_read(cx, &mut read) {
-                std::task::Poll::Pending if total == 0 => return std::task::Poll::Pending,
-                std::task::Poll::Pending => return std::task::Poll::Ready((total, None)),
+        let mut storage = [std::mem::MaybeUninit::<u8>::uninit(); TCP_DOWNLOAD_CHUNK_SIZE];
+        let mut buffer =
+            tokio::io::ReadBuf::uninit(&mut storage[..limit.min(TCP_DOWNLOAD_CHUNK_SIZE)]);
+        let mut end = None;
+        while buffer.remaining() > 0 {
+            let before = buffer.filled().len();
+            match std::pin::Pin::new(&mut *reader).poll_read(cx, &mut buffer) {
+                std::task::Poll::Pending if before == 0 => return std::task::Poll::Pending,
+                std::task::Poll::Pending => break,
                 std::task::Poll::Ready(Err(_)) => {
-                    return std::task::Poll::Ready((total, Some(RemoteReadEnd::Failed)));
+                    end = Some(RemoteReadEnd::Failed);
+                    break;
                 }
-                std::task::Poll::Ready(Ok(())) if read.filled().is_empty() => {
-                    return std::task::Poll::Ready((total, Some(RemoteReadEnd::Closed)));
+                std::task::Poll::Ready(Ok(())) if buffer.filled().len() == before => {
+                    end = Some(RemoteReadEnd::Closed);
+                    break;
                 }
-                std::task::Poll::Ready(Ok(())) => total += read.filled().len(),
-            }
-            if total == buffer.len() {
-                return std::task::Poll::Ready((total, None));
+                std::task::Poll::Ready(Ok(())) => {}
             }
         }
+        std::task::Poll::Ready((Bytes::copy_from_slice(buffer.filled()), end))
     })
     .await
 }

@@ -2,6 +2,8 @@
 //! ahead put back in front.
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -14,18 +16,110 @@ use crate::sniffing::{Sniffed, UdpSniffProgress, UdpSniffer, QUIC_MAX_CRYPTO_STR
 /// Xray-core waits at most 200 ms in total for the rest of a ClientHello.
 const SNIFF_WAIT: Duration = Duration::from_millis(200);
 
+/// The payload bytes waiting in one flow's datagram queue, and in the queues
+/// of every flow of the same runtime.
+#[derive(Debug)]
+pub(crate) struct QueuedBytes {
+    flow: AtomicUsize,
+    total: Arc<AtomicUsize>,
+}
+
+impl QueuedBytes {
+    pub(crate) fn new(total: Arc<AtomicUsize>) -> Self {
+        Self {
+            flow: AtomicUsize::new(0),
+            total,
+        }
+    }
+
+    /// Bytes this flow's queue holds.
+    pub(crate) fn flow(&self) -> usize {
+        self.flow.load(Ordering::Acquire)
+    }
+
+    /// Bytes the queues of all flows hold.
+    pub(crate) fn total(&self) -> usize {
+        self.total.load(Ordering::Acquire)
+    }
+
+    fn add(&self, bytes: usize) {
+        self.flow.fetch_add(bytes, Ordering::AcqRel);
+        self.total.fetch_add(bytes, Ordering::AcqRel);
+    }
+
+    fn release(&self, bytes: usize) {
+        self.flow.fetch_sub(bytes, Ordering::AcqRel);
+        self.total.fetch_sub(bytes, Ordering::AcqRel);
+    }
+}
+
+/// A datagram in a flow's queue. Its bytes count in [`QueuedBytes`] until it
+/// is taken out of the queue, or dropped with it.
+#[derive(Debug)]
+pub(crate) struct QueuedDatagram {
+    payload: Bytes,
+    len: usize,
+    queued: Arc<QueuedBytes>,
+}
+
+impl QueuedDatagram {
+    pub(crate) fn new(payload: Bytes, queued: Arc<QueuedBytes>) -> Self {
+        let len = payload.len();
+        queued.add(len);
+        Self {
+            payload,
+            len,
+            queued,
+        }
+    }
+
+    pub(crate) fn into_payload(mut self) -> Bytes {
+        std::mem::take(&mut self.payload)
+    }
+}
+
+impl Drop for QueuedDatagram {
+    fn drop(&mut self) {
+        self.queued.release(self.len);
+    }
+}
+
+#[derive(Debug)]
+enum DatagramQueue {
+    Plain(mpsc::Receiver<Bytes>),
+    Counted(mpsc::Receiver<QueuedDatagram>),
+}
+
+impl DatagramQueue {
+    async fn recv(&mut self) -> Option<Bytes> {
+        match self {
+            Self::Plain(rx) => rx.recv().await,
+            Self::Counted(rx) => rx.recv().await.map(QueuedDatagram::into_payload),
+        }
+    }
+}
+
 /// The datagrams of one UDP flow after its first.
 #[derive(Debug)]
 pub(crate) struct UdpIngress {
     replay: VecDeque<Bytes>,
-    rx: mpsc::Receiver<Bytes>,
+    rx: DatagramQueue,
 }
 
 impl From<mpsc::Receiver<Bytes>> for UdpIngress {
     fn from(rx: mpsc::Receiver<Bytes>) -> Self {
         Self {
             replay: VecDeque::new(),
-            rx,
+            rx: DatagramQueue::Plain(rx),
+        }
+    }
+}
+
+impl From<mpsc::Receiver<QueuedDatagram>> for UdpIngress {
+    fn from(rx: mpsc::Receiver<QueuedDatagram>) -> Self {
+        Self {
+            replay: VecDeque::new(),
+            rx: DatagramQueue::Counted(rx),
         }
     }
 }
@@ -52,10 +146,10 @@ pub(crate) async fn sniff_udp_flow(
     config: &InboundSniffingConfig,
     original: &Target,
     first: &[u8],
-    rx: mpsc::Receiver<Bytes>,
+    rx: impl Into<UdpIngress>,
     shutdown: &mut watch::Receiver<bool>,
 ) -> (Option<Sniffed>, UdpIngress) {
-    let mut ingress = UdpIngress::from(rx);
+    let mut ingress = rx.into();
     let mut sniffer = UdpSniffer::new(config, original);
     let deadline = tokio::time::Instant::now() + SNIFF_WAIT;
     let mut buffered = first.len();
@@ -166,7 +260,7 @@ mod tests {
         tx.send(second.clone()).await.unwrap();
         assert_eq!(ingress.recv().await, Some(second));
 
-        let (_tx, rx) = mpsc::channel(4);
+        let (_tx, rx) = mpsc::channel::<Bytes>(4);
         let (shutdown_tx, mut shutdown) = watch::channel(false);
         let (sniffing, target) = (config(), original());
         let started = tokio::time::Instant::now();
@@ -202,5 +296,36 @@ mod tests {
         assert!(sniffed.is_none());
         assert!(ingress.replay.is_empty());
         assert_eq!(ingress.recv().await, Some(Bytes::from_static(b"second")));
+    }
+
+    #[tokio::test]
+    async fn queued_bytes_count_until_a_datagram_leaves_the_queue() {
+        let total = Arc::new(AtomicUsize::new(0));
+        let first = Arc::new(QueuedBytes::new(Arc::clone(&total)));
+        let second = Arc::new(QueuedBytes::new(Arc::clone(&total)));
+        let (tx, rx) = mpsc::channel(4);
+        tx.try_send(QueuedDatagram::new(
+            Bytes::from_static(b"one"),
+            Arc::clone(&first),
+        ))
+        .unwrap();
+        tx.try_send(QueuedDatagram::new(
+            Bytes::from_static(b"three"),
+            Arc::clone(&first),
+        ))
+        .unwrap();
+        let other = QueuedDatagram::new(Bytes::from_static(b"other"), Arc::clone(&second));
+        assert_eq!((first.flow(), second.flow(), first.total()), (8, 5, 13));
+
+        let mut ingress = UdpIngress::from(rx);
+        assert_eq!(ingress.recv().await, Some(Bytes::from_static(b"one")));
+        assert_eq!((first.flow(), first.total()), (5, 10));
+
+        // A queue dropped with datagrams in it gives their bytes back.
+        drop(ingress);
+        drop(tx);
+        assert_eq!((first.flow(), first.total()), (0, 5));
+        assert_eq!(other.into_payload(), Bytes::from_static(b"other"));
+        assert_eq!((second.flow(), total.load(Ordering::Acquire)), (0, 0));
     }
 }

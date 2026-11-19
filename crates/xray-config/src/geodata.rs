@@ -5,12 +5,19 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     path::{Component, Path, PathBuf},
     sync::Arc,
+    time::{Duration, SystemTime},
 };
 
 use prost::Message;
 use thiserror::Error;
-use xray_routing::IpMatcherSetBuilder;
+use xray_routing::{
+    DomainNameMode, DomainPatternSet, DomainPatternSetBuilder, IpMatcherSetBuilder,
+    IpRangeSetBuilder,
+};
 
+use crate::geodata_cache::{FileIdentity, GeoIpEntry, GeodataCache, IpKey, SiteKey};
+use crate::geodata_wire::{self, Unsupported};
+use crate::model::domain_matcher_set_error;
 use crate::{ConfigModelError, DomainMatcher, IpCidr, RegexMatcher};
 
 const MAX_GEODATA_FILE_SIZE: u64 = 128 * 1024 * 1024;
@@ -25,21 +32,28 @@ const MAX_GEODATA_ATTRIBUTE_SIZE: usize = 1024;
 const MAX_GEODATA_CIDRS: usize = 500_000;
 const MAX_GEODATA_CIDR_SIZE: usize = 128;
 
+/// Resolves geodata references for one configuration.
+///
+/// Compiled categories come from the process-wide [`GeodataCache`] when the
+/// same version of the file was compiled before; otherwise the entry is read,
+/// decoded without copying its names, compiled into packed matchers and
+/// cached. Files stay open for the loader's lifetime, so every lookup of one
+/// configuration sees the same file version.
 #[derive(Debug)]
 pub(crate) struct GeodataLoader {
     search_dirs: Vec<PathBuf>,
-    files: HashMap<String, IndexedGeodataFile>,
-    sites: HashMap<GeodataCacheKey, Arc<GeoSite>>,
-    ips: HashMap<GeodataCacheKey, Arc<GeoIp>>,
-    site_selections: HashMap<GeositeSelectionKey, Arc<[usize]>>,
+    files: HashMap<String, OpenedGeodataFile>,
+    cache: Arc<GeodataCache>,
+    /// Categories of files that changed too recently for `cache`, kept for
+    /// this configuration only so that its repeated references still compile
+    /// once.
+    recent: GeodataCache,
     #[cfg(test)]
     index_builds: usize,
     #[cfg(test)]
-    domain_matcher_builds: usize,
+    site_decodes: usize,
     #[cfg(test)]
-    ip_matcher_builds: usize,
-    #[cfg(test)]
-    domain_filter_scans: usize,
+    ip_decodes: usize,
 }
 
 impl Default for GeodataLoader {
@@ -50,23 +64,77 @@ impl Default for GeodataLoader {
 
 impl GeodataLoader {
     pub(crate) fn from_dirs(search_dirs: Vec<PathBuf>) -> Self {
+        Self::with_cache(search_dirs, Arc::clone(GeodataCache::global()))
+    }
+
+    pub(crate) fn with_cache(search_dirs: Vec<PathBuf>, cache: Arc<GeodataCache>) -> Self {
         Self {
             search_dirs,
             files: HashMap::new(),
-            sites: HashMap::new(),
-            ips: HashMap::new(),
-            site_selections: HashMap::new(),
+            cache,
+            recent: GeodataCache::new(usize::MAX, Duration::ZERO),
             #[cfg(test)]
             index_builds: 0,
             #[cfg(test)]
-            domain_matcher_builds: 0,
+            site_decodes: 0,
             #[cfg(test)]
-            ip_matcher_builds: 0,
-            #[cfg(test)]
-            domain_filter_scans: 0,
+            ip_decodes: 0,
         }
     }
 
+    /// The domains `file_name:code@attrs` selects, compiled for `mode` into
+    /// one shared set. Its [`DomainPatternSet::source_count`] is what the
+    /// selection charges against the matcher budget.
+    pub(crate) fn load_site_patterns(
+        &mut self,
+        file_name: &str,
+        code: &str,
+        attrs: &[String],
+        mode: DomainNameMode,
+        max_matchers: usize,
+    ) -> Result<Arc<DomainPatternSet>, GeodataError> {
+        let code = normalize_code(code);
+        let identity = self.opened_file(file_name)?.identity.clone();
+        let key = SiteKey::new(identity, &code, attrs, mode);
+        if let Some(patterns) = self.cache.site(&key).or_else(|| self.recent.site(&key)) {
+            ensure_domain_matcher_budget(file_name, &code, patterns.source_count(), max_matchers)?;
+            return Ok(patterns);
+        }
+
+        let (body, path) = self.read_entry(file_name, &code, validate_geo_site_body)?;
+        self.record_site_decode();
+        let site = DecodedSite::decode(&body, &path, &code)?;
+        let selection = site.selection(key.attrs(), &path)?;
+        ensure_domain_matcher_budget(file_name, &code, selection.count, max_matchers)?;
+
+        let mut builder = DomainPatternSet::builder();
+        selection.reserve(&mut builder);
+        let mut dotted = false;
+        site.for_each_selected(key.attrs(), &path, |domain| {
+            dotted |= domain.insert_into(&mut builder, mode, file_name, &code)?;
+            Ok(())
+        })?;
+        // The names are copied into the builder: free the entry before the
+        // tables are built.
+        drop(site);
+        drop(body);
+        let patterns = builder
+            .build()
+            .map_err(|error| GeodataError::InvalidDomainMatcher {
+                file_name: file_name.to_owned(),
+                code: code.clone(),
+                source: domain_matcher_set_error(error),
+            })?;
+        let patterns = Arc::new(patterns);
+        let Some(cache) = self.cache_for(file_name)? else {
+            return Ok(patterns);
+        };
+        let key = if dotted { key } else { key.mode_independent() };
+        Ok(cache.insert_site(key, patterns))
+    }
+
+    /// The domains `file_name:code@attrs` selects, one matcher each, for the
+    /// rules that need them apart, such as `dns.hosts`. Not cached.
     pub(crate) fn load_site_matchers(
         &mut self,
         file_name: &str,
@@ -75,78 +143,24 @@ impl GeodataLoader {
         max_matchers: usize,
     ) -> Result<Vec<DomainMatcher>, GeodataError> {
         let code = normalize_code(code);
-        let site = self.load_site(file_name, &code)?;
-        if attrs.is_empty() {
-            self.ensure_domain_matcher_budget(file_name, &code, site.domain.len(), max_matchers)?;
-            let mut matchers = Vec::with_capacity(site.domain.len());
-            for domain in &site.domain {
-                matchers.push(domain_to_matcher(domain, file_name, &code)?);
-                self.record_domain_matcher_build();
-            }
-            return Ok(matchers);
-        }
+        let (body, path) = self.read_entry(file_name, &code, validate_geo_site_body)?;
+        self.record_site_decode();
+        let site = DecodedSite::decode(&body, &path, &code)?;
+        let selection = site.selection(attrs, &path)?;
+        ensure_domain_matcher_budget(file_name, &code, selection.count, max_matchers)?;
 
-        let selection_key = GeositeSelectionKey::new(file_name, &code, attrs);
-        let selected = match self.site_selections.get(&selection_key) {
-            Some(selected) => Arc::clone(selected),
-            None => {
-                let mut selected = Vec::new();
-                for (index, domain) in site.domain.iter().enumerate() {
-                    #[cfg(test)]
-                    {
-                        self.domain_filter_scans += 1;
-                    }
-                    if domain_matches_attrs(domain, attrs) {
-                        if selected.len() == max_matchers {
-                            return Err(GeodataError::DomainMatcherBudgetExceeded {
-                                file_name: file_name.to_owned(),
-                                code,
-                                expanded: max_matchers.saturating_add(1),
-                                remaining: max_matchers,
-                            });
-                        }
-                        selected.push(index);
-                    }
-                }
-                let selected = Arc::<[usize]>::from(selected);
-                self.site_selections
-                    .insert(selection_key, Arc::clone(&selected));
-                selected
-            }
-        };
-        self.ensure_domain_matcher_budget(file_name, &code, selected.len(), max_matchers)?;
-
-        let mut matchers = Vec::with_capacity(selected.len());
-        for &index in selected.iter() {
-            matchers.push(domain_to_matcher(&site.domain[index], file_name, &code)?);
-            self.record_domain_matcher_build();
-        }
-
+        let mut matchers = Vec::with_capacity(selection.count);
+        site.for_each_selected(attrs, &path, |domain| {
+            matchers.push(domain.to_matcher(file_name, &code)?);
+            Ok(())
+        })?;
         Ok(matchers)
     }
 
-    fn ensure_domain_matcher_budget(
-        &self,
-        file_name: &str,
-        code: &str,
-        matcher_count: usize,
-        max_matchers: usize,
-    ) -> Result<(), GeodataError> {
-        if matcher_count > max_matchers {
-            return Err(GeodataError::DomainMatcherBudgetExceeded {
-                file_name: file_name.to_owned(),
-                code: code.to_owned(),
-                expanded: matcher_count,
-                remaining: max_matchers,
-            });
-        }
-        Ok(())
-    }
-
-    fn record_domain_matcher_build(&mut self) {
+    fn record_site_decode(&mut self) {
         #[cfg(test)]
         {
-            self.domain_matcher_builds += 1;
+            self.site_decodes += 1;
         }
     }
 
@@ -199,56 +213,71 @@ impl GeodataLoader {
         matchers: &mut IpMatcherSetBuilder,
     ) -> Result<usize, GeodataError> {
         let code = normalize_code(code);
-        let geoip = self.load_ip(file_name, &code)?;
-        if geoip.cidr.len() > max_matchers {
-            return Err(GeodataError::IpMatcherBudgetExceeded {
-                file_name: file_name.to_owned(),
-                code,
-                expanded: geoip.cidr.len(),
-                remaining: max_matchers,
-            });
-        }
+        let geoip = self.load_geoip(file_name, &code, max_matchers)?;
         let inverse = inverse ^ (apply_asset_reverse && geoip.reverse_match);
-        for cidr in &geoip.cidr {
-            matchers.insert_geoip_cidr(cidr_to_ip_cidr(cidr, file_name, &code)?.cidr(), inverse);
-            #[cfg(test)]
-            {
-                self.ip_matcher_builds += 1;
+        matchers.insert_geoip_set(&geoip.ranges, geoip.cidr_count, inverse);
+        Ok(geoip.cidr_count)
+    }
+
+    fn load_geoip(
+        &mut self,
+        file_name: &str,
+        code: &str,
+        max_matchers: usize,
+    ) -> Result<GeoIpEntry, GeodataError> {
+        let identity = self.opened_file(file_name)?.identity.clone();
+        let key = IpKey::new(identity, code);
+        if let Some(geoip) = self.cache.ip(&key).or_else(|| self.recent.ip(&key)) {
+            ensure_ip_matcher_budget(file_name, code, geoip.cidr_count, max_matchers)?;
+            return Ok(geoip);
+        }
+
+        let (body, path) = self.read_entry(file_name, code, validate_geo_ip_body)?;
+        #[cfg(test)]
+        {
+            self.ip_decodes += 1;
+        }
+        let geoip = DecodedGeoIp::decode(&body, &path, code)?;
+        let (mut ipv4, mut ipv6) = (0, 0);
+        geoip.for_each_cidr(&path, |ip, _| {
+            if ip.len() == 16 {
+                ipv6 += 1;
+            } else {
+                ipv4 += 1;
             }
-        }
-        Ok(geoip.cidr.len())
+            Ok(())
+        })?;
+        let cidr_count = ipv4 + ipv6;
+        ensure_ip_matcher_budget(file_name, code, cidr_count, max_matchers)?;
+
+        let mut ranges = IpRangeSetBuilder::with_capacity(ipv4, ipv6);
+        geoip.for_each_cidr(&path, |ip, prefix| {
+            ranges.insert_cidr(cidr_to_ip_cidr(ip, prefix, file_name, code)?.cidr());
+            Ok(())
+        })?;
+        let geoip = GeoIpEntry {
+            ranges: ranges.build(),
+            cidr_count,
+            reverse_match: geoip.reverse_match(),
+        };
+        drop(body);
+        let Some(cache) = self.cache_for(file_name)? else {
+            return Ok(geoip);
+        };
+        Ok(cache.insert_ip(key, geoip))
     }
 
-    fn load_site(&mut self, file_name: &str, code: &str) -> Result<Arc<GeoSite>, GeodataError> {
-        let key = GeodataCacheKey::new(file_name, code);
-        if let Some(site) = self.sites.get(&key) {
-            return Ok(Arc::clone(site));
+    /// Where a category just read from `file_name` is cached: the process
+    /// cache when the file had settled when it was opened, this loader's own
+    /// otherwise, and nowhere when the file changed since it was opened.
+    fn cache_for(&mut self, file_name: &str) -> Result<Option<&GeodataCache>, GeodataError> {
+        self.opened_file(file_name)?;
+        let file = &self.files[file_name];
+        if !file.unchanged()? {
+            return Ok(None);
         }
-
-        let site = Arc::new(self.load_entry::<GeoSite>(
-            file_name,
-            code,
-            validate_geo_site_body,
-            |site| &site.code,
-        )?);
-        self.sites.insert(key, Arc::clone(&site));
-        Ok(site)
-    }
-
-    fn load_ip(&mut self, file_name: &str, code: &str) -> Result<Arc<GeoIp>, GeodataError> {
-        let key = GeodataCacheKey::new(file_name, code);
-        if let Some(geoip) = self.ips.get(&key) {
-            return Ok(Arc::clone(geoip));
-        }
-
-        let geoip = Arc::new(self.load_entry::<GeoIp>(
-            file_name,
-            code,
-            validate_geo_ip_body,
-            |geoip| &geoip.code,
-        )?);
-        self.ips.insert(key, Arc::clone(&geoip));
-        Ok(geoip)
+        let settled = self.cache.accepts(&file.identity, file.identified_at);
+        Ok(Some(if settled { &self.cache } else { &self.recent }))
     }
 
     /// Checks that `file_name` holds `code`, as Xray-core's `checkFile` does
@@ -256,7 +285,7 @@ impl GeodataLoader {
     /// decoded and no matcher is built.
     pub(crate) fn check_code(&mut self, file_name: &str, code: &str) -> Result<(), GeodataError> {
         let code = normalize_code(code);
-        if self.indexed_file(file_name)?.entries.contains_key(&code) {
+        if self.indexed_file(file_name)?.contains(&code) {
             return Ok(());
         }
         Err(GeodataError::CodeNotFound {
@@ -265,32 +294,13 @@ impl GeodataLoader {
         })
     }
 
-    fn indexed_file(&mut self, file_name: &str) -> Result<&mut IndexedGeodataFile, GeodataError> {
-        if !self.files.contains_key(file_name) {
-            let (file, path) = self.open_file(file_name)?;
-            let indexed = IndexedGeodataFile::new(file, path)?;
-            self.files.insert(file_name.to_owned(), indexed);
-            #[cfg(test)]
-            {
-                self.index_builds += 1;
-            }
-        }
-        Ok(self
-            .files
-            .get_mut(file_name)
-            .expect("geodata file was inserted above"))
-    }
-
-    fn load_entry<M>(
+    /// Reads and bounds-checks the entry body of `code`.
+    fn read_entry(
         &mut self,
         file_name: &str,
         code: &str,
         validate_body: fn(&[u8]) -> Result<(), String>,
-        decoded_code: fn(&M) -> &str,
-    ) -> Result<M, GeodataError>
-    where
-        M: Message + Default,
-    {
+    ) -> Result<(Vec<u8>, PathBuf), GeodataError> {
         let indexed = self.indexed_file(file_name)?;
         let path = indexed.path.clone();
         let body = indexed
@@ -303,18 +313,33 @@ impl GeodataLoader {
             path: path.clone(),
             message,
         })?;
+        Ok((body, path))
+    }
 
-        let decoded = M::decode(body.as_slice()).map_err(|source| GeodataError::Decode {
-            path: path.clone(),
-            source,
-        })?;
-        if decoded_code(&decoded) != code {
-            return Err(GeodataError::InvalidFile {
-                path,
-                message: "decoded geodata code does not match its index entry".to_owned(),
-            });
+    fn opened_file(&mut self, file_name: &str) -> Result<&mut OpenedGeodataFile, GeodataError> {
+        if !self.files.contains_key(file_name) {
+            let (file, path) = self.open_file(file_name)?;
+            let opened = OpenedGeodataFile::new(file, path)?;
+            self.files.insert(file_name.to_owned(), opened);
         }
-        Ok(decoded)
+        Ok(self
+            .files
+            .get_mut(file_name)
+            .expect("geodata file was inserted above"))
+    }
+
+    fn indexed_file(&mut self, file_name: &str) -> Result<&mut OpenedGeodataFile, GeodataError> {
+        #[cfg(test)]
+        let built = self
+            .files
+            .get(file_name)
+            .is_none_or(|file| file.entries.is_none());
+        self.opened_file(file_name)?.index()?;
+        #[cfg(test)]
+        if built {
+            self.index_builds += 1;
+        }
+        self.opened_file(file_name)
     }
 
     fn open_file(&self, file_name: &str) -> Result<(File, PathBuf), GeodataError> {
@@ -454,38 +479,6 @@ pub(crate) fn default_geodata_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct GeodataCacheKey {
-    file_name: String,
-    code: String,
-}
-
-impl GeodataCacheKey {
-    fn new(file_name: &str, code: &str) -> Self {
-        Self {
-            file_name: file_name.to_owned(),
-            code: code.to_owned(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct GeositeSelectionKey {
-    file_name: String,
-    code: String,
-    attrs: Vec<String>,
-}
-
-impl GeositeSelectionKey {
-    fn new(file_name: &str, code: &str, attrs: &[String]) -> Self {
-        Self {
-            file_name: file_name.to_owned(),
-            code: code.to_owned(),
-            attrs: attrs.to_vec(),
-        }
-    }
-}
-
 #[derive(Debug, Error)]
 pub(crate) enum GeodataError {
     #[error("invalid geodata path `{file_name}`: {message}")]
@@ -556,25 +549,60 @@ struct GeodataEntryLocation {
     len: usize,
 }
 
+/// A geodata file opened for one configuration, its identity taken from the
+/// open descriptor and its code index built on first use.
 #[derive(Debug)]
-struct IndexedGeodataFile {
+struct OpenedGeodataFile {
     file: File,
     path: PathBuf,
-    entries: HashMap<String, GeodataEntryLocation>,
+    identity: FileIdentity,
+    /// The time just before `identity` was taken.
+    identified_at: SystemTime,
+    entries: Option<HashMap<String, GeodataEntryLocation>>,
 }
 
-impl IndexedGeodataFile {
+impl OpenedGeodataFile {
     fn new(file: File, path: PathBuf) -> Result<Self, GeodataError> {
-        let entries = index_geodata_file(&file, &path)?;
+        let identified_at = SystemTime::now();
+        let metadata = file.metadata().map_err(|source| GeodataError::Read {
+            path: path.clone(),
+            source,
+        })?;
+        let identity = FileIdentity::new(&path, &metadata);
         Ok(Self {
             file,
             path,
-            entries,
+            identity,
+            identified_at,
+            entries: None,
         })
     }
 
+    fn index(&mut self) -> Result<&HashMap<String, GeodataEntryLocation>, GeodataError> {
+        if self.entries.is_none() {
+            self.entries = Some(index_geodata_file(&self.file, &self.path)?);
+        }
+        Ok(self.entries.as_ref().expect("index was built above"))
+    }
+
+    fn contains(&self, code: &str) -> bool {
+        self.entries
+            .as_ref()
+            .is_some_and(|entries| entries.contains_key(code))
+    }
+
+    /// Whether the file still has the identity it was opened with, so what
+    /// was read from it may be cached under that identity.
+    fn unchanged(&self) -> Result<bool, GeodataError> {
+        let metadata = self.file.metadata().map_err(|source| GeodataError::Read {
+            path: self.path.clone(),
+            source,
+        })?;
+        Ok(FileIdentity::new(&self.path, &metadata) == self.identity)
+    }
+
     fn read_entry(&mut self, code: &str) -> Result<Option<Vec<u8>>, GeodataError> {
-        let Some(location) = self.entries.get(code).copied() else {
+        let Some(location) = self.index()?.get(code).copied() else {
             return Ok(None);
         };
         self.file
@@ -613,7 +641,13 @@ fn index_geodata_file(
             ),
         });
     }
-    let file = file.try_clone().map_err(|source| GeodataError::Read {
+    let mut file = file.try_clone().map_err(|source| GeodataError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    // The clone shares the descriptor's offset, which an entry read or an
+    // index that failed part-way left elsewhere.
+    file.rewind().map_err(|source| GeodataError::Read {
         path: path.to_path_buf(),
         source,
     })?;
@@ -841,7 +875,7 @@ fn invalid_geodata_file(path: &Path, message: impl Into<String>) -> GeodataError
 
 #[cfg(test)]
 fn find_entry_body(file: File, path: &Path, code: &str) -> Result<Option<Vec<u8>>, GeodataError> {
-    IndexedGeodataFile::new(file, path.to_path_buf())?.read_entry(code)
+    OpenedGeodataFile::new(file, path.to_path_buf())?.read_entry(code)
 }
 
 fn read_varint(reader: &mut impl Read) -> io::Result<u64> {
@@ -1028,52 +1062,318 @@ fn visit_length_delimited_fields(
     Ok(())
 }
 
-fn domain_matches_attrs(domain: &GeoDomain, attrs: &[String]) -> bool {
-    attrs.iter().all(|attr| {
-        domain
-            .attribute
-            .iter()
-            .any(|candidate| candidate.key.eq_ignore_ascii_case(attr))
-    })
-}
-
-fn domain_to_matcher(
-    domain: &GeoDomain,
+fn ensure_domain_matcher_budget(
     file_name: &str,
     code: &str,
-) -> Result<DomainMatcher, GeodataError> {
-    if domain.value.is_empty() {
-        return Err(GeodataError::InvalidDomain {
+    matcher_count: usize,
+    max_matchers: usize,
+) -> Result<(), GeodataError> {
+    if matcher_count > max_matchers {
+        return Err(GeodataError::DomainMatcherBudgetExceeded {
             file_name: file_name.to_owned(),
             code: code.to_owned(),
-            message: "domain value cannot be empty".to_owned(),
+            expanded: matcher_count,
+            remaining: max_matchers,
         });
     }
+    Ok(())
+}
 
-    let domain_type = GeoDomainType::try_from(domain.r#type).map_err(|_| {
-        GeodataError::UnsupportedDomainType {
+fn ensure_ip_matcher_budget(
+    file_name: &str,
+    code: &str,
+    matcher_count: usize,
+    max_matchers: usize,
+) -> Result<(), GeodataError> {
+    if matcher_count > max_matchers {
+        return Err(GeodataError::IpMatcherBudgetExceeded {
             file_name: file_name.to_owned(),
             code: code.to_owned(),
-            domain_type: domain.r#type,
-        }
-    })?;
+            expanded: matcher_count,
+            remaining: max_matchers,
+        });
+    }
+    Ok(())
+}
 
-    match domain_type {
-        GeoDomainType::Substr => Ok(DomainMatcher::Keyword(domain.value.clone())),
-        GeoDomainType::Regex => RegexMatcher::new(domain.value.clone())
-            .map(DomainMatcher::Regex)
-            .map_err(|source| GeodataError::InvalidDomainMatcher {
-                file_name: file_name.to_owned(),
-                code: code.to_owned(),
-                source: source.into(),
-            }),
-        GeoDomainType::Domain => Ok(DomainMatcher::Suffix(domain.value.clone())),
-        GeoDomainType::Full => Ok(DomainMatcher::Full(domain.value.clone())),
+fn check_decoded_code(decoded: &str, code: &str, path: &Path) -> Result<(), GeodataError> {
+    if decoded != code {
+        return Err(GeodataError::InvalidFile {
+            path: path.to_path_buf(),
+            message: "decoded geodata code does not match its index entry".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+/// A second walk over a body the first walk accepted cannot fail; this is the
+/// error it would report if it did.
+fn reread_error(path: &Path) -> GeodataError {
+    invalid_geodata_file(path, "geodata entry changed between two reads")
+}
+
+/// A `GeoSite` entry, read in place when the body is plain protobuf
+/// ([`geodata_wire`]) and decoded by prost otherwise.
+enum DecodedSite<'a> {
+    Wire(&'a [u8]),
+    Prost(GeoSite),
+}
+
+impl<'a> DecodedSite<'a> {
+    fn decode(body: &'a [u8], path: &Path, code: &str) -> Result<Self, GeodataError> {
+        match geodata_wire::site_code(body) {
+            Ok(decoded) => {
+                check_decoded_code(decoded, code, path)?;
+                Ok(Self::Wire(body))
+            }
+            Err(Unsupported) => {
+                let site = GeoSite::decode(body).map_err(|source| GeodataError::Decode {
+                    path: path.to_path_buf(),
+                    source,
+                })?;
+                check_decoded_code(&site.code, code, path)?;
+                Ok(Self::Prost(site))
+            }
+        }
+    }
+
+    /// Visits the domains every attribute filter of `attrs` selects, in
+    /// entry order.
+    fn for_each_selected(
+        &self,
+        attrs: &[String],
+        path: &Path,
+        mut visit: impl FnMut(&DomainRecord<'_>) -> Result<(), GeodataError>,
+    ) -> Result<(), GeodataError> {
+        let mut visit = |domain: &DomainRecord<'_>| {
+            if domain.has_attrs(attrs) {
+                visit(domain)
+            } else {
+                Ok(())
+            }
+        };
+        match self {
+            Self::Wire(body) => {
+                for domain in geodata_wire::site_domains(body) {
+                    let domain = domain.map_err(|Unsupported| reread_error(path))?;
+                    visit(&DomainRecord::Wire(domain))?;
+                }
+            }
+            Self::Prost(site) => {
+                for domain in &site.domain {
+                    visit(&DomainRecord::Prost(domain))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn selection(&self, attrs: &[String], path: &Path) -> Result<SiteSelection, GeodataError> {
+        let mut selection = SiteSelection::default();
+        self.for_each_selected(attrs, path, |domain| {
+            selection.add(domain);
+            Ok(())
+        })?;
+        Ok(selection)
     }
 }
 
-fn cidr_to_ip_cidr(cidr: &GeoCidr, file_name: &str, code: &str) -> Result<IpCidr, GeodataError> {
-    let ip = match cidr.ip.as_slice() {
+/// How many domains of each kind a selection holds, and their bytes.
+#[derive(Debug, Default)]
+struct SiteSelection {
+    count: usize,
+    full: (usize, usize),
+    suffix: (usize, usize),
+    keyword: (usize, usize),
+    regex: usize,
+}
+
+impl SiteSelection {
+    fn add(&mut self, domain: &DomainRecord<'_>) {
+        self.count += 1;
+        let len = domain.value().len();
+        let kind = match GeoDomainType::try_from(domain.kind()) {
+            Ok(GeoDomainType::Full) => &mut self.full,
+            Ok(GeoDomainType::Domain) => &mut self.suffix,
+            Ok(GeoDomainType::Substr) => &mut self.keyword,
+            Ok(GeoDomainType::Regex) => {
+                self.regex += 1;
+                return;
+            }
+            Err(_) => return,
+        };
+        kind.0 += 1;
+        kind.1 += len;
+    }
+
+    fn reserve(&self, builder: &mut DomainPatternSetBuilder) {
+        builder.reserve_full(self.full.0, self.full.1);
+        builder.reserve_suffix(self.suffix.0, self.suffix.1);
+        builder.reserve_keyword(self.keyword.0, self.keyword.1);
+        builder.reserve_regex(self.regex);
+    }
+}
+
+/// One domain of a [`DecodedSite`].
+enum DomainRecord<'a> {
+    Wire(geodata_wire::Domain<'a>),
+    Prost(&'a GeoDomain),
+}
+
+impl DomainRecord<'_> {
+    fn kind(&self) -> i32 {
+        match self {
+            Self::Wire(domain) => domain.kind,
+            Self::Prost(domain) => domain.r#type,
+        }
+    }
+
+    fn value(&self) -> &str {
+        match self {
+            Self::Wire(domain) => domain.value,
+            Self::Prost(domain) => &domain.value,
+        }
+    }
+
+    /// Whether the domain carries every attribute of `attrs`, compared ASCII
+    /// case-insensitively.
+    fn has_attrs(&self, attrs: &[String]) -> bool {
+        attrs.iter().all(|attr| match self {
+            Self::Wire(domain) => domain
+                .attribute_keys()
+                .any(|key| key.eq_ignore_ascii_case(attr)),
+            Self::Prost(domain) => domain
+                .attribute
+                .iter()
+                .any(|candidate| candidate.key.eq_ignore_ascii_case(attr)),
+        })
+    }
+
+    fn checked_kind(&self, file_name: &str, code: &str) -> Result<GeoDomainType, GeodataError> {
+        if self.value().is_empty() {
+            return Err(GeodataError::InvalidDomain {
+                file_name: file_name.to_owned(),
+                code: code.to_owned(),
+                message: "domain value cannot be empty".to_owned(),
+            });
+        }
+        GeoDomainType::try_from(self.kind()).map_err(|_| GeodataError::UnsupportedDomainType {
+            file_name: file_name.to_owned(),
+            code: code.to_owned(),
+            domain_type: self.kind(),
+        })
+    }
+
+    fn regex(&self, file_name: &str, code: &str) -> Result<RegexMatcher, GeodataError> {
+        RegexMatcher::new(self.value()).map_err(|source| GeodataError::InvalidDomainMatcher {
+            file_name: file_name.to_owned(),
+            code: code.to_owned(),
+            source: source.into(),
+        })
+    }
+
+    fn to_matcher(&self, file_name: &str, code: &str) -> Result<DomainMatcher, GeodataError> {
+        let value = self.value().to_owned();
+        Ok(match self.checked_kind(file_name, code)? {
+            GeoDomainType::Substr => DomainMatcher::Keyword(value),
+            GeoDomainType::Regex => DomainMatcher::Regex(self.regex(file_name, code)?),
+            GeoDomainType::Domain => DomainMatcher::Suffix(value),
+            GeoDomainType::Full => DomainMatcher::Full(value),
+        })
+    }
+
+    /// Adds the domain to `builder` as [`Self::to_matcher`]'s matcher would
+    /// be added, and returns whether it is a `full:` or `domain:` name with
+    /// a trailing dot, which the two name modes compile differently.
+    fn insert_into(
+        &self,
+        builder: &mut DomainPatternSetBuilder,
+        mode: DomainNameMode,
+        file_name: &str,
+        code: &str,
+    ) -> Result<bool, GeodataError> {
+        let value = self.value();
+        match self.checked_kind(file_name, code)? {
+            GeoDomainType::Substr => builder.insert_keyword(value),
+            GeoDomainType::Regex => builder.insert_regex(&self.regex(file_name, code)?),
+            GeoDomainType::Domain => {
+                builder.insert_suffix(value, mode);
+                return Ok(value.ends_with('.'));
+            }
+            GeoDomainType::Full => {
+                builder.insert_full(value, mode);
+                return Ok(value.ends_with('.'));
+            }
+        }
+        Ok(false)
+    }
+}
+
+/// A `GeoIP` entry, read in place when the body is plain protobuf and
+/// decoded by prost otherwise.
+enum DecodedGeoIp<'a> {
+    Wire { body: &'a [u8], reverse_match: bool },
+    Prost(GeoIp),
+}
+
+impl<'a> DecodedGeoIp<'a> {
+    fn decode(body: &'a [u8], path: &Path, code: &str) -> Result<Self, GeodataError> {
+        match geodata_wire::geoip_header(body) {
+            Ok(header) => {
+                check_decoded_code(header.code, code, path)?;
+                Ok(Self::Wire {
+                    body,
+                    reverse_match: header.reverse_match,
+                })
+            }
+            Err(Unsupported) => {
+                let geoip = GeoIp::decode(body).map_err(|source| GeodataError::Decode {
+                    path: path.to_path_buf(),
+                    source,
+                })?;
+                check_decoded_code(&geoip.code, code, path)?;
+                Ok(Self::Prost(geoip))
+            }
+        }
+    }
+
+    fn reverse_match(&self) -> bool {
+        match self {
+            Self::Wire { reverse_match, .. } => *reverse_match,
+            Self::Prost(geoip) => geoip.reverse_match,
+        }
+    }
+
+    /// Visits every CIDR's IP bytes and prefix, in entry order.
+    fn for_each_cidr(
+        &self,
+        path: &Path,
+        mut visit: impl FnMut(&[u8], u32) -> Result<(), GeodataError>,
+    ) -> Result<(), GeodataError> {
+        match self {
+            Self::Wire { body, .. } => {
+                for cidr in geodata_wire::geoip_cidrs(body) {
+                    let cidr = cidr.map_err(|Unsupported| reread_error(path))?;
+                    visit(cidr.ip, cidr.prefix)?;
+                }
+            }
+            Self::Prost(geoip) => {
+                for cidr in &geoip.cidr {
+                    visit(&cidr.ip, cidr.prefix)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn cidr_to_ip_cidr(
+    ip: &[u8],
+    prefix: u32,
+    file_name: &str,
+    code: &str,
+) -> Result<IpCidr, GeodataError> {
+    let ip = match ip {
         [a, b, c, d] => IpAddr::V4(Ipv4Addr::new(*a, *b, *c, *d)),
         bytes if bytes.len() == 16 => {
             let mut octets = [0_u8; 16];
@@ -1084,15 +1384,15 @@ fn cidr_to_ip_cidr(cidr: &GeoCidr, file_name: &str, code: &str) -> Result<IpCidr
             return Err(GeodataError::InvalidCidr {
                 file_name: file_name.to_owned(),
                 code: code.to_owned(),
-                message: format!("IP byte slice must be 4 or 16 bytes, got {}", cidr.ip.len()),
+                message: format!("IP byte slice must be 4 or 16 bytes, got {}", ip.len()),
             });
         }
     };
 
-    let prefix = u8::try_from(cidr.prefix).map_err(|_| GeodataError::InvalidCidr {
+    let prefix = u8::try_from(prefix).map_err(|_| GeodataError::InvalidCidr {
         file_name: file_name.to_owned(),
         code: code.to_owned(),
-        message: format!("CIDR prefix length {} does not fit in u8", cidr.prefix),
+        message: format!("CIDR prefix length {prefix} does not fit in u8"),
     })?;
 
     IpCidr::new(ip, prefix).map_err(|source| GeodataError::InvalidCidr {
@@ -1164,18 +1464,19 @@ mod tests {
         io::{self, BufReader, Cursor, Read, Seek, SeekFrom},
         path::PathBuf,
         sync::Arc,
-        time::{Instant, SystemTime, UNIX_EPOCH},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
 
     use prost::Message;
-    use xray_routing::IpMatcherSet;
+    use xray_routing::{DomainNameMode, IpMatcherSet};
 
     use super::{
-        find_entry_body, scan_entry_code, validate_geo_site_body, GeoCidr, GeoDomain,
-        GeoDomainAttribute, GeoIp, GeoSite, GeodataCacheKey, GeodataError, GeodataLoader,
-        MAX_GEODATA_DOMAINS, MAX_GEODATA_ENTRY_SIZE, MAX_GEODATA_FILE_SIZE,
-        MAX_GEODATA_INDEX_ENTRIES,
+        cidr_to_ip_cidr, find_entry_body, geodata_wire, scan_entry_code, validate_geo_ip_body,
+        validate_geo_site_body, DecodedSite, GeoCidr, GeoDomain, GeoDomainAttribute, GeoDomainType,
+        GeoIp, GeoSite, GeodataCache, GeodataError, GeodataLoader, MAX_GEODATA_DOMAINS,
+        MAX_GEODATA_ENTRY_SIZE, MAX_GEODATA_FILE_SIZE, MAX_GEODATA_INDEX_ENTRIES,
     };
+    use crate::DomainMatcher;
 
     struct CountingReader {
         inner: Cursor<Vec<u8>>,
@@ -1430,45 +1731,112 @@ mod tests {
         assert!(error.contains("domains"));
     }
 
-    #[test]
-    fn decoded_geodata_cache_reuses_arc_allocations() {
-        let key = GeodataCacheKey::new("geosite.dat", "TEST");
-        let cached = Arc::new(GeoSite {
+    fn private_cache() -> Arc<GeodataCache> {
+        Arc::new(GeodataCache::new(usize::MAX, Duration::ZERO))
+    }
+
+    fn suffix_domain(value: &str, attrs: &[&str]) -> GeoDomain {
+        GeoDomain {
+            r#type: GeoDomainType::Domain as i32,
+            value: value.to_owned(),
+            attribute: attrs
+                .iter()
+                .map(|key| GeoDomainAttribute {
+                    key: (*key).to_owned(),
+                })
+                .collect(),
+        }
+    }
+
+    fn write_sites(path: &std::path::Path, sites: &[GeoSite]) {
+        let bodies = sites
+            .iter()
+            .map(|site| site.encode_to_vec())
+            .collect::<Vec<_>>();
+        write_entry_file(path, &bodies);
+    }
+
+    fn write_geoips(path: &std::path::Path, geoips: &[GeoIp]) {
+        let bodies = geoips
+            .iter()
+            .map(|geoip| geoip.encode_to_vec())
+            .collect::<Vec<_>>();
+        write_entry_file(path, &bodies);
+    }
+
+    fn three_domain_site() -> GeoSite {
+        GeoSite {
             code: "TEST".to_owned(),
-            domain: Vec::new(),
-        });
-        let mut loader = GeodataLoader::from_dirs(Vec::new());
-        loader.sites.insert(key, Arc::clone(&cached));
+            domain: (0..3)
+                .map(|index| suffix_domain(&format!("{index}.example"), &["ads"]))
+                .collect(),
+        }
+    }
 
-        let loaded = loader.load_site("geosite.dat", "TEST").unwrap();
-
-        assert!(Arc::ptr_eq(&cached, &loaded));
+    fn v4_cidr(a: u8, b: u8, c: u8, prefix: u32) -> GeoCidr {
+        GeoCidr {
+            ip: vec![a, b, c, 0],
+            prefix,
+        }
     }
 
     #[test]
-    fn cached_geosite_over_budget_is_rejected_before_rebuilding_matchers() {
-        let key = GeodataCacheKey::new("geosite.dat", "TEST");
-        let cached = Arc::new(GeoSite {
-            code: "TEST".to_owned(),
-            domain: (0..3)
-                .map(|index| GeoDomain {
-                    r#type: 2,
-                    value: format!("{index}.example"),
-                    attribute: Vec::new(),
-                })
-                .collect(),
-        });
-        let mut loader = GeodataLoader::from_dirs(Vec::new());
-        loader.sites.insert(key, cached);
+    fn compiled_categories_are_shared_across_loaders() {
+        let root = unique_temp_dir("shared-site");
+        write_sites(&root.join("geosite.dat"), &[three_domain_site()]);
+        let cache = private_cache();
 
-        let first = loader
-            .load_site_matchers("geosite.dat", "TEST", &[], 3)
+        let mut first = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
+        let compiled = first
+            .load_site_patterns("geosite.dat", "test", &[], DomainNameMode::Routing, 3)
             .unwrap();
-        let error = loader
-            .load_site_matchers("geosite.dat", "TEST", &[], 2)
-            .unwrap_err();
+        assert_eq!(compiled.source_count(), 3);
+        assert!(compiled.matches("www.1.EXAMPLE"));
+        assert_eq!((first.site_decodes, first.index_builds), (1, 1));
 
-        assert_eq!(first.len(), 3);
+        let mut second = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
+        let reused = second
+            .load_site_patterns("geosite.dat", "TEST", &[], DomainNameMode::Routing, 3)
+            .unwrap();
+        assert!(Arc::ptr_eq(&compiled, &reused));
+        assert_eq!(
+            (second.site_decodes, second.index_builds),
+            (0, 0),
+            "a cached category is neither indexed nor decoded again"
+        );
+        assert_eq!(cache.stats().hits, 1);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cached_geosite_over_budget_is_rejected_without_decoding() {
+        let root = unique_temp_dir("site-budget");
+        write_sites(&root.join("geosite.dat"), &[three_domain_site()]);
+        let cache = private_cache();
+        let mut first = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
+        first
+            .load_site_patterns("geosite.dat", "TEST", &[], DomainNameMode::Routing, 3)
+            .unwrap();
+
+        let mut second = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
+        let error = second
+            .load_site_patterns("geosite.dat", "TEST", &[], DomainNameMode::Routing, 2)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            GeodataError::DomainMatcherBudgetExceeded {
+                expanded: 3,
+                remaining: 2,
+                ..
+            }
+        ));
+        assert_eq!(second.site_decodes, 0);
+
+        let mut cold = GeodataLoader::with_cache(vec![root.clone()], private_cache());
+        let error = cold
+            .load_site_patterns("geosite.dat", "TEST", &[], DomainNameMode::Routing, 2)
+            .unwrap_err();
         assert!(matches!(
             error,
             GeodataError::DomainMatcherBudgetExceeded {
@@ -1478,88 +1846,202 @@ mod tests {
             }
         ));
         assert_eq!(
-            loader.domain_matcher_builds, 3,
-            "the rejected cached reference must not clone or compile any matcher"
+            cold.cache.stats().entries,
+            0,
+            "a rejected category is not cached"
         );
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn repeated_geosite_attribute_selection_reuses_one_domain_scan() {
-        let key = GeodataCacheKey::new("geosite.dat", "TEST");
-        let cached = Arc::new(GeoSite {
-            code: "TEST".to_owned(),
-            domain: (0..3)
-                .map(|index| GeoDomain {
-                    r#type: 2,
-                    value: format!("{index}.example"),
-                    attribute: vec![GeoDomainAttribute {
-                        key: "ads".to_owned(),
-                    }],
-                })
-                .collect(),
-        });
-        let mut loader = GeodataLoader::from_dirs(Vec::new());
-        loader.sites.insert(key, cached);
-        let attrs = vec!["ads".to_owned()];
+    fn attribute_selections_are_cached_per_normalized_filter() {
+        let root = unique_temp_dir("site-attrs");
+        let mut site = three_domain_site();
+        site.domain.push(suffix_domain("clean.example", &["other"]));
+        site.domain
+            .push(suffix_domain("both.example", &["ADS", "cn"]));
+        write_sites(&root.join("geosite.dat"), &[site]);
+        let cache = private_cache();
+        let mut loader = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
 
-        loader
-            .load_site_matchers("geosite.dat", "TEST", &attrs, 3)
+        let ads = loader
+            .load_site_patterns(
+                "geosite.dat",
+                "TEST",
+                &["ads".to_owned()],
+                DomainNameMode::Routing,
+                10,
+            )
             .unwrap();
-        loader
-            .load_site_matchers("geosite.dat", "TEST", &attrs, 3)
+        assert_eq!(ads.source_count(), 4);
+        assert!(ads.matches("both.example") && !ads.matches("clean.example"));
+        let same = loader
+            .load_site_patterns(
+                "geosite.dat",
+                "TEST",
+                &["ADS".to_owned(), "ads".to_owned()],
+                DomainNameMode::Routing,
+                10,
+            )
             .unwrap();
+        assert!(Arc::ptr_eq(&ads, &same));
+        let both = loader
+            .load_site_patterns(
+                "geosite.dat",
+                "TEST",
+                &["cn".to_owned(), "ads".to_owned()],
+                DomainNameMode::Routing,
+                10,
+            )
+            .unwrap();
+        assert_eq!(both.source_count(), 1);
+        assert!(both.matches("www.both.example") && !both.matches("1.example"));
         let error = loader
-            .load_site_matchers("geosite.dat", "TEST", &attrs, 2)
+            .load_site_patterns(
+                "geosite.dat",
+                "TEST",
+                &["ads".to_owned()],
+                DomainNameMode::Routing,
+                3,
+            )
             .unwrap_err();
-
         assert!(matches!(
             error,
             GeodataError::DomainMatcherBudgetExceeded {
-                expanded: 3,
-                remaining: 2,
+                expanded: 4,
+                remaining: 3,
                 ..
             }
         ));
-        assert_eq!(
-            loader.domain_filter_scans, 3,
-            "repeated references to the same canonical attribute set must reuse the selection"
-        );
-        assert_eq!(
-            loader.domain_matcher_builds, 6,
-            "the over-budget reference must fail before rebuilding matchers"
-        );
+        assert_eq!(loader.site_decodes, 2);
+        assert_eq!(loader.index_builds, 1);
+
+        let matchers = loader
+            .load_site_matchers("geosite.dat", "TEST", &["cn".to_owned()], 10)
+            .unwrap();
+        assert_eq!(matchers, [DomainMatcher::Suffix("both.example".to_owned())]);
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn cached_geoip_over_budget_is_rejected_before_rebuilding_matchers() {
-        let key = GeodataCacheKey::new("geoip.dat", "TEST");
-        let cached = Arc::new(GeoIp {
-            code: "TEST".to_owned(),
-            cidr: vec![
-                GeoCidr {
-                    ip: vec![192, 0, 2, 0],
-                    prefix: 24,
-                },
-                GeoCidr {
-                    ip: vec![198, 51, 100, 0],
-                    prefix: 24,
-                },
-            ],
-            reverse_match: false,
-        });
-        let mut loader = GeodataLoader::from_dirs(Vec::new());
-        loader.ips.insert(key, cached);
+    fn categories_compile_once_for_both_modes_unless_a_name_ends_with_a_dot() {
+        let root = unique_temp_dir("site-modes");
+        let dotted = GeoSite {
+            code: "DOTTED".to_owned(),
+            domain: vec![suffix_domain("dotted.example.", &[])],
+        };
+        write_sites(&root.join("geosite.dat"), &[three_domain_site(), dotted]);
+        let cache = private_cache();
+        let mut loader = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
 
+        let routing = loader
+            .load_site_patterns("geosite.dat", "TEST", &[], DomainNameMode::Routing, 10)
+            .unwrap();
+        let dns = loader
+            .load_site_patterns("geosite.dat", "TEST", &[], DomainNameMode::Dns, 10)
+            .unwrap();
+        assert!(Arc::ptr_eq(&routing, &dns));
+
+        let routing = loader
+            .load_site_patterns("geosite.dat", "DOTTED", &[], DomainNameMode::Routing, 10)
+            .unwrap();
+        let dns = loader
+            .load_site_patterns("geosite.dat", "DOTTED", &[], DomainNameMode::Dns, 10)
+            .unwrap();
+        assert!(!Arc::ptr_eq(&routing, &dns));
+        assert!(routing.matches("a.dotted.example.") && !routing.matches("a.dotted.example"));
+        assert!(dns.matches("a.dotted.example") && !dns.matches("a.dotted.example."));
+        assert_eq!(loader.site_decodes, 3);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_rewritten_file_is_compiled_again() {
+        let root = unique_temp_dir("rewritten");
+        let path = root.join("geosite.dat");
+        let site = |value: &str| GeoSite {
+            code: "TEST".to_owned(),
+            domain: vec![suffix_domain(value, &[])],
+        };
+        write_sites(&path, &[site("old.example")]);
+        let cache = private_cache();
+        let load = || {
+            let mut loader = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
+            let patterns = loader
+                .load_site_patterns("geosite.dat", "TEST", &[], DomainNameMode::Routing, 10)
+                .unwrap();
+            (patterns, loader.site_decodes)
+        };
+
+        let (old, decodes) = load();
+        assert_eq!(decodes, 1);
+        assert!(old.matches("old.example"));
+        drop(old);
+
+        // Rewritten in place with another size.
+        write_sites(&path, &[site("newer.example")]);
+        let (new, decodes) = load();
+        assert_eq!(decodes, 1);
+        assert!(new.matches("newer.example") && !new.matches("old.example"));
+        assert_eq!(
+            cache.stats().entries,
+            1,
+            "the unused entry of the replaced version is dropped"
+        );
+        let (again, decodes) = load();
+        assert_eq!(decodes, 0);
+        assert!(Arc::ptr_eq(&new, &again));
+
+        // Replaced by a file of the same size, as a host's atomic update does.
+        let staged = root.join("geosite.dat.new");
+        write_sites(&staged, &[site("other.example")]);
+        fs::rename(&staged, &path).unwrap();
+        let (replaced, decodes) = load();
+        assert_eq!(decodes, 1);
+        assert!(replaced.matches("other.example") && !replaced.matches("newer.example"));
+        assert!(!Arc::ptr_eq(&new, &replaced));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cached_geoip_is_shared_and_its_budget_checked_without_decoding() {
+        let root = unique_temp_dir("geoip-shared");
+        write_geoips(
+            &root.join("geoip.dat"),
+            &[GeoIp {
+                code: "TEST".to_owned(),
+                cidr: vec![v4_cidr(192, 0, 2, 24), v4_cidr(198, 51, 100, 24)],
+                reverse_match: false,
+            }],
+        );
+        let cache = private_cache();
+        let mut first = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
         let mut matchers = IpMatcherSet::builder();
-        let first = loader
+        assert_eq!(
+            first
+                .load_ip_matchers("geoip.dat", "test", false, 2, &mut matchers)
+                .unwrap(),
+            2
+        );
+        assert_eq!(matchers.matcher_count(), 2);
+        let first_set = matchers.build();
+        assert!(first_set.matches("198.51.100.7".parse().unwrap()));
+        assert!(!first_set.matches("203.0.113.7".parse().unwrap()));
+        assert_eq!(first.ip_decodes, 1);
+
+        let mut second = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
+        let mut matchers = IpMatcherSet::builder();
+        second
             .load_ip_matchers("geoip.dat", "TEST", false, 2, &mut matchers)
             .unwrap();
-        let error = loader
-            .load_ip_matchers("geoip.dat", "TEST", false, 1, &mut matchers)
+        assert_eq!(matchers.build(), first_set);
+        let error = second
+            .load_ip_matchers("geoip.dat", "TEST", false, 1, &mut IpMatcherSet::builder())
             .unwrap_err();
-
-        assert_eq!(first, 2);
-        assert_eq!(matchers.matcher_count(), 2);
         assert!(matches!(
             error,
             GeodataError::IpMatcherBudgetExceeded {
@@ -1568,10 +2050,82 @@ mod tests {
                 ..
             }
         ));
-        assert_eq!(
-            loader.ip_matcher_builds, 2,
-            "the rejected cached reference must not rebuild any matcher"
+        assert_eq!(second.ip_decodes, 0);
+        let stats = cache.stats();
+        assert_eq!((stats.entries, stats.hits, stats.misses), (1, 2, 1));
+        assert!(
+            stats.referenced_bytes > 0,
+            "the built set still uses the cached ranges"
         );
+        drop(first_set);
+        assert_eq!(cache.stats().referenced_bytes, 0);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn invalid_entries_fail_as_before_and_are_not_cached() {
+        let root = unique_temp_dir("invalid-entries");
+        write_sites(
+            &root.join("geosite.dat"),
+            &[
+                GeoSite {
+                    code: "EMPTY".to_owned(),
+                    domain: vec![suffix_domain("", &[])],
+                },
+                GeoSite {
+                    code: "TYPE".to_owned(),
+                    domain: vec![GeoDomain {
+                        r#type: 9,
+                        value: "x".to_owned(),
+                        attribute: Vec::new(),
+                    }],
+                },
+                GeoSite {
+                    code: "REGEX".to_owned(),
+                    domain: vec![GeoDomain {
+                        r#type: GeoDomainType::Regex as i32,
+                        value: "(".to_owned(),
+                        attribute: Vec::new(),
+                    }],
+                },
+            ],
+        );
+        write_geoips(
+            &root.join("geoip.dat"),
+            &[GeoIp {
+                code: "BAD".to_owned(),
+                cidr: vec![GeoCidr {
+                    ip: vec![1, 2, 3],
+                    prefix: 8,
+                }],
+                reverse_match: false,
+            }],
+        );
+        let cache = private_cache();
+        let mut loader = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
+        let mut site = |code| {
+            loader
+                .load_site_patterns("geosite.dat", code, &[], DomainNameMode::Routing, 10)
+                .unwrap_err()
+        };
+        assert!(matches!(site("EMPTY"), GeodataError::InvalidDomain { .. }));
+        assert!(matches!(
+            site("TYPE"),
+            GeodataError::UnsupportedDomainType { domain_type: 9, .. }
+        ));
+        assert!(matches!(
+            site("REGEX"),
+            GeodataError::InvalidDomainMatcher { .. }
+        ));
+        assert!(matches!(site("MISSING"), GeodataError::CodeNotFound { .. }));
+        assert!(matches!(
+            loader.load_ip_matchers("geoip.dat", "BAD", false, 10, &mut IpMatcherSet::builder()),
+            Err(GeodataError::InvalidCidr { .. })
+        ));
+        assert_eq!(cache.stats().entries, 0);
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     /// A rule that is only validated, as Xray-core's `checkFile` validates
@@ -1593,7 +2147,8 @@ mod tests {
         encode_varint(body.len() as u64, &mut bytes);
         bytes.extend_from_slice(&body);
         fs::write(root.join("geoip.dat"), bytes).unwrap();
-        let mut loader = GeodataLoader::from_dirs(vec![root.clone()]);
+        let cache = private_cache();
+        let mut loader = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
 
         loader.check_code("geoip.dat", "test").unwrap();
         loader.check_code("geoip.dat", "TEST").unwrap();
@@ -1606,8 +2161,8 @@ mod tests {
             Err(GeodataError::FileNotFound { .. })
         ));
         assert_eq!(loader.index_builds, 1);
-        assert_eq!(loader.ip_matcher_builds, 0);
-        assert!(loader.ips.is_empty(), "no entry was decoded");
+        assert_eq!(loader.ip_decodes, 0);
+        assert_eq!(cache.stats().entries, 0, "no entry was decoded");
 
         fs::remove_dir_all(root).unwrap();
     }
@@ -1615,37 +2170,563 @@ mod tests {
     #[test]
     fn multiple_codes_share_one_pinned_file_index() {
         let root = unique_temp_dir("shared-index");
-        let path = root.join("geosite.dat");
-        let first = GeoSite {
-            code: "FIRST".to_owned(),
-            domain: Vec::new(),
-        }
-        .encode_to_vec();
-        let second = GeoSite {
-            code: "SECOND".to_owned(),
-            domain: Vec::new(),
-        }
-        .encode_to_vec();
-        let mut bytes = Vec::new();
-        for body in [&first, &second] {
-            bytes.push(0);
-            encode_varint(body.len() as u64, &mut bytes);
-            bytes.extend_from_slice(body);
-        }
-        fs::write(path, bytes).unwrap();
-        let mut loader = GeodataLoader::from_dirs(vec![root.clone()]);
+        write_sites(
+            &root.join("geosite.dat"),
+            &[
+                GeoSite {
+                    code: "FIRST".to_owned(),
+                    domain: vec![suffix_domain("first.example", &[])],
+                },
+                GeoSite {
+                    code: "SECOND".to_owned(),
+                    domain: vec![suffix_domain("second.example", &[])],
+                },
+            ],
+        );
+        let mut loader = GeodataLoader::with_cache(vec![root.clone()], private_cache());
 
-        assert_eq!(
-            loader.load_site("geosite.dat", "FIRST").unwrap().code,
-            "FIRST"
-        );
-        assert_eq!(
-            loader.load_site("geosite.dat", "SECOND").unwrap().code,
-            "SECOND"
-        );
+        for code in ["FIRST", "SECOND"] {
+            let patterns = loader
+                .load_site_patterns("geosite.dat", code, &[], DomainNameMode::Routing, 10)
+                .unwrap();
+            assert!(patterns.matches(&format!("{}.example", code.to_ascii_lowercase())));
+        }
         assert_eq!(loader.index_builds, 1);
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The parser reports a geodata error and goes on, so a file whose index
+    /// failed part-way is indexed again for its next reference. That index
+    /// starts from the beginning, not where the failed one left the shared
+    /// descriptor's offset.
+    #[test]
+    fn an_index_that_failed_part_way_fails_alike_when_built_again() {
+        let root = unique_temp_dir("index-retry");
+        let body = GeoSite {
+            code: "FIRST".to_owned(),
+            domain: vec![suffix_domain("first.example", &[])],
+        }
+        .encode_to_vec();
+        let mut bytes = vec![0x0a];
+        encode_varint(body.len() as u64, &mut bytes);
+        bytes.extend_from_slice(&body);
+        // A second entry whose length runs past the end of the file.
+        bytes.extend_from_slice(&[0x0a, 0x7f, 0x0a]);
+        fs::write(root.join("geosite.dat"), bytes).unwrap();
+        let mut loader = GeodataLoader::with_cache(vec![root.clone()], private_cache());
+
+        for _ in 0..2 {
+            let error = loader
+                .load_site_patterns("geosite.dat", "FIRST", &[], DomainNameMode::Routing, 10)
+                .unwrap_err();
+            assert!(
+                matches!(&error, GeodataError::InvalidFile { message, .. } if message.contains("beyond the end")),
+                "{error}"
+            );
+        }
+        assert!(matches!(
+            loader.check_code("geosite.dat", "FIRST"),
+            Err(GeodataError::InvalidFile { .. })
+        ));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A same-size rewrite within one timestamp tick would keep the file's
+    /// identity, so a file that changed just before it was opened is
+    /// compiled for its configuration but not cached for the process.
+    #[test]
+    fn a_recently_changed_file_is_cached_for_its_configuration_only() {
+        let root = unique_temp_dir("recent-file");
+        let path = root.join("geosite.dat");
+        write_sites(&path, &[three_domain_site()]);
+        write_geoips(
+            &root.join("geoip.dat"),
+            &[GeoIp {
+                code: "TEST".to_owned(),
+                cidr: vec![v4_cidr(192, 0, 2, 24)],
+                reverse_match: false,
+            }],
+        );
+        // Every file written by this test changed within the hour.
+        let cache = Arc::new(GeodataCache::new(usize::MAX, Duration::from_secs(3600)));
+        let mut loader = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
+
+        let first = loader
+            .load_site_patterns("geosite.dat", "TEST", &[], DomainNameMode::Routing, 10)
+            .unwrap();
+        let second = loader
+            .load_site_patterns("geosite.dat", "TEST", &[], DomainNameMode::Dns, 10)
+            .unwrap();
+        assert!(Arc::ptr_eq(&first, &second));
+        for _ in 0..2 {
+            loader
+                .load_ip_matchers("geoip.dat", "TEST", false, 10, &mut IpMatcherSet::builder())
+                .unwrap();
+        }
+        assert_eq!((loader.site_decodes, loader.ip_decodes), (1, 1));
+        assert_eq!(cache.stats().entries, 0);
+
+        // Setting the modification time back does not settle the file: the
+        // status-change time records the write.
+        #[cfg(unix)]
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(7200))
+            .unwrap();
+        let mut next = GeodataLoader::with_cache(vec![root.clone()], Arc::clone(&cache));
+        let again = next
+            .load_site_patterns("geosite.dat", "TEST", &[], DomainNameMode::Routing, 10)
+            .unwrap();
+        assert!(!Arc::ptr_eq(&first, &again));
+        assert_eq!(next.site_decodes, 1);
+        assert_eq!(cache.stats().entries, 0);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// What prost decodes a `GeoSite` body to, in the zero-copy reader's
+    /// terms: the code and every domain's type, value and attribute keys.
+    type SiteView = (String, Vec<(i32, String, Vec<String>)>);
+
+    fn prost_site(body: &[u8]) -> Option<SiteView> {
+        let site = GeoSite::decode(body).ok()?;
+        Some((
+            site.code,
+            site.domain
+                .into_iter()
+                .map(|domain| {
+                    (
+                        domain.r#type,
+                        domain.value,
+                        domain.attribute.into_iter().map(|a| a.key).collect(),
+                    )
+                })
+                .collect(),
+        ))
+    }
+
+    fn wire_site(body: &[u8]) -> Result<SiteView, geodata_wire::Unsupported> {
+        let code = geodata_wire::site_code(body)?.to_owned();
+        let domains = geodata_wire::site_domains(body)
+            .map(|domain| {
+                domain.map(|domain| {
+                    (
+                        domain.kind,
+                        domain.value.to_owned(),
+                        domain.attribute_keys().map(str::to_owned).collect(),
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok((code, domains))
+    }
+
+    type GeoIpView = (String, bool, Vec<(Vec<u8>, u32)>);
+
+    fn prost_geoip(body: &[u8]) -> Option<GeoIpView> {
+        let geoip = GeoIp::decode(body).ok()?;
+        Some((
+            geoip.code,
+            geoip.reverse_match,
+            geoip
+                .cidr
+                .into_iter()
+                .map(|cidr| (cidr.ip, cidr.prefix))
+                .collect(),
+        ))
+    }
+
+    fn wire_geoip(body: &[u8]) -> Result<GeoIpView, geodata_wire::Unsupported> {
+        let header = geodata_wire::geoip_header(body)?;
+        let cidrs = geodata_wire::geoip_cidrs(body)
+            .map(|cidr| cidr.map(|cidr| (cidr.ip.to_vec(), cidr.prefix)))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok((header.code.to_owned(), header.reverse_match, cidrs))
+    }
+
+    /// The zero-copy readers either decline a body or read exactly what
+    /// prost decodes from it.
+    fn assert_wire_agrees_with_prost(body: &[u8]) -> bool {
+        let site = wire_site(body);
+        if let Ok(view) = &site {
+            assert_eq!(Some(view), prost_site(body).as_ref(), "geosite {body:02x?}");
+        }
+        let geoip = wire_geoip(body);
+        if let Ok(view) = &geoip {
+            assert_eq!(Some(view), prost_geoip(body).as_ref(), "geoip {body:02x?}");
+        }
+        site.is_ok()
+    }
+
+    fn field(output: &mut Vec<u8>, number: u64, wire_type: u64) {
+        encode_varint((number << 3) | wire_type, output);
+    }
+
+    fn bytes_field(output: &mut Vec<u8>, number: u64, value: &[u8]) {
+        field(output, number, 2);
+        encode_varint(value.len() as u64, output);
+        output.extend_from_slice(value);
+    }
+
+    fn varint_field(output: &mut Vec<u8>, number: u64, value: u64) {
+        field(output, number, 0);
+        encode_varint(value, output);
+    }
+
+    #[test]
+    fn zero_copy_reader_matches_prost_on_edge_cases() {
+        let attribute = |key: &[u8], extra: &[u8]| {
+            let mut body = Vec::new();
+            bytes_field(&mut body, 1, key);
+            body.extend_from_slice(extra);
+            body
+        };
+        let domain = |kind: u64, value: &[u8], attributes: &[Vec<u8>]| {
+            let mut body = Vec::new();
+            varint_field(&mut body, 1, kind);
+            bytes_field(&mut body, 2, value);
+            for attribute in attributes {
+                bytes_field(&mut body, 3, attribute);
+            }
+            body
+        };
+        let site = |code: &[u8], domains: &[Vec<u8>], extra: &[u8]| {
+            let mut body = Vec::new();
+            bytes_field(&mut body, 1, code);
+            for domain in domains {
+                bytes_field(&mut body, 2, domain);
+            }
+            body.extend_from_slice(extra);
+            body
+        };
+
+        let mut unknown = Vec::new();
+        varint_field(&mut unknown, 9, 300);
+        field(&mut unknown, 10, 1);
+        unknown.extend_from_slice(&[0; 8]);
+        field(&mut unknown, 11, 5);
+        unknown.extend_from_slice(&[0; 4]);
+        bytes_field(&mut unknown, 12, b"skipped");
+        let mut bool_attribute = Vec::new();
+        varint_field(&mut bool_attribute, 2, 1);
+        let mut group = Vec::new();
+        field(&mut group, 4, 3);
+        field(&mut group, 4, 4);
+        let mut duplicate = domain(2, b"first.example", &[]);
+        varint_field(&mut duplicate, 1, 3);
+        bytes_field(&mut duplicate, 2, b"last.example");
+        let mut negative = Vec::new();
+        varint_field(&mut negative, 1, u64::MAX);
+        let mut wrong_type = Vec::new();
+        bytes_field(&mut wrong_type, 1, b"x");
+
+        let plain = [
+            site(b"TEST", &[domain(2, b"a.example", &[])], &[]),
+            site(
+                b"TEST",
+                &[domain(0, b"kw", &[attribute(b"Ads", &bool_attribute)])],
+                &unknown,
+            ),
+            site(b"TEST", &[duplicate.clone()], &[]),
+            site(b"TEST", &[negative], &[]),
+            site(b"TEST", &[[duplicate.as_slice(), &unknown].concat()], &[]),
+            {
+                let mut twice = site(b"OLD", &[], &[]);
+                twice.extend(site(b"NEW", &[domain(3, b"b.example", &[])], &[]));
+                twice
+            },
+            Vec::new(),
+        ];
+        for body in &plain {
+            assert!(assert_wire_agrees_with_prost(body), "declined {body:02x?}");
+        }
+        assert_eq!(
+            wire_site(&plain[2]).unwrap().1,
+            [(3, "last.example".to_owned(), Vec::new())]
+        );
+
+        let declined = [
+            site(b"TEST", &[domain(2, b"\xff.example", &[])], &[]),
+            site(b"\xff", &[], &[]),
+            site(b"TEST", &[domain(2, b"a", &[attribute(b"\xff", &[])])], &[]),
+            site(b"TEST", &[domain(2, b"a", &[attribute(b"k", &group)])], &[]),
+            site(b"TEST", &[wrong_type], &[]),
+            site(b"TEST", &[], &group),
+            vec![0x0a, 0x05, b'a'],
+            vec![
+                0x10, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f,
+            ],
+            vec![0x00, 0x00],
+        ];
+        for body in &declined {
+            assert!(!assert_wire_agrees_with_prost(body), "accepted {body:02x?}");
+        }
+        assert!(
+            prost_site(&declined[3]).is_some(),
+            "prost skips a group inside an attribute, so the loader falls back to it"
+        );
+
+        let mut geoip = Vec::new();
+        bytes_field(&mut geoip, 1, b"TEST");
+        let mut cidr = Vec::new();
+        bytes_field(&mut cidr, 1, &[192, 0, 2, 0]);
+        varint_field(&mut cidr, 2, (1 << 32) + 24);
+        bytes_field(&mut geoip, 2, &cidr);
+        varint_field(&mut geoip, 3, 2);
+        geoip.extend_from_slice(&unknown);
+        assert_eq!(
+            wire_geoip(&geoip).unwrap(),
+            ("TEST".to_owned(), true, vec![(vec![192, 0, 2, 0], 24)])
+        );
+        assert_wire_agrees_with_prost(&geoip);
+    }
+
+    #[test]
+    fn zero_copy_reader_matches_prost_on_mutated_bodies() {
+        let mut site = three_domain_site();
+        site.domain.push(GeoDomain {
+            r#type: GeoDomainType::Regex as i32,
+            value: "^a[0-9]+$".to_owned(),
+            attribute: vec![GeoDomainAttribute {
+                key: "cn".to_owned(),
+            }],
+        });
+        let site = site.encode_to_vec();
+        let geoip = GeoIp {
+            code: "TEST".to_owned(),
+            cidr: vec![
+                v4_cidr(192, 0, 2, 24),
+                GeoCidr {
+                    ip: vec![0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    prefix: 32,
+                },
+            ],
+            reverse_match: true,
+        }
+        .encode_to_vec();
+
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut accepted = 0;
+        for round in 0..20_000 {
+            let mut body = if round % 2 == 0 {
+                site.clone()
+            } else {
+                geoip.clone()
+            };
+            for _ in 0..=next() % 3 {
+                let index = (next() % body.len() as u64) as usize;
+                match next() % 4 {
+                    0 => body[index] = next() as u8,
+                    1 => body[index] ^= 1 << (next() % 8),
+                    2 => body.truncate(index),
+                    _ => body.insert(index, next() as u8),
+                }
+                if body.is_empty() {
+                    break;
+                }
+            }
+            if assert_wire_agrees_with_prost(&body) || wire_geoip(&body).is_ok() {
+                accepted += 1;
+            }
+        }
+        assert!(
+            accepted > 1_000,
+            "only {accepted} mutated bodies were plain"
+        );
+    }
+
+    /// The reference the packed matchers replace: one hash set per name kind,
+    /// probed per label, as `DomainMatcherSet` compiled geosite categories
+    /// before.
+    struct ReferenceMatcher {
+        full: std::collections::HashSet<String>,
+        suffix: std::collections::HashSet<String>,
+        others: Vec<DomainMatcher>,
+    }
+
+    impl ReferenceMatcher {
+        fn new(matchers: &[DomainMatcher], mode: DomainNameMode) -> Self {
+            let mut reference = Self {
+                full: Default::default(),
+                suffix: Default::default(),
+                others: Vec::new(),
+            };
+            let pattern = |name: &str| match mode {
+                DomainNameMode::Routing => name.to_ascii_lowercase(),
+                DomainNameMode::Dns => name.trim_end_matches('.').to_ascii_lowercase(),
+            };
+            for matcher in matchers {
+                match matcher {
+                    DomainMatcher::Full(name) => {
+                        reference.full.insert(pattern(name));
+                    }
+                    DomainMatcher::Suffix(name) => {
+                        reference.suffix.insert(pattern(name));
+                    }
+                    other => reference.others.push(other.clone()),
+                }
+            }
+            reference
+        }
+
+        fn matches(&self, domain: &str) -> bool {
+            let domain = domain.to_ascii_lowercase();
+            self.full.contains(&domain)
+                || self.suffix.contains(&domain)
+                || domain
+                    .rmatch_indices('.')
+                    .any(|(index, _)| self.suffix.contains(&domain[index + 1..]))
+                || self.others.iter().any(|matcher| matcher.matches(&domain))
+        }
+    }
+
+    fn equivalence_probes(matchers: &[DomainMatcher]) -> Vec<String> {
+        let mut probes = vec![String::new(), ".".to_owned(), "example.com".to_owned()];
+        for matcher in matchers {
+            let name = match matcher {
+                DomainMatcher::Full(name)
+                | DomainMatcher::Suffix(name)
+                | DomainMatcher::Keyword(name) => name.clone(),
+                DomainMatcher::Regex(_) => continue,
+            };
+            probes.push(format!("www.{name}"));
+            probes.push(name.to_ascii_uppercase());
+            probes.push(format!("{name}."));
+            probes.push(format!("x{name}"));
+            if let Some((_, parent)) = name.split_once('.') {
+                probes.push(parent.to_owned());
+            }
+            probes.push(name);
+        }
+        probes
+    }
+
+    /// Every category of a real `geosite.dat` and `geoip.dat` compiles to
+    /// matchers that answer as the prost-decoded, per-name reference does.
+    /// Run with `XRAY_GEODATA_TEST_DIR=<dir> cargo test -p xray-config --lib
+    /// real_geodata -- --ignored`.
+    #[test]
+    #[ignore = "needs XRAY_GEODATA_TEST_DIR with geosite.dat and geoip.dat"]
+    fn real_geodata_compiles_like_the_reference() {
+        let dir = PathBuf::from(
+            std::env::var_os("XRAY_GEODATA_TEST_DIR").expect("XRAY_GEODATA_TEST_DIR is set"),
+        );
+        let mut loader = GeodataLoader::with_cache(vec![dir.clone()], private_cache());
+
+        let site_codes = loader
+            .indexed_file("geosite.dat")
+            .unwrap()
+            .entries
+            .clone()
+            .unwrap();
+        let mut checked_names = 0;
+        for code in site_codes.keys() {
+            let (body, path) = loader
+                .read_entry("geosite.dat", code, validate_geo_site_body)
+                .unwrap();
+            assert_eq!(
+                wire_site(&body).ok(),
+                prost_site(&body),
+                "zero-copy and prost decodes of geosite:{code}"
+            );
+            let site = GeoSite::decode(body.as_slice()).unwrap();
+            let mut attrs = site
+                .domain
+                .iter()
+                .flat_map(|domain| {
+                    domain
+                        .attribute
+                        .iter()
+                        .map(|attr| attr.key.to_ascii_lowercase())
+                })
+                .collect::<Vec<_>>();
+            attrs.sort_unstable();
+            attrs.dedup();
+            let filters = std::iter::once(Vec::new())
+                .chain(attrs.into_iter().map(|attr| vec![attr]))
+                .collect::<Vec<_>>();
+            for filter in &filters {
+                let reference = DecodedSite::Prost(site.clone());
+                let mut matchers = Vec::new();
+                reference
+                    .for_each_selected(filter, &path, |domain| {
+                        matchers.push(domain.to_matcher("geosite.dat", code)?);
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(
+                    loader
+                        .load_site_matchers("geosite.dat", code, filter, usize::MAX)
+                        .unwrap(),
+                    matchers,
+                    "geosite:{code}@{filter:?} matchers"
+                );
+                let probes = equivalence_probes(&matchers);
+                for mode in [DomainNameMode::Routing, DomainNameMode::Dns] {
+                    let expected = ReferenceMatcher::new(&matchers, mode);
+                    let compiled = loader
+                        .load_site_patterns("geosite.dat", code, filter, mode, usize::MAX)
+                        .unwrap();
+                    assert_eq!(compiled.source_count(), matchers.len());
+                    for probe in &probes {
+                        assert_eq!(
+                            compiled.matches(probe),
+                            expected.matches(probe),
+                            "geosite:{code}@{filter:?} {mode:?} `{probe}`"
+                        );
+                    }
+                    checked_names += probes.len();
+                }
+            }
+        }
+
+        let ip_codes = loader
+            .indexed_file("geoip.dat")
+            .unwrap()
+            .entries
+            .clone()
+            .unwrap();
+        for code in ip_codes.keys() {
+            let (body, _) = loader
+                .read_entry("geoip.dat", code, validate_geo_ip_body)
+                .unwrap();
+            assert_eq!(
+                wire_geoip(&body).ok(),
+                prost_geoip(&body),
+                "zero-copy and prost decodes of geoip:{code}"
+            );
+            let geoip = GeoIp::decode(body.as_slice()).unwrap();
+            let mut expected = IpMatcherSet::builder();
+            for cidr in &geoip.cidr {
+                expected.insert_geoip_cidr(
+                    cidr_to_ip_cidr(&cidr.ip, cidr.prefix, "geoip.dat", code)
+                        .unwrap()
+                        .cidr(),
+                    geoip.reverse_match,
+                );
+            }
+            let mut compiled = IpMatcherSet::builder();
+            loader
+                .load_ip_matchers("geoip.dat", code, false, usize::MAX, &mut compiled)
+                .unwrap();
+            assert_eq!(compiled.matcher_count(), expected.matcher_count());
+            assert_eq!(compiled.build(), expected.build(), "geoip:{code}");
+        }
+        eprintln!(
+            "checked {} geosite and {} geoip categories, {checked_names} probes",
+            site_codes.len(),
+            ip_codes.len()
+        );
     }
 
     fn unique_temp_dir(label: &str) -> PathBuf {

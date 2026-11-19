@@ -1304,6 +1304,50 @@ The probe also emits `dns-policy-probe-selector` slices for 0, 64, and 4096 DNS 
 
 Compilation is excluded from query timing but reported separately as `compile_us`; `pattern_bytes` is the deterministic retained object-server domain-pattern payload and deliberately excludes allocator/hash-table/regex-engine overhead, so it is not an RSS estimate. `ip_filter_ranges` reports retained merged ranges. Object-server selector iterations include result allocation; IP-filter iterations measure membership only. The command validates selector order, DNS-outbound actions, DNS route hit/miss behavior, and both IP hit/miss outcomes before measuring and writes all metrics to `target/benchmarks/<run-id>/dns-policy-probe/result.json`. New outbound fields deserialize with defaults so stored pre-outbound results remain readable. Matcher count is capped at the parser's 250,000-domain budget, and timing runs should use `--release`.
 
+## Geodata restart memory
+
+`crates/xray-core-rs/examples/geodata_restart_memory.rs` starts a core with
+geodata routing rules, stops it and starts the next one in the same process,
+as a mobile host does on every server switch, and prints the process's
+physical footprint (`ri_phys_footprint`, what iOS jetsam limits), the
+footprint peak of each phase, the bytes held in live allocations and the
+geodata cache counters. A first core without geodata warms the runtime, so
+the deltas belong to the rules:
+
+```sh
+cargo run --release -p xray-core-rs --example geodata_restart_memory -- \
+  <geodata-dir> <config.json> 6 stop-first   # or `overlap`
+```
+
+The 2026-11-17 run used a provider's 1.6 MB `geosite.dat` and 1.6 MB
+`geoip.dat` (SHA-256 prefixes `d3effb82f17381f0` and `ac58a26254caac37`) on
+an Apple M5 Mac under macOS 26.6, comparing `33c2cfb4` with the geodata cache
+and packed matchers. "Russia" routes `geosite:category-ads` to a blackhole and
+`geosite:private`, `geosite:category-ru`, `geosite:ru-available-only-inside`,
+`geosite:tld-ru`, `geoip:private` and `geoip:ru` (25,157 CIDRs) direct;
+"ru-blocked" routes `geosite:ru-blocked` (73,515 domains) and
+`geoip:ru-blocked` (88,587 CIDRs) to the proxy. Footprint is above the
+warmed-up idle process; "stop-first" stops and drops each core, as
+`xray_core_free` does, before the next one starts.
+
+| Profile, stop-first | First start | Second start | After 6 starts | Live heap of one core |
+| --- | --- | --- | --- | --- |
+| Russia, before | +3,904 KiB, 14.5 ms | +1,808 KiB, 11.2 ms | +6,080 KiB | 944 KiB |
+| Russia, after | +1,552 KiB, 10.3 ms | +128 KiB, 0.6 ms | +1,952 KiB | 886 KiB |
+| ru-blocked, before | +23,040 KiB, 44.3 ms | +2,992 KiB, 41.8 ms | +42,880 KiB | 4,433 KiB |
+| ru-blocked, after | +3,824 KiB, 26.3 ms | +80 KiB, 0.2 ms | +4,208 KiB | 1,869 KiB |
+
+With "overlap" (the next core starts before the previous one stops), six
+ru-blocked starts went from +49,808 KiB to +4,128 KiB. Before, each start
+decoded the entries into a `String` per domain and a `Vec` per CIDR and
+copied every name into a hash set of boxed strings: tens of thousands of
+small allocations whose freed pages the allocator kept, so the footprint
+grew by 3-4 MiB per restart although live allocations returned to the same
+size. After, the first start allocates a few large buffers per category and
+every later start takes the categories from the cache. The Russia live heap
+includes the cached `geoip:ru` ranges (388 KiB), which the rule merges with
+the built-in `geoip:private` into a copy of its own.
+
 ## v0.5 Pre-Device Performance Gate
 
 `phase2-probe` exercises the production Phase 2 management paths without a

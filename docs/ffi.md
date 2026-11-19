@@ -178,6 +178,15 @@ it runs on a thread outside the runtime, at most 64 at once. One still in
 `getaddrinfo` is not waited for: it finishes by itself after the call returns
 and calls no host callback.
 
+Compiled geosite and geoip categories are cached for the whole process and
+shared by every handle whose config names them, so the next handle a host
+creates after a server switch reuses them. `xray_core_load_config_json`,
+`xray_core_replace_routing_policy_json` and `xray_core_free` end by releasing
+the categories no configuration references beyond a 4 MiB budget kept for
+the next handle, whether they succeed or fail, so between calls the unused
+categories stay within it. The cache has no C API of its own; see
+[geodata](config-compatibility.md#geodata) for what is cached and shared.
+
 ## Handles and errors
 
 - `XrayCoreHandle *` is an owning opaque pointer returned by
@@ -372,7 +381,8 @@ by the MTU; the adapters do this from `tunMtu`.
 
 What grows with the MTU:
 
-- each TUN TCP socket's receive buffer is `max(32 KiB, 4 × MSS)`, because
+- each TUN TCP socket's receive buffer is `max(32 KiB, 4 × MSS)` once the
+  client has sent data on it (it starts at `max(8 KiB, 2 × MSS)`), because
   Linux, Android and Darwin senders only put whole segments into the window.
   32 KiB already covers MTUs up to 8232; at 9000 it is 35 KiB, at most
   768 KiB more on the `Mobile` profile (256 flows) and 1.1 MiB on `MobilePlus`;
@@ -556,6 +566,18 @@ outbound sockets.
 ## Packet APIs
 
 `xray_tun_push_packet` copies one raw IP packet into the bounded inbound queue.
+
+What the host writes into the TUN, through `xray_tun_push_packet` or a
+[direct TUN descriptor](#direct-tun-file-descriptors), is taken to come from
+the host's own network stack, which computed its checksums. The core checks
+each IPv4 header checksum and each UDP checksum, but not the checksum of a TCP
+segment, as Xray-core's TUN inbound checks none
+([TUN checksums](xray-core-differences.md#tun-checksums)). IPv6 has no header
+checksum, so nothing of an IPv6 TCP segment is checked. A host that writes
+packets other devices sent it, such as tethering through the tunnel or a
+gateway for a network, relies on their link layer and its own stack to have
+checked them: a segment corrupted after that becomes stream data rather than
+being sent again.
 
 `xray_tun_poll_packet` is nonblocking:
 

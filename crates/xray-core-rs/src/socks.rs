@@ -63,7 +63,6 @@ const SOCKS_UDP_FLOW_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 const SOCKS_UDP_BUDGET_LOG_INTERVAL: Duration = Duration::from_secs(5);
 const SOCKS_VLESS_UDP_FLUSH_BATCH: usize = 16;
 const SOCKS_VLESS_UDP_FLUSH_INTERVAL: Duration = Duration::from_millis(2);
-const SOCKS_TCP_SNIFF_BUFFER_SIZE: usize = 8 * 1024;
 const SOCKS_TCP_SNIFF_TIMEOUT: Duration = Duration::from_millis(250);
 static SOCKS_UDP_GLOBAL_FLOWS: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static SOCKS_UDP_GLOBAL_PENDING_OPENS: OnceLock<Arc<Semaphore>> = OnceLock::new();
@@ -1013,15 +1012,15 @@ where
     S: tokio::io::AsyncRead + Unpin,
 {
     let deadline = tokio::time::Instant::now() + SOCKS_TCP_SNIFF_TIMEOUT;
-    let mut buffer = Vec::with_capacity(SOCKS_TCP_SNIFF_BUFFER_SIZE);
+    let mut buffer = Vec::with_capacity(crate::sniffing::TCP_SNIFF_BUFFER_SIZE);
 
-    while buffer.len() < SOCKS_TCP_SNIFF_BUFFER_SIZE {
+    while buffer.len() < crate::sniffing::TCP_SNIFF_BUFFER_SIZE {
         let now = tokio::time::Instant::now();
         if now >= deadline {
             break;
         }
 
-        let mut chunk = vec![0; SOCKS_TCP_SNIFF_BUFFER_SIZE - buffer.len()];
+        let mut chunk = vec![0; crate::sniffing::TCP_SNIFF_BUFFER_SIZE - buffer.len()];
         let read = tokio::time::timeout(deadline - now, inbound.read(&mut chunk)).await;
         let len = match read {
             Ok(Ok(len)) if len > 0 => len,

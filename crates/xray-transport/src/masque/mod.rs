@@ -37,12 +37,61 @@ pub const QUIC_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// quic-go's default connection ID length, which Xray's dial keeps.
 pub const QUIC_CONNECTION_ID_LEN: u8 = 4;
 
+/// A proxy's capsule stream, pushed in pieces of the size the first byte
+/// picks, as the tunnel reads it: assignments become the destinations the
+/// DATAGRAM capsules' packets are checked against, as `read_packet` checks
+/// them, and each packet is also readied and answered as an outgoing one.
 #[cfg(feature = "fuzzing")]
-pub mod fuzzing {
-    //! Capsule parsing for the fuzz targets.
-    pub fn parse_capsules(data: &[u8]) {
-        let mut parser = super::capsule::CapsuleParser::default();
-        parser.push(data);
-        while let Ok(Some(_)) = parser.next() {}
+pub(crate) fn fuzz_capsules(data: &[u8]) {
+    use capsule::{Capsule, CapsuleParser, Parsed};
+
+    let Some((&selector, stream)) = data.split_first() else {
+        return;
+    };
+    let bare = selector & 0x80 != 0;
+    let mut parser = CapsuleParser::default();
+    let mut destinations = packet::Destinations::default();
+    for piece in stream.chunks(usize::from(selector & 0x7f) + 1) {
+        parser.push(piece);
+        loop {
+            match parser.next() {
+                Ok(Some(Parsed::Capsule(Capsule::AddressAssign(entries)))) => {
+                    destinations.assigned = entries
+                        .iter()
+                        .filter(|entry| !entry.prefix.is_rejection())
+                        .map(|entry| entry.prefix)
+                        .collect();
+                }
+                Ok(Some(Parsed::Capsule(Capsule::AddressRequest(entries)))) => {
+                    let refusals: Vec<_> = entries
+                        .iter()
+                        .map(|entry| AssignedAddress {
+                            request_id: entry.request_id,
+                            prefix: IpPrefix::rejection(entry.prefix.addr.is_ipv4()),
+                        })
+                        .collect();
+                    let _ = capsule::address_assign(&refusals);
+                }
+                // A client keeps no routes; matching against the proxy's
+                // still runs the range checks a server's routes take.
+                Ok(Some(Parsed::Capsule(Capsule::RouteAdvertisement(routes)))) => {
+                    destinations.local_routes = routes;
+                }
+                Ok(Some(Parsed::Capsule(Capsule::Datagram(value)))) => {
+                    let Some(packet) = session::datagram_packet(value, bare) else {
+                        continue;
+                    };
+                    let _ = packet::check_incoming(&packet, &destinations);
+                    let mut outgoing = packet.to_vec();
+                    let _ = packet::prepare_outgoing(&mut outgoing);
+                    let _ = packet::icmp_too_large(&packet, MIN_PACKET_SIZE);
+                    let _ = session::datagram_capsule(&packet, bare);
+                }
+                Ok(Some(Parsed::OversizedDatagram(_))) => {}
+                Ok(None) => break,
+                Err(_) => return,
+            }
+        }
     }
+    let _ = parser.is_mid_capsule();
 }

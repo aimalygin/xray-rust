@@ -900,11 +900,16 @@ pub unsafe extern "C" fn xray_core_load_config_json(
     json: *const c_char,
     error: *mut *mut XrayError,
 ) -> XrayStatus {
-    unsafe {
+    let status = unsafe {
         ffi_status(error, || {
             xray_core_load_config_json_inner(handle, json, error)
         })
-    }
+    };
+    // A failed load drops the configuration it parsed, and a successful one
+    // can leave a cached category unused, as when a rule merges a GeoIP code
+    // with its other entries.
+    trim_geodata_cache();
+    status
 }
 
 unsafe fn xray_core_load_config_json_inner(
@@ -1256,11 +1261,15 @@ pub unsafe extern "C" fn xray_core_replace_routing_policy_json(
     json: *const c_char,
     error: *mut *mut XrayError,
 ) -> XrayStatus {
-    unsafe {
+    let status = unsafe {
         ffi_status(error, || {
             xray_core_replace_routing_policy_json_inner(handle, json, error)
         })
-    }
+    };
+    // The replaced policy, or the rejected one, has been dropped; one that a
+    // routing decision still holds is released by the next trim.
+    trim_geodata_cache();
+    status
 }
 
 unsafe fn xray_core_replace_routing_policy_json_inner(
@@ -3808,7 +3817,19 @@ unsafe fn xray_core_free_inner(handle: *mut XrayCoreHandle) {
         // callback, and the host may let go of the callback's context. Work
         // that cannot be cancelled therefore stays off the runtime, as the
         // system DNS lookup does (`xray_transport::SystemDnsResolver`).
+        drop(handle);
+        // The core's geodata categories are now unused unless another handle
+        // shares them; keep only the small budget left for the next core.
+        trim_geodata_cache();
     }
+}
+
+/// Releases the cached geodata categories no configuration references
+/// beyond the budget kept for the next core. Every call that parses or drops
+/// a configuration ends with it, so the cache is within its budget between
+/// calls.
+fn trim_geodata_cache() {
+    let _ = catch_unwind(xray_config::trim_geodata_cache);
 }
 
 /// Frees an error returned through an FFI error out-parameter.
