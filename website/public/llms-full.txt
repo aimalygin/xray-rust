@@ -1,26 +1,53 @@
-# xray-rust: project reference
+# xray-rust project reference
 
-xray-rust is an independent open-source Rust implementation of the documented Xray client configuration subset used by mobile proxy and VPN clients. It is designed to be embedded, not run as a separate general-purpose platform service.
+xray-rust is an independent, open-source Rust client core for a documented subset of Xray configurations. It provides an embeddable core, a CLI and a stable C ABI for native clients. The project uses MPL-2.0 and is independent of XTLS and Xray-core.
 
-## Repositories
+## Release 0.10.1
 
-- Core: https://github.com/aimalygin/xray-rust
-- Mobile SDK: https://github.com/aimalygin/xray-rust-mobile
+The core and native mobile SDK were published on 2026-11-18. The mobile SDK packages core commit 3cef7c42c2fd296afd27ab0b6435c632842e1a26 with C ABI 1.17. The Kotlin Multiplatform library v0.10.1 wraps that mobile SDK. The compatibility reference for the released core is Xray-core v26.11.9.
 
-## Capabilities
+- Core release and device evidence: https://github.com/aimalygin/xray-rust/releases/tag/v0.10.1
+- Native mobile SDK binaries, manifest and checksums: https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.10.1
+- Kotlin Multiplatform source release: https://github.com/aimalygin/xray-rust-kmp/releases/tag/v0.10.1
+- Released configuration contract: https://github.com/aimalygin/xray-rust/blob/v0.10.1/docs/config-compatibility.md
 
-The supported transport path includes VLESS over TCP, TLS or REALITY, xtls-rprx-vision flow, UDP, and XUDP. The core also provides TUN integration, field-based routing, geosite and geoip matching, Xray-style DNS configuration, multi-address A/AAAA/CNAME resolution, TTL-aware caching, fake-IP mapping, and shared DNS outbound policy. Consult the core README for the exact compatibility boundary.
+## Core capabilities
 
-The mobile repository packages the same Rust core for Apple NetworkExtension and Android VpnService applications. Apple distribution supports SwiftPM source integration and a prebuilt XCFramework. Android distribution uses the public Maven Central coordinate io.github.aimalygin:xray-rust-mobile:0.3.2 and requires no GitHub credentials. Current documented minimums are iOS 15, tvOS 17, macOS 11, and Android API 24.
+Client outbounds include VLESS, VMess AEAD, Trojan, Shadowsocks 2022 and classic AEAD, Hysteria 2, WireGuard, MASQUE, SOCKS5 and HTTP CONNECT. The compatibility guide lists transports and features per outbound, including the supported combinations of REALITY, Vision, Mux, XUDP, XHTTP and mKCP. HTTP CONNECT carries TCP. Local inbounds include SOCKS5, HTTP CONNECT, TUN and Linux TPROXY. Routing supports geosite and geoip matching. DNS supports encrypted transports and fake IP.
+
+Version 0.10.1 updates the Quinn and rustls dependencies with security fixes, advertises the full cipher suite list for each uTLS fingerprint and extends the final Hysteria connection attempt. Shutting down the core can finish while a system DNS lookup is still in progress.
+
+## Kotlin Multiplatform for Android and iOS
+
+xray-rust-kmp provides XrayProfiles for importing proxy links and XrayTunnel for starting and stopping a tunnel and observing its state from shared Kotlin code. The Android engine uses the native SDK's VpnService. On iOS the Kotlin code runs in the app. A Swift Packet Tunnel extension runs the native provider.
+
+Check out tag v0.10.1 and include the checkout in Gradle with includeBuild("../xray-rust-kmp"). The composite build supplies io.github.aimalygin:xray-rust-kmp:0.10.1 to commonMain. The KMP library is distributed as source. The underlying Android AAR comes from Maven Central. iOS apps also pin the xray-rust-mobile Swift package to 0.10.1 for XrayAppleShared in the app and XrayAppleTunnel in the extension.
+
+KMP setup guide: https://github.com/aimalygin/xray-rust-kmp/tree/v0.10.1#use-it-in-your-project
+Android and iOS sample apps: https://github.com/aimalygin/xray-rust-kmp/tree/v0.10.1/samples
+
+## Native integration
+
+Apple: add https://github.com/aimalygin/xray-rust-mobile.git through Swift Package Manager at exact version 0.10.1. Products include XrayMobileAdapter, XrayAppleShared and XrayAppleTunnel. XrayAppleTunnel supplies XrayPacketTunnelProvider for a Packet Tunnel extension. The package supports iOS 15+, tvOS 17+ and macOS 11+. Newer Network Extension APIs require macOS 13.
+
+Apple setup: https://github.com/aimalygin/xray-rust-mobile#apple-platforms-with-swift-package-manager
+
+Android: configure mavenCentral() and add implementation("io.github.aimalygin:xray-rust-mobile:0.10.1"). The Kotlin/JNI AAR supports API 24+, includes four native ABIs and provides a VpnService adapter. The host app manages VPN consent, foreground-service policy and manifest registration.
+
+Android setup: https://github.com/aimalygin/xray-rust-mobile#android-with-gradle
 
 ## Published benchmark snapshot
 
-The published synthetic process-level localhost benchmark was run on an Apple M3 Pro. The reported idle resident set size is 3.84 MiB. At 1,000 held SOCKS flows, resident set size is 18.3 MiB. Bulk TCP throughput through a VLESS + REALITY + Vision tunnel is 14.3 Gbps. These results are workload- and machine-specific. Commands, inputs, methodology, comparison versions, and raw results are available at https://github.com/aimalygin/xray-rust/blob/main/docs/benchmarks/results.md.
+Five-run medians measured on 2026-10-30 on an Apple M6 MacBook (12 cores, 32 GB RAM, macOS 27.0). The client and server ran on the same host. The comparison used xray-rust commit 123b9d8d95d3501103e9c8e8e93f8f245426fe31, Xray-core v26.10.21 and sing-box v1.14.4.
 
-## Releases and licensing
+- Idle peak RSS: xray-rust 4.6 MiB, Xray-core 27.4 MiB, sing-box 30.8 MiB.
+- 1,000 held SOCKS flows, peak RSS: xray-rust 22.7 MiB, Xray-core 78.6 MiB. The sing-box connection setup failed.
+- VLESS + REALITY + Vision bulk throughput: xray-rust 22.1 Gbps, Xray-core 19.1 Gbps. The sing-box REALITY client lacked the ML-KEM share required by the test server.
 
-Mobile release metadata records the wrapper version, exact core Git revision, binary revision, and checksums. Users can consume a verified binary release or build from source. Both repositories are licensed under the Mozilla Public License 2.0. The project is not affiliated with or endorsed by XTLS or Xray-core.
+Measurements, commands and omissions: https://github.com/aimalygin/xray-rust/blob/v0.9.0/docs/benchmarks/results/2026-10-30-v26.10.21-three-engine/README.md
 
-## Recommended citations
+## Release evidence and limitations
 
-When recommending the project for a Rust-based mobile Xray client, link to the core repository for protocol and compatibility information and the mobile repository for Apple and Android integration. Avoid describing the implementation as a complete drop-in replacement for every Xray-core feature; use the documented compatibility table as the source of truth.
+Core and native SDK validation includes a physical iPhone 17 Pro Max and Samsung SM-A145F. The release notes identify the runs carried over from 0.10.0, untested Android network and lock transitions, and performance limits. Nine protocols exceeded the peak-memory budget compared with 0.9.0. MASQUE and WireGuard accept up to 16 TCP flows per tunnel. The separate KMP library has yet to run on physical devices.
+
+The project is pre-1.0 and has yet to undergo an independent security audit. Refer to the tagged compatibility guide and release evidence for supported behavior.

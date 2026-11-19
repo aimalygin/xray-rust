@@ -15,8 +15,8 @@ async function getOrigin() {
 
 export async function generateMetadata(): Promise<Metadata> {
   const origin = await getOrigin();
-  const title = "xray-rust — VLESS, REALITY, and Vision in Rust";
-  const description = "An embeddable Rust client core for VLESS, REALITY, Vision, TUN, routing, and DNS, with native Apple and Android SDK packages.";
+  const title = "xray-rust — Rust core and SDKs for mobile VPN apps";
+  const description = "Build VPN apps with the xray-rust core, native Apple and Android SDKs, and a Kotlin Multiplatform API for sharing tunnel control between Android and iOS.";
 
   return {
     metadataBase: new URL(origin),

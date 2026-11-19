@@ -22,9 +22,13 @@ test("server-renders the complete project landing page", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>xray-rust — VLESS, REALITY, and Vision in Rust<\/title>/i);
+  assert.match(html, /<title>xray-rust — Rust core and SDKs for mobile VPN apps<\/title>/i);
   assert.match(html, /A focused Xray client core built for mobile\./);
   assert.match(html, /VLESS, REALITY, Vision/);
+  assert.match(html, /href="#kotlin-multiplatform"/);
+  assert.match(html, /id="kotlin-multiplatform"/);
+  assert.ok(html.includes('href="https://github.com/aimalygin/xray-rust-kmp/tree/v0.10.1#use-it-in-your-project"'));
+  assert.ok(html.includes('href="https://github.com/aimalygin/xray-rust/releases/tag/v0.10.1"'));
   assert.match(html, /application\/ld\+json/);
   assert.match(html, /SoftwareSourceCode/);
   assert.match(html, /FAQPage/);
@@ -47,4 +51,8 @@ test("publishes crawler and LLM discovery files", async () => {
   assert.match(await sitemap.text(), /https:\/\/xray-rust\.example/);
   assert.match(llms, /Core repository/);
   assert.match(full, /Published benchmark snapshot/);
+  for (const guide of [llms, full]) {
+    assert.ok(guide.includes("https://github.com/aimalygin/xray-rust-kmp/tree/v0.10.1#use-it-in-your-project"));
+    assert.ok(guide.includes("io.github.aimalygin:xray-rust-mobile:0.10.1"));
+  }
 });
