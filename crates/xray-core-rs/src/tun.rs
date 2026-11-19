@@ -378,6 +378,15 @@ const TUN_RUNTIME_POLICY: TunRuntimePolicy = MOBILE_TUN_RUNTIME_POLICY;
 )))]
 const TUN_RUNTIME_POLICY: TunRuntimePolicy = DESKTOP_TUN_RUNTIME_POLICY;
 
+/// How many TCP flows of a TUN with this profile may wait for their
+/// outbound's open at once; past that, a new one is refused.
+pub(crate) fn tcp_pending_open_limit(profile: TunRuntimeProfile) -> usize {
+    tun_runtime_policy_for_options(TunRuntimeOptions::with_profile(profile))
+        .flows
+        .tcp
+        .max_pending_opens
+}
+
 fn tun_runtime_policy_for_options(options: TunRuntimeOptions) -> TunRuntimePolicy {
     match options.profile {
         TunRuntimeProfile::Default => TUN_RUNTIME_POLICY,

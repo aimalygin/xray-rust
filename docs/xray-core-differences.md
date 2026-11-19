@@ -675,8 +675,10 @@ keepalive. Deliberate differences:
   it, and the dial that resumes one would not show a fresh certificate.
 - Unknown fields in `warp` fail the configuration, as everywhere; Go's
   JSON ignores them.
-- The stack is the WireGuard outbound's smoltcp stack, not gVisor: 16 TCP
-  and 512 UDP flows a tunnel, its buffers and its TCP. smoltcp does not act
+- The stack is the WireGuard outbound's smoltcp stack, not gVisor: its
+  [flow limits](config-compatibility.md#wireguard-flow-limits) (512 UDP
+  flows a tunnel and 32 to 128 TCP flows by runtime profile, a TCP flow past
+  them waiting for a place), its buffers and its TCP. smoltcp does not act
   on ICMP Packet Too Big; the QUIC connection never goes below its 1350-byte
   first packets, so the stack's 1280-byte packets always fit.
 - A name tries up to eight addresses, three seconds each and ten for the
@@ -1404,6 +1406,11 @@ differences:
   `dialerProxy` outbound.
 - A WireGuard peer endpoint that is a domain dials the first address its
   `domainStrategy` keeps. Xray-core picks one of them at random.
+- A WireGuard device carries 512 UDP flows and 32 to 128 TCP flows at once,
+  by runtime profile, with fixed buffers; a TCP flow past them waits up to
+  three seconds for a place and is then refused, and an idle flow is never
+  closed to make room ([flow limits](config-compatibility.md#wireguard-flow-limits)).
+  Xray-core's gVisor stack sets no such bound.
 - An option that fails is logged at debug level; Xray-core logs it at info,
   a level the runtime log here does not have.
 - Xray-core's outbound UDP sockets are IPv6 sockets that also carry IPv4, so

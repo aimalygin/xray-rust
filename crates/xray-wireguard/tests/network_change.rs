@@ -172,7 +172,10 @@ async fn native_rebind_preserves_existing_tcp_udp_flows_in_both_outer_families()
                 "one new protected socket per coalesced burst"
             );
             client.shutdown().await;
-            assert_eq!(client.available_tcp_slots(), 16);
+            assert_eq!(
+                client.available_tcp_slots(),
+                xray_wireguard::FlowLimits::default().tcp()
+            );
             assert_eq!(client.available_udp_slots(), 512);
             tcp_task.abort();
             udp_task.abort();
@@ -286,7 +289,10 @@ async fn native_rebind_during_tcp_transfer_recovers_without_reopening() {
         relay.abort();
         echo.abort();
         assert_eq!(protector.calls.load(Ordering::SeqCst), 3);
-        assert_eq!(client.available_tcp_slots(), 16);
+        assert_eq!(
+            client.available_tcp_slots(),
+            xray_wireguard::FlowLimits::default().tcp()
+        );
         result.expect("first TCP flow must recover without an application retry");
         assert_eq!(
             initiations.load(Ordering::SeqCst),

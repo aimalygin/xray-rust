@@ -149,7 +149,10 @@ async fn roundtrip(psk: Option<[u8; 32]>) {
             .await
             .expect("shutdown while workers wait");
         assert!(!client.is_live());
-        assert_eq!(client.available_tcp_slots(), 16);
+        assert_eq!(
+            client.available_tcp_slots(),
+            xray_wireguard::FlowLimits::default().tcp()
+        );
         assert_eq!(client.available_udp_slots(), 512);
         echo_tcp.abort();
         echo_udp.abort();
@@ -192,7 +195,7 @@ async fn pinned_reference_wrong_keys_or_psk_never_deliver_application_data_and_r
                 _ = udp.recv(&mut bytes) => panic!("UDP reached application with incorrect key or PSK"),
             }
             timeout(Duration::from_secs(2),client.shutdown()).await.unwrap();
-            assert_eq!(client.available_tcp_slots(),16);
+            assert_eq!(client.available_tcp_slots(), xray_wireguard::FlowLimits::default().tcp());
             assert_eq!(client.available_udp_slots(),512);
         }
         // A fresh device with the matching key works; failed-device pending

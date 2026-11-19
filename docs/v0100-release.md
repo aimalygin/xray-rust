@@ -44,7 +44,9 @@ Three of those decisions were made during the campaign, on 2026-11-15:
 - **Android MASQUE stress** («Ограничение и перепрогон»). A MASQUE or
   WireGuard tunnel carries at most 16 TCP flows at once and refuses the next.
   Android's resource stress opened 32 and failed for MASQUE; it was run again
-  with 8, and the bound is a known limitation.
+  with 8, and the bound is a known limitation of 0.10.0. After the release a
+  flow past the bound waits for a place, and the bound follows the runtime
+  profile (see the changelog's Unreleased section).
 - **The iPhone's resource bound** («Без прогона, в ограничения»). MASQUE's
   resident memory grew 8.25 MiB in the iPhone's resource run, 0.26 MiB over
   the 8 MiB the 0.9.0 evidence used; footprint and threads, the documented
@@ -413,8 +415,17 @@ Maven Central («Тег и GitHub-релиз»).
 
 ## After 0.10.0
 
-- A MASQUE or WireGuard tunnel should let a TCP flow past its 16-flow bound
-  wait for a place instead of refusing it at once.
+- Done: a MASQUE or WireGuard tunnel takes 32, 64 or 128 TCP flows by
+  runtime profile and lets a TCP flow past its bound wait up to three seconds
+  for a place instead of refusing it at once
+  ([flow limits](config-compatibility.md#wireguard-flow-limits)). Android's
+  MASQUE resource stress can go back to 32 connections at once.
+- Open: nothing closes an idle tunnel flow to make room, so once idle
+  keep-alive connections hold every place a new flow waits and is refused.
+  Closing the longest-idle flow while one waits, or a limit as large as the
+  TUN's active flows, would cover that. A single download over a phone
+  profile is bounded by its 256 KiB window (about 21 Mbit/s at 100 ms) and
+  wants a measurement on a device.
 - The SDK's Maven Central job should wait longer than ten minutes, so a slow
   publication does not end a successful release run as failed.
 - Lua noise scripts, `xdns` over DNS over HTTPS and `realm`'s `portMapping`

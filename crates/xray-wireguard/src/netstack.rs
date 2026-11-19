@@ -1,17 +1,16 @@
 //! The WireGuard client's userspace TCP/IP interface without WireGuard, for
 //! tunnels that carry IP packets themselves, such as MASQUE's CONNECT-IP.
 use crate::client::{
-    Error, Flows, Routes, Stop, TcpStream, UdpSession, COMMAND_QUEUE, IP_PACKET_QUEUE, TCP_LIMIT,
-    UDP_LIMIT,
+    Error, Flows, Routes, Stop, TcpSlot, TcpStream, UdpSession, COMMAND_QUEUE, IP_PACKET_QUEUE,
 };
-use crate::stack;
+use crate::{stack, FlowLimits};
 use bytes::Bytes;
 use std::{
     fmt,
     net::{IpAddr, SocketAddr},
-    sync::{atomic::AtomicU64, Arc},
+    sync::Arc,
 };
-use tokio::sync::{mpsc, watch, Notify, Semaphore};
+use tokio::sync::{mpsc, watch, Notify};
 
 /// The packet side of a [`Netstack`]: what it sends and what it receives.
 #[derive(Debug)]
@@ -34,7 +33,8 @@ impl Drop for Owner {
 }
 
 /// A userspace TCP/IP interface over raw IP packets, with the bounds of the
-/// WireGuard client's: 16 TCP and 512 UDP flows, and the same buffers.
+/// WireGuard client's: the TCP flows of its [`FlowLimits`], 512 UDP flows,
+/// and the same buffers.
 #[derive(Clone)]
 pub struct Netstack(Arc<Owner>);
 impl fmt::Debug for Netstack {
@@ -49,6 +49,15 @@ impl Netstack {
     /// Starts a stack with up to one local address per family. Flows may go
     /// to any usable address of a family it has an address of.
     pub fn start(addresses: Vec<IpAddr>, mtu: u16) -> Result<(Self, NetstackPackets), Error> {
+        Self::start_with_limits(addresses, mtu, FlowLimits::default())
+    }
+
+    /// [`Self::start`] with the flow limits of a runtime profile.
+    pub fn start_with_limits(
+        addresses: Vec<IpAddr>,
+        mtu: u16,
+        limits: FlowLimits,
+    ) -> Result<(Self, NetstackPackets), Error> {
         if addresses.is_empty()
             || addresses.iter().filter(|ip| ip.is_ipv4()).count() > 1
             || addresses.iter().filter(|ip| ip.is_ipv6()).count() > 1
@@ -65,6 +74,7 @@ impl Netstack {
         let stack = stack::Stack::<Bytes>::new(
             &addresses,
             mtu,
+            limits.tcp_buffer(),
             outgoing_tx,
             incoming_rx,
             requests,
@@ -79,17 +89,15 @@ impl Netstack {
         });
         Ok((
             Self(Arc::new(Owner {
-                flows: Flows {
+                flows: Flows::new(
                     addresses,
                     mtu,
-                    routes: Routes::Everywhere,
+                    Routes::Everywhere,
                     commands,
                     stop,
                     wake,
-                    tcp: Arc::new(Semaphore::new(TCP_LIMIT)),
-                    udp: Arc::new(Semaphore::new(UDP_LIMIT)),
-                    next: AtomicU64::new(1),
-                },
+                    limits,
+                ),
                 finished: done,
             })),
             NetstackPackets { outgoing, incoming },
@@ -115,11 +123,29 @@ impl Netstack {
     pub fn available_tcp_slots(&self) -> usize {
         self.0.flows.tcp.available_permits()
     }
+    /// TCP flows waiting for a place.
+    pub fn waiting_tcp_flows(&self) -> usize {
+        self.0.flows.waiting_tcp_flows()
+    }
     pub fn available_udp_slots(&self) -> usize {
         self.0.flows.udp.available_permits()
     }
+    /// Waits for a place, then opens a TCP flow in it, as
+    /// [`crate::Client::connect`] does.
     pub async fn connect(&self, remote: SocketAddr) -> Result<TcpStream, Error> {
         self.0.flows.connect(remote).await
+    }
+    /// See [`crate::Client::tcp_slot`].
+    pub async fn tcp_slot(&self) -> Result<TcpSlot, Error> {
+        self.0.flows.tcp_slot().await
+    }
+    /// See [`crate::Client::connect_with_slot`].
+    pub async fn connect_with_slot(
+        &self,
+        slot: TcpSlot,
+        remote: SocketAddr,
+    ) -> Result<TcpStream, Error> {
+        self.0.flows.connect_with_slot(slot, remote).await
     }
     pub async fn open_udp(&self, remote: SocketAddr) -> Result<UdpSession, Error> {
         self.0.flows.open_udp(remote).await
@@ -253,6 +279,305 @@ mod tests {
                 UdpPacket::new_checked(ip.payload()).unwrap().payload(),
                 b"ping"
             );
+            stack.shutdown().await;
+        })
+        .await
+        .unwrap();
+    }
+
+    /// The far end of a stack's packets, as a peer across the tunnel: TCP
+    /// echo servers on a smoltcp interface at `address`, `listeners` of them
+    /// at once. Each echoes what it reads and closes once its client has.
+    fn echo_peer(
+        packets: NetstackPackets,
+        address: Ipv4Address,
+        port: u16,
+        listeners: usize,
+    ) -> tokio::task::JoinHandle<()> {
+        use smoltcp::iface::{Config, Interface, SocketSet};
+        use smoltcp::socket::tcp;
+        use smoltcp::time::Instant;
+        use smoltcp::wire::{HardwareAddress, IpCidr};
+        let NetstackPackets {
+            mut outgoing,
+            incoming,
+        } = packets;
+        tokio::spawn(async move {
+            let mut wire = Wire::default();
+            let mut interface =
+                Interface::new(Config::new(HardwareAddress::Ip), &mut wire, Instant::ZERO);
+            interface.update_ip_addrs(|ips| ips.push(IpCidr::new(address.into(), 32)).unwrap());
+            interface
+                .routes_mut()
+                .add_default_ipv4_route(address)
+                .unwrap();
+            let mut sockets = SocketSet::new(vec![]);
+            let handles: Vec<_> = (0..listeners)
+                .map(|_| {
+                    let mut socket = tcp::Socket::new(
+                        tcp::SocketBuffer::new(vec![0; 16 * 1024]),
+                        tcp::SocketBuffer::new(vec![0; 16 * 1024]),
+                    );
+                    socket.listen(port).unwrap();
+                    sockets.add(socket)
+                })
+                .collect();
+            let start = std::time::Instant::now();
+            // Replies wait here rather than in a send: the stack reads no
+            // reply while its own queue is full.
+            let mut replies = std::collections::VecDeque::new();
+            loop {
+                let now = Instant::from_millis(start.elapsed().as_millis() as i64);
+                interface.poll(now, &mut wire, &mut sockets);
+                for &handle in &handles {
+                    let socket = sockets.get_mut::<tcp::Socket>(handle);
+                    // A reset connection may still hold what it read, and
+                    // can no longer send: listening again discards it.
+                    while socket.can_recv() && socket.can_send() {
+                        let room = socket.send_capacity() - socket.send_queue();
+                        let data = socket
+                            .recv(|bytes| {
+                                let n = bytes.len().min(room);
+                                (n, bytes[..n].to_vec())
+                            })
+                            .unwrap();
+                        socket.send_slice(&data).unwrap();
+                    }
+                    if socket.state() == tcp::State::CloseWait && !socket.can_recv() {
+                        socket.close();
+                    }
+                    if socket.state() == tcp::State::Closed {
+                        socket.listen(port).unwrap();
+                    }
+                }
+                interface.poll(now, &mut wire, &mut sockets);
+                replies.extend(wire.tx.drain(..));
+                let delay = interface
+                    .poll_delay(now, &sockets)
+                    .map_or(Duration::from_millis(20), |d| {
+                        Duration::from_millis(d.total_millis())
+                    })
+                    .min(Duration::from_millis(20));
+                tokio::select! {
+                    packet = outgoing.recv() => match packet {
+                        Some(packet) => wire.rx.push_back(packet),
+                        None => return,
+                    },
+                    permit = incoming.reserve(), if !replies.is_empty() => match permit {
+                        Ok(permit) => permit.send(replies.pop_front().unwrap()),
+                        Err(_) => return,
+                    },
+                    () = tokio::time::sleep(delay) => {}
+                }
+                while let Ok(packet) = outgoing.try_recv() {
+                    wire.rx.push_back(packet);
+                }
+                while !replies.is_empty() {
+                    let Ok(permit) = incoming.try_reserve() else {
+                        break;
+                    };
+                    permit.send(replies.pop_front().unwrap());
+                }
+            }
+        })
+    }
+    #[derive(Default)]
+    struct Wire {
+        rx: std::collections::VecDeque<Bytes>,
+        tx: Vec<Bytes>,
+    }
+    struct WireRx(Bytes);
+    struct WireTx<'a>(&'a mut Vec<Bytes>);
+    impl smoltcp::phy::Device for Wire {
+        type RxToken<'a> = WireRx;
+        type TxToken<'a> = WireTx<'a>;
+        fn receive(
+            &mut self,
+            _: smoltcp::time::Instant,
+        ) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+            let packet = self.rx.pop_front()?;
+            Some((WireRx(packet), WireTx(&mut self.tx)))
+        }
+        fn transmit(&mut self, _: smoltcp::time::Instant) -> Option<Self::TxToken<'_>> {
+            Some(WireTx(&mut self.tx))
+        }
+        fn capabilities(&self) -> smoltcp::phy::DeviceCapabilities {
+            let mut caps = smoltcp::phy::DeviceCapabilities::default();
+            caps.medium = smoltcp::phy::Medium::Ip;
+            caps.max_transmission_unit = 1280;
+            caps
+        }
+    }
+    impl smoltcp::phy::RxToken for WireRx {
+        fn consume<R, F: FnOnce(&[u8]) -> R>(self, f: F) -> R {
+            f(&self.0)
+        }
+    }
+    impl smoltcp::phy::TxToken for WireTx<'_> {
+        fn consume<R, F: FnOnce(&mut [u8]) -> R>(self, len: usize, f: F) -> R {
+            let mut bytes = bytes::BytesMut::zeroed(len);
+            let result = f(&mut bytes);
+            self.0.push(bytes.freeze());
+            result
+        }
+    }
+
+    const ECHO: SocketAddr =
+        SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::new(192, 0, 2, 10)), 80);
+    fn echo_stack(limits: FlowLimits, listeners: usize) -> Netstack {
+        let (stack, packets) =
+            Netstack::start_with_limits(vec!["10.66.0.2".parse().unwrap()], 1280, limits).unwrap();
+        echo_peer(packets, Ipv4Address::new(192, 0, 2, 10), 80, listeners);
+        stack
+    }
+    /// Writes, reads the echo, then closes both ways: our FIN, the peer's.
+    async fn echo_and_close(mut stream: TcpStream, payload: &[u8]) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        stream.write_all(payload).await.unwrap();
+        let mut echoed = vec![0; payload.len()];
+        stream.read_exact(&mut echoed).await.unwrap();
+        assert_eq!(echoed, payload);
+        stream.shutdown().await.unwrap();
+        assert_eq!(stream.read(&mut [0; 1]).await.unwrap(), 0);
+    }
+    async fn until(mut condition: impl FnMut() -> bool) {
+        while !condition() {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+
+    /// A browser opens more TCP connections than there are places and keeps
+    /// them open. Those past the limit wait for one and complete; the order
+    /// places go in is the client tests' concern.
+    #[tokio::test]
+    async fn tcp_flows_past_the_limit_wait_for_a_place_and_all_complete() {
+        tokio::time::timeout(Duration::from_secs(20), async {
+            let limits = FlowLimits::new(4, 32, FlowLimits::MIN_TCP_BUFFER).unwrap();
+            let stack = echo_stack(limits, 8);
+            let mut held = Vec::new();
+            for _ in 0..4 {
+                held.push(stack.connect(ECHO).await.unwrap());
+            }
+            assert_eq!(stack.available_tcp_slots(), 0);
+            let mut flows = tokio::task::JoinSet::new();
+            for index in 0..20u8 {
+                flows.spawn({
+                    let stack = stack.clone();
+                    async move {
+                        let stream = stack.connect(ECHO).await.unwrap();
+                        echo_and_close(stream, &[index; 3000]).await;
+                    }
+                });
+                until(|| stack.waiting_tcp_flows() == usize::from(index) + 1).await;
+            }
+            // Seventeen and more flows, none refused.
+            assert_eq!(stack.waiting_tcp_flows(), 20);
+            drop(held);
+            let mut completed = 0;
+            while let Some(flow) = flows.join_next().await {
+                flow.unwrap();
+                completed += 1;
+            }
+            assert_eq!(completed, 20);
+            until(|| stack.available_tcp_slots() == 4).await;
+            assert_eq!(stack.waiting_tcp_flows(), 0);
+            stack.shutdown().await;
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_phone_profile_carries_forty_tcp_flows_at_once() {
+        tokio::time::timeout(Duration::from_secs(20), async {
+            let stack = echo_stack(FlowLimits::MOBILE, 40);
+            let all_open = Arc::new(tokio::sync::Barrier::new(41));
+            let mut flows = tokio::task::JoinSet::new();
+            for index in 0..40u8 {
+                flows.spawn({
+                    let stack = stack.clone();
+                    let all_open = all_open.clone();
+                    async move {
+                        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                        let mut stream = stack.connect(ECHO).await.unwrap();
+                        stream.write_all(&[index; 64]).await.unwrap();
+                        let mut echoed = [0; 64];
+                        stream.read_exact(&mut echoed).await.unwrap();
+                        assert_eq!(echoed, [index; 64]);
+                        all_open.wait().await;
+                        echo_and_close(stream, b"bye").await;
+                    }
+                });
+            }
+            all_open.wait().await;
+            assert_eq!(stack.available_tcp_slots(), FlowLimits::MOBILE.tcp() - 40);
+            assert_eq!(stack.waiting_tcp_flows(), 0);
+            while let Some(flow) = flows.join_next().await {
+                flow.unwrap();
+            }
+            until(|| stack.available_tcp_slots() == FlowLimits::MOBILE.tcp()).await;
+            stack.shutdown().await;
+        })
+        .await
+        .unwrap();
+    }
+
+    /// Flows closed both ways, dropped mid-transfer, or abandoned while
+    /// waiting each give their place back, cycle after cycle, on threads
+    /// that race each other.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn open_and_close_cycles_leave_no_place_behind() {
+        tokio::time::timeout(Duration::from_secs(30), async {
+            let limits = FlowLimits::new(4, 64, FlowLimits::MIN_TCP_BUFFER).unwrap();
+            let stack = echo_stack(limits, 8);
+            let mut workers = tokio::task::JoinSet::new();
+            for worker in 0..12u8 {
+                workers.spawn({
+                    let stack = stack.clone();
+                    async move {
+                        let mut abandoned = 0;
+                        for cycle in 0..20u8 {
+                            match (worker + cycle) % 3 {
+                                0 => {
+                                    let stream = stack.connect(ECHO).await.unwrap();
+                                    echo_and_close(stream, &[cycle; 2000]).await;
+                                }
+                                1 => {
+                                    use tokio::io::AsyncWriteExt;
+                                    let mut stream = stack.connect(ECHO).await.unwrap();
+                                    stream.write_all(&[cycle; 9000]).await.unwrap();
+                                    drop(stream);
+                                }
+                                _ => {
+                                    // Gives up its wait, or its open, at once.
+                                    let open = tokio::time::timeout(
+                                        Duration::from_millis(1),
+                                        stack.connect(ECHO),
+                                    )
+                                    .await;
+                                    abandoned += usize::from(open.is_err());
+                                }
+                            }
+                        }
+                        abandoned
+                    }
+                });
+            }
+            let mut abandoned = 0;
+            while let Some(worker) = workers.join_next().await {
+                abandoned += worker.unwrap();
+            }
+            assert!(abandoned > 0, "some flows gave up their wait");
+            until(|| stack.available_tcp_slots() == 4).await;
+            assert_eq!(stack.waiting_tcp_flows(), 0);
+            // Every place is free for use again.
+            let mut streams = Vec::new();
+            for _ in 0..4 {
+                streams.push(stack.connect(ECHO).await.unwrap());
+            }
+            for stream in streams {
+                echo_and_close(stream, b"again").await;
+            }
             stack.shutdown().await;
         })
         .await

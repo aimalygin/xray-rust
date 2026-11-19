@@ -365,6 +365,53 @@ preserves explicitly supplied DNS addresses in both the profile DNS
 configuration and `remoteDNS`; it never substitutes public resolvers during
 import. Port-qualified/hostname DNS, DoH and DoT are outside this field's contract.
 
+## WireGuard flow limits
+
+A WireGuard device, and each MASQUE tunnel, carries its TCP and UDP flows
+through a userspace TCP/IP stack with fixed bounds, where Xray-core's gVisor
+stack has none. It takes 512 UDP flows and refuses the next. It takes the
+TCP flows of the core's TUN runtime profile at once, idle ones included, each
+with its own receive and send buffer:
+
+| Profile | TCP flows | Waiting | Buffer each way | All buffers |
+| --- | --- | --- | --- | --- |
+| `LowMemory` | 32 | 16 | 256 KiB | 16 MiB |
+| `Mobile` | 64 | 32 | 256 KiB | 32 MiB |
+| `MobilePlus` | 64 | 48 | 256 KiB | 32 MiB |
+| `Desktop` | 128 | 256 | 1 MiB | 256 MiB |
+| `Throughput` | 128 | 512 | 1 MiB | 256 MiB |
+
+`Default` takes `Mobile`'s on Android and Apple's mobile systems and
+`Desktop`'s elsewhere. A buffer is allocated zeroed when its flow opens, so
+the pages a flow never uses cost no memory, but a long transfer touches all
+of it and keeps it until the flow closes. One flow's receive window, and so
+its download rate, is bounded by its buffer: 256 KiB a round trip on a
+phone, about 21 Mbit/s at 100 ms and 10 Mbit/s at 200 ms, where the 1 MiB
+buffers before allowed about 84 and 42. The send buffer bounds an upload the
+same way. The stack shares 1 MiB of receive and of send credit among its
+busy flows, as before.
+
+A TCP flow past the limit waits for an earlier one to close, in arrival
+order, for up to three seconds, and only then tries its addresses; one that
+gives up leaves the queue at once. The wait ends well inside the flow's open
+deadline, the handshake timeout (ten seconds by default; for MASQUE ten
+seconds more), so a wait that runs out is refused as an exhausted flow
+budget rather than timed out. A flow whose deadline passes first, as with a
+handshake timeout of three seconds or less, times out as any slow open does.
+A flow is refused at once when the queue is full. A TUN flow holds one of
+the TUN's pending-open permits while it waits, and flows to every outbound
+share those, so a tunnel lets at most half of them wait: the Waiting column.
+A flow's place is free again as soon as the application drops the stream or
+the connection is reset; a connection both sides closed frees it by itself,
+at the latest after the ten seconds of TCP's TIME-WAIT.
+
+The limits were 16 TCP flows of 1 MiB each way, the next refused at once: a
+phone's browser opens more for one page and keeps them open. The larger
+limits are what let it open the page; the wait helps a burst of short flows.
+Nothing closes an idle flow to make room, so once idle keep-alive
+connections hold every place, a new flow waits its three seconds and is
+refused, where before it was refused at once.
+
 ## v0.8 TLS ClientHello fragmentation
 
 TCP TLS/REALITY carriers accept one `tlshello` FinalMask, after socket
@@ -2746,15 +2793,17 @@ capsules are queued for the stream, and the stream is read no further while
 128 packets wait for the stack, as in Xray-core.
 
 Each tunnel runs the WireGuard outbound's userspace TCP/IP stack, MTU 1280,
-on the assigned addresses: 16 TCP and 512 UDP flows at once, the stack's
-bounds. TCP and UDP flows from SOCKS, HTTP and TUN go to their destination
+on the assigned addresses, with its flow limits
+([WireGuard flow limits](#wireguard-flow-limits)): 512 UDP flows, and 32, 64
+or 128 TCP flows at once by runtime profile, a TCP flow past them waiting
+for a place. TCP and UDP flows from SOCKS, HTTP and TUN go to their destination
 through it; a name resolves through the tunnel, with the `remoteDNS`
 servers of the families the tunnel has an address of (all of them when none
 matches), for those families, IPv6 first when there is one. A TCP flow tries
-up to eight of its addresses, three seconds each and ten for the last; a UDP
-flow goes to the first. A flow's open deadline is the handshake timeout plus
-the ten seconds a tunnel dial may take, which goes on for the next flows if
-the one that started it gives up.
+up to eight of its addresses, three seconds each and ten for the last, each
+after it has a place; a UDP flow goes to the first. A flow's open deadline
+is the handshake timeout plus the ten seconds a tunnel dial may take, which
+goes on for the next flows if the one that started it gives up.
 
 `warp` reaches Cloudflare WARP, as Xray-core v26.10.31 does:
 

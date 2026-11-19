@@ -18,7 +18,7 @@ use xray_transport::masque::{
 };
 /// Xray's WARP dial: `quic.Transport.ConnectionIDLength = 20`.
 const WARP_CONNECTION_ID_LEN: u8 = 20;
-use xray_wireguard::Netstack;
+use xray_wireguard::{FlowLimits, Netstack};
 
 /// Xray's `retryInterval`: after a failed tunnel, flows take an existing one
 /// or the same error for this long, without dialing again.
@@ -60,6 +60,8 @@ struct Owner {
     address_port: xray_config::AddressPortStrategy,
     socket_dialer: Mutex<Option<(TransportDialer, TransportDialer)>>,
     pool: Arc<AsyncMutex<Pool>>,
+    /// The runtime profile's flow limits for each tunnel's stack.
+    flow_limits: FlowLimits,
     /// Every live tunnel, for closing the outbound while a dial holds the
     /// pool.
     tunnels: Mutex<Vec<Weak<Tunnel>>>,
@@ -215,6 +217,12 @@ impl Drop for Tunnel {
 
 impl MasqueOutbound {
     pub(crate) fn new(outbound: &OutboundConfig) -> Result<Self, CoreError> {
+        Self::with_flow_limits(outbound, FlowLimits::default())
+    }
+    pub(crate) fn with_flow_limits(
+        outbound: &OutboundConfig,
+        flow_limits: FlowLimits,
+    ) -> Result<Self, CoreError> {
         let OutboundSettings::Masque(settings) = &outbound.settings else {
             return Err(CoreError::UnsupportedOutboundNetwork);
         };
@@ -338,6 +346,7 @@ impl MasqueOutbound {
                 entries: Vec::new(),
                 last_error: None,
             })),
+            flow_limits,
             tunnels: Mutex::new(Vec::new()),
             shutdown: watch::channel(false).0,
         })))
@@ -559,7 +568,8 @@ impl MasqueOutbound {
     fn start_stack(&self, masque: MasqueTunnel) -> Result<Arc<Tunnel>, CoreError> {
         let local = masque.local_addrs().to_vec();
         let (stack, packets) =
-            Netstack::start(local.clone(), MIN_PACKET_SIZE as u16).map_err(stack_error)?;
+            Netstack::start_with_limits(local.clone(), MIN_PACKET_SIZE as u16, self.0.flow_limits)
+                .map_err(stack_error)?;
         let masque = Arc::new(masque);
         let xray_wireguard::NetstackPackets {
             mut outgoing,
@@ -686,10 +696,13 @@ impl MasqueOutbound {
             let mut error = xray_wireguard::Error::NoRoute;
             let last = addresses.len() - 1;
             for (index, address) in addresses.into_iter().enumerate() {
+                // Past the stack's TCP limit a flow waits for a place before
+                // an address's attempt, not within it.
+                let slot = tunnel.stack.tcp_slot().await.map_err(stack_error)?;
                 let attempt = if index == last { 10 } else { 3 };
                 match tokio::time::timeout(
                     Duration::from_secs(attempt),
-                    tunnel.stack.connect(address),
+                    tunnel.stack.connect_with_slot(slot, address),
                 )
                 .await
                 .unwrap_or(Err(xray_wireguard::Error::Timeout))

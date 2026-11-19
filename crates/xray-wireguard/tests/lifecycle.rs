@@ -9,7 +9,7 @@ use std::{
 use tokio::{net::UdpSocket, time::timeout};
 use xray_proxy::wireguard::KeyMaterial;
 use xray_transport::{SocketHandle, SocketProtector};
-use xray_wireguard::{Client, Config, Error};
+use xray_wireguard::{Client, Config, Error, FlowLimits};
 
 fn config(endpoint: SocketAddr) -> Config {
     Config {
@@ -57,7 +57,7 @@ async fn short_udp_requests_do_not_exhaust_capacity_while_tun_retains_idle_flows
         }
         assert_eq!(client.available_udp_slots(), capacity - idle.len());
         drop(idle);
-        wait_slots(&client, 16, capacity).await;
+        wait_slots(&client, FlowLimits::default().tcp(), capacity).await;
         client.shutdown().await;
     })
     .await
@@ -67,21 +67,33 @@ async fn short_udp_requests_do_not_exhaust_capacity_while_tun_retains_idle_flows
 async fn pending_tcp_cancellation_udp_pressure_and_shutdown_release_all_slots() {
     timeout(Duration::from_secs(10), async {
         let blackhole = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-        let client = Client::start(config(blackhole.local_addr().unwrap()), None)
-            .await
-            .unwrap();
+        let limits = FlowLimits::new(16, 4, FlowLimits::MIN_TCP_BUFFER).unwrap();
+        let client =
+            Client::start_with_limits(config(blackhole.local_addr().unwrap()), None, limits, None)
+                .await
+                .unwrap();
+        // Sixteen opens hold every place, waiting on a peer that never
+        // answers; four more wait for a place, and the queue is full.
         let mut opens = tokio::task::JoinSet::new();
-        for _ in 0..16 {
+        for _ in 0..20 {
             let client = client.clone();
             opens.spawn(async move { client.connect(target()).await });
         }
         wait_slots(&client, 0, 512).await;
+        timeout(Duration::from_secs(2), async {
+            while client.waiting_tcp_flows() != 4 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("four opens wait for a place");
         assert!(matches!(client.connect(target()).await, Err(Error::Busy)));
         opens.abort_all();
         while let Some(result) = opens.join_next().await {
             assert!(matches!(result, Err(error) if error.is_cancelled()));
         }
         wait_slots(&client, 16, 512).await;
+        assert_eq!(client.waiting_tcp_flows(), 0);
         let mut sessions = Vec::new();
         for index in 0..512 {
             let session = client.open_udp(target()).await.unwrap();

@@ -110,6 +110,29 @@ long-term supported release series.
   `DomainMatcherSet` equality now compares normalized patterns, however they
   are stored, and `DomainMatcherSetError` has a `TooLarge` variant for a
   table beyond 4 GiB.
+- A WireGuard device or MASQUE tunnel takes more TCP flows at once, by TUN
+  runtime profile, each flow's buffers sized with it: 32 flows of 256 KiB
+  each way on `LowMemory` (16 MiB), 64 of 256 KiB on `Mobile` and
+  `MobilePlus` (32 MiB, what 16 flows of 1 MiB took), 128 of 1 MiB on
+  `Desktop` and `Throughput`; `Default` follows the target. Each tunnel took
+  16 TCP flows, idle ones included, and refused the seventeenth, so a phone
+  browser, which opens more for one page and keeps them open, broke pages
+  over WARP and WireGuard. On the phone profiles one flow's receive window is
+  now at most 256 KiB, which bounds a single download to 256 KiB a round
+  trip: about 21 Mbit/s at 100 ms, where 1 MiB allowed about 84.
+- A TCP flow past that limit no longer fails at once: it waits for an
+  earlier flow to close, in arrival order, for up to three seconds, and only
+  then tries its addresses, so the wait does not spend an address's attempt.
+  This helps a burst of short flows. Nothing closes an idle flow to make
+  room, so once idle connections hold every place, a new flow waits its three
+  seconds and is then refused as an exhausted flow budget. A waiting TUN flow
+  holds one of the TUN's pending-open permits, so a tunnel lets at most half
+  of them wait (16 `LowMemory`, 32 `Mobile`, 48 `MobilePlus`, 256 `Desktop`,
+  512 `Throughput`) and refuses the next at once. A waiting flow that is
+  cancelled leaves the queue at once. `xray-wireguard` adds `FlowLimits`,
+  `Client::start_with_limits`, `Netstack::start_with_limits`, `tcp_slot`,
+  `connect_with_slot` and `waiting_tcp_flows`; the existing constructors take
+  the target's limits.
 
 ## 0.10.1 - 2026-11-16
 

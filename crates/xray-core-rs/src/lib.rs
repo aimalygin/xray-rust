@@ -274,6 +274,25 @@ impl TunRuntimeProfile {
             Self::Desktop | Self::Throughput => Some(xray_transport::MemoryClass::Standard),
         }
     }
+
+    /// The TCP flows each WireGuard device and MASQUE tunnel carries at
+    /// once, the queue for more, and each flow's buffers: phones keep the
+    /// 32 MiB that 16 flows of 1 MiB took before, in 64 smaller flows; a
+    /// desktop sizes them for throughput. `Default` follows the target.
+    fn tunnel_flow_limits(self) -> xray_wireguard::FlowLimits {
+        use xray_wireguard::FlowLimits;
+        let limits = match self {
+            Self::Default => FlowLimits::default(),
+            Self::LowMemory => FlowLimits::LOW_MEMORY,
+            Self::Mobile | Self::MobilePlus => FlowLimits::MOBILE,
+            Self::Desktop | Self::Throughput => FlowLimits::DESKTOP,
+        };
+        // A TUN flow waiting for a place holds one of the TUN's pending-open
+        // permits, which flows to every outbound share: one tunnel's queue
+        // takes at most half of them.
+        let waiting = (tun::tcp_pending_open_limit(self) / 2).min(FlowLimits::MAX_TCP_WAITING);
+        FlowLimits::new(limits.tcp(), waiting, limits.tcp_buffer()).unwrap_or(limits)
+    }
 }
 
 impl TunRuntimeOptions {
@@ -883,10 +902,13 @@ impl Core {
         xray_transport::set_memory_class(tun_runtime_options.profile.transport_memory_class());
         let outbound_graph = Arc::new(OutboundGraph::new(Arc::clone(&config)));
         outbound_graph.validate_proxy_chains()?;
-        let outbound_factory = Arc::new(OutboundFactory::with_hysteria_stream_limits(
-            outbound_graph,
-            tun_runtime_options.hysteria_stream_limits,
-        ));
+        let outbound_factory = Arc::new(
+            OutboundFactory::with_hysteria_stream_limits(
+                outbound_graph,
+                tun_runtime_options.hysteria_stream_limits,
+            )
+            .with_tunnel_flow_limits(tun_runtime_options.profile.tunnel_flow_limits()),
+        );
         let outbound_router = Arc::new(OutboundRouter::from_factory(outbound_factory));
         // A bridge's outbound is dialed from the start, so its refusals
         // belong to the start too.
@@ -2196,6 +2218,64 @@ mod tests {
             (TunRuntimeProfile::Throughput, Some(MemoryClass::Standard)),
         ] {
             assert_eq!(profile.transport_memory_class(), class, "{profile:?}");
+        }
+    }
+
+    #[test]
+    fn tunnel_flow_limits_follow_the_device_class_a_profile_names() {
+        use xray_wireguard::FlowLimits;
+
+        for (profile, preset, tcp_and_waiting) in [
+            (TunRuntimeProfile::Default, FlowLimits::default(), None),
+            (
+                TunRuntimeProfile::LowMemory,
+                FlowLimits::LOW_MEMORY,
+                Some((32, 16)),
+            ),
+            (
+                TunRuntimeProfile::Mobile,
+                FlowLimits::MOBILE,
+                Some((64, 32)),
+            ),
+            (
+                TunRuntimeProfile::MobilePlus,
+                FlowLimits::MOBILE,
+                Some((64, 48)),
+            ),
+            (
+                TunRuntimeProfile::Desktop,
+                FlowLimits::DESKTOP,
+                Some((128, 256)),
+            ),
+            (
+                TunRuntimeProfile::Throughput,
+                FlowLimits::DESKTOP,
+                Some((128, 512)),
+            ),
+        ] {
+            let limits = profile.tunnel_flow_limits();
+            assert_eq!(limits.tcp(), preset.tcp(), "{profile:?}");
+            assert_eq!(limits.tcp_buffer(), preset.tcp_buffer(), "{profile:?}");
+            // Waiting flows leave half of the TUN's pending opens to other
+            // outbounds.
+            let pending_opens = crate::tun::tcp_pending_open_limit(profile);
+            assert_eq!(limits.tcp_waiting(), pending_opens / 2, "{profile:?}");
+            if let Some((tcp, waiting)) = tcp_and_waiting {
+                assert_eq!(
+                    (limits.tcp(), limits.tcp_waiting()),
+                    (tcp, waiting),
+                    "{profile:?}"
+                );
+            }
+        }
+        // The presets match the TUN profiles of their name.
+        for (profile, preset) in [
+            (TunRuntimeProfile::Default, FlowLimits::default()),
+            (TunRuntimeProfile::LowMemory, FlowLimits::LOW_MEMORY),
+            (TunRuntimeProfile::Mobile, FlowLimits::MOBILE),
+            (TunRuntimeProfile::Desktop, FlowLimits::DESKTOP),
+        ] {
+            assert_eq!(profile.tunnel_flow_limits(), preset, "{profile:?}");
         }
     }
 
