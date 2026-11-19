@@ -1340,9 +1340,15 @@ Deliberate differences:
   a fresh connection, for DoQ as for DoH. Go's HTTP/2 client retries a
   request the server did not process; Xray-core's DoQ client reports the
   error.
-- A query given up after 2 seconds without a response takes its connection
-  out of the pool, so the next one does not wait on it as well. Xray-core
-  leaves that to the 45-second PING, and to the idle timeout for DoQ.
+- A query that a kept connection leaves unanswered for 2 seconds takes it
+  out of the pool and goes on a fresh connection as well; whichever answers
+  first is its answer. A kept connection can die without a word, as when a
+  phone slept through its server's idle timeout while the clocks that would
+  retire it stood still, and its first query would otherwise wait out its
+  deadline and fail. A query given up after 2 seconds without a response
+  takes its connection out of the pool too, so the next one does not wait on
+  it as well. Xray-core leaves both to the 45-second PING, and to the idle
+  timeout for DoQ.
 
 ## DNS hosts `"#N"` RCODE answers
 

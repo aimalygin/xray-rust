@@ -4158,10 +4158,11 @@ dropped when a query fails on it, when the server closes it, after 300 seconds
 without a query for DoH (with Xray-core's 45-second PING while nothing is
 read) and 30 seconds for DoQ, and when the host reports an OS network change
 with `rebind_quic`; the next query dials a new one. A query that a kept
-connection drops before answering goes once more on a fresh one. A Core keeps
-at most 8 connections of each kind and closes the least recently used to make
-room; first queries at the same time wait for one dial. The differences from
-Xray-core are listed in
+connection drops before answering goes once more on a fresh one, and one it
+leaves unanswered for 2 seconds goes on a fresh one as well, the first answer
+taken. A Core keeps at most 8 connections of each kind and closes the least
+recently used to make room; first queries at the same time wait for one dial.
+The differences from Xray-core are listed in
 [xray-core-differences.md](xray-core-differences.md#dns-over-https-and-quic-connection-reuse).
 TCP/TLS/DoQ URLs are authority-only.
 HTTPS permits an ASCII path/query but rejects

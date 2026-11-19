@@ -143,7 +143,11 @@ long-term supported release series.
   fails on it, when the server closes it, after Xray-core's idle times (300
   seconds for DoH, 30 for DoQ) and when the host reports a network change
   with `rebind_quic`; a query that a kept connection drops unanswered goes
-  once more on a fresh one. A Core keeps at most 8 connections of each kind.
+  once more on a fresh one. A query that a kept connection leaves unanswered
+  for 2 seconds goes on a fresh one as well, and the first answer is taken:
+  a connection that died without a word, as while a phone slept, costs one
+  lookup those 2 seconds instead of failing it at its deadline. A Core keeps
+  at most 8 connections of each kind.
   `exchange_dns_quic_candidates` in `xray-transport` takes the
   `DnsConnectionPools` that keep them.
 

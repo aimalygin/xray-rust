@@ -32,6 +32,8 @@ pub(crate) const MAX_POOLED_DNS_CONNECTIONS: usize = 8;
 const SWEEP_INTERVAL: Duration = Duration::from_secs(30);
 /// A query abandoned after waiting this long takes its connection out of
 /// the pool: nothing came back, so the next query should not wait on it too.
+/// A query that a kept connection leaves unanswered this long does the same
+/// and goes on a fresh connection as well.
 const STALLED_EXCHANGE: Duration = Duration::from_secs(2);
 /// Bounds the attempts of one query whatever its dialer reports.
 const MAX_EXCHANGE_ATTEMPTS: usize = 16;
@@ -356,30 +358,71 @@ impl<C: DnsPooledConnection> Drop for RetireIfStalled<'_, C> {
 /// A connection that fails a query leaves the pool. If another query dialed
 /// it and no response arrived, the query goes once more on a fresh one. If
 /// this query dialed it, the next server address is tried, as without a pool.
+///
+/// A kept connection can die without a word, as when a phone slept through
+/// its server's timeout: nothing closes it, and the clocks that would retire
+/// it stood still meanwhile. So a query that a kept connection leaves
+/// unanswered for [`STALLED_EXCHANGE`] takes it out of the pool and goes on
+/// a fresh one too, and whichever answers first is its answer. A dead
+/// connection costs its first query that wait; a slow one costs it nothing.
 pub(crate) async fn exchange_pooled<E: DnsPooledExchange>(
     pool: &DnsConnectionPool<E::Connection>,
     key: &DnsConnectionKey,
     exchange: &E,
 ) -> io::Result<Vec<u8>> {
+    let Some(kept) = pool.reuse(key) else {
+        return exchange_attempts(pool, key, exchange, false).await;
+    };
+    let first = exchange_guarded(pool, key, exchange, &kept);
+    tokio::pin!(first);
+    let failure = match tokio::time::timeout(STALLED_EXCHANGE, &mut first).await {
+        Ok(Ok(response)) => return Ok(response),
+        Ok(Err(failure)) => failure,
+        Err(_) => {
+            pool.discard(key, kept.id);
+            let second = exchange_attempts(pool, key, exchange, true);
+            tokio::pin!(second);
+            return tokio::select! {
+                biased;
+                outcome = &mut first => match outcome {
+                    Ok(response) => Ok(response),
+                    // An answer, late as it is: the server refused the query.
+                    Err(failure) if !failure.retryable => Err(failure.error),
+                    Err(_) => second.await,
+                },
+                result = &mut second => match result {
+                    Ok(response) => Ok(response),
+                    // The kept connection may only be slow; it has until
+                    // the caller's deadline.
+                    Err(error) => first.await.map_err(|_| error),
+                },
+            };
+        }
+    };
+    pool.discard(key, kept.id);
+    if !failure.retryable {
+        return Err(failure.error);
+    }
+    exchange_attempts(pool, key, exchange, true).await
+}
+
+/// Sends one query on what [`DnsConnectionPool::checkout`] gives, until an
+/// answer or an error that is the query's. `retried` says the query already
+/// had its second chance after a kept connection failed it.
+async fn exchange_attempts<E: DnsPooledExchange>(
+    pool: &DnsConnectionPool<E::Connection>,
+    key: &DnsConnectionKey,
+    exchange: &E,
+    mut retried: bool,
+) -> io::Result<Vec<u8>> {
     let mut failed = Vec::new();
     let mut last_error = None;
-    let mut retried = false;
     for _ in 0..MAX_EXCHANGE_ATTEMPTS {
         let checkout = match pool.checkout(key, exchange, &failed).await {
             Ok(checkout) => checkout,
             Err(error) => return Err(last_error.unwrap_or(error)),
         };
-        let mut stalled = RetireIfStalled {
-            pool,
-            key,
-            id: checkout.id,
-            started: Instant::now(),
-            abandoned: true,
-        };
-        let outcome = exchange.exchange(&checkout.connection).await;
-        stalled.abandoned = false;
-        drop(stalled);
-        let failure = match outcome {
+        let failure = match exchange_guarded(pool, key, exchange, &checkout).await {
             Ok(response) => return Ok(response),
             Err(failure) => failure,
         };
@@ -397,6 +440,26 @@ pub(crate) async fn exchange_pooled<E: DnsPooledExchange>(
         }
     }
     Err(last_error.unwrap_or_else(|| io::Error::other("DNS exchange ran out of attempts")))
+}
+
+/// One exchange on a checked-out connection. Dropped unfinished after a long
+/// wait, it takes the connection out of the pool.
+async fn exchange_guarded<E: DnsPooledExchange>(
+    pool: &DnsConnectionPool<E::Connection>,
+    key: &DnsConnectionKey,
+    exchange: &E,
+    checkout: &Checkout<E::Connection>,
+) -> Result<Vec<u8>, DnsExchangeFailure> {
+    let mut stalled = RetireIfStalled {
+        pool,
+        key,
+        id: checkout.id,
+        started: Instant::now(),
+        abandoned: true,
+    };
+    let outcome = exchange.exchange(&checkout.connection).await;
+    stalled.abandoned = false;
+    outcome
 }
 
 #[cfg(test)]
@@ -427,6 +490,10 @@ mod tests {
         /// Connections with these numbers fail their queries unanswered.
         broken: Vec<usize>,
         stall: bool,
+        /// Connections with these numbers stay live and never answer.
+        silent: Mutex<Vec<usize>>,
+        /// Connections that answer only after this long.
+        slow: Mutex<Vec<(usize, Duration)>>,
     }
 
     #[async_trait]
@@ -452,8 +519,17 @@ mod tests {
             &self,
             connection: &TestConnection,
         ) -> Result<Vec<u8>, DnsExchangeFailure> {
-            if self.stall {
+            if self.stall || self.silent.lock().unwrap().contains(&connection.number) {
                 std::future::pending::<()>().await;
+            }
+            let slow = self
+                .slow
+                .lock()
+                .unwrap()
+                .iter()
+                .find_map(|(number, delay)| (*number == connection.number).then_some(*delay));
+            if let Some(delay) = slow {
+                tokio::time::sleep(delay).await;
             }
             if self.broken.contains(&connection.number) {
                 return Err(DnsExchangeFailure::unanswered(io::Error::other("broken")));
@@ -629,6 +705,96 @@ mod tests {
         );
         assert!(slow.await.is_err());
         assert_eq!(pool.len(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn query_on_a_silent_kept_connection_is_answered_by_a_fresh_one() {
+        let pool = pool(Duration::from_secs(300), 8);
+        let key = key("silent.test");
+        let exchange = TestExchange::default();
+        assert_eq!(exchange_pooled(&pool, &key, &exchange).await.unwrap(), [0]);
+        // Connection 0 dies without a word: it stays live and never answers.
+        exchange.silent.lock().unwrap().push(0);
+
+        let started = Instant::now();
+        let answer = tokio::time::timeout(TEST_TIMEOUT, exchange_pooled(&pool, &key, &exchange))
+            .await
+            .expect("the fresh connection should answer within the deadline");
+        assert_eq!(answer.unwrap(), [1]);
+        assert_eq!(started.elapsed(), STALLED_EXCHANGE);
+        assert_eq!(exchange.dials.load(Ordering::Relaxed), 2);
+
+        // The next query finds the fresh connection kept and does not wait.
+        let started = Instant::now();
+        assert_eq!(exchange_pooled(&pool, &key, &exchange).await.unwrap(), [1]);
+        assert_eq!(started.elapsed(), Duration::ZERO);
+        assert_eq!(pool.len(), 1);
+        assert_eq!(exchange.dials.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn slow_kept_connection_still_answers_its_query() {
+        let pool = pool(Duration::from_secs(300), 8);
+        let key = key("slow.test");
+        let exchange = TestExchange {
+            dial_delay: Duration::from_secs(4),
+            ..TestExchange::default()
+        };
+        assert_eq!(exchange_pooled(&pool, &key, &exchange).await.unwrap(), [0]);
+        exchange
+            .slow
+            .lock()
+            .unwrap()
+            .push((0, Duration::from_secs(3)));
+
+        // The answer comes a second into the fresh dial, which takes four.
+        let started = Instant::now();
+        assert_eq!(exchange_pooled(&pool, &key, &exchange).await.unwrap(), [0]);
+        assert_eq!(started.elapsed(), Duration::from_secs(3));
+        assert_eq!(exchange.dials.load(Ordering::Relaxed), 1);
+        assert_eq!(pool.len(), 0, "a connection that slow is not kept");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn failed_fresh_dial_leaves_the_query_to_the_slow_kept_connection() {
+        struct RefusingDial(TestExchange);
+
+        #[async_trait]
+        impl DnsPooledExchange for RefusingDial {
+            type Connection = TestConnection;
+
+            async fn dial(
+                &self,
+                failed: &[SocketAddr],
+            ) -> io::Result<(TestConnection, Option<SocketAddr>)> {
+                if self.0.dials.load(Ordering::Relaxed) > 0 {
+                    return Err(io::Error::other("refused"));
+                }
+                self.0.dial(failed).await
+            }
+
+            async fn exchange(
+                &self,
+                connection: &TestConnection,
+            ) -> Result<Vec<u8>, DnsExchangeFailure> {
+                self.0.exchange(connection).await
+            }
+        }
+
+        let pool = pool(Duration::from_secs(300), 8);
+        let key = key("refused.test");
+        let exchange = RefusingDial(TestExchange::default());
+        assert_eq!(exchange_pooled(&pool, &key, &exchange).await.unwrap(), [0]);
+        exchange
+            .0
+            .slow
+            .lock()
+            .unwrap()
+            .push((0, Duration::from_secs(3)));
+
+        let started = Instant::now();
+        assert_eq!(exchange_pooled(&pool, &key, &exchange).await.unwrap(), [0]);
+        assert_eq!(started.elapsed(), Duration::from_secs(3));
     }
 
     #[tokio::test(start_paused = true)]
