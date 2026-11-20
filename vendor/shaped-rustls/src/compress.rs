@@ -197,6 +197,7 @@ mod feat_zlib_rs {
 #[cfg(feature = "zlib")]
 pub use feat_zlib_rs::{ZLIB_COMPRESSOR, ZLIB_DECOMPRESSOR};
 
+#[allow(clippy::std_instead_of_core)] // awaits core::io::Cursor (1.97) in crate MSRV
 #[cfg(feature = "brotli")]
 mod feat_brotli {
     use std::io::{Cursor, Write};
@@ -396,7 +397,7 @@ impl CompressionCache {
             compressed: CompressedCertificatePayload {
                 alg: algorithm,
                 uncompressed_len,
-                compressed: PayloadU24(Payload::new(compressed)),
+                compressed: PayloadU24::from(Payload::new(compressed)),
             },
         });
 
@@ -429,7 +430,7 @@ impl CompressionCache {
             compressed: CompressedCertificatePayload {
                 alg: algorithm,
                 uncompressed_len,
-                compressed: PayloadU24(Payload::new(compressed)),
+                compressed: PayloadU24::from(Payload::new(compressed)),
             },
         }))
     }

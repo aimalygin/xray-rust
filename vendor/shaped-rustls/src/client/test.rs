@@ -3,7 +3,7 @@ use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc as StdArc, Mutex};
+use std::sync::Mutex;
 
 use pki_types::{CertificateDer, ServerName};
 
@@ -45,6 +45,7 @@ mod tests {
     use crate::crypto::tls13::OkmBlock;
     use crate::enums::CertificateType;
     use crate::msgs::base::PayloadU8;
+    use crate::msgs::ccs::ChangeCipherSpecPayload;
     use crate::msgs::enums::ECCurveType;
     use crate::msgs::handshake::{
         CertificateChain, EcParameters, HelloRetryRequestExtensions, KeyShareEntry,
@@ -123,7 +124,7 @@ mod tests {
                 .unwrap()
                 .with_root_certificates(roots())
                 .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_random(fixed_random))),
         }));
 
@@ -141,7 +142,7 @@ mod tests {
                 .unwrap()
                 .with_root_certificates(roots())
                 .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_session_id(
                 ClientHelloSessionId::try_from(session_id.clone()).unwrap(),
             ))),
@@ -154,15 +155,15 @@ mod tests {
 
     #[test]
     fn client_hello_customizer_captures_raw_client_hello() {
-        let captured = StdArc::new(Mutex::new(Vec::new()));
+        let captured = Arc::new(Mutex::new(Vec::new()));
         let mut config =
             ClientConfig::builder_with_provider(super::provider::default_provider().into())
                 .with_protocol_versions(&[&version::TLS13])
                 .unwrap()
                 .with_root_certificates(roots())
                 .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
-            plan: Mutex::new(Some(ClientHelloPlan::new().with_capture(StdArc::new(
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
+            plan: Mutex::new(Some(ClientHelloPlan::new().with_capture(Arc::new(
                 RecordingClientHelloCapture {
                     bytes: captured.clone(),
                 },
@@ -176,8 +177,8 @@ mod tests {
 
     #[test]
     fn client_hello_finalizer_patches_captured_and_emitted_session_id() {
-        let captured = StdArc::new(Mutex::new(Vec::new()));
-        let finalizer_called = StdArc::new(AtomicBool::new(false));
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let finalizer_called = Arc::new(AtomicBool::new(false));
         let replacement_session_id = [0x5au8; 32];
         let mut config =
             ClientConfig::builder_with_provider(super::provider::default_provider().into())
@@ -185,15 +186,15 @@ mod tests {
                 .unwrap()
                 .with_root_certificates(roots())
                 .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_session_id(ClientHelloSessionId::try_from(vec![0; 32]).unwrap())
-                    .with_finalizer(StdArc::new(PatchingClientHelloFinalizer {
+                    .with_finalizer(Arc::new(PatchingClientHelloFinalizer {
                         replacement_session_id,
                         called: finalizer_called.clone(),
                     }))
-                    .with_capture(StdArc::new(RecordingClientHelloCapture {
+                    .with_capture(Arc::new(RecordingClientHelloCapture {
                         bytes: captured.clone(),
                     })),
             )),
@@ -209,18 +210,18 @@ mod tests {
 
     #[test]
     fn client_hello_finalizer_error_fails_before_emitting_client_hello() {
-        let finalizer_called = StdArc::new(AtomicBool::new(false));
+        let finalizer_called = Arc::new(AtomicBool::new(false));
         let mut config =
             ClientConfig::builder_with_provider(super::provider::default_provider().into())
                 .with_protocol_versions(&[&version::TLS13])
                 .unwrap()
                 .with_root_certificates(roots())
                 .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_session_id(ClientHelloSessionId::try_from(vec![0; 32]).unwrap())
-                    .with_finalizer(StdArc::new(FailingClientHelloFinalizer {
+                    .with_finalizer(Arc::new(FailingClientHelloFinalizer {
                         called: finalizer_called.clone(),
                     })),
             )),
@@ -238,18 +239,18 @@ mod tests {
 
     #[test]
     fn client_hello_finalizer_rejects_non_session_id_changes() {
-        let finalizer_called = StdArc::new(AtomicBool::new(false));
+        let finalizer_called = Arc::new(AtomicBool::new(false));
         let mut config =
             ClientConfig::builder_with_provider(super::provider::default_provider().into())
                 .with_protocol_versions(&[&version::TLS13])
                 .unwrap()
                 .with_root_certificates(roots())
                 .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_session_id(ClientHelloSessionId::try_from(vec![0; 32]).unwrap())
-                    .with_finalizer(StdArc::new(MutatingClientHelloFinalizer {
+                    .with_finalizer(Arc::new(MutatingClientHelloFinalizer {
                         mutation: ClientHelloFinalizerMutation::NonSessionByte,
                         called: finalizer_called.clone(),
                     })),
@@ -268,18 +269,18 @@ mod tests {
 
     #[test]
     fn client_hello_finalizer_rejects_length_changes() {
-        let finalizer_called = StdArc::new(AtomicBool::new(false));
+        let finalizer_called = Arc::new(AtomicBool::new(false));
         let mut config =
             ClientConfig::builder_with_provider(super::provider::default_provider().into())
                 .with_protocol_versions(&[&version::TLS13])
                 .unwrap()
                 .with_root_certificates(roots())
                 .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_session_id(ClientHelloSessionId::try_from(vec![0; 32]).unwrap())
-                    .with_finalizer(StdArc::new(MutatingClientHelloFinalizer {
+                    .with_finalizer(Arc::new(MutatingClientHelloFinalizer {
                         mutation: ClientHelloFinalizerMutation::Length,
                         called: finalizer_called.clone(),
                     })),
@@ -299,7 +300,7 @@ mod tests {
     #[cfg(feature = "aws_lc_rs")]
     #[test]
     fn client_hello_finalizer_session_id_completes_tls13_handshake() {
-        let finalizer_called = StdArc::new(AtomicBool::new(false));
+        let finalizer_called = Arc::new(AtomicBool::new(false));
         let replacement_session_id = [0x5au8; 32];
         let provider = super::provider::default_provider();
         let mut client_config = ClientConfig::builder_with_provider(provider.clone().into())
@@ -307,11 +308,11 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        client_config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        client_config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_session_id(ClientHelloSessionId::try_from(vec![0; 32]).unwrap())
-                    .with_finalizer(StdArc::new(PatchingClientHelloFinalizer {
+                    .with_finalizer(Arc::new(PatchingClientHelloFinalizer {
                         replacement_session_id,
                         called: finalizer_called.clone(),
                     })),
@@ -345,7 +346,7 @@ mod tests {
         assert!(!baseline.extensions.is_empty());
 
         let mut config = tls13_x25519_config_with_alpn();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(None),
         }));
 
@@ -364,7 +365,7 @@ mod tests {
         assert!(!baseline.extensions.is_empty());
 
         let mut config = tls13_x25519_config_with_alpn();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new())),
         }));
 
@@ -394,7 +395,9 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        // The expected extension list has no compress_certificate.
+        config.cert_decompressors.clear();
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_extension_order(order))),
         }));
 
@@ -429,7 +432,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new().with_cipher_suites(cipher_suites),
             )),
@@ -456,7 +459,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new().with_cipher_suites(cipher_suites),
             )),
@@ -483,7 +486,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new().with_advertised_cipher_suites(cipher_suites),
             )),
@@ -514,7 +517,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new().with_advertised_cipher_suites(cipher_suites),
             )),
@@ -563,7 +566,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new().with_advertised_cipher_suites(cipher_suites),
             )),
@@ -612,7 +615,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new().with_supported_versions(versions),
             )),
@@ -639,7 +642,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new().with_supported_versions(versions),
             )),
@@ -670,7 +673,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_supported_groups(groups))),
         }));
 
@@ -694,7 +697,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_supported_groups(groups))),
         }));
 
@@ -728,7 +731,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_advertised_supported_versions(versions)
@@ -770,7 +773,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new().with_signature_algorithms(signature_algorithms),
             )),
@@ -799,7 +802,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new().with_signature_algorithms(signature_algorithms),
             )),
@@ -827,7 +830,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new().with_signature_algorithms(signature_algorithms),
             )),
@@ -859,7 +862,7 @@ mod tests {
             .with_root_certificates(roots())
             .with_no_client_auth();
         config.cert_decompressors = vec![&ZLIB_DECOMPRESSOR, &BROTLI_DECOMPRESSOR];
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new().with_certificate_compression_algorithms(algorithms),
             )),
@@ -890,7 +893,7 @@ mod tests {
             .with_root_certificates(roots())
             .with_no_client_auth();
         config.cert_decompressors.clear();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new().with_certificate_compression_algorithms(algorithms),
             )),
@@ -914,7 +917,7 @@ mod tests {
             .with_root_certificates(roots())
             .with_no_client_auth();
         config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_alpn_protocols(alpn))),
         }));
 
@@ -954,7 +957,7 @@ mod tests {
             .with_root_certificates(roots())
             .with_no_client_auth();
         config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_extensions(extensions))),
         }));
 
@@ -1004,7 +1007,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_extensions(extensions))),
         }));
 
@@ -1053,7 +1056,9 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        // The expected extension list has no compress_certificate.
+        config.cert_decompressors.clear();
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_forced_extensions(forced)
@@ -1106,7 +1111,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_grease(grease))),
         }));
 
@@ -1160,7 +1165,9 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        // The expected extension list has no compress_certificate.
+        config.cert_decompressors.clear();
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_extension_order(order)
@@ -1214,7 +1221,9 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        // The expected extension list has no compress_certificate.
+        config.cert_decompressors.clear();
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_extension_order(order)
@@ -1253,7 +1262,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_grease(grease))),
         }));
 
@@ -1287,7 +1296,7 @@ mod tests {
                 .unwrap()
                 .with_root_certificates(roots())
                 .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_supported_versions(versions)
@@ -1324,7 +1333,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new().with_exact_extensions(exact_extensions),
             )),
@@ -1376,7 +1385,7 @@ mod tests {
             .with_root_certificates(roots())
             .with_no_client_auth();
         config.cert_decompressors = vec![&BROTLI_DECOMPRESSOR];
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_alpn_protocols(alpn)
@@ -1416,6 +1425,8 @@ mod tests {
             .assert_matches_encoded(&encoded);
     }
 
+    // The FIPS provider offers no X25519 key share.
+    #[cfg(not(feature = "fips"))]
     #[test]
     fn client_hello_oracle_can_place_forced_and_grease_extensions_before_padding() {
         static BROTLI_DECOMPRESSOR: TestCertDecompressor =
@@ -1513,7 +1524,7 @@ mod tests {
                 .with_root_certificates(roots())
                 .with_no_client_auth();
         config.cert_decompressors = vec![&BROTLI_DECOMPRESSOR];
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_advertised_cipher_suites(advertised_cipher_suites)
@@ -1625,7 +1636,9 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        // The expected extension list has no compress_certificate.
+        config.cert_decompressors.clear();
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_cipher_suites(cipher_suites)
@@ -1715,7 +1728,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_grease(grease))),
         }));
 
@@ -1738,7 +1751,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_grease(grease))),
         }));
 
@@ -1787,7 +1800,7 @@ mod tests {
     #[test]
     fn client_hello_customizer_keeps_the_planned_order_when_nothing_is_elided() {
         let mut config = tls13_x25519_client_config();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(planned_order_with_grease())),
         }));
 
@@ -1829,7 +1842,7 @@ mod tests {
         ])
         .unwrap();
         let mut config = tls13_x25519_client_config();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_extension_order(order))),
         }));
 
@@ -1863,7 +1876,7 @@ mod tests {
             .with_extension(ClientHelloGreaseExtension::new(0x0a0a, 10, vec![]).unwrap())
             .unwrap();
         let mut config = tls13_x25519_client_config();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_extension_order(order)
@@ -1945,7 +1958,7 @@ mod tests {
 
     fn ip_literal_client_hello(plan: ClientHelloPlan) -> Result<Vec<u8>, Error> {
         let mut config = tls13_x25519_client_config();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(plan)),
         }));
 
@@ -1979,7 +1992,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_grease(grease))),
         }));
 
@@ -2008,7 +2021,7 @@ mod tests {
         .unwrap()
         .with_root_certificates(roots())
         .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_key_share_plan(key_shares))),
         }));
 
@@ -2028,7 +2041,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_key_share_plan(key_shares))),
         }));
 
@@ -2050,7 +2063,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new().with_raw_key_shares(raw_key_shares),
             )),
@@ -2080,7 +2093,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_raw_key_shares(raw_key_shares)
@@ -2119,7 +2132,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_padding(padding))),
         }));
 
@@ -2156,7 +2169,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_padding(padding))),
         }));
 
@@ -2196,7 +2209,9 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        // The expected extension list has no compress_certificate.
+        config.cert_decompressors.clear();
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_raw_extensions(raw_extensions)
@@ -2250,7 +2265,9 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        // The expected extension list has no compress_certificate.
+        config.cert_decompressors.clear();
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_exact_extensions(exact_extensions)
@@ -2286,9 +2303,11 @@ mod tests {
 
     #[test]
     fn client_extensions_custom_order_rejects_missing_emitted_extension() {
-        let mut extensions = ClientExtensions::default();
-        extensions.extended_master_secret_request = Some(());
-        extensions.ec_point_formats = Some(SupportedEcPointFormats::default());
+        let mut extensions = ClientExtensions {
+            extended_master_secret_request: Some(()),
+            ec_point_formats: Some(SupportedEcPointFormats::default()),
+            ..Default::default()
+        };
 
         assert!(
             extensions
@@ -2299,8 +2318,10 @@ mod tests {
 
     #[test]
     fn client_extensions_custom_order_rejects_extra_non_emitted_extension() {
-        let mut extensions = ClientExtensions::default();
-        extensions.extended_master_secret_request = Some(());
+        let mut extensions = ClientExtensions {
+            extended_master_secret_request: Some(()),
+            ..Default::default()
+        };
 
         assert!(
             extensions
@@ -2314,8 +2335,10 @@ mod tests {
 
     #[test]
     fn client_extensions_custom_order_rejects_duplicate_extension() {
-        let mut extensions = ClientExtensions::default();
-        extensions.extended_master_secret_request = Some(());
+        let mut extensions = ClientExtensions {
+            extended_master_secret_request: Some(()),
+            ..Default::default()
+        };
 
         assert!(
             extensions
@@ -2329,9 +2352,11 @@ mod tests {
 
     #[test]
     fn client_extensions_custom_order_rejects_forced_final_extension() {
-        let mut extensions = ClientExtensions::default();
-        extensions.extended_master_secret_request = Some(());
-        extensions.encrypted_client_hello = Some(EncryptedClientHello::Inner);
+        let mut extensions = ClientExtensions {
+            extended_master_secret_request: Some(()),
+            encrypted_client_hello: Some(EncryptedClientHello::Inner),
+            ..Default::default()
+        };
 
         assert!(
             extensions
@@ -2345,9 +2370,11 @@ mod tests {
 
     #[test]
     fn client_extensions_custom_order_rejects_contiguous_extension_and_appends_it_once() {
-        let mut extensions = ClientExtensions::default();
-        extensions.extended_master_secret_request = Some(());
-        extensions.ec_point_formats = Some(SupportedEcPointFormats::default());
+        let mut extensions = ClientExtensions {
+            extended_master_secret_request: Some(()),
+            ec_point_formats: Some(SupportedEcPointFormats::default()),
+            ..Default::default()
+        };
         extensions
             .contiguous_extensions
             .push(ExtensionType::ECPointFormats);
@@ -2384,15 +2411,15 @@ mod tests {
         let expected_public =
             hex::decode("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a")
                 .unwrap();
-        let observed_public = StdArc::new(Mutex::new(None));
+        let observed_public = Arc::new(Mutex::new(None));
         let mut config = ClientConfig::builder_with_provider(aws_lc_x25519_provider().into())
             .with_protocol_versions(&[&version::TLS13])
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_fixed_x25519(
-                crate::client::FixedX25519KeyShare::new(private_key).with_observer(StdArc::new(
+                crate::client::FixedX25519KeyShare::new(private_key).with_observer(Arc::new(
                     RecordingX25519KeyShare {
                         public_key: observed_public.clone(),
                     },
@@ -2421,7 +2448,8 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "aws_lc_rs")]
+    // The FIPS provider offers no X25519 key share.
+    #[cfg(all(feature = "aws_lc_rs", not(feature = "fips")))]
     #[test]
     fn fixed_x25519_can_be_mixed_with_provider_backed_p256() {
         let private_key =
@@ -2442,7 +2470,7 @@ mod tests {
         .unwrap()
         .with_root_certificates(roots())
         .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_key_share_plan(key_shares)
@@ -2481,7 +2509,7 @@ mod tests {
         let expected_public =
             hex::decode("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a")
                 .unwrap();
-        let observed_public = StdArc::new(Mutex::new(None));
+        let observed_public = Arc::new(Mutex::new(None));
         let key_shares =
             ClientHelloKeySharePlan::try_from(vec![NamedGroup::X25519MLKEM768]).unwrap();
         let provider = CryptoProvider {
@@ -2493,13 +2521,13 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_key_share_plan(key_shares)
                     .with_fixed_x25519(
                         crate::client::FixedX25519KeyShare::new(private_key).with_observer(
-                            StdArc::new(RecordingX25519KeyShare {
+                            Arc::new(RecordingX25519KeyShare {
                                 public_key: observed_public.clone(),
                             }),
                         ),
@@ -2542,7 +2570,7 @@ mod tests {
         let expected_public =
             hex::decode("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a")
                 .unwrap();
-        let observed_public = StdArc::new(Mutex::new(None));
+        let observed_public = Arc::new(Mutex::new(None));
         let draft_group = NamedGroup::Unknown(0x6399);
         let key_shares = ClientHelloKeySharePlan::try_from(vec![draft_group]).unwrap();
         let provider = CryptoProvider {
@@ -2554,13 +2582,13 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_key_share_plan(key_shares)
                     .with_fixed_x25519(
                         crate::client::FixedX25519KeyShare::new(private_key).with_observer(
-                            StdArc::new(RecordingX25519KeyShare {
+                            Arc::new(RecordingX25519KeyShare {
                                 public_key: observed_public.clone(),
                             }),
                         ),
@@ -2606,16 +2634,16 @@ mod tests {
         let expected_public =
             hex::decode("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a")
                 .unwrap();
-        let observed_public = StdArc::new(Mutex::new(None));
+        let observed_public = Arc::new(Mutex::new(None));
         let provider = aws_lc_x25519_provider();
         let mut client_config = ClientConfig::builder_with_provider(provider.clone().into())
             .with_protocol_versions(&[&version::TLS13])
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        client_config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        client_config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(ClientHelloPlan::new().with_fixed_x25519(
-                crate::client::FixedX25519KeyShare::new(private_key).with_observer(StdArc::new(
+                crate::client::FixedX25519KeyShare::new(private_key).with_observer(Arc::new(
                     RecordingX25519KeyShare {
                         public_key: observed_public.clone(),
                     },
@@ -2660,7 +2688,7 @@ mod tests {
         let expected_public =
             hex::decode("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a")
                 .unwrap();
-        let observed_public = StdArc::new(Mutex::new(None));
+        let observed_public = Arc::new(Mutex::new(None));
         let draft_group = NamedGroup::Unknown(0x6399);
         let key_shares = ClientHelloKeySharePlan::try_from(vec![draft_group]).unwrap();
         let provider = CryptoProvider {
@@ -2672,13 +2700,13 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        client_config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        client_config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_key_share_plan(key_shares)
                     .with_fixed_x25519(
                         crate::client::FixedX25519KeyShare::new(private_key).with_observer(
-                            StdArc::new(RecordingX25519KeyShare {
+                            Arc::new(RecordingX25519KeyShare {
                                 public_key: observed_public.clone(),
                             }),
                         ),
@@ -2720,7 +2748,7 @@ mod tests {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-        config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+        config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
             plan: Mutex::new(Some(
                 ClientHelloPlan::new()
                     .with_fixed_x25519(crate::client::FixedX25519KeyShare::new([1u8; 32])),
@@ -3093,6 +3121,63 @@ mod tests {
         conn.process_new_packets().map(|_| ())
     }
 
+    #[test]
+    fn test_client_rejects_protected_change_cipher_spec() {
+        let fake_server_crypto = Arc::new(FakeServerCrypto::new());
+        let mut config = ClientConfig::builder_with_provider(x25519_provider().into())
+            .with_protocol_versions(&[&version::TLS13])
+            .unwrap()
+            .with_root_certificates(roots())
+            .with_no_client_auth();
+        config.key_log = fake_server_crypto.clone();
+        let mut conn =
+            ClientConnection::new(config.into(), ServerName::try_from("localhost").unwrap())
+                .unwrap();
+        let mut sent = Vec::new();
+        conn.write_tls(&mut sent).unwrap();
+
+        let sh = Message {
+            version: ProtocolVersion::TLSv1_3,
+            payload: MessagePayload::handshake(HandshakeMessagePayload(
+                HandshakePayload::ServerHello(ServerHelloPayload {
+                    random: Random([0; 32]),
+                    compression_method: Compression::Null,
+                    cipher_suite: CipherSuite::TLS13_AES_128_GCM_SHA256,
+                    legacy_version: ProtocolVersion::TLSv1_3,
+                    session_id: SessionId::empty(),
+                    extensions: Box::new(ServerExtensions {
+                        key_share: Some(KeyShareEntry {
+                            group: NamedGroup::X25519,
+                            payload: PayloadU16::new(vec![0xaa; 32]),
+                        }),
+                        ..ServerExtensions::default()
+                    }),
+                }),
+            )),
+        };
+        conn.read_tls(&mut sh.into_wire_bytes().as_slice())
+            .unwrap();
+        conn.process_new_packets().unwrap();
+
+        // A change_cipher_spec protected under the handshake keys is not a
+        // compatibility-mode CCS, and must not be dropped like one.
+        let ccs = Message {
+            version: ProtocolVersion::TLSv1_3,
+            payload: MessagePayload::ChangeCipherSpec(ChangeCipherSpecPayload),
+        };
+
+        let mut encrypter = fake_server_crypto.server_handshake_encrypter();
+        let enc_ccs = encrypter
+            .encrypt(PlainMessage::from(ccs).borrow_outbound(), 0)
+            .unwrap();
+        conn.read_tls(&mut enc_ccs.encode().as_slice())
+            .unwrap();
+        assert_eq!(
+            conn.process_new_packets().unwrap_err(),
+            PeerMisbehaved::IllegalMiddleboxChangeCipherSpec.into()
+        );
+    }
+
     fn client_config_for_rpk(key_log: Arc<dyn KeyLog>) -> ClientConfig {
         let mut config = ClientConfig::builder_with_provider(x25519_provider().into())
             .with_protocol_versions(&[&version::TLS13])
@@ -3423,7 +3508,7 @@ fn retry_test_config(plan: ClientHelloPlan) -> ClientConfig {
             .unwrap()
             .with_root_certificates(roots())
             .with_no_client_auth();
-    config.client_hello_customizer = Some(StdArc::new(StaticClientHelloCustomizer {
+    config.client_hello_customizer = Some(Arc::new(StaticClientHelloCustomizer {
         plan: Mutex::new(Some(plan.with_key_share_plan(
             ClientHelloKeySharePlan::try_from(vec![NamedGroup::X25519]).unwrap(),
         ))),
@@ -3720,7 +3805,7 @@ impl ClientHelloCustomizer for StaticClientHelloCustomizer {
 
 #[derive(Debug)]
 struct RecordingClientHelloCapture {
-    bytes: StdArc<Mutex<Vec<u8>>>,
+    bytes: Arc<Mutex<Vec<u8>>>,
 }
 
 impl crate::client::CapturesClientHello for RecordingClientHelloCapture {
@@ -3733,7 +3818,7 @@ impl crate::client::CapturesClientHello for RecordingClientHelloCapture {
 #[derive(Debug)]
 struct PatchingClientHelloFinalizer {
     replacement_session_id: [u8; 32],
-    called: StdArc<AtomicBool>,
+    called: Arc<AtomicBool>,
 }
 
 impl FinalizesClientHello for PatchingClientHelloFinalizer {
@@ -3749,7 +3834,7 @@ impl FinalizesClientHello for PatchingClientHelloFinalizer {
 
 #[derive(Debug)]
 struct FailingClientHelloFinalizer {
-    called: StdArc<AtomicBool>,
+    called: Arc<AtomicBool>,
 }
 
 impl FinalizesClientHello for FailingClientHelloFinalizer {
@@ -3763,7 +3848,7 @@ impl FinalizesClientHello for FailingClientHelloFinalizer {
 #[derive(Debug)]
 struct MutatingClientHelloFinalizer {
     mutation: ClientHelloFinalizerMutation,
-    called: StdArc<AtomicBool>,
+    called: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -3787,7 +3872,7 @@ impl FinalizesClientHello for MutatingClientHelloFinalizer {
 #[cfg(feature = "aws_lc_rs")]
 #[derive(Debug)]
 struct RecordingX25519KeyShare {
-    public_key: StdArc<Mutex<Option<[u8; 32]>>>,
+    public_key: Arc<Mutex<Option<[u8; 32]>>>,
 }
 
 #[cfg(feature = "aws_lc_rs")]

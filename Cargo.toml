@@ -67,7 +67,7 @@ regex = "1"
 quinn = { version = "=0.11.12", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
 # Named only for congestion-controller callback types; quinn selects the features.
 quinn-proto = { version = "=0.11.19", default-features = false }
-rustls = { version = "0.23.40", default-features = false, features = ["aws_lc_rs", "brotli", "logging", "ring", "std", "tls12", "zlib"] }
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "brotli", "logging", "ring", "std", "tls12", "zlib"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha1 = "0.11"
@@ -100,6 +100,6 @@ h3 = { path = "vendor/h3" }
 h3-quinn = { path = "vendor/h3-quinn" }
 quinn-proto = { path = "vendor/quinn-proto" }
 h2 = { path = "vendor/h2" }
-# aimalygin/shaped-rustls at ca91d48c385f7d16ad3993ecaf26fa9b84882dbc with
-# upstream rustls 0.23.45/0.23.46 security fixes; see vendor/shaped-rustls/XRAY-PATCH.md.
+# aimalygin/shaped-rustls at 474a31b7cb158a681970d048734abc7d7b4d1adc, which is rustls
+# 0.23.46 with the ClientHello shaping API; see vendor/shaped-rustls/XRAY-PATCH.md.
 rustls = { path = "vendor/shaped-rustls" }
