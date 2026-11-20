@@ -22,7 +22,13 @@ The safe path is:
 
 1. publish the fork under an unambiguous package name such as
    `shaped-rustls`, preserving its upstream licenses and fork disclosure;
-2. publish a matching Tokio adapter that depends on that package;
+2. depend on that package by its own name. No Tokio adapter has to be
+   published with it: the client side of TLS is
+   `crates/xray-transport/src/tls_stream.rs`, over `rustls::ClientConnection`,
+   so on the TCP path no crates.io package sits between the workspace's code
+   and the fork. `tokio-rustls` is only a dev-dependency (and a dependency of
+   the unpublished `xray-bench`), for the server side of tests, where
+   upstream `rustls` serves as well;
 3. keep QUIC/HTTP3 on upstream `rustls` types or publish the additional adapted
    QUIC dependency surface;
 4. give every internal `xray-*` path dependency a matching registry version;
