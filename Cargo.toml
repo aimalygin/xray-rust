@@ -75,6 +75,8 @@ sha2 = "0.11"
 smoltcp = { version = "0.14.0", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp"] }
 thiserror = "2"
 tokio = { version = "1.53.3", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
+# TLS servers for tests and xray-bench fixtures only. The client side is
+# crates/xray-transport/src/tls_stream.rs: no production code reads through it.
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["aws_lc_rs", "logging", "ring", "tls12"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 webpki-roots = "1.0.11"

@@ -39,19 +39,6 @@ impl Carrier for crate::fragment::FragmentStream {
     }
 }
 
-/// A TLS session that Vision may unwrap into direct mode, over the carrier
-/// the unwrapped directions then use.
-///
-/// REALITY runs over its own TCP socket; plain TLS runs over whatever carrier
-/// the dialer produced, which under a chained outbound is another proxy
-/// stream. Either way it is the connection Xray-core's Vision reads and
-/// writes once a direction switches to direct mode (`tls.Conn.NetConn()`).
-///
-/// The session reads its carrier one TLS record at a time
-/// ([`ClientTlsStream::connect_record_aligned`]), so when the read side goes
-/// direct the session holds nothing but plaintext it has already decrypted,
-/// and the cleartext that follows the peer's last record is still in the
-/// carrier.
 enum PenetratingTlsState<S> {
     Tls(Option<Box<ClientTlsStream<S>>>),
     /// The read side switched to Vision direct mode while the write side may
@@ -67,6 +54,19 @@ enum PenetratingTlsState<S> {
     },
 }
 
+/// A TLS session that Vision may unwrap into direct mode, over the carrier
+/// the unwrapped directions then use.
+///
+/// REALITY runs over its own TCP socket; plain TLS runs over whatever carrier
+/// the dialer produced, which under a chained outbound is another proxy
+/// stream. Either way it is the connection Xray-core's Vision reads and
+/// writes once a direction switches to direct mode (`tls.Conn.NetConn()`).
+///
+/// The session reads its carrier one TLS record at a time
+/// ([`ClientTlsStream::connect_record_aligned`]), so when the read side goes
+/// direct the session holds nothing but plaintext it has already decrypted,
+/// and the cleartext that follows the peer's last record is still in the
+/// carrier.
 pub(crate) struct PenetratingTlsStream<S = TcpStream> {
     state: PenetratingTlsState<S>,
 }
