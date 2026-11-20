@@ -26,10 +26,12 @@ use tokio::{
 };
 
 // Bound receive bursts independently of the send window for delayed paths.
-// At most 32 MiB of backing storage across 16 TCP slots; active windows start smaller.
-const TCP_RECEIVE_BUFFER: usize = 1024 * 1024;
+// The receive and send credit every TCP flow of a stack shares (see `drive`).
+// Each flow's own buffers, `FlowLimits::tcp_buffer` each way, are at most this
+// size and bound its share; active windows start smaller.
+const TCP_RECEIVE_BUDGET: usize = crate::FlowLimits::MAX_TCP_BUFFER;
 const TCP_INITIAL_RECEIVE_WINDOW: usize = 64 * 1024;
-const TCP_SEND_BUFFER: usize = 1024 * 1024;
+const TCP_SEND_BUDGET: usize = crate::FlowLimits::MAX_TCP_BUFFER;
 // How long past a round trip the retransmission timer of a CONNECT-IP stack
 // waits at least. RFC 6298 says a second; Linux uses this value. It stays
 // above the delayed ACK of the common stacks, so a peer that is only slow to
@@ -42,10 +44,14 @@ fn tcp_timestamp() -> u32 {
     (EPOCH.get_or_init(Clock::now).elapsed().as_millis() as u32).wrapping_add(1)
 }
 
-fn tcp_socket(retransmission_floor: Option<smoltcp::time::Duration>) -> tcp::Socket<'static> {
+fn tcp_socket(
+    buffer: usize,
+    retransmission_floor: Option<smoltcp::time::Duration>,
+) -> tcp::Socket<'static> {
+    // Zeroed allocations: pages a flow has not yet used cost no memory.
     let mut socket = tcp::Socket::new(
-        tcp::SocketBuffer::new(vec![0; TCP_RECEIVE_BUFFER]),
-        tcp::SocketBuffer::new(vec![0; TCP_SEND_BUFFER]),
+        tcp::SocketBuffer::new(vec![0; buffer]),
+        tcp::SocketBuffer::new(vec![0; buffer]),
     );
     assert!(socket.set_receive_window_limit(TCP_INITIAL_RECEIVE_WINDOW));
     socket.set_congestion_control(tcp::CongestionControl::Reno);
@@ -158,11 +164,14 @@ pub(crate) struct Stack<P: IpPacket = Packet<Ip>> {
     start: Clock,
     port: u16,
     mtu: usize,
+    /// Each TCP flow's receive and send buffer.
+    tcp_buffer: usize,
 }
 impl<P: IpPacket> Stack<P> {
     pub(crate) fn new(
         addresses: &[IpAddr],
         mtu: u16,
+        tcp_buffer: usize,
         tx: mpsc::Sender<P>,
         incoming: mpsc::Receiver<P>,
         commands: mpsc::Receiver<Command>,
@@ -216,6 +225,7 @@ impl<P: IpPacket> Stack<P> {
             start: Clock::now(),
             port: rand::random::<u16>() | 0xc000,
             mtu: usize::from(mtu),
+            tcp_buffer,
         }
     }
     fn now(&self) -> Instant {
@@ -323,7 +333,7 @@ impl<P: IpPacket> Stack<P> {
             })
             .count()
             .max(1);
-        let send_budget = TCP_SEND_BUFFER / active_senders;
+        let send_budget = TCP_SEND_BUDGET / active_senders;
         let activity_now = Clock::now();
         let active_receivers =
             self.flows
@@ -336,7 +346,7 @@ impl<P: IpPacket> Stack<P> {
                 .count()
                 .max(1);
         let receive_budget =
-            (TCP_RECEIVE_BUFFER / active_receivers).max(TCP_INITIAL_RECEIVE_WINDOW);
+            (TCP_RECEIVE_BUDGET / active_receivers).max(TCP_INITIAL_RECEIVE_WINDOW);
         let mut removed = Vec::new();
         for (&id, entry) in &mut self.flows {
             match entry {
@@ -505,7 +515,7 @@ impl<P: IpPacket> Stack<P> {
                 }
                 // This TCP crosses a real UDP path; respect congestion instead
                 // of sending every flow's entire window into bounded queues.
-                let mut socket = tcp_socket(P::TCP_RETRANSMISSION_FLOOR);
+                let mut socket = tcp_socket(self.tcp_buffer, P::TCP_RETRANSMISSION_FLOOR);
                 let port = self.next_port();
                 if socket
                     .connect(
@@ -692,7 +702,7 @@ mod tests {
             ));
             let mut handles = Vec::new();
             for port in [40000, 40001] {
-                let mut socket = tcp_socket(None);
+                let mut socket = tcp_socket(TCP_RECEIVE_BUDGET, None);
                 socket
                     .connect(interface.context(), (remote, 80), (local, port))
                     .unwrap();
@@ -863,8 +873,8 @@ mod tests {
             addresses.push(IpCidr::new(local.into(), 24)).unwrap();
         });
         let mut socket = tcp::Socket::new(
-            tcp::SocketBuffer::new(vec![0; TCP_RECEIVE_BUFFER]),
-            tcp::SocketBuffer::new(vec![0; TCP_SEND_BUFFER]),
+            tcp::SocketBuffer::new(vec![0; TCP_RECEIVE_BUDGET]),
+            tcp::SocketBuffer::new(vec![0; TCP_SEND_BUDGET]),
         );
         socket
             .connect(interface.context(), (remote, 80), (local, 40000))
@@ -914,7 +924,7 @@ mod tests {
         interface.update_ip_addrs(|addresses| {
             addresses.push(IpCidr::new(local.into(), 24)).unwrap();
         });
-        let mut socket = tcp_socket(None);
+        let mut socket = tcp_socket(TCP_RECEIVE_BUDGET, None);
         socket
             .connect(interface.context(), (remote, 80), (local, 40000))
             .unwrap();
@@ -1038,8 +1048,8 @@ mod tests {
             addresses.push(IpCidr::new(local.into(), 24)).unwrap();
         });
         let mut socket = tcp::Socket::new(
-            tcp::SocketBuffer::new(vec![0; TCP_RECEIVE_BUFFER]),
-            tcp::SocketBuffer::new(vec![0; TCP_SEND_BUFFER]),
+            tcp::SocketBuffer::new(vec![0; TCP_RECEIVE_BUDGET]),
+            tcp::SocketBuffer::new(vec![0; TCP_SEND_BUDGET]),
         );
         socket.set_nagle_enabled(false);
         socket.set_congestion_control(tcp::CongestionControl::Reno);
@@ -1162,7 +1172,7 @@ mod tests {
             addresses.push(IpCidr::new(local.into(), 24)).unwrap();
         });
         interface.set_tcp_egress_burst(32);
-        let mut socket = tcp_socket(retransmission_floor);
+        let mut socket = tcp_socket(TCP_RECEIVE_BUDGET, retransmission_floor);
         socket
             .connect(interface.context(), (remote, 80), (local, 40000))
             .unwrap();

@@ -18,8 +18,8 @@ pub use config::{
     XhttpSessionIdConfig, XhttpUplinkDataPlacement,
 };
 pub(crate) use h2::{
-    connect_h2, connect_h2_with_window, H2Client, H2Error, H2ReceiveWindow, H2ResponseBody,
-    H2Upload,
+    connect_h2, connect_h2_with_keepalive, connect_h2_with_window, H2Client, H2Error,
+    H2ReceiveWindow, H2ResponseBody, H2Upload,
 };
 pub(crate) use h3::{
     configure_quic_datagram_socket, connect_quic_transport, connect_quic_transport_with_datagrams,

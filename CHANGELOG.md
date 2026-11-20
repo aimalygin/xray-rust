@@ -110,6 +110,46 @@ long-term supported release series.
   `DomainMatcherSet` equality now compares normalized patterns, however they
   are stored, and `DomainMatcherSetError` has a `TooLarge` variant for a
   table beyond 4 GiB.
+- A WireGuard device or MASQUE tunnel takes more TCP flows at once, by TUN
+  runtime profile, each flow's buffers sized with it: 32 flows of 256 KiB
+  each way on `LowMemory` (16 MiB), 64 of 256 KiB on `Mobile` and
+  `MobilePlus` (32 MiB, what 16 flows of 1 MiB took), 128 of 1 MiB on
+  `Desktop` and `Throughput`; `Default` follows the target. Each tunnel took
+  16 TCP flows, idle ones included, and refused the seventeenth, so a phone
+  browser, which opens more for one page and keeps them open, broke pages
+  over WARP and WireGuard. On the phone profiles one flow's receive window is
+  now at most 256 KiB, which bounds a single download to 256 KiB a round
+  trip: about 21 Mbit/s at 100 ms, where 1 MiB allowed about 84.
+- A TCP flow past that limit no longer fails at once: it waits for an
+  earlier flow to close, in arrival order, for up to three seconds, and only
+  then tries its addresses, so the wait does not spend an address's attempt.
+  This helps a burst of short flows. Nothing closes an idle flow to make
+  room, so once idle connections hold every place, a new flow waits its three
+  seconds and is then refused as an exhausted flow budget. A waiting TUN flow
+  holds one of the TUN's pending-open permits, so a tunnel lets at most half
+  of them wait (16 `LowMemory`, 32 `Mobile`, 48 `MobilePlus`, 256 `Desktop`,
+  512 `Throughput`) and refuses the next at once. A waiting flow that is
+  cancelled leaves the queue at once. `xray-wireguard` adds `FlowLimits`,
+  `Client::start_with_limits`, `Netstack::start_with_limits`, `tcp_slot`,
+  `connect_with_slot` and `waiting_tcp_flows`; the existing constructors take
+  the target's limits.
+- DNS over HTTPS and DNS over QUIC keep their connection to the server
+  between queries. Every query used to open its own: a TCP, TLS and HTTP/2
+  handshake, or a QUIC one, for each name, which cost a round trip or two
+  of latency, radio time on a phone, and a recognisable burst of short
+  connections. Now a DoH server has one HTTP/2 connection per route that
+  carries queries as parallel streams, and a DoQ server has one QUIC
+  connection with a stream per query. A connection is dropped when a query
+  fails on it, when the server closes it, after Xray-core's idle times (300
+  seconds for DoH, 30 for DoQ) and when the host reports a network change
+  with `rebind_quic`; a query that a kept connection drops unanswered goes
+  once more on a fresh one. A query that a kept connection leaves unanswered
+  for 2 seconds goes on a fresh one as well, and the first answer is taken:
+  a connection that died without a word, as while a phone slept, costs one
+  lookup those 2 seconds instead of failing it at its deadline. A Core keeps
+  at most 8 connections of each kind.
+  `exchange_dns_quic_candidates` in `xray-transport` takes the
+  `DnsConnectionPools` that keep them.
 
 ## 0.10.1 - 2026-11-16
 

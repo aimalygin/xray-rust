@@ -675,8 +675,10 @@ keepalive. Deliberate differences:
   it, and the dial that resumes one would not show a fresh certificate.
 - Unknown fields in `warp` fail the configuration, as everywhere; Go's
   JSON ignores them.
-- The stack is the WireGuard outbound's smoltcp stack, not gVisor: 16 TCP
-  and 512 UDP flows a tunnel, its buffers and its TCP. smoltcp does not act
+- The stack is the WireGuard outbound's smoltcp stack, not gVisor: its
+  [flow limits](config-compatibility.md#wireguard-flow-limits) (512 UDP
+  flows a tunnel and 32 to 128 TCP flows by runtime profile, a TCP flow past
+  them waiting for a place), its buffers and its TCP. smoltcp does not act
   on ICMP Packet Too Big; the QUIC connection never goes below its 1350-byte
   first packets, so the stack's 1280-byte packets always fit.
 - A name tries up to eight addresses, three seconds each and ten for the
@@ -1310,6 +1312,44 @@ its own `UseSystem` leaves the lookup unanswered. Xray-core returns an empty
 response there and keeps no record of it; here an empty answer would be
 cached for 30 seconds, past the moment the routes are back.
 
+## DNS over HTTPS and QUIC connection reuse
+
+DoH and DoQ keep one connection per server between queries, as Xray-core
+does in `app/dns/nameserver_doh.go` and `nameserver_quic.go`
+([details](config-compatibility.md#dns)). The timers are Xray-core's: a DoH connection goes after 300 seconds without a query
+(`IdleConnTimeout`) and is probed with a PING after 45 seconds without a
+read (`ReadIdleTimeout`, 15 seconds for the answer); a DoQ connection has
+quic-go's default 30-second idle timeout and no keepalive.
+
+Deliberate differences:
+
+- An OS network change drops the kept connections. The host reports it
+  with `rebind_quic`, and the next query dials on the new network.
+  Xray-core keeps a connection until it fails, which on a phone that moved
+  from Wi-Fi to mobile data is a DNS query waiting for a dead socket. The
+  DNS connections are dropped, not moved to a new socket as the other QUIC
+  carriers are: they cost one handshake, and a DoH connection cannot move.
+- Routed DoH keeps one connection per inbound tag and outbound that routing
+  picks, not one per server. A query never rides a connection that was
+  dialed through another outbound, when a balancer or a rule sends it
+  elsewhere.
+- A Core keeps at most 8 DoH and 8 DoQ connections and closes the least
+  recently used one for a ninth. Xray-core has no limit; its count is the
+  number of configured servers.
+- A query that a kept connection drops before any response goes once more on
+  a fresh connection, for DoQ as for DoH. Go's HTTP/2 client retries a
+  request the server did not process; Xray-core's DoQ client reports the
+  error.
+- A query that a kept connection leaves unanswered for 2 seconds takes it
+  out of the pool and goes on a fresh connection as well; whichever answers
+  first is its answer. A kept connection can die without a word, as when a
+  phone slept through its server's idle timeout while the clocks that would
+  retire it stood still, and its first query would otherwise wait out its
+  deadline and fail. A query given up after 2 seconds without a response
+  takes its connection out of the pool too, so the next one does not wait on
+  it as well. Xray-core leaves both to the 45-second PING, and to the idle
+  timeout for DoQ.
+
 ## DNS hosts `"#N"` RCODE answers
 
 `dns.hosts` reads a `"#N"` value as Xray-core's `app/dns/hosts.go` does: the
@@ -1404,6 +1444,11 @@ differences:
   `dialerProxy` outbound.
 - A WireGuard peer endpoint that is a domain dials the first address its
   `domainStrategy` keeps. Xray-core picks one of them at random.
+- A WireGuard device carries 512 UDP flows and 32 to 128 TCP flows at once,
+  by runtime profile, with fixed buffers; a TCP flow past them waits up to
+  three seconds for a place and is then refused, and an idle flow is never
+  closed to make room ([flow limits](config-compatibility.md#wireguard-flow-limits)).
+  Xray-core's gVisor stack sets no such bound.
 - An option that fails is logged at debug level; Xray-core logs it at info,
   a level the runtime log here does not have.
 - Xray-core's outbound UDP sockets are IPv6 sockets that also carry IPv4, so

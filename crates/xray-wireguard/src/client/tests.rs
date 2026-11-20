@@ -29,6 +29,7 @@ async fn tcp_reset_is_an_error_after_buffered_bytes_and_releases_flow() {
         let stack = stack::Stack::<Packet<gotatun::packet::Ip>>::new(
             &config.addresses,
             config.mtu,
+            FlowLimits::MOBILE.tcp_buffer(),
             out,
             input,
             requests,
@@ -227,18 +228,18 @@ async fn idle_carrier_receive_follows_rebind_and_releases_old_sockets() {
 }
 
 fn queue_test_client(commands: mpsc::Sender<Command>, udp_limit: usize) -> Client {
+    let mut flows = Flows::new(
+        vec!["10.44.0.2".parse().unwrap()],
+        1420,
+        Routes::AllowedIps(vec!["0.0.0.0/0".parse().unwrap()]),
+        commands,
+        Stop::new(),
+        Arc::new(Notify::new()),
+        FlowLimits::default(),
+    );
+    flows.udp = Arc::new(Semaphore::new(udp_limit));
     Client(Arc::new(Owner {
-        flows: Flows {
-            addresses: vec!["10.44.0.2".parse().unwrap()],
-            mtu: 1420,
-            routes: Routes::AllowedIps(vec!["0.0.0.0/0".parse().unwrap()]),
-            commands,
-            stop: Stop::new(),
-            wake: Arc::new(Notify::new()),
-            tcp: Arc::new(Semaphore::new(TCP_LIMIT)),
-            udp: Arc::new(Semaphore::new(udp_limit)),
-            next: AtomicU64::new(1),
-        },
+        flows,
         finished: watch::channel(false).1,
         rebind: Arc::default(),
     }))
@@ -297,4 +298,208 @@ async fn opens_wait_for_a_full_command_queue_and_busy_means_no_flow_slot() {
     })
     .await
     .unwrap();
+}
+
+fn limited_client(limits: FlowLimits) -> (Client, mpsc::Receiver<Command>) {
+    let (commands, requests) = mpsc::channel(COMMAND_QUEUE);
+    let flows = Flows::new(
+        vec!["10.44.0.2".parse().unwrap()],
+        1420,
+        Routes::AllowedIps(vec!["0.0.0.0/0".parse().unwrap()]),
+        commands,
+        Stop::new(),
+        Arc::new(Notify::new()),
+        limits,
+    );
+    let client = Client(Arc::new(Owner {
+        flows,
+        finished: watch::channel(false).1,
+        rebind: Arc::default(),
+    }));
+    (client, requests)
+}
+/// An actor that opens every TCP flow and hands its place to the test, which
+/// closes the flow by dropping the place, as the stack drops it with the flow.
+fn open_every_tcp_flow(
+    mut requests: mpsc::Receiver<Command>,
+) -> mpsc::UnboundedReceiver<OwnedSemaphorePermit> {
+    let (opened, places) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        while let Some(command) = requests.recv().await {
+            if let Command::Tcp { reply, permit, .. } = command {
+                let _ = reply.send(Ok(()));
+                let _ = opened.send(permit);
+            }
+        }
+    });
+    places
+}
+async fn until(mut condition: impl FnMut() -> bool) {
+    while !condition() {
+        tokio::task::yield_now().await;
+    }
+}
+fn small(tcp: usize, tcp_waiting: usize) -> FlowLimits {
+    FlowLimits::new(tcp, tcp_waiting, FlowLimits::MIN_TCP_BUFFER).unwrap()
+}
+const TARGET: &str = "198.51.100.7:443";
+
+#[tokio::test]
+async fn tcp_flows_past_the_limit_wait_in_turn_and_a_full_queue_is_busy() {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let (client, requests) = limited_client(small(2, 3));
+        let mut places = open_every_tcp_flow(requests);
+        let target = TARGET.parse().unwrap();
+        let _streams = [
+            client.connect(target).await.unwrap(),
+            client.connect(target).await.unwrap(),
+        ];
+        let mut open = vec![places.recv().await.unwrap(), places.recv().await.unwrap()];
+        assert_eq!(client.available_tcp_slots(), 0);
+
+        let (done, mut finished) = mpsc::unbounded_channel();
+        let mut waiters = Vec::new();
+        for (index, name) in ["first", "second", "third"].into_iter().enumerate() {
+            waiters.push(tokio::spawn({
+                let client = client.clone();
+                let done = done.clone();
+                async move {
+                    let stream = client.connect(target).await;
+                    done.send((name, stream.is_ok())).unwrap();
+                    stream
+                }
+            }));
+            until(|| client.waiting_tcp_flows() == index + 1).await;
+        }
+        // The queue holds three: the next is refused at once.
+        assert!(matches!(client.connect(target).await, Err(Error::Busy)));
+
+        // A waiter that gives up leaves the queue at once.
+        let second = waiters.remove(1);
+        second.abort();
+        assert!(matches!(second.await, Err(error) if error.is_cancelled()));
+        assert_eq!(client.waiting_tcp_flows(), 2);
+
+        // Each place a closed flow frees goes to the longest waiter.
+        drop(open.remove(0));
+        assert_eq!(finished.recv().await.unwrap(), ("first", true));
+        open.push(places.recv().await.unwrap());
+        assert_eq!(client.waiting_tcp_flows(), 1);
+        drop(open.remove(0));
+        assert_eq!(finished.recv().await.unwrap(), ("third", true));
+        open.push(places.recv().await.unwrap());
+        assert_eq!(client.waiting_tcp_flows(), 0);
+        for waiter in waiters {
+            assert!(waiter.await.unwrap().is_ok());
+        }
+        drop(open);
+        assert_eq!(client.available_tcp_slots(), 2);
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_tcp_flow_that_waits_out_its_wait_is_busy_and_leaves_the_queue() {
+    let (client, requests) = limited_client(small(1, 1));
+    let mut places = open_every_tcp_flow(requests);
+    let target = TARGET.parse().unwrap();
+    let _stream = client.connect(target).await.unwrap();
+    let place = places.recv().await.unwrap();
+
+    // The wait gives up as Busy before the open deadlines around it, the
+    // outbound's ten seconds and the handshake timeout, would time it out.
+    let started = tokio::time::Instant::now();
+    assert!(matches!(client.connect(target).await, Err(Error::Busy)));
+    assert!(started.elapsed() >= TCP_SLOT_WAIT);
+    assert!(started.elapsed() < OPEN_TIMEOUT);
+    assert_eq!(client.waiting_tcp_flows(), 0);
+    assert_eq!(client.available_tcp_slots(), 0);
+
+    // A place freed within the deadline ends the wait.
+    let waiter = tokio::spawn({
+        let client = client.clone();
+        async move { client.connect(target).await }
+    });
+    until(|| client.waiting_tcp_flows() == 1).await;
+    tokio::time::advance(TCP_SLOT_WAIT / 2).await;
+    drop(place);
+    assert!(waiter.await.unwrap().is_ok());
+    drop(places.recv().await.unwrap());
+    assert_eq!(client.available_tcp_slots(), 1);
+    assert_eq!(client.waiting_tcp_flows(), 0);
+}
+
+#[tokio::test]
+async fn closing_the_client_ends_tcp_waits_and_slots_stay_with_their_stack() {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let (client, requests) = limited_client(small(1, 4));
+        let _places = open_every_tcp_flow(requests);
+        let target = TARGET.parse().unwrap();
+        let slot = client.tcp_slot().await.unwrap();
+        assert_eq!(client.available_tcp_slots(), 0);
+
+        // A place belongs to the stack that gave it.
+        let (other, _requests) = limited_client(small(1, 4));
+        assert!(matches!(
+            other.connect_with_slot(slot, target).await,
+            Err(Error::Configuration)
+        ));
+        assert_eq!(client.available_tcp_slots(), 1);
+
+        let slot = client.tcp_slot().await.unwrap();
+        let waiter = tokio::spawn({
+            let client = client.clone();
+            async move { client.connect(target).await }
+        });
+        until(|| client.waiting_tcp_flows() == 1).await;
+        client.close();
+        assert!(matches!(waiter.await.unwrap(), Err(Error::Closed)));
+        assert_eq!(client.waiting_tcp_flows(), 0);
+        assert!(matches!(client.tcp_slot().await, Err(Error::Closed)));
+        drop(slot);
+        assert_eq!(client.available_tcp_slots(), 1);
+    })
+    .await
+    .unwrap();
+}
+
+#[test]
+fn flow_limits_bound_their_memory_and_reject_what_the_stack_cannot_hold() {
+    for limits in [
+        FlowLimits::LOW_MEMORY,
+        FlowLimits::MOBILE,
+        FlowLimits::DESKTOP,
+        FlowLimits::default(),
+    ] {
+        assert_eq!(
+            FlowLimits::new(limits.tcp(), limits.tcp_waiting(), limits.tcp_buffer()).unwrap(),
+            limits
+        );
+        assert!(limits.tcp() > 16, "a browser opens more than 16 at once");
+        assert!(limits.tcp_waiting() > 0);
+    }
+    let buffers = |limits: FlowLimits| 2 * limits.tcp() * limits.tcp_buffer();
+    assert_eq!(buffers(FlowLimits::LOW_MEMORY), 16 << 20);
+    // The bound 16 flows of 1 MiB each way had.
+    assert_eq!(buffers(FlowLimits::MOBILE), 32 << 20);
+    assert_eq!(buffers(FlowLimits::DESKTOP), 256 << 20);
+    for (tcp, waiting, buffer) in [
+        (0, 0, FlowLimits::MIN_TCP_BUFFER),
+        (FlowLimits::MAX_TCP + 1, 0, FlowLimits::MIN_TCP_BUFFER),
+        (
+            1,
+            FlowLimits::MAX_TCP_WAITING + 1,
+            FlowLimits::MIN_TCP_BUFFER,
+        ),
+        (1, 0, FlowLimits::MIN_TCP_BUFFER - 1),
+        (1, 0, FlowLimits::MAX_TCP_BUFFER + 1),
+    ] {
+        assert!(matches!(
+            FlowLimits::new(tcp, waiting, buffer),
+            Err(Error::Configuration)
+        ));
+    }
+    // No queue: the old refusal at once.
+    assert!(FlowLimits::new(16, 0, FlowLimits::MAX_TCP_BUFFER).is_ok());
 }
