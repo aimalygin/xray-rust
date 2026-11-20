@@ -1,10 +1,7 @@
 use std::{
     collections::HashMap,
-    io,
     net::SocketAddr,
-    pin::Pin,
     sync::{Arc, Mutex},
-    task::{Context, Poll},
 };
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
@@ -15,8 +12,6 @@ use rustls::{
     SignatureScheme,
 };
 use sha2::{Digest, Sha256};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio_rustls::TlsConnector as TokioTlsConnector;
 use x509_parser::prelude::{FromDer, X509Certificate};
 use xray_routing::{Target, TargetAddr};
 
@@ -25,8 +20,8 @@ use crate::{
     utls_profiles::UtlsClientHelloProfile,
     utls_shaping::profile_offers_tls13,
     utls_tls::{unshaped_alpn_protocols, TlsAlpnPolicy},
-    BoxedTransportStream, CapturedStream, HappyEyeballsConfig, PenetratingTlsStream,
-    SocketProtector, TlsClientConfig, TransportError, TransportStream,
+    BoxedTransportStream, ClientTlsStream, HappyEyeballsConfig, PenetratingTlsStream,
+    SocketProtector, TlsClientConfig, TransportError,
 };
 
 /// Identifies one rustls configuration shape. Two connections that agree on
@@ -367,8 +362,7 @@ impl TlsConnector {
         stream: BoxedTransportStream,
         prepared: PreparedTlsStream,
     ) -> Result<BoxedTransportStream, TransportError> {
-        let stream = TokioTlsConnector::from(prepared.client_config)
-            .connect(prepared.server_name, stream)
+        let stream = ClientTlsStream::connect(prepared.client_config, prepared.server_name, stream)
             .await
             .map_err(TransportError::Tls)?;
 
@@ -383,11 +377,10 @@ impl TlsConnector {
         stream: BoxedTransportStream,
         prepared: PreparedTlsStream,
     ) -> Result<(BoxedTransportStream, Option<Vec<u8>>), TransportError> {
-        let stream = TokioTlsConnector::from(prepared.client_config)
-            .connect(prepared.server_name, stream)
+        let stream = ClientTlsStream::connect(prepared.client_config, prepared.server_name, stream)
             .await
             .map_err(TransportError::Tls)?;
-        let alpn = stream.get_ref().1.alpn_protocol().map(<[u8]>::to_vec);
+        let alpn = stream.alpn_protocol().map(<[u8]>::to_vec);
         Ok((Box::new(stream), alpn))
     }
 
@@ -415,11 +408,10 @@ impl TlsConnector {
     ) -> Result<(BoxedTransportStream, Option<Vec<u8>>), TransportError> {
         let mut client = (*self.client_config_for_policy(config, TlsAlpnPolicy::Raw)?).clone();
         warp.apply(&mut client, config);
-        let stream = TokioTlsConnector::from(Arc::new(client))
-            .connect(tls_server_name(config)?, stream)
+        let stream = ClientTlsStream::connect(Arc::new(client), tls_server_name(config)?, stream)
             .await
             .map_err(TransportError::Tls)?;
-        let alpn = stream.get_ref().1.alpn_protocol().map(<[u8]>::to_vec);
+        let alpn = stream.alpn_protocol().map(<[u8]>::to_vec);
         Ok((Box::new(stream), alpn))
     }
 
@@ -428,19 +420,23 @@ impl TlsConnector {
     /// Once a direction switches to direct mode, Xray-core's Vision reads and
     /// writes the connection under the TLS session (`tls.Conn.NetConn()`),
     /// for plain TLS exactly as for REALITY. The returned stream therefore
-    /// wraps its carrier the way REALITY wraps its socket: reads stay aligned
-    /// to TLS record boundaries, so the cleartext that follows the last
-    /// downlink record never lands in the rustls deframer, until a direct
-    /// read takes the carrier over or the consumer releases the alignment.
+    /// reads its carrier the way REALITY reads its socket: no read crosses a
+    /// TLS record boundary, so the cleartext that follows the last downlink
+    /// record never lands in the rustls deframer, until a direct read takes
+    /// the carrier over or the consumer releases the alignment.
     pub(crate) async fn connect_prepared_penetrating_stream(
         &self,
         stream: BoxedTransportStream,
         prepared: PreparedTlsStream,
     ) -> Result<BoxedTransportStream, TransportError> {
-        let stream = TokioTlsConnector::from(prepared.client_config)
-            .connect(prepared.server_name, CapturedStream::new(stream, None))
-            .await
-            .map_err(TransportError::Tls)?;
+        let stream = ClientTlsStream::connect_record_aligned(
+            prepared.client_config,
+            prepared.server_name,
+            stream,
+            None,
+        )
+        .await
+        .map_err(TransportError::Tls)?;
 
         Ok(Box::new(PenetratingTlsStream::new(stream)))
     }
@@ -548,29 +544,6 @@ fn validate_quic_client_config(client_config: &rustls::ClientConfig) -> Result<(
     )
     .map(|_| ())
     .map_err(|error| TransportError::TlsConfig(error.to_string()))
-}
-
-/// TLS that Vision never unwraps: the session under an HTTP-based stream
-/// transport, where Vision requires VLESS encryption and its Direct command
-/// removes only that layer, and the sessions `TlsConnector` dials for DNS and
-/// probes. Direct I/O therefore stays inside the session. The raw transport's
-/// TLS, which Vision does unwrap, is a `PenetratingTlsStream`.
-impl TransportStream for tokio_rustls::client::TlsStream<BoxedTransportStream> {
-    fn poll_read_direct(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        output: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        AsyncRead::poll_read(self, cx, output)
-    }
-
-    fn poll_write_direct(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        input: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        AsyncWrite::poll_write(self, cx, input)
-    }
 }
 
 /// Skips certificate verification, but still verifies handshake signatures

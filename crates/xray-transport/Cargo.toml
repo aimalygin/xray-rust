@@ -43,7 +43,6 @@ sha2.workspace = true
 socket2 = { version = "0.6.5", features = ["all"] }
 thiserror.workspace = true
 tokio.workspace = true
-tokio-rustls.workspace = true
 webpki-roots.workspace = true
 x25519-dalek.workspace = true
 x509-parser.workspace = true
@@ -58,6 +57,8 @@ rcgen.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+# Server fixtures only: the client side is `src/tls_stream.rs`.
+tokio-rustls.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

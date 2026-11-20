@@ -58,6 +58,7 @@ mod socket_options;
 pub mod stream;
 mod system_records;
 mod tls;
+mod tls_stream;
 mod utls_profiles;
 mod utls_shaping;
 mod utls_tls;
@@ -75,7 +76,7 @@ pub use dns_pool::{DnsConnectionKey, DnsConnectionRoute};
 pub use happy_eyeballs::{connect_tcp_dual_stack, connect_tcp_happy_eyeballs, HappyEyeballsConfig};
 pub use memory_class::{memory_class, set_memory_class, MemoryClass};
 pub use network_change::NetworkChanges;
-pub(crate) use penetrating_tls::{CapturedStream, Carrier, PenetratingTlsStream, ServerReadLog};
+pub(crate) use penetrating_tls::{Carrier, PenetratingTlsStream};
 pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};
 pub use reality_runtime::{
     RealityHandshakeContextProvider, RealityRuntimeEngine, SystemRealityHandshakeContextProvider,
@@ -91,6 +92,7 @@ pub use socket_options::{
 };
 pub use system_records::{is_domain_name, RecordResolver, SrvRecord, SystemRecordResolver};
 pub use tls::{plain_tls_client_hello_bytes, TlsConnector, WarpTls};
+pub(crate) use tls_stream::{ClientTlsStream, ServerReadLog};
 pub use utls_profiles::draw_modern_fingerprint;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -334,24 +336,6 @@ impl TransportStream for TcpStream {
 }
 
 impl TransportStream for tokio::io::DuplexStream {
-    fn poll_read_direct(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        output: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        AsyncRead::poll_read(self, cx, output)
-    }
-
-    fn poll_write_direct(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        input: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        AsyncWrite::poll_write(self, cx, input)
-    }
-}
-
-impl TransportStream for tokio_rustls::client::TlsStream<TcpStream> {
     fn poll_read_direct(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
