@@ -124,15 +124,17 @@ cargo test --locked --manifest-path "$temporary/h2-0.4.20/Cargo.toml" \
 
 # shaped-rustls is the rustls fork at a pinned commit, not a crates.io
 # release. The vendored crate is its `rustls` directory (manifest, build
-# script and sources) and the fork's license files; XRAY-PATCH.diff expands
-# the workspace manifest and carries the backported security fixes.
-shaped_rustls_rev=ca91d48c385f7d16ad3993ecaf26fa9b84882dbc
+# script and sources) and the fork's license files; XRAY-PATCH.diff touches
+# the manifest alone: it expands the workspace dependencies and gives the
+# package upstream's name and release back, which `[patch.crates-io]` and the
+# advisory check need.
+shaped_rustls_rev=474a31b7cb158a681970d048734abc7d7b4d1adc
 curl --fail --location --silent --show-error \
   --proto '=https' --tlsv1.2 --retry 3 \
   --user-agent 'xray-rust-vendor-provenance/1.0' \
   --output "$temporary/shaped-rustls.tar.gz" \
   "https://codeload.github.com/aimalygin/shaped-rustls/tar.gz/$shaped_rustls_rev"
-echo "797e1851f8511d2d6d9ddb17006b17c8fe5c1726bb4521437fcbf43d7dfb8467  $temporary/shaped-rustls.tar.gz" |
+echo "00509c60f2eca32098208f219ee2d9ebd37fc1502062f12c5c09495f7fde3697  $temporary/shaped-rustls.tar.gz" |
   sha256sum --check -
 tar -xzf "$temporary/shaped-rustls.tar.gz" -C "$temporary"
 shaped_rustls_checkout="$temporary/shaped-rustls-$shaped_rustls_rev"
@@ -149,16 +151,14 @@ patch --batch --fuzz=0 -p1 \
 diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
   "$temporary/shaped-rustls" "$ROOT/vendor/shaped-rustls"
 # The fork's unit tests need its workspace (dev-dependencies, lockfile), so
-# they run there against the vendored sources. With brotli and zlib enabled,
-# seven ClientHello shaping tests of the fork expect no compress_certificate
-# extension and fail at the pinned commit already; the compression tests run
-# with those features on their own.
+# they run there against the vendored sources, with the features this
+# workspace enables. In its own workspace the package is `shaped-rustls`.
 rm -rf "$shaped_rustls_checkout/rustls/src"
 cp -R "$ROOT/vendor/shaped-rustls/src" "$shaped_rustls_checkout/rustls/src"
 cargo test --locked --manifest-path "$shaped_rustls_checkout/Cargo.toml" \
-  -p rustls --features ring --lib
+  -p shaped-rustls --features ring --lib
 cargo test --locked --manifest-path "$shaped_rustls_checkout/Cargo.toml" \
-  -p rustls --features ring,brotli,zlib --lib -- compress::
+  -p shaped-rustls --features ring,brotli,zlib --lib
 
 bash "$ROOT/scripts/check-wireguard-adapter-prototype.sh" --verify-vendor-only
 

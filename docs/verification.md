@@ -196,8 +196,8 @@ and the upstream fix the copy carries, and it reports an acknowledgement that
 no longer matches, so a rebase onto a fixed release can drop it. Extra
 arguments go to `cargo audit`, for example `--no-fetch` offline. Rebase a
 vendored crate onto the fixed release where its local patch allows; backport
-and acknowledge only when it does not, as for the rustls fork in
-`vendor/shaped-rustls/XRAY-PATCH.md`.
+and acknowledge only when it does not, as the rustls fork needed until it
+merged rustls 0.23.46 (`vendor/shaped-rustls/XRAY-PATCH.md`).
 
 The dedicated secret-scan job checks the complete reachable history. On a tag
 push it scans only the tag's ancestry (`--log-opts=HEAD`) with the policy the

@@ -37,9 +37,10 @@ use crate::msgs::codec::{Codec, Reader};
 use crate::msgs::enums::{Compression, ExtensionType, NamedGroup};
 use crate::msgs::handshake::{
     CertificateStatusRequest, ClientExtensions, ClientExtensionsInput, ClientHelloPayload,
-    ClientSessionTicket, EncryptedClientHello, HandshakeMessagePayload, HandshakePayload,
-    HelloRetryRequest, KeyShareEntry, ProtocolName, PskKeyExchangeModes, Random, ServerNamePayload,
-    SessionId, SupportedEcPointFormats, SupportedProtocolVersions, TransportParameters,
+    ClientSessionTicket, ClientTicketRequest, EncryptedClientHello, HandshakeMessagePayload,
+    HandshakePayload, HelloRetryRequest, KeyShareEntry, ProtocolName, PskKeyExchangeModes, Random,
+    ServerNamePayload, SessionId, SupportedEcPointFormats, SupportedProtocolVersions,
+    TransportParameters,
 };
 use crate::msgs::message::{Message, MessagePayload};
 use crate::msgs::persist;
@@ -63,7 +64,6 @@ struct ExpectServerHello {
     //
     // If this is `None` then we do not support early data.
     early_data_key_schedule: Option<KeyScheduleEarly>,
-    offered_cipher_suites: Vec<CipherSuite>,
     offered_key_share: Option<tls13::OfferedKeyShares>,
     suite: Option<SupportedCipherSuite>,
     ech_state: Option<EchState>,
@@ -122,7 +122,9 @@ impl ClientHelloInput {
         let session_id = match session_id {
             Some(session_id) => session_id,
             None if cx.common.is_quic() => SessionId::empty(),
-            None if !config.supports_version(ProtocolVersion::TLSv1_3) => SessionId::empty(),
+            None if !config.supports_version(ProtocolVersion::TLSv1_3, cx.common.protocol) => {
+                SessionId::empty()
+            }
             None => SessionId::random(config.provider.secure_random)?,
         };
 
@@ -143,10 +145,12 @@ impl ClientHelloInput {
                     .copied()
                     .filter(|version| match version.version {
                         ProtocolVersion::TLSv1_2 => {
-                            !forbids_tls12 && config.supports_version(ProtocolVersion::TLSv1_2)
+                            !forbids_tls12
+                                && config
+                                    .supports_version(ProtocolVersion::TLSv1_2, cx.common.protocol)
                         }
                         ProtocolVersion::TLSv1_3 => {
-                            config.supports_version(ProtocolVersion::TLSv1_3)
+                            config.supports_version(ProtocolVersion::TLSv1_3, cx.common.protocol)
                         }
                         _ => false,
                     })
@@ -256,29 +260,31 @@ impl ClientHelloInput {
 
 fn default_supported_versions(
     config: &ClientConfig,
+    protocol: Protocol,
     forbids_tls12: bool,
 ) -> SupportedProtocolVersions {
     SupportedProtocolVersions::from_flags(
-        config.supports_version(ProtocolVersion::TLSv1_2) && !forbids_tls12,
-        config.supports_version(ProtocolVersion::TLSv1_3),
+        config.supports_version(ProtocolVersion::TLSv1_2, protocol) && !forbids_tls12,
+        config.supports_version(ProtocolVersion::TLSv1_3, protocol),
     )
 }
 
 fn planned_supported_versions(
     plan: Option<&ClientHelloPlan>,
     config: &ClientConfig,
+    protocol: Protocol,
     forbids_tls12: bool,
 ) -> Result<SupportedProtocolVersions, Error> {
     let Some(versions) = plan.and_then(|plan| plan.supported_versions.as_ref()) else {
-        return Ok(default_supported_versions(config, forbids_tls12));
+        return Ok(default_supported_versions(config, protocol, forbids_tls12));
     };
 
     for version in versions.as_slice() {
         let supported = match *version {
             ProtocolVersion::TLSv1_2 => {
-                !forbids_tls12 && config.supports_version(ProtocolVersion::TLSv1_2)
+                !forbids_tls12 && config.supports_version(ProtocolVersion::TLSv1_2, protocol)
             }
-            ProtocolVersion::TLSv1_3 => config.supports_version(ProtocolVersion::TLSv1_3),
+            ProtocolVersion::TLSv1_3 => config.supports_version(ProtocolVersion::TLSv1_3, protocol),
             _ => false,
         };
 
@@ -480,6 +486,7 @@ fn apply_extension_plan(
                 hello.offered_cert_compression = false;
             }
             ExtensionType::SessionTicket => exts.session_ticket = None,
+            ExtensionType::TicketRequest => exts.ticket_request = None,
             ExtensionType::PreSharedKey => {
                 if exts.preshared_key_offer.is_some() {
                     return Err(Error::General(
@@ -805,9 +812,9 @@ const PADDING_EXTENSION_HEADER_LEN: usize = 4;
 
 fn insert_at<T>(items: &mut Vec<T>, position: usize, value: T, what: &str) -> Result<(), Error> {
     if position > items.len() {
-        return Err(Error::General(
-            format!("ClientHello GREASE position is out of range for {what}").into(),
-        ));
+        return Err(Error::General(format!(
+            "ClientHello GREASE position is out of range for {what}"
+        )));
     }
 
     items.insert(position, value);
@@ -978,8 +985,12 @@ fn emit_client_hello_for_retry(
     // builder semantics.
     let forbids_tls12 = cx.common.is_quic() || ech_state.is_some();
 
-    let supported_versions =
-        planned_supported_versions(input.plan.as_ref(), config, forbids_tls12)?;
+    let supported_versions = planned_supported_versions(
+        input.plan.as_ref(),
+        config,
+        cx.common.protocol,
+        forbids_tls12,
+    )?;
 
     // should be unreachable thanks to config builder
     assert!(supported_versions.any(|_| true));
@@ -1026,6 +1037,17 @@ fn emit_client_hello_for_retry(
         protocols: extra_exts.protocols.clone(),
         ..Default::default()
     });
+
+    if !config
+        .crypto_provider()
+        .cipher_suites
+        .iter()
+        .any(|cs| cs.tls13().is_some())
+    {
+        if let Some(schemes) = &mut exts.signature_schemes {
+            schemes.retain(|scheme| scheme.algorithm().is_some());
+        }
+    }
 
     match extra_exts.transport_parameters.clone() {
         Some(TransportParameters::Quic(v)) => exts.transport_parameters = Some(v),
@@ -1083,6 +1105,13 @@ fn emit_client_hello_for_retry(
             psk: false,
             psk_dhe: true,
         });
+
+        if let Some(ticket_req) = &config.send_ticket_request {
+            exts.ticket_request = Some(ClientTicketRequest {
+                new_session_count: ticket_req.new_session_count,
+                resumption_count: ticket_req.resumption_count,
+            });
+        }
     }
 
     input.hello.offered_cert_compression = match input.plan.as_ref().and_then(|plan| {
@@ -1310,17 +1339,15 @@ fn emit_client_hello_for_retry(
         }
         // If we haven't offered ECH, and have no ECH state, then consider whether to use GREASE
         // ECH.
-        (EchStatus::NotOffered, None) => {
-            if !has_exact_ech {
-                if let Some(grease_ext) = ech_grease_ext {
-                    // Add the GREASE ECH extension.
-                    let grease_ext = grease_ext?;
-                    chp_payload.encrypted_client_hello = Some(grease_ext.clone());
-                    cx.data.ech_status = EchStatus::Grease;
-                    // Store the GREASE ECH extension in case we need to carry it forward in a
-                    // subsequent hello.
-                    input.prev_ech_ext = Some(grease_ext);
-                }
+        (EchStatus::NotOffered, None) if !has_exact_ech => {
+            if let Some(grease_ext) = ech_grease_ext {
+                // Add the GREASE ECH extension.
+                let grease_ext = grease_ext?;
+                chp_payload.encrypted_client_hello = Some(grease_ext.clone());
+                cx.data.ech_status = EchStatus::Grease;
+                // Store the GREASE ECH extension in case we need to carry it forward in a
+                // subsequent hello.
+                input.prev_ech_ext = Some(grease_ext);
             }
         }
         _ => {}
@@ -1332,7 +1359,7 @@ fn emit_client_hello_for_retry(
     input.hello.sent_extensions = chp_payload
         .extensions
         .collect_used_with_raw();
-    let offered_cipher_suites = chp_payload.cipher_suites.clone();
+    input.hello.offered_cipher_suites = chp_payload.cipher_suites.clone();
 
     let mut chp = HandshakeMessagePayload(HandshakePayload::ClientHello(chp_payload));
 
@@ -1433,7 +1460,6 @@ fn emit_client_hello_for_retry(
         input,
         transcript_buffer,
         early_data_key_schedule,
-        offered_cipher_suites,
         offered_key_share: key_share,
         suite,
         ech_state,
@@ -1583,7 +1609,7 @@ fn prepare_resumption<'a>(
     let resuming = match resuming {
         Some(resuming) if !resuming.ticket().is_empty() => resuming,
         _ => {
-            if config.supports_version(ProtocolVersion::TLSv1_2)
+            if config.supports_version(ProtocolVersion::TLSv1_2, cx.common.protocol)
                 && config.resumption.tls12_resumption == Tls12Resumption::SessionIdOrTickets
             {
                 // If we don't have a ticket, request one.
@@ -1595,7 +1621,7 @@ fn prepare_resumption<'a>(
 
     let Some(tls13) = resuming.map(|csv| csv.tls13()) else {
         // TLS 1.2; send the ticket if we have support this protocol version
-        if config.supports_version(ProtocolVersion::TLSv1_2)
+        if config.supports_version(ProtocolVersion::TLSv1_2, cx.common.protocol)
             && config.resumption.tls12_resumption == Tls12Resumption::SessionIdOrTickets
         {
             exts.session_ticket = Some(ClientSessionTicket::Offer(Payload::new(resuming.ticket())));
@@ -1603,7 +1629,7 @@ fn prepare_resumption<'a>(
         return None; // TLS 1.2, so nothing to return here
     };
 
-    if !config.supports_version(ProtocolVersion::TLSv1_3) {
+    if !config.supports_version(ProtocolVersion::TLSv1_3, cx.common.protocol) {
         return None;
     }
 
@@ -1709,7 +1735,7 @@ impl State<ClientConnectionData> for ExpectServerHello {
 
         use crate::ProtocolVersion::{TLSv1_2, TLSv1_3};
         let config = &self.input.config;
-        let tls13_supported = config.supports_version(TLSv1_3);
+        let tls13_supported = config.supports_version(TLSv1_3, cx.common.protocol);
 
         let server_version = if server_hello.legacy_version == TLSv1_2 {
             server_hello
@@ -1721,7 +1747,7 @@ impl State<ClientConnectionData> for ExpectServerHello {
 
         let version = match server_version {
             TLSv1_3 if tls13_supported => TLSv1_3,
-            TLSv1_2 if config.supports_version(TLSv1_2) => {
+            TLSv1_2 if config.supports_version(TLSv1_2, cx.common.protocol) => {
                 if cx.data.early_data.is_enabled() && cx.common.early_traffic {
                     // The client must fail with a dedicated error code if the server
                     // responds with TLS 1.2 when offering 0-RTT.
@@ -1797,26 +1823,18 @@ impl State<ClientConnectionData> for ExpectServerHello {
             }
         }
 
-        if !self
+        let Some(Some(suite)) = self
+            .input
+            .hello
             .offered_cipher_suites
             .contains(&server_hello.cipher_suite)
-        {
-            return Err({
-                cx.common.send_fatal_alert(
-                    AlertDescription::HandshakeFailure,
-                    PeerMisbehaved::SelectedUnofferedCipherSuite,
-                )
-            });
-        }
-
-        let suite = config
-            .find_cipher_suite(server_hello.cipher_suite)
-            .ok_or_else(|| {
-                cx.common.send_fatal_alert(
-                    AlertDescription::HandshakeFailure,
-                    PeerMisbehaved::SelectedUnofferedCipherSuite,
-                )
-            })?;
+            .then(|| config.find_cipher_suite(server_hello.cipher_suite, cx.common.protocol))
+        else {
+            return Err(cx.common.send_fatal_alert(
+                AlertDescription::HandshakeFailure,
+                PeerMisbehaved::SelectedUnofferedCipherSuite,
+            ));
+        };
 
         if version != suite.version().version {
             return Err({
@@ -1982,6 +2000,8 @@ impl ExpectServerHelloOrHelloRetryRequest {
         // Or asks us to use a ciphersuite we didn't offer.
         if !self
             .next
+            .input
+            .hello
             .offered_cipher_suites
             .contains(&hrr.cipher_suite)
         {
@@ -1993,7 +2013,7 @@ impl ExpectServerHelloOrHelloRetryRequest {
             });
         }
 
-        let Some(cs) = config.find_cipher_suite(hrr.cipher_suite) else {
+        let Some(cs) = config.find_cipher_suite(hrr.cipher_suite, cx.common.protocol) else {
             return Err({
                 cx.common.send_fatal_alert(
                     AlertDescription::IllegalParameter,
@@ -2017,20 +2037,18 @@ impl ExpectServerHelloOrHelloRetryRequest {
         cx.common.handshake_kind = Some(HandshakeKind::FullWithHelloRetryRequest);
 
         // If we offered ECH, we need to confirm that the server accepted it.
-        match (self.next.ech_state.as_ref(), cs.tls13()) {
-            // If the server did not confirm, then note the new ECH status but
-            // continue the handshake. We will abort with an ECH required error
-            // at the end.
-            (Some(ech_state), Some(tls13_cs))
-                if !ech_state.confirm_hrr_acceptance(hrr, tls13_cs, cx.common)? =>
-            {
-                cx.data.ech_status = EchStatus::Rejected
-            }
-            (Some(_), None) => {
+        if let Some(ech_state) = self.next.ech_state.as_mut() {
+            let Some(tls13_cs) = cs.tls13() else {
                 unreachable!("ECH state should only be set when TLS 1.3 was negotiated")
+            };
+
+            if !ech_state.confirm_hrr_acceptance(hrr, tls13_cs, cx.common)? {
+                // If the server did not confirm, then note the new ECH status but
+                // continue the handshake. We will abort with an ECH required error
+                // at the end.
+                cx.data.ech_status = EchStatus::Rejected;
             }
-            _ => {}
-        };
+        }
 
         // This is the draft19 change where the transcript became a tree
         let transcript = self

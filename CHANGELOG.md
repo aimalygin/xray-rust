@@ -150,6 +150,12 @@ long-term supported release series.
   at most 8 connections of each kind.
   `exchange_dns_quic_candidates` in `xray-transport` takes the
   `DnsConnectionPools` that keep them.
+- The vendored rustls fork is now shaped-rustls at `474a31b7`: rustls 0.23.46
+  with the ClientHello shaping API, where it was rustls 0.23.40 with four
+  security fixes carried by hand. Those fixes (RUSTSEC-2026-0285, -0346,
+  -0348 and -0349) are upstream's own commits now, RUSTSEC-2026-0347 never
+  applied to 0.23.40 and is fixed in 0.23.46, and the local patch is down to
+  the manifest. No ClientHello byte changes.
 
 ## 0.10.1 - 2026-11-16
 

@@ -96,7 +96,7 @@ pub(super) fn handle_server_hello(
         resuming,
         mut sent_tls13_fake_ccs,
         mut hello,
-        server_name,
+        mut server_name,
         ..
     } = input;
 
@@ -196,6 +196,8 @@ pub(super) fn handle_server_hello(
             server_hello,
             server_hello_encoded,
             suite.common.hash_provider,
+            &mut server_name,
+            cx.common,
         )? {
             // The server accepted our ECH offer, so complete the inner transcript with the
             // server hello message, and switch the relevant state to the copies for the
@@ -364,21 +366,20 @@ pub(super) fn initial_key_shares(
         return planned_key_shares(config, kx_state, plan, key_share_plan.as_slice());
     }
 
-    let planned_group = match plan.and_then(|plan| plan.supported_groups.as_ref()) {
-        Some(groups) => {
-            let mut selected = None;
-            for group_name in groups.as_slice() {
-                let Some(group) = config.find_kx_group(*group_name, ProtocolVersion::TLSv1_3)
-                else {
-                    return Err(Error::General(
+    // A plan's first supported group is the one whose key share goes out.
+    let planned_group = match plan
+        .and_then(|plan| plan.supported_groups.as_ref())
+        .and_then(|groups| groups.as_slice().first())
+    {
+        Some(group_name) => Some(
+            config
+                .find_kx_group(*group_name, ProtocolVersion::TLSv1_3)
+                .ok_or_else(|| {
+                    Error::General(
                         "ClientHello supported group is not supported by this config".into(),
-                    ));
-                };
-                selected = Some(group);
-                break;
-            }
-            selected
-        }
+                    )
+                })?,
+        ),
         None => None,
     };
 
@@ -1720,15 +1721,18 @@ impl State<ClientConnectionData> for ExpectFinished {
         cx.common.check_aligned_handshake()?;
         let (key_schedule, resumption) =
             key_schedule_pre_finished.into_traffic(cx.common, st.transcript.current_hash());
-        cx.common
-            .start_traffic(&mut cx.sendable_plaintext);
 
         // Now that we've reached the end of the normal handshake we must enforce ECH acceptance by
         // sending an alert and returning an error (potentially with retry configs) if the server
-        // did not accept our ECH offer.
+        // did not accept our ECH offer. This must happen before the connection is made available
+        // for application data, since the server has only been authenticated for the ECH config's
+        // `public_name`.
         if cx.data.ech_status == EchStatus::Rejected {
             return Err(ech::fatal_alert_required(st.ech_retry_configs, cx.common));
         }
+
+        cx.common
+            .start_traffic(&mut cx.sendable_plaintext);
 
         let st = ExpectTraffic {
             config: st.config.clone(),

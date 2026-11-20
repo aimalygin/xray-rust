@@ -7,13 +7,18 @@ depend on unpublished path-only crates.
 
 ## Current blocker
 
-The transport layer uses the pinned `shaped-rustls` fork through a workspace
-`[patch.crates-io]`. Its ClientHello customization API is required for the
-documented TLS and REALITY fingerprint behavior and is not present in upstream
-`rustls` 0.23.40.
+The transport layer uses the `shaped-rustls` fork, vendored and put in place
+of `rustls` through a workspace `[patch.crates-io]`. Its ClientHello
+customization API is required for the documented TLS and REALITY fingerprint
+behavior and is not present in upstream `rustls`.
+
+The fork is not the only override. `[patch.crates-io]` also replaces quinn,
+quinn-proto, h3, h3-quinn, h2, smoltcp and blake3 with vendored copies that
+carry local changes, and `xray-wireguard` takes a patched gotatun by path. The
+workspace calls APIs that exist only in those copies.
 
 Cargo removes local path overrides when creating a registry package, and a
-crates.io package cannot rely on the Git revision used by this workspace.
+crates.io package cannot rely on the vendored copies used by this workspace.
 Publishing `xray-transport`, `xray-core-rs`, or `xray-ffi` in the current shape
 would therefore produce a package that fails its registry build and fails on
 docs.rs. `cargo publish --no-verify` is not an acceptable workaround.
@@ -21,13 +26,19 @@ docs.rs. `cargo publish --no-verify` is not an acceptable workaround.
 The safe path is:
 
 1. publish the fork under an unambiguous package name such as
-   `shaped-rustls`, preserving its upstream licenses and fork disclosure;
+   `shaped-rustls`, preserving its upstream licenses and fork disclosure.
+   The fork's own manifest carries that name since its revision `474a31b7`
+   (rustls 0.23.46) and passes `cargo publish --dry-run`; it is not on
+   crates.io yet, and this workspace still builds it under the name `rustls`
+   (`vendor/shaped-rustls/XRAY-PATCH.md` says why);
 2. publish a matching Tokio adapter that depends on that package;
 3. keep QUIC/HTTP3 on upstream `rustls` types or publish the additional adapted
    QUIC dependency surface;
-4. give every internal `xray-*` path dependency a matching registry version;
-5. package and publish the workspace in dependency order;
-6. verify every package with `cargo publish --dry-run` and build documentation
+4. do the same for the other overridden crates: send upstream what upstream
+   can take, and publish the rest under names of their own;
+5. give every internal `xray-*` path dependency a matching registry version;
+6. package and publish the workspace in dependency order;
+7. verify every package with `cargo publish --dry-run` and build documentation
    using the same features and target selected for docs.rs.
 
 ## Intended publication order
