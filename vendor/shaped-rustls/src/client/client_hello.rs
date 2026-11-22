@@ -332,17 +332,17 @@ where
     K: Ord,
 {
     if values.is_empty() {
-        return Err(Error::General(
-            format!("ClientHello {what} cannot be empty").into(),
-        ));
+        return Err(Error::General(format!(
+            "ClientHello {what} cannot be empty"
+        )));
     }
 
     let mut seen = BTreeSet::new();
     for value in values {
         if !seen.insert(key(*value)) {
-            return Err(Error::General(
-                format!("ClientHello {what} contains a duplicate value").into(),
-            ));
+            return Err(Error::General(format!(
+                "ClientHello {what} contains a duplicate value"
+            )));
         }
     }
 
@@ -351,9 +351,9 @@ where
 
 fn reject_empty<T>(values: &[T], what: &str) -> Result<(), Error> {
     if values.is_empty() {
-        return Err(Error::General(
-            format!("ClientHello {what} cannot be empty").into(),
-        ));
+        return Err(Error::General(format!(
+            "ClientHello {what} cannot be empty"
+        )));
     }
 
     Ok(())

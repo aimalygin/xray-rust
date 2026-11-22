@@ -159,11 +159,12 @@ comparator omissions. A separate v0.5 RC gate now runs every supported stream
 transport plus two-minute XHTTP H2/H3 sessions under Linux `tc netem` delay,
 jitter, and loss. Mobile energy evidence remains a physical-device gate.
 
-REALITY ClientHello shaping currently depends on a full, immutable Git revision
-of the maintainer's public `shaped-rustls` fork rather than the crates.io
-`rustls` release. The revision is pinned in `Cargo.toml`, recorded in
-`Cargo.lock`, and constrained by `deny.toml`; consumers should include that fork
-in dependency and security reviews.
+TLS and REALITY ClientHello shaping depends on the maintainer's public
+`shaped-rustls` fork rather than the crates.io `rustls` release. The workspace
+builds a vendored copy of one fork revision, currently rustls 0.23.46 with the
+shaping API: `vendor/shaped-rustls/XRAY-PATCH.md` names the revision, and
+`scripts/check-vendored-sources.sh` proves the copy against that revision's
+archive. Consumers should include the fork in dependency and security reviews.
 
 ### XHTTP HTTP/3 phase-one limits
 
