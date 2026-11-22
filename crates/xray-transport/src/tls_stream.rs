@@ -911,8 +911,7 @@ mod tests {
         let server_error = server
             .await
             .expect("server task")
-            .err()
-            .expect("the server handshake fails");
+            .expect_err("the server handshake fails");
         assert!(matches!(
             server_error
                 .get_ref()
