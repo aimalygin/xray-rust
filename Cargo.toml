@@ -19,7 +19,7 @@ resolver = "2"
 # `.claude` holds agent worktrees, each a checkout with its own workspace.
 # Without it here, cargo resolves their excluded vendor crates to this
 # workspace and fails ("believes it's in a workspace when it's not").
-exclude = ["vendor/gotatun", "vendor/smoltcp", "vendor/quinn", "vendor/h2", "vendor/h3", "vendor/shaped-rustls", ".claude"]
+exclude = ["vendor/gotatun", "vendor/smoltcp", "vendor/quinn", "vendor/h2", "vendor/h3", "vendor/shaped-rustls", "vendor/tokio-rustls", ".claude"]
 
 [workspace.package]
 version = "0.10.1"
@@ -67,7 +67,11 @@ regex = "1"
 quinn = { version = "=0.11.12", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
 # Named only for congestion-controller callback types; quinn selects the features.
 quinn-proto = { version = "=0.11.19", default-features = false }
-rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "brotli", "logging", "ring", "std", "tls12", "zlib"] }
+# The ClientHello-shaping fork of rustls, under its own package name and the
+# library name `rustls`: aimalygin/shaped-rustls at
+# 474a31b7cb158a681970d048734abc7d7b4d1adc, which is rustls 0.23.46 with the
+# shaping API; see vendor/shaped-rustls/XRAY-PATCH.md.
+rustls = { package = "shaped-rustls", path = "vendor/shaped-rustls", version = "0.23.4600", default-features = false, features = ["aws_lc_rs", "brotli", "logging", "ring", "std", "tls12", "zlib"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha1 = "0.11"
@@ -77,7 +81,11 @@ thiserror = "2"
 tokio = { version = "1.53.3", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
 # TLS servers for tests and xray-bench fixtures only. The client side is
 # crates/xray-transport/src/tls_stream.rs: no production code reads through it.
-tokio-rustls = { version = "0.26.4", default-features = false, features = ["aws_lc_rs", "logging", "ring", "tls12"] }
+# tokio-rustls 0.26.4 built on the shaped-rustls package instead of on rustls,
+# so that those servers and the clients under test share one TLS library; see
+# vendor/tokio-rustls/XRAY-PATCH.md. A path dependency without a version: a
+# published crate's manifest drops it with the other dev-dependencies.
+tokio-rustls = { path = "vendor/tokio-rustls", default-features = false, features = ["aws_lc_rs", "logging", "ring", "tls12"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 webpki-roots = "1.0.11"
 x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
@@ -102,6 +110,3 @@ h3 = { path = "vendor/h3" }
 h3-quinn = { path = "vendor/h3-quinn" }
 quinn-proto = { path = "vendor/quinn-proto" }
 h2 = { path = "vendor/h2" }
-# aimalygin/shaped-rustls at 474a31b7cb158a681970d048734abc7d7b4d1adc, which is rustls
-# 0.23.46 with the ClientHello shaping API; see vendor/shaped-rustls/XRAY-PATCH.md.
-rustls = { path = "vendor/shaped-rustls" }

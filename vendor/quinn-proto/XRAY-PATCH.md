@@ -285,3 +285,14 @@ The complete 361-test library suite (313 before, plus upstream's new tests,
 including `oversized_retry_token`, `oversized_cached_initial_token`,
 `large_initial_token_leaves_room_for_close`, `max_stream_data_over_stream_limit`
 and the DATAGRAM accounting tests) passes in the reconstruction.
+
+## The rustls dependency
+
+The `rustls` dependency is the `shaped-rustls` package at `../shaped-rustls`
+(the ClientHello-shaping fork of rustls 0.23.46, whose library is still named
+`rustls`), version `0.23.4600`, where upstream's manifest names the `rustls`
+package from crates.io. The workspace builds its TLS and QUIC client
+configurations on that fork's types, and it no longer puts the fork under the
+name `rustls` with `[patch.crates-io]`. No source file changes for this.
+`scripts/check-vendored-sources.sh` adds the fork to the published lockfile
+before the locked test, so the crate's own tests run on the fork as well.

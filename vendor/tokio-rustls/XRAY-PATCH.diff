@@ -1,0 +1,57 @@
+diff -ruN a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml	2026-11-22 15:26:56
++++ b/Cargo.toml	2026-11-22 15:26:56
+@@ -57,50 +57,12 @@
+ name = "tokio_rustls"
+ path = "src/lib.rs"
+ 
+-[[test]]
+-name = "badssl"
+-path = "tests/badssl.rs"
+-
+-[[test]]
+-name = "certs"
+-path = "tests/certs/main.rs"
+-
+-[[test]]
+-name = "early-data"
+-path = "tests/early-data.rs"
+-
+-[[test]]
+-name = "test"
+-path = "tests/test.rs"
+-
+-[[test]]
+-name = "utils"
+-path = "tests/utils.rs"
+-
+ [dependencies.rustls]
+-version = "0.23.27"
++version = "0.23.4600"
+ features = ["std"]
+ default-features = false
++package = "shaped-rustls"
++path = "../shaped-rustls"
+ 
+ [dependencies.tokio]
+ version = "1.0"
+-
+-[dev-dependencies.argh]
+-version = "0.1.1"
+-
+-[dev-dependencies.futures-util]
+-version = "0.3.1"
+-
+-[dev-dependencies.lazy_static]
+-version = "1.1"
+-
+-[dev-dependencies.rcgen]
+-version = "0.14"
+-features = ["pem"]
+-
+-[dev-dependencies.tokio]
+-version = "1.0"
+-features = ["full"]
+-
+-[dev-dependencies.webpki-roots]
+-version = "1"

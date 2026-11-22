@@ -1,3 +1,20 @@
+diff --color -ruN a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -120,10 +120,12 @@ optional = true
+ version = "2"
+ 
+ [dependencies.rustls]
+-version = "0.23.5"
++version = "0.23.4600"
+ features = ["std"]
+ optional = true
+ default-features = false
++package = "shaped-rustls"
++path = "../shaped-rustls"
+ 
+ [dependencies.rustls-platform-verifier]
+ version = "0.7"
 diff --color -ruN a/src/chrome_parrot.rs b/src/chrome_parrot.rs
 --- a/src/chrome_parrot.rs
 +++ b/src/chrome_parrot.rs

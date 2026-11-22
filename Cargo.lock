@@ -1759,7 +1759,7 @@ dependencies = [
  "quinn-proto",
  "quinn-udp",
  "rustc-hash",
- "rustls",
+ "shaped-rustls",
  "socket2",
  "thiserror 2.0.21",
  "tokio",
@@ -1778,8 +1778,8 @@ dependencies = [
  "rand_pcg",
  "ring",
  "rustc-hash",
- "rustls",
  "rustls-pki-types",
+ "shaped-rustls",
  "slab",
  "thiserror 2.0.21",
  "tinyvec",
@@ -1997,24 +1997,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustls"
-version = "0.23.46"
-dependencies = [
- "aws-lc-rs",
- "brotli",
- "brotli-decompressor",
- "log",
- "once_cell",
- "ring",
- "rustls-pki-types",
- "rustls-webpki",
- "shake",
- "subtle",
- "zeroize",
- "zlib-rs",
-]
-
-[[package]]
 name = "rustls-pki-types"
 version = "1.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2144,6 +2126,24 @@ dependencies = [
  "digest 0.11.3",
  "keccak",
  "sponge-cursor",
+]
+
+[[package]]
+name = "shaped-rustls"
+version = "0.23.4600"
+dependencies = [
+ "aws-lc-rs",
+ "brotli",
+ "brotli-decompressor",
+ "log",
+ "once_cell",
+ "ring",
+ "rustls-pki-types",
+ "rustls-webpki",
+ "shake",
+ "subtle",
+ "zeroize",
+ "zlib-rs",
 ]
 
 [[package]]
@@ -2416,10 +2416,8 @@ dependencies = [
 [[package]]
 name = "tokio-rustls"
 version = "0.26.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61"
 dependencies = [
- "rustls",
+ "shaped-rustls",
  "tokio",
 ]
 
@@ -2949,10 +2947,10 @@ dependencies = [
  "bytes",
  "libc",
  "rcgen",
- "rustls",
  "serde",
  "serde_json",
  "sha2",
+ "shaped-rustls",
  "smoltcp",
  "thiserror 2.0.21",
  "tokio",
@@ -3016,9 +3014,9 @@ dependencies = [
  "quinn",
  "rand 0.8.6",
  "rcgen",
- "rustls",
  "serde_json",
  "sha2",
+ "shaped-rustls",
  "smoltcp",
  "socket2",
  "thiserror 2.0.21",
@@ -3144,11 +3142,11 @@ dependencies = [
  "rand 0.8.6",
  "rcgen",
  "regex",
- "rustls",
  "serde",
  "serde_json",
  "sha1",
  "sha2",
+ "shaped-rustls",
  "socket2",
  "thiserror 2.0.21",
  "tokio",

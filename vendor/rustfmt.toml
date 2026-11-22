@@ -1,0 +1,4 @@
+# Vendored crates keep their upstream formatting. `cargo fmt --all` follows
+# path dependencies, and shaped-rustls, tokio-rustls and gotatun are named by
+# path, so without this file it would check and rewrite them.
+disable_all_formatting = true

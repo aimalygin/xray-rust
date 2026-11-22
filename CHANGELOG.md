@@ -169,6 +169,19 @@ long-term supported release series.
   live in it. No ClientHello byte, public API or configuration changes, and
   TLS early data was never enabled. A direct read that would start inside a
   TLS record now fails the flow instead of returning it with bytes missing.
+- The workspace depends on the rustls fork under its own package name,
+  `shaped-rustls`, instead of putting it in place of `rustls` with
+  `[patch.crates-io]`; code still writes `rustls::`, because the fork's
+  library keeps that name. An embedder that took these crates by git had to
+  copy that patch entry, which replaced rustls for its whole build; it has
+  nothing to copy for rustls now, while the entries for the other vendored
+  crates remain. The vendored quinn and quinn-proto name the fork the same
+  way, and the TLS servers of tests and benches use a vendored tokio-rustls
+  0.26.4 built on it, so the build still holds one TLS library and the
+  upstream `rustls` package is no longer in `Cargo.lock`. Same sources as
+  before: no ClientHello byte, public API or behaviour changes.
+  `scripts/check-vendored-advisories.sh` audits the fork as the rustls
+  release it is built on.
 
 ## 0.10.1 - 2026-11-16
 
