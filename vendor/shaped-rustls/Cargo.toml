@@ -1,17 +1,22 @@
 [package]
 name = "rustls"
-version = "0.23.40"
+version = "0.23.46"
 edition = "2021"
-rust-version = "1.71"
+rust-version = "1.85"
 license = "Apache-2.0 OR ISC OR MIT"
-description = "Rustls is a modern TLS library written in Rust."
-homepage = "https://github.com/rustls/rustls"
-repository = "https://github.com/rustls/rustls"
+description = "A fork of rustls 0.23.46 with an opt-in API for shaping the TLS ClientHello (browser and uTLS fingerprints)."
+repository = "https://github.com/aimalygin/shaped-rustls"
 categories = ["network-programming", "cryptography"]
+keywords = ["tls", "rustls", "clienthello", "fingerprint", "utls"]
 autobenches = false
 autotests = false
 exclude = ["src/testdata", "tests/**"]
 build = "build.rs"
+
+# The library keeps upstream's name, so that code written for rustls compiles
+# against this package unchanged.
+[lib]
+name = "rustls"
 
 [features]
 default = ["aws_lc_rs", "logging", "prefer-post-quantum", "std", "tls12"]
@@ -33,7 +38,7 @@ zlib = ["dep:zlib-rs"]
 rustversion = { version = "1.0.6", optional = true }
 
 [dependencies]
-aws-lc-rs = { version = "1.14", default-features = false, optional = true }
+aws-lc-rs = { version = "1.18", default-features = false, optional = true }
 brotli = { version = "8", default-features = false, features = ["std"], optional = true }
 brotli-decompressor = { version = "5.0.0", optional = true }
 hashbrown = { version = "0.15", default-features = false, features = ["default-hasher", "inline-more"], optional = true }
@@ -42,7 +47,7 @@ log = { version = "0.4.8", optional = true }
 once_cell = { version = "1.16", default-features = false, features = ["alloc", "race"] }
 ring = { version = "0.17", optional = true }
 subtle = { version = "2.5.0", default-features = false }
-webpki = { package = "rustls-webpki", version = "0.103.5", default-features = false, features = ["alloc"] }
+webpki = { package = "rustls-webpki", version = "0.103.14", default-features = false, features = ["alloc"] }
 pki-types = { package = "rustls-pki-types", version = "1.12", features = ["alloc"] }
 shake = { version = "0.1", default-features = false, optional = true }
 zeroize = { version = "1.8" }

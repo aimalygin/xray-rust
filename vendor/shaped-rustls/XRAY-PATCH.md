@@ -1,11 +1,11 @@
-# shaped-rustls at ca91d48c with upstream rustls 0.23.45/0.23.46 security fixes
+# shaped-rustls at 474a31b7: rustls 0.23.46 with the ClientHello shaping API
 
-Source: the `rustls` crate of the ClientHello-shaping fork
+Source: the `rustls` directory of the ClientHello-shaping fork
 [aimalygin/shaped-rustls](https://github.com/aimalygin/shaped-rustls), commit
-`ca91d48c385f7d16ad3993ecaf26fa9b84882dbc` (branch `xray/rustls-0.23.40`, based
-on rustls 0.23.40), which the workspace used as a git dependency until now.
-Archive: `https://codeload.github.com/aimalygin/shaped-rustls/tar.gz/ca91d48c385f7d16ad3993ecaf26fa9b84882dbc`,
-SHA-256 `797e1851f8511d2d6d9ddb17006b17c8fe5c1726bb4521437fcbf43d7dfb8467`.
+`474a31b7cb158a681970d048734abc7d7b4d1adc` (branch `xray/rustls-0.23.40`, which
+despite its name is based on rustls 0.23.46 since that commit).
+Archive: `https://codeload.github.com/aimalygin/shaped-rustls/tar.gz/474a31b7cb158a681970d048734abc7d7b4d1adc`,
+SHA-256 `00509c60f2eca32098208f219ee2d9ebd37fc1502062f12c5c09495f7fde3697`.
 
 The vendored crate is that archive's `rustls/Cargo.toml`, `rustls/build.rs`
 and `rustls/src`, with the fork's `LICENSE`, `LICENSE-APACHE`, `LICENSE-ISC`
@@ -15,60 +15,58 @@ reconstructs it from those files with zero fuzz.
 reconstruction, then runs the fork's library tests, in the fork's own
 workspace and lockfile, against these sources.
 
-## Why it is vendored
-
-A git dependency cannot be patched in place, the fork is not ours to push to
-from this repository, and `cargo audit` does not match advisories against a
-git source. The fixes below change no ClientHello byte: they act on what the
-server sends back, on when a value is stored, and on `Debug` output. The
-shaping oracle tests (`utls_tls_shaping_tests`, `reality_rustls_tests`,
-`chrome_parrot_tests`) pass unchanged. Configuring a bounded brotli
-decompressor from xray-rust instead would leave every `ClientConfig` built
-without it, the server side and the other three advisories as they were.
-
-When the fork takes these commits, or is rebased onto rustls 0.23.46 or later,
-point `[patch.crates-io] rustls` back at the fork's new revision, delete this
-directory and its acknowledgements in `scripts/check-vendored-advisories.sh`.
-
 ## Changes
 
-- `Cargo.toml`: the fork's `workspace = true` dependencies take the versions
-  and features of the fork's workspace manifest. Dev-dependencies, tests,
-  benches, the internal example and the `readme` field are removed: they refer
-  to fork workspace files that are not vendored.
-- RUSTSEC-2026-0348 (`src/compress.rs`): the brotli certificate decompressor
-  uses `BrotliState::new_strict`, which refuses the large-window extension,
-  so a five-byte header can no longer make it allocate up to 1 GiB before the
-  certificate is authenticated. Chrome-shaped hellos offer brotli, so any
-  server, or anyone answering in its place, could trigger it. The zlib and
-  brotli decompressors also refuse trailing input. Upstream rustls `1aa987af`
-  and `b10cdb0d`, with their tests.
-- RUSTSEC-2026-0349 (`src/client/tls13.rs`): the key exchange group the
-  server chose is remembered for the next ClientHello's key share only after
-  the handshake has authenticated the server, not when the ServerHello
-  arrives. Upstream `f04804fa`.
-- RUSTSEC-2026-0285 (`src/conn.rs`, `src/msgs/deframer/handshake.rs`): a
-  TLS 1.3 handshake message joined to a key-changing message in the same
-  record is refused with `unexpected_message`, as RFC 8446 section 5.1
-  requires. Upstream `f9d4ee92`; its four regression tests are in the fork's
-  `rustls/tests/api.rs`, which is not vendored, and pass against these
-  sources in the fork's workspace once the two `rustls-test` helpers from
-  upstream `b480cc67` are added there.
-- RUSTSEC-2026-0346 (`src/msgs/persist.rs`, `src/client/handy.rs`): `Debug`
-  of TLS 1.2 and TLS 1.3 client session values and of `ServerSessionValue`
-  no longer prints the master secret or resumption PSK. Upstream `dcdb9464`
-  (its unrelated session-cache tests left out) and `6d0ba089`.
+`XRAY-PATCH.diff` touches `Cargo.toml` alone; every source file is the fork's.
 
-RUSTSEC-2026-0347 (application data after an ECH rejection) does not affect
-0.23.40: the client checked the certificate against the inner name until
-0.23.44, so the handshake failed before any data went out.
+- The package is named `rustls`, version `0.23.46`, where the fork's manifest
+  says `shaped-rustls` `0.23.4600`. `[patch.crates-io]` replaces a package by
+  its own name only, and `scripts/check-vendored-advisories.sh` reads the
+  upstream name and release from this manifest to audit them.
+- The fork's `workspace = true` dependencies take the versions and features
+  of the fork's workspace manifest.
+- Dev-dependencies, tests, benches, the internal example and the `readme`
+  field are removed: they refer to fork workspace files that are not vendored.
 
-The fork's library suite passes against these sources with `ring` (490 tests)
-and its `api` suite with the four new tests (432 without `brotli`/`zlib`, 438
-with them). With `brotli` and `zlib` enabled, seven ClientHello shaping unit
-tests of the fork fail at `ca91d48c` already, with and without these changes:
-they expect a hello without `compress_certificate`. In xray-transport,
-`chrome_refuses_a_large_window_brotli_certificate` has a server send a
-stored-brotli certificate under a standard header, which completes, and under
-the large-window header, which must be refused; it fails without the
-`compress.rs` change.
+## Why it is still vendored
+
+The fork publishes its crate as `shaped-rustls`, so a git or registry
+dependency on it cannot stand in for `rustls` under `[patch.crates-io]`, and
+tokio-rustls, which this workspace still builds its TLS streams with, depends
+on the `rustls` package. Once the workspace no longer needs a third-party
+crate between itself and rustls, it can depend on `shaped-rustls` under that
+name (`rustls = { package = "shaped-rustls", ... }`, here and in the vendored
+quinn crates); this directory, the `[patch.crates-io]` entry and the fork's
+part of `scripts/check-vendored-sources.sh` go then.
+
+Until then a move to a newer fork revision is: replace the files named above
+from the new archive, regenerate `XRAY-PATCH.diff`, and update the revision
+and checksum here, in `scripts/check-vendored-sources.sh` and in the root
+`Cargo.toml`.
+
+## What the move from ca91d48c brought
+
+The previous copy was the fork at `ca91d48c` (rustls 0.23.40) with four
+security fixes of rustls 0.23.45 and 0.23.46 backported by hand:
+RUSTSEC-2026-0285, -0346, -0348 and -0349. The fork has since merged rustls
+0.23.46, so those fixes are upstream's own commits now and the
+acknowledgements in `scripts/check-vendored-advisories.sh` are gone.
+RUSTSEC-2026-0347 (application data after an ECH rejection), which affects
+rustls 0.23.44 and 0.23.45 only, is fixed in 0.23.46 as well.
+
+Besides the merge, the fork changed no behaviour of the shaping code: it
+cleared Clippy findings, and its tests no longer fail with the `brotli` and
+`zlib` features. No ClientHello byte changes: the shaping oracle tests
+(`utls_tls_shaping_tests`, `reality_rustls_tests`, `chrome_parrot_tests`,
+`reality_clienthello_tests`, `utls_hello_retry_tests`, `shaped_rustls_tests`)
+pass unchanged.
+
+Two properties of the fork to keep in mind when reviewing it:
+
+- an unknown extension in a TLS 1.3 certificate entry is ignored, where
+  upstream rustls rejects the message, with or without a ClientHello
+  customizer. A shaped hello can offer extensions rustls does not implement,
+  and a peer may answer one there; Go's `crypto/tls` ignores them too. This
+  has been the fork's behaviour since its commit `94f088e2`;
+- the fork needs Rust 1.85, because the `aws_lc_rs` feature depends on the
+  `shake` crate. This workspace's toolchain is newer.

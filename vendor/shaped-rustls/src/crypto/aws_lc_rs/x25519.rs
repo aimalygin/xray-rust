@@ -36,7 +36,7 @@ impl ActiveKeyExchange for FixedX25519 {
         }
 
         let peer_key = agreement::UnparsedPublicKey::new(&agreement::X25519, peer_pub_key);
-        agreement::agree(&self.private_key, &peer_key, (), |secret| {
+        agreement::agree(&self.private_key, peer_key, (), |secret| {
             Ok(SharedSecret::from(secret))
         })
         .map_err(|_| PeerMisbehaved::InvalidKeyShare.into())

@@ -20,12 +20,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 temporary="$(mktemp -d "${TMPDIR:-/tmp}/xray-vendor-advisories.XXXXXX")"
 trap 'rm -rf "$temporary"' EXIT
 
-# <vendored directory> <advisory> <the upstream fix the copy carries>
+# <vendored directory> <advisory> <the upstream fix the copy carries>, one per
+# line, for example:
+#   vendor/shaped-rustls RUSTSEC-2026-0348 rustls 1aa987af, b10cdb0d (0.23.46): strict brotli
+# None at present: the rustls fork carried four until it took rustls 0.23.46.
 readonly ACKNOWLEDGED='
-vendor/shaped-rustls RUSTSEC-2026-0285 rustls f9d4ee92 (0.23.45): aligned handshake check
-vendor/shaped-rustls RUSTSEC-2026-0346 rustls dcdb9464, 6d0ba089 (0.23.46): redacted Debug
-vendor/shaped-rustls RUSTSEC-2026-0348 rustls 1aa987af, b10cdb0d (0.23.46): strict brotli
-vendor/shaped-rustls RUSTSEC-2026-0349 rustls f04804fa (0.23.46): KX hint after authentication
 '
 
 if ! cargo audit --version >/dev/null 2>&1; then
