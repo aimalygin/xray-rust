@@ -172,10 +172,12 @@ package = "quinn-proto"
 version = "2"
 
 [dependencies.rustls]
-version = "0.23.5"
+version = "0.23.4600"
 features = ["std"]
 optional = true
 default-features = false
+package = "shaped-rustls"
+path = "../shaped-rustls"
 
 [dependencies.smol]
 version = "2"

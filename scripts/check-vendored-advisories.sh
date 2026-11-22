@@ -33,7 +33,9 @@ if ! cargo audit --version >/dev/null 2>&1; then
 fi
 
 # The vendored manifests are crates.io-normalized (or, for git sources,
-# expanded) and keep upstream's package name and version.
+# expanded) and keep upstream's package name and version. The rustls fork is
+# the exception: its package is `shaped-rustls`, and its version carries the
+# upstream release, 0.23.PP as 0.23.PPRR (vendor/shaped-rustls/XRAY-PATCH.md).
 lockfile="$temporary/Cargo.lock"
 printf '# Upstream releases of vendored and git dependencies, for cargo audit only.\nversion = 4\n' >"$lockfile"
 for manifest in "$ROOT"/vendor/*/Cargo.toml; do
@@ -60,6 +62,11 @@ for manifest in "$ROOT"/vendor/*/Cargo.toml; do
     ' "$ROOT/Cargo.lock"; then
     echo "Cargo.lock has no path package $name $version for $manifest" >&2
     exit 1
+  fi
+  # What cargo audit is asked about: the upstream release under the copy.
+  if [[ "$name" == shaped-rustls ]]; then
+    name=rustls
+    version="${version%.*}.$((${version##*.} / 100))"
   fi
   printf '\n[[package]]\nname = "%s"\nversion = "%s"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\n' \
     "$name" "$version" >>"$lockfile"

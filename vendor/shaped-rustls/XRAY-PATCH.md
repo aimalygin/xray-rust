@@ -19,30 +19,35 @@ workspace and lockfile, against these sources.
 
 `XRAY-PATCH.diff` touches `Cargo.toml` alone; every source file is the fork's.
 
-- The package is named `rustls`, version `0.23.46`, where the fork's manifest
-  says `shaped-rustls` `0.23.4600`. `[patch.crates-io]` replaces a package by
-  its own name only, and `scripts/check-vendored-advisories.sh` reads the
-  upstream name and release from this manifest to audit them.
 - The fork's `workspace = true` dependencies take the versions and features
   of the fork's workspace manifest.
 - Dev-dependencies, tests, benches, the internal example and the `readme`
   field are removed: they refer to fork workspace files that are not vendored.
 
+## How the workspace takes it
+
+The package keeps the fork's own name and version, `shaped-rustls`
+`0.23.4600`, and its library is named `rustls`. The workspace depends on it by
+path under the dependency name `rustls`
+(`rustls = { package = "shaped-rustls", path = "vendor/shaped-rustls", ... }`),
+and so do the vendored quinn, quinn-proto and tokio-rustls, as
+`../shaped-rustls`. No `[patch.crates-io]` entry is involved, and the
+upstream `rustls` package is not in the build.
+
+A version is `0.23.PPRR`: upstream rustls patch `PP`, fork release `RR`.
+`scripts/check-vendored-advisories.sh` reads the upstream release out of it
+and audits that, since RustSec advisories are filed against `rustls`.
+
 ## Why it is still vendored
 
-The fork publishes its crate as `shaped-rustls`, so a git or registry
-dependency on it cannot stand in for `rustls` under `[patch.crates-io]`, and
-tokio-rustls, which this workspace still builds its TLS streams with, depends
-on the `rustls` package. Once the workspace no longer needs a third-party
-crate between itself and rustls, it can depend on `shaped-rustls` under that
-name (`rustls = { package = "shaped-rustls", ... }`, here and in the vendored
-quinn crates); this directory, the `[patch.crates-io]` entry and the fork's
-part of `scripts/check-vendored-sources.sh` go then.
+The fork's crate is not on crates.io yet. When it is, this path dependency
+becomes a registry one, and this directory and the fork's part of
+`scripts/check-vendored-sources.sh` go.
 
 Until then a move to a newer fork revision is: replace the files named above
 from the new archive, regenerate `XRAY-PATCH.diff`, and update the revision
 and checksum here, in `scripts/check-vendored-sources.sh` and in the root
-`Cargo.toml`.
+`Cargo.toml`, and the version in the manifests that name it.
 
 ## What the move from ca91d48c brought
 

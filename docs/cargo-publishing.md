@@ -7,15 +7,17 @@ depend on unpublished path-only crates.
 
 ## Current blocker
 
-The transport layer uses the `shaped-rustls` fork, vendored and put in place
-of `rustls` through a workspace `[patch.crates-io]`. Its ClientHello
+The transport layer uses the `shaped-rustls` fork of rustls. Its ClientHello
 customization API is required for the documented TLS and REALITY fingerprint
-behavior and is not present in upstream `rustls`.
+behavior and is not present in upstream `rustls`. The workspace depends on it
+under its own package name, by path to a vendored copy, because the crate is
+not on crates.io yet.
 
-The fork is not the only override. `[patch.crates-io]` also replaces quinn,
-quinn-proto, h3, h3-quinn, h2, smoltcp and blake3 with vendored copies that
-carry local changes, and `xray-wireguard` takes a patched gotatun by path. The
-workspace calls APIs that exist only in those copies.
+`[patch.crates-io]` replaces quinn, quinn-proto, h3, h3-quinn, h2, smoltcp and
+blake3 with vendored copies that carry local changes, and `xray-wireguard`
+takes a patched gotatun by path. The workspace calls APIs that exist only in
+those copies. The vendored quinn and quinn-proto also take `shaped-rustls` by
+path.
 
 Cargo removes local path overrides when creating a registry package, and a
 crates.io package cannot rely on the vendored copies used by this workspace.
@@ -29,17 +31,19 @@ The safe path is:
    `shaped-rustls`, preserving its upstream licenses and fork disclosure.
    The fork's own manifest carries that name since its revision `474a31b7`
    (rustls 0.23.46) and passes `cargo publish --dry-run`; it is not on
-   crates.io yet, and this workspace still builds it under the name `rustls`
-   (`vendor/shaped-rustls/XRAY-PATCH.md` says why);
-2. depend on that package by its own name. No Tokio adapter has to be
-   published with it: the client side of TLS is
-   `crates/xray-transport/src/tls_stream.rs`, over `rustls::ClientConnection`,
-   so on the TCP path no crates.io package sits between the workspace's code
-   and the fork. `tokio-rustls` is only a dev-dependency (and a dependency of
-   the unpublished `xray-bench`), for the server side of tests, where
-   upstream `rustls` serves as well;
-3. keep QUIC/HTTP3 on upstream `rustls` types or publish the additional adapted
-   QUIC dependency surface;
+   crates.io yet;
+2. depend on that package by its own name. Done, by path until step 1 is:
+   `rustls = { package = "shaped-rustls", ... }`, with no `[patch.crates-io]`
+   entry for rustls. No Tokio adapter has to be published with it: the client
+   side of TLS is `crates/xray-transport/src/tls_stream.rs`, over
+   `rustls::ClientConnection`, so on the TCP path no crates.io package sits
+   between the workspace's code and the fork. `tokio-rustls` is only a
+   dev-dependency (and a dependency of the unpublished `xray-bench`), for the
+   server side of tests: a vendored copy built on `shaped-rustls`, named by
+   path without a version, which a published manifest drops;
+3. publish the adapted QUIC dependency surface: the vendored quinn and
+   quinn-proto depend on `shaped-rustls` already and carry other local changes
+   as well, so they need names of their own under step 4 in any case;
 4. do the same for the other overridden crates: send upstream what upstream
    can take, and publish the rest under names of their own;
 5. give every internal `xray-*` path dependency a matching registry version;

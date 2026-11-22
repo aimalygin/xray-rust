@@ -162,9 +162,10 @@ jitter, and loss. Mobile energy evidence remains a physical-device gate.
 TLS and REALITY ClientHello shaping depends on the maintainer's public
 `shaped-rustls` fork rather than the crates.io `rustls` release. The workspace
 builds a vendored copy of one fork revision, currently rustls 0.23.46 with the
-shaping API: `vendor/shaped-rustls/XRAY-PATCH.md` names the revision, and
-`scripts/check-vendored-sources.sh` proves the copy against that revision's
-archive. Consumers should include the fork in dependency and security reviews.
+shaping API, as the package `shaped-rustls`: `vendor/shaped-rustls/XRAY-PATCH.md`
+names the revision, and `scripts/check-vendored-sources.sh` proves the copy
+against that revision's archive. The upstream `rustls` package is not in the
+build. Consumers should include the fork in dependency and security reviews.
 
 ### XHTTP HTTP/3 phase-one limits
 
