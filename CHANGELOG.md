@@ -156,6 +156,19 @@ long-term supported release series.
   -0348 and -0349) are upstream's own commits now, RUSTSEC-2026-0347 never
   applied to 0.23.40 and is fixed in 0.23.46, and the local patch is down to
   the manifest. No ClientHello byte changes.
+- TLS and REALITY client sessions are driven by an adapter in `xray-transport`
+  over `rustls::ClientConnection` instead of by `tokio-rustls`, which leaves
+  the normal dependencies of `xray-transport` and everything built on it; it
+  stays a dev-dependency for the server side of tests, and a dependency of
+  `xray-bench` for its fixtures. Vision's direct mode needs the session to
+  stop reading at the record that produced plaintext, because what follows
+  the peer's last record is cleartext for the connection beneath.
+  `tokio-rustls` 0.26.5 and later keep reading while the caller's buffer has
+  room, which is why the workspace stayed on 0.26.4; the read loop is now this
+  crate's own, and the record-boundary reads and REALITY's server read log
+  live in it. No ClientHello byte, public API or configuration changes, and
+  TLS early data was never enabled. A direct read that would start inside a
+  TLS record now fails the flow instead of returning it with bytes missing.
 
 ## 0.10.1 - 2026-11-16
 

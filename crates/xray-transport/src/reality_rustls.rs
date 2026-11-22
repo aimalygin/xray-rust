@@ -19,7 +19,6 @@ use rustls::{
     RootCertStore, SignatureScheme,
 };
 use tokio::net::TcpStream;
-use tokio_rustls::TlsConnector as TokioTlsConnector;
 use zeroize::Zeroize;
 
 use crate::{
@@ -32,7 +31,7 @@ use crate::{
     reality_spider::{spider, RealitySpider},
     utls_profiles::{reality_profile_for_fingerprint, UtlsClientHelloProfile},
     utls_shaping::{apply_utls_profile, retain_profile_certificate_decompressors, HelloDraws},
-    BoxedTransportStream, CapturedStream, PenetratingTlsStream, ServerReadLog, TransportError,
+    BoxedTransportStream, ClientTlsStream, PenetratingTlsStream, ServerReadLog, TransportError,
 };
 
 const TLS_RECORD_HANDSHAKE: u8 = 0x16;
@@ -593,10 +592,14 @@ impl RustlsRealityTlsSession {
         )?);
         let server_name = ServerName::try_from(self.server_name.clone())
             .map_err(|_| TransportError::InvalidTlsServerName(self.server_name.clone()))?;
-        let connector = TokioTlsConnector::from(config);
-        let tcp_stream = CapturedStream::new(tcp_stream, server_read_log);
-        let connect = connector.connect(server_name, tcp_stream);
-        let stream = connect.await.map_err(TransportError::Tls)?;
+        let stream = ClientTlsStream::connect_record_aligned(
+            config,
+            server_name,
+            tcp_stream,
+            server_read_log,
+        )
+        .await
+        .map_err(TransportError::Tls)?;
 
         if real_certificate.accepted.load(Ordering::Acquire) {
             // Xray-core finishes this handshake and crawls the real site

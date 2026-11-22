@@ -31,7 +31,13 @@ The safe path is:
    (rustls 0.23.46) and passes `cargo publish --dry-run`; it is not on
    crates.io yet, and this workspace still builds it under the name `rustls`
    (`vendor/shaped-rustls/XRAY-PATCH.md` says why);
-2. publish a matching Tokio adapter that depends on that package;
+2. depend on that package by its own name. No Tokio adapter has to be
+   published with it: the client side of TLS is
+   `crates/xray-transport/src/tls_stream.rs`, over `rustls::ClientConnection`,
+   so on the TCP path no crates.io package sits between the workspace's code
+   and the fork. `tokio-rustls` is only a dev-dependency (and a dependency of
+   the unpublished `xray-bench`), for the server side of tests, where
+   upstream `rustls` serves as well;
 3. keep QUIC/HTTP3 on upstream `rustls` types or publish the additional adapted
    QUIC dependency surface;
 4. do the same for the other overridden crates: send upstream what upstream
