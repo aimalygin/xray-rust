@@ -1,3 +1,25 @@
+# xray-gotatun
+
+xray-gotatun is a fork of [GotaTun](https://github.com/mullvad/gotatun)
+0.9.1, published for [xray-rust](https://github.com/aimalygin/xray-rust). It is not affiliated with
+or endorsed by Mullvad or the GotaTun project: please report its bugs
+[to xray-rust](https://github.com/aimalygin/xray-rust/issues), not upstream.
+
+The library is still named `gotatun`:
+
+```toml
+gotatun = { package = "xray-gotatun", version = "0.9.100" }
+```
+
+A version is `X.Y.PPRR`: GotaTun patch release `PP`, fork release `RR`.
+`XRAY-PATCH.md` in this package describes the changes and how this source is
+reproduced from upstream's commit; the patches are in
+[xray-rust](https://github.com/aimalygin/xray-rust/tree/main/tools/wireguard-adapter-prototype/patches).
+
+Everything below is upstream's own README.
+
+---
+
 # GotaTun
 
 A userspace [WireGuard<sup>®</sup>](https://www.wireguard.com/) implementation, and a fork of [BoringTun](https://github.com/cloudflare/boringtun).

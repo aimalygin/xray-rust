@@ -49,8 +49,14 @@ sha3 = { version = "0.11", features = ["zeroize"] }
 ctr = { version = "0.10.1", features = ["zeroize"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 ghash = { version = "0.6", features = ["zeroize"] }
-h2 = "0.4.16"
-h3 = "=0.0.8"
+# h2, h3 and smoltcp are forks kept in vendor/ and published under names of
+# their own; each library keeps upstream's name, so the workspace writes
+# `h2::` as it would with upstream. A version is X.Y.PPRR: upstream patch
+# release PP, fork release RR, so 0.4.2000 is h2 0.4.20. The path is what this
+# workspace builds; the version is what a published crate depends on. See
+# docs/vendored-forks.md.
+h2 = { package = "xray-h2", path = "vendor/h2", version = "0.4.2000" }
+h3 = { package = "xray-h3", path = "vendor/h3", version = "=0.0.800" }
 h3-quinn = "=0.0.10"
 hkdf = "0.13"
 hmac = "0.13"
@@ -76,7 +82,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha1 = "0.11"
 sha2 = "0.11"
-smoltcp = { version = "0.14.0", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp"] }
+smoltcp = { package = "xray-smoltcp", path = "vendor/smoltcp", version = "0.14.0", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp"] }
 thiserror = "2"
 tokio = { version = "1.53.3", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
 # TLS servers for tests and xray-bench fixtures only. The client side is
@@ -104,8 +110,5 @@ panic = "unwind"
 
 [patch.crates-io]
 quinn = { path = "vendor/quinn" }
-smoltcp = { path = "vendor/smoltcp" }
-h3 = { path = "vendor/h3" }
 h3-quinn = { path = "vendor/h3-quinn" }
 quinn-proto = { path = "vendor/quinn-proto" }
-h2 = { path = "vendor/h2" }

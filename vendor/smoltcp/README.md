@@ -1,3 +1,25 @@
+# xray-smoltcp
+
+xray-smoltcp is a fork of [smoltcp](https://github.com/smoltcp-rs/smoltcp) 0.14.0, published for
+[xray-rust](https://github.com/aimalygin/xray-rust). It is not affiliated with
+or endorsed by the smoltcp project: please report its bugs
+[to xray-rust](https://github.com/aimalygin/xray-rust/issues), not upstream.
+
+The library is still named `smoltcp`:
+
+```toml
+smoltcp = { package = "xray-smoltcp", version = "0.14.0" }
+```
+
+The patch number of a version is smoltcp's patch release times 100 plus the
+fork's release: `0.14.0` is smoltcp 0.14.0, fork release 0.
+`XRAY-PATCH.md` in this package describes every change, and `XRAY-PATCH.diff`
+is the whole difference from the crates.io archive of smoltcp 0.14.0.
+
+Everything below is upstream's own README.
+
+---
+
 # smoltcp
 
 [![docs.rs](https://docs.rs/smoltcp/badge.svg)](https://docs.rs/smoltcp)

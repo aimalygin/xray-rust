@@ -177,6 +177,7 @@ The supply-chain CI job additionally runs:
 
 ```sh
 bash scripts/check-vendored-sources.sh
+bash scripts/check-vendored-packages.sh
 cargo audit
 bash scripts/check-vendored-advisories.sh
 cargo deny --locked check advisories bans licenses sources
@@ -193,14 +194,22 @@ the same way). The rustls fork is a registry package, but under the name
 release plus `XRAY-PATCH.diff`; `check-vendored-advisories.sh` then audits
 those upstream releases, the rustls release the fork's version carries
 ([shaped-rustls.md](shaped-rustls.md)), and any git dependency in
-`Cargo.lock`, as if they were crates.io packages. It fails on an advisory
-unless the script acknowledges it with the vendored directory (or the fork's
-package name) and the upstream fix the copy carries, and it reports an
-acknowledgement that no longer matches, so a rebase onto a fixed release can
-drop it. Extra arguments go to `cargo audit`, for example `--no-fetch`
+`Cargo.lock`, as if they were crates.io packages. A copy published under a
+name of its own, such as `xray-h2` 0.4.2000, is audited as the upstream
+release its version carries, h2 0.4.20; the first script holds that version
+to the archive it verified ([vendored-forks.md](vendored-forks.md)). The
+audit fails on an advisory unless the script acknowledges it with the vendored
+directory (or the fork's package name) and the upstream fix the copy carries,
+and it reports an acknowledgement that no longer matches, so a rebase onto a
+fixed release can drop it. Extra arguments go to `cargo audit`, for example `--no-fetch`
 offline. Rebase a vendored crate onto the fixed release where its local patch
 allows; backport and acknowledge only when it does not, as the rustls fork
 needed until it merged rustls 0.23.46.
+
+`check-vendored-packages.sh` packages each `xray-*` copy as `cargo publish`
+would and lets cargo build the package from its archive, so a manifest
+crates.io would refuse, or an archive without a file the build needs, fails
+here and not at the upload. It uploads nothing.
 
 The dedicated secret-scan job checks the complete reachable history. On a tag
 push it scans only the tag's ancestry (`--log-opts=HEAD`) with the policy the

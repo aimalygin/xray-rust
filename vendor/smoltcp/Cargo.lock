@@ -720,28 +720,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
-name = "smoltcp"
-version = "0.14.0"
-dependencies = [
- "bitflags 1.1.0",
- "byteorder",
- "cfg-if",
- "defmt",
- "env_logger",
- "getopts",
- "heapless",
- "idna 1.0.1",
- "insta",
- "libc",
- "log",
- "managed",
- "rand",
- "rand_chacha",
- "rstest",
- "url",
-]
-
-[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1026,6 +1004,28 @@ name = "writeable"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e9df38ee2d2c3c5948ea468a8406ff0db0b29ae1ffde1bcf20ef305bcc95c51"
+
+[[package]]
+name = "xray-smoltcp"
+version = "0.14.0"
+dependencies = [
+ "bitflags 1.1.0",
+ "byteorder",
+ "cfg-if",
+ "defmt",
+ "env_logger",
+ "getopts",
+ "heapless",
+ "idna 1.0.1",
+ "insta",
+ "libc",
+ "log",
+ "managed",
+ "rand",
+ "rand_chacha",
+ "rstest",
+ "url",
+]
 
 [[package]]
 name = "yoke"

@@ -10,7 +10,7 @@ description = "Bounded WireGuard client with a userspace TCP/UDP interface"
 
 [dependencies]
 bytes.workspace = true
-gotatun = { path = "../../vendor/gotatun", version = "=0.9.1", default-features = false, features = ["ring", "device"] }
+gotatun = { package = "xray-gotatun", path = "../../vendor/gotatun", version = "=0.9.100", default-features = false, features = ["ring", "device"] }
 rand.workspace = true
 socket2 = "0.6.5"
 smoltcp = { workspace = true, features = ["socket-udp", "socket-tcp-reno"] }

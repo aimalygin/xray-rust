@@ -29,6 +29,36 @@ download_and_verify() {
   tar -xzf "$archive" -C "$temporary"
 }
 
+# A vendored crate published under a name of its own is `xray-<upstream>` at
+# X.Y.N, where N is upstream's patch release times 100 plus the fork's release
+# (docs/vendored-forks.md). check-vendored-advisories.sh audits the upstream
+# release it reads out of that version, so the version has to name the archive
+# this script verified.
+expect_fork_of() {
+  local name="$1"
+  local version="$2"
+  local manifest="$ROOT/vendor/$name/Cargo.toml"
+  local package
+  package="$(awk '
+    /^\[package\]/ { in_package = 1; next }
+    /^\[/ { in_package = 0 }
+    in_package && $1 == "name" { gsub(/"/, "", $3); name = $3 }
+    in_package && $1 == "version" { gsub(/"/, "", $3); version = $3 }
+    END { print name, version }
+  ' "$manifest")"
+  local fork_name="${package% *}"
+  local fork_version="${package#* }"
+  if [[ ! "$fork_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    echo "$manifest: '$fork_version' is not a version" >&2
+    exit 1
+  fi
+  local carried="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((10#${BASH_REMATCH[3]} / 100))"
+  if [[ "$fork_name" != "xray-$name" || "$carried" != "$version" ]]; then
+    echo "$manifest names $fork_name $fork_version, which is not a fork release of $name $version" >&2
+    exit 1
+  fi
+}
+
 download_and_verify \
   h3-quinn 0.0.10 \
   8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4
@@ -61,6 +91,7 @@ patch --batch --fuzz=0 -p1 \
   <"$ROOT/vendor/h3/XRAY-PATCH.diff"
 diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
   "$temporary/h3-0.0.8" "$ROOT/vendor/h3"
+expect_fork_of h3 0.0.8
 # The published tests module includes h3-quinn from upstream's repository
 # layout, which no release ships; run the crate's other unit tests.
 : >"$temporary/h3-0.0.8/src/tests/mod.rs"
@@ -138,6 +169,7 @@ patch --batch --fuzz=0 -p1 \
   <"$ROOT/vendor/smoltcp/XRAY-PATCH.diff"
 diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
   "$temporary/smoltcp-0.14.0" "$ROOT/vendor/smoltcp"
+expect_fork_of smoltcp 0.14.0
 cargo test --locked --manifest-path "$temporary/smoltcp-0.14.0/Cargo.toml" \
   --no-default-features --features std,medium-ip,proto-ipv4,proto-ipv6,socket-tcp,socket-tcp-reno,socket-udp \
   --lib
@@ -150,10 +182,13 @@ patch --batch --fuzz=0 -p1 \
   <"$ROOT/vendor/h2/XRAY-PATCH.diff"
 diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
   "$temporary/h2-0.4.20" "$ROOT/vendor/h2"
+expect_fork_of h2 0.4.20
 # The published crate omits the HPACK fixture files its fixture tests read.
 cargo test --locked --manifest-path "$temporary/h2-0.4.20/Cargo.toml" \
   --lib -- --skip hpack::test::fixture
 
+# The script names GotaTun's commit, and the normalizer it runs writes the
+# fork's version from the one in upstream's manifest at that commit.
 bash "$ROOT/scripts/check-wireguard-adapter-prototype.sh" --verify-vendor-only
 
 # Vendored crates are path dependencies, so Cargo enforces their own lint
@@ -162,5 +197,5 @@ bash "$ROOT/scripts/check-wireguard-adapter-prototype.sh" --verify-vendor-only
 # fuzz job compiles.
 RUSTFLAGS="--cfg fuzzing" cargo check --locked \
   --manifest-path "$ROOT/Cargo.toml" --target-dir "$temporary/fuzzing-target" \
-  -p gotatun -p h2 -p h3 -p h3-quinn -p quinn -p quinn-proto -p smoltcp
+  -p xray-gotatun -p xray-h2 -p xray-h3 -p h3-quinn -p quinn -p quinn-proto -p xray-smoltcp
 echo "verified vendored sources against checksum-pinned archives"

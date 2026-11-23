@@ -126,7 +126,8 @@ THE SOFTWARE.
 ## GotaTun WireGuard engine
 
 - Project: [Mullvad GotaTun](https://github.com/mullvad/gotatun)
-- Version: 0.9.1, commit `dab390cdf9dcfb7a6fa85dd8798db92b681ad296`.
+- Version: 0.9.1, commit `dab390cdf9dcfb7a6fa85dd8798db92b681ad296`; in this
+  workspace the package `xray-gotatun` 0.9.100.
 - License: MPL-2.0, with retained upstream BSD notices.
 - Complete notices: [LICENSE](vendor/gotatun/LICENSE) and
   [LICENSE-CLOUDFLARE](vendor/gotatun/LICENSE-CLOUDFLARE).

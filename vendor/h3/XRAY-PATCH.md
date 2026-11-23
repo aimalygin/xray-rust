@@ -2,10 +2,21 @@
 
 Source: the complete unchanged-version crates.io `h3` **0.0.8** archive,
 SHA256 `10872b55cfb02a821b69dc7cf8dc6a71d6af25eb9a79662bec4a9d016056b3be`.
-Upstream licenses and the published lockfile remain intact. `XRAY-PATCH.diff`
-reconstructs the local source from that archive with zero fuzz. Run
+Upstream licenses remain intact, and so does the published lockfile apart
+from its root entry. `XRAY-PATCH.diff` reconstructs the local source from that
+archive with zero fuzz. Run
 `scripts/check-vendored-sources.sh` to verify the archive, exact reconstruction,
 and the library tests from an isolated copy.
+
+## Package
+
+The copy is the package `xray-h3` 0.0.800: h3 0.0.8, fork
+release 0 (`docs/vendored-forks.md`). The library is still named `h3`.
+`XRAY-PATCH.diff` carries that in three more files: the manifest, the root
+entry of `Cargo.lock`, and a notice above upstream's README. The manifest
+changes the name, version, description, `documentation` and `repository`, and
+excludes `Cargo.toml.orig` and `.cargo_vcs_info.json`: both came with
+upstream's archive, and cargo writes its own into every package.
 
 ## Frame read-ahead
 
@@ -35,13 +46,13 @@ which no release ships.
 
 ## Lints
 
-crates.io builds cap lints. This path override builds under the workspace's
-`-Dwarnings`, and rustc 1.96 reports `dead_code`, `mismatched_lifetime_syntaxes`,
+crates.io builds cap lints. This copy is a path dependency and builds under
+the workspace's `-Dwarnings`, and rustc 1.96 reports `dead_code`, `mismatched_lifetime_syntaxes`,
 `unused_imports` and `unused_variables` in upstream code, so `src/lib.rs`
 allows those four.
 
-All other source is unchanged. Remove this copy and its `[patch.crates-io]`
-entry once a compatible h3 release bounds both reads.
+A compatible h3 release that bounds both reads would make the read-ahead
+change unnecessary; the changes below would remain.
 
 ## Extension settings at their defaults
 

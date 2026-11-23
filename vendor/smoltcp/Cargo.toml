@@ -12,18 +12,21 @@
 [package]
 edition = "2024"
 rust-version = "1.91"
-name = "smoltcp"
+name = "xray-smoltcp"
 version = "0.14.0"
 authors = ["whitequark <whitequark@whitequark.org>"]
 build = "build.rs"
+exclude = [
+    "Cargo.toml.orig",
+    ".cargo_vcs_info.json",
+]
 autolib = false
 autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "A TCP/IP stack designed for bare-metal, real-time systems without a heap."
-homepage = "https://github.com/smoltcp-rs/smoltcp"
-documentation = "https://docs.rs/smoltcp/"
+description = "A fork of smoltcp 0.14.0 with opt-in TCP loss recovery (NewReno, SACK), shared receive budgets, egress bursts and growable socket buffers."
+documentation = "https://docs.rs/xray-smoltcp"
 readme = "README.md"
 keywords = [
     "ip",
@@ -37,7 +40,7 @@ categories = [
     "network-programming",
 ]
 license = "0BSD"
-repository = "https://github.com/smoltcp-rs/smoltcp.git"
+repository = "https://github.com/aimalygin/xray-rust"
 
 [features]
 _netsim = []

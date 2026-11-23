@@ -1,3 +1,25 @@
+# xray-h2
+
+xray-h2 is a fork of [h2](https://github.com/hyperium/h2) 0.4.20, published for
+[xray-rust](https://github.com/aimalygin/xray-rust). It is not affiliated with
+or endorsed by the h2 project: please report its bugs
+[to xray-rust](https://github.com/aimalygin/xray-rust/issues), not upstream.
+
+The library is still named `h2`:
+
+```toml
+h2 = { package = "xray-h2", version = "0.4.2000" }
+```
+
+The patch number of a version is h2's patch release times 100 plus the
+fork's release: `0.4.2000` is h2 0.4.20, fork release 0.
+`XRAY-PATCH.md` in this package describes every change, and `XRAY-PATCH.diff`
+is the whole difference from the crates.io archive of h2 0.4.20.
+
+Everything below is upstream's own README.
+
+---
+
 # H2
 
 A Tokio aware, HTTP/2 client & server implementation for Rust.

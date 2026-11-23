@@ -918,6 +918,9 @@ jobs:
       - name: Verify vendored crate provenance and exact patch set
         run: bash scripts/check-vendored-sources.sh
 
+      - name: Package the vendored forks and build them from their archives
+        run: bash scripts/check-vendored-packages.sh
+
       - name: Verify Gradle dependency provenance against canonical repositories
         run: |
           python3 scripts/check-gradle-verification.py \

@@ -124,3 +124,16 @@
  
          num.try_into().expect("invalid stream id")
      }
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -51,7 +51,9 @@
+ version = "0.3.28"
+ 
+ [dependencies.h3]
+-version = "0.0.8"
++version = "0.0.800"
++path = "../h3"
++package = "xray-h3"
+ 
+ [dependencies.h3-datagram]
+ version = "0.0.2"
