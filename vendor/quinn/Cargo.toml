@@ -12,15 +12,19 @@
 [package]
 edition = "2021"
 rust-version = "1.85"
-name = "quinn"
-version = "0.11.12"
+name = "xray-quinn"
+version = "0.11.1200"
 build = "build.rs"
+exclude = [
+    "Cargo.toml.orig",
+    ".cargo_vcs_info.json",
+]
 autolib = false
 autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "Versatile QUIC transport protocol implementation"
+description = "A fork of quinn 0.11.12 built on xray-quinn-proto and shaped-rustls, with a bounded receive batch, a larger transmit quantum and a rebind that keeps reading the old socket."
 readme = "README.md"
 keywords = ["quic"]
 categories = [
@@ -28,7 +32,7 @@ categories = [
     "asynchronous",
 ]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/quinn-rs/quinn"
+repository = "https://github.com/aimalygin/xray-rust"
 
 [package.metadata.docs.rs]
 features = [
@@ -53,7 +57,6 @@ aws-lc-rs-fips = ["proto/aws-lc-rs-fips"]
 bloom = ["proto/bloom"]
 default = [
     "log",
-    "platform-verifier",
     "runtime-tokio",
     "rustls-ring",
     "bloom",
@@ -64,7 +67,6 @@ log = [
     "proto/log",
     "udp/log",
 ]
-platform-verifier = ["proto/platform-verifier"]
 qlog = ["proto/qlog"]
 ring = ["proto/ring"]
 runtime-async-std = [
@@ -164,9 +166,10 @@ optional = true
 version = "0.2"
 
 [dependencies.proto]
-version = "0.11.18"
+version = "0.11.1900"
+path = "../quinn-proto"
 default-features = false
-package = "quinn-proto"
+package = "xray-quinn-proto"
 
 [dependencies.rustc-hash]
 version = "2"

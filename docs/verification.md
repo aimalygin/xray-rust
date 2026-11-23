@@ -206,10 +206,11 @@ offline. Rebase a vendored crate onto the fixed release where its local patch
 allows; backport and acknowledge only when it does not, as the rustls fork
 needed until it merged rustls 0.23.46.
 
-`check-vendored-packages.sh` packages each `xray-*` copy as `cargo publish`
-would and lets cargo build the package from its archive, so a manifest
-crates.io would refuse, or an archive without a file the build needs, fails
-here and not at the upload. It uploads nothing.
+`check-vendored-packages.sh` packages the `xray-*` copies as `cargo publish`
+would, together and in dependency order, and lets cargo build each package
+from its archive, so a manifest crates.io would refuse, an archive without a
+file the build needs, or a default feature that does not compile fails here
+and not at the upload. It uploads nothing.
 
 The dedicated secret-scan job checks the complete reachable history. On a tag
 push it scans only the tag's ancestry (`--log-opts=HEAD`) with the policy the

@@ -12,8 +12,8 @@
 [package]
 edition = "2021"
 rust-version = "1.70"
-name = "h3-quinn"
-version = "0.0.10"
+name = "xray-h3-quinn"
+version = "0.0.1000"
 authors = ["Jean-Christophe BEGUE <jc.begue@pm.me>"]
 build = false
 autolib = false
@@ -21,8 +21,8 @@ autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "QUIC transport implementation based on Quinn."
-documentation = "https://docs.rs/h3-quinn"
+description = "A fork of h3-quinn 0.0.10 built on xray-h3 and xray-quinn, with a receive stream that stays stoppable while a read is pending."
+documentation = "https://docs.rs/xray-h3-quinn"
 readme = "README.md"
 keywords = [
     "http3",
@@ -34,10 +34,9 @@ categories = [
     "web-programming",
 ]
 license = "MIT"
-repository = "https://github.com/hyperium/h3"
+repository = "https://github.com/aimalygin/xray-rust"
 
 [features]
-datagram = ["dep:h3-datagram"]
 tracing = ["dep:tracing"]
 
 [lib]
@@ -55,14 +54,12 @@ version = "0.0.800"
 path = "../h3"
 package = "xray-h3"
 
-[dependencies.h3-datagram]
-version = "0.0.2"
-optional = true
-
 [dependencies.quinn]
-version = "0.11.7"
+version = "0.11.1200"
+path = "../quinn"
 features = ["futures-io"]
 default-features = false
+package = "xray-quinn"
 
 [dependencies.tokio]
 version = "1"

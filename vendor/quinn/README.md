@@ -1,3 +1,29 @@
+# xray-quinn
+
+xray-quinn is a fork of [quinn](https://github.com/quinn-rs/quinn) 0.11.12, published for
+[xray-rust](https://github.com/aimalygin/xray-rust). It is not affiliated with
+or endorsed by the Quinn project: please report its bugs
+[to xray-rust](https://github.com/aimalygin/xray-rust/issues), not upstream.
+
+The library is still named `quinn`:
+
+```toml
+quinn = { package = "xray-quinn", version = "0.11.1200" }
+```
+
+Its protocol state machine is `xray-quinn-proto` and its TLS is
+[shaped-rustls](https://crates.io/crates/shaped-rustls), a fork of rustls,
+where upstream uses quinn-proto and rustls.
+
+The patch number of a version is quinn's patch release times 100 plus the
+fork's release: `0.11.1200` is quinn 0.11.12, fork release 0.
+`XRAY-PATCH.md` in this package describes every change, and `XRAY-PATCH.diff`
+is the whole difference from the crates.io archive of quinn 0.11.12.
+
+Everything below is upstream's own README.
+
+---
+
 <h1 align="center"><img width="500" src="https://raw.githubusercontent.com/quinn-rs/quinn/51a3cea225670757cb844a342428e4e1341d9f13/docs/thumbnail.svg" /></h1>
 
 [![Documentation](https://docs.rs/quinn/badge.svg)](https://docs.rs/quinn/)

@@ -59,9 +59,13 @@ release is acknowledged in that script.
 
 ## Moving to a newer release
 
-1. Set the new version in the root `Cargo.toml` and in the manifests of
-   `vendor/quinn`, `vendor/quinn-proto` and `vendor/tokio-rustls`, and make the
-   same change in the manifest hunk of each crate's `XRAY-PATCH.diff`.
+1. Set the new version in the root `Cargo.toml`. The manifests of
+   `vendor/quinn`, `vendor/quinn-proto` and `vendor/tokio-rustls` name the
+   fork by a caret requirement, which a newer release satisfies. Raise it
+   there only when a copy needs the newer release, then with the same change
+   in the manifest hunk of its `XRAY-PATCH.diff` and, for quinn and
+   quinn-proto, in its lockfile and as a new release of that fork
+   ([vendored-forks.md](vendored-forks.md)).
 2. `cargo update -p shaped-rustls --precise <version>`.
 3. Run the byte oracles, which fail on any change to a ClientHello:
    `cargo test -p xray-transport --test utls_tls_shaping_tests --test

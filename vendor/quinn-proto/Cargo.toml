@@ -12,29 +12,32 @@
 [package]
 edition = "2021"
 rust-version = "1.85"
-name = "quinn-proto"
-version = "0.11.19"
+name = "xray-quinn-proto"
+version = "0.11.1900"
 build = false
+exclude = [
+    "Cargo.toml.orig",
+    ".cargo_vcs_info.json",
+]
 autolib = false
 autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "State machine for the QUIC transport protocol"
-readme = false
+description = "A fork of quinn-proto 0.11.19 built on shaped-rustls, with Xray's ChromeParrot handshake, BBR corrections, a separate DATAGRAM size advertisement and resizable stream receive windows."
+readme = "README.md"
 keywords = ["quic"]
 categories = [
     "network-programming",
     "asynchronous",
 ]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/quinn-rs/quinn"
+repository = "https://github.com/aimalygin/xray-rust"
 
 [package.metadata.docs.rs]
 features = [
     "rustls-aws-lc-rs",
     "rustls-ring",
-    "platform-verifier",
     "log",
     "rustls-log",
 ]
@@ -57,7 +60,6 @@ default = [
     "bloom",
 ]
 log = ["tracing/log"]
-platform-verifier = ["dep:rustls-platform-verifier"]
 qlog = ["dep:qlog"]
 ring = ["dep:ring"]
 rustls = ["rustls-ring"]
@@ -125,10 +127,6 @@ features = ["std"]
 optional = true
 default-features = false
 package = "shaped-rustls"
-
-[dependencies.rustls-platform-verifier]
-version = "0.7"
-optional = true
 
 [dependencies.slab]
 version = "0.4.6"

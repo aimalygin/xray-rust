@@ -29,9 +29,6 @@ use h3::{
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
-#[cfg(feature = "datagram")]
-pub mod datagram;
-
 /// BoxStream with Sync trait
 type BoxStreamSync<'a, T> = Pin<Box<dyn Stream<Item = T> + Sync + Send + 'a>>;
 

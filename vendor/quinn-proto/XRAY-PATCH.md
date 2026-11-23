@@ -2,10 +2,23 @@
 
 Source: the complete unchanged-version crates.io `quinn-proto` **0.11.19** archive,
 SHA256 `0e750cca55fe4f0439a15d0bb529da9651e79993e8e72c61a899a36d462befbe`.
-Upstream licenses and the published lockfile remain intact. `XRAY-PATCH.diff`
-reconstructs the local source from that archive with zero fuzz. Run
+Upstream licenses remain intact. `XRAY-PATCH.diff` reconstructs the local
+source from that archive with zero fuzz. Run
 `scripts/check-vendored-sources.sh` to verify the archive, exact reconstruction,
 and the protocol tests from an isolated copy.
+
+## Package
+
+The copy is the package `xray-quinn-proto` 0.11.1900: quinn-proto 0.11.19,
+fork release 0 (`docs/vendored-forks.md`). The library is still named
+`quinn_proto`. `XRAY-PATCH.diff` carries that in the manifest, the lockfile
+and a README. The manifest changes the name, version, description and
+`repository`, names the README, and excludes `Cargo.toml.orig` and
+`.cargo_vcs_info.json`: both came with upstream's archive, and cargo writes
+its own into every package. The lockfile is the published one brought in line
+with the manifest: the package under its new name, `shaped-rustls` and what it
+needs in place of `rustls`, and without what only `platform-verifier` needed.
+Upstream ships no README with quinn-proto; the one here is the fork's notice.
 
 ## Independent DATAGRAM advertisement limit
 
@@ -294,6 +307,17 @@ ClientHello-shaping fork of rustls 0.23.46, whose library is still named
 package. The workspace builds its TLS and QUIC client
 configurations on that fork's types, and it no longer puts the fork under the
 name `rustls` with `[patch.crates-io]`. No source file changes for this.
-`scripts/check-vendored-sources.sh` adds the fork release the workspace
-builds to the published lockfile before the locked test, so the crate's own
-tests run on the fork as well.
+The copy's lockfile names the fork release it was locked on, and
+`scripts/check-vendored-sources.sh` moves it to the release the workspace
+builds before the locked test, so the crate's own tests run on that one.
+
+## No `platform-verifier` feature
+
+Upstream's `platform-verifier` feature builds a client configuration with the
+rustls-platform-verifier crate, whose verifier and builder extension are made
+for upstream's rustls. On `shaped-rustls` they are types and traits of
+another crate, and the feature does not compile. It is removed: the feature,
+its dependency, `ClientConfig::with_platform_verifier`,
+`ClientConfig::try_with_platform_verifier` and the constructor behind them.
+The workspace never enabled it: it builds its own `rustls::ClientConfig` and
+hands it to quinn.

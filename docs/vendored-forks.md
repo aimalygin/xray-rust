@@ -7,27 +7,29 @@ dependencies. Each copy is an upstream release plus a patch, kept in
 A crates.io package cannot depend on a path or on a `[patch.crates-io]`
 entry, so before the workspace can be published
 ([cargo-publishing.md](cargo-publishing.md)) every copy it builds on has to be
-a crates.io package itself. Four of them are prepared for that; the QUIC stack
-is next.
+a crates.io package itself. All seven are prepared for that, and the root
+manifest has no `[patch.crates-io]` section.
 
-| Directory | Package | Version | Upstream release | How the workspace takes it |
-| --- | --- | --- | --- | --- |
-| `vendor/h2` | `xray-h2` | 0.4.2000 | h2 0.4.20 | path and version |
-| `vendor/h3` | `xray-h3` | 0.0.800 | h3 0.0.8 | path and version |
-| `vendor/smoltcp` | `xray-smoltcp` | 0.14.0 | smoltcp 0.14.0 | path and version |
-| `vendor/gotatun` | `xray-gotatun` | 0.9.100 | GotaTun 0.9.1, commit `dab390cd` | path and version |
-| `vendor/quinn-proto` | `quinn-proto` | 0.11.19 | the same | `[patch.crates-io]` |
-| `vendor/quinn` | `quinn` | 0.11.12 | the same | `[patch.crates-io]` |
-| `vendor/h3-quinn` | `h3-quinn` | 0.0.10 | the same | `[patch.crates-io]` |
-| `vendor/tokio-rustls` | `tokio-rustls` | 0.26.4 | the same | path, tests and benches only |
+| Directory | Package | Version | Upstream release |
+| --- | --- | --- | --- |
+| `vendor/h2` | `xray-h2` | 0.4.2000 | h2 0.4.20 |
+| `vendor/h3` | `xray-h3` | 0.0.800 | h3 0.0.8 |
+| `vendor/h3-quinn` | `xray-h3-quinn` | 0.0.1000 | h3-quinn 0.0.10 |
+| `vendor/quinn-proto` | `xray-quinn-proto` | 0.11.1900 | quinn-proto 0.11.19 |
+| `vendor/quinn` | `xray-quinn` | 0.11.1200 | quinn 0.11.12 |
+| `vendor/smoltcp` | `xray-smoltcp` | 0.14.0 | smoltcp 0.14.0 |
+| `vendor/gotatun` | `xray-gotatun` | 0.9.100 | GotaTun 0.9.1, commit `dab390cd` |
 
-None of the four `xray-*` packages is on crates.io yet. Until one is, its
-version here can still change without a new release number.
+None of the seven is on crates.io yet. Until one is, its version here can
+still change without a new release number.
 
-The rustls fork is not in `vendor/`: it is the crates.io package
-`shaped-rustls` ([shaped-rustls.md](shaped-rustls.md)).
+Two more forks are not in this table. The rustls fork is not in `vendor/`:
+it is the crates.io package `shaped-rustls`
+([shaped-rustls.md](shaped-rustls.md)). `vendor/tokio-rustls` is
+tokio-rustls 0.26.4 built on `shaped-rustls`; only tests and benches use it,
+by path, and it is not published.
 
-## How the workspace takes a published fork
+## How the workspace takes a fork
 
 ```toml
 h2 = { package = "xray-h2", path = "vendor/h2", version = "0.4.2000" }
@@ -36,11 +38,17 @@ h2 = { package = "xray-h2", path = "vendor/h2", version = "0.4.2000" }
 The path is what this workspace builds. The version is what a published crate
 will depend on: cargo drops the path when it packages a crate and keeps the
 package name and the version. Each fork's library keeps upstream's name, so
-the code writes `h2::`, `h3::`, `smoltcp::` and `gotatun::` as it would with
-upstream.
+the code writes `h2::`, `h3::`, `h3_quinn::`, `quinn::`, `quinn_proto::`,
+`smoltcp::` and `gotatun::` as it would with upstream.
 
-`vendor/h3-quinn` names `xray-h3` the same way, by the path `../h3`, so that
-it and the workspace build one h3.
+The forks name one another the same way, so that the build holds one h3, one
+quinn and one quinn-proto:
+
+- `vendor/quinn` names `xray-quinn-proto` by the path `../quinn-proto`;
+- `vendor/h3-quinn` names `xray-h3` by `../h3` and `xray-quinn` by `../quinn`.
+
+`xray-quinn-proto` and `xray-quinn` are built on `shaped-rustls`, as the
+workspace is.
 
 ## Names and versions
 
@@ -58,6 +66,19 @@ so once a fork is published, any change to its files is a new fork release.
 Each manifest keeps upstream's `rust-version`. The forks are built and tested
 only with this workspace's toolchain.
 
+## Features a fork does not have
+
+A feature that cannot be built on the forks' dependencies is removed with its
+code, so that a published package has no feature that fails to compile:
+
+- `xray-quinn-proto` and `xray-quinn` have no `platform-verifier`, which is
+  in upstream quinn's default features. It needs rustls-platform-verifier,
+  whose verifier is built for upstream's rustls and not for `shaped-rustls`.
+- `xray-h3-quinn` has no `datagram`. It needs h3-datagram, which is built on
+  upstream's h3 and not on `xray-h3`.
+
+The workspace enabled neither.
+
 ## What the package says about itself
 
 A fork is someone else's crate under another name, and its page must not read
@@ -66,19 +87,21 @@ as upstream's:
 - the description starts with "A fork of" and the upstream release;
 - the README opens with a notice: what the crate is a fork of, that it is not
   affiliated with upstream, where to report its bugs, and how to depend on it.
-  Upstream's README follows unchanged;
+  Upstream's README follows unchanged; quinn-proto ships none, so there the
+  notice is the README;
 - `repository` is this repository;
 - `XRAY-PATCH.md` and, for the crates.io-based copies, `XRAY-PATCH.diff` are
   in the package. Upstream's license files are kept as they are.
 
-For h2, h3 and smoltcp these are hunks of `XRAY-PATCH.diff`, with the root
-entry of the copy's `Cargo.lock`. For GotaTun, which is rebuilt from
-upstream's commit and four patches,
+For the copies taken from crates.io these are hunks of `XRAY-PATCH.diff`,
+with the copy's `Cargo.lock` where it has one. For GotaTun, which is rebuilt
+from upstream's commit and four patches,
 `tools/wireguard-adapter-prototype/prepare_vendor.py` writes them.
 
-The manifests exclude `Cargo.toml.orig` and `.cargo_vcs_info.json`. Both came
-with upstream's archive, cargo writes its own into every package, and it
-refuses a source directory that would add files of those names.
+The manifests exclude `Cargo.toml.orig` and `.cargo_vcs_info.json` where the
+copy has them. Both came with upstream's archive, cargo writes its own into
+every package, and it refuses a source directory that would add files of
+those names.
 
 ## Checks
 
@@ -86,16 +109,20 @@ The supply-chain CI job runs three scripts over `vendor/`:
 
 - `scripts/check-vendored-sources.sh` downloads each upstream archive by
   checksum, applies the patch with zero fuzz and requires the result to equal
-  the copy file for file. For a published fork it also requires the version
-  to name the archive it verified, so `xray-h2` 0.4.2000 cannot sit on
-  anything but h2 0.4.20.
+  the copy file for file. It also requires each fork's version to name the
+  archive it verified, so `xray-h2` 0.4.2000 cannot sit on anything but h2
+  0.4.20, and runs the unit tests of h2, h3, quinn, quinn-proto and smoltcp
+  with the copies' lockfiles.
 - `scripts/check-vendored-advisories.sh` audits the upstream release under
   each copy against RustSec. Advisories are filed against `h2`, not `xray-h2`,
   so the script reads the upstream name and release out of the fork's:
   `xray-h2` 0.4.2000 is audited as h2 0.4.20.
-- `scripts/check-vendored-packages.sh` packages every `xray-*` copy as
-  `cargo publish` would and lets cargo build each package from its archive.
-  It uploads nothing.
+- `scripts/check-vendored-packages.sh` packages the seven as `cargo publish`
+  would and lets cargo build each package from its archive. It packages them
+  together, in dependency order, each finished archive served to the next
+  from a local registry, because `xray-quinn` cannot be built from its
+  archive while `xray-quinn-proto` is missing from crates.io. It uploads
+  nothing.
 
 ## Publishing a fork
 
@@ -110,15 +137,23 @@ CARGO_TARGET_DIR="$PWD/target/vendored-package" \
   cargo publish --locked --manifest-path vendor/h2/Cargo.toml
 ```
 
-`vendor/gotatun` has no `Cargo.lock`, so it is published without `--locked`;
-cargo resolves its dependencies and writes the lockfile into the package
-only. The target directory is set because each copy is outside the workspace
-and would otherwise build into `vendor/<crate>/target`, which the provenance
-check reports as untracked files.
+`vendor/gotatun` and `vendor/h3-quinn` have no `Cargo.lock`, so they are
+published without `--locked`; cargo resolves their dependencies and writes
+the lockfile into the package only. The target directory is set because each
+copy is outside the workspace and would otherwise build into
+`vendor/<crate>/target`, which the provenance check reports as untracked
+files.
 
-The four packages do not depend on one another, so their order is free.
-`xray-h3` has to be on crates.io before the fork of h3-quinn that will depend
-on it.
+Cargo builds a package before it uploads it, with the package's dependencies
+taken from crates.io, so the order matters where one fork depends on another:
+
+1. `xray-quinn-proto`, then `xray-quinn`;
+2. `xray-h3`;
+3. `xray-h3-quinn`, after `xray-quinn` and `xray-h3`.
+
+`xray-h2`, `xray-smoltcp` and `xray-gotatun` depend on none of the others. A
+dry run of `xray-quinn` or `xray-h3-quinn` fails until what it depends on is
+uploaded; the packaging check is what covers them before that.
 
 After a publication, record the version, the commit and the SHA-256 of the
 crate archive here.
@@ -130,14 +165,16 @@ crate archive here.
    `scripts/check-wireguard-adapter-prototype.sh`.
 2. Unpack the archive, apply `XRAY-PATCH.diff`, and resolve what no longer
    applies. Set the version: the new patch release times 100.
-3. Rename the root entry of the copy's lockfile:
+3. Bring the copy's lockfile in line with its manifest:
    `cargo update --workspace --manifest-path vendor/<crate>/Cargo.toml`.
 4. Write the difference from the archive back into `XRAY-PATCH.diff`, and
    update `XRAY-PATCH.md` and the README notice, which name the release.
-5. Update the version in the root `Cargo.toml` (in
-   `crates/xray-wireguard/Cargo.toml` for GotaTun) and in the table above.
+5. Update the version where the fork is named: the root `Cargo.toml`
+   (`crates/xray-wireguard/Cargo.toml` for GotaTun), the manifests of the
+   forks that depend on it, and the table above. A fork whose manifest
+   changes this way and is already on crates.io gets a release of its own.
 6. Run the three scripts and the workspace's tests.
 
 A change to a fork on the same upstream release is the same procedure from
-step 4, with the fork's release raised by one if the current version is
+step 3, with the fork's release raised by one if the current version is
 already on crates.io.

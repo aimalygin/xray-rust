@@ -14,8 +14,6 @@ use rustls::{
     pki_types::{CertificateDer, PrivateKeyDer, ServerName},
     quic::{Connection, HeaderProtectionKey, KeyChange, PacketKey, Secrets, Suite, Version},
 };
-#[cfg(feature = "platform-verifier")]
-use rustls_platform_verifier::BuilderVerifierExt;
 
 use crate::{
     ConnectError, ConnectionId, Side, TransportError, TransportErrorCode,
@@ -273,7 +271,7 @@ pub struct HandshakeData {
 /// A QUIC-compatible TLS client configuration
 ///
 /// Quinn implicitly constructs a `QuicClientConfig` with reasonable defaults within
-/// [`ClientConfig::with_root_certificates()`][root_certs] and [`ClientConfig::with_platform_verifier()`][platform].
+/// [`ClientConfig::with_root_certificates()`][root_certs].
 /// Alternatively, `QuicClientConfig`'s [`TryFrom`] implementation can be used to wrap around a
 /// custom [`rustls::ClientConfig`], in which case care should be taken around certain points:
 ///
@@ -287,31 +285,12 @@ pub struct HandshakeData {
 /// 256 server names.
 ///
 /// [root_certs]: crate::config::ClientConfig::with_root_certificates()
-/// [platform]: crate::config::ClientConfig::with_platform_verifier()
 pub struct QuicClientConfig {
     pub(crate) inner: Arc<rustls::ClientConfig>,
     initial: Suite,
 }
 
 impl QuicClientConfig {
-    #[cfg(feature = "platform-verifier")]
-    pub(crate) fn with_platform_verifier() -> Result<Self, Error> {
-        // Keep in sync with `inner()` below
-        let mut inner = rustls::ClientConfig::builder_with_provider(configured_provider())
-            .with_protocol_versions(&[&rustls::version::TLS13])
-            .unwrap() // The default providers support TLS 1.3
-            .with_platform_verifier()?
-            .with_no_client_auth();
-
-        inner.enable_early_data = true;
-        Ok(Self {
-            // We're confident that the *ring* default provider contains TLS13_AES_128_GCM_SHA256
-            initial: initial_suite_from_provider(inner.crypto_provider())
-                .expect("no initial cipher suite found"),
-            inner: Arc::new(inner),
-        })
-    }
-
     /// Initialize a sane QUIC-compatible TLS client configuration
     ///
     /// QUIC requires that TLS 1.3 be enabled. Advanced users can use any [`rustls::ClientConfig`] that
@@ -340,7 +319,6 @@ impl QuicClientConfig {
     }
 
     pub(crate) fn inner(verifier: Arc<dyn ServerCertVerifier>) -> rustls::ClientConfig {
-        // Keep in sync with `with_platform_verifier()` above
         let mut config = rustls::ClientConfig::builder_with_provider(configured_provider())
             .with_protocol_versions(&[&rustls::version::TLS13])
             .unwrap() // The default providers support TLS 1.3
