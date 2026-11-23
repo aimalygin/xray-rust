@@ -204,8 +204,8 @@ long-term supported release series.
   a patch that finds none. Each library keeps upstream's name, and
   the workspace's code does not change. The patch number of a version is
   upstream's patch release times 100 plus the fork's release, as for
-  `shaped-rustls` (`docs/vendored-forks.md`). None of the seven is on
-  crates.io yet.
+  `shaped-rustls` (`docs/vendored-forks.md`). All seven are on crates.io,
+  uploaded on 2026-11-23 from commit `06ad5e23`.
   - Two upstream features that cannot be built on the forks' dependencies
     are removed with their code: `platform-verifier` from the quinn and
     quinn-proto forks (rustls-platform-verifier is made for upstream's
@@ -218,6 +218,17 @@ long-term supported release series.
     audits each as the upstream release its version carries, and
     `scripts/check-vendored-sources.sh` holds that version to the archive it
     verifies.
+  - `scripts/check-vendored-published.sh`, also new in that job, holds each
+    copy to the crates.io package of its name. The version in the copy's
+    manifest must not be yanked, and its archive, checked against the SHA-256
+    recorded in the script, has to equal the copy file for file, apart from
+    the files cargo writes into a package: the workspace builds the copies by
+    path and a crate published from it will take the registry packages, so a
+    copy changed without a new fork release fails there. The script's table
+    is the list of the fork releases made from this repository, and the
+    crates.io index has to list exactly those, so an upload nobody recorded
+    fails too. A fork release that waits for its upload is reported, with a
+    warning on the CI run, and does not fail.
 
 ## 0.10.1 - 2026-11-16
 

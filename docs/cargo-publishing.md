@@ -21,8 +21,9 @@ calls APIs that exist only in those copies
 Each of the seven is a package of its own, `xray-h2`, `xray-h3`,
 `xray-h3-quinn`, `xray-quinn`, `xray-quinn-proto`, `xray-smoltcp` and
 `xray-gotatun`, which the workspace names by path and version, and the root
-manifest has no `[patch.crates-io]` section. They stand in the way only until
-they are uploaded: none of the seven is on crates.io yet.
+manifest has no `[patch.crates-io]` section. All seven are on crates.io, and
+CI holds each copy in `vendor/` to the package of its version, so they no
+longer stand in the way.
 
 blake3 was one of those copies, for one added method: key derivation with a
 byte context. `xray-vless-encryption` now computes the context key itself and
@@ -30,11 +31,11 @@ hands it to the registry crate
 ([vless-encryption-design.md](vless-encryption-design.md)), so blake3 is an
 ordinary dependency.
 
-Cargo removes local path overrides when creating a registry package, and a
-crates.io package cannot rely on the vendored copies used by this workspace.
-Publishing `xray-transport`, `xray-core-rs`, or `xray-ffi` in the current shape
-would therefore produce a package that fails its registry build and fails on
-docs.rs. `cargo publish --no-verify` is not an acceptable workaround.
+Cargo removes local paths when creating a registry package, so a crates.io
+package cannot rely on the copies in `vendor/`: it builds on the registry
+packages of the same versions. What stands in the way now is the workspace
+itself, steps 5 to 7 below. `cargo publish --no-verify` is not an acceptable
+workaround for any of them.
 
 The safe path is:
 
@@ -53,11 +54,13 @@ The safe path is:
    path without a version, which a published manifest drops;
 3. publish the adapted QUIC dependency surface: the vendored quinn and
    quinn-proto depend on `shaped-rustls` and carry other local changes as
-   well. They are named and packaged, as `xray-quinn` and `xray-quinn-proto`,
-   with `xray-h3-quinn` on top, and wait for their upload;
+   well. Done: `xray-quinn-proto` 0.11.1900 and `xray-quinn` 0.11.1200 are on
+   crates.io, with `xray-h3-quinn` 0.0.1000 on top;
 4. do the same for the other overridden crates: send upstream what upstream
-   can take, and publish the rest under names of their own. h2, h3, smoltcp
-   and GotaTun are named and packaged, and wait for their upload;
+   can take, and publish the rest under names of their own. The publishing
+   is done: `xray-h2` 0.4.2000, `xray-h3` 0.0.800, `xray-smoltcp` 0.14.0 and
+   `xray-gotatun` 0.9.100 are on crates.io. Sending upstream what upstream
+   can take remains open and blocks nothing;
 5. give every internal `xray-*` path dependency a matching registry version;
 6. package and publish the workspace in dependency order;
 7. verify every package with `cargo publish --dry-run` and build documentation

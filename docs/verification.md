@@ -178,6 +178,7 @@ The supply-chain CI job additionally runs:
 ```sh
 bash scripts/check-vendored-sources.sh
 bash scripts/check-vendored-packages.sh
+bash scripts/check-vendored-published.sh
 cargo audit
 bash scripts/check-vendored-advisories.sh
 cargo deny --locked check advisories bans licenses sources
@@ -211,6 +212,17 @@ would, together and in dependency order, and lets cargo build each package
 from its archive, so a manifest crates.io would refuse, an archive without a
 file the build needs, or a default feature that does not compile fails here
 and not at the upload. It uploads nothing.
+
+`check-vendored-published.sh` holds each `xray-*` copy to the crates.io
+package of its name. The version in the copy's manifest must not be yanked,
+and its archive, checked against the SHA-256 recorded in the script, has to
+equal the copy file for file, apart from the files cargo writes into a
+package: the workspace builds the copies by path and a crate published from
+it takes the registry packages, so a copy changed without a new fork release
+fails here. The script's table is also the list of the fork releases made
+from this repository, and the crates.io index has to list exactly those: a
+release nobody recorded fails. A fork release that is not uploaded yet is
+reported and does not fail ([vendored-forks.md](vendored-forks.md)).
 
 The dedicated secret-scan job checks the complete reachable history. On a tag
 push it scans only the tag's ancestry (`--log-opts=HEAD`) with the policy the
