@@ -429,6 +429,14 @@ owner-accepted limitations in the
   same number. And a lost MTU probe no longer puts that sender into
   recovery: a probe larger than the path carries is lost by design. Xray-core
   does the last two itself; both are listed as deliberate differences.
+- Android, iOS and tvOS: an SRV or TXT `addressPortStrategy` works. With no
+  `/etc/resolv.conf` on the device, the lookup now asks the servers in
+  `dns.servers` directly over protected sockets, never through routing,
+  which could send it into the outbound being opened. Each
+  dial used to ask loopback nameservers, as Go does, that no phone runs, and
+  dial the configured server once they failed. Without a server to ask, the
+  configured server is dialled at once and the log says so once. See
+  [Socket options](docs/xray-core-differences.md#socket-options).
 - A TCP flow through a MASQUE or WireGuard outbound recovers from a burst
   loss without waiting for its retransmission timer. The userspace TCP/IP
   stack resent one segment when the peer had repeated an ACK three times and
