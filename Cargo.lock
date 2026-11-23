@@ -2131,6 +2131,8 @@ dependencies = [
 [[package]]
 name = "shaped-rustls"
 version = "0.23.4600"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bca996193e4d5b1769d8518203ab6b77d3d28599b42779a38778595dc2ab33cf"
 dependencies = [
  "aws-lc-rs",
  "brotli",

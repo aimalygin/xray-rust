@@ -125,7 +125,6 @@ features = ["std"]
 optional = true
 default-features = false
 package = "shaped-rustls"
-path = "../shaped-rustls"
 
 [dependencies.rustls-platform-verifier]
 version = "0.7"

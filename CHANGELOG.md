@@ -150,12 +150,12 @@ long-term supported release series.
   at most 8 connections of each kind.
   `exchange_dns_quic_candidates` in `xray-transport` takes the
   `DnsConnectionPools` that keep them.
-- The vendored rustls fork is now shaped-rustls at `474a31b7`: rustls 0.23.46
-  with the ClientHello shaping API, where it was rustls 0.23.40 with four
-  security fixes carried by hand. Those fixes (RUSTSEC-2026-0285, -0346,
-  -0348 and -0349) are upstream's own commits now, RUSTSEC-2026-0347 never
-  applied to 0.23.40 and is fixed in 0.23.46, and the local patch is down to
-  the manifest. No ClientHello byte changes.
+- The rustls fork is now shaped-rustls 0.23.4600, the fork's revision
+  `474a31b7`: rustls 0.23.46 with the ClientHello shaping API, where it was a
+  vendored rustls 0.23.40 with four security fixes carried by hand. Those
+  fixes (RUSTSEC-2026-0285, -0346, -0348 and -0349) are upstream's own commits
+  now, and RUSTSEC-2026-0347 never applied to 0.23.40 and is fixed in 0.23.46.
+  No ClientHello byte changes.
 - TLS and REALITY client sessions are driven by an adapter in `xray-transport`
   over `rustls::ClientConnection` instead of by `tokio-rustls`, which leaves
   the normal dependencies of `xray-transport` and everything built on it; it
@@ -169,19 +169,20 @@ long-term supported release series.
   live in it. No ClientHello byte, public API or configuration changes, and
   TLS early data was never enabled. A direct read that would start inside a
   TLS record now fails the flow instead of returning it with bytes missing.
-- The workspace depends on the rustls fork under its own package name,
-  `shaped-rustls`, instead of putting it in place of `rustls` with
-  `[patch.crates-io]`; code still writes `rustls::`, because the fork's
-  library keeps that name. An embedder that took these crates by git had to
-  copy that patch entry, which replaced rustls for its whole build; it has
-  nothing to copy for rustls now, while the entries for the other vendored
-  crates remain. The vendored quinn and quinn-proto name the fork the same
-  way, and the TLS servers of tests and benches use a vendored tokio-rustls
-  0.26.4 built on it, so the build still holds one TLS library and the
-  upstream `rustls` package is no longer in `Cargo.lock`. Same sources as
-  before: no ClientHello byte, public API or behaviour changes.
-  `scripts/check-vendored-advisories.sh` audits the fork as the rustls
-  release it is built on.
+- The workspace takes the rustls fork from crates.io under its own package
+  name, `shaped-rustls`, instead of putting a vendored copy in place of
+  `rustls` with `[patch.crates-io]`; code still writes `rustls::`, because
+  the fork's library keeps that name. An embedder that took these crates by
+  git had to copy that patch entry, which replaced rustls for its whole
+  build; it has nothing to copy for rustls now, while the entries for the
+  other vendored crates remain. `vendor/shaped-rustls` is gone, and
+  `Cargo.lock` pins the release by checksum. The vendored quinn and
+  quinn-proto name the fork the same way, and the TLS servers of tests and
+  benches use a vendored tokio-rustls 0.26.4 built on it, so the build still
+  holds one TLS library and the upstream `rustls` package is no longer in
+  `Cargo.lock`. Same sources as before: no ClientHello byte, public API or
+  behaviour changes. `scripts/check-vendored-advisories.sh` audits the fork
+  as the rustls release its version carries (`docs/shaped-rustls.md`).
 
 ## 0.10.1 - 2026-11-16
 

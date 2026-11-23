@@ -62,7 +62,6 @@ version = "0.23.4600"
 features = ["std"]
 default-features = false
 package = "shaped-rustls"
-path = "../shaped-rustls"
 
 [dependencies.tokio]
 version = "1.0"

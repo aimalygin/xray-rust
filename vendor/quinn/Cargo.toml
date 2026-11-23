@@ -177,7 +177,6 @@ features = ["std"]
 optional = true
 default-features = false
 package = "shaped-rustls"
-path = "../shaped-rustls"
 
 [dependencies.smol]
 version = "2"

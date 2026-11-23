@@ -187,17 +187,20 @@ before reproducing this part locally.
 
 `cargo audit` matches advisories only against registry packages, and the
 crates in `vendor/` are path dependencies (a git dependency would be skipped
-the same way). `check-vendored-sources.sh` proves each vendored crate is its
-pinned upstream release plus `XRAY-PATCH.diff`;
-`check-vendored-advisories.sh` then audits those upstream releases, and any
-git dependency in `Cargo.lock`, as if they were crates.io packages. It fails
-on an advisory unless the script acknowledges it with the vendored directory
-and the upstream fix the copy carries, and it reports an acknowledgement that
-no longer matches, so a rebase onto a fixed release can drop it. Extra
-arguments go to `cargo audit`, for example `--no-fetch` offline. Rebase a
-vendored crate onto the fixed release where its local patch allows; backport
-and acknowledge only when it does not, as the rustls fork needed until it
-merged rustls 0.23.46 (`vendor/shaped-rustls/XRAY-PATCH.md`).
+the same way). The rustls fork is a registry package, but under the name
+`shaped-rustls`, which no advisory is filed against.
+`check-vendored-sources.sh` proves each vendored crate is its pinned upstream
+release plus `XRAY-PATCH.diff`; `check-vendored-advisories.sh` then audits
+those upstream releases, the rustls release the fork's version carries
+([shaped-rustls.md](shaped-rustls.md)), and any git dependency in
+`Cargo.lock`, as if they were crates.io packages. It fails on an advisory
+unless the script acknowledges it with the vendored directory (or the fork's
+package name) and the upstream fix the copy carries, and it reports an
+acknowledgement that no longer matches, so a rebase onto a fixed release can
+drop it. Extra arguments go to `cargo audit`, for example `--no-fetch`
+offline. Rebase a vendored crate onto the fixed release where its local patch
+allows; backport and acknowledge only when it does not, as the rustls fork
+needed until it merged rustls 0.23.46.
 
 The dedicated secret-scan job checks the complete reachable history. On a tag
 push it scans only the tag's ancestry (`--log-opts=HEAD`) with the policy the

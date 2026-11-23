@@ -1,6 +1,6 @@
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -172,10 +172,12 @@ package = "quinn-proto"
+@@ -172,10 +172,11 @@ package = "quinn-proto"
  version = "2"
  
  [dependencies.rustls]
@@ -10,7 +10,6 @@
  optional = true
  default-features = false
 +package = "shaped-rustls"
-+path = "../shaped-rustls"
  
  [dependencies.smol]
  version = "2"
