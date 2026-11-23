@@ -67,7 +67,7 @@ loom = "0.7"
 ml-dsa = { version = "0.1.1", default-features = false, features = ["alloc"] }
 polyval = { version = "0.7", features = ["zeroize"] }
 prost = "0.14"
-rand = "0.8"
+rand = "0.10"
 rcgen = { version = "0.14", default-features = false, features = ["ring"] }
 regex = "1"
 quinn = { package = "xray-quinn", path = "vendor/quinn", version = "=0.11.1200", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
