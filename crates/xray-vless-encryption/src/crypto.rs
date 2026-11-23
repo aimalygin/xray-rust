@@ -2,10 +2,11 @@ use std::io;
 
 use aes::Aes256;
 use aws_lc_rs::aead::{self, Aad, LessSafeKey, Nonce, UnboundKey};
+use blake3::hazmat::HasherExt as _;
 use ctr::cipher::{KeyIvInit, StreamCipher};
 use zeroize::Zeroizing;
 
-use crate::{crypto_error, invalid_data};
+use crate::{context_key::context_key, crypto_error, invalid_data};
 
 pub(crate) const TAG_LEN: usize = 16;
 pub(crate) const MAX_NONCE: [u8; 12] = [0xff; 12];
@@ -31,8 +32,10 @@ impl Default for CipherSuite {
     }
 }
 
+/// BLAKE3 key derivation with a context that is bytes, as Go's
+/// `blake3.DeriveKey(out, string(context), material)` takes it.
 pub(crate) fn derive(context: &[u8], material: &[u8]) -> Zeroizing<[u8; 32]> {
-    let mut hasher = Zeroizing::new(blake3::Hasher::new_derive_key_bytes(context));
+    let mut hasher = Zeroizing::new(blake3::Hasher::new_from_context_key(&context_key(context)));
     hasher.update(material);
     let mut output = Zeroizing::new([0; 32]);
     // Zeroize the XOF state as well as the material-bearing hasher.

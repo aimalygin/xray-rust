@@ -183,6 +183,17 @@ long-term supported release series.
   `Cargo.lock`. Same sources as before: no ClientHello byte, public API or
   behaviour changes. `scripts/check-vendored-advisories.sh` audits the fork
   as the rustls release its version carries (`docs/shaped-rustls.md`).
+- BLAKE3 is the unmodified `blake3` crate from crates.io; `vendor/blake3`
+  and its `[patch.crates-io]` entry are gone, so an embedder that took these
+  crates by git has one entry fewer to copy. The vendored copy added one
+  method, key derivation with a byte context: VLESS encryption needs it
+  because Xray's Go client passes binary values as the context, which the
+  crate's `&str` API cannot take. `xray-vless-encryption` now hashes such a
+  context into BLAKE3's context key itself and hands the key to the crate's
+  `hazmat` API, which hashes the key material as before. The derived keys
+  are the same: the new code equals the crate for text contexts at every
+  length through four chunks, equals the pinned Go vectors for binary ones,
+  and agreed with the removed copy on 5,012 binary contexts.
 
 ## 0.10.1 - 2026-11-16
 

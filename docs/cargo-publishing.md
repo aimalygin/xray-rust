@@ -13,10 +13,16 @@ behavior and is not present in upstream `rustls`. The workspace depends on it
 under its own package name, from crates.io, so rustls no longer stands in the
 way ([shaped-rustls.md](shaped-rustls.md)).
 
-`[patch.crates-io]` replaces quinn, quinn-proto, h3, h3-quinn, h2, smoltcp and
-blake3 with vendored copies that carry local changes, and `xray-wireguard`
-takes a patched gotatun by path. The workspace calls APIs that exist only in
-those copies.
+`[patch.crates-io]` replaces quinn, quinn-proto, h3, h3-quinn, h2 and smoltcp
+with vendored copies that carry local changes, and `xray-wireguard` takes a
+patched gotatun by path. The workspace calls APIs that exist only in those
+copies.
+
+blake3 was on that list for one added method, key derivation with a byte
+context. `xray-vless-encryption` now computes the context key itself and
+hands it to the registry crate
+([vless-encryption-design.md](vless-encryption-design.md)), so blake3 is an
+ordinary dependency.
 
 Cargo removes local path overrides when creating a registry package, and a
 crates.io package cannot rely on the vendored copies used by this workspace.

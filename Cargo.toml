@@ -38,7 +38,7 @@ async-trait = "0.1"
 aws-lc-rs = { version = "=1.18.1", default-features = false, features = ["alloc", "non-fips", "prebuilt-nasm"] }
 base64 = "0.23.1"
 blake2 = "=0.11.0"
-blake3 = { version = "=1.8.5", features = ["zeroize", "pure"] }
+blake3 = { version = "1.8.5", features = ["zeroize", "pure"] }
 bytes = "1"
 chacha20 = { version = "0.10.2", default-features = false, features = ["xchacha"] }
 chacha20poly1305 = "0.11.0"
@@ -105,7 +105,6 @@ panic = "unwind"
 [patch.crates-io]
 quinn = { path = "vendor/quinn" }
 smoltcp = { path = "vendor/smoltcp" }
-blake3 = { path = "vendor/blake3" }
 h3 = { path = "vendor/h3" }
 h3-quinn = { path = "vendor/h3-quinn" }
 quinn-proto = { path = "vendor/quinn-proto" }

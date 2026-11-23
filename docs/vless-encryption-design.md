@@ -120,15 +120,27 @@ the first encrypted length; both variants are covered explicitly in interop.
 ML-KEM-768 uses AWS-LC 1.17.0, X25519 uses the existing zeroizing Dalek library,
 and CTR uses the existing AES/CTR RustCrypto primitives with zeroize enabled.
 
-BLAKE3 1.8.5 is vendored with one API addition for byte contexts. Xray's Go
-conversion preserves arbitrary binary bytes; the normal Rust `&str` API cannot
-represent them. The added method uses the original BLAKE3 context/material
-flags and unchanged compression/tree implementation, corresponding to the
-upstream C raw-context API. No UTF-8 coercion, custom KDF, or unsafe `str` is
-used. Source archive checksum, upstream commit, and patch scope are in
-[`vendor/blake3/XRAY-PATCH.md`](../vendor/blake3/XRAY-PATCH.md). The official
-[BLAKE3 API source](https://docs.rs/blake3/1.8.5/src/blake3/lib.rs.html) documents
-the original string API.
+BLAKE3 is the `blake3` crate from crates.io, unmodified. Its key derivation
+takes the context as `&str`, and Xray's Go conversion preserves arbitrary
+binary bytes there: an IV, a key-exchange message, a record's ciphertext. The
+Rust API cannot represent them, and no UTF-8 coercion or unsafe `str` is used.
+BLAKE3 derives a key in two steps: it hashes the context into a context key,
+then hashes the key material under it.
+`crates/xray-vless-encryption/src/context_key.rs` does the first step for a
+byte context, as the upstream C raw-context API does: the BLAKE3 hash in its
+`DERIVE_KEY_CONTEXT` mode, one compression at a time. The crate's
+`hazmat::HasherExt::new_from_context_key` takes that key and hashes the
+material, so the secret half of the derivation stays in the `blake3` crate.
+Every context is a value that crossed the wire.
+
+The context hash is checked two ways. For text contexts it equals the
+crate's own `hazmat::hash_derive_key_context` at every length up to four
+chunks and around every subtree boundary of a 67-chunk tree. For binary
+contexts of 16 to 16,645 bytes the derived keys equal the pinned Go client's
+(`tests/fixtures/vless-encryption/primitives.json`). Until this replaced it,
+the workspace built a vendored BLAKE3 1.8.5 with one added method for byte
+contexts. When the copy was removed the two agreed on 5,012 binary contexts:
+every length through 5,000 bytes and eleven longer ones, up to 70 KiB.
 
 `VlessUser.encryption` is now a typed `VlessEncryption`; it retains no raw
 key-bearing string. Debug output reveals only the scheme/mode and redaction
