@@ -13,13 +13,20 @@ behavior and is not present in upstream `rustls`. The workspace depends on it
 under its own package name, from crates.io, so rustls no longer stands in the
 way ([shaped-rustls.md](shaped-rustls.md)).
 
-`[patch.crates-io]` replaces quinn, quinn-proto, h3, h3-quinn, h2 and smoltcp
-with vendored copies that carry local changes, and `xray-wireguard` takes a
-patched gotatun by path. The workspace calls APIs that exist only in those
-copies.
+The workspace also builds on its own copies of h2, h3, smoltcp, GotaTun,
+quinn, quinn-proto and h3-quinn, kept in `vendor/` with local changes, and
+calls APIs that exist only in those copies
+([vendored-forks.md](vendored-forks.md)).
 
-blake3 was on that list for one added method, key derivation with a byte
-context. `xray-vless-encryption` now computes the context key itself and
+- h2, h3, smoltcp and GotaTun are packages of their own, `xray-h2`,
+  `xray-h3`, `xray-smoltcp` and `xray-gotatun`, which the workspace names by
+  path and version. They stand in the way only until they are uploaded: none
+  of the four is on crates.io yet.
+- `[patch.crates-io]` still replaces quinn, quinn-proto and h3-quinn. These
+  three depend on one another and on `xray-h3`, so they are renamed together.
+
+blake3 was one of those copies, for one added method: key derivation with a
+byte context. `xray-vless-encryption` now computes the context key itself and
 hands it to the registry crate
 ([vless-encryption-design.md](vless-encryption-design.md)), so blake3 is an
 ordinary dependency.
@@ -49,7 +56,8 @@ The safe path is:
    quinn-proto depend on `shaped-rustls` already and carry other local changes
    as well, so they need names of their own under step 4 in any case;
 4. do the same for the other overridden crates: send upstream what upstream
-   can take, and publish the rest under names of their own;
+   can take, and publish the rest under names of their own. h2, h3, smoltcp
+   and GotaTun are named and packaged, and wait for their upload;
 5. give every internal `xray-*` path dependency a matching registry version;
 6. package and publish the workspace in dependency order;
 7. verify every package with `cargo publish --dry-run` and build documentation

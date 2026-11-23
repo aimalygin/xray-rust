@@ -139,32 +139,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "h2"
-version = "0.4.20"
-dependencies = [
- "atomic-waker",
- "bytes",
- "env_logger",
- "fnv",
- "futures-core",
- "futures-sink",
- "hex",
- "http",
- "indexmap",
- "quickcheck",
- "rand 0.8.7",
- "serde",
- "serde_json",
- "slab",
- "tokio",
- "tokio-rustls",
- "tokio-util",
- "tracing",
- "walkdir",
- "webpki-roots",
-]
-
-[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -700,6 +674,32 @@ name = "windows_x86_64_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
+
+[[package]]
+name = "xray-h2"
+version = "0.4.2000"
+dependencies = [
+ "atomic-waker",
+ "bytes",
+ "env_logger",
+ "fnv",
+ "futures-core",
+ "futures-sink",
+ "hex",
+ "http",
+ "indexmap",
+ "quickcheck",
+ "rand 0.8.7",
+ "serde",
+ "serde_json",
+ "slab",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "tracing",
+ "walkdir",
+ "webpki-roots",
+]
 
 [[package]]
 name = "zerocopy"

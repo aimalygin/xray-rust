@@ -2,10 +2,21 @@
 
 Source: the complete unchanged-version crates.io `h2` **0.4.20** archive,
 SHA256 `7d29020232d6aa3fb1daca64c1127cf662cf97f254ae16c18c05b8ab635fc118`.
-Upstream licenses and the published lockfile remain intact. `XRAY-PATCH.diff`
-reconstructs the local source from that archive with zero fuzz. Run
+Upstream licenses remain intact, and so does the published lockfile apart
+from its root entry. `XRAY-PATCH.diff` reconstructs the local source from that
+archive with zero fuzz. Run
 `scripts/check-vendored-sources.sh` to verify the archive, exact reconstruction,
 and the library tests from an isolated copy.
+
+## Package
+
+The copy is the package `xray-h2` 0.4.2000: h2 0.4.20, fork
+release 0 (`docs/vendored-forks.md`). The library is still named `h2`.
+`XRAY-PATCH.diff` carries that in three more files: the manifest, the root
+entry of `Cargo.lock`, and a notice above upstream's README. The manifest
+changes the name, version, description, `documentation` and `repository`, and
+excludes `Cargo.toml.orig` and `.cargo_vcs_info.json`: both came with
+upstream's archive, and cargo writes its own into every package.
 
 ## Stream window update threshold
 

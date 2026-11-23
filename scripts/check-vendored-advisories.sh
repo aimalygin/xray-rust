@@ -6,13 +6,14 @@
 # dependencies without a registry source and a git dependency has a git
 # source, so it never matches an advisory against them. The rustls fork is a
 # registry package, but under its own name, `shaped-rustls`, and advisories
-# are filed against `rustls`. This script writes a lockfile that lists each of
-# them as the crates.io release it was taken from, audits that, and fails on
-# any advisory the copy does not carry a fix for. A backported fix is
-# acknowledged below with the vendored directory (or the fork's package
-# name), the advisory and the upstream change; rebasing a crate onto a fixed
-# release makes the acknowledgement stale, which the script reports so it can
-# be removed.
+# are filed against `rustls`; the forks in vendor/ that are published as
+# `xray-<upstream>` are in the same position. This script writes a lockfile
+# that lists each of them as the crates.io release it was taken from, audits
+# that, and fails on any advisory the copy does not carry a fix for. A
+# backported fix is acknowledged below with the vendored directory (or the
+# fork's package name), the advisory and the upstream change; rebasing a crate
+# onto a fixed release makes the acknowledgement stale, which the script
+# reports so it can be removed.
 #
 # Usage: scripts/check-vendored-advisories.sh [extra cargo-audit options]
 #   e.g. --no-fetch to reuse the local advisory database offline.
@@ -35,7 +36,11 @@ if ! cargo audit --version >/dev/null 2>&1; then
 fi
 
 # The vendored manifests are crates.io-normalized (or, for git sources,
-# expanded) and keep upstream's package name and version.
+# expanded). One that keeps upstream's package name keeps its version too. A
+# fork published under a name of its own is `xray-<upstream>` at X.Y.N, where
+# N is upstream's patch release times 100 plus the fork's release
+# (docs/vendored-forks.md): xray-h2 0.4.2000 is h2 0.4.20.
+# check-vendored-sources.sh holds that version to the archive it verifies.
 lockfile="$temporary/Cargo.lock"
 printf '# Upstream releases of vendored, forked and git dependencies, for cargo audit only.\nversion = 4\n' >"$lockfile"
 for manifest in "$ROOT"/vendor/*/Cargo.toml; do
@@ -64,6 +69,14 @@ for manifest in "$ROOT"/vendor/*/Cargo.toml; do
     exit 1
   fi
   # What cargo audit is asked about: the upstream release under the copy.
+  if [[ "$name" == xray-* ]]; then
+    if [[ ! "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+      echo "$name $version in $manifest is not a fork version" >&2
+      exit 1
+    fi
+    name="${name#xray-}"
+    version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((10#${BASH_REMATCH[3]} / 100))"
+  fi
   printf '\n[[package]]\nname = "%s"\nversion = "%s"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\n' \
     "$name" "$version" >>"$lockfile"
   directory="${manifest%/Cargo.toml}"

@@ -12,8 +12,8 @@
 [package]
 edition = "2021"
 rust-version = "1.63"
-name = "h2"
-version = "0.4.20"
+name = "xray-h2"
+version = "0.4.2000"
 authors = [
     "Carl Lerche <me@carllerche.com>",
     "Sean McArthur <sean@seanmonstar.com>",
@@ -22,14 +22,16 @@ build = false
 exclude = [
     "fixtures/**",
     "ci/**",
+    "Cargo.toml.orig",
+    ".cargo_vcs_info.json",
 ]
 autolib = false
 autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "An HTTP/2 client and server"
-documentation = "https://docs.rs/h2"
+description = "A fork of h2 0.4.20 with client options for Go's stream WINDOW_UPDATE policy and request header block, and a wait for the server's SETTINGS."
+documentation = "https://docs.rs/xray-h2"
 readme = "README.md"
 keywords = [
     "http",
@@ -42,7 +44,7 @@ categories = [
     "network-programming",
 ]
 license = "MIT"
-repository = "https://github.com/hyperium/h2"
+repository = "https://github.com/aimalygin/xray-rust"
 
 [package.metadata.docs.rs]
 features = ["stream"]

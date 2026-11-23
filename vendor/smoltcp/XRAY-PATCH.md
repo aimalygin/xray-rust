@@ -48,7 +48,17 @@ ACK-division overgrowth. Credit is cleared on loss. Upstream defaults remain
 unchanged. Four regression tests fail before the implementation and pass after.
 
 Apply `XRAY-PATCH.diff` to the checksum-verified published archive with zero fuzz.
-All other upstream files, including licenses and Cargo.lock, are unchanged.
+Upstream's licenses are unchanged.
+
+## Package
+
+The copy is the package `xray-smoltcp` 0.14.0: smoltcp 0.14.0, fork release 0
+(`docs/vendored-forks.md`). The library is still named `smoltcp`.
+`XRAY-PATCH.diff` carries that in three more files: the manifest, the root
+entry of `Cargo.lock`, and a notice above upstream's README. The manifest
+changes the name, description, `documentation` and `repository`, drops
+`homepage`, and excludes `Cargo.toml.orig` and `.cargo_vcs_info.json`: both
+came with upstream's archive, and cargo writes its own into every package.
 
 
 ## Shared receive budgets without retracting advertised credit

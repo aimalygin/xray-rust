@@ -31,6 +31,11 @@ bounded-queue regression test also runs in the upstream adapter gate.
 README and license notices, expands workspace manifest fields/dependencies and
 removes benchmark declarations. It does not copy upstream's privileged TUN runner.
 
+The same script makes the copy the package `xray-gotatun` 0.9.100: GotaTun
+0.9.1, fork release 0 (`docs/vendored-forks.md`). It sets the manifest's name,
+version, description and `repository`, names the library `gotatun` as before,
+and puts a notice above upstream's README.
+
 `scripts/check-wireguard-runtime.sh` verifies the archive, applies all four patches with
 zero fuzz, regenerates this crate and compares every file except this note. It
 then runs engine tests, the IP adapter probe and TCP/UDP/core interoperability

@@ -1,3 +1,25 @@
+# xray-h3
+
+xray-h3 is a fork of [h3](https://github.com/hyperium/h3) 0.0.8, published for
+[xray-rust](https://github.com/aimalygin/xray-rust). It is not affiliated with
+or endorsed by the h3 project: please report its bugs
+[to xray-rust](https://github.com/aimalygin/xray-rust/issues), not upstream.
+
+The library is still named `h3`:
+
+```toml
+h3 = { package = "xray-h3", version = "0.0.800" }
+```
+
+The patch number of a version is h3's patch release times 100 plus the
+fork's release: `0.0.800` is h3 0.0.8, fork release 0.
+`XRAY-PATCH.md` in this package describes every change, and `XRAY-PATCH.diff`
+is the whole difference from the crates.io archive of h3 0.0.8.
+
+Everything below is upstream's own README.
+
+---
+
 # h3
 
 An async HTTP/3 implementation.

@@ -943,83 +943,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "gotatun"
-version = "0.9.1"
-dependencies = [
- "aead 0.5.2",
- "base64 0.22.1",
- "bitfield-struct",
- "blake2 0.10.6",
- "bytes",
- "chacha20poly1305 0.10.1",
- "constant_time_eq",
- "duplicate",
- "either",
- "eyre",
- "futures",
- "hex",
- "hmac 0.12.1",
- "ip_network",
- "ip_network_table",
- "ipnetwork",
- "libc",
- "nix",
- "parking_lot",
- "rand 0.9.5",
- "rand_chacha 0.9.0",
- "rand_core 0.6.4",
- "ring",
- "socket2",
- "thiserror 1.0.69",
- "tokio",
- "tokio-util",
- "tracing",
- "typed-builder",
- "windows-sys 0.61.2",
- "x25519-dalek",
- "zerocopy",
- "zeroize",
-]
-
-[[package]]
-name = "h2"
-version = "0.4.20"
-dependencies = [
- "atomic-waker",
- "bytes",
- "fnv",
- "futures-core",
- "futures-sink",
- "http",
- "indexmap",
- "slab",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "h3"
-version = "0.0.8"
-dependencies = [
- "bytes",
- "fastrand",
- "futures-util",
- "http",
- "pin-project-lite",
- "tokio",
-]
-
-[[package]]
 name = "h3-quinn"
 version = "0.0.10"
 dependencies = [
  "bytes",
  "futures",
- "h3",
  "quinn",
  "tokio",
  "tokio-util",
+ "xray-h3",
 ]
 
 [[package]]
@@ -2203,18 +2135,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
-name = "smoltcp"
-version = "0.14.0"
-dependencies = [
- "bitflags 1.3.2",
- "byteorder",
- "cfg-if",
- "defmt",
- "heapless",
- "managed",
-]
-
-[[package]]
 name = "socket2"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2955,7 +2875,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "shaped-rustls",
- "smoltcp",
  "thiserror 2.0.21",
  "tokio",
  "tokio-rustls",
@@ -2963,6 +2882,7 @@ dependencies = [
  "xray-core-rs",
  "xray-proxy",
  "xray-routing",
+ "xray-smoltcp",
  "xray-transport",
  "xray-tun",
  "xray-utls",
@@ -3010,7 +2930,6 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "futures-util",
- "h2",
  "hkdf",
  "http",
  "libc",
@@ -3021,7 +2940,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "shaped-rustls",
- "smoltcp",
  "socket2",
  "thiserror 2.0.21",
  "tokio",
@@ -3029,9 +2947,11 @@ dependencies = [
  "uuid",
  "x25519-dalek",
  "xray-config",
+ "xray-h2",
  "xray-proxy",
  "xray-routing",
  "xray-runtime",
+ "xray-smoltcp",
  "xray-transport",
  "xray-tun",
  "xray-vless-encryption",
@@ -3053,6 +2973,74 @@ dependencies = [
  "xray-transport",
  "xray-tun",
  "zeroize",
+]
+
+[[package]]
+name = "xray-gotatun"
+version = "0.9.100"
+dependencies = [
+ "aead 0.5.2",
+ "base64 0.22.1",
+ "bitfield-struct",
+ "blake2 0.10.6",
+ "bytes",
+ "chacha20poly1305 0.10.1",
+ "constant_time_eq",
+ "duplicate",
+ "either",
+ "eyre",
+ "futures",
+ "hex",
+ "hmac 0.12.1",
+ "ip_network",
+ "ip_network_table",
+ "ipnetwork",
+ "libc",
+ "nix",
+ "parking_lot",
+ "rand 0.9.5",
+ "rand_chacha 0.9.0",
+ "rand_core 0.6.4",
+ "ring",
+ "socket2",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "typed-builder",
+ "windows-sys 0.61.2",
+ "x25519-dalek",
+ "zerocopy",
+ "zeroize",
+]
+
+[[package]]
+name = "xray-h2"
+version = "0.4.2000"
+dependencies = [
+ "atomic-waker",
+ "bytes",
+ "fnv",
+ "futures-core",
+ "futures-sink",
+ "http",
+ "indexmap",
+ "slab",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "xray-h3"
+version = "0.0.800"
+dependencies = [
+ "bytes",
+ "fastrand",
+ "futures-util",
+ "http",
+ "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]
@@ -3118,6 +3106,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "xray-smoltcp"
+version = "0.14.0"
+dependencies = [
+ "bitflags 1.3.2",
+ "byteorder",
+ "cfg-if",
+ "defmt",
+ "heapless",
+ "managed",
+]
+
+[[package]]
 name = "xray-transport"
 version = "0.10.1"
 dependencies = [
@@ -3130,8 +3130,6 @@ dependencies = [
  "bytes",
  "futures-util",
  "ghash",
- "h2",
- "h3",
  "h3-quinn",
  "hkdf",
  "hmac 0.13.0",
@@ -3159,6 +3157,8 @@ dependencies = [
  "webpki-roots",
  "x25519-dalek",
  "x509-parser",
+ "xray-h2",
+ "xray-h3",
  "xray-proxy",
  "xray-routing",
  "xray-utls",
@@ -3202,15 +3202,15 @@ version = "0.10.1"
 dependencies = [
  "base64 0.23.1",
  "bytes",
- "gotatun",
  "rand 0.8.6",
  "serde_json",
- "smoltcp",
  "socket2",
  "thiserror 2.0.21",
  "tokio",
  "x25519-dalek",
+ "xray-gotatun",
  "xray-proxy",
+ "xray-smoltcp",
  "xray-transport",
 ]
 

@@ -2541,3 +2541,128 @@
      #[test]
      fn test_buffer_length_changes() {
          let mut ring = RingBuffer::new(vec![0; 2]);
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -12,18 +12,21 @@
+ [package]
+ edition = "2024"
+ rust-version = "1.91"
+-name = "smoltcp"
++name = "xray-smoltcp"
+ version = "0.14.0"
+ authors = ["whitequark <whitequark@whitequark.org>"]
+ build = "build.rs"
++exclude = [
++    "Cargo.toml.orig",
++    ".cargo_vcs_info.json",
++]
+ autolib = false
+ autobins = false
+ autoexamples = false
+ autotests = false
+ autobenches = false
+-description = "A TCP/IP stack designed for bare-metal, real-time systems without a heap."
+-homepage = "https://github.com/smoltcp-rs/smoltcp"
+-documentation = "https://docs.rs/smoltcp/"
++description = "A fork of smoltcp 0.14.0 with opt-in TCP loss recovery (NewReno, SACK), shared receive budgets, egress bursts and growable socket buffers."
++documentation = "https://docs.rs/xray-smoltcp"
+ readme = "README.md"
+ keywords = [
+     "ip",
+@@ -37,7 +40,7 @@
+     "network-programming",
+ ]
+ license = "0BSD"
+-repository = "https://github.com/smoltcp-rs/smoltcp.git"
++repository = "https://github.com/aimalygin/xray-rust"
+ 
+ [features]
+ _netsim = []
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -718,28 +718,6 @@
+ version = "1.15.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+-
+-[[package]]
+-name = "smoltcp"
+-version = "0.14.0"
+-dependencies = [
+- "bitflags 1.1.0",
+- "byteorder",
+- "cfg-if",
+- "defmt",
+- "env_logger",
+- "getopts",
+- "heapless",
+- "idna 1.0.1",
+- "insta",
+- "libc",
+- "log",
+- "managed",
+- "rand",
+- "rand_chacha",
+- "rstest",
+- "url",
+-]
+ 
+ [[package]]
+ name = "stable_deref_trait"
+@@ -1028,6 +1006,28 @@
+ checksum = "1e9df38ee2d2c3c5948ea468a8406ff0db0b29ae1ffde1bcf20ef305bcc95c51"
+ 
+ [[package]]
++name = "xray-smoltcp"
++version = "0.14.0"
++dependencies = [
++ "bitflags 1.1.0",
++ "byteorder",
++ "cfg-if",
++ "defmt",
++ "env_logger",
++ "getopts",
++ "heapless",
++ "idna 1.0.1",
++ "insta",
++ "libc",
++ "log",
++ "managed",
++ "rand",
++ "rand_chacha",
++ "rstest",
++ "url",
++]
++
++[[package]]
+ name = "yoke"
+ version = "0.7.5"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,25 @@
++# xray-smoltcp
++
++xray-smoltcp is a fork of [smoltcp](https://github.com/smoltcp-rs/smoltcp) 0.14.0, published for
++[xray-rust](https://github.com/aimalygin/xray-rust). It is not affiliated with
++or endorsed by the smoltcp project: please report its bugs
++[to xray-rust](https://github.com/aimalygin/xray-rust/issues), not upstream.
++
++The library is still named `smoltcp`:
++
++```toml
++smoltcp = { package = "xray-smoltcp", version = "0.14.0" }
++```
++
++The patch number of a version is smoltcp's patch release times 100 plus the
++fork's release: `0.14.0` is smoltcp 0.14.0, fork release 0.
++`XRAY-PATCH.md` in this package describes every change, and `XRAY-PATCH.diff`
++is the whole difference from the crates.io archive of smoltcp 0.14.0.
++
++Everything below is upstream's own README.
++
++---
++
+ # smoltcp
+ 
+ [![docs.rs](https://docs.rs/smoltcp/badge.svg)](https://docs.rs/smoltcp)

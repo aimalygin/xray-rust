@@ -1,11 +1,11 @@
 [package]
-name = "gotatun"
-description = "an implementation of the WireGuard® protocol designed for portability and speed"
-version = "0.9.1"
+name = "xray-gotatun"
+description = "A fork of gotatun 0.9.1, a userspace WireGuard implementation, with opt-in bounded device resources and zeroizing preshared keys."
+version = "0.9.100"
 authors = ["Noah Kennedy <nkennedy@cloudflare.com>", "Andy Grover <agrover@cloudflare.com>", "Jeff Hiner <jhiner@cloudflare.com>", "Mullvad VPN"]
 rust-version = "1.95"
 edition = "2024"
-repository = "https://github.com/mullvad/gotatun"
+repository = "https://github.com/aimalygin/xray-rust"
 license = "MPL-2.0"
 categories = ["asynchronous", "network-programming"]
 keywords = ["vpn", "wireguard"]
@@ -22,6 +22,7 @@ targets = [
 rustdoc-args = ["--cfg", "docsrs"]
 
 [lib]
+name = "gotatun"
 crate-type = ["cdylib", "rlib", "staticlib"]
 
 [dependencies]

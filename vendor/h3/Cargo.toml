@@ -12,20 +12,24 @@
 [package]
 edition = "2021"
 rust-version = "1.70"
-name = "h3"
-version = "0.0.8"
+name = "xray-h3"
+version = "0.0.800"
 authors = [
     "Sean McArthur <sean@seanmonstar.com>",
     "Jean-Christophe BEGUE <jc.begue@pm.me>",
 ]
 build = false
+exclude = [
+    "Cargo.toml.orig",
+    ".cargo_vcs_info.json",
+]
 autolib = false
 autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "An async HTTP/3 implementation."
-documentation = "https://docs.rs/h3"
+description = "A fork of h3 0.0.8 with bounded frame read-ahead, CONNECT-IP for MASQUE and the SETTINGS frame quic-go sends."
+documentation = "https://docs.rs/xray-h3"
 readme = "README.md"
 keywords = [
     "http3",
@@ -38,7 +42,7 @@ categories = [
     "web-programming::http-server",
 ]
 license = "MIT"
-repository = "https://github.com/hyperium/h3"
+repository = "https://github.com/aimalygin/xray-rust"
 
 [features]
 i-implement-a-third-party-backend-and-opt-into-breaking-changes = []
