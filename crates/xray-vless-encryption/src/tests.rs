@@ -85,7 +85,7 @@ fn header_mask_counter_carries_like_pinned_go() {
 }
 
 #[test]
-fn byte_context_api_preserves_utf8_api() {
+fn a_text_context_derives_the_key_blake3_derives() {
     for context in ["", "VLESS", "ключ 🔑"] {
         assert_eq!(
             *derive(context.as_bytes(), &pattern(96)),

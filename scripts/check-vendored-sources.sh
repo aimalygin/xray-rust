@@ -7,7 +7,7 @@ trap 'rm -rf "$temporary"' EXIT
 
 # Include ignored files here: an upstream .gitignore can hide crate files on
 # the developer's filesystem even though a clean checkout will omit them.
-untracked="$(git -C "$ROOT" ls-files --others -- vendor/blake3 vendor/h2 vendor/h3 vendor/h3-quinn vendor/quinn vendor/quinn-proto vendor/gotatun vendor/smoltcp vendor/tokio-rustls)"
+untracked="$(git -C "$ROOT" ls-files --others -- vendor/h2 vendor/h3 vendor/h3-quinn vendor/quinn vendor/quinn-proto vendor/gotatun vendor/smoltcp vendor/tokio-rustls)"
 if [[ -n "$untracked" ]]; then
   echo 'vendored source files are absent from the Git index:' >&2
   printf '%s\n' "$untracked" >&2
@@ -30,9 +30,6 @@ download_and_verify() {
 }
 
 download_and_verify \
-  blake3 1.8.5 \
-  0aa83c34e62843d924f905e0f5c866eb1dd6545fc4d719e803d9ba6030371fce
-download_and_verify \
   h3-quinn 0.0.10 \
   8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4
 download_and_verify \
@@ -46,15 +43,6 @@ patch --batch --fuzz=0 -p1 \
   <"$ROOT/vendor/quinn/XRAY-PATCH.diff"
 diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
   "$temporary/quinn-0.11.12" "$ROOT/vendor/quinn"
-
-patch --batch --fuzz=0 -p1 \
-  -d "$temporary/blake3-1.8.5" \
-  <"$ROOT/vendor/blake3/XRAY-PATCH.diff"
-diff -ruN \
-  --exclude XRAY-PATCH.diff \
-  --exclude XRAY-PATCH.md \
-  "$temporary/blake3-1.8.5" \
-  "$ROOT/vendor/blake3"
 
 patch --batch --fuzz=0 -p1 \
   -d "$temporary/h3-quinn-0.0.10" \
@@ -174,5 +162,5 @@ bash "$ROOT/scripts/check-wireguard-adapter-prototype.sh" --verify-vendor-only
 # fuzz job compiles.
 RUSTFLAGS="--cfg fuzzing" cargo check --locked \
   --manifest-path "$ROOT/Cargo.toml" --target-dir "$temporary/fuzzing-target" \
-  -p blake3 -p gotatun -p h2 -p h3 -p h3-quinn -p quinn -p quinn-proto -p smoltcp
+  -p gotatun -p h2 -p h3 -p h3-quinn -p quinn -p quinn-proto -p smoltcp
 echo "verified vendored sources against checksum-pinned archives"
