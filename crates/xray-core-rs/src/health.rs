@@ -290,9 +290,11 @@ async fn run_sequential_round(
 /// Why an outbound is probed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProbeKind {
-    /// The round of the probe interval. Its result is recorded as it is.
+    /// The round of the probe interval. Its result is recorded as it is,
+    /// and is a sample of the `leastLoad` window.
     Scheduled,
-    /// For a failure of real traffic, or a follow-up of such a probe.
+    /// For a failure of real traffic, or a follow-up of such a probe. Its
+    /// result, when recorded, moves the health state but adds no sample.
     Reprobe,
 }
 
@@ -344,7 +346,7 @@ async fn probe_nodes(
                 joined = tasks.join_next() => {
                     if let Some(Ok((node, result))) = joined {
                         if reprobes.probe_finished(node, result.is_ok(), kind, Instant::now()) {
-                            record_result(&runtime.selection, node, result);
+                            record_result(&runtime.selection, node, result, kind);
                         }
                     }
                 }
@@ -762,20 +764,33 @@ async fn probe_node(
     .await
 }
 
+/// Records a probe's result in the outbound's health. Only the scheduled
+/// round adds samples to the `leastLoad` window, so that it holds the last
+/// evenly spaced probes and not the bursts of re-probes failing traffic
+/// brings; a re-probe moves the state, the last delay and the failure count.
 fn record_result(
     selection: &OutboundSelectionOverlay,
     node: OutboundNodeId,
     result: Result<Duration, StartupProbeError>,
+    kind: ProbeKind,
 ) {
     let now_unix_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
         .min(u128::from(u64::MAX)) as u64;
-    match result {
-        Ok(delay) => selection.record_health_success(node, delay, now_unix_ms),
-        Err(error) => {
+    match (result, kind) {
+        (Ok(delay), ProbeKind::Scheduled) => {
+            selection.record_health_success(node, delay, now_unix_ms);
+        }
+        (Ok(delay), ProbeKind::Reprobe) => {
+            selection.record_reprobe_success(node, delay, now_unix_ms);
+        }
+        (Err(error), ProbeKind::Scheduled) => {
             selection.record_health_failure(node, error.health_failure(), now_unix_ms);
+        }
+        (Err(error), ProbeKind::Reprobe) => {
+            selection.record_reprobe_failure(node, error.health_failure(), now_unix_ms);
         }
     }
 }
@@ -1458,6 +1473,31 @@ mod tests {
         (port, connects, server)
     }
 
+    /// A [`socks_server`] that, while `up` is false, closes every connection
+    /// at once, so that a probe through it fails as through a dead server.
+    async fn switchable_socks_server(up: Arc<AtomicBool>) -> (u16, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind SOCKS server");
+        let port = listener.local_addr().expect("SOCKS server address").port();
+        let server = tokio::spawn(async move {
+            let connects = Arc::new(AtomicUsize::new(0));
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                if !up.load(Ordering::Acquire) {
+                    continue;
+                }
+                let connects = Arc::clone(&connects);
+                tokio::spawn(async move {
+                    let _ = serve_socks(&mut stream, Duration::ZERO, &connects).await;
+                });
+            }
+        });
+        (port, server)
+    }
+
     async fn serve_socks(
         stream: &mut TcpStream,
         delay: Duration,
@@ -1505,6 +1545,123 @@ mod tests {
         let mut reply = [0; 10];
         client.read_exact(&mut reply).await.unwrap();
         reply[1]
+    }
+
+    /// Probes `node` once as the observatory does for `kind`.
+    async fn probe_once(
+        runtime: &ObservatoryRuntime,
+        reprobes: &mut Reprobes,
+        node: OutboundNodeId,
+        kind: ProbeKind,
+    ) {
+        let (_shutdown_tx, mut shutdown) = watch::channel(false);
+        assert!(
+            probe_nodes(runtime, &[node], kind, reprobes, &mut shutdown).await,
+            "a {kind:?} probe runs to its end"
+        );
+    }
+
+    /// Re-probes run because traffic failed, several per probe interval and
+    /// mostly failing. They move the health state, the last delay and the
+    /// failure count, but the `leastLoad` window keeps holding the scheduled
+    /// round's samples alone.
+    #[tokio::test]
+    async fn reprobes_leave_the_least_load_window_to_the_scheduled_round() {
+        tokio::time::timeout(Duration::from_secs(30), async {
+            let up = Arc::new(AtomicBool::new(true));
+            let (port, server) = switchable_socks_server(Arc::clone(&up)).await;
+            let router = Arc::new(OutboundRouter::new(Arc::new(parse(&json!({
+                "outbounds": [
+                    {"tag": "direct", "protocol": "freedom"},
+                    socks("proxy-a", "127.0.0.1", port),
+                    socks("proxy-b", "127.0.0.1", port),
+                ],
+                "routing": {"balancers": [{"tag": "auto", "selector": ["proxy-"],
+                    "strategy": {"type": "leastLoad"}, "fallbackTag": "direct"}]},
+            })))));
+            let observatory = ObservatoryConfig {
+                subject_selectors: vec!["proxy-".to_owned()],
+                probe_url: "http://192.0.2.1/generate_204".to_owned(),
+                probe_interval: Duration::from_secs(600),
+                enable_concurrency: true,
+            };
+            let nodes = router
+                .graph()
+                .leaf_nodes_matching_prefixes(&observatory.subject_selectors);
+            let proxy_a = router.graph().node_for_tag("proxy-a").unwrap();
+            let resolver = crate::system_dns_resolver();
+            let runtime = ObservatoryRuntime::new(
+                observatory,
+                nodes,
+                Arc::clone(&router),
+                router.selection_handle(),
+                Arc::clone(&resolver),
+                resolver,
+                Arc::new(TransportDialer::system().expect("system dialer")),
+            );
+            let mut reprobes = Reprobes::new(
+                Arc::clone(&runtime.selection),
+                router.graph(),
+                &runtime.nodes,
+                runtime.config.probe_interval,
+                REPROBE_COOLDOWNS,
+            );
+            let selection = router.selection();
+            let status = || {
+                selection
+                    .health_snapshot()
+                    .outbounds
+                    .into_iter()
+                    .find(|outbound| outbound.outbound_tag == "proxy-a")
+                    .expect("proxy-a has a health status")
+            };
+            let window = || selection.least_load_window_of(proxy_a).unwrap();
+
+            // Three scheduled rounds: a success, a failure, a success.
+            for answers in [true, false, true] {
+                up.store(answers, Ordering::Release);
+                probe_once(&runtime, &mut reprobes, proxy_a, ProbeKind::Scheduled).await;
+            }
+            assert_eq!(status().state, OutboundHealthState::Healthy);
+            let scheduled = window();
+            assert_eq!(scheduled, (3, 1));
+
+            // The server goes away and traffic through it fails. The first
+            // re-probe is held back for the one that confirms it.
+            up.store(false, Ordering::Release);
+            probe_once(&runtime, &mut reprobes, proxy_a, ProbeKind::Reprobe).await;
+            assert_eq!(status().state, OutboundHealthState::Healthy);
+            assert_eq!(window(), scheduled);
+
+            // The confirming probe marks it unhealthy, the first recheck
+            // finds it still down.
+            for consecutive_failures in [1, 2] {
+                probe_once(&runtime, &mut reprobes, proxy_a, ProbeKind::Reprobe).await;
+                let status = status();
+                assert_eq!(status.state, OutboundHealthState::Unhealthy);
+                assert_eq!(status.consecutive_failures, consecutive_failures);
+                assert_eq!(status.delay_ms, None);
+                assert_eq!(window(), scheduled, "after failure {consecutive_failures}");
+                assert!(reprobes.next_due(Instant::now()).is_some());
+            }
+
+            // It is back, and the next recheck marks it healthy again.
+            up.store(true, Ordering::Release);
+            probe_once(&runtime, &mut reprobes, proxy_a, ProbeKind::Reprobe).await;
+            let status_now = status();
+            assert_eq!(status_now.state, OutboundHealthState::Healthy);
+            assert_eq!(status_now.consecutive_failures, 0);
+            assert!(status_now.delay_ms.is_some());
+            assert_eq!(window(), scheduled);
+            assert_eq!(reprobes.next_due(Instant::now()), None);
+
+            // The next scheduled round adds its sample as before.
+            probe_once(&runtime, &mut reprobes, proxy_a, ProbeKind::Scheduled).await;
+            assert_eq!(window(), (4, 1));
+            server.abort();
+        })
+        .await
+        .expect("the probes finish in time");
     }
 
     async fn wait_for_state(

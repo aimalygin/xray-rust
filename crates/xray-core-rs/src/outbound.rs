@@ -2287,6 +2287,15 @@ impl Default for OutboundHealthAtomicState {
     }
 }
 
+/// Whether a probe result is also a sample of the `leastLoad` window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HealthSample {
+    /// A probe of the scheduled round, evenly spaced: one of the samples.
+    Window,
+    /// Any other probe: it moves the health state alone.
+    StateOnly,
+}
+
 impl OutboundHealthAtomicState {
     fn record_sample(&self, delay_ms: Option<u64>) {
         let metrics = self
@@ -2447,11 +2456,58 @@ impl OutboundSelectionOverlay {
         }
     }
 
+    /// Records a successful probe of the scheduled round: in the health
+    /// state, and as a sample of the `leastLoad` window.
     pub(crate) fn record_health_success(
         &self,
         node: OutboundNodeId,
         delay: Duration,
         now_unix_ms: u64,
+    ) {
+        self.store_health_success(node, delay, now_unix_ms, HealthSample::Window);
+    }
+
+    /// Records a failed probe of the scheduled round: in the health state,
+    /// and as a sample of the `leastLoad` window.
+    pub(crate) fn record_health_failure(
+        &self,
+        node: OutboundNodeId,
+        failure: OutboundHealthFailure,
+        now_unix_ms: u64,
+    ) {
+        self.store_health_failure(node, failure, now_unix_ms, HealthSample::Window);
+    }
+
+    /// Records a successful probe outside the scheduled round, as one run
+    /// because traffic failed: it sets the state, the last delay and the
+    /// failure count, but adds no sample to the `leastLoad` window, which
+    /// holds the scheduled round's samples alone.
+    pub(crate) fn record_reprobe_success(
+        &self,
+        node: OutboundNodeId,
+        delay: Duration,
+        now_unix_ms: u64,
+    ) {
+        self.store_health_success(node, delay, now_unix_ms, HealthSample::StateOnly);
+    }
+
+    /// Records a failed probe outside the scheduled round, leaving the
+    /// `leastLoad` window as it is; see [`Self::record_reprobe_success`].
+    pub(crate) fn record_reprobe_failure(
+        &self,
+        node: OutboundNodeId,
+        failure: OutboundHealthFailure,
+        now_unix_ms: u64,
+    ) {
+        self.store_health_failure(node, failure, now_unix_ms, HealthSample::StateOnly);
+    }
+
+    fn store_health_success(
+        &self,
+        node: OutboundNodeId,
+        delay: Duration,
+        now_unix_ms: u64,
+        sample: HealthSample,
     ) {
         let Some(health) = self.health_state(node) else {
             return;
@@ -2460,11 +2516,11 @@ impl OutboundSelectionOverlay {
             .update_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        health.delay_ms.store(
-            delay.as_millis().min(u128::from(u64::MAX)) as u64,
-            Ordering::Release,
-        );
-        health.record_sample(Some(delay.as_millis().min(u128::from(u64::MAX)) as u64));
+        let delay_ms = delay.as_millis().min(u128::from(u64::MAX)) as u64;
+        health.delay_ms.store(delay_ms, Ordering::Release);
+        if sample == HealthSample::Window {
+            health.record_sample(Some(delay_ms));
+        }
         health
             .last_try_unix_ms
             .store(now_unix_ms, Ordering::Release);
@@ -2481,11 +2537,12 @@ impl OutboundSelectionOverlay {
         self.revision.fetch_add(1, Ordering::AcqRel);
     }
 
-    pub(crate) fn record_health_failure(
+    fn store_health_failure(
         &self,
         node: OutboundNodeId,
         failure: OutboundHealthFailure,
         now_unix_ms: u64,
+        sample: HealthSample,
     ) {
         let Some(health) = self.health_state(node) else {
             return;
@@ -2494,7 +2551,9 @@ impl OutboundSelectionOverlay {
             .update_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        health.record_sample(None);
+        if sample == HealthSample::Window {
+            health.record_sample(None);
+        }
         health.delay_ms.store(u64::MAX, Ordering::Release);
         health
             .last_try_unix_ms
@@ -2573,6 +2632,16 @@ impl OutboundSelectionOverlay {
             .map_or(OutboundHealthState::Unknown, |health| {
                 OutboundHealthState::from_u8(health.state.load(Ordering::Acquire))
             })
+    }
+
+    /// How many samples the `leastLoad` window of leaf `node` holds, and
+    /// how many of them are failures.
+    #[cfg(test)]
+    pub(crate) fn least_load_window_of(&self, node: OutboundNodeId) -> Option<(u64, u64)> {
+        let health = self.health_state(node)?;
+        let metrics =
+            OutboundHealthWindowMetrics::decode(health.least_load_metrics.load(Ordering::Acquire));
+        Some((metrics.sample_count, metrics.failure_count))
     }
 
     /// The slot of leaf `node` in per-leaf state, if `node` is a leaf of

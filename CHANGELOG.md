@@ -27,7 +27,9 @@ long-term supported release series.
   gRPC and other stream transports are not reported. A dead server behind a
   `leastPing` balancer with `probeInterval: "10m"` was kept for up to ten
   minutes; it is now left after one failed open and two failed probes.
-  Without failures the observatory probes as before.
+  Re-probes move the health state but add no sample to the window `leastLoad`
+  reads, which keeps holding the last 16 scheduled probes. Without failures
+  the observatory probes as before.
 
 ## 0.10.1 - 2026-11-16
 

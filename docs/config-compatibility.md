@@ -4028,8 +4028,11 @@ at the earliest after the last such pass finished, and twice the previous
 wait, up to `probeInterval`, after a pass in which every probe failed. Reports
 only bring probes forward: without failures, probes follow the interval as
 before, the scheduled round is not moved and its results are recorded as
-they are, and re-probes use the same concurrency bound. Startup and on-demand
-probes report nothing.
+they are, and re-probes use the same concurrency bound. The 16-sample window
+that `leastLoad` reads for `tolerance`, the average and the deviation counts
+scheduled probes only: a re-probe sets the health state, the last delay and
+the failure count, but adds no sample to it. Startup and on-demand probes
+report nothing.
 
 The observer starts only after the core and any configured startup probe have
 started successfully. It dials each leaf directly by tag, so routing rules and
