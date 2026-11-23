@@ -55,7 +55,11 @@ for manifest in "$ROOT"/vendor/*/Cargo.toml; do
 
   archive="$temporary/target/package/$name-$version.crate"
   # The disclosure of what the fork changes has to travel with the package.
-  if ! tar -tzf "$archive" | grep -qx "$name-$version/XRAY-PATCH.md"; then
+  # The listing is read whole first: `grep -q` leaves at its first match, GNU
+  # tar then fails on the closed pipe, and pipefail would report that as no
+  # match.
+  listing="$(tar -tzf "$archive")"
+  if ! grep -qxF "$name-$version/XRAY-PATCH.md" <<<"$listing"; then
     echo "$name $version was packaged without XRAY-PATCH.md" >&2
     exit 1
   fi
