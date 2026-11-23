@@ -943,18 +943,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "h3-quinn"
-version = "0.0.10"
-dependencies = [
- "bytes",
- "futures",
- "quinn",
- "tokio",
- "tokio-util",
- "xray-h3",
-]
-
-[[package]]
 name = "hash32"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1680,45 +1668,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "quinn"
-version = "0.11.12"
-dependencies = [
- "bytes",
- "cfg_aliases",
- "futures-io",
- "pin-project-lite",
- "quinn-proto",
- "quinn-udp",
- "rustc-hash",
- "shaped-rustls",
- "socket2",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
- "web-time",
-]
-
-[[package]]
-name = "quinn-proto"
-version = "0.11.19"
-dependencies = [
- "bytes",
- "getrandom 0.4.2",
- "lru-slab",
- "rand 0.10.2",
- "rand_pcg",
- "ring",
- "rustc-hash",
- "rustls-pki-types",
- "shaped-rustls",
- "slab",
- "thiserror 2.0.21",
- "tinyvec",
- "tracing",
- "web-time",
 ]
 
 [[package]]
@@ -2934,7 +2883,6 @@ dependencies = [
  "http",
  "libc",
  "loom",
- "quinn",
  "rand 0.8.6",
  "rcgen",
  "serde_json",
@@ -2949,6 +2897,7 @@ dependencies = [
  "xray-config",
  "xray-h2",
  "xray-proxy",
+ "xray-quinn",
  "xray-routing",
  "xray-runtime",
  "xray-smoltcp",
@@ -3044,6 +2993,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "xray-h3-quinn"
+version = "0.0.1000"
+dependencies = [
+ "bytes",
+ "futures",
+ "tokio",
+ "tokio-util",
+ "xray-h3",
+ "xray-quinn",
+]
+
+[[package]]
 name = "xray-proxy"
 version = "0.10.1"
 dependencies = [
@@ -3068,6 +3029,45 @@ dependencies = [
  "uuid",
  "xray-routing",
  "zeroize",
+]
+
+[[package]]
+name = "xray-quinn"
+version = "0.11.1200"
+dependencies = [
+ "bytes",
+ "cfg_aliases",
+ "futures-io",
+ "pin-project-lite",
+ "quinn-udp",
+ "rustc-hash",
+ "shaped-rustls",
+ "socket2",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "web-time",
+ "xray-quinn-proto",
+]
+
+[[package]]
+name = "xray-quinn-proto"
+version = "0.11.1900"
+dependencies = [
+ "bytes",
+ "getrandom 0.4.2",
+ "lru-slab",
+ "rand 0.10.2",
+ "rand_pcg",
+ "ring",
+ "rustc-hash",
+ "rustls-pki-types",
+ "shaped-rustls",
+ "slab",
+ "thiserror 2.0.21",
+ "tinyvec",
+ "tracing",
+ "web-time",
 ]
 
 [[package]]
@@ -3130,7 +3130,6 @@ dependencies = [
  "bytes",
  "futures-util",
  "ghash",
- "h3-quinn",
  "hkdf",
  "hmac 0.13.0",
  "http",
@@ -3139,8 +3138,6 @@ dependencies = [
  "ml-dsa",
  "num-bigint",
  "polyval",
- "quinn",
- "quinn-proto",
  "rand 0.8.6",
  "rcgen",
  "regex",
@@ -3159,7 +3156,10 @@ dependencies = [
  "x509-parser",
  "xray-h2",
  "xray-h3",
+ "xray-h3-quinn",
  "xray-proxy",
+ "xray-quinn",
+ "xray-quinn-proto",
  "xray-routing",
  "xray-utls",
  "zeroize",

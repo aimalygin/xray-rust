@@ -73,6 +73,7 @@ patch --batch --fuzz=0 -p1 \
   <"$ROOT/vendor/quinn/XRAY-PATCH.diff"
 diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
   "$temporary/quinn-0.11.12" "$ROOT/vendor/quinn"
+expect_fork_of quinn 0.11.12
 
 patch --batch --fuzz=0 -p1 \
   -d "$temporary/h3-quinn-0.0.10" \
@@ -82,6 +83,7 @@ for path in Cargo.toml LICENSE README.md src; do
     "$temporary/h3-quinn-0.0.10/$path" \
     "$ROOT/vendor/h3-quinn/$path"
 done
+expect_fork_of h3-quinn 0.0.10
 
 download_and_verify \
   h3 0.0.8 \
@@ -99,9 +101,9 @@ cargo test --locked --manifest-path "$temporary/h3-0.0.8/Cargo.toml" --lib
 
 # The rustls fork is the crates.io package `shaped-rustls`, which Cargo.lock
 # pins by checksum like any other registry package. The vendored quinn-proto,
-# quinn and tokio-rustls name it in place of the `rustls` package their
-# published lockfiles pin, so each lockfile below gains the release this
-# workspace builds before the crate is tested or checked on it.
+# quinn and tokio-rustls name it in place of the `rustls` package, so each
+# lockfile below is moved to the release this workspace builds before the
+# crate is tested or checked on it.
 shaped_rustls_version="$(awk '
   /^\[\[package\]\]/ { n = "" }
   $1 == "name" { gsub(/"/, "", $3); n = $3 }
@@ -117,28 +119,21 @@ patch --batch --fuzz=0 -p1 \
   <"$ROOT/vendor/quinn-proto/XRAY-PATCH.diff"
 diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
   "$temporary/quinn-proto-0.11.19" "$ROOT/vendor/quinn-proto"
-# Its published lockfile pins the rustls package, and the vendored manifest
-# names the fork instead: add that entry, and only what it needs, before the
-# locked test.
-cargo update --manifest-path "$temporary/quinn-proto-0.11.19/Cargo.toml" --workspace
+expect_fork_of quinn-proto 0.11.19
+# The copy's lockfile names the fork release it was last locked on; this is a
+# no-op while the workspace builds the same one.
 cargo update --manifest-path "$temporary/quinn-proto-0.11.19/Cargo.toml" \
   -p shaped-rustls --precise "$shaped_rustls_version"
 cargo test --locked --manifest-path "$temporary/quinn-proto-0.11.19/Cargo.toml" \
   --no-default-features --features rustls-ring --lib
 
-# The quinn patch calls quinn-proto's patched `set_stream_receive_window`, so
-# quinn is tested against the reconstruction above. Its published lockfile
-# pins crates.io quinn-proto 0.11.18 and rustls: move the first entry, and
-# only what 0.11.19 and the fork need, before the locked test.
-quinn_proto_patch="patch.crates-io.quinn-proto.path=\"$temporary/quinn-proto-0.11.19\""
-cargo update --config "$quinn_proto_patch" \
-  --manifest-path "$temporary/quinn-0.11.12/Cargo.toml" \
-  -p quinn-proto --precise 0.11.19
-cargo update --config "$quinn_proto_patch" \
-  --manifest-path "$temporary/quinn-0.11.12/Cargo.toml" \
+# The vendored quinn names quinn-proto by the path `../quinn-proto`, and its
+# patch calls quinn-proto's patched `set_stream_receive_window`: give that
+# path the reconstruction above, so quinn is tested against it.
+ln -s quinn-proto-0.11.19 "$temporary/quinn-proto"
+cargo update --manifest-path "$temporary/quinn-0.11.12/Cargo.toml" \
   -p shaped-rustls --precise "$shaped_rustls_version"
-cargo test --locked --config "$quinn_proto_patch" \
-  --manifest-path "$temporary/quinn-0.11.12/Cargo.toml" \
+cargo test --locked --manifest-path "$temporary/quinn-0.11.12/Cargo.toml" \
   --no-default-features --features runtime-tokio,rustls-ring --lib
 
 # tokio-rustls serves the TLS of tests and benches only. Its tests directory
@@ -197,5 +192,6 @@ bash "$ROOT/scripts/check-wireguard-adapter-prototype.sh" --verify-vendor-only
 # fuzz job compiles.
 RUSTFLAGS="--cfg fuzzing" cargo check --locked \
   --manifest-path "$ROOT/Cargo.toml" --target-dir "$temporary/fuzzing-target" \
-  -p xray-gotatun -p xray-h2 -p xray-h3 -p h3-quinn -p quinn -p quinn-proto -p xray-smoltcp
+  -p xray-gotatun -p xray-h2 -p xray-h3 -p xray-h3-quinn -p xray-quinn -p xray-quinn-proto \
+  -p xray-smoltcp
 echo "verified vendored sources against checksum-pinned archives"

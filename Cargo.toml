@@ -19,7 +19,7 @@ resolver = "2"
 # `.claude` holds agent worktrees, each a checkout with its own workspace.
 # Without it here, cargo resolves their excluded vendor crates to this
 # workspace and fails ("believes it's in a workspace when it's not").
-exclude = ["vendor/gotatun", "vendor/smoltcp", "vendor/quinn", "vendor/h2", "vendor/h3", "vendor/tokio-rustls", ".claude"]
+exclude = ["vendor/gotatun", "vendor/smoltcp", "vendor/quinn", "vendor/quinn-proto", "vendor/h2", "vendor/h3", "vendor/h3-quinn", "vendor/tokio-rustls", ".claude"]
 
 [workspace.package]
 version = "0.10.1"
@@ -49,15 +49,15 @@ sha3 = { version = "0.11", features = ["zeroize"] }
 ctr = { version = "0.10.1", features = ["zeroize"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 ghash = { version = "0.6", features = ["zeroize"] }
-# h2, h3 and smoltcp are forks kept in vendor/ and published under names of
-# their own; each library keeps upstream's name, so the workspace writes
-# `h2::` as it would with upstream. A version is X.Y.PPRR: upstream patch
-# release PP, fork release RR, so 0.4.2000 is h2 0.4.20. The path is what this
-# workspace builds; the version is what a published crate depends on. See
-# docs/vendored-forks.md.
+# h2, h3, h3-quinn, quinn, quinn-proto and smoltcp are forks kept in vendor/
+# and published under names of their own; each library keeps upstream's name,
+# so the workspace writes `h2::` as it would with upstream. A version is
+# X.Y.PPRR: upstream patch release PP, fork release RR, so 0.4.2000 is h2
+# 0.4.20. The path is what this workspace builds; the version is what a
+# published crate depends on. See docs/vendored-forks.md.
 h2 = { package = "xray-h2", path = "vendor/h2", version = "0.4.2000" }
 h3 = { package = "xray-h3", path = "vendor/h3", version = "=0.0.800" }
-h3-quinn = "=0.0.10"
+h3-quinn = { package = "xray-h3-quinn", path = "vendor/h3-quinn", version = "=0.0.1000" }
 hkdf = "0.13"
 hmac = "0.13"
 http = "1"
@@ -70,9 +70,9 @@ prost = "0.14"
 rand = "0.8"
 rcgen = { version = "0.14", default-features = false, features = ["ring"] }
 regex = "1"
-quinn = { version = "=0.11.12", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
+quinn = { package = "xray-quinn", path = "vendor/quinn", version = "=0.11.1200", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
 # Named only for congestion-controller callback types; quinn selects the features.
-quinn-proto = { version = "=0.11.19", default-features = false }
+quinn-proto = { package = "xray-quinn-proto", path = "vendor/quinn-proto", version = "=0.11.1900", default-features = false }
 # The ClientHello-shaping fork of rustls, from crates.io under its own package
 # name; its library is still named `rustls`. A version is 0.23.PPRR: rustls
 # patch release PP, fork release RR, so 0.23.4600 is rustls 0.23.46 with the
@@ -107,8 +107,3 @@ strip = "symbols"
 
 [profile.dev]
 panic = "unwind"
-
-[patch.crates-io]
-quinn = { path = "vendor/quinn" }
-h3-quinn = { path = "vendor/h3-quinn" }
-quinn-proto = { path = "vendor/quinn-proto" }

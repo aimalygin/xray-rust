@@ -194,23 +194,30 @@ long-term supported release series.
   are the same: the new code equals the crate for text contexts at every
   length through four chunks, equals the pinned Go vectors for binary ones,
   and agreed with the removed copy on 5,012 binary contexts.
-- The vendored h2, h3, smoltcp and GotaTun are packages of their own:
-  `xray-h2` 0.4.2000, `xray-h3` 0.0.800, `xray-smoltcp` 0.14.0 and
-  `xray-gotatun` 0.9.100. The workspace names them by path and version, and
-  the `[patch.crates-io]` entries for h2, h3 and smoltcp are gone; quinn,
-  quinn-proto and h3-quinn keep theirs for now. An embedder that took these
-  crates by git and copied the six entries has to delete those three: the
-  repository no longer holds packages named `h2`, `h3` and `smoltcp`, and
-  cargo refuses a patch that finds none. Same sources: each library keeps
-  upstream's name, and no code changes in the copies or in the workspace. The
-  patch number of a version is upstream's patch release times 100 plus the
-  fork's release, as for `shaped-rustls` (`docs/vendored-forks.md`). None of
-  the four is on crates.io yet. `scripts/check-vendored-packages.sh`, new in
-  the supply-chain CI job, packages each as `cargo publish` would and builds
-  it from its archive; `scripts/check-vendored-advisories.sh` audits each as
-  the upstream release its version carries, and
-  `scripts/check-vendored-sources.sh` holds that version to the archive it
-  verifies.
+- The copies in `vendor/` the workspace builds on are packages of their own:
+  `xray-h2` 0.4.2000, `xray-h3` 0.0.800, `xray-h3-quinn` 0.0.1000,
+  `xray-quinn-proto` 0.11.1900, `xray-quinn` 0.11.1200, `xray-smoltcp` 0.14.0
+  and `xray-gotatun` 0.9.100. The workspace names them by path and version,
+  and the root manifest has no `[patch.crates-io]` section left. An embedder
+  that took these crates by git and copied that section has to delete it:
+  the repository no longer holds packages of those names, and cargo refuses
+  a patch that finds none. Each library keeps upstream's name, and
+  the workspace's code does not change. The patch number of a version is
+  upstream's patch release times 100 plus the fork's release, as for
+  `shaped-rustls` (`docs/vendored-forks.md`). None of the seven is on
+  crates.io yet.
+  - Two upstream features that cannot be built on the forks' dependencies
+    are removed with their code: `platform-verifier` from the quinn and
+    quinn-proto forks (rustls-platform-verifier is made for upstream's
+    rustls, not for `shaped-rustls`) and `datagram` from the h3-quinn fork
+    (h3-datagram is built on upstream's h3). The workspace enabled neither.
+    Nothing else changes in the copies' sources.
+  - `scripts/check-vendored-packages.sh`, new in the supply-chain CI job,
+    packages the seven as `cargo publish` would, in dependency order, and
+    builds each from its archive. `scripts/check-vendored-advisories.sh`
+    audits each as the upstream release its version carries, and
+    `scripts/check-vendored-sources.sh` holds that version to the archive it
+    verifies.
 
 ## 0.10.1 - 2026-11-16
 

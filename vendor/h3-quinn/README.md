@@ -1,3 +1,29 @@
+# xray-h3-quinn
+
+xray-h3-quinn is a fork of [h3-quinn](https://github.com/hyperium/h3) 0.0.10, published for
+[xray-rust](https://github.com/aimalygin/xray-rust). It is not affiliated with
+or endorsed by the h3 project: please report its bugs
+[to xray-rust](https://github.com/aimalygin/xray-rust/issues), not upstream.
+
+The library is still named `h3_quinn`:
+
+```toml
+h3-quinn = { package = "xray-h3-quinn", version = "0.0.1000" }
+```
+
+It is built on `xray-h3` and `xray-quinn` where upstream uses h3 and quinn.
+The `datagram` feature is not in this fork: it needs h3-datagram, which is
+built on upstream's h3.
+
+The patch number of a version is h3-quinn's patch release times 100 plus the
+fork's release: `0.0.1000` is h3-quinn 0.0.10, fork release 0.
+`XRAY-PATCH.md` in this package describes every change, and `XRAY-PATCH.diff`
+is the whole difference from the crates.io archive of h3-quinn 0.0.10.
+
+Everything below is upstream's own README.
+
+---
+
 # h3-quinn
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -6,28 +32,6 @@
 [![Documentation](https://docs.rs/h3-quinn/badge.svg)](https://docs.rs/h3-quinn)
 
 QUIC transport implementation for [h3](https://github.com/hyperium/h3) based on [Quinn](https://github.com/quinn-rs/quinn).
-
-## Vendoring note
-
-This directory is a source copy of the crates.io `h3-quinn` 0.0.10 release,
-used through the workspace's `[patch.crates-io]` entry. The only code change is
-in `RecvStream`: it keeps the Quinn receive stream in the adapter while
-polling the cancellation-safe `read_chunk` future. Upstream 0.0.10 temporarily
-moves that stream into a pending future, so an immediate HTTP/3
-`STOP_SENDING(H3_REQUEST_CANCELLED)` unwraps an empty `Option` and panics.
-
-The focused regressions
-`h3_quinn_recv_stream_remains_stoppable_after_a_pending_read` and
-`response_drop_after_upload_fin_cancels_stream_and_reuses_connection` in
-`crates/xray-transport/tests/stream_xhttp_h3_tests.rs` pin both the adapter
-behavior and the end-to-end connection-reuse contract. Keep this patch local
-until the same cancellation fix is available in a compatible upstream
-release, then remove the path override and this vendored copy together.
-
-The canonical crate archive SHA-256 is
-`8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4`.
-`scripts/check-vendored-sources.sh` re-downloads it, applies
-`XRAY-PATCH.diff` without fuzz, and requires an exact source-tree match.
 
 ## Overview
 

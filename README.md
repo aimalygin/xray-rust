@@ -454,7 +454,7 @@ tests/                     shared fixtures and compatibility data
 fuzz/                      cargo-fuzz targets
 scripts/                   build, interop, benchmark and release checks
 docs/                      status, compatibility, architecture, evidence
-vendor/                    vendored upstream crates patched into the workspace
+vendor/                    forks of upstream crates the workspace builds on
 website/                   project website source
 ```
 

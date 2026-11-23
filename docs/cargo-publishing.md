@@ -18,12 +18,11 @@ quinn, quinn-proto and h3-quinn, kept in `vendor/` with local changes, and
 calls APIs that exist only in those copies
 ([vendored-forks.md](vendored-forks.md)).
 
-- h2, h3, smoltcp and GotaTun are packages of their own, `xray-h2`,
-  `xray-h3`, `xray-smoltcp` and `xray-gotatun`, which the workspace names by
-  path and version. They stand in the way only until they are uploaded: none
-  of the four is on crates.io yet.
-- `[patch.crates-io]` still replaces quinn, quinn-proto and h3-quinn. These
-  three depend on one another and on `xray-h3`, so they are renamed together.
+Each of the seven is a package of its own, `xray-h2`, `xray-h3`,
+`xray-h3-quinn`, `xray-quinn`, `xray-quinn-proto`, `xray-smoltcp` and
+`xray-gotatun`, which the workspace names by path and version, and the root
+manifest has no `[patch.crates-io]` section. They stand in the way only until
+they are uploaded: none of the seven is on crates.io yet.
 
 blake3 was one of those copies, for one added method: key derivation with a
 byte context. `xray-vless-encryption` now computes the context key itself and
@@ -53,8 +52,9 @@ The safe path is:
    server side of tests: a vendored copy built on `shaped-rustls`, named by
    path without a version, which a published manifest drops;
 3. publish the adapted QUIC dependency surface: the vendored quinn and
-   quinn-proto depend on `shaped-rustls` already and carry other local changes
-   as well, so they need names of their own under step 4 in any case;
+   quinn-proto depend on `shaped-rustls` and carry other local changes as
+   well. They are named and packaged, as `xray-quinn` and `xray-quinn-proto`,
+   with `xray-h3-quinn` on top, and wait for their upload;
 4. do the same for the other overridden crates: send upstream what upstream
    can take, and publish the rest under names of their own. h2, h3, smoltcp
    and GotaTun are named and packaged, and wait for their upload;
