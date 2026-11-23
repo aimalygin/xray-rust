@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# Checks the upstream release under each vendored crate against the RustSec
-# advisory database.
+# Checks the upstream release under each vendored or forked crate against the
+# RustSec advisory database.
 #
 # `cargo audit` reads Cargo.lock, where the crates in vendor/ are path
-# dependencies without a registry source and a fork is a git source, so it
-# never matches an advisory against them. This script writes a lockfile that
-# lists each of them as the crates.io release it was taken from, audits that,
-# and fails on any advisory the vendored copy does not carry a fix for. A
-# backported fix is acknowledged below with the vendored directory, the
-# advisory and the upstream change; rebasing a crate onto a fixed release
-# makes the acknowledgement stale, which the script reports so it can be
-# removed.
+# dependencies without a registry source and a git dependency has a git
+# source, so it never matches an advisory against them. The rustls fork is a
+# registry package, but under its own name, `shaped-rustls`, and advisories
+# are filed against `rustls`. This script writes a lockfile that lists each of
+# them as the crates.io release it was taken from, audits that, and fails on
+# any advisory the copy does not carry a fix for. A backported fix is
+# acknowledged below with the vendored directory (or the fork's package
+# name), the advisory and the upstream change; rebasing a crate onto a fixed
+# release makes the acknowledgement stale, which the script reports so it can
+# be removed.
 #
 # Usage: scripts/check-vendored-advisories.sh [extra cargo-audit options]
 #   e.g. --no-fetch to reuse the local advisory database offline.
@@ -20,9 +22,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 temporary="$(mktemp -d "${TMPDIR:-/tmp}/xray-vendor-advisories.XXXXXX")"
 trap 'rm -rf "$temporary"' EXIT
 
-# <vendored directory> <advisory> <the upstream fix the copy carries>, one per
-# line, for example:
-#   vendor/shaped-rustls RUSTSEC-2026-0348 rustls 1aa987af, b10cdb0d (0.23.46): strict brotli
+# <vendored directory, or shaped-rustls> <advisory> <the upstream fix the copy
+# carries>, one per line, for example:
+#   shaped-rustls RUSTSEC-2026-0348 rustls 1aa987af, b10cdb0d (0.23.46): strict brotli
 # None at present: the rustls fork carried four until it took rustls 0.23.46.
 readonly ACKNOWLEDGED='
 '
@@ -33,11 +35,9 @@ if ! cargo audit --version >/dev/null 2>&1; then
 fi
 
 # The vendored manifests are crates.io-normalized (or, for git sources,
-# expanded) and keep upstream's package name and version. The rustls fork is
-# the exception: its package is `shaped-rustls`, and its version carries the
-# upstream release, 0.23.PP as 0.23.PPRR (vendor/shaped-rustls/XRAY-PATCH.md).
+# expanded) and keep upstream's package name and version.
 lockfile="$temporary/Cargo.lock"
-printf '# Upstream releases of vendored and git dependencies, for cargo audit only.\nversion = 4\n' >"$lockfile"
+printf '# Upstream releases of vendored, forked and git dependencies, for cargo audit only.\nversion = 4\n' >"$lockfile"
 for manifest in "$ROOT"/vendor/*/Cargo.toml; do
   read -r name version < <(
     awk '
@@ -64,16 +64,36 @@ for manifest in "$ROOT"/vendor/*/Cargo.toml; do
     exit 1
   fi
   # What cargo audit is asked about: the upstream release under the copy.
-  if [[ "$name" == shaped-rustls ]]; then
-    name=rustls
-    version="${version%.*}.$((${version##*.} / 100))"
-  fi
   printf '\n[[package]]\nname = "%s"\nversion = "%s"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\n' \
     "$name" "$version" >>"$lockfile"
   directory="${manifest%/Cargo.toml}"
   echo "${directory#"$ROOT"/} = $name $version" >>"$temporary/crates"
 done
-# A git dependency is invisible to cargo audit in the same way.
+# The rustls fork: a registry package whose version carries the upstream
+# release, 0.23.PP as 0.23.PPRR (docs/shaped-rustls.md). That release is what
+# cargo audit is asked about.
+shaped_rustls_releases="$(awk '
+  /^\[\[package\]\]/ { n = "" }
+  $1 == "name" { gsub(/"/, "", $3); n = $3 }
+  $1 == "version" && n == "shaped-rustls" { gsub(/"/, "", $3); print $3 }
+' "$ROOT/Cargo.lock")"
+if [[ -z "$shaped_rustls_releases" ]]; then
+  echo 'Cargo.lock has no shaped-rustls package to audit as rustls' >&2
+  exit 1
+fi
+while read -r version; do
+  if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]{3,}$ ]]; then
+    echo "shaped-rustls $version is not a 0.23.PPRR version" >&2
+    exit 1
+  fi
+  echo "${version%.*}.$((10#${version##*.} / 100))"
+done <<<"$shaped_rustls_releases" | sort -u >"$temporary/rustls-releases"
+while read -r version; do
+  printf '\n[[package]]\nname = "rustls"\nversion = "%s"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\n' \
+    "$version" >>"$lockfile"
+  echo "shaped-rustls = rustls $version" >>"$temporary/crates"
+done <"$temporary/rustls-releases"
+# A git dependency is invisible to cargo audit in the same way as a path one.
 awk '
   /^\[\[package\]\]/ { n = v = "" }
   $1 == "name" { gsub(/"/, "", $3); n = $3 }
@@ -139,7 +159,7 @@ for key, reason in acknowledged.items():
         print(f"stale acknowledgement: {key[0]} {key[1]} no longer matches; remove it ({reason})")
 
 if unfixed:
-    print("\nadvisories against vendored or git dependencies without a vendored fix:", file=sys.stderr)
+    print("\nadvisories against vendored, forked or git dependencies without a fix in the copy:", file=sys.stderr)
     for label in unfixed:
         print(f"  {label}", file=sys.stderr)
     print(
@@ -148,5 +168,5 @@ if unfixed:
         file=sys.stderr,
     )
     sys.exit(1)
-print("no unfixed advisories against vendored or git dependencies")
+print("no unfixed advisories against vendored, forked or git dependencies")
 PY

@@ -7,7 +7,7 @@ trap 'rm -rf "$temporary"' EXIT
 
 # Include ignored files here: an upstream .gitignore can hide crate files on
 # the developer's filesystem even though a clean checkout will omit them.
-untracked="$(git -C "$ROOT" ls-files --others -- vendor/blake3 vendor/h2 vendor/h3 vendor/h3-quinn vendor/quinn vendor/quinn-proto vendor/gotatun vendor/smoltcp vendor/shaped-rustls vendor/tokio-rustls)"
+untracked="$(git -C "$ROOT" ls-files --others -- vendor/blake3 vendor/h2 vendor/h3 vendor/h3-quinn vendor/quinn vendor/quinn-proto vendor/gotatun vendor/smoltcp vendor/tokio-rustls)"
 if [[ -n "$untracked" ]]; then
   echo 'vendored source files are absent from the Git index:' >&2
   printf '%s\n' "$untracked" >&2
@@ -78,53 +78,32 @@ diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
 : >"$temporary/h3-0.0.8/src/tests/mod.rs"
 cargo test --locked --manifest-path "$temporary/h3-0.0.8/Cargo.toml" --lib
 
-# shaped-rustls is the rustls fork at a pinned commit, not a crates.io
-# release. The vendored crate is its `rustls` directory (manifest, build
-# script and sources) and the fork's license files; XRAY-PATCH.diff touches
-# the manifest alone, to expand the workspace dependencies. It is
-# reconstructed first: the vendored quinn-proto, quinn and tokio-rustls depend
-# on it as `../shaped-rustls`, here as in vendor/.
-shaped_rustls_rev=474a31b7cb158a681970d048734abc7d7b4d1adc
-curl --fail --location --silent --show-error \
-  --proto '=https' --tlsv1.2 --retry 3 \
-  --user-agent 'xray-rust-vendor-provenance/1.0' \
-  --output "$temporary/shaped-rustls.tar.gz" \
-  "https://codeload.github.com/aimalygin/shaped-rustls/tar.gz/$shaped_rustls_rev"
-echo "00509c60f2eca32098208f219ee2d9ebd37fc1502062f12c5c09495f7fde3697  $temporary/shaped-rustls.tar.gz" |
-  sha256sum --check -
-tar -xzf "$temporary/shaped-rustls.tar.gz" -C "$temporary"
-shaped_rustls_checkout="$temporary/shaped-rustls-$shaped_rustls_rev"
-mkdir "$temporary/shaped-rustls"
-cp "$shaped_rustls_checkout/rustls/Cargo.toml" "$shaped_rustls_checkout/rustls/build.rs" \
-  "$temporary/shaped-rustls/"
-cp -R "$shaped_rustls_checkout/rustls/src" "$temporary/shaped-rustls/src"
-for license in LICENSE LICENSE-APACHE LICENSE-ISC LICENSE-MIT; do
-  cp "$shaped_rustls_checkout/$license" "$temporary/shaped-rustls/"
-done
-patch --batch --fuzz=0 -p1 \
-  -d "$temporary/shaped-rustls" \
-  <"$ROOT/vendor/shaped-rustls/XRAY-PATCH.diff"
-diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
-  "$temporary/shaped-rustls" "$ROOT/vendor/shaped-rustls"
-# The fork's unit tests need its workspace (dev-dependencies, lockfile), so
-# they run there against the vendored sources, with the features this
-# workspace enables. In its own workspace the package is `shaped-rustls`.
-rm -rf "$shaped_rustls_checkout/rustls/src"
-cp -R "$ROOT/vendor/shaped-rustls/src" "$shaped_rustls_checkout/rustls/src"
-cargo test --locked --manifest-path "$shaped_rustls_checkout/Cargo.toml" \
-  -p shaped-rustls --features ring --lib
-cargo test --locked --manifest-path "$shaped_rustls_checkout/Cargo.toml" \
-  -p shaped-rustls --features ring,brotli,zlib --lib
+# The rustls fork is the crates.io package `shaped-rustls`, which Cargo.lock
+# pins by checksum like any other registry package. The vendored quinn-proto,
+# quinn and tokio-rustls name it in place of the `rustls` package their
+# published lockfiles pin, so each lockfile below gains the release this
+# workspace builds before the crate is tested or checked on it.
+shaped_rustls_version="$(awk '
+  /^\[\[package\]\]/ { n = "" }
+  $1 == "name" { gsub(/"/, "", $3); n = $3 }
+  $1 == "version" && n == "shaped-rustls" { gsub(/"/, "", $3); print $3 }
+' "$ROOT/Cargo.lock")"
+if [[ ! "$shaped_rustls_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Cargo.lock does not name exactly one shaped-rustls release: '$shaped_rustls_version'" >&2
+  exit 1
+fi
 
 patch --batch --fuzz=0 -p1 \
   -d "$temporary/quinn-proto-0.11.19" \
   <"$ROOT/vendor/quinn-proto/XRAY-PATCH.diff"
 diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
   "$temporary/quinn-proto-0.11.19" "$ROOT/vendor/quinn-proto"
-# Its published lockfile pins rustls from crates.io, and the vendored manifest
-# takes the fork instead: add that entry, and only what it needs, before the
+# Its published lockfile pins the rustls package, and the vendored manifest
+# names the fork instead: add that entry, and only what it needs, before the
 # locked test.
 cargo update --manifest-path "$temporary/quinn-proto-0.11.19/Cargo.toml" --workspace
+cargo update --manifest-path "$temporary/quinn-proto-0.11.19/Cargo.toml" \
+  -p shaped-rustls --precise "$shaped_rustls_version"
 cargo test --locked --manifest-path "$temporary/quinn-proto-0.11.19/Cargo.toml" \
   --no-default-features --features rustls-ring --lib
 
@@ -136,6 +115,9 @@ quinn_proto_patch="patch.crates-io.quinn-proto.path=\"$temporary/quinn-proto-0.1
 cargo update --config "$quinn_proto_patch" \
   --manifest-path "$temporary/quinn-0.11.12/Cargo.toml" \
   -p quinn-proto --precise 0.11.19
+cargo update --config "$quinn_proto_patch" \
+  --manifest-path "$temporary/quinn-0.11.12/Cargo.toml" \
+  -p shaped-rustls --precise "$shaped_rustls_version"
 cargo test --locked --config "$quinn_proto_patch" \
   --manifest-path "$temporary/quinn-0.11.12/Cargo.toml" \
   --no-default-features --features runtime-tokio,rustls-ring --lib
@@ -154,7 +136,10 @@ patch --batch --fuzz=0 -p1 \
   <"$ROOT/vendor/tokio-rustls/XRAY-PATCH.diff"
 diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
   "$temporary/tokio-rustls-0.26.4" "$ROOT/vendor/tokio-rustls"
-cargo check --manifest-path "$temporary/tokio-rustls-0.26.4/Cargo.toml" \
+cargo update --manifest-path "$temporary/tokio-rustls-0.26.4/Cargo.toml" --workspace
+cargo update --manifest-path "$temporary/tokio-rustls-0.26.4/Cargo.toml" \
+  -p shaped-rustls --precise "$shaped_rustls_version"
+cargo check --locked --manifest-path "$temporary/tokio-rustls-0.26.4/Cargo.toml" \
   --target-dir "$temporary/tokio-rustls-target" --lib
 
 download_and_verify \
@@ -189,5 +174,5 @@ bash "$ROOT/scripts/check-wireguard-adapter-prototype.sh" --verify-vendor-only
 # fuzz job compiles.
 RUSTFLAGS="--cfg fuzzing" cargo check --locked \
   --manifest-path "$ROOT/Cargo.toml" --target-dir "$temporary/fuzzing-target" \
-  -p blake3 -p gotatun -p h2 -p h3 -p h3-quinn -p quinn -p quinn-proto -p shaped-rustls -p smoltcp
+  -p blake3 -p gotatun -p h2 -p h3 -p h3-quinn -p quinn -p quinn-proto -p smoltcp
 echo "verified vendored sources against checksum-pinned archives"

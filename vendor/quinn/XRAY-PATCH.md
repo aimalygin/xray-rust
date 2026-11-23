@@ -37,13 +37,14 @@ so a tunnel over datagrams lost its packets of that moment.
 
 ## The rustls dependency
 
-The `rustls` dependency is the `shaped-rustls` package at `../shaped-rustls`
-(the ClientHello-shaping fork of rustls 0.23.46, whose library is still named
+The `rustls` dependency is the crates.io package `shaped-rustls` (the
+ClientHello-shaping fork of rustls 0.23.46, whose library is still named
 `rustls`), version `0.23.4600`, where upstream's manifest names the `rustls`
-package from crates.io. The workspace builds its TLS and QUIC client
+package. The workspace builds its TLS and QUIC client
 configurations on that fork's types, and it no longer puts the fork under the
 name `rustls` with `[patch.crates-io]`. No source file changes for this.
-`scripts/check-vendored-sources.sh` adds the fork to the published lockfile
-before the locked test, so the crate's own tests run on the fork as well.
+`scripts/check-vendored-sources.sh` adds the fork release the workspace
+builds to the published lockfile before the locked test, so the crate's own
+tests run on the fork as well.
 
 All other source is unchanged. Apply XRAY-PATCH.diff with zero fuzz.

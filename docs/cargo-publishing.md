@@ -10,14 +10,13 @@ depend on unpublished path-only crates.
 The transport layer uses the `shaped-rustls` fork of rustls. Its ClientHello
 customization API is required for the documented TLS and REALITY fingerprint
 behavior and is not present in upstream `rustls`. The workspace depends on it
-under its own package name, by path to a vendored copy, because the crate is
-not on crates.io yet.
+under its own package name, from crates.io, so rustls no longer stands in the
+way ([shaped-rustls.md](shaped-rustls.md)).
 
 `[patch.crates-io]` replaces quinn, quinn-proto, h3, h3-quinn, h2, smoltcp and
 blake3 with vendored copies that carry local changes, and `xray-wireguard`
 takes a patched gotatun by path. The workspace calls APIs that exist only in
-those copies. The vendored quinn and quinn-proto also take `shaped-rustls` by
-path.
+those copies.
 
 Cargo removes local path overrides when creating a registry package, and a
 crates.io package cannot rely on the vendored copies used by this workspace.
@@ -27,14 +26,13 @@ docs.rs. `cargo publish --no-verify` is not an acceptable workaround.
 
 The safe path is:
 
-1. publish the fork under an unambiguous package name such as
-   `shaped-rustls`, preserving its upstream licenses and fork disclosure.
-   The fork's own manifest carries that name since its revision `474a31b7`
-   (rustls 0.23.46) and passes `cargo publish --dry-run`; it is not on
-   crates.io yet;
-2. depend on that package by its own name. Done, by path until step 1 is:
-   `rustls = { package = "shaped-rustls", ... }`, with no `[patch.crates-io]`
-   entry for rustls. No Tokio adapter has to be published with it: the client
+1. publish the fork under an unambiguous package name, preserving its
+   upstream licenses and fork disclosure. Done: `shaped-rustls` 0.23.4600 on
+   crates.io is the fork's revision `474a31b7` (rustls 0.23.46);
+2. depend on that package by its own name. Done:
+   `rustls = { package = "shaped-rustls", version = "0.23.4600", ... }`, a
+   registry dependency with no `[patch.crates-io]` entry and no vendored
+   copy. No Tokio adapter has to be published with it: the client
    side of TLS is `crates/xray-transport/src/tls_stream.rs`, over
    `rustls::ClientConnection`, so on the TCP path no crates.io package sits
    between the workspace's code and the fork. `tokio-rustls` is only a
@@ -53,7 +51,7 @@ The safe path is:
 
 ## Intended publication order
 
-After the TLS dependency is registry-resolvable, publish synchronized versions
+After every dependency is registry-resolvable, publish synchronized versions
 in this order:
 
 1. `xray-utls`, `xray-routing`, `xray-runtime`, and `xray-tun`;
