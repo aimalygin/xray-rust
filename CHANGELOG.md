@@ -10,6 +10,11 @@ long-term supported release series.
 
 ## Unreleased
 
+- A base64 JSON `vmess://` link without TLS (`tls` absent, empty or `none`)
+  imports when it carries `sni`, `alpn` or `fp`; those fields are ignored, as
+  v2rayN ignores them. Panels such as V2Board write `fp` on every link, so
+  such a plain WebSocket link failed with "profile contains an unsupported
+  setting". A link with TLS still maps them into `tlsSettings`.
 - The DNS resolver and the system SRV/TXT lookups refuse a name longer than
   255 octets, the limit Xray-core's DNS client applies through Go's
   `dnsmessage`. A name was read for up to 32 labels and pointers, about 2 KB,

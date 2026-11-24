@@ -139,10 +139,11 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
         }
         insert(&mut params, "type", network.clone())?;
         let security = take(&mut fields, "tls", "none");
+        let plain = matches!(security.as_str(), "" | "none");
         insert(
             &mut params,
             "security",
-            if security.is_empty() {
+            if plain {
                 Zeroizing::new("none".into())
             } else {
                 security
@@ -150,6 +151,14 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
         )?;
         insert(&mut params, "encryption", take(&mut fields, "scy", "auto"))?;
         insert(&mut params, "alterId", take(&mut fields, "aid", "0"))?;
+        // Panels such as V2Board write `fp` on every link. v2rayN builds TLS
+        // settings only when `tls` names a security, so a plain link's TLS
+        // fields configure nothing there and are dropped here.
+        if plain {
+            for key in ["sni", "alpn", "fp"] {
+                fields.remove(key);
+            }
+        }
         for key in [
             "sni",
             "alpn",
