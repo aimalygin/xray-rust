@@ -1538,6 +1538,16 @@ differences:
   three seconds for a place and is then refused, and an idle flow is never
   closed to make room ([flow limits](config-compatibility.md#wireguard-flow-limits)).
   Xray-core's gVisor stack sets no such bound.
+- A WireGuard device that has had no flow for five minutes is closed, and
+  the next flow starts a new one with a new handshake. A started device runs
+  its timers every 250 ms, which on a phone is four wake-ups a second for a
+  tunnel that carries nothing. A device with a peer that sets `keepAlive` is
+  kept, since that asks for the path to stay open. Xray-core keeps its device
+  for as long as the outbound lives. To the peer this is little different
+  from WireGuard's own idleness: a session unused for three minutes has to
+  handshake again before it carries data either way. Covered by outbound
+  unit tests on a paused clock; the effect on a phone's battery is not
+  measured.
 - A proxy outbound's `domainStrategy` (VLESS, VMess, Trojan, Shadowsocks,
   SOCKS, HTTP, Hysteria) resolves its domain server through the bootstrap
   resolver and dials the kept addresses in order, or races them under

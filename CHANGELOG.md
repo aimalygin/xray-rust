@@ -10,6 +10,12 @@ long-term supported release series.
 
 ## Unreleased
 
+- A WireGuard outbound's device is closed once it has had no flow for five
+  minutes, and the next flow starts a new one with a fresh handshake. A
+  started device runs WireGuard's timers every 250 ms for as long as it
+  lives, so a profile that had used a WireGuard outbound once woke an idle
+  phone four times a second until the core stopped. A device whose peers set
+  `keepAlive` is kept, since that asks for the path to stay open while idle.
 - The Android and Apple VPN integrations start profiles whose `dns.servers`
   list Xray-core's `localhost` or `fakedns`, as a string or an object's
   `address`: neither is resolved during DNS bootstrap, where the object form
