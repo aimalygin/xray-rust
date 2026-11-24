@@ -382,6 +382,10 @@ long-term supported release series.
   every subject is pinged again within 3 seconds and its first new sample
   replaces the old network's. `CoreConfig` gains `burst_observatory` and
   `NetworkChanges` gains `observe`.
+- Update aws-lc-rs to 1.19.0, which builds AWS-LC 5.12 (5.7 before), zstd to
+  0.14.4, bytes to 1.12.2 and uuid to 1.29.3, together with their resolved
+  transitive dependencies. AWS-LC's portable Ed25519 code now rejects
+  non-canonical public keys, as its assembly implementations already did.
 
 ## 0.10.1 - 2026-11-16
 

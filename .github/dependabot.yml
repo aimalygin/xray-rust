@@ -9,6 +9,13 @@ updates:
       time: "06:00"
       timezone: America/Chicago
     open-pull-requests-limit: 5
+    ignore:
+      # rand 0.10 has no `RngCore`, `thread_rng` or `rngs::OsRng` any more,
+      # so the bump alone does not build (#335), and x25519-dalek 2 still
+      # takes rand_core 0.6: moving off 0.8 is a migration of its own, not a
+      # Dependabot bump. 0.8 patch releases still come.
+      - dependency-name: rand
+        versions: [">= 0.9"]
 
   - package-ecosystem: github-actions
     directory: /
