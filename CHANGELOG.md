@@ -10,6 +10,25 @@ long-term supported release series.
 
 ## Unreleased
 
+- A TCP download through TUN that arrives one segment at a time no longer
+  pays the whole chain of wake-ups, from the remote socket to the TUN
+  descriptor, for every segment. On the `LowMemory`, `Mobile` and
+  `MobilePlus` profiles the read of a flow's remote that follows a read below
+  8 KiB waits 1 ms, so that it takes several segments at once. It waits only
+  in a one-way stream (nothing uploaded since the previous read) whose reads
+  are at most 5 ms apart and that has run so for 25 ms: a request/response
+  exchange, a response that arrives within 25 ms and a stream whose reads
+  already carry several segments are read as before, and so is everything on
+  `Desktop` and `Throughput`. On macOS (M4 Pro, Freedom, one flow, `Mobile`,
+  medians of five runs) the engine's CPU per GiB falls from 16.3 s to 8.6 s
+  at 6 MiB/s, from 13.3 s to 4.2 s at 50 MiB/s and from 7.2 s to 2.7 s at
+  200 MiB/s when the segments arrive singly, and from 7.0 s to 5.8 s at
+  6 MiB/s when they arrive four at a time. Throughput is unchanged at every
+  rate, as are the unpaced download, a download at 1 MiB/s and the latency of
+  a 1 KiB and of a 64 KiB echo; the peak footprint is 0.5 MiB higher at
+  50 MiB/s. Not measured on a device yet. `xray-bench protocol-run` takes
+  `origin_rate_kib_s` and `origin_burst_bytes` for a TUN download, which pace
+  its origin to stand in for a link slower than the engine.
 - The DNS resolver and the system SRV/TXT lookups refuse a name longer than
   255 octets, the limit Xray-core's DNS client applies through Go's
   `dnsmessage`. A name was read for up to 32 labels and pointers, about 2 KB,

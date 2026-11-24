@@ -159,8 +159,12 @@ mod backpressure_tests;
 #[path = "tun_download.rs"]
 mod download;
 use download::{
-    read_remote_batch, send_remote_data, DownloadDelivery, PendingDownload, RemoteReadEnd,
+    read_remote_batch_after, send_remote_data, DownloadCoalescePolicy, DownloadCoalescer,
+    DownloadDelivery, PendingDownload, RemoteReadEnd, MOBILE_DOWNLOAD_COALESCE_POLICY,
 };
+
+#[cfg(test)]
+use download::read_remote_batch;
 
 #[path = "tun_dns.rs"]
 mod dns_proxy;
@@ -237,6 +241,9 @@ struct TcpUploadBridgePolicy {
 struct TunRuntimePolicy {
     flows: FlowBudgetPolicy,
     tcp_upload: TcpUploadBridgePolicy,
+    /// Set on the profiles of battery-powered hosts, where the CPU time of a
+    /// download that trickles in matters more than one millisecond.
+    tcp_download_coalesce: Option<DownloadCoalescePolicy>,
 }
 
 const MOBILE_FLOW_BUDGET_POLICY: FlowBudgetPolicy = FlowBudgetPolicy {
@@ -340,26 +347,31 @@ const LOW_MEMORY_TCP_UPLOAD_BRIDGE_POLICY: TcpUploadBridgePolicy = TcpUploadBrid
 const MOBILE_TUN_RUNTIME_POLICY: TunRuntimePolicy = TunRuntimePolicy {
     flows: MOBILE_FLOW_BUDGET_POLICY,
     tcp_upload: MOBILE_TCP_UPLOAD_BRIDGE_POLICY,
+    tcp_download_coalesce: Some(MOBILE_DOWNLOAD_COALESCE_POLICY),
 };
 
 const MOBILE_PLUS_TUN_RUNTIME_POLICY: TunRuntimePolicy = TunRuntimePolicy {
     flows: MOBILE_PLUS_FLOW_BUDGET_POLICY,
     tcp_upload: MOBILE_TCP_UPLOAD_BRIDGE_POLICY,
+    tcp_download_coalesce: Some(MOBILE_DOWNLOAD_COALESCE_POLICY),
 };
 
 const DESKTOP_TUN_RUNTIME_POLICY: TunRuntimePolicy = TunRuntimePolicy {
     flows: DESKTOP_FLOW_BUDGET_POLICY,
     tcp_upload: DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
+    tcp_download_coalesce: None,
 };
 
 const LOW_MEMORY_TUN_RUNTIME_POLICY: TunRuntimePolicy = TunRuntimePolicy {
     flows: LOW_MEMORY_FLOW_BUDGET_POLICY,
     tcp_upload: LOW_MEMORY_TCP_UPLOAD_BRIDGE_POLICY,
+    tcp_download_coalesce: Some(MOBILE_DOWNLOAD_COALESCE_POLICY),
 };
 
 const THROUGHPUT_TUN_RUNTIME_POLICY: TunRuntimePolicy = TunRuntimePolicy {
     flows: THROUGHPUT_FLOW_BUDGET_POLICY,
     tcp_upload: DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
+    tcp_download_coalesce: None,
 };
 
 #[cfg(any(
@@ -4028,6 +4040,8 @@ where
     // loop consumes the task's cooperative budget before download can run.
     let idle_sleep = tokio::time::sleep(idle_timeout);
     tokio::pin!(idle_sleep);
+    let mut download_coalescer =
+        DownloadCoalescer::new(context.runtime_policy.tcp_download_coalesce);
 
     let termination = 'bridge: loop {
         let upload = async {
@@ -4095,7 +4109,7 @@ where
                 () = &mut idle_sleep => break 'bridge TcpBridgeTermination::Graceful,
                 wrote = &mut upload, if upload_open => {
                     match wrote {
-                        Ok(true) => {},
+                        Ok(true) => download_coalescer.record_upload(),
                         Ok(false) => {
                             upload_open = false;
                             // Packet-up transports may leave their independent
@@ -4115,12 +4129,18 @@ where
                     }
                     idle_sleep.as_mut().reset(TokioInstant::now() + active_idle_timeout);
                 }
-                (data, end) = read_remote_batch(remote_reader, TCP_DOWNLOAD_CHUNK_SIZE), if pending_download.is_none() => {
+                (data, end) = read_remote_batch_after(
+                    remote_reader,
+                    TCP_DOWNLOAD_CHUNK_SIZE,
+                    download_coalescer.read_not_before(),
+                ), if pending_download.is_none() => {
                     remote_read_end = end;
                     let read = data.len();
                     if read == 0 {
                         continue;
                     }
+                    let read_at = TokioInstant::now();
+                    download_coalescer.record_read(read_at, read);
                     timing.record_first_byte(context.tun.as_ref(), target);
                     context.tun.record_tcp_remote_read(read);
                     traffic.record_downlink(read as u64);
@@ -4129,9 +4149,7 @@ where
                         operation_timeout,
                         context.send_remote_data(handle, generation, data),
                     )));
-                    idle_sleep
-                        .as_mut()
-                        .reset(TokioInstant::now() + active_idle_timeout);
+                    idle_sleep.as_mut().reset(read_at + active_idle_timeout);
                 }
             }
         }
@@ -8252,6 +8270,29 @@ mod tests {
             assert!(most_queued(MOBILE_TUN_RUNTIME_POLICY.flows.udp) <= 8 * 1024 * 1024);
             assert!(most_queued(MOBILE_PLUS_TUN_RUNTIME_POLICY.flows.udp) <= 12 * 1024 * 1024);
         }
+    }
+
+    #[test]
+    fn only_battery_profiles_delay_reads_of_a_trickling_download() {
+        for (profile, delays) in [
+            (TunRuntimeProfile::Mobile, true),
+            (TunRuntimeProfile::MobilePlus, true),
+            (TunRuntimeProfile::LowMemory, true),
+            (TunRuntimeProfile::Desktop, false),
+            (TunRuntimeProfile::Throughput, false),
+        ] {
+            let policy = tun_runtime_policy_for_options(TunRuntimeOptions::with_profile(profile));
+            assert_eq!(
+                policy.tcp_download_coalesce,
+                delays.then_some(MOBILE_DOWNLOAD_COALESCE_POLICY),
+                "{profile:?}"
+            );
+        }
+        // One delay must stay a small share of the time a stream has run, and
+        // delayed reads must still count as one stream.
+        let policy = MOBILE_DOWNLOAD_COALESCE_POLICY;
+        assert!(policy.delay * 20 <= policy.min_stream_age);
+        assert!(policy.delay * 2 < policy.max_read_gap);
     }
 
     #[test]

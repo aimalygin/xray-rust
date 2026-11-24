@@ -91,6 +91,23 @@ timer instead of 1 ms sleeps. Earlier TUN TCP echo latencies of about 2.7 ms
 were mostly driver wakeup delay, not client latency: one client measured a
 2,719 µs median with the old driver and 75 µs with the new one.
 
+An unpaced TUN download is CPU-bound: the origin writes as fast as the client
+reads, every read carries many segments, and the result says what a byte
+costs. What an arrival costs shows only when the link is slower than the
+client. For a TUN download a `protocol-run` request may therefore set
+`origin_rate_kib_s`, the average rate at which the origin writes, and
+`origin_burst_bytes`, how much it writes at once (one 1448-byte segment when
+absent); the origin sets `TCP_NODELAY`, so each burst is a separate arrival at
+the client's remote socket. Both values are echoed in the result. Compare
+engine CPU per GiB between such runs, not throughput, which the pace fixes:
+
+```json
+{"binary": "target/release/xray-rust", "config": {"outbounds": [{"protocol": "freedom"}]},
+ "path": "tun", "traffic": "download", "connections": 1, "iterations": 512, "payload_size": 65536,
+ "output": "out", "client_env": {"XRAY_TUN_PROFILE": "mobile"},
+ "origin_rate_kib_s": 6144, "origin_burst_bytes": 1448}
+```
+
 ```sh
 # Python >=3.11; Go 1.27.3 must be on PATH for reference identity verification.
 python3 scripts/run-migration-benchmarks.py \

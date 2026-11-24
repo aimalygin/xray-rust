@@ -174,6 +174,23 @@ shared limit plus 8 KiB per flow (8 MiB on `Mobile` at a 1500-byte MTU). A
 datagram over a limit is dropped, as one that finds its queue full, and
 counted in `udp_channel_dropped_packets`; the flow stays up.
 
+A TCP download costs the CPU a chain of wake-ups for every read of the remote:
+the bridge task reads the socket and hands the bytes to the stack, the stack
+writes them to the TUN descriptor, and the host's acknowledgements come back
+through it. When the remote delivers one segment at a time, a link slower than
+the engine being the usual reason, that chain runs for every segment, and the
+same download takes several times the CPU it takes when segments arrive
+together. On the `LowMemory`, `Mobile` and `MobilePlus` profiles the bridge
+therefore lets such a stream collect: after a read below 8 KiB, the next read
+of that flow's remote waits 1 ms. It does so only when the stream is one-way
+(nothing was uploaded since the previous read), its reads are at most 5 ms
+apart, and it has run that way for 25 ms, which keeps the wait a small share of
+the time the data took to arrive. A request/response exchange, a response that
+arrives within 25 ms and a stream whose reads already carry several segments
+are read as before; so is every flow on `Desktop` and `Throughput`. An
+outbound over kernel TCP is acknowledged by the host's stack whenever the
+bridge reads, so the wait does not slow the sender.
+
 A TCP flow holds buffers only for what it carries. Its smoltcp socket starts
 with an 8 KiB receive buffer (two segments at least) and no send buffer, so a
 SYN that is never completed, a flow whose outbound is still connecting and a
