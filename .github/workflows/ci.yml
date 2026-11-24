@@ -949,6 +949,9 @@ jobs:
       - name: Package the vendored forks and build them from their archives
         run: bash scripts/check-vendored-packages.sh
 
+      - name: Hold the vendored forks to their crates.io releases
+        run: bash scripts/check-vendored-published.sh
+
       - name: Verify Gradle dependency provenance against canonical repositories
         run: |
           python3 scripts/check-gradle-verification.py \
