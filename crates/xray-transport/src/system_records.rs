@@ -104,6 +104,14 @@ impl SystemRecordResolver {
         }
     }
 
+    /// Whether a missing `config` is taken as a phone takes it; the target
+    /// decides unless a test says otherwise.
+    #[doc(hidden)]
+    pub fn skipping_without_config(mut self, skips: bool) -> Self {
+        self.skips_without_config = skips;
+        self
+    }
+
     /// On a phone without `config`, asks the resolver `slot` holds, if any,
     /// rather than skipping the lookup.
     pub fn with_unconfigured_resolver(mut self, slot: Option<Arc<RecordResolverSlot>>) -> Self {
