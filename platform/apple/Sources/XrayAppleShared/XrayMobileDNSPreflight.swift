@@ -20,7 +20,7 @@ public enum XrayMobileDNSPreflightError: Error, Equatable, LocalizedError, Senda
     public var errorDescription: String? {
         switch self {
         case .unavailable:
-            return "DNS requires enabled dns.fakeIp, at least one dns.servers upstream, or explicit IP servers; fake-IP cannot be combined with explicit servers."
+            return "DNS requires enabled dns.fakeIp, at least one dns.servers upstream, or explicit IP servers; fake-IP cannot be combined with explicit servers. A `localhost` server answers from dns.hosts alone inside the tunnel and is not an upstream."
         case .unsafeFakeIPWireguardRouting:
             return "Fake-IP without dns.servers cannot use WireGuard as the default or from a TUN domain-capable routing rule."
         case .unsafeFakeIPFreedomRouting:
@@ -48,7 +48,12 @@ public enum XrayMobileDNSPreflight {
         // The core maps Xray-core's `fakedns` entry onto fake-IP and asks no
         // wire server for it: it counts as fake-IP, not as an upstream.
         let hasFakeDNSServer = servers.contains(where: isFakeDNSServer)
-        let hasWireServers = servers.contains { !isFakeDNSServer($0) }
+        // Neither is `localhost`: it asks the core's bootstrap resolver, which
+        // inside a VPN answers from dns.hosts alone, since the platform
+        // resolver would ask the tunnel itself.
+        let hasWireServers = servers.contains {
+            !isFakeDNSServer($0) && !isLocalhostDNSServer($0)
+        }
 
         // Match the provider's fail-closed behavior: an explicitly enabled
         // but unusable FakeIP block is an error even if dns.servers exists.
@@ -64,7 +69,10 @@ public enum XrayMobileDNSPreflight {
                 throw XrayMobileDNSPreflightError.unavailable
             }
         case .system:
-            guard fakeIPIsAvailable || hasConfiguredServers else {
+            // Something has to answer the tunnel's names: fake-IP, or a
+            // server on the wire. `localhost` alone would start a tunnel in
+            // which no name resolves.
+            guard fakeIPIsAvailable || hasFakeDNSServer || hasWireServers else {
                 throw XrayMobileDNSPreflightError.unavailable
             }
         }
@@ -151,6 +159,11 @@ public enum XrayMobileDNSPreflight {
     private static func isFakeDNSServer(_ server: Any) -> Bool {
         let address = (server as? String) ?? ((server as? [String: Any])?["address"] as? String)
         return address?.caseInsensitiveCompare("fakedns") == .orderedSame
+    }
+
+    private static func isLocalhostDNSServer(_ server: Any) -> Bool {
+        let address = (server as? String) ?? ((server as? [String: Any])?["address"] as? String)
+        return address?.caseInsensitiveCompare("localhost") == .orderedSame
     }
 
     private static func jsonRoot(_ configJSON: String) -> [String: Any]? {

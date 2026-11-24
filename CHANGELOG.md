@@ -16,7 +16,11 @@ long-term supported release series.
   failed preparation and the string form was looked up as a host name. A
   `fakedns` entry counts as fake-IP, not as an upstream, in the fake-IP
   routing preflight, and Android accepts up to 32 `dns.servers` entries, as
-  the core does, where it stopped at eight.
+  the core does, where it stopped at eight. `localhost` is no upstream there
+  either: inside a VPN it answers from `dns.hosts` alone, since the platform
+  resolver would ask the tunnel itself, so a profile whose only servers are
+  `localhost` is refused instead of starting a tunnel in which no name
+  resolves.
 - `dns.servers` takes up to 32 entries, where more than eight failed to
   parse. Xray-core sets no limit, and full subscriptions list more than
   eight. Destination lookups use every server; the TUN DNS proxy at

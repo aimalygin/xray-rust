@@ -208,7 +208,11 @@ resolution to the proxy. DNS upstream preparation includes
 an IP-literal URL needs no
 bootstrap lookup, and neither do Xray-core's `localhost` and `fakedns`
 servers, which the core answers from its own bootstrap resolver or maps onto
-fake-IP. Up to 32 `dns.servers` entries are accepted, as by the core. It preserves every usable A/AAAA result in resolver order,
+fake-IP. Inside the VPN that resolver answers from `dns.hosts` alone, since
+the platform resolver would ask the tunnel itself, so `localhost` is no
+upstream: preparation refuses a profile whose only servers are `localhost`,
+and beside `fakedns` it leaves Freedom and WireGuard nothing to resolve
+restored names with. Up to 32 `dns.servers` entries are accepted, as by the core. It preserves every usable A/AAAA result in resolver order,
 removes duplicates, and writes a nonempty exact `full:` IP array under
 `dns.hosts`, then creates the core with `XrayDnsBootstrapMode.StaticOnly`. The
 original carrier address/endpoint strings, authentication, DNS server URI, and

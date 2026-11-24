@@ -330,7 +330,11 @@ domain VLESS, VMess, Trojan, Shadowsocks, SOCKS, HTTP, and Hysteria 2 server, ev
 WireGuard peer endpoint host, and every domain-valued classic, TCP, DoT, DoH, or
 DoQ DNS endpoint. Xray-core's `localhost` and `fakedns` servers have no
 endpoint and need no bootstrap: the core answers `localhost` from its own
-bootstrap resolver and maps `fakedns` onto fake-IP. SOCKS and HTTP preparation supports both flat settings and the
+bootstrap resolver and maps `fakedns` onto fake-IP. Inside the tunnel that
+resolver answers from `dns.hosts` alone, since the platform resolver would ask
+the tunnel itself, so `localhost` is no upstream: the DNS preflight refuses a
+profile whose only servers are `localhost`, and beside `fakedns` it leaves
+Freedom and WireGuard nothing to resolve restored names with. SOCKS and HTTP preparation supports both flat settings and the
 legacy single-entry `servers` form; it resolves only the proxy endpoint,
 leaving destination-domain resolution to the proxy. An IP-literal stream URL needs
 no system lookup. URL modes use their

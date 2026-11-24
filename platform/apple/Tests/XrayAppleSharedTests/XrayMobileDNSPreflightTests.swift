@@ -97,9 +97,35 @@ final class XrayMobileDNSPreflightTests: XCTestCase {
             configJSON: #"{"dns":{"servers":["fakedns","192.0.2.53"]}}"#,
             explicitDNS: .custom
         )
-        // `localhost` is an upstream like any other.
+    }
+
+    func testLocalhostServerIsNoUpstreamInsideTheTunnel() {
+        // Inside a VPN `localhost` answers from dns.hosts alone: the platform
+        // resolver would ask the tunnel itself. Alone it would start a tunnel
+        // in which no name resolves.
+        for servers in [#"["localhost"]"#, #"["LocalHost",{"address":"localhost","domains":["domain:lan"]}]"#] {
+            assertError(
+                .unavailable,
+                configJSON: #"{"dns":{"servers":\#(servers)},"outbounds":[{"protocol":"vless","tag":"proxy"}]}"#
+            )
+        }
+        // Beside a server on the wire it is fine.
         XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(
-            #"{"dns":{"servers":["localhost"]},"outbounds":[{"protocol":"freedom"}]}"#
+            #"{"dns":{"servers":["localhost","192.0.2.53"]},"outbounds":[{"protocol":"freedom"}]}"#
+        ))
+        // Beside `fakedns` the tunnel resolves through fake-IP, and
+        // `localhost` still gives Freedom nothing to resolve restored names.
+        XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(
+            #"{"dns":{"servers":["fakedns","localhost"]},"inbounds":[{"protocol":"tun","tag":"tun-in"}],"outbounds":[{"protocol":"vless","tag":"proxy"}]}"#
+        ))
+        assertError(
+            .unsafeFakeIPFreedomRouting,
+            configJSON: #"{"dns":{"servers":["fakedns","localhost"]},"inbounds":[{"protocol":"tun","tag":"tun-in"}],"outbounds":[{"protocol":"freedom","tag":"direct"}]}"#
+        )
+        // With explicit system DNS servers the tunnel's names go to those.
+        XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(
+            #"{"dns":{"servers":["localhost"]},"outbounds":[{"protocol":"freedom"}]}"#,
+            explicitDNS: .custom
         ))
     }
 

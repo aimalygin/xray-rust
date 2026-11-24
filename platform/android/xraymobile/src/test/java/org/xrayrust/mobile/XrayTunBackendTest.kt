@@ -642,6 +642,46 @@ class XrayTunBackendTest {
     }
 
     @Test
+    fun localhostServerIsNoUpstreamInsideTheVpn() {
+        // Inside a VPN `localhost` answers from dns.hosts alone: the platform
+        // resolver would ask the tunnel itself. Alone it would start a tunnel
+        // in which no name resolves.
+        val resolver = BoundedAndroidDnsBootstrapResolver(maxConcurrentLookups = 1) { domain ->
+            error("unexpected system lookup for $domain")
+        }
+        val proxy = """{"protocol":"socks","settings":{"address":"192.0.2.10","port":1080}}"""
+        val freedom = """{"protocol":"freedom"}"""
+        fun prepare(servers: String, outbound: String = proxy) =
+            prepareAndroidVpnConfigWithinDeadline(
+                configJson = """{"dns":{"servers":$servers},"outbounds":[$outbound]}""",
+                resolver = resolver,
+                deadline = AndroidDnsBootstrapDeadline(TimeUnit.SECONDS.toNanos(1)),
+            )
+        try {
+            assertTrue(isLocalhostDnsServer("LocalHost"))
+            assertTrue(isLocalhostDnsServer(mapOf("address" to "localhost", "port" to 53)))
+            assertFalse(isLocalhostDnsServer("fakedns"))
+            for (servers in listOf(
+                """["localhost"]""",
+                """["LocalHost",{"address":"localhost","domains":["domain:lan"]}]""",
+            )) {
+                val error = assertThrows(IllegalArgumentException::class.java) { prepare(servers) }
+                assertTrue(error.message, error.message!!.contains("only `localhost`"))
+            }
+            // Beside a server on the wire it is fine.
+            prepare("""["localhost","192.0.2.53"]""", outbound = freedom)
+            // Beside `fakedns` the tunnel resolves through fake-IP, and
+            // `localhost` still gives Freedom nothing to resolve restored names.
+            prepare("""["fakedns","localhost"]""")
+            assertThrows(IllegalArgumentException::class.java) {
+                prepare("""["fakedns","localhost"]""", outbound = freedom)
+            }
+        } finally {
+            resolver.close()
+        }
+    }
+
+    @Test
     fun malformedDnsIpPolicyStringListReportsTheFieldAndItemIndex() {
         val scalarError = assertThrows(IllegalArgumentException::class.java) {
             dnsServerBootstrapDomain(

@@ -162,7 +162,19 @@ internal fun prepareAndroidVpnConfigWithinDeadline(
     } else {
         (0 until dnsServers.length()).count { isFakeDnsServer(dnsServers.opt(it)) }
     }
-    val wireDnsServers = (dnsServers?.length() ?: 0) - fakeDnsServers
+    // Neither is `localhost`: it asks the core's bootstrap resolver, which
+    // inside a VPN answers from dns.hosts alone, since the platform resolver
+    // would ask the tunnel itself.
+    val localhostDnsServers = if (dnsServers == null) {
+        0
+    } else {
+        (0 until dnsServers.length()).count { isLocalhostDnsServer(dnsServers.opt(it)) }
+    }
+    val wireDnsServers = (dnsServers?.length() ?: 0) - fakeDnsServers - localhostDnsServers
+    require(usesFakeIp || fakeDnsServers > 0 || localhostDnsServers == 0 || wireDnsServers > 0) {
+        "dns.servers lists only `localhost`, which inside a VPN answers from dns.hosts alone: " +
+            "add a DNS server or enable dns.fakeIp"
+    }
     if ((usesFakeIp || fakeDnsServers > 0) && wireDnsServers == 0) {
         validateAndroidDnsPreflightTopology(
             androidDnsPreflightTopology(
@@ -709,6 +721,16 @@ internal fun isFakeDnsServer(server: Any?): Boolean {
         else -> null
     }
     return address is String && address.equals("fakedns", ignoreCase = true)
+}
+
+internal fun isLocalhostDnsServer(server: Any?): Boolean {
+    val address = when (server) {
+        is String -> server
+        is JSONObject -> server.opt("address")
+        is Map<*, *> -> server["address"]
+        else -> null
+    }
+    return address is String && address.equals("localhost", ignoreCase = true)
 }
 
 private fun hasDnsTcpUrlScheme(server: String): Boolean {
