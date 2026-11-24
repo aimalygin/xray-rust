@@ -1496,6 +1496,39 @@ pub struct CompiledNameServerPolicies {
 }
 
 impl CompiledNameServerPolicies {
+    /// The servers in configured order, as SRV and TXT lookups ask them,
+    /// outside routing. A DNS-over-TLS server, which the query transport
+    /// reaches only through routing, and a DNS-over-HTTPS server without its
+    /// request path are left out.
+    pub fn record_servers(&self) -> Vec<crate::RecordServer> {
+        self.policies
+            .iter()
+            .filter_map(|policy| {
+                let transport = match policy.transport {
+                    NameServerTransport::Classic => DnsQueryTransportKind::Udp,
+                    NameServerTransport::TcpRouted | NameServerTransport::TcpLocal => {
+                        DnsQueryTransportKind::Tcp
+                    }
+                    NameServerTransport::HttpsRouted | NameServerTransport::HttpsLocal
+                        if policy.https_path.is_some() =>
+                    {
+                        DnsQueryTransportKind::Https
+                    }
+                    NameServerTransport::QuicLocal => DnsQueryTransportKind::Quic,
+                    NameServerTransport::TlsRouted
+                    | NameServerTransport::HttpsRouted
+                    | NameServerTransport::HttpsLocal => return None,
+                };
+                Some(crate::RecordServer {
+                    server: policy.server.clone(),
+                    transport,
+                    tag: policy.tag.clone(),
+                    https_path: policy.https_path.clone(),
+                })
+            })
+            .collect()
+    }
+
     pub fn new(policies: Vec<NameServerPolicy>) -> Self {
         let mut matcher_count = 0;
         let mut pattern_bytes = 0;

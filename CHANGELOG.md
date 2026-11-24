@@ -10,6 +10,26 @@ long-term supported release series.
 
 ## Unreleased
 
+- A selected geosite entry may hold 250,000 domains, where the limit was
+  200,000, and a configuration 500,000 domain matchers, where it was 250,000.
+  Loyalsoldier's `category-ads-all`, a common ad-blocking rule, passed 200,000
+  (reported at 203,233), so a configuration that named it failed to load, and
+  beside `geosite:cn` (110,258) it would not have fitted the 250,000 either.
+  A compiled domain takes about 26 bytes and about 70 while its entry is
+  compiled, so a configuration at the new budget keeps some 13 MB of domain
+  rules, where the old one kept 6.5 MB, and loading its largest entry peaks
+  some 17 MB above that; the entry limit stays below the budget to bound that
+  peak. The total of 1,000,000 domain and IP matchers is unchanged. An error
+  about an entry over a limit now names the entry, as ``entry `CODE`: …``,
+  since the file itself is sound.
+- Android, iOS and tvOS: an SRV or TXT `addressPortStrategy` works. With no
+  `/etc/resolv.conf` on the device, the lookup now asks the servers in
+  `dns.servers` directly over protected sockets, never through routing,
+  which could send it into the outbound being opened. Each
+  dial used to ask loopback nameservers, as Go does, that no phone runs, and
+  dial the configured server once they failed. Without a server to ask, the
+  configured server is dialled at once and the log says so once. See
+  [Socket options](docs/xray-core-differences.md#socket-options).
 - A base64 JSON `vmess://` link without TLS (`tls` absent, empty or `none`)
   imports when it carries `sni`, `alpn` or `fp`; those fields are ignored, as
   v2rayN ignores them. Panels such as V2Board write `fp` on every link, so

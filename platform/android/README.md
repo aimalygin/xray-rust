@@ -686,8 +686,8 @@ data out of backups:
 
 Each load scans the whole referenced file once to index its codes and then
 decodes only the referenced entries; nothing is cached between loads. Parsing
-enforces per-entry budgets of 200,000 domains, 500,000 CIDRs and 32 MiB, a
-128 MiB file limit, and per-config budgets of 250,000 domain matchers and
+enforces per-entry budgets of 250,000 domains, 500,000 CIDRs and 32 MiB, a
+128 MiB file limit, and per-config budgets of 500,000 domain matchers and
 750,000 IP matchers. A code over a budget fails the load with a config error.
 For example, in the October 2026 runetfreedom `geosite.dat`, `ru-blocked-all`
 and `antifilter-download` (about 1.37 million domains each) exceed these

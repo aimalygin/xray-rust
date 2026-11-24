@@ -44,6 +44,8 @@ pub struct TransportDialer {
 struct Replaced {
     route_probe: Option<Arc<dyn RouteProbe>>,
     record_resolver: Option<Arc<dyn RecordResolver>>,
+    unconfigured_records: Option<Arc<crate::RecordResolverSlot>>,
+    resolver_configuration: Option<(std::path::PathBuf, bool)>,
     tcp_header_custom: Option<Arc<crate::header_custom::HeaderCustomTcpConfig>>,
     tcp_sudoku: Option<Arc<crate::sudoku::SudokuConfig>>,
     tcp_xmc: Option<Arc<crate::xmc::XmcConfig>>,
@@ -144,6 +146,18 @@ impl TransportDialer {
         self
     }
 
+    /// Where Go's resolver has no configuration on a phone, asks the resolver
+    /// `slot` holds for `addressPortStrategy` lookups instead of skipping
+    /// them.
+    pub fn with_unconfigured_record_resolver(
+        mut self,
+        slot: Arc<crate::RecordResolverSlot>,
+    ) -> Self {
+        Arc::make_mut(self.replaced.get_or_insert_with(Default::default)).unconfigured_records =
+            Some(slot);
+        self
+    }
+
     /// The resolver for `addressPortStrategy` lookups: the one set with
     /// [`Self::with_record_resolver`], else Go's behind this dialer's
     /// protector, the outbound's `sockopt` included: a `mark` or an
@@ -156,8 +170,34 @@ impl TransportDialer {
             .and_then(|replaced| replaced.record_resolver.as_ref())
         {
             Some(resolver) => Arc::clone(resolver),
-            None => Arc::new(SystemRecordResolver::new(self.socket_protector.clone())),
+            None => {
+                let replaced = self.replaced.as_ref();
+                let protector = self.socket_protector.clone();
+                let system = match replaced.and_then(|r| r.resolver_configuration.as_ref()) {
+                    Some((config, phone)) => SystemRecordResolver::with_config(config, protector)
+                        .skipping_without_config(*phone),
+                    None => SystemRecordResolver::new(protector),
+                };
+                Arc::new(system.with_unconfigured_resolver(
+                    replaced.and_then(|replaced| replaced.unconfigured_records.clone()),
+                ))
+            }
         }
+    }
+
+    /// Reads the resolver configuration for `addressPortStrategy` lookups
+    /// from `config` instead of `/etc/resolv.conf` and, with `phone`, takes a
+    /// missing file as Android, iOS and tvOS do, whatever the target. It lets
+    /// a test on a desktop run the lookup as a phone runs it.
+    #[doc(hidden)]
+    pub fn with_resolver_configuration(
+        mut self,
+        config: impl Into<std::path::PathBuf>,
+        phone: bool,
+    ) -> Self {
+        Arc::make_mut(self.replaced.get_or_insert_with(Default::default)).resolver_configuration =
+            Some((config.into(), phone));
+        self
     }
 
     /// Resolves the STUN servers' and rendezvous's names of a `realm`
