@@ -3466,11 +3466,13 @@ nothing:
 - `minVersion`, `maxVersion` and `cipherSuites` (strings) and
   `curvePreferences` (a string or an array of strings). With a uTLS
   fingerprint, the default, Xray-core's `copyConfig` drops all four and the
-  fingerprint's ClientHello decides them; here the same profile does. With
-  `fingerprint: "unsafe"` and on QUIC, rustls keeps its own versions (TLS 1.2
-  and 1.3), suites and groups, where Xray-core's crypto/tls would apply them:
-  a `maxVersion` of `1.2` still negotiates TLS 1.3, and a `minVersion` of
-  `1.3` still accepts a TLS 1.2 server.
+  fingerprint's ClientHello decides them; here the same profile does. On
+  QUIC, where TLS is 1.3 and the handshake is shaped too, they are ignored
+  with the same warning. With `fingerprint: "unsafe"` Xray-core's crypto/tls
+  applies all four, and the rustls handshake here would not, so there a
+  nonempty one fails: ignored, a `minVersion` of `1.3` would still accept a
+  TLS 1.2 server, and `curvePreferences` could not hold the key exchange to a
+  group.
 - `useSystemCA: true`, which in Xray-core trusts the operating system's store
   instead of Go's bundled roots. Here the bundled Mozilla roots stay in use,
   so a server whose chain needs a privately installed CA fails verification.

@@ -165,6 +165,46 @@ fn client_side_tls_knobs_are_type_checked_and_ignored_with_warnings() {
     }
 }
 
+/// With `fingerprint: "unsafe"` Xray-core's crypto/tls applies these four,
+/// and the rustls handshake here would not: a `minVersion` of 1.3 would
+/// accept a TLS 1.2 server. They fail there instead of being ignored.
+#[test]
+fn the_unsafe_fingerprint_refuses_the_tls_knobs_xray_core_applies_to_it() {
+    let base = "$.outbounds[0].streamSettings.tlsSettings";
+    for (key, value) in [
+        ("minVersion", json!("1.3")),
+        ("maxVersion", json!("1.2")),
+        (
+            "cipherSuites",
+            json!("TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"),
+        ),
+        ("curvePreferences", json!(["X25519MLKEM768"])),
+        ("curvePreferences", json!("X25519")),
+    ] {
+        let raw = tls_profile(json!({
+            "serverName": "proxy.example",
+            "fingerprint": "unsafe",
+            key: value
+        }));
+        assert_eq!(error_paths(&raw), [format!("{base}.{key}")], "{key}");
+    }
+
+    // What says nothing still says nothing, and the fields no handshake
+    // reads keep their warnings.
+    let raw = tls_profile(json!({
+        "serverName": "proxy.example",
+        "fingerprint": "unsafe",
+        "minVersion": "",
+        "maxVersion": "",
+        "cipherSuites": "",
+        "curvePreferences": [],
+        "useSystemCA": true
+    }));
+    let warnings = warnings_of(&raw);
+    assert!(warning_at(&warnings, &format!("{base}.useSystemCA")).contains("Mozilla roots"));
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+}
+
 #[test]
 fn ech_config_list_fails_rather_than_connecting_without_ech() {
     // Xray-core fails a connection it cannot give ECH; connecting without it

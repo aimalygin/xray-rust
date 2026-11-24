@@ -1787,8 +1787,9 @@ impl Parser<'_> {
     /// `minVersion`, `maxVersion`, `cipherSuites` and `curvePreferences`
     /// reach only Go's own crypto/tls: with a uTLS fingerprint, the default,
     /// Xray-core's `copyConfig` drops them and the fingerprint's hello decides
-    /// all four. An unshaped rustls handshake (`unsafe`, QUIC) keeps its own
-    /// versions, suites and groups. `useSystemCA` picks the operating system's
+    /// all four. With `fingerprint: "unsafe"` Xray-core applies them, and
+    /// they are refused here; a QUIC handshake keeps its own versions, suites
+    /// and groups. `useSystemCA` picks the operating system's
     /// store over Go's bundled roots; the bundled Mozilla roots stay in use
     /// here. `show` is REALITY's debug switch and no TLS field.
     ///
@@ -1804,10 +1805,26 @@ impl Parser<'_> {
     /// would trust the system roots that the config turned off, so it fails.
     fn validate_ignored_tls_fields(&mut self, settings: &Value, settings_path: &str) {
         let at = |key: &str| format!("{settings_path}.{key}");
+        // With `fingerprint: "unsafe"` Xray-core hands the handshake to Go's
+        // crypto/tls, which applies all four. The rustls handshake here would
+        // not: a `minVersion` of 1.3 would accept TLS 1.2, and
+        // `curvePreferences` could not hold the key exchange to a group. So
+        // there they are refused, where ignoring them would weaken what the
+        // configuration asks for.
+        let unshaped = settings
+            .get("fingerprint")
+            .and_then(Value::as_str)
+            .is_some_and(|fingerprint| fingerprint.eq_ignore_ascii_case("unsafe"));
+        let refused = |key: &str| {
+            format!(
+                "tls `{key}` is not supported with fingerprint `unsafe`: Xray-core applies it to that handshake, and the rustls handshake here would not"
+            )
+        };
         for key in ["minVersion", "maxVersion", "cipherSuites"] {
             match settings.get(key) {
                 None | Some(Value::Null) => {}
                 Some(Value::String(text)) if text.is_empty() => {}
+                Some(Value::String(_)) if unshaped => self.error(at(key), refused(key)),
                 Some(Value::String(_)) => self.warning(
                     at(key),
                     format!(
@@ -1819,6 +1836,9 @@ impl Parser<'_> {
         }
         match settings.get("curvePreferences") {
             None | Some(Value::Null) => {}
+            Some(Value::String(text)) if unshaped && !text.is_empty() => {
+                self.error(at("curvePreferences"), refused("curvePreferences"));
+            }
             Some(Value::String(_)) => self.warning(
                 at("curvePreferences"),
                 "tls `curvePreferences` is ignored: a uTLS fingerprint's ClientHello decides the key shares, as in Xray-core",
@@ -1829,6 +1849,8 @@ impl Parser<'_> {
                         at("curvePreferences"),
                         "tls curvePreferences entries must be strings",
                     );
+                } else if unshaped && !curves.is_empty() {
+                    self.error(at("curvePreferences"), refused("curvePreferences"));
                 } else if !curves.is_empty() {
                     self.warning(
                         at("curvePreferences"),

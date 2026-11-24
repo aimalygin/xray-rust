@@ -68,7 +68,9 @@ long-term supported release series.
   `routing.domainMatcher`, `sockopt.tcpNoDelay`, mKCP `congestion`,
   `readBufferSize` and `writeBufferSize`, and TLS `minVersion`, `maxVersion`,
   `cipherSuites`, `curvePreferences`, `useSystemCA` and `show`. A uTLS
-  fingerprint decides the TLS four, as in Xray-core. A nonempty
+  fingerprint decides the TLS four, as in Xray-core; with `fingerprint:
+  "unsafe"`, where Xray-core applies them and the rustls handshake here would
+  not, they still fail. A nonempty
   `echConfigList` still fails: ECH is not implemented, and connecting without
   it would send the server name in the clear, where Xray-core fails the
   connection. `disableSystemRoot: true` is accepted only beside
