@@ -124,6 +124,7 @@ pub(crate) struct Flows {
     /// Places in the queue for `tcp`, its hard bound.
     pub(crate) tcp_waiting: Arc<Semaphore>,
     pub(crate) tcp_waiting_limit: usize,
+    pub(crate) tcp_limit: usize,
     pub(crate) udp: Arc<Semaphore>,
     pub(crate) next: AtomicU64,
 }
@@ -358,6 +359,10 @@ impl Client {
     pub fn available_udp_slots(&self) -> usize {
         self.0.flows.udp.available_permits()
     }
+    /// Flows that hold or wait for a place in the client; zero when idle.
+    pub fn open_flows(&self) -> usize {
+        self.0.flows.open_flows()
+    }
     /// Waits for a place, then opens a TCP flow in it.
     pub async fn connect(&self, remote: SocketAddr) -> Result<TcpStream, Error> {
         self.0.flows.connect(remote).await
@@ -407,12 +412,20 @@ impl Flows {
             tcp: Arc::new(Semaphore::new(limits.tcp())),
             tcp_waiting: Arc::new(Semaphore::new(limits.tcp_waiting())),
             tcp_waiting_limit: limits.tcp_waiting(),
+            tcp_limit: limits.tcp(),
             udp: Arc::new(Semaphore::new(UDP_LIMIT)),
             next: AtomicU64::new(1),
         }
     }
     pub(crate) fn waiting_tcp_flows(&self) -> usize {
         self.tcp_waiting_limit - self.tcp_waiting.available_permits()
+    }
+    /// Flows holding or waiting for a place: open TCP and UDP flows, a
+    /// [`TcpSlot`] not yet spent, and TCP flows queued for a place.
+    pub(crate) fn open_flows(&self) -> usize {
+        (self.tcp_limit - self.tcp.available_permits())
+            + self.waiting_tcp_flows()
+            + (UDP_LIMIT - self.udp.available_permits())
     }
     pub(crate) fn is_live(&self) -> bool {
         !self.stop.is_closed()
