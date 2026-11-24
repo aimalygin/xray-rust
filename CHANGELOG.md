@@ -23,7 +23,9 @@ long-term supported release series.
   `198.18.0.1` still forwards to the first eight distinct ones, which share
   its five-second budget. With `enableParallelQuery` a lookup asks at most
   eight servers at a time, the next starting as one settles, so one lookup
-  over 32 servers stays within the managed resolver's exchange limit.
+  over 32 servers stays within the managed resolver's exchange limit. The
+  SRV or TXT `addressPortStrategy` lookup of a phone, which asks servers in
+  turn before every dial, asks the first eight it can ask.
 - RAW's `http` header obfuscation works (`tcpSettings`/`rawSettings`
   `header.type: "http"`), where it was refused: every connection sends a
   request head built as Xray-core builds it (method, a drawn path, headers

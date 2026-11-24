@@ -1513,11 +1513,18 @@ pub struct CompiledNameServerPolicies {
     pattern_bytes: usize,
 }
 
+/// How many servers a phone's SRV or TXT lookup asks at most. They are asked
+/// in turn, four seconds each, before every dial of an outbound with an
+/// `addressPortStrategy`, and `dns.servers` takes up to 32 entries: asking
+/// them all would hold a dial for minutes when none answers.
+const MAX_RECORD_SERVERS: usize = 8;
+
 impl CompiledNameServerPolicies {
     /// The servers in configured order, as SRV and TXT lookups ask them,
-    /// outside routing. A DNS-over-TLS server, which the query transport
-    /// reaches only through routing, a DNS-over-HTTPS server without its
-    /// request path and `localhost` are left out.
+    /// outside routing: the first eight that can be asked. A DNS-over-TLS
+    /// server, which the query transport reaches only through routing, a
+    /// DNS-over-HTTPS server without its request path and `localhost` are
+    /// left out.
     pub fn record_servers(&self) -> Vec<crate::RecordServer> {
         self.policies
             .iter()
@@ -1547,6 +1554,7 @@ impl CompiledNameServerPolicies {
                     https_path: policy.https_path.clone(),
                 })
             })
+            .take(MAX_RECORD_SERVERS)
             .collect()
     }
 

@@ -1502,7 +1502,9 @@ differences:
   them. The connection to a `realm` rendezvous takes both as well.
 - On Android, iOS and tvOS without `/etc/resolv.conf`, the
   `addressPortStrategy` SRV or TXT lookup asks the core's `dns.servers` in
-  their configured order, without a search list, four seconds a server.
+  their configured order, without a search list, four seconds a server, and
+  at most the first eight it can ask: `dns.servers` takes up to 32, and the
+  lookup runs before every dial.
   The lookup never goes through routing, like the bootstrap that resolves
   an outbound's server address, since routing could send it into the
   outbound being opened: a UDP server is asked directly over a protected

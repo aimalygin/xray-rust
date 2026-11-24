@@ -2376,6 +2376,43 @@ mod tests {
         );
     }
 
+    /// A phone's SRV or TXT lookup asks its servers in turn before every
+    /// dial, so of up to 32 `dns.servers` it takes the first eight it can
+    /// ask: `localhost` and a DNS-over-TLS server are passed over, not counted.
+    #[test]
+    fn a_phones_record_lookup_asks_the_first_eight_servers_it_can() {
+        let mut servers = vec![
+            serde_json::json!("localhost"),
+            serde_json::json!("tls://192.0.2.1"),
+        ];
+        servers.extend((10..20).map(|host| serde_json::json!(format!("192.0.2.{host}"))));
+        let raw = serde_json::json!({
+            "dns": {"servers": servers},
+            "inbounds": [],
+            "outbounds": [{"tag": "direct", "protocol": "freedom"}]
+        });
+        let mut config = parse_xray_json(&raw.to_string())
+            .expect("twelve DNS servers parse")
+            .config;
+        let rules = DnsRules::from_config(&mut config);
+        let asked = rules.name_servers.unwrap().record_servers();
+        let expected = (10..18)
+            .map(|host| {
+                xray_transport::NameServer::Socket(SocketAddr::from(([192, 0, 2, host], 53)))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            asked
+                .iter()
+                .map(|server| server.server.clone())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(asked
+            .iter()
+            .all(|server| server.transport == xray_transport::DnsQueryTransportKind::Udp));
+    }
+
     #[tokio::test]
     async fn localhost_dns_servers_answer_from_the_platform_resolver() {
         let raw = r#"{
