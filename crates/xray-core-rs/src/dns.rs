@@ -1410,6 +1410,7 @@ mod tests {
             default_outbound_tag: Some("dns-out".to_owned()),
             routing: RoutingConfig::default(),
             observatory: None,
+            burst_observatory: None,
             dns,
             policy: PolicyConfig::default(),
         })
@@ -1499,6 +1500,7 @@ mod tests {
                 domain_strategy: RoutingDomainStrategy::IpIfNonMatch,
             },
             observatory: None,
+            burst_observatory: None,
             dns: DnsConfig {
                 servers: vec![DnsServerConfig::Domain {
                     domain: server_domain.to_owned(),
@@ -2008,6 +2010,7 @@ mod tests {
             default_outbound_tag: Some("direct".to_owned()),
             routing: RoutingConfig::default(),
             observatory: None,
+            burst_observatory: None,
             dns: DnsConfig::default(),
             policy: PolicyConfig::default(),
         });
@@ -2256,6 +2259,7 @@ mod tests {
                 default_outbound_tag: Some("direct".to_owned()),
                 routing: RoutingConfig::default(),
                 observatory: None,
+                burst_observatory: None,
                 dns: DnsConfig::default(),
                 policy: PolicyConfig::default(),
             });
@@ -3075,6 +3079,7 @@ mod tests {
             default_outbound_tag: None,
             routing: RoutingConfig::default(),
             observatory: None,
+            burst_observatory: None,
             dns: DnsConfig {
                 hosts: DomainHostIndex::from_iter([
                     (
@@ -3152,6 +3157,7 @@ mod tests {
             default_outbound_tag: None,
             routing: RoutingConfig::default(),
             observatory: None,
+            burst_observatory: None,
             dns: DnsConfig::default(),
             policy: PolicyConfig::default(),
         });
@@ -3226,6 +3232,7 @@ mod tests {
             default_outbound_tag: None,
             routing: RoutingConfig::default(),
             observatory: None,
+            burst_observatory: None,
             dns: DnsConfig::default(),
             policy: PolicyConfig::default(),
         });
@@ -3318,6 +3325,7 @@ mod tests {
             default_outbound_tag: Some("direct".to_owned()),
             routing: RoutingConfig::default(),
             observatory: None,
+            burst_observatory: None,
             dns: DnsConfig::default(),
             policy: PolicyConfig::default(),
         });
@@ -3629,6 +3637,7 @@ mod tests {
             default_outbound_tag: Some("direct".to_owned()),
             routing: RoutingConfig::default(),
             observatory: None,
+            burst_observatory: None,
             dns: DnsConfig::default(),
             policy: PolicyConfig::default(),
         });
@@ -3713,6 +3722,7 @@ mod tests {
             default_outbound_tag: Some("direct".to_owned()),
             routing: RoutingConfig::default(),
             observatory: None,
+            burst_observatory: None,
             dns: DnsConfig::default(),
             policy: PolicyConfig::default(),
         });
@@ -3842,6 +3852,7 @@ mod tests {
             default_outbound_tag: Some("direct".to_owned()),
             routing: RoutingConfig::default(),
             observatory: None,
+            burst_observatory: None,
             dns: DnsConfig::default(),
             policy: PolicyConfig::default(),
         });
