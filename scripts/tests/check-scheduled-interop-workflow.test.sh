@@ -257,7 +257,7 @@ expected_rc_interop="$(cat <<'EXPECTED'
           path: Xray-core
           persist-credentials: false
       - name: Install pinned Go toolchain
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
         with:
           go-version: "1.27.3"
           cache-dependency-path: Xray-core/go.sum
@@ -290,7 +290,7 @@ expected_scheduled_pinned="$(cat <<'EXPECTED'
           path: Xray-core
           persist-credentials: false
       - name: Install pinned Go toolchain
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
         with:
           go-version: "1.27.3"
           cache-dependency-path: Xray-core/go.sum
@@ -334,7 +334,7 @@ expected_main_smoke="$(cat <<'EXPECTED'
           echo "revision=$revision" >>"$GITHUB_OUTPUT"
           printf 'Xray-core main revision: `%s`\n' "$revision" >>"$GITHUB_STEP_SUMMARY"
       - name: Install Go toolchain required by Xray-core main
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
         with:
           go-version-file: Xray-core/go.mod
           cache-dependency-path: Xray-core/go.sum

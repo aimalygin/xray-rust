@@ -375,7 +375,7 @@ jobs:
       # paths alone, so a module missing from the list has its dependencies
       # re-downloaded on every run.
       - name: Install pinned Go toolchain
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27.3"
           cache-dependency-path: |
@@ -522,7 +522,7 @@ jobs:
           persist-credentials: false
 
       - name: Install pinned Go toolchain
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27.3"
           cache-dependency-path: Xray-core/go.sum
@@ -557,7 +557,7 @@ jobs:
           persist-credentials: false
 
       - name: Install pinned Go toolchain
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27.3"
           cache-dependency-path: Xray-core/go.sum
@@ -604,7 +604,7 @@ jobs:
           printf 'Xray-core main revision: `%s`\n' "$revision" >>"$GITHUB_STEP_SUMMARY"
 
       - name: Install Go toolchain required by Xray-core main
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: Xray-core/go.mod
           cache-dependency-path: Xray-core/go.sum
@@ -705,7 +705,7 @@ jobs:
           persist-credentials: false
 
       - name: Install pinned Go toolchain
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: "1.27.3"
           cache-dependency-path: Xray-core/go.sum
