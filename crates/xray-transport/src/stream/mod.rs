@@ -35,6 +35,7 @@ mod http2_connect;
 pub(crate) mod http_headers;
 mod httpupgrade;
 pub(crate) mod masquerade;
+mod raw_http_header;
 mod websocket;
 mod websocket_frame;
 pub(crate) mod xhttp;
@@ -59,6 +60,7 @@ pub use httpupgrade::{connect_httpupgrade, HttpUpgradeConfig, PrefixedStream};
 pub use masquerade::{
     apply_masquerade, apply_masquerade_with_versions, BrowserVersions, VersionOffsets,
 };
+pub use raw_http_header::{RawHttpHeaderConfig, RawHttpHeaderStream};
 pub use websocket::{accept_key_for, connect_websocket, encode_early_data, WebSocketConfig};
 #[doc(hidden)]
 pub use xhttp::composer_test_only as xhttp_composer_test_only;
@@ -94,6 +96,10 @@ pub use xhttp::{
 #[derive(Debug, Clone)]
 pub enum TransportLayer {
     Raw,
+    /// RAW inside Xray-core's `http` header obfuscation: a request head
+    /// before the first write, the response head dropped before the first
+    /// read, above the security layer.
+    RawHttpHeader(std::sync::Arc<RawHttpHeaderConfig>),
     WebSocket(WebSocketConfig),
     HttpUpgrade(HttpUpgradeConfig),
     Grpc(GrpcTransport),

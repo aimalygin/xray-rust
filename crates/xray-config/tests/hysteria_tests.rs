@@ -87,11 +87,6 @@ fn hysteria2_rejects_unsupported_or_inconsistent_settings_without_exposing_auth(
             json!({"dialerProxy":"direct"}),
         ),
         (
-            "/outbounds/0/streamSettings",
-            "sockopt",
-            json!({"domainStrategy":"UseIPv4"}),
-        ),
-        (
             "/outbounds/0/streamSettings/tlsSettings",
             "fingerprint",
             json!("chrome"),
@@ -129,7 +124,8 @@ fn hysteria2_takes_socket_options_for_its_quic_socket() {
         "interface": "eth0",
         "tcpFastOpen": true,
         "customSockopt": [{"network": "udp", "level": "41", "opt": "67", "value": "1", "type": "int"}],
-        "happyEyeballs": {"tryDelayMs": 250}
+        "happyEyeballs": {"tryDelayMs": 250},
+        "domainStrategy": "UseIPv4"
     });
     let parsed = parse_xray_json(&config.to_string()).expect("Hysteria socket options parse");
     let options = parsed.config.outbounds[0]
@@ -141,6 +137,10 @@ fn hysteria2_takes_socket_options_for_its_quic_socket() {
     assert_eq!(options.interface, "eth0");
     assert_eq!(options.tcp_fast_open, 256);
     assert_eq!(options.custom.len(), 1);
+    assert_eq!(
+        options.domain_strategy,
+        xray_config::DomainStrategy::UseIpv4
+    );
 }
 
 #[test]

@@ -1370,6 +1370,79 @@ Deliberate differences, source-derived:
 - The fixed TUN FakeDNS mode (`dns.fakeIp` without a DNS outbound) does not
   read `dns.hosts`, for IP values as for `"#N"`.
 
+## DNS parallel query
+
+`dns.enableParallelQuery` asks the servers of a lookup's plan at once and
+settles groups as Xray-core v26.10.31's `parallelQuery` does
+([details](config-compatibility.md#dns)). Deliberate difference: at most
+eight servers are asked at a time, the next in plan order starting as each
+settles, where Xray-core starts them all. `dns.servers` takes up to 32
+entries, and every server is two exchanges under `UseIP`, so asking all of
+them would exceed the managed resolver's exchange limit (eight running and
+four waiting per place on the low-memory profile) within a single lookup.
+Covered by resolver unit tests.
+
+## DNS `localhost` client
+
+A `localhost` DNS server asks the platform resolver, as Xray-core v26.10.31's
+`LocalNameServer` (`app/dns/nameserver_local.go`) does, with the same local
+domain rules (`app/dns/config.go`) and the same 300-second TTL
+(`features/dns/client.go`) ([details](config-compatibility.md#dns)).
+Source-derived; covered by parser, resolver and TUN proxy unit tests, not by
+interop.
+
+Deliberate differences:
+
+- Answers enter the destination cache like other servers'. Xray-core's
+  `IsDisableCache` keeps this client out of its cache and asks the platform
+  each time.
+- The platform resolver is the core's bootstrap resolver, behind
+  `dns.hosts`. Under `StaticOnly`, where it would loop through the tunnel,
+  only `dns.hosts` answers, and other names fail over to the next server.
+  Xray-core's `MayUseSystemResolver` leaves that loop to its embedder.
+- A lookup that finds no address is a failure, not an empty answer, so the
+  next server is asked; Xray-core's `ErrEmptyResponse` reaches the same next
+  server.
+- The TUN DNS proxy also forwards questions other than A and AAAA. A
+  `localhost` upstream fails them, so the next upstream answers; Xray-core's
+  app DNS asks this client for addresses only.
+
+## Xray-core's FakeDNS as `dns.fakeIp`
+
+A `fakedns` DNS server with root `fakeDns` pools runs as `dns.fakeIp`
+([details](config-compatibility.md#dns)), source-derived from
+`infra/conf/fakedns.go` and `app/dns/nameserver_fakedns.go`. Deliberate
+differences:
+
+- Fake addresses are IPv4 only; IPv6 pools are ignored with a warning.
+- Every name is answered with a fake address, so only a `fakedns` entry
+  that Xray-core's plan (`sortClients` in `app/dns/dns.go`) reaches first for
+  every name is accepted: first, without `domains`, beside no server with
+  `domains` and no `localhost`. A `fakedns` Xray-core asks for some names
+  only, or only after another server fails, is refused, since `dns.fakeIp`
+  has no domain filter.
+- The answer TTL is 60 seconds where Xray-core's is 1, so applications do not
+  ask again for every connection; addresses stay stable across restarts as
+  described below.
+
+## RAW `http` header
+
+`tcpSettings.header` (or `rawSettings.header`) of type `http` frames the raw
+transport as Xray-core's `transport/internet/headers/http` client does
+([details](config-compatibility.md#outbounds-and-streams)): a request head
+before the first write, the response head dropped before the first read.
+Source-derived and covered by transport tests against the head Xray-core's
+server reads and writes, not by interop. Deliberate differences:
+
+- The response head is read until its blank line, at most 8192 bytes,
+  whatever it holds. Xray-core's client parses a head that arrives in more
+  than one read with `http.ReadRequest`, which a response line fails, so a
+  split head fails there and is read here.
+- A carriage return or line feed in the request, or an empty header name,
+  fails parsing; Xray-core writes it into the head.
+- Freedom and DNS outbounds refuse the header: they dial without it here,
+  while Xray-core's TCP dialer frames their connections with it as well.
+
 ## Fake-IP mappings across restarts
 
 A `Core` started with `dns.fakeIp` adopts the mappings that the `Core` stopped
@@ -1427,6 +1500,22 @@ differences:
   protector, so inside a mobile VPN it bypasses the tunnel, and applies the
   outbound's `sockopt` to them; Go's resolver in Xray-core sets nothing on
   them. The connection to a `realm` rendezvous takes both as well.
+- On Android, iOS and tvOS without `/etc/resolv.conf`, the
+  `addressPortStrategy` SRV or TXT lookup asks the core's `dns.servers` in
+  their configured order, without a search list, four seconds a server, and
+  at most the first eight it can ask: `dns.servers` takes up to 32, and the
+  lookup runs before every dial.
+  The lookup never goes through routing, like the bootstrap that resolves
+  an outbound's server address, since routing could send it into the
+  outbound being opened: a UDP server is asked directly over a protected
+  socket, TCP, DNS-over-HTTPS and DNS-over-QUIC servers as a `+local` server
+  is, and a DNS-over-TLS server, reachable only through routing, is not
+  asked. Go's resolver in Xray-core asks `127.0.0.1:53` and
+  `[::1]:53` there, which no phone serves, so its lookup fails and it dials
+  the configured server. Without a running managed DNS client or a server
+  in `dns.servers`, the lookup is skipped, with one warning per process, and
+  the configured server is dialled, as Go ends up doing. Wherever
+  `/etc/resolv.conf` exists, desktops included, Go's resolver is followed.
 - `interface` is bound before every other option. In Xray-core the binding
   follows `mark` on Linux and the TCP options on Apple platforms, and an
   option that fails stops the rest: with `tcpFastOpen` on an Apple platform,
@@ -1449,6 +1538,24 @@ differences:
   three seconds for a place and is then refused, and an idle flow is never
   closed to make room ([flow limits](config-compatibility.md#wireguard-flow-limits)).
   Xray-core's gVisor stack sets no such bound.
+- A WireGuard device that has had no flow for five minutes is closed, and
+  the next flow starts a new one with a new handshake. A started device runs
+  its timers every 250 ms, which on a phone is four wake-ups a second for a
+  tunnel that carries nothing. A device with a peer that sets `keepAlive` is
+  kept, since that asks for the path to stay open. Xray-core keeps its device
+  for as long as the outbound lives. To the peer this is little different
+  from WireGuard's own idleness: a session unused for three minutes has to
+  handshake again before it carries data either way. Covered by outbound
+  unit tests on a paused clock; the effect on a phone's battery is not
+  measured.
+- A proxy outbound's `domainStrategy` (VLESS, VMess, Trojan, Shadowsocks,
+  SOCKS, HTTP, Hysteria) resolves its domain server through the bootstrap
+  resolver and dials the kept addresses in order, or races them under
+  `happyEyeballs`. Xray-core's `DialSystem` resolves through its DNS client
+  and dials one at random. Source-derived from `transport/internet/dialer.go`;
+  covered by a carrier unit test, not by interop. Beside `dialerProxy` or
+  `proxySettings` it fails parsing, where Xray-core hands the chain the
+  resolved address.
 - An option that fails is logged at debug level; Xray-core logs it at info,
   a level the runtime log here does not have.
 - Xray-core's outbound UDP sockets are IPv6 sockets that also carry IPv4, so
@@ -1490,8 +1597,35 @@ v26.10.31:
   rustls keeps its session cache whatever the value, while Xray-core resumes
   only when the value is `true`.
 
-Other panel TLS fields, such as `cipherSuites` and `echConfigList`, are still
-rejected.
+Other fields these exports write, which Xray-core accepts and which change
+nothing for this client, are accepted with a warning (source-derived from
+v26.10.31):
+
+- root `stats`, `api`, `metrics`, `version` and `geodata` build Xray-core apps
+  (`infra/conf/xray.go`) that have no runtime here. They are type-checked as
+  the Go structs decode them. `geodata` is v26's scheduled downloader
+  (`infra/conf/geodata.go`), which this client does not run.
+- `routing.domainMatcher`, `sockopt.tcpNoDelay`, `tlsSettings.show` and
+  mKCP's `congestion`, `readBufferSize` and `writeBufferSize` are absent from
+  `RouterConfig`, `SocketConfig`, `TLSConfig` and `KCPConfig`
+  (`infra/conf/router.go`, `transport_sockopt.go`, `transport_security.go`,
+  `transport_method.go`), so Go's decoding skips them.
+- `minVersion`, `maxVersion`, `cipherSuites` and `curvePreferences` reach Go's
+  crypto/tls only (`transport/internet/tls/config.go`); `copyConfig`
+  (`transport/internet/tls/tls.go`) leaves them out of every uTLS handshake.
+  The known difference is `fingerprint: "unsafe"`, where Xray-core applies
+  them and rustls keeps its own.
+- `useSystemCA` selects Go's root store (`config_other.go`); the bundled
+  Mozilla roots stay in use here.
+- `disableSystemRoot: true` is accepted only beside `pinnedPeerCertSha256`,
+  where pins decide trust in both cores; without a pin it fails rather than
+  trusting roots the config turned off.
+
+`certificates`, `masterKeyLog`, `echServerKeys` and `echSockopt` are still
+rejected, and so is a nonempty `echConfigList`: ECH is not implemented, and
+where Xray-core cannot apply ECH it fails the connection
+(`transport/internet/tls/ech.go`) rather than send the server name in the
+clear.
 
 ## REALITY real-certificate crawl
 
@@ -1581,7 +1715,91 @@ documented 2xx/3xx rule and `HTTP_STATUS` failure.
 
 Differences: probes still speak HTTP/1.1 over a TLS handshake without ALPN,
 where Go's transport offers `h2, http/1.1` for an `https` probe URL, and they
-stop reading after the status line.
+stop reading after the status line. Xray-core's observer learns of a dead
+outbound only from its scheduled probes; xray-rust's also probes an observed
+outbound again, at most every 10 seconds, when real traffic fails to dial it
+or to complete its handshake, and marks it unhealthy when two such probes 10
+seconds apart fail, as described under
+[Observatory and outbound health](config-compatibility.md#observatory-and-outbound-health).
+
+## burstObservatory
+
+xray-rust reads `burstObservatory` as Xray-core v26.11.9 does and feeds the
+same statistics to the balancer strategies. From the reference:
+
+- `pingConfig` is required (`infra/conf/observatory.go` lines 29-32). Defaults
+  and lower bounds are `NewHealthPing`'s (`app/observatory/burst/healthping.go`
+  lines 40-79): destination `https://connectivitycheck.gstatic.com/generate_204`,
+  interval `1m` with a nonzero one below `10s` raised to `10s`, sampling 10,
+  timeout `5s`, method `HEAD`.
+- One ping per subject at start (`healthping.go` lines 99-107), then `sampling`
+  pings per subject at uniformly random points of `interval * sampling`
+  (lines 95 and 180-186). The next period cancels what is pending (lines
+  116-121).
+- A failed ping is a failure sample unless the `connectivity` URL, requested
+  through no outbound, fails too; then nothing is recorded (lines 190-224 and
+  274-286).
+- An outbound keeps its latest `sampling` samples, each valid for two periods
+  (lines 241-248; `healthping_result.go` lines 81-124). It is alive while
+  `All != Fail`, its delay is the average of the successes
+  (`burstobserver.go` lines 44-45), and the deviation of a single success is
+  half of it. `leastLoad` ranks by that deviation, average, failures and count
+  and applies `tolerance` to `Fail / All` (`app/router/strategy_leastload.go`
+  lines 168-174 and 185-199); `leastPing` and `maxRTT` compare the average.
+- With `observatory` also present both are registered as the observatory
+  feature (`infra/conf/xray.go` lines 689-703) and every strategy receives the
+  first, `observatory` (`core/xray.go` `getFeature` and `callbackResolution`,
+  lines 38-58). xray-rust selects on `observatory` too.
+
+Deliberate differences:
+
+- **Unused burst observatory.** With both present Xray-core still starts the
+  burst scheduler, whose results nothing reads (`burstobserver.go` lines
+  68-81). xray-rust validates it, warns, and sends no ping.
+- **Failures of real traffic.** `observatory` probes an outbound again within
+  seconds when a flow fails to open through it; `burstObservatory` does not.
+  Nothing follows those failures while it runs, so an outbound's window stays
+  its last `sampling` scheduled pings, as in `healthping_result.go`, and a
+  dead server is left when its pings say so. With both configured,
+  `observatory` governs and its re-probes apply.
+- **Upper bounds.** Xray-core has none (`healthping.go` lines 66-79).
+  xray-rust lowers `interval` above `24h`, `sampling` above 100 and `timeout`
+  above `60s` to those values with a warning. They bound an outbound's window
+  and the pings scheduled for one period.
+- **Method.** Xray-core accepts any string and, when `net/http` refuses it,
+  fails every ping (`ping.go` line 61). xray-rust refuses a method that is
+  not an HTTP token when it reads the configuration.
+- **URLs.** A URL the probe cannot request (another scheme, user info, an IPv6
+  literal) fails every ping in Xray-core and is refused by `Core::new` here.
+- **Concurrency.** Xray-core fires every timer on its own goroutine
+  (`healthping.go` line 186). xray-rust runs at most four pings at once, as
+  its `observatory` does; a ping whose turn comes late leaves late, and one
+  not sent by the end of the period is dropped.
+- **No network.** After a failed connectivity check Xray-core keeps sending
+  every scheduled ping, and a connectivity request after each (`healthping.go`
+  lines 190-203). xray-rust holds the scheduled pings back and lets one
+  through after 5 seconds, then 10, doubling up to `interval`; a ping that
+  produces a sample, success or counted failure, resumes the schedule. Nothing
+  is recorded meanwhile, as in Xray-core, and samples expire as there.
+- **Network change.** Xray-core keeps balancing on samples of the network the
+  device left until the random schedule replaces them, up to two periods
+  (`healthping.go` lines 241-248). When the host reports a change through
+  `rebind_quic`, xray-rust starts a new period, pings every subject 1 to 3
+  seconds later, and lets an outbound's first sample on the new network
+  replace its window. Old samples drive selection only until then.
+- **Expiry.** Xray-core ages samples out when a strategy reads them
+  (`healthping_result.go` line 91). xray-rust does at every recorded sample
+  of that outbound, at the start of a period and at every failed connectivity
+  check, so an outbound that stopped being pinged can stay alive up to one
+  period longer.
+- **Resolution.** Statistics are kept in milliseconds, as for `observatory`;
+  Xray-core compares nanoseconds. A ping stops at the status line, so a `GET`
+  does not time the body (`ping.go` lines 72-77).
+
+Not done: re-probing a dead outbound sooner than the schedule, limiting
+subjects to the members of a balancer, and counting real dial failures as
+samples. Each would change what a window of `sampling` pings means to
+`leastLoad`.
 
 ## XHTTP HTTP/2 connection preface
 

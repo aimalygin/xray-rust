@@ -45,6 +45,7 @@ fn runtime_config() -> CoreConfig {
                 udp_realm: None,
                 udp_xicmp: None,
                 udp_salamander: None,
+                raw_http_header: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -66,6 +67,7 @@ fn runtime_config() -> CoreConfig {
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -136,6 +138,7 @@ async fn core_selector_override_is_available_before_and_during_runtime() {
             udp_realm: None,
             udp_xicmp: None,
             udp_salamander: None,
+            raw_http_header: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,

@@ -25,7 +25,12 @@ const MAX_GEODATA_ENTRY_SIZE: usize = 32 * 1024 * 1024;
 const MAX_GEODATA_INDEX_ENTRIES: usize = 65_536;
 const MAX_GEODATA_INDEX_CODE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_GEODATA_CODE_SIZE: usize = 256;
-const MAX_GEODATA_DOMAINS: usize = 200_000;
+/// Domains in one selected entry. While an entry is compiled it takes about
+/// 70 bytes a domain, nearly three times what it keeps, so this limit bounds
+/// the peak of a load at some 17 MB, where the configuration's domain budget
+/// bounds what stays. The largest entry known, Loyalsoldier's
+/// `category-ads-all`, passed 200,000 in 2026.
+const MAX_GEODATA_DOMAINS: usize = 250_000;
 const MAX_GEODATA_DOMAIN_ATTRIBUTES: usize = 400_000;
 const MAX_GEODATA_DOMAIN_VALUE_SIZE: usize = 4 * 1024;
 const MAX_GEODATA_ATTRIBUTE_SIZE: usize = 1024;
@@ -309,9 +314,11 @@ impl GeodataLoader {
                 file_name: file_name.to_owned(),
                 code: code.to_owned(),
             })?;
+        // The file is sound when only one entry is over a limit, so the
+        // message names that entry.
         validate_body(&body).map_err(|message| GeodataError::InvalidFile {
             path: path.clone(),
-            message,
+            message: format!("entry `{code}`: {message}"),
         })?;
         Ok((body, path))
     }
@@ -1729,6 +1736,23 @@ mod tests {
         let error = validate_geo_site_body(&body).unwrap_err();
 
         assert!(error.contains("domains"));
+    }
+
+    /// An entry may hold 250,000 domains and no more, whatever room the
+    /// configuration's budget has left.
+    #[test]
+    fn geosite_entry_holds_a_quarter_of_a_million_domains() {
+        const _: () = assert!(MAX_GEODATA_DOMAINS < crate::MAX_CONFIG_DOMAIN_MATCHERS);
+        let mut body = vec![0x0a, 0x04];
+        body.extend_from_slice(b"TEST");
+        for _ in 0..MAX_GEODATA_DOMAINS {
+            body.extend_from_slice(&[0x12, 0x00]);
+        }
+        validate_geo_site_body(&body).expect("an entry of exactly the budget");
+
+        body.extend_from_slice(&[0x12, 0x00]);
+        let error = validate_geo_site_body(&body).unwrap_err();
+        assert_eq!(error, "geosite contains more than 250000 domains");
     }
 
     fn private_cache() -> Arc<GeodataCache> {

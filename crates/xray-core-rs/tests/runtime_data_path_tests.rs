@@ -166,6 +166,7 @@ fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> Ou
             udp_realm: None,
             udp_xicmp: None,
             udp_salamander: None,
+            raw_http_header: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -205,6 +206,7 @@ fn freedom_outbound() -> OutboundConfig {
             udp_realm: None,
             udp_xicmp: None,
             udp_salamander: None,
+            raw_http_header: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -232,6 +234,7 @@ fn dns_outbound(settings: DnsOutboundSettings) -> OutboundConfig {
             udp_realm: None,
             udp_xicmp: None,
             udp_salamander: None,
+            raw_http_header: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -274,6 +277,7 @@ fn config_with_outbound(outbound: OutboundConfig) -> CoreConfig {
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -499,6 +503,7 @@ fn runtime_config_with_freedom_outbound() -> CoreConfig {
         default_outbound_tag: Some("direct".to_owned()),
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -546,6 +551,7 @@ fn runtime_tun_config_with_freedom_outbound() -> CoreConfig {
         default_outbound_tag: Some("direct".to_owned()),
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -606,6 +612,7 @@ fn runtime_listener_config_with_dns_outbound(
             ..RoutingConfig::default()
         },
         observatory: None,
+        burst_observatory: None,
         dns: DnsConfig::default(),
         policy: PolicyConfig::default(),
     }
@@ -647,6 +654,7 @@ fn runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> Co
             ..Default::default()
         },
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -820,6 +828,7 @@ fn runtime_tun_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -844,6 +853,7 @@ fn runtime_socks_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig 
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -897,6 +907,7 @@ fn runtime_tun_config_with_tls_vision_vless_domain_server(
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -927,6 +938,7 @@ fn runtime_tun_config_with_reality_vision_vless_server(port: u16) -> CoreConfig 
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -980,6 +992,7 @@ fn runtime_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreCo
             ..Default::default()
         },
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1024,6 +1037,7 @@ fn runtime_config_with_domain_routed_freedom_outbound(unused_proxy_port: u16) ->
             ..Default::default()
         },
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1096,6 +1110,7 @@ fn runtime_config_with_ip_routed_freedom_outbound(unused_proxy_port: u16) -> Cor
             ..Default::default()
         },
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1144,6 +1159,7 @@ fn runtime_config_with_ip_if_non_match_routed_freedom_outbound(
             domain_strategy: RoutingDomainStrategy::IpIfNonMatch,
         },
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1168,6 +1184,7 @@ fn runtime_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1192,6 +1209,7 @@ fn runtime_http_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1216,6 +1234,7 @@ fn runtime_config_with_vless_domain_server(domain: &str, port: u16) -> CoreConfi
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1251,6 +1270,7 @@ fn runtime_config_with_tls_vless_domain_server(
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1384,6 +1404,7 @@ fn selects_default_outbound_tag_when_present() {
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     };
@@ -3135,6 +3156,64 @@ async fn tun_dns_proxy_forwards_udp_wire_response_from_local_anchor() {
     timeout(Duration::from_secs(2), run_tun_dns_proxy_udp_scenario())
         .await
         .unwrap();
+}
+
+/// Xray-core's `localhost` server answers addresses only. Another question
+/// must reach the next upstream, not end the proxy's walk with an empty
+/// NOERROR from the platform resolver.
+#[tokio::test]
+async fn tun_dns_proxy_asks_the_next_upstream_what_localhost_cannot_answer() {
+    timeout(Duration::from_secs(2), async {
+        // The trailing bytes tell the upstream's answer from an empty one.
+        let (upstream, upstream_handle) = spawn_udp_dns_responder(4).await;
+        let mut config = runtime_tun_config_with_freedom_outbound();
+        config.dns.servers = vec![
+            tagged_dns_server_with_transport(
+                DnsServerEndpoint::Domain {
+                    domain: "localhost".to_owned(),
+                    port: 53,
+                },
+                "dns-local",
+                xray_config::DnsServerTransport::System,
+            ),
+            DnsServerConfig::Ip(upstream),
+        ];
+        let mut core = Core::new(config).unwrap();
+        core.start().await.unwrap();
+
+        let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+        let anchor = Ipv4Addr::new(198, 18, 0, 1);
+        let client_port = 53_033;
+        // SRV, which the platform resolver cannot answer.
+        let query = build_dns_query(0x2233, "_sip._udp.proxy.example", 33, 1);
+        let mut expected = query.clone();
+        expected[2..4].copy_from_slice(&0x8180_u16.to_be_bytes());
+        expected.extend_from_slice(&[0x5a; 4]);
+        core.tun()
+            .push_inbound(Bytes::from(ipv4_udp_packet(
+                client_addr,
+                client_port,
+                anchor,
+                53,
+                &query,
+            )))
+            .await
+            .unwrap();
+
+        let reply = poll_tun_outbound_until(core.tun(), |packet| {
+            ipv4_udp_payload(packet) == Some(expected.as_slice())
+        })
+        .await;
+        assert_ipv4_udp_packet(&reply, anchor, 53, client_addr, client_port, &expected);
+
+        core.stop().await.unwrap();
+        timeout(Duration::from_secs(1), upstream_handle)
+            .await
+            .unwrap()
+            .unwrap();
+    })
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

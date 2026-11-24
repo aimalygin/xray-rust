@@ -691,6 +691,16 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     /// not callback execution. Apple does not supply an Android-style UID lookup.
     open func tunAdmissionOptions() throws -> XrayTunAdmissionOptions? { nil }
 
+    /// Answers an app message that the provider does not handle itself.
+    ///
+    /// Called from `handleAppMessage` with the active data-path core, after the
+    /// built-in close-connections request and before the stats request. The
+    /// message is the app's bytes as sent and need not be text. Return the
+    /// response data, or `nil` to fall through to the built-in handling (an
+    /// unknown message then gets no response). Keep the work short, and do
+    /// not start, stop or replace `core` from here.
+    open func handleCustomAppMessage(_ messageData: Data, core: XrayCore) -> Data? { nil }
+
     static func resolvingHostOptions(
         _ config: ResolvedConfig,
         hysteriaStreamLimits: () throws -> XrayHysteriaStreamLimits?,
@@ -1041,13 +1051,15 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             "PacketTunnelProvider",
             "handleAppMessage bytes=\(messageData.count)"
         )
-        guard let request = String(data: messageData, encoding: .utf8),
-              let runtime = lifecycle.active()
-        else {
+        guard let runtime = lifecycle.active() else {
             XrayAppleLog.info("PacketTunnelProvider", "App message ignored or stats unavailable")
             completionHandler?(nil)
             return
         }
+        // The built-in requests are text. A message that is not text, as one
+        // of a subclass's own binary protocol, names none of them and still
+        // reaches `handleCustomAppMessage`.
+        let request = String(data: messageData, encoding: .utf8)
         let core = runtime.core
 
 #if DEBUG
@@ -1101,6 +1113,12 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 )
                 completionHandler?(nil)
             }
+            return
+        }
+
+        if request != XrayTunnelProviderMessage.statsRequest,
+           let response = handleCustomAppMessage(messageData, core: core) {
+            completionHandler?(response)
             return
         }
 
@@ -1466,10 +1484,11 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
                 }
                 switch upstream {
-                case .ip:
+                case .ip, .xrayInternal:
                     // DNS endpoints never become carrier exclusions. Routed
                     // mode uses the Xray router; local mode relies on the
-                    // provider-process Network Extension policy.
+                    // provider-process Network Extension policy. `localhost`
+                    // and `fakedns` have no endpoint at all.
                     continue
                 case let .domain(domain, port, rejectsTunnelOwnedAddress):
                     appendBootstrapDomain(
@@ -1689,12 +1708,24 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     private enum DNSBootstrapUpstream: Equatable {
         case ip(String, port: UInt16)
         case domain(String, port: UInt16, rejectsTunnelOwnedAddress: Bool)
+        /// Xray-core's `localhost`, which the core answers from its own
+        /// bootstrap resolver, or `fakedns`, which it maps onto fake-IP:
+        /// no wire server, so nothing to resolve before the tunnel starts.
+        case xrayInternal
+    }
+
+    private static func isXrayInternalDNSServer(_ address: String) -> Bool {
+        address.caseInsensitiveCompare("localhost") == .orderedSame ||
+            address.caseInsensitiveCompare("fakedns") == .orderedSame
     }
 
     private static func dnsBootstrapUpstream(from rawServer: Any) -> DNSBootstrapUpstream? {
         if let server = rawServer as? String {
             if hasDNSTCPURLScheme(server) {
                 return dnsTCPBootstrapUpstream(from: server)
+            }
+            if isXrayInternalDNSServer(server) {
+                return .xrayInternal
             }
             guard server == server.trimmingCharacters(in: .whitespacesAndNewlines),
                   isNonzeroDNSServer(server),
@@ -1749,9 +1780,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             }
             return .ip(canonicalAddress, port: port)
         }
-        guard address.caseInsensitiveCompare("localhost") != .orderedSame,
-              address.caseInsensitiveCompare("fakedns") != .orderedSame,
-              !address.contains(":"),
+        if isXrayInternalDNSServer(address) {
+            return .xrayInternal
+        }
+        guard !address.contains(":"),
               let domain = canonicalDNSBootstrapDomain(address)
         else {
             return nil

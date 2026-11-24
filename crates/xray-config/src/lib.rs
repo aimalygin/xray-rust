@@ -31,19 +31,20 @@ pub use model::{
     KcpMask, KcpSettings, LoopbackOutboundSettings, MuxSettings, MuxUdp443, Network,
     ObservatoryConfig, OutboundConfig, OutboundProtocol, OutboundProxySettings, OutboundSettings,
     PolicyConfig, PolicyLevelConfig, PolicySystemConfig, ProxyProtocolVersion, QuicBbrProfile,
-    QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings, RealitySettings,
-    RealityShortId, RegexMatcher, RouteContext, RoutingAttributes, RoutingBalancer,
-    RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy, RoutingLeastLoadCost,
-    RoutingLeastLoadSettings, RoutingOrigin, RoutingPortRange, RoutingRule, RoutingRuleTarget,
-    RoutingUsers, Shadowsocks2022OutboundSettings, SniffingDestination, SocketOptions,
-    StreamSecurity, StreamSettings, StreamTransport, SudokuMask, TargetAddr, TcpFragmentSettings,
-    TlsSettings, TproxyMode, TrojanOutboundSettings, VlessOutboundSettings, VlessReverseSettings,
-    VlessUser, VmessOutboundSettings, WebSocketSettings, WireguardOutboundSettings,
-    WireguardPeerSettings, XhttpDownloadSettings, XhttpMode, XhttpPaddingMethod,
-    XhttpPaddingPlacement, XhttpPlacement, XhttpRange, XhttpSettings, XhttpUplinkDataPlacement,
-    XhttpXmuxSettings, DEFAULT_DNS_POLICY_KEY, DEFAULT_DNS_SERVER_TIMEOUT_MS,
-    DEFAULT_OBSERVATORY_PROBE_INTERVAL, DEFAULT_OBSERVATORY_PROBE_URL, LOCAL_OS,
-    MAX_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
+    QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings, RawHttpHeader,
+    RealitySettings, RealityShortId, RegexMatcher, RouteContext, RoutingAttributes,
+    RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
+    RoutingLeastLoadCost, RoutingLeastLoadSettings, RoutingOrigin, RoutingPortRange, RoutingRule,
+    RoutingRuleTarget, RoutingUsers, Shadowsocks2022OutboundSettings, SniffingDestination,
+    SocketOptions, StreamSecurity, StreamSettings, StreamTransport, SudokuMask, TargetAddr,
+    TcpFragmentSettings, TlsSettings, TproxyMode, TrojanOutboundSettings, VlessOutboundSettings,
+    VlessReverseSettings, VlessUser, VmessOutboundSettings, WebSocketSettings,
+    WireguardOutboundSettings, WireguardPeerSettings, XhttpDownloadSettings, XhttpMode,
+    XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange, XhttpSettings,
+    XhttpUplinkDataPlacement, XhttpXmuxSettings, DEFAULT_DNS_POLICY_KEY,
+    DEFAULT_DNS_SERVER_TIMEOUT_MS, DEFAULT_OBSERVATORY_PROBE_INTERVAL,
+    DEFAULT_OBSERVATORY_PROBE_URL, LOCAL_OS, MAX_DNS_SERVER_TIMEOUT_MS,
+    MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
 };
 pub use model::{xdrive_default_xmux, XdriveS3Settings, XdriveService, XdriveSettings};
 pub use model::{
@@ -52,6 +53,13 @@ pub use model::{
     SalamanderMask, SocksInboundSettings, SocksOutboundSettings, TproxySettings, UdpNoiseItem,
     UdpNoiseSettings, UdpSudoku, XdnsDomain, XdnsMask, XdnsProtocol, XdnsResolver, XicmpMask,
     XmcMask, XmcProfile,
+};
+pub use model::{
+    BurstObservatoryConfig, BurstPingConfig, DEFAULT_BURST_OBSERVATORY_DESTINATION,
+    DEFAULT_BURST_OBSERVATORY_HTTP_METHOD, DEFAULT_BURST_OBSERVATORY_INTERVAL,
+    DEFAULT_BURST_OBSERVATORY_SAMPLING, DEFAULT_BURST_OBSERVATORY_TIMEOUT,
+    MAX_BURST_OBSERVATORY_INTERVAL, MAX_BURST_OBSERVATORY_SAMPLING, MAX_BURST_OBSERVATORY_TIMEOUT,
+    MIN_BURST_OBSERVATORY_INTERVAL,
 };
 pub use model::{MasqueOutboundSettings, MasqueSettings, MasqueWarpSettings, MASQUE_DEFAULT_XMUX};
 pub use parser::{

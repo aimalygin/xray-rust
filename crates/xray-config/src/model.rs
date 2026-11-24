@@ -49,6 +49,9 @@ pub struct CoreConfig {
     pub default_outbound_tag: Option<String>,
     pub routing: RoutingConfig,
     pub observatory: Option<ObservatoryConfig>,
+    /// Xray's `burstObservatory`. When [`CoreConfig::observatory`] is also
+    /// present that one drives selection, as in Xray-core, and this is unused.
+    pub burst_observatory: Option<BurstObservatoryConfig>,
     pub dns: DnsConfig,
     pub policy: PolicyConfig,
 }
@@ -64,6 +67,83 @@ pub struct ObservatoryConfig {
     pub probe_url: String,
     pub probe_interval: Duration,
     pub enable_concurrency: bool,
+}
+
+/// `pingConfig.destination` of a burst observatory that names none.
+pub const DEFAULT_BURST_OBSERVATORY_DESTINATION: &str =
+    "https://connectivitycheck.gstatic.com/generate_204";
+/// `pingConfig.interval` of a burst observatory that names none: the average
+/// time between two pings of one outbound.
+pub const DEFAULT_BURST_OBSERVATORY_INTERVAL: Duration = Duration::from_secs(60);
+/// Xray-core raises a shorter nonzero `pingConfig.interval` to this.
+pub const MIN_BURST_OBSERVATORY_INTERVAL: Duration = Duration::from_secs(10);
+/// A longer `pingConfig.interval` is lowered to this, which keeps the
+/// sampling period and the validity of a sample well inside a `Duration`.
+pub const MAX_BURST_OBSERVATORY_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+/// `pingConfig.sampling` of a burst observatory that names none.
+pub const DEFAULT_BURST_OBSERVATORY_SAMPLING: u32 = 10;
+/// A larger `pingConfig.sampling` is lowered to this. It bounds the memory of
+/// one outbound's sample window and the pings scheduled for one period.
+pub const MAX_BURST_OBSERVATORY_SAMPLING: u32 = 100;
+/// `pingConfig.timeout` of a burst observatory that names none.
+pub const DEFAULT_BURST_OBSERVATORY_TIMEOUT: Duration = Duration::from_secs(5);
+/// A longer `pingConfig.timeout` is lowered to this, the bound of every
+/// outbound URL probe.
+pub const MAX_BURST_OBSERVATORY_TIMEOUT: Duration = Duration::from_secs(60);
+/// `pingConfig.httpMethod` of a burst observatory that names none.
+pub const DEFAULT_BURST_OBSERVATORY_HTTP_METHOD: &str = "HEAD";
+
+/// Xray's `burstObservatory`: outbound health from a window of pings spread
+/// at random over a sampling period.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BurstObservatoryConfig {
+    pub subject_selectors: Vec<String>,
+    pub ping: BurstPingConfig,
+}
+
+/// `burstObservatory.pingConfig` with Xray-core's defaults applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BurstPingConfig {
+    /// URL pinged through every observed outbound.
+    pub destination: String,
+    /// URL requested without any outbound after a failed ping. While it also
+    /// fails the network is taken to be down and the ping is not counted.
+    pub connectivity: Option<String>,
+    /// Average time between two pings of one outbound.
+    pub interval: Duration,
+    /// Pings of one outbound per period and the size of its sample window.
+    pub sampling: u32,
+    pub timeout: Duration,
+    /// Request method, sent as written.
+    pub http_method: String,
+}
+
+impl BurstPingConfig {
+    /// The time over which `sampling` pings of one outbound are spread.
+    #[must_use]
+    pub fn sampling_period(&self) -> Duration {
+        self.interval.saturating_mul(self.sampling)
+    }
+
+    /// How long a sample counts. Xray-core keeps it for two periods because
+    /// pings fall anywhere within one.
+    #[must_use]
+    pub fn sample_validity(&self) -> Duration {
+        self.sampling_period().saturating_mul(2)
+    }
+}
+
+impl Default for BurstPingConfig {
+    fn default() -> Self {
+        Self {
+            destination: DEFAULT_BURST_OBSERVATORY_DESTINATION.to_owned(),
+            connectivity: None,
+            interval: DEFAULT_BURST_OBSERVATORY_INTERVAL,
+            sampling: DEFAULT_BURST_OBSERVATORY_SAMPLING,
+            timeout: DEFAULT_BURST_OBSERVATORY_TIMEOUT,
+            http_method: DEFAULT_BURST_OBSERVATORY_HTTP_METHOD.to_owned(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -184,6 +264,10 @@ pub enum DnsServerTransport {
     HttpsLocal,
     /// DNS over QUIC dialed directly through the local network stack.
     QuicLocal,
+    /// Xray-core's `localhost`: the platform resolver the core bootstraps
+    /// with, asked directly rather than over the wire. Its endpoint is the
+    /// placeholder `localhost:53`, which nothing dials.
+    System,
 }
 
 pub const DEFAULT_DNS_SERVER_TIMEOUT_MS: u64 = 4_000;
@@ -1867,6 +1951,8 @@ pub struct StreamSettings {
     /// The `header-custom` TCP mask: the handshake every TCP carrier sends
     /// and checks before anything else.
     pub tcp_header_custom: Option<HeaderCustomTcp>,
+    /// RAW's `http` header obfuscation; only the raw transport has one.
+    pub raw_http_header: Option<RawHttpHeader>,
     /// The `header-custom` UDP mask, at its place among the stream's UDP
     /// masks.
     pub udp_header_custom: Option<HeaderCustomUdp>,
@@ -1893,6 +1979,25 @@ pub struct StreamSettings {
     /// [`HysteriaSettings`].
     pub udp_salamander: Option<SalamanderMask>,
     pub socket_options: Option<SocketOptions>,
+}
+
+/// RAW's `header` of type `http`, Xray-core's HTTP header obfuscation: each
+/// connection sends a request head before its first bytes and drops the
+/// server's response head before its first read, as
+/// `transport/internet/headers/http` does on the client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawHttpHeader {
+    /// `request.method`; `GET` when absent or empty.
+    pub method: String,
+    /// `request.version`; `1.1` when absent or empty.
+    pub version: String,
+    /// `request.path`, a `StringList` one entry of which each connection
+    /// draws; `/` when absent or empty.
+    pub paths: Vec<String>,
+    /// `request.headers` in the order Xray-core sends them, by name, each
+    /// with the values one is drawn from. `None` sends Xray-core's default
+    /// browser headers.
+    pub headers: Option<Vec<(String, Vec<String>)>>,
 }
 
 /// A `salamander` UDP mask: every datagram behind a random salt and XORed

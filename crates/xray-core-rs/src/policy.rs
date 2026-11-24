@@ -468,6 +468,7 @@ mod tests {
                     udp_realm: None,
                     udp_xicmp: None,
                     udp_salamander: None,
+                    raw_http_header: None,
                     udp_sudoku: None,
                     udp_noise: None,
                     socket_options: None,
@@ -477,6 +478,7 @@ mod tests {
             default_outbound_tag: Some("direct".to_owned()),
             routing: Default::default(),
             observatory: None,
+            burst_observatory: None,
             dns: Default::default(),
             policy: PolicyConfig {
                 levels: BTreeMap::from([(level, policy)]),

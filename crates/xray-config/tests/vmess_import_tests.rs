@@ -161,3 +161,38 @@ fn vmess_json_grpc_mode_and_header_type_name_the_rejected_field() {
         true
     );
 }
+/// Panels such as V2Board write `fp` on every base64 JSON link, also with
+/// `tls` empty. v2rayN builds TLS settings only for `tls` or `reality`, so
+/// the TLS fields of a plain link are ignored rather than refused.
+#[test]
+fn vmess_json_ignores_tls_fields_without_tls() {
+    for security in ["", "none"] {
+        let mut source = link();
+        for (k, v) in [
+            ("port", "80"),
+            ("scy", "auto"),
+            ("tls", security),
+            ("sni", "tls.example"),
+            ("alpn", "h2,http/1.1"),
+            ("fp", "chrome"),
+        ] {
+            source[k] = json!(v);
+        }
+        let text = format!("vmess://{}", STANDARD.encode(source.to_string()));
+        let profile = import_profile(ProfileFormat::Vmess, &text, None, &[]).unwrap();
+        let root: Value = serde_json::from_str(&profile.config_json).unwrap();
+        let stream = &root["outbounds"][0]["streamSettings"];
+        assert_eq!(stream["security"], "none");
+        assert!(stream.get("tlsSettings").is_none());
+        assert_eq!(stream["wsSettings"]["host"], "front.example");
+    }
+    let mut source = link();
+    source["fp"] = json!("chrome");
+    let text = format!("vmess://{}", STANDARD.encode(source.to_string()));
+    let profile = import_profile(ProfileFormat::Vmess, &text, None, &[]).unwrap();
+    let root: Value = serde_json::from_str(&profile.config_json).unwrap();
+    let tls = &root["outbounds"][0]["streamSettings"]["tlsSettings"];
+    assert_eq!(tls["serverName"], "tls.example");
+    assert_eq!(tls["fingerprint"], "chrome");
+    assert_eq!(tls["alpn"], json!(["http/1.1"]));
+}

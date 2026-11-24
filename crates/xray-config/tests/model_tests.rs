@@ -53,6 +53,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
             udp_realm: None,
             udp_xicmp: None,
             udp_salamander: None,
+            raw_http_header: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -88,6 +89,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     };
@@ -127,6 +129,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                 udp_realm: None,
                 udp_xicmp: None,
                 udp_salamander: None,
+                raw_http_header: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -148,6 +151,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     };
@@ -193,6 +197,7 @@ fn normalized_model_can_represent_freedom_outbound() {
             udp_realm: None,
             udp_xicmp: None,
             udp_salamander: None,
+            raw_http_header: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -314,6 +319,7 @@ fn normalized_model_uses_xray_happy_eyeballs_defaults() {
         udp_realm: None,
         udp_xicmp: None,
         udp_salamander: None,
+        raw_http_header: None,
         udp_sudoku: None,
         udp_noise: None,
         socket_options: Some(SocketOptions {

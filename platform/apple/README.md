@@ -133,6 +133,24 @@ additional packet-loop work. Explicit Hysteria2 limits accept 1...256 TCP and
 1...128 UDP (ABI 1.10+); admission requires ABI 1.11+. Neither changes the wire
 protocol or creates extra QUIC sessions.
 
+To answer app messages of its own, a subclass overrides
+`handleCustomAppMessage(_:core:)`. The provider calls it with the active
+data-path core for every message it does not handle itself (the built-in
+close-connections request is handled first, the stats request after), so a host
+can, for example, return the core's connection or accounting snapshot to its
+app. The message is the app's bytes as sent and need not be text. Return `nil`
+to fall through to the built-in handling. Keep the work short and do not start,
+stop or replace the core from the hook.
+
+```swift
+final class PacketTunnelProvider: XrayPacketTunnelProvider {
+    override func handleCustomAppMessage(_ messageData: Data, core: XrayCore) -> Data? {
+        guard messageData == Data("connections".utf8) else { return nil }
+        return try? JSONEncoder().encode(core.connectionSnapshot())
+    }
+}
+```
+
 Admission receives the original TCP/UDP tuple before routing/FakeDNS restoration.
 Its `@Sendable` callback runs concurrently on bounded native workers; keep it
 short, avoid capturing the provider strongly, and never invoke lifecycle methods
@@ -198,7 +216,8 @@ pinning a domain onto, a tunnel-owned address is rejected on every URL port;
 classic non-URL servers retain their legacy port-53 check.
 
 Fake-IP without `dns.servers` is accepted only when TUN domain traffic cannot
-select Freedom or WireGuard. Before applying Network Extension settings, the
+select Freedom or WireGuard. A `fakedns` entry in `dns.servers`, which the core
+maps onto fake-IP, counts as fake-IP here and not as an upstream. Before applying Network Extension settings, the
 provider rejects either protocol as the default or through a TUN-applicable
 rule that is not strictly IP-only. Balancer prefix candidates and `fallbackTag`
 are included in this check. A VLESS or Hysteria 2 default remains valid, as do
@@ -309,7 +328,13 @@ new VLESS URL is imported; choose `Config JSON` to disable the override.
 Before applying Network Extension DNS and routes, the provider bootstraps every
 domain VLESS, VMess, Trojan, Shadowsocks, SOCKS, HTTP, and Hysteria 2 server, every
 WireGuard peer endpoint host, and every domain-valued classic, TCP, DoT, DoH, or
-DoQ DNS endpoint. SOCKS and HTTP preparation supports both flat settings and the
+DoQ DNS endpoint. Xray-core's `localhost` and `fakedns` servers have no
+endpoint and need no bootstrap: the core answers `localhost` from its own
+bootstrap resolver and maps `fakedns` onto fake-IP. Inside the tunnel that
+resolver answers from `dns.hosts` alone, since the platform resolver would ask
+the tunnel itself, so `localhost` is no upstream: the DNS preflight refuses a
+profile whose only servers are `localhost`, and beside `fakedns` it leaves
+Freedom and WireGuard nothing to resolve restored names with. SOCKS and HTTP preparation supports both flat settings and the
 legacy single-entry `servers` form; it resolves only the proxy endpoint,
 leaving destination-domain resolution to the proxy. An IP-literal stream URL needs
 no system lookup. URL modes use their

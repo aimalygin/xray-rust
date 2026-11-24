@@ -58,7 +58,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::task::{Context, Poll};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use rand::Rng;
@@ -101,7 +101,14 @@ const VISION_UDP443_FLOW: &str = "xtls-rprx-vision-udp443";
 const DNS_OUTBOUND_HARD_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 const LEAST_LOAD_HEALTH_WINDOW: usize = 16;
 const COST_MILLIONTHS_ONE: u64 = 1_000_000;
-const LEAST_LOAD_RTT_BITS: u32 = 27;
+/// Bits of each sample count in the packed window metrics. A burst
+/// observatory's `sampling` is bounded by `MAX_BURST_OBSERVATORY_SAMPLING`,
+/// which fits.
+const LEAST_LOAD_COUNT_BITS: u32 = 8;
+const LEAST_LOAD_COUNT_MAX: u64 = (1 << LEAST_LOAD_COUNT_BITS) - 1;
+/// Bits of the average and of the deviation, in milliseconds: over four
+/// hours, where a probe is bounded by a minute.
+const LEAST_LOAD_RTT_BITS: u32 = 24;
 const LEAST_LOAD_RTT_MAX: u64 = (1 << LEAST_LOAD_RTT_BITS) - 1;
 static NEXT_DNS_OUTBOUND_RUNTIME_IDENTITY: AtomicU64 = AtomicU64::new(1);
 static NEXT_OUTBOUND_GRAPH_RUNTIME_IDENTITY: AtomicU64 = AtomicU64::new(1);
@@ -421,6 +428,8 @@ pub enum TcpOutbound {
 pub(crate) struct SelectedTcpOutbound {
     pub(crate) outbound: TcpOutbound,
     pub(crate) tag: Option<String>,
+    /// The leaf the flow goes through, to report a failed open by.
+    pub(crate) node: OutboundNodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -484,6 +493,8 @@ pub(crate) enum TcpSessionOutbound {
 pub(crate) struct SelectedTcpSessionOutbound {
     pub(crate) outbound: TcpSessionOutbound,
     pub(crate) tag: Option<String>,
+    /// The leaf the flow goes through, to report a failed open by.
+    pub(crate) node: OutboundNodeId,
 }
 
 /// One configured handler selected for a UDP session. Keeping this combined
@@ -501,6 +512,8 @@ pub(crate) enum UdpSessionOutbound {
 pub(crate) struct SelectedUdpSessionOutbound {
     pub(crate) outbound: UdpSessionOutbound,
     pub(crate) tag: Option<String>,
+    /// The leaf the flow goes through, to report a failed open by.
+    pub(crate) node: OutboundNodeId,
 }
 
 impl DnsOutbound {
@@ -833,6 +846,23 @@ impl FreedomOutbound {
             happy_eyeballs: happy_eyeballs_config(stream),
             ..Self::for_udp(settings, stream)?
         })
+    }
+
+    /// Freedom with no settings: the device's own network, protected from
+    /// the tunnel like every other outbound socket.
+    pub(crate) fn direct() -> Self {
+        Self {
+            fragment: None,
+            happy_eyeballs: None,
+            socket_options: None,
+            domain_strategy: DomainStrategy::default(),
+            redirect: None,
+            user_level: 0,
+            proxy_protocol: None,
+            final_rules: None,
+            noises: None,
+            udp_masks: None,
+        }
     }
 
     /// UDP reads neither the fragment mask nor Happy Eyeballs.
@@ -2182,39 +2212,64 @@ struct OutboundHealthAtomicState {
     history: Mutex<OutboundHealthWindow>,
 }
 
-#[derive(Debug)]
-struct OutboundHealthWindow {
-    samples: [Option<u64>; LEAST_LOAD_HEALTH_WINDOW],
-    next: usize,
-    len: usize,
+/// How a burst observatory's samples become an outbound's health, as
+/// `app/observatory/burst/healthping_result.go` computes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BurstHealthPolicy {
+    /// Samples kept per outbound: `pingConfig.sampling`.
+    pub(crate) sampling: usize,
+    /// A sample older than this no longer counts.
+    pub(crate) validity: Duration,
 }
 
-impl Default for OutboundHealthWindow {
-    fn default() -> Self {
-        Self {
-            samples: [None; LEAST_LOAD_HEALTH_WINDOW],
-            next: 0,
-            len: 0,
-        }
-    }
+#[derive(Debug, Clone, Copy)]
+struct OutboundHealthSample {
+    /// `None` is a failed probe.
+    delay_ms: Option<u64>,
+    at: Instant,
+}
+
+/// The latest probe outcomes of one outbound, oldest overwritten first.
+#[derive(Debug, Default)]
+struct OutboundHealthWindow {
+    samples: Vec<OutboundHealthSample>,
+    next: usize,
+    /// The network epoch the samples were taken in.
+    epoch: u64,
 }
 
 impl OutboundHealthWindow {
-    fn record(&mut self, delay_ms: Option<u64>) -> OutboundHealthWindowMetrics {
-        self.samples[self.next] = delay_ms;
-        self.next = (self.next + 1) % LEAST_LOAD_HEALTH_WINDOW;
-        self.len = (self.len + 1).min(LEAST_LOAD_HEALTH_WINDOW);
+    fn record(&mut self, sample: OutboundHealthSample, capacity: usize, epoch: u64) {
+        if self.epoch != epoch {
+            // Samples of the network the device has left describe another path.
+            self.samples.clear();
+            self.next = 0;
+            self.epoch = epoch;
+        }
+        match self.samples.get_mut(self.next) {
+            Some(slot) => *slot = sample,
+            None => self.samples.push(sample),
+        }
+        self.next = (self.next + 1) % capacity.max(1);
+    }
 
-        let samples = &self.samples[..self.len];
-        let successes = samples
-            .iter()
-            .filter_map(|sample| *sample)
+    fn metrics(
+        &self,
+        burst: Option<BurstHealthPolicy>,
+        now: Instant,
+    ) -> OutboundHealthWindowMetrics {
+        let valid = self.samples.iter().filter(|sample| {
+            burst.is_none_or(|burst| now.saturating_duration_since(sample.at) <= burst.validity)
+        });
+        let sample_count = valid.clone().count() as u64;
+        let successes = valid
+            .filter_map(|sample| sample.delay_ms)
             .collect::<Vec<_>>();
         let success_count = successes.len() as u64;
-        let failure_count = self.len as u64 - success_count;
+        let failure_count = sample_count - success_count;
         if successes.is_empty() {
             return OutboundHealthWindowMetrics {
-                sample_count: self.len as u64,
+                sample_count,
                 failure_count,
                 average_ms: u64::MAX,
                 deviation_ms: u64::MAX,
@@ -2224,21 +2279,29 @@ impl OutboundHealthWindow {
             .iter()
             .fold(0u128, |sum, sample| sum + u128::from(*sample));
         let average = sum / u128::from(success_count);
-        let variance = successes.iter().fold(0u128, |sum, sample| {
-            let sample = u128::from(*sample);
-            let difference = sample.abs_diff(average);
-            sum.saturating_add(difference.saturating_mul(difference))
-        }) / u128::from(success_count);
+        let deviation = if burst.is_some() && success_count < 2 {
+            // Xray-core's burst statistics take half the average for the
+            // deviation of a single sample, or a node pinged once would
+            // always rank before one pinged twice.
+            average / 2
+        } else {
+            let variance = successes.iter().fold(0u128, |sum, sample| {
+                let sample = u128::from(*sample);
+                let difference = sample.abs_diff(average);
+                sum.saturating_add(difference.saturating_mul(difference))
+            }) / u128::from(success_count);
+            variance.isqrt()
+        };
         OutboundHealthWindowMetrics {
-            sample_count: self.len as u64,
+            sample_count,
             failure_count,
             average_ms: u64::try_from(average).unwrap_or(u64::MAX),
-            deviation_ms: u64::try_from(variance.isqrt()).unwrap_or(u64::MAX),
+            deviation_ms: u64::try_from(deviation).unwrap_or(u64::MAX),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct OutboundHealthWindowMetrics {
     sample_count: u64,
     failure_count: u64,
@@ -2250,19 +2313,40 @@ impl OutboundHealthWindowMetrics {
     fn encode(self) -> u64 {
         let average = self.average_ms.min(LEAST_LOAD_RTT_MAX);
         let deviation = self.deviation_ms.min(LEAST_LOAD_RTT_MAX);
-        self.sample_count.min(31)
-            | (self.failure_count.min(31) << 5)
-            | (average << 10)
-            | (deviation << (10 + LEAST_LOAD_RTT_BITS))
+        self.sample_count.min(LEAST_LOAD_COUNT_MAX)
+            | (self.failure_count.min(LEAST_LOAD_COUNT_MAX) << LEAST_LOAD_COUNT_BITS)
+            | (average << (2 * LEAST_LOAD_COUNT_BITS))
+            | (deviation << (2 * LEAST_LOAD_COUNT_BITS + LEAST_LOAD_RTT_BITS))
     }
 
     fn decode(value: u64) -> Self {
         Self {
-            sample_count: value & 31,
-            failure_count: (value >> 5) & 31,
-            average_ms: (value >> 10) & LEAST_LOAD_RTT_MAX,
-            deviation_ms: (value >> (10 + LEAST_LOAD_RTT_BITS)) & LEAST_LOAD_RTT_MAX,
+            sample_count: value & LEAST_LOAD_COUNT_MAX,
+            failure_count: (value >> LEAST_LOAD_COUNT_BITS) & LEAST_LOAD_COUNT_MAX,
+            average_ms: (value >> (2 * LEAST_LOAD_COUNT_BITS)) & LEAST_LOAD_RTT_MAX,
+            deviation_ms: (value >> (2 * LEAST_LOAD_COUNT_BITS + LEAST_LOAD_RTT_BITS))
+                & LEAST_LOAD_RTT_MAX,
         }
+    }
+
+    fn has_success(self) -> bool {
+        self.failure_count < self.sample_count
+    }
+}
+
+impl OutboundHealthAtomicState {
+    /// Burst health: alive while the window holds a success, with the
+    /// window's average as the delay (`burstobserver.go` `createResult`).
+    fn store_window_health(&self, metrics: OutboundHealthWindowMetrics) {
+        self.least_load_metrics
+            .store(metrics.encode(), Ordering::Release);
+        let (state, delay_ms) = if metrics.has_success() {
+            (OutboundHealthState::HEALTHY, metrics.average_ms)
+        } else {
+            (OutboundHealthState::UNHEALTHY, u64::MAX)
+        };
+        self.delay_ms.store(delay_ms, Ordering::Release);
+        self.state.store(state, Ordering::Release);
     }
 }
 
@@ -2281,16 +2365,13 @@ impl Default for OutboundHealthAtomicState {
     }
 }
 
-impl OutboundHealthAtomicState {
-    fn record_sample(&self, delay_ms: Option<u64>) {
-        let metrics = self
-            .history
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .record(delay_ms);
-        self.least_load_metrics
-            .store(metrics.encode(), Ordering::Release);
-    }
+/// Whether a probe result is also a sample of the `leastLoad` window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HealthSample {
+    /// A probe of the scheduled round, evenly spaced: one of the samples.
+    Window,
+    /// Any other probe: it moves the health state alone.
+    StateOnly,
 }
 
 /// Small mutable layer over an immutable outbound graph.
@@ -2303,6 +2384,13 @@ pub struct OutboundSelectionOverlay {
     graph: Arc<OutboundGraph>,
     groups: Box<[OutboundSelectorGroupState]>,
     health: Box<[OutboundHealthAtomicState]>,
+    /// Failures of real traffic, from the flows to the observatory.
+    failure_reports: crate::health::FailureReports,
+    /// Set once, before a burst observatory records its first sample.
+    burst_health: OnceLock<BurstHealthPolicy>,
+    /// Advanced when the device changes network. A window drops the samples
+    /// of an earlier epoch when it records the first one of the current.
+    health_epoch: AtomicU64,
     revision: AtomicU64,
     update_lock: Mutex<()>,
 }
@@ -2320,10 +2408,14 @@ impl OutboundSelectionOverlay {
             .map(|_| OutboundHealthAtomicState::default())
             .collect::<Vec<_>>()
             .into_boxed_slice();
+        let failure_reports = crate::health::FailureReports::new(graph.leaf_count);
         Self {
             graph,
             groups,
             health,
+            failure_reports,
+            burst_health: OnceLock::new(),
+            health_epoch: AtomicU64::new(0),
             revision: AtomicU64::new(0),
             update_lock: Mutex::new(()),
         }
@@ -2437,45 +2529,97 @@ impl OutboundSelectionOverlay {
         }
     }
 
+    /// Makes every later probe outcome count as a burst observatory's sample:
+    /// an outbound is alive while its window holds a success, and its delay
+    /// is the window's average. The first policy set stays.
+    pub(crate) fn use_burst_health(&self, policy: BurstHealthPolicy) {
+        let _ = self.burst_health.set(policy);
+    }
+
+    /// The device changed network: samples taken so far describe another
+    /// path. They keep driving selection until an outbound is probed again,
+    /// and that probe's sample replaces them.
+    pub(crate) fn start_health_epoch(&self) {
+        self.health_epoch.fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Records a successful probe of the scheduled round: in the health
+    /// state, and as a sample of the window.
     pub(crate) fn record_health_success(
         &self,
         node: OutboundNodeId,
         delay: Duration,
         now_unix_ms: u64,
     ) {
-        let Some(health) = self.health_state(node) else {
-            return;
-        };
-        let _update = self
-            .update_lock
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        health.delay_ms.store(
-            delay.as_millis().min(u128::from(u64::MAX)) as u64,
-            Ordering::Release,
-        );
-        health.record_sample(Some(delay.as_millis().min(u128::from(u64::MAX)) as u64));
-        health
-            .last_try_unix_ms
-            .store(now_unix_ms, Ordering::Release);
-        health
-            .last_seen_unix_ms
-            .store(now_unix_ms, Ordering::Release);
-        health.consecutive_failures.store(0, Ordering::Release);
-        health
-            .last_failure
-            .store(OutboundHealthFailure::NONE, Ordering::Release);
-        health
-            .state
-            .store(OutboundHealthState::HEALTHY, Ordering::Release);
-        self.revision.fetch_add(1, Ordering::AcqRel);
+        self.record_health_probe(node, Ok(delay), now_unix_ms, Instant::now());
     }
 
+    /// Records a failed probe of the scheduled round: in the health state,
+    /// and as a sample of the window.
     pub(crate) fn record_health_failure(
         &self,
         node: OutboundNodeId,
         failure: OutboundHealthFailure,
         now_unix_ms: u64,
+    ) {
+        self.record_health_probe(node, Err(failure), now_unix_ms, Instant::now());
+    }
+
+    /// Records a successful probe outside the scheduled round, as one run
+    /// because traffic failed: it sets the state, the last delay and the
+    /// failure count, but adds no sample to the `leastLoad` window, which
+    /// holds the scheduled round's samples alone.
+    pub(crate) fn record_reprobe_success(
+        &self,
+        node: OutboundNodeId,
+        delay: Duration,
+        now_unix_ms: u64,
+    ) {
+        self.store_health_probe(
+            node,
+            Ok(delay),
+            now_unix_ms,
+            Instant::now(),
+            HealthSample::StateOnly,
+        );
+    }
+
+    /// Records a failed probe outside the scheduled round, leaving the
+    /// `leastLoad` window as it is; see [`Self::record_reprobe_success`].
+    pub(crate) fn record_reprobe_failure(
+        &self,
+        node: OutboundNodeId,
+        failure: OutboundHealthFailure,
+        now_unix_ms: u64,
+    ) {
+        self.store_health_probe(
+            node,
+            Err(failure),
+            now_unix_ms,
+            Instant::now(),
+            HealthSample::StateOnly,
+        );
+    }
+
+    /// Records one probe outcome taken at `at`, which orders burst samples
+    /// and ages them out, as a sample of the window.
+    pub(crate) fn record_health_probe(
+        &self,
+        node: OutboundNodeId,
+        outcome: Result<Duration, OutboundHealthFailure>,
+        now_unix_ms: u64,
+        at: Instant,
+    ) {
+        self.store_health_probe(node, outcome, now_unix_ms, at, HealthSample::Window);
+    }
+
+    fn store_health_probe(
+        &self,
+        node: OutboundNodeId,
+        outcome: Result<Duration, OutboundHealthFailure>,
+        now_unix_ms: u64,
+        at: Instant,
+        sample: HealthSample,
     ) {
         let Some(health) = self.health_state(node) else {
             return;
@@ -2484,19 +2628,99 @@ impl OutboundSelectionOverlay {
             .update_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        health.record_sample(None);
-        health.delay_ms.store(u64::MAX, Ordering::Release);
+        let burst = self.burst_health.get().copied();
+        let delay_ms = outcome
+            .ok()
+            .map(|delay| delay.as_millis().min(u128::from(u64::MAX)) as u64);
+        // Only a sample enters the window and changes its metrics.
+        let metrics = (sample == HealthSample::Window).then(|| {
+            let mut history = health
+                .history
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            history.record(
+                OutboundHealthSample { delay_ms, at },
+                burst.map_or(LEAST_LOAD_HEALTH_WINDOW, |burst| burst.sampling),
+                self.health_epoch.load(Ordering::Acquire),
+            );
+            history.metrics(burst, at)
+        });
         health
             .last_try_unix_ms
             .store(now_unix_ms, Ordering::Release);
-        health.consecutive_failures.fetch_add(1, Ordering::AcqRel);
-        health
-            .last_failure
-            .store(failure.encode(), Ordering::Release);
-        health
-            .state
-            .store(OutboundHealthState::UNHEALTHY, Ordering::Release);
+        match outcome {
+            Ok(_) => {
+                health
+                    .last_seen_unix_ms
+                    .store(now_unix_ms, Ordering::Release);
+                health.consecutive_failures.store(0, Ordering::Release);
+                health
+                    .last_failure
+                    .store(OutboundHealthFailure::NONE, Ordering::Release);
+            }
+            Err(failure) => {
+                health.consecutive_failures.fetch_add(1, Ordering::AcqRel);
+                health
+                    .last_failure
+                    .store(failure.encode(), Ordering::Release);
+            }
+        }
+        match (burst, metrics) {
+            // A burst observatory's health is what its window says.
+            (Some(_), Some(metrics)) => health.store_window_health(metrics),
+            // No re-probe runs beside a burst observatory, and a probe that
+            // is no sample says nothing about its window.
+            (Some(_), None) => {}
+            (None, metrics) => {
+                if let Some(metrics) = metrics {
+                    health
+                        .least_load_metrics
+                        .store(metrics.encode(), Ordering::Release);
+                }
+                health
+                    .delay_ms
+                    .store(delay_ms.unwrap_or(u64::MAX), Ordering::Release);
+                let state = if delay_ms.is_some() {
+                    OutboundHealthState::HEALTHY
+                } else {
+                    OutboundHealthState::UNHEALTHY
+                };
+                health.state.store(state, Ordering::Release);
+            }
+        }
         self.revision.fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Ages burst samples out as of `now`. An outbound whose samples have all
+    /// expired is no longer alive, as in Xray-core, until a ping succeeds.
+    pub(crate) fn expire_health_samples(&self, now: Instant) {
+        let Some(burst) = self.burst_health.get().copied() else {
+            return;
+        };
+        let _update = self
+            .update_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut changed = false;
+        for health in &self.health {
+            let metrics = {
+                let history = health
+                    .history
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if history.samples.is_empty() {
+                    continue;
+                }
+                history.metrics(Some(burst), now)
+            };
+            if metrics.encode() != health.least_load_metrics.load(Ordering::Acquire) {
+                health.store_window_health(metrics);
+                changed = true;
+            }
+        }
+        if changed {
+            self.revision.fetch_add(1, Ordering::AcqRel);
+        }
     }
 
     /// The balancer's pick, its `fallbackTag` when the strategy picks no
@@ -2555,6 +2779,45 @@ impl OutboundSelectionOverlay {
         (node.graph_identity == self.graph.identity)
             .then(|| self.health.get(node.index))
             .flatten()
+    }
+
+    /// The observed health of leaf `node`; unknown for any other node.
+    pub(crate) fn health_state_of(&self, node: OutboundNodeId) -> OutboundHealthState {
+        self.health_state(node)
+            .map_or(OutboundHealthState::Unknown, |health| {
+                OutboundHealthState::from_u8(health.state.load(Ordering::Acquire))
+            })
+    }
+
+    /// How many samples the `leastLoad` window of leaf `node` holds, and
+    /// how many of them are failures.
+    #[cfg(test)]
+    pub(crate) fn least_load_window_of(&self, node: OutboundNodeId) -> Option<(u64, u64)> {
+        let health = self.health_state(node)?;
+        let metrics =
+            OutboundHealthWindowMetrics::decode(health.least_load_metrics.load(Ordering::Acquire));
+        Some((metrics.sample_count, metrics.failure_count))
+    }
+
+    /// The slot of leaf `node` in per-leaf state, if `node` is a leaf of
+    /// this graph.
+    pub(crate) fn leaf_index(&self, node: OutboundNodeId) -> Option<usize> {
+        (node.graph_identity == self.graph.identity && node.index < self.graph.leaf_count)
+            .then_some(node.index)
+    }
+
+    pub(crate) fn failure_reports(&self) -> &crate::health::FailureReports {
+        &self.failure_reports
+    }
+
+    /// Tells the observatory that a flow could not open through leaf `node`.
+    /// Unless the observatory watches `node`, which it does only for an
+    /// outbound with a server of its own, this is one atomic load, and it
+    /// never changes health by itself: the observatory probes `node` again.
+    pub(crate) fn report_dial_failure(&self, node: OutboundNodeId) {
+        if let Some(index) = self.leaf_index(node) {
+            self.failure_reports.report(index);
+        }
     }
 
     fn is_eligible(&self, node: OutboundNodeId) -> bool {
@@ -3045,6 +3308,26 @@ impl OutboundRouter {
         self.factory.selection_handle()
     }
 
+    /// Tells the observatory that a flow failed to open through leaf `node`
+    /// with `error`, when the error may mean that the outbound's server is
+    /// gone (see [`crate::health::is_dial_failure`]), so that it probes
+    /// `node` again soon.
+    pub(crate) fn report_open_error(&self, node: OutboundNodeId, error: &CoreError) {
+        if crate::health::is_dial_failure(error) {
+            self.selection().report_dial_failure(node);
+        }
+    }
+
+    /// Tells the observatory that a flow through leaf `node` did not open
+    /// within its handshake timeout. Opens time out on a local network that
+    /// is down or changing as they do on a server that drops packets, and
+    /// nothing here tells the two apart: the observatory probes `node`
+    /// again, and records a failure only when a second probe, a cooldown
+    /// later, fails too.
+    pub(crate) fn report_open_timeout(&self, node: OutboundNodeId) {
+        self.selection().report_dial_failure(node);
+    }
+
     pub fn replace_routing_policy(&self, routing: RoutingConfig) -> Result<u64, CoreError> {
         self.validate_routing_policy(&routing)?;
         let dns_route_prefilter = Self::dns_route_prefilter(self.graph(), &routing);
@@ -3195,7 +3478,11 @@ impl OutboundRouter {
             .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
             .flatten();
         let outbound = self.factory.cached_tcp_outbound(node)?;
-        Ok(SelectedTcpOutbound { outbound, tag })
+        Ok(SelectedTcpOutbound {
+            outbound,
+            tag,
+            node,
+        })
     }
 
     #[cfg(test)]
@@ -3215,7 +3502,11 @@ impl OutboundRouter {
             .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
             .flatten();
         let outbound = self.factory.cached_tcp_outbound(node)?;
-        Ok(SelectedTcpOutbound { outbound, tag })
+        Ok(SelectedTcpOutbound {
+            outbound,
+            tag,
+            node,
+        })
     }
 
     pub async fn select_tcp_outbound_for_session_with_resolver(
@@ -3265,7 +3556,11 @@ impl OutboundRouter {
                 .cached_tcp_outbound(node)
                 .map(TcpSessionOutbound::Transport),
         }?;
-        Ok(SelectedTcpSessionOutbound { outbound, tag })
+        Ok(SelectedTcpSessionOutbound {
+            outbound,
+            tag,
+            node,
+        })
     }
 
     #[cfg(test)]
@@ -3287,7 +3582,11 @@ impl OutboundRouter {
             .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
             .flatten();
         let outbound = self.factory.cached_tcp_outbound(node)?;
-        Ok(SelectedTcpOutbound { outbound, tag })
+        Ok(SelectedTcpOutbound {
+            outbound,
+            tag,
+            node,
+        })
     }
 
     pub fn select_udp_outbound_for_session(
@@ -3468,7 +3767,11 @@ impl OutboundRouter {
                 .cached_udp_outbound(node)
                 .map(UdpSessionOutbound::Transport),
         }?;
-        Ok(SelectedUdpSessionOutbound { outbound, tag })
+        Ok(SelectedUdpSessionOutbound {
+            outbound,
+            tag,
+            node,
+        })
     }
 
     fn select_configured_node(
@@ -5471,6 +5774,7 @@ mod tests {
             tag: Some(tag.to_owned()),
             proxy_settings: None,
             stream: StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
@@ -5498,6 +5802,7 @@ mod tests {
             tag: Some(tag.to_owned()),
             proxy_settings: None,
             stream: StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
@@ -5537,6 +5842,7 @@ mod tests {
             tag: Some(tag.to_owned()),
             proxy_settings: None,
             stream: StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
@@ -5582,6 +5888,7 @@ mod tests {
                 ..Default::default()
             },
             observatory: None,
+            burst_observatory: None,
             dns: Default::default(),
             policy: Default::default(),
         }
@@ -5859,6 +6166,7 @@ mod tests {
         let explicit = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
@@ -5910,6 +6218,7 @@ mod tests {
             let dynamic = DnsOutbound::new_with_stream(
                 DnsOutboundSettings::default(),
                 &StreamSettings {
+                    raw_http_header: None,
                     network: Network::Tcp,
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::Tls(TlsSettings {
@@ -5956,6 +6265,7 @@ mod tests {
     #[test]
     fn tls_outbound_carries_the_tls_shape_into_the_static_dns_connector() {
         let stream = StreamSettings {
+            raw_http_header: None,
             network: Network::Tcp,
             transport: StreamTransport::Raw,
             security: StreamSecurity::Tls(TlsSettings {
@@ -5999,6 +6309,7 @@ mod tests {
         let outbound = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
@@ -6090,6 +6401,7 @@ mod tests {
         let non_tcp = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Udp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
@@ -6137,6 +6449,7 @@ mod tests {
         let outbound = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::Reality(reality.clone()),
@@ -6190,6 +6503,7 @@ mod tests {
         let absent = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
@@ -6218,6 +6532,7 @@ mod tests {
         let disabled = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
@@ -6252,6 +6567,7 @@ mod tests {
         let plain = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
@@ -6276,6 +6592,7 @@ mod tests {
         let tls = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
@@ -6817,6 +7134,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,
@@ -8022,6 +8340,207 @@ mod tests {
             )
             .unwrap();
         assert_eq!(selected.tag.as_deref(), Some("proxy-b"));
+    }
+
+    fn burst_selector_router(
+        strategy: RoutingBalancerStrategy,
+        sampling: usize,
+        validity: Duration,
+    ) -> (OutboundRouter, OutboundNodeId, OutboundNodeId) {
+        let graph = Arc::new(OutboundGraph::new(Arc::new(selector_group_config(
+            strategy,
+        ))));
+        let proxy_a = graph.node_for_tag("proxy-a").unwrap();
+        let proxy_b = graph.node_for_tag("proxy-b").unwrap();
+        let router = OutboundRouter::from_factory(Arc::new(OutboundFactory::new(graph)));
+        router
+            .selection()
+            .use_burst_health(BurstHealthPolicy { sampling, validity });
+        (router, proxy_a, proxy_b)
+    }
+
+    fn selected_tag(router: &OutboundRouter) -> Option<String> {
+        router
+            .select_tcp_outbound_for_session_with_tag(
+                &xray_config::RouteContext::default(),
+                &domain_tcp_target("example.test"),
+                true,
+            )
+            .unwrap()
+            .tag
+    }
+
+    fn health_of(router: &OutboundRouter, tag: &str) -> OutboundHealthStatusSnapshot {
+        router
+            .selection()
+            .health_snapshot()
+            .outbounds
+            .into_iter()
+            .find(|status| status.outbound_tag == tag)
+            .unwrap_or_else(|| panic!("no health status for {tag}"))
+    }
+
+    /// `healthping_result.go`: an outbound is alive while its window of
+    /// `sampling` pings holds one success, and its delay is their average.
+    #[test]
+    fn burst_health_is_alive_while_the_sampling_window_holds_a_success() {
+        let (router, proxy_a, _) = burst_selector_router(
+            RoutingBalancerStrategy::LeastPing,
+            3,
+            Duration::from_secs(600),
+        );
+        let selection = router.selection();
+        let start = Instant::now();
+
+        selection.record_health_probe(proxy_a, Ok(Duration::from_millis(40)), 1_000, start);
+        selection.record_health_probe(proxy_a, Ok(Duration::from_millis(80)), 2_000, start);
+        selection.record_health_probe(proxy_a, Err(OutboundHealthFailure::Timeout), 3_000, start);
+        let status = health_of(&router, "proxy-a");
+        assert_eq!(status.state, OutboundHealthState::Healthy);
+        assert_eq!(status.delay_ms, Some(60));
+        assert_eq!(status.last_failure, Some(OutboundHealthFailure::Timeout));
+
+        // Two more failures push both successes out of the window of three.
+        for unix_ms in [4_000, 5_000] {
+            selection.record_health_probe(
+                proxy_a,
+                Err(OutboundHealthFailure::Timeout),
+                unix_ms,
+                start,
+            );
+        }
+        assert_eq!(
+            health_of(&router, "proxy-a").state,
+            OutboundHealthState::Unhealthy
+        );
+
+        selection.record_health_probe(proxy_a, Ok(Duration::from_millis(20)), 6_000, start);
+        let status = health_of(&router, "proxy-a");
+        assert_eq!(status.state, OutboundHealthState::Healthy);
+        assert_eq!(status.delay_ms, Some(20));
+    }
+
+    /// `healthping_result.go` `getStatistics` skips a sample older than the
+    /// validity, and `burstobserver.go` reports `All == Fail` as not alive.
+    #[test]
+    fn burst_samples_expire_after_their_validity() {
+        let validity = Duration::from_secs(120);
+        let (router, proxy_a, proxy_b) =
+            burst_selector_router(RoutingBalancerStrategy::LeastPing, 10, validity);
+        let selection = router.selection();
+        let start = Instant::now();
+
+        selection.record_health_probe(proxy_a, Ok(Duration::from_millis(10)), 1_000, start);
+        selection.record_health_probe(
+            proxy_b,
+            Ok(Duration::from_millis(90)),
+            2_000,
+            start + Duration::from_secs(100),
+        );
+        selection.expire_health_samples(start + validity);
+        assert_eq!(selected_tag(&router).as_deref(), Some("proxy-a"));
+
+        selection.expire_health_samples(start + validity + Duration::from_secs(1));
+        assert_eq!(
+            health_of(&router, "proxy-a").state,
+            OutboundHealthState::Unhealthy
+        );
+        assert_eq!(selected_tag(&router).as_deref(), Some("proxy-b"));
+    }
+
+    /// leastLoad reads the burst statistics: deviation, then average, over
+    /// the last `sampling` pings rather than a fixed sixteen.
+    #[test]
+    fn least_load_ranks_by_burst_statistics_of_the_sampling_window() {
+        let (router, proxy_a, proxy_b) = burst_selector_router(
+            RoutingBalancerStrategy::LeastLoad(RoutingLeastLoadSettings::default()),
+            3,
+            Duration::from_secs(600),
+        );
+        let selection = router.selection();
+        let start = Instant::now();
+
+        for delay_ms in [10, 50, 30] {
+            selection.record_health_probe(
+                proxy_a,
+                Ok(Duration::from_millis(delay_ms)),
+                1_000,
+                start,
+            );
+        }
+        for _ in 0..3 {
+            selection.record_health_probe(proxy_b, Ok(Duration::from_millis(100)), 1_000, start);
+        }
+        assert_eq!(
+            selected_tag(&router).as_deref(),
+            Some("proxy-b"),
+            "the steadier outbound wins over the faster one"
+        );
+
+        // Three steady pings replace the whole window of three: equal
+        // deviation now, so the lower average decides.
+        for _ in 0..3 {
+            selection.record_health_probe(proxy_a, Ok(Duration::from_millis(20)), 2_000, start);
+        }
+        assert_eq!(selected_tag(&router).as_deref(), Some("proxy-a"));
+    }
+
+    /// With one success Xray-core takes half the average for the deviation,
+    /// so an outbound pinged once does not outrank a steadier one.
+    #[test]
+    fn burst_deviation_of_a_single_sample_is_half_its_average() {
+        let (router, proxy_a, proxy_b) = burst_selector_router(
+            RoutingBalancerStrategy::LeastLoad(RoutingLeastLoadSettings::default()),
+            10,
+            Duration::from_secs(600),
+        );
+        let selection = router.selection();
+        let start = Instant::now();
+
+        selection.record_health_probe(proxy_a, Ok(Duration::from_millis(40)), 1_000, start);
+        for delay_ms in [100, 110] {
+            selection.record_health_probe(
+                proxy_b,
+                Ok(Duration::from_millis(delay_ms)),
+                1_000,
+                start,
+            );
+        }
+
+        assert_eq!(selected_tag(&router).as_deref(), Some("proxy-b"));
+    }
+
+    /// After a network change the old network's samples keep driving
+    /// selection only until an outbound is pinged on the new one.
+    #[test]
+    fn burst_samples_of_the_previous_network_yield_to_the_first_new_one() {
+        let (router, proxy_a, proxy_b) = burst_selector_router(
+            RoutingBalancerStrategy::LeastPing,
+            10,
+            Duration::from_secs(600),
+        );
+        let selection = router.selection();
+        let start = Instant::now();
+        for _ in 0..5 {
+            selection.record_health_probe(proxy_a, Ok(Duration::from_millis(10)), 1_000, start);
+            selection.record_health_probe(proxy_b, Ok(Duration::from_millis(50)), 1_000, start);
+        }
+
+        selection.start_health_epoch();
+        assert_eq!(
+            selected_tag(&router).as_deref(),
+            Some("proxy-a"),
+            "nothing better is known until the new network is probed"
+        );
+
+        selection.record_health_probe(proxy_a, Ok(Duration::from_millis(300)), 2_000, start);
+        let status = health_of(&router, "proxy-a");
+        assert_eq!(
+            status.delay_ms,
+            Some(300),
+            "old samples are not averaged in"
+        );
+        assert_eq!(selected_tag(&router).as_deref(), Some("proxy-b"));
     }
 
     #[test]
@@ -10259,6 +10778,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,
@@ -10305,6 +10825,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,
@@ -10369,6 +10890,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,
@@ -10458,6 +10980,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,
@@ -10542,6 +11065,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,
@@ -10613,6 +11137,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,
@@ -10707,6 +11232,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,

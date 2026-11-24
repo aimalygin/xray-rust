@@ -10,6 +10,118 @@ long-term supported release series.
 
 ## Unreleased
 
+- A WireGuard outbound's device is closed once it has had no flow for five
+  minutes, and the next flow starts a new one with a fresh handshake. A
+  started device runs WireGuard's timers every 250 ms for as long as it
+  lives, so a profile that had used a WireGuard outbound once woke an idle
+  phone four times a second until the core stopped. A device whose peers set
+  `keepAlive` is kept, since that asks for the path to stay open while idle.
+- The Android and Apple VPN integrations start profiles whose `dns.servers`
+  list Xray-core's `localhost` or `fakedns`, as a string or an object's
+  `address`: neither is resolved during DNS bootstrap, where the object form
+  failed preparation and the string form was looked up as a host name. A
+  `fakedns` entry counts as fake-IP, not as an upstream, in the fake-IP
+  routing preflight, and Android accepts up to 32 `dns.servers` entries, as
+  the core does, where it stopped at eight. `localhost` is no upstream there
+  either: inside a VPN it answers from `dns.hosts` alone, since the platform
+  resolver would ask the tunnel itself, so a profile whose only servers are
+  `localhost` is refused instead of starting a tunnel in which no name
+  resolves.
+- `dns.servers` takes up to 32 entries, where more than eight failed to
+  parse. Xray-core sets no limit, and full subscriptions list more than
+  eight. Destination lookups use every server; the TUN DNS proxy at
+  `198.18.0.1` still forwards to the first eight distinct ones, which share
+  its five-second budget. With `enableParallelQuery` a lookup asks at most
+  eight servers at a time, the next starting as one settles, so one lookup
+  over 32 servers stays within the managed resolver's exchange limit. The
+  SRV or TXT `addressPortStrategy` lookup of a phone, which asks servers in
+  turn before every dial, asks the first eight it can ask.
+- RAW's `http` header obfuscation works (`tcpSettings`/`rawSettings`
+  `header.type: "http"`), where it was refused: every connection sends a
+  request head built as Xray-core builds it (method, a drawn path, headers
+  sorted by name with drawn values, or Xray-core's Chrome headers by default)
+  before its first bytes, above TLS or REALITY when set, and drops the
+  server's response head, at most 8192 bytes, before its first read. Vision
+  is refused on it, as in Xray-core. Request text with a carriage return or
+  line feed fails, and so does the header on a freedom or DNS outbound,
+  which would dial without it.
+- Xray-core's FakeDNS works: a `fakedns` entry in `dns.servers`, refused
+  until now, turns on `dns.fakeIp` with the first IPv4 pool of root
+  `fakeDns` (an object or an array, also spelled `fakedns`) and its
+  `poolSize`, or Xray-core's automatic `198.18.0.0/15` without one.
+  Destination lookups never ask the entry. IPv6 pools are ignored with a
+  warning, as fake addresses are IPv4 only. Every name gets a fake address,
+  so the entry is accepted only where Xray-core sends it every name: first,
+  without `domains`, while no other server has `domains` or is `localhost`.
+  Elsewhere it still fails, since Xray-core would fake only some names. An
+  explicit `dns.fakeIp` wins.
+- `sockopt.domainStrategy` works on VLESS, VMess, Trojan, Shadowsocks, SOCKS,
+  HTTP and Hysteria outbounds and on an XHTTP download leg, where any value
+  but `AsIs` was refused. A domain server resolves to the families the
+  strategy asks for before it is dialed, as Xray-core's `DialSystem` resolves
+  it: `UseIPv4` dials only IPv4 addresses and falls back to all of them when
+  there is none, `ForceIPv4` fails instead, and the `v4v6`/`v6v4` forms try
+  one family, then the other. The bootstrap resolver answers, as without a
+  strategy. A strategy beside `dialerProxy` or `proxySettings` on such an
+  outbound is refused, since the chain would carry the server's name.
+- `localhost` works as a DNS server, as Xray-core's system-resolver client,
+  where it was refused. It asks the resolver the core bootstraps with
+  (`dns.hosts`, then the platform resolver) instead of the wire, bypassing
+  routing, and its `domains` gain Xray-core's local rules, so dotless names
+  and `.local`, `.lan`, `.home.arpa` and the reserved suffixes go to it
+  first. Answers carry the platform's TTL or Xray-core's 300 seconds and are
+  cached like other servers'. Under the `StaticOnly` bootstrap mode it answers
+  only from `dns.hosts`, and the next server takes the other names. The TUN
+  DNS proxy asks it locally over UDP and TCP, for A and AAAA questions; any
+  other question goes on to the next upstream.
+- Full Xray JSON subscriptions with fields Xray-core accepts and that change
+  nothing here now start, with a warning for each, where they failed to
+  parse: root `stats`, `api`, `metrics`, `version` and `geodata` objects,
+  `routing.domainMatcher`, `sockopt.tcpNoDelay`, mKCP `congestion`,
+  `readBufferSize` and `writeBufferSize`, and TLS `minVersion`, `maxVersion`,
+  `cipherSuites`, `curvePreferences`, `useSystemCA` and `show`. A uTLS
+  fingerprint decides the TLS four, as in Xray-core; with `fingerprint:
+  "unsafe"`, where Xray-core applies them and the rustls handshake here would
+  not, they still fail. A nonempty
+  `echConfigList` still fails: ECH is not implemented, and connecting without
+  it would send the server name in the clear, where Xray-core fails the
+  connection. `disableSystemRoot: true` is accepted only beside
+  `pinnedPeerCertSha256` and still fails without one, since ignoring it would
+  trust roots the config turned off. Values Go's decoding refuses, and
+  unknown keys, still fail.
+- A selected geosite entry may hold 250,000 domains, where the limit was
+  200,000, and a configuration 500,000 domain matchers, where it was 250,000.
+  Loyalsoldier's `category-ads-all`, a common ad-blocking rule, passed 200,000
+  (reported at 203,233), so a configuration that named it failed to load, and
+  beside `geosite:cn` (110,258) it would not have fitted the 250,000 either.
+  A compiled domain takes about 26 bytes and about 70 while its entry is
+  compiled, so a configuration at the new budget keeps some 13 MB of domain
+  rules, where the old one kept 6.5 MB, and loading its largest entry peaks
+  some 17 MB above that; the entry limit stays below the budget to bound that
+  peak. The total of 1,000,000 domain and IP matchers is unchanged. An error
+  about an entry over a limit now names the entry, as ``entry `CODE`: …``,
+  since the file itself is sound.
+- Android, iOS and tvOS: an SRV or TXT `addressPortStrategy` works. With no
+  `/etc/resolv.conf` on the device, the lookup now asks the servers in
+  `dns.servers` directly over protected sockets, never through routing,
+  which could send it into the outbound being opened. Each
+  dial used to ask loopback nameservers, as Go does, that no phone runs, and
+  dial the configured server once they failed. Without a server to ask, the
+  configured server is dialled at once and the log says so once. See
+  [Socket options](docs/xray-core-differences.md#socket-options).
+- A base64 JSON `vmess://` link without TLS (`tls` absent, empty or `none`)
+  imports when it carries `sni`, `alpn` or `fp`; those fields are ignored, as
+  v2rayN ignores them. Panels such as V2Board write `fp` on every link, so
+  such a plain WebSocket link failed with "profile contains an unsupported
+  setting". A link with TLS still maps them into `tlsSettings`.
+- `XrayPacketTunnelProvider` has an open `handleCustomAppMessage(_:core:)`
+  hook. A subclass receives each app message the provider does not handle
+  itself, together with the active core, and can answer it, for example with
+  the connection, accounting, selection or health snapshot, or apply an
+  outbound selector override or a routing policy. The provider kept its
+  runtime private, so a host could not reach these core APIs from its app
+  without forking the provider. The default returns `nil`, so the built-in
+  close-connections and stats requests behave as before.
 - The DNS resolver and the system SRV/TXT lookups refuse a name longer than
   255 octets, the limit Xray-core's DNS client applies through Go's
   `dnsmessage`. A name was read for up to 32 labels and pointers, about 2 KB,
@@ -229,6 +341,47 @@ long-term supported release series.
     crates.io index has to list exactly those, so an upload nobody recorded
     fails too. A fork release that waits for its upload is reported, with a
     warning on the CI run, and does not fail.
+- Flows that fail to open through an outbound the observatory watches now
+  have it probed again within seconds instead of at the next `probeInterval`.
+  An open that timed out, or a refused, reset or timed-out connection or a
+  failed TLS or REALITY handshake, on a TCP flow from SOCKS, HTTP or TUN or a
+  UDP flow from TUN, wakes the observer, which probes that outbound again 10
+  seconds after its last probe finished at the earliest. One failed re-probe
+  is not recorded, since a local network that is away for a moment fails it
+  too: a second one 10 seconds later decides. An outbound re-probes marked
+  unhealthy is probed again after 10 seconds, then at doubling intervals up
+  to the probe interval. When no observed member of a balancer is healthy, a
+  failure through a member or the balancer's fallback has all of them probed
+  again, 15 seconds at the earliest after the last such pass finished,
+  doubling after each pass in which every probe failed. Freedom outbounds,
+  local network errors, target refusals and the message-only errors of XHTTP,
+  gRPC and other stream transports are not reported. A dead server behind a
+  `leastPing` balancer with `probeInterval: "10m"` was kept for up to ten
+  minutes; it is now left after one failed open and two failed probes.
+  Re-probes move the health state but add no sample to the window `leastLoad`
+  reads, which keeps holding the last 16 scheduled probes. Without failures
+  the observatory probes as before.
+- `burstObservatory` is read and run as in Xray-core v26.11.9; it used to be
+  refused as an unknown root field. `pingConfig` takes `destination`,
+  `connectivity`, `interval`, `sampling`, `timeout` and `httpMethod` with
+  Xray-core's defaults and lower bounds. Every subject is pinged once at
+  start and then `sampling` times at random points of each
+  `interval * sampling`. `leastLoad`, `leastPing`, `random` and `roundRobin`
+  read Xray's burst statistics: the latest `sampling` pings no older than two
+  periods, alive while one of them succeeded, the average as the delay. A
+  failed ping is not counted while the `connectivity` URL fails too. With
+  `observatory` also present that one drives selection, as in Xray-core, and
+  `burstObservatory` is not run. The re-probes that failures of real traffic
+  bring belong to `observatory`: beside `burstObservatory` alone nothing
+  follows them, and its window stays the scheduled pings. Deliberately
+  different, for phones:
+  `interval`, `sampling` and `timeout` are capped at 24h, 100 and 60s with a
+  warning; at most four pings run at once; while the connectivity check fails
+  one ping leaves per backoff of 5s up to `interval` instead of every
+  scheduled one; and after a network change reported through `rebind_quic`
+  every subject is pinged again within 3 seconds and its first new sample
+  replaces the old network's. `CoreConfig` gains `burst_observatory` and
+  `NetworkChanges` gains `observe`.
 
 ## 0.10.1 - 2026-11-16
 

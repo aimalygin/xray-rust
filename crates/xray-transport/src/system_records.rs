@@ -5,14 +5,19 @@
 //! included: it reads `/etc/resolv.conf` and asks those nameservers over UDP,
 //! then over TCP when an answer is truncated. The platform's resolver is
 //! never asked. Without the file, as on Android, Go asks `127.0.0.1:53` and
-//! `[::1]:53`. This module follows Go 1.27's `net` package.
+//! `[::1]:53`. This module follows Go 1.27's `net` package, except that on
+//! Android, iOS and tvOS a missing file means asking the core's `dns.servers`
+//! through [`ConfiguredRecordResolver`], or, without a usable one, skipping
+//! the lookup with one warning, instead of asking loopback nameservers no
+//! phone runs; the dial then goes on with the configured server, as Go's
+//! failed lookup leaves it.
 use std::{
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6},
     path::PathBuf,
     sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        Arc, RwLock,
     },
     time::Duration,
 };
@@ -21,7 +26,8 @@ use async_trait::async_trait;
 
 use crate::{
     dns::{exchange_direct_tcp_candidates, exchange_direct_udp, read_dns_name, read_u16},
-    dns_response_matches_query, SocketProtector,
+    dns_response_matches_query, DnsQueryMetadata, DnsQueryTransport, DnsQueryTransportKind,
+    NameServer, SocketProtector,
 };
 
 /// One SRV record, as Go's `net.SRV` holds it.
@@ -61,6 +67,10 @@ pub trait RecordResolver: Send + Sync {
 pub struct SystemRecordResolver {
     config: PathBuf,
     protector: Option<Arc<dyn SocketProtector>>,
+    /// Whether a missing `config` means `unconfigured`, or a skipped lookup,
+    /// rather than Go's loopback nameservers.
+    skips_without_config: bool,
+    unconfigured: Option<Arc<RecordResolverSlot>>,
 }
 
 impl std::fmt::Debug for SystemRecordResolver {
@@ -85,7 +95,46 @@ impl SystemRecordResolver {
         Self {
             config: config.into(),
             protector,
+            skips_without_config: cfg!(any(
+                target_os = "android",
+                target_os = "ios",
+                target_os = "tvos"
+            )),
+            unconfigured: None,
         }
+    }
+
+    /// Whether a missing `config` is taken as a phone takes it; the target
+    /// decides unless a test says otherwise.
+    #[doc(hidden)]
+    pub fn skipping_without_config(mut self, skips: bool) -> Self {
+        self.skips_without_config = skips;
+        self
+    }
+
+    /// On a phone without `config`, asks the resolver `slot` holds, if any,
+    /// rather than skipping the lookup.
+    pub fn with_unconfigured_resolver(mut self, slot: Option<Arc<RecordResolverSlot>>) -> Self {
+        self.unconfigured = slot;
+        self
+    }
+
+    /// The configuration to ask; on a phone without one, the resolver set in
+    /// its place or a failed lookup.
+    fn source(&self) -> io::Result<Source> {
+        if !self.skips_without_config || self.config.exists() {
+            return Ok(Source::Conf(ResolvConf::read(&self.config)));
+        }
+        if let Some(resolver) = self.unconfigured.as_ref().and_then(|slot| slot.get()) {
+            return Ok(Source::Configured(resolver));
+        }
+        if !WARNED_WITHOUT_CONFIG.swap(true, Ordering::Relaxed) {
+            tracing::warn!(
+                config = %self.config.display(),
+                "no resolver configuration or usable dns.servers: addressPortStrategy SRV and TXT lookups are skipped and servers are dialled as configured"
+            );
+        }
+        Err(no_such_host())
     }
 
     /// Go's `lookup`: each name of the search list in turn, until one has
@@ -180,32 +229,236 @@ impl SystemRecordResolver {
         proto: &str,
         name: &str,
     ) -> io::Result<Vec<SrvRecord>> {
-        let target = if service.is_empty() && proto.is_empty() {
-            name.to_owned()
-        } else {
-            format!("_{service}._{proto}.{name}")
-        };
-        let Answers::Srv(mut records) = self.lookup(conf, &target, TYPE_SRV).await? else {
-            unreachable!("an SRV lookup answers SRV records")
-        };
-        if records
-            .iter()
-            .any(|record| record.target != "." && !is_domain_name(&record.target))
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "DNS response contained records which contain invalid names",
-            ));
-        }
-        sort_by_priority_weight(&mut records, random_below);
-        Ok(records)
+        let answers = self
+            .lookup(conf, &srv_name(service, proto, name), TYPE_SRV)
+            .await?;
+        srv_records(answers)
     }
 
     async fn txt(&self, conf: &ResolvConf, name: &str) -> io::Result<Vec<String>> {
-        let Answers::Txt(records) = self.lookup(conf, name, TYPE_TXT).await? else {
-            unreachable!("a TXT lookup answers TXT records")
+        txt_records(self.lookup(conf, name, TYPE_TXT).await?)
+    }
+}
+
+enum Source {
+    Conf(ResolvConf),
+    Configured(Arc<dyn RecordResolver>),
+}
+
+/// The name Go's `LookupSRV` asks for.
+fn srv_name(service: &str, proto: &str, name: &str) -> String {
+    if service.is_empty() && proto.is_empty() {
+        name.to_owned()
+    } else {
+        format!("_{service}._{proto}.{name}")
+    }
+}
+
+/// Go's checks and order on the SRV records of an answer.
+fn srv_records(answers: Answers) -> io::Result<Vec<SrvRecord>> {
+    let Answers::Srv(mut records) = answers else {
+        unreachable!("an SRV lookup answers SRV records")
+    };
+    if records
+        .iter()
+        .any(|record| record.target != "." && !is_domain_name(&record.target))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "DNS response contained records which contain invalid names",
+        ));
+    }
+    sort_by_priority_weight(&mut records, random_below);
+    Ok(records)
+}
+
+fn txt_records(answers: Answers) -> io::Result<Vec<String>> {
+    let Answers::Txt(records) = answers else {
+        unreachable!("a TXT lookup answers TXT records")
+    };
+    Ok(records)
+}
+
+/// The resolver a running core offers phones without `/etc/resolv.conf`:
+/// one over its `dns.servers` while it has a query transport for them. A
+/// core can start again, so each start replaces it.
+#[derive(Default)]
+pub struct RecordResolverSlot(RwLock<Option<Arc<dyn RecordResolver>>>);
+
+impl RecordResolverSlot {
+    pub fn set(&self, resolver: Option<Arc<dyn RecordResolver>>) {
+        *self
+            .0
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = resolver;
+    }
+
+    pub fn get(&self) -> Option<Arc<dyn RecordResolver>> {
+        self.0
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+}
+
+impl std::fmt::Debug for RecordResolverSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RecordResolverSlot")
+            .field("set", &self.get().is_some())
+            .finish()
+    }
+}
+
+/// One `dns.servers` entry as [`ConfiguredRecordResolver`] asks it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordServer {
+    pub server: NameServer,
+    pub transport: DnsQueryTransportKind,
+    /// The inbound tag the query presents, as the server's own queries do.
+    pub tag: Option<String>,
+    /// A DNS-over-HTTPS server's request path.
+    pub https_path: Option<String>,
+}
+
+/// SRV and TXT lookups over the core's `dns.servers` for a phone where Go's
+/// resolver has nothing to read. Each server in turn, until one answers or
+/// says the name does not exist; a truncated UDP answer is asked again over
+/// TCP. The name is asked as given, without a search list.
+///
+/// A lookup names an outbound's own server, so, like the bootstrap that
+/// resolves that server's address, it never goes through routing: routing
+/// could send it into the very outbound being opened, whose dial would look
+/// the name up again. A UDP server is asked over a socket of its own behind
+/// the core's protector, as Go asks the nameservers of `/etc/resolv.conf`;
+/// TCP, HTTPS and QUIC servers through the query transport's local path,
+/// as a `+local` server is.
+pub struct ConfiguredRecordResolver {
+    servers: Vec<RecordServer>,
+    transport: Arc<dyn DnsQueryTransport>,
+    protector: Option<Arc<dyn SocketProtector>>,
+    timeout: Duration,
+}
+
+impl ConfiguredRecordResolver {
+    /// Four seconds a server, as the core's DNS client waits.
+    pub fn new(
+        servers: Vec<RecordServer>,
+        transport: Arc<dyn DnsQueryTransport>,
+        protector: Option<Arc<dyn SocketProtector>>,
+    ) -> Self {
+        Self {
+            servers,
+            transport,
+            protector,
+            timeout: Duration::from_secs(4),
+        }
+    }
+
+    async fn lookup(&self, name: &str, qtype: u16) -> io::Result<Answers> {
+        if !is_domain_name(name) {
+            return Err(no_such_host());
+        }
+        let fqdn = ensure_rooted(name);
+        let mut last = io::Error::other("no DNS server answered");
+        for server in &self.servers {
+            let response = match self.exchange(server, &fqdn, qtype).await {
+                Ok(response) => response,
+                Err(error) => {
+                    last = error;
+                    continue;
+                }
+            };
+            match check_response(&response, qtype) {
+                Checked::Answers(answers) => return Ok(answers),
+                Checked::NoSuchHost => return Err(no_such_host()),
+                Checked::NextServer(error) => last = error,
+            }
+        }
+        Err(last)
+    }
+
+    async fn exchange(&self, server: &RecordServer, fqdn: &str, qtype: u16) -> io::Result<Vec<u8>> {
+        let query = build_query(rand::random(), fqdn, qtype, false)?;
+        let query = query.as_slice();
+        let response = match (server.transport, &server.server) {
+            (DnsQueryTransportKind::Udp, NameServer::Socket(address)) => {
+                let protector = self.protector.as_deref();
+                let udp = self
+                    .timed(exchange_direct_udp(*address, query, protector))
+                    .await?;
+                if truncated(&udp) {
+                    self.timed(exchange_direct_tcp_candidates(
+                        &[*address],
+                        query,
+                        protector,
+                    ))
+                    .await?
+                } else {
+                    udp
+                }
+            }
+            (DnsQueryTransportKind::Udp, NameServer::Domain { .. }) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "a UDP DNS server named by domain is not asked for SRV and TXT records",
+                ));
+            }
+            (kind, _) => {
+                let mut metadata = DnsQueryMetadata::local(server.tag.as_deref());
+                if let Some(path) = server.https_path.as_deref() {
+                    metadata = metadata.with_https_path(path);
+                }
+                self.timed(
+                    self.transport
+                        .exchange(&server.server, kind, metadata, query),
+                )
+                .await?
+            }
         };
-        Ok(records)
+        if !dns_response_matches_query(query, &response) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "DNS response does not match its query",
+            ));
+        }
+        Ok(response)
+    }
+
+    /// One exchange within a server's time.
+    async fn timed(
+        &self,
+        exchange: impl std::future::Future<Output = io::Result<Vec<u8>>>,
+    ) -> io::Result<Vec<u8>> {
+        tokio::time::timeout(self.timeout, exchange)
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "DNS query timed out"))?
+    }
+}
+
+impl std::fmt::Debug for ConfiguredRecordResolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConfiguredRecordResolver")
+            .field("servers", &self.servers.len())
+            .finish()
+    }
+}
+
+#[async_trait]
+impl RecordResolver for ConfiguredRecordResolver {
+    async fn lookup_srv(
+        &self,
+        service: &str,
+        proto: &str,
+        name: &str,
+    ) -> io::Result<Vec<SrvRecord>> {
+        srv_records(
+            self.lookup(&srv_name(service, proto, name), TYPE_SRV)
+                .await?,
+        )
+    }
+
+    async fn lookup_txt(&self, name: &str) -> io::Result<Vec<String>> {
+        txt_records(self.lookup(name, TYPE_TXT).await?)
     }
 }
 
@@ -217,15 +470,22 @@ impl RecordResolver for SystemRecordResolver {
         proto: &str,
         name: &str,
     ) -> io::Result<Vec<SrvRecord>> {
-        let conf = ResolvConf::read(&self.config);
-        self.srv(&conf, service, proto, name).await
+        match self.source()? {
+            Source::Conf(conf) => self.srv(&conf, service, proto, name).await,
+            Source::Configured(resolver) => resolver.lookup_srv(service, proto, name).await,
+        }
     }
 
     async fn lookup_txt(&self, name: &str) -> io::Result<Vec<String>> {
-        let conf = ResolvConf::read(&self.config);
-        self.txt(&conf, name).await
+        match self.source()? {
+            Source::Conf(conf) => self.txt(&conf, name).await,
+            Source::Configured(resolver) => resolver.lookup_txt(name).await,
+        }
     }
 }
+
+/// Whether a phone without a resolver configuration has said so once.
+static WARNED_WITHOUT_CONFIG: AtomicBool = AtomicBool::new(false);
 
 /// Go's `soffset`, the next first server under `options rotate`.
 static ROTATION: AtomicU32 = AtomicU32::new(0);
