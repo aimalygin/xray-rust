@@ -72,7 +72,12 @@ const MAX_OBSERVATORY_PROBE_INTERVAL: std::time::Duration =
 const MAX_DNS_OUTBOUND_RULES: usize = 4_096;
 const MAX_DNS_QTYPE_SELECTORS: usize = 65_536;
 const MAX_ROUTING_PORT_SELECTORS: usize = 65_536;
-pub const MAX_CONFIG_DOMAIN_MATCHERS: usize = 250_000;
+/// Domain matchers a configuration may hold, geosite entries and inline
+/// domains together. A compiled geosite domain takes about 26 bytes, so the
+/// budget is some 13 MB of routing state at most. It was 250,000 until two
+/// common geosite categories together no longer fitted: an ad list of 203,000
+/// domains beside a country list of 110,000.
+pub const MAX_CONFIG_DOMAIN_MATCHERS: usize = 500_000;
 const MAX_CONFIG_IP_MATCHERS: usize = 750_000;
 const MAX_CONFIG_MATCHERS: usize = 1_000_000;
 const MAX_CONFIG_GEODATA_ATTR_FILTERS: usize = 32;
@@ -2950,12 +2955,14 @@ mod tests {
         let mut ip_budget = MatcherBudget::new(DEFAULT_MATCHER_BUDGET_LIMITS);
         let mut combined_budget = MatcherBudget::new(DEFAULT_MATCHER_BUDGET_LIMITS);
 
-        assert!(domain_budget.consume_domain_matchers(250_000));
+        assert!(domain_budget.consume_domain_matchers(500_000));
         assert!(!domain_budget.consume_domain_matchers(1));
         assert!(ip_budget.consume_ip_matchers(750_000));
         assert!(!ip_budget.consume_ip_matchers(1));
-        assert!(combined_budget.consume_domain_matchers(250_000));
-        assert!(combined_budget.consume_ip_matchers(750_000));
+        // Both budgets together exceed the total, which then decides.
+        assert!(combined_budget.consume_domain_matchers(500_000));
+        assert!(!combined_budget.consume_ip_matchers(750_000));
+        assert!(combined_budget.consume_ip_matchers(500_000));
         assert_eq!(combined_budget.remaining_total_matchers(), 0);
         assert!(!combined_budget.consume_domain_matchers(1));
         assert!(!combined_budget.consume_ip_matchers(1));

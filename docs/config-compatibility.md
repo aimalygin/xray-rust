@@ -4785,12 +4785,19 @@ before protobuf decoding. Every expansion is charged against the shared
 per-configuration IP and total matcher budgets, including repeated references
 to a cached category in different rules or DNS selectors.
 
-A selected GeoSite entry may contain up to 250,000 domains, the whole domain
-matcher budget of a configuration, with up to 400,000 attributes among them.
-It is checked before protobuf decoding as well, and every reference is charged
-against the domain and total matcher budgets, so an entry near the limit
-leaves little room for other domain rules beside it. An entry over a limit is
-named in the error (``entry `CODE`: …``); the file itself is sound.
+A selected GeoSite entry may contain up to 250,000 domains, with up to 400,000
+attributes among them, and is checked before protobuf decoding as well. A
+configuration may hold 500,000 domain matchers, and every reference to an
+entry is charged against that and the total budget. The entry limit is the
+lower one because an entry takes about 70 bytes a domain while it is compiled
+and about 26 once it is: the entry limit bounds the peak of a load at some
+17 MB, the configuration's budget what stays at some 13 MB (macOS, measured
+on names of 22 bytes). An entry over a limit is named in the error
+(``entry `CODE`: …``); the file itself is sound.
+
+Loyalsoldier's `category-ads-all` passed the earlier 200,000 an entry in
+November 2026, and beside `geosite:cn` (reported at 203,233 and 110,258
+domains) it passed the earlier 250,000 a configuration.
 
 Compiled categories are cached for the whole process: a configuration that
 names a category another one already compiled, such as the next core a host
@@ -4829,7 +4836,7 @@ display them. The C ABI exposes warnings through
 `xray_core_config_warnings`, and the checked-in Swift/Kotlin adapters surface
 them through their platform logging paths.
 
-Current aggregate limits include 4,096 routing rules, 250,000 domain matchers,
+Current aggregate limits include 4,096 routing rules, 500,000 domain matchers,
 750,000 IP matchers, and 1,000,000 matchers total per config. These limits are
 implementation safeguards and may change across major ABI or documented
 configuration revisions.

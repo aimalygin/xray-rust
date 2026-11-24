@@ -10,14 +10,18 @@ long-term supported release series.
 
 ## Unreleased
 
-- A selected geosite entry may hold up to 250,000 domains, the whole domain
-  matcher budget of a configuration, where the limit was 200,000. Loyalsoldier's
-  `category-ads-all`, a common ad-blocking rule, passed 200,000 (reported at
-  203,233), and a configuration that named it failed to load. The budget of
-  250,000 domain matchers a configuration is unchanged, so no configuration
-  holds more than it could before, and an entry that large leaves little room
-  for other domain rules beside it. An error about an entry over a limit now
-  names the entry, as ``entry `CODE`: …``, since the file itself is sound.
+- A selected geosite entry may hold 250,000 domains, where the limit was
+  200,000, and a configuration 500,000 domain matchers, where it was 250,000.
+  Loyalsoldier's `category-ads-all`, a common ad-blocking rule, passed 200,000
+  (reported at 203,233), so a configuration that named it failed to load, and
+  beside `geosite:cn` (110,258) it would not have fitted the 250,000 either.
+  A compiled domain takes about 26 bytes and about 70 while its entry is
+  compiled, so a configuration at the new budget keeps some 13 MB of domain
+  rules, where the old one kept 6.5 MB, and loading its largest entry peaks
+  some 17 MB above that; the entry limit stays below the budget to bound that
+  peak. The total of 1,000,000 domain and IP matchers is unchanged. An error
+  about an entry over a limit now names the entry, as ``entry `CODE`: …``,
+  since the file itself is sound.
 - Android, iOS and tvOS: an SRV or TXT `addressPortStrategy` works. With no
   `/etc/resolv.conf` on the device, the lookup now asks the servers in
   `dns.servers` directly over protected sockets, never through routing,

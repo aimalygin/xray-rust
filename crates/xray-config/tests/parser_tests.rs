@@ -1572,39 +1572,47 @@ fn a_geosite_selection_without_domains_matches_nothing() {
     assert!(ext_site.matches_domain(Some("api.example.com")));
 }
 
-/// One geosite entry may fill the configuration's domain matcher budget.
-/// Loyalsoldier's `category-ads-all` was reported at 203,233 domains when it
-/// passed the earlier limit of 200,000 an entry. An entry beyond the budget
-/// is refused, and the error names it rather than only the file.
+/// Two large geosite categories fit one configuration: an ad list beside a
+/// country list, the sizes Loyalsoldier's `category-ads-all` and `cn` were
+/// reported at. The first alone was over the earlier limit of 200,000 an
+/// entry, and the two together over the earlier 250,000 a configuration. An
+/// entry beyond 250,000 is refused, and the error names it, not only the file.
 #[test]
-fn a_geosite_entry_may_fill_the_domain_matcher_budget() {
+fn large_geosite_categories_fit_the_domain_matcher_budget() {
     let asset_dir = unique_temp_dir("geosite-large-entry");
-    let entry = |code: &str, domains: usize| TestGeoSite {
+    let entry = |code: &str, name: &str, domains: usize| TestGeoSite {
         code: code.to_owned(),
         domain: (0..domains)
-            .map(|index| site_domain(3, &format!("ads{index}.example"), &[]))
+            .map(|index| site_domain(3, &format!("{name}{index}.example"), &[]))
             .collect(),
     };
     write_geosite_dat(
         &asset_dir,
         "geosite.dat",
         &[
-            entry("ADS", 203_233),
-            entry("TOO-MANY", xray_config::MAX_CONFIG_DOMAIN_MATCHERS + 1),
+            entry("ADS", "ads", 203_233),
+            entry("CN", "cn", 110_258),
+            entry("TOO-MANY", "many", 250_001),
         ],
     );
 
-    let raw = raw_with_routing(r#""rules": [{"domain": ["geosite:ads"], "outboundTag": "proxy"}]"#);
+    let raw = raw_with_routing(
+        r#""rules": [{"domain": ["geosite:ads"], "outboundTag": "proxy"},
+                     {"domain": ["geosite:cn"], "outboundTag": "proxy"}]"#,
+    );
     let parsed = parse_xray_json_with_geodata_dirs(&raw, std::slice::from_ref(&asset_dir))
-        .expect("an entry within the budget should load");
-    let rule = &parsed.config.routing.rules[0];
-    assert!(rule.matches_domain(Some("ads203232.example")));
-    assert!(!rule.matches_domain(Some("ads203233.example")));
+        .expect("both categories should load");
+    let ads = &parsed.config.routing.rules[0];
+    assert!(ads.matches_domain(Some("ads203232.example")));
+    assert!(!ads.matches_domain(Some("ads203233.example")));
+    let cn = &parsed.config.routing.rules[1];
+    assert!(cn.matches_domain(Some("cn110257.example")));
+    assert!(!cn.matches_domain(Some("ads0.example")));
 
     let raw =
         raw_with_routing(r#""rules": [{"domain": ["geosite:too-many"], "outboundTag": "proxy"}]"#);
     let error = parse_xray_json_with_geodata_dirs(&raw, std::slice::from_ref(&asset_dir))
-        .expect_err("an entry beyond the budget should be refused");
+        .expect_err("an entry beyond the limit should be refused");
     let message = &error.diagnostics[0].message;
     assert!(
         message.contains("entry `TOO-MANY`: geosite contains more than 250000 domains"),
