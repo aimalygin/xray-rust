@@ -274,6 +274,7 @@ fn config_with_outbound(outbound: OutboundConfig) -> CoreConfig {
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -499,6 +500,7 @@ fn runtime_config_with_freedom_outbound() -> CoreConfig {
         default_outbound_tag: Some("direct".to_owned()),
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -546,6 +548,7 @@ fn runtime_tun_config_with_freedom_outbound() -> CoreConfig {
         default_outbound_tag: Some("direct".to_owned()),
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -606,6 +609,7 @@ fn runtime_listener_config_with_dns_outbound(
             ..RoutingConfig::default()
         },
         observatory: None,
+        burst_observatory: None,
         dns: DnsConfig::default(),
         policy: PolicyConfig::default(),
     }
@@ -647,6 +651,7 @@ fn runtime_tun_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> Co
             ..Default::default()
         },
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -820,6 +825,7 @@ fn runtime_tun_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -844,6 +850,7 @@ fn runtime_socks_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig 
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -897,6 +904,7 @@ fn runtime_tun_config_with_tls_vision_vless_domain_server(
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -927,6 +935,7 @@ fn runtime_tun_config_with_reality_vision_vless_server(port: u16) -> CoreConfig 
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -980,6 +989,7 @@ fn runtime_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreCo
             ..Default::default()
         },
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1024,6 +1034,7 @@ fn runtime_config_with_domain_routed_freedom_outbound(unused_proxy_port: u16) ->
             ..Default::default()
         },
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1096,6 +1107,7 @@ fn runtime_config_with_ip_routed_freedom_outbound(unused_proxy_port: u16) -> Cor
             ..Default::default()
         },
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1144,6 +1156,7 @@ fn runtime_config_with_ip_if_non_match_routed_freedom_outbound(
             domain_strategy: RoutingDomainStrategy::IpIfNonMatch,
         },
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1168,6 +1181,7 @@ fn runtime_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1192,6 +1206,7 @@ fn runtime_http_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1216,6 +1231,7 @@ fn runtime_config_with_vless_domain_server(domain: &str, port: u16) -> CoreConfi
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1251,6 +1267,7 @@ fn runtime_config_with_tls_vless_domain_server(
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -1384,6 +1401,7 @@ fn selects_default_outbound_tag_when_present() {
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     };

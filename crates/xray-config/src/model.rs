@@ -49,6 +49,9 @@ pub struct CoreConfig {
     pub default_outbound_tag: Option<String>,
     pub routing: RoutingConfig,
     pub observatory: Option<ObservatoryConfig>,
+    /// Xray's `burstObservatory`. When [`CoreConfig::observatory`] is also
+    /// present that one drives selection, as in Xray-core, and this is unused.
+    pub burst_observatory: Option<BurstObservatoryConfig>,
     pub dns: DnsConfig,
     pub policy: PolicyConfig,
 }
@@ -64,6 +67,83 @@ pub struct ObservatoryConfig {
     pub probe_url: String,
     pub probe_interval: Duration,
     pub enable_concurrency: bool,
+}
+
+/// `pingConfig.destination` of a burst observatory that names none.
+pub const DEFAULT_BURST_OBSERVATORY_DESTINATION: &str =
+    "https://connectivitycheck.gstatic.com/generate_204";
+/// `pingConfig.interval` of a burst observatory that names none: the average
+/// time between two pings of one outbound.
+pub const DEFAULT_BURST_OBSERVATORY_INTERVAL: Duration = Duration::from_secs(60);
+/// Xray-core raises a shorter nonzero `pingConfig.interval` to this.
+pub const MIN_BURST_OBSERVATORY_INTERVAL: Duration = Duration::from_secs(10);
+/// A longer `pingConfig.interval` is lowered to this, which keeps the
+/// sampling period and the validity of a sample well inside a `Duration`.
+pub const MAX_BURST_OBSERVATORY_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+/// `pingConfig.sampling` of a burst observatory that names none.
+pub const DEFAULT_BURST_OBSERVATORY_SAMPLING: u32 = 10;
+/// A larger `pingConfig.sampling` is lowered to this. It bounds the memory of
+/// one outbound's sample window and the pings scheduled for one period.
+pub const MAX_BURST_OBSERVATORY_SAMPLING: u32 = 100;
+/// `pingConfig.timeout` of a burst observatory that names none.
+pub const DEFAULT_BURST_OBSERVATORY_TIMEOUT: Duration = Duration::from_secs(5);
+/// A longer `pingConfig.timeout` is lowered to this, the bound of every
+/// outbound URL probe.
+pub const MAX_BURST_OBSERVATORY_TIMEOUT: Duration = Duration::from_secs(60);
+/// `pingConfig.httpMethod` of a burst observatory that names none.
+pub const DEFAULT_BURST_OBSERVATORY_HTTP_METHOD: &str = "HEAD";
+
+/// Xray's `burstObservatory`: outbound health from a window of pings spread
+/// at random over a sampling period.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BurstObservatoryConfig {
+    pub subject_selectors: Vec<String>,
+    pub ping: BurstPingConfig,
+}
+
+/// `burstObservatory.pingConfig` with Xray-core's defaults applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BurstPingConfig {
+    /// URL pinged through every observed outbound.
+    pub destination: String,
+    /// URL requested without any outbound after a failed ping. While it also
+    /// fails the network is taken to be down and the ping is not counted.
+    pub connectivity: Option<String>,
+    /// Average time between two pings of one outbound.
+    pub interval: Duration,
+    /// Pings of one outbound per period and the size of its sample window.
+    pub sampling: u32,
+    pub timeout: Duration,
+    /// Request method, sent as written.
+    pub http_method: String,
+}
+
+impl BurstPingConfig {
+    /// The time over which `sampling` pings of one outbound are spread.
+    #[must_use]
+    pub fn sampling_period(&self) -> Duration {
+        self.interval.saturating_mul(self.sampling)
+    }
+
+    /// How long a sample counts. Xray-core keeps it for two periods because
+    /// pings fall anywhere within one.
+    #[must_use]
+    pub fn sample_validity(&self) -> Duration {
+        self.sampling_period().saturating_mul(2)
+    }
+}
+
+impl Default for BurstPingConfig {
+    fn default() -> Self {
+        Self {
+            destination: DEFAULT_BURST_OBSERVATORY_DESTINATION.to_owned(),
+            connectivity: None,
+            interval: DEFAULT_BURST_OBSERVATORY_INTERVAL,
+            sampling: DEFAULT_BURST_OBSERVATORY_SAMPLING,
+            timeout: DEFAULT_BURST_OBSERVATORY_TIMEOUT,
+            http_method: DEFAULT_BURST_OBSERVATORY_HTTP_METHOD.to_owned(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

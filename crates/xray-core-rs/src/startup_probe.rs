@@ -7,7 +7,8 @@ use xray_transport::stream::{apply_masquerade, serialize_request, HeaderMap};
 use xray_transport::{DnsResolver, TlsClientConfig, TlsConnector, TransportDialer};
 
 use crate::outbound::{
-    open_tcp_stream_with_resolvers_and_dialer, OutboundGraph, OutboundHealthFailure,
+    open_tcp_stream_with_resolvers_and_dialer, FreedomOutbound, OutboundGraph,
+    OutboundHealthFailure, TcpOutbound,
 };
 use crate::{CoreError, OutboundRouter};
 
@@ -31,6 +32,32 @@ pub(crate) enum ProbeStatusPolicy {
     /// their documented FFI contract reports other statuses as `HttpStatus`,
     /// and nothing about the status check is visible on the wire.
     Success,
+}
+
+/// What a probe sends and which way, where Xray-core's observers differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProbeRequest<'a> {
+    /// Request method, written as it is.
+    pub(crate) method: &'a str,
+    pub(crate) path: ProbePath,
+}
+
+impl Default for ProbeRequest<'_> {
+    fn default() -> Self {
+        Self {
+            method: "GET",
+            path: ProbePath::Outbound,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProbePath {
+    /// Through the outbound the probe options name.
+    Outbound,
+    /// Over the device's own network, through no configured outbound: the
+    /// burst observatory's connectivity check.
+    Direct,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,6 +240,28 @@ pub(crate) async fn run_outbound_url_probe(
     transport_dialer: &TransportDialer,
     status_policy: ProbeStatusPolicy,
 ) -> Result<Duration, StartupProbeError> {
+    run_health_probe(
+        outbound_router,
+        options,
+        ProbeRequest::default(),
+        destination_resolver,
+        bootstrap_resolver,
+        transport_dialer,
+        status_policy,
+    )
+    .await
+}
+
+/// One bounded URL probe with the request an observatory asks for.
+pub(crate) async fn run_health_probe(
+    outbound_router: &OutboundRouter,
+    options: StartupProbeOptions,
+    request: ProbeRequest<'_>,
+    destination_resolver: &dyn DnsResolver,
+    bootstrap_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+    status_policy: ProbeStatusPolicy,
+) -> Result<Duration, StartupProbeError> {
     let timeout_ms = options.timeout.as_millis();
     let url = diagnostic_probe_url(&options.url);
     timeout(
@@ -220,6 +269,7 @@ pub(crate) async fn run_outbound_url_probe(
         run_startup_probe_inner(
             outbound_router,
             &options,
+            request,
             destination_resolver,
             bootstrap_resolver,
             transport_dialer,
@@ -237,9 +287,11 @@ pub(crate) fn diagnostic_probe_url(raw: &str) -> String {
         .unwrap_or_else(|_| "<redacted>".to_owned())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_startup_probe_inner(
     outbound_router: &OutboundRouter,
     options: &StartupProbeOptions,
+    request: ProbeRequest<'_>,
     destination_resolver: &dyn DnsResolver,
     bootstrap_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
@@ -250,12 +302,15 @@ async fn run_startup_probe_inner(
     let parsed = parse_probe_url(&options.url)?;
     let url = parsed.diagnostic_label();
     let step_timeout = options.timeout;
-    let outbound = outbound_router
-        .select_tcp_outbound_direct(options.outbound_tag.as_deref())
-        .map_err(|source| StartupProbeError::Core {
-            url: url.clone(),
-            source: Box::new(source),
-        })?;
+    let outbound = match request.path {
+        ProbePath::Outbound => outbound_router
+            .select_tcp_outbound_direct(options.outbound_tag.as_deref())
+            .map_err(|source| StartupProbeError::Core {
+                url: url.clone(),
+                source: Box::new(source),
+            })?,
+        ProbePath::Direct => TcpOutbound::Freedom(FreedomOutbound::direct()),
+    };
     let target = Target::new(
         probe_target_addr(&parsed.host),
         parsed.port,
@@ -319,7 +374,7 @@ async fn run_startup_probe_inner(
         })?;
     }
 
-    let request = probe_request(&parsed);
+    let request = probe_request(&parsed, request.method);
     timeout(step_timeout, stream.write_all(&request))
         .await
         .map_err(|_| StartupProbeError::Timeout {
@@ -362,11 +417,11 @@ async fn run_startup_probe_inner(
 /// then writes `Host`, `User-Agent`, the sorted header map and finally the
 /// transport's own `Accept-Encoding: gzip` (`Transport.DisableCompression` is
 /// unset and the persona sets no `Accept-Encoding`).
-fn probe_request(parsed: &ParsedProbeUrl) -> Vec<u8> {
+fn probe_request(parsed: &ParsedProbeUrl, method: &str) -> Vec<u8> {
     let mut headers = HeaderMap::new();
     apply_masquerade(&mut headers, "nav");
     let mut request = serialize_request(
-        "GET",
+        method,
         &parsed.path_and_query,
         &host_header_value(parsed),
         &headers,
@@ -865,6 +920,7 @@ mod https_tests {
             default_outbound_tag: Some("direct".to_owned()),
             routing: RoutingConfig::default(),
             observatory: None,
+            burst_observatory: None,
             dns: Default::default(),
             policy: Default::default(),
         }
@@ -876,7 +932,7 @@ mod https_tests {
     #[test]
     fn probe_request_carries_xray_navigation_persona_in_go_order() {
         let parsed = parse_probe_url("http://probe.test:8080/generate_204?x=1").unwrap();
-        let request = String::from_utf8(probe_request(&parsed)).unwrap();
+        let request = String::from_utf8(probe_request(&parsed, "GET")).unwrap();
 
         assert!(!request.to_ascii_lowercase().contains("xray"), "{request}");
         assert!(request.ends_with("\r\n\r\n"), "{request}");
@@ -1007,6 +1063,7 @@ mod https_tests {
             run_startup_probe_inner(
                 &outbound_router,
                 &options,
+                ProbeRequest::default(),
                 &resolver,
                 &resolver,
                 &transport_dialer,

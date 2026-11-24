@@ -5820,6 +5820,54 @@
       "set": {
         "/outbounds/0/mux/enabled": false
       }
+    },
+    {
+      "name": "burst-observatory",
+      "accepted": true,
+      "objects": {
+        "BURST_OBSERVATORY": "/burstObservatory",
+        "BURST_PING_CONFIG": "/burstObservatory/pingConfig"
+      },
+      "config": {
+        "inbounds": [],
+        "outbounds": [
+          {
+            "protocol": "freedom",
+            "tag": "direct"
+          }
+        ],
+        "burstObservatory": {
+          "subjectSelector": [
+            "direct"
+          ],
+          "pingConfig": {
+            "destination": "https://connectivitycheck.gstatic.com/generate_204",
+            "connectivity": "http://connectivitycheck.platform.hicloud.com/generate_204",
+            "interval": "1m",
+            "sampling": 10,
+            "timeout": "5s",
+            "httpMethod": "HEAD"
+          }
+        }
+      }
+    },
+    {
+      "name": "burst-observatory-without-ping-config",
+      "accepted": false,
+      "errorPath": "$.burstObservatory.pingConfig",
+      "base": "burst-observatory",
+      "set": {
+        "/burstObservatory/pingConfig": null
+      }
+    },
+    {
+      "name": "burst-observatory-interval-raised",
+      "accepted": true,
+      "warningPath": "$.burstObservatory.pingConfig.interval",
+      "base": "burst-observatory",
+      "set": {
+        "/burstObservatory/pingConfig/interval": "2s"
+      }
     }
   ]
 }

@@ -60,6 +60,7 @@ fn config_with_outbounds(outbounds: Vec<OutboundConfig>, default: Option<&str>) 
         default_outbound_tag: default.map(ToOwned::to_owned),
         routing: RoutingConfig::default(),
         observatory: None,
+        burst_observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
