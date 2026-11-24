@@ -138,8 +138,9 @@ To answer app messages of its own, a subclass overrides
 data-path core for every message it does not handle itself (the built-in
 close-connections request is handled first, the stats request after), so a host
 can, for example, return the core's connection or accounting snapshot to its
-app. Return `nil` to fall through to the built-in handling. Keep the work short
-and do not start, stop or replace the core from the hook.
+app. The message is the app's bytes as sent and need not be text. Return `nil`
+to fall through to the built-in handling. Keep the work short and do not start,
+stop or replace the core from the hook.
 
 ```swift
 final class PacketTunnelProvider: XrayPacketTunnelProvider {
