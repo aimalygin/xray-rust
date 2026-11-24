@@ -1572,6 +1572,47 @@ fn a_geosite_selection_without_domains_matches_nothing() {
     assert!(ext_site.matches_domain(Some("api.example.com")));
 }
 
+/// One geosite entry may fill the configuration's domain matcher budget.
+/// Loyalsoldier's `category-ads-all` was reported at 203,233 domains when it
+/// passed the earlier limit of 200,000 an entry. An entry beyond the budget
+/// is refused, and the error names it rather than only the file.
+#[test]
+fn a_geosite_entry_may_fill_the_domain_matcher_budget() {
+    let asset_dir = unique_temp_dir("geosite-large-entry");
+    let entry = |code: &str, domains: usize| TestGeoSite {
+        code: code.to_owned(),
+        domain: (0..domains)
+            .map(|index| site_domain(3, &format!("ads{index}.example"), &[]))
+            .collect(),
+    };
+    write_geosite_dat(
+        &asset_dir,
+        "geosite.dat",
+        &[
+            entry("ADS", 203_233),
+            entry("TOO-MANY", xray_config::MAX_CONFIG_DOMAIN_MATCHERS + 1),
+        ],
+    );
+
+    let raw = raw_with_routing(r#""rules": [{"domain": ["geosite:ads"], "outboundTag": "proxy"}]"#);
+    let parsed = parse_xray_json_with_geodata_dirs(&raw, std::slice::from_ref(&asset_dir))
+        .expect("an entry within the budget should load");
+    let rule = &parsed.config.routing.rules[0];
+    assert!(rule.matches_domain(Some("ads203232.example")));
+    assert!(!rule.matches_domain(Some("ads203233.example")));
+
+    let raw =
+        raw_with_routing(r#""rules": [{"domain": ["geosite:too-many"], "outboundTag": "proxy"}]"#);
+    let error = parse_xray_json_with_geodata_dirs(&raw, std::slice::from_ref(&asset_dir))
+        .expect_err("an entry beyond the budget should be refused");
+    let message = &error.diagnostics[0].message;
+    assert!(
+        message.contains("entry `TOO-MANY`: geosite contains more than 250000 domains"),
+        "{message}"
+    );
+    let _ = fs::remove_dir_all(&asset_dir);
+}
+
 #[test]
 fn dns_geosite_selections_without_domains_match_nothing() {
     let asset_dir = unique_temp_dir("dns-geosite-empty-selection");

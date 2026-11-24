@@ -10,6 +10,14 @@ long-term supported release series.
 
 ## Unreleased
 
+- A selected geosite entry may hold up to 250,000 domains, the whole domain
+  matcher budget of a configuration, where the limit was 200,000. Loyalsoldier's
+  `category-ads-all`, a common ad-blocking rule, passed 200,000 (reported at
+  203,233), and a configuration that named it failed to load. The budget of
+  250,000 domain matchers a configuration is unchanged, so no configuration
+  holds more than it could before, and an entry that large leaves little room
+  for other domain rules beside it. An error about an entry over a limit now
+  names the entry, as ``entry `CODE`: …``, since the file itself is sound.
 - A base64 JSON `vmess://` link without TLS (`tls` absent, empty or `none`)
   imports when it carries `sni`, `alpn` or `fp`; those fields are ignored, as
   v2rayN ignores them. Panels such as V2Board write `fp` on every link, so

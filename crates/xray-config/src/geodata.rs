@@ -25,7 +25,10 @@ const MAX_GEODATA_ENTRY_SIZE: usize = 32 * 1024 * 1024;
 const MAX_GEODATA_INDEX_ENTRIES: usize = 65_536;
 const MAX_GEODATA_INDEX_CODE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_GEODATA_CODE_SIZE: usize = 256;
-const MAX_GEODATA_DOMAINS: usize = 200_000;
+/// One selected entry may fill the domain matcher budget of a configuration.
+/// That budget bounds what a configuration holds whatever its entries are,
+/// so a lower limit here only refused entries the budget had room for.
+const MAX_GEODATA_DOMAINS: usize = crate::MAX_CONFIG_DOMAIN_MATCHERS;
 const MAX_GEODATA_DOMAIN_ATTRIBUTES: usize = 400_000;
 const MAX_GEODATA_DOMAIN_VALUE_SIZE: usize = 4 * 1024;
 const MAX_GEODATA_ATTRIBUTE_SIZE: usize = 1024;
@@ -309,9 +312,11 @@ impl GeodataLoader {
                 file_name: file_name.to_owned(),
                 code: code.to_owned(),
             })?;
+        // The file is sound when only one entry is over a limit, so the
+        // message names that entry.
         validate_body(&body).map_err(|message| GeodataError::InvalidFile {
             path: path.clone(),
-            message,
+            message: format!("entry `{code}`: {message}"),
         })?;
         Ok((body, path))
     }
@@ -1729,6 +1734,23 @@ mod tests {
         let error = validate_geo_site_body(&body).unwrap_err();
 
         assert!(error.contains("domains"));
+    }
+
+    /// An entry may be as large as the domain matcher budget of a
+    /// configuration, and no larger.
+    #[test]
+    fn geosite_entry_may_fill_the_configuration_domain_budget() {
+        assert_eq!(MAX_GEODATA_DOMAINS, crate::MAX_CONFIG_DOMAIN_MATCHERS);
+        let mut body = vec![0x0a, 0x04];
+        body.extend_from_slice(b"TEST");
+        for _ in 0..MAX_GEODATA_DOMAINS {
+            body.extend_from_slice(&[0x12, 0x00]);
+        }
+        validate_geo_site_body(&body).expect("an entry of exactly the budget");
+
+        body.extend_from_slice(&[0x12, 0x00]);
+        let error = validate_geo_site_body(&body).unwrap_err();
+        assert_eq!(error, "geosite contains more than 250000 domains");
     }
 
     fn private_cache() -> Arc<GeodataCache> {

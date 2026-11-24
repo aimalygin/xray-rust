@@ -4785,6 +4785,13 @@ before protobuf decoding. Every expansion is charged against the shared
 per-configuration IP and total matcher budgets, including repeated references
 to a cached category in different rules or DNS selectors.
 
+A selected GeoSite entry may contain up to 250,000 domains, the whole domain
+matcher budget of a configuration, with up to 400,000 attributes among them.
+It is checked before protobuf decoding as well, and every reference is charged
+against the domain and total matcher budgets, so an entry near the limit
+leaves little room for other domain rules beside it. An entry over a limit is
+named in the error (``entry `CODE`: …``); the file itself is sound.
+
 Compiled categories are cached for the whole process: a configuration that
 names a category another one already compiled, such as the next core a host
 starts after a server switch, reuses it without reading the file entry again.
