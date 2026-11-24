@@ -629,6 +629,98 @@ pub(super) async fn run_target_server(
         .await
 }
 
+/// How a download origin spaces its writes to stand in for a link slower
+/// than the engine: `burst_bytes` at a time, `bytes_per_second` on average.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct OriginPace {
+    pub(super) bytes_per_second: u64,
+    pub(super) burst_bytes: usize,
+}
+
+/// A download-only target whose flows write at `pace`. `TCP_NODELAY` keeps
+/// every burst a separate arrival at the engine's remote socket.
+pub(super) async fn run_paced_download_server(
+    listener: TcpListener,
+    template: Arc<Vec<u8>>,
+    iterations: usize,
+    connections: usize,
+    pace: OriginPace,
+) -> Result<(), BenchError> {
+    let io_error = |action: &'static str| {
+        move |source| BenchError::Io {
+            action: action.to_owned(),
+            source,
+        }
+    };
+    let mut workers = JoinSet::new();
+    for _ in 0..connections {
+        let (mut stream, _) = listener
+            .accept()
+            .await
+            .map_err(io_error("accepting paced download connection"))?;
+        let template = Arc::clone(&template);
+        workers.spawn(async move {
+            stream
+                .set_nodelay(true)
+                .map_err(io_error("disabling Nagle on paced download"))?;
+            stream
+                .write_all(&[READY_BYTE])
+                .await
+                .map_err(io_error("writing paced download ready marker"))?;
+            write_pattern_paced(&mut stream, &template, iterations, pace)
+                .await
+                .map_err(io_error("writing paced benchmark download"))
+        });
+    }
+    while let Some(result) = workers.join_next().await {
+        result.map_err(|error| {
+            BenchError::InvalidArguments(format!("paced download flow failed: {error}"))
+        })??;
+    }
+    Ok(())
+}
+
+async fn write_pattern_paced<W>(
+    writer: &mut W,
+    template: &[u8],
+    iterations: usize,
+    pace: OriginPace,
+) -> std::io::Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    const TIMER_GRANULARITY: std::time::Duration = std::time::Duration::from_millis(1);
+    let total = template.len() * iterations;
+    let started = Instant::now();
+    let mut sent = 0_usize;
+    while sent < total {
+        let offset = sent % template.len();
+        let end = template
+            .len()
+            .min(offset + pace.burst_bytes)
+            .min(offset + total - sent);
+        writer.write_all(&template[offset..end]).await?;
+        sent += end - offset;
+        let due = started
+            + std::time::Duration::from_secs_f64(sent as f64 / pace.bytes_per_second as f64);
+        loop {
+            let left = due.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            // Tokio timers tick once a millisecond, and bursts of a few
+            // megabytes per second are closer together than that: sleep
+            // through whole ticks and yield through the rest.
+            if left > 2 * TIMER_GRANULARITY {
+                tokio::time::sleep(left - TIMER_GRANULARITY).await;
+            } else {
+                tokio::task::yield_now().await;
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn run_target_server_with_preface(
     listener: TcpListener,
     traffic: StreamBenchTraffic,
@@ -1541,6 +1633,54 @@ mod tests {
             .expect("held-open target did not observe client close")
             .unwrap()
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn paced_download_keeps_the_rate_and_the_burst_size() {
+        let template = Arc::new((0..=255_u8).collect::<Vec<_>>());
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        // 4 KiB at 64 KiB/s in 256-byte bursts: 16 bursts over 62.5 ms.
+        let pace = OriginPace {
+            bytes_per_second: 64 * 1024,
+            burst_bytes: 256,
+        };
+        let server = tokio::spawn(run_paced_download_server(
+            listener,
+            Arc::clone(&template),
+            16,
+            1,
+            pace,
+        ));
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        let started = Instant::now();
+        let mut ready = [0];
+        client.read_exact(&mut ready).await.unwrap();
+        assert_eq!(ready[0], READY_BYTE);
+
+        let mut received = Vec::new();
+        let mut largest_read = 0;
+        let mut buffer = [0; 4096];
+        while received.len() < 16 * template.len() {
+            let read = client.read(&mut buffer).await.unwrap();
+            assert_ne!(read, 0, "paced download closed early");
+            largest_read = largest_read.max(read);
+            received.extend_from_slice(&buffer[..read]);
+        }
+        let elapsed = started.elapsed();
+        server.await.unwrap().unwrap();
+
+        assert!(received
+            .chunks(template.len())
+            .all(|chunk| chunk == &template[..]));
+        // The last burst is due 15/16 of the way through the nominal time.
+        assert!(
+            elapsed >= std::time::Duration::from_millis(55),
+            "{elapsed:?}"
+        );
+        assert!(elapsed < std::time::Duration::from_secs(2), "{elapsed:?}");
+        // A reader that keeps up sees separate bursts, not one stream.
+        assert!(largest_read < received.len(), "{largest_read}");
     }
 
     #[tokio::test]

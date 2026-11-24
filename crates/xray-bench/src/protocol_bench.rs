@@ -25,6 +25,14 @@ struct Request {
     client_preface: bool,
     #[serde(default)]
     client_env: std::collections::BTreeMap<String, String>,
+    /// Average rate, in KiB/s, at which the origin of a TUN download writes.
+    /// Stands in for a link slower than the engine; absent means unpaced.
+    #[serde(default)]
+    origin_rate_kib_s: Option<u32>,
+    /// Bytes the paced origin writes at once: how many arrive together at
+    /// the engine's remote socket. Defaults to one 1448-byte segment.
+    #[serde(default)]
+    origin_burst_bytes: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -58,6 +66,17 @@ fn io_error(source: io::Error) -> BenchError {
     }
 }
 
+/// One MSS of a 1500-byte IPv4 path with TCP timestamps.
+const DEFAULT_ORIGIN_BURST_BYTES: usize = 1448;
+
+fn origin_pace(r: &Request) -> Option<stream_transport::OriginPace> {
+    r.origin_rate_kib_s
+        .map(|rate| stream_transport::OriginPace {
+            bytes_per_second: u64::from(rate) * 1024,
+            burst_bytes: r.origin_burst_bytes.unwrap_or(DEFAULT_ORIGIN_BURST_BYTES),
+        })
+}
+
 fn validate(r: &Request) -> Result<(), BenchError> {
     if !matches!(r.path.as_str(), "socks" | "tun")
         || !matches!(
@@ -74,6 +93,13 @@ fn validate(r: &Request) -> Result<(), BenchError> {
         || (r.path == "tun" && (r.prepare_client || r.warmup))
         || (r.client_preface
             && (r.path != "socks" || matches!(r.traffic.as_str(), "tcp-latency" | "udp")))
+        || ((r.origin_rate_kib_s.is_some() || r.origin_burst_bytes.is_some())
+            && (r.path != "tun" || r.traffic != "download"))
+        || (r.origin_burst_bytes.is_some() && r.origin_rate_kib_s.is_none())
+        || r.origin_rate_kib_s
+            .is_some_and(|rate| !(1..=1024 * 1024).contains(&rate))
+        || r.origin_burst_bytes
+            .is_some_and(|burst| !(1..=65536).contains(&burst))
     {
         return Err(invalid("invalid bounded protocol benchmark request"));
     }
@@ -242,7 +268,13 @@ pub async fn run(args: Vec<String>) -> Result<(), BenchError> {
                 run_tcp_freedom_workload_on(socks, &options, local_non_loopback_ipv4()?).await?
             }
             (Some(fd), traffic) => {
-                run_tun_bulk(fd.raw(), &options, StreamBenchTraffic::parse(traffic)?).await?
+                run_tun_bulk(
+                    fd.raw(),
+                    &options,
+                    StreamBenchTraffic::parse(traffic)?,
+                    origin_pace(&r),
+                )
+                .await?
             }
             (None, traffic) => {
                 stream_transport::run_workload_with_preface_on(
@@ -309,6 +341,8 @@ pub async fn run(args: Vec<String>) -> Result<(), BenchError> {
                 "client_cpu_total_millis":samples.last().unwrap().cpu_millis,
                 "engine_binary":prepared.binary,"engine_sha256":engine_sha256,
                 "client_env":r.client_env,
+                "origin_rate_kib_s":r.origin_rate_kib_s,
+                "origin_burst_bytes":origin_pace(&r).map(|pace| pace.burst_bytes),
                 "tun_fd_buffers":link_buffers,
                 "latency_us":if matches!(r.traffic.as_str(), "udp" | "tcp-latency") {summarize_latency_us(outcome.latencies_us.clone())} else {None},
                 "ready_latency_us":if r.path=="tun" && !matches!(r.traffic.as_str(), "udp" | "tcp-latency") {summarize_latency_us(outcome.latencies_us)} else {None},
@@ -534,6 +568,7 @@ async fn run_tun_bulk(
     fd: RawFd,
     options: &BenchOptions,
     traffic: StreamBenchTraffic,
+    origin_pace: Option<stream_transport::OriginPace>,
 ) -> Result<WorkloadOutcome, BenchError> {
     let listener = TcpListener::bind((local_non_loopback_ipv4()?, 0))
         .await
@@ -544,8 +579,28 @@ async fn run_tun_bulk(
     let iterations = options.iterations;
     let count = options.connections;
     let server = tokio::spawn(async move {
-        stream_transport::run_target_server(listener, traffic, server_template, iterations, count)
-            .await
+        match origin_pace {
+            Some(pace) => {
+                stream_transport::run_paced_download_server(
+                    listener,
+                    server_template,
+                    iterations,
+                    count,
+                    pace,
+                )
+                .await
+            }
+            None => {
+                stream_transport::run_target_server(
+                    listener,
+                    traffic,
+                    server_template,
+                    iterations,
+                    count,
+                )
+                .await
+            }
+        }
     });
     // Abort the local fixture on error/timeout; its JoinSet cancels child flows.
     struct Abort(tokio::task::AbortHandle);
@@ -748,6 +803,8 @@ mod tests {
             warmup: false,
             client_preface: false,
             client_env: Default::default(),
+            origin_rate_kib_s: None,
+            origin_burst_bytes: None,
         };
         assert!(validate(&r).is_ok());
         r.warmup = true;
@@ -776,6 +833,50 @@ mod tests {
         assert!(validate(&r).is_err());
         r.path = "unknown".into();
         assert!(validate(&r).is_err());
+    }
+
+    #[test]
+    fn origin_pace_is_bounded_and_only_for_tun_downloads() {
+        let mut r: Request = serde_json::from_value(json!({
+            "binary":"engine", "config":{}, "path":"tun", "traffic":"download",
+            "connections":1, "iterations":1, "payload_size":1024, "output":"result",
+            "origin_rate_kib_s":6144
+        }))
+        .unwrap();
+        assert!(validate(&r).is_ok());
+        let pace = origin_pace(&r).unwrap();
+        assert_eq!(pace.bytes_per_second, 6144 * 1024);
+        assert_eq!(pace.burst_bytes, DEFAULT_ORIGIN_BURST_BYTES);
+
+        r.origin_burst_bytes = Some(4 * 1448);
+        assert!(validate(&r).is_ok());
+        assert_eq!(origin_pace(&r).unwrap().burst_bytes, 4 * 1448);
+        r.origin_burst_bytes = Some(0);
+        assert!(validate(&r).is_err());
+        r.origin_burst_bytes = Some(65537);
+        assert!(validate(&r).is_err());
+        r.origin_burst_bytes = None;
+
+        r.origin_rate_kib_s = Some(0);
+        assert!(validate(&r).is_err());
+        r.origin_rate_kib_s = Some(1024 * 1024 + 1);
+        assert!(validate(&r).is_err());
+        r.origin_rate_kib_s = Some(6144);
+
+        r.traffic = "upload".into();
+        assert!(validate(&r).is_err());
+        r.traffic = "download".into();
+        r.path = "socks".into();
+        assert!(validate(&r).is_err());
+        r.path = "tun".into();
+
+        // A burst size without a rate paces nothing.
+        r.origin_rate_kib_s = None;
+        r.origin_burst_bytes = Some(1448);
+        assert!(validate(&r).is_err());
+        r.origin_burst_bytes = None;
+        assert!(validate(&r).is_ok());
+        assert!(origin_pace(&r).is_none());
     }
 
     #[test]
