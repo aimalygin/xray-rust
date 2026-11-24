@@ -1468,20 +1468,44 @@ fn create_temp_dir(prefix: &str) -> TempDir {
     panic!("failed to create unique temp dir for {prefix}");
 }
 
+/// A loopback port that was free for both TCP and UDP when picked: Xray binds
+/// both on one number for a UDP-capable inbound (Shadowsocks with `tcp,udp`),
+/// and a parallel test's UDP socket can hold a number the kernel hands out
+/// for TCP. Nothing holds the port once this returns, so a start still has to
+/// survive losing it ([`start_xray_on_fresh_port`]).
 fn allocate_loopback_port() -> u16 {
-    std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-        .expect("bind ephemeral port")
-        .local_addr()
-        .expect("read local addr")
-        .port()
+    allocate_loopback_port_from(false)
 }
 
+/// [`allocate_loopback_port`], starting from the kernel's pick for UDP.
 fn allocate_loopback_udp_port() -> u16 {
-    std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
-        .expect("bind ephemeral UDP port")
-        .local_addr()
-        .expect("read local UDP addr")
-        .port()
+    allocate_loopback_port_from(true)
+}
+
+fn allocate_loopback_port_from(udp: bool) -> u16 {
+    for _ in 0..64 {
+        let (port, other_free) = if udp {
+            let socket =
+                std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind ephemeral port");
+            let port = socket.local_addr().expect("read local addr").port();
+            (
+                port,
+                std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port)).is_ok(),
+            )
+        } else {
+            let listener =
+                std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind ephemeral port");
+            let port = listener.local_addr().expect("read local addr").port();
+            (
+                port,
+                std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, port)).is_ok(),
+            )
+        };
+        if other_free {
+            return port;
+        }
+    }
+    panic!("no loopback port was free for both TCP and UDP in 64 picks");
 }
 
 fn generate_tls_identity(temp_dir: &TempDir, server_name: &str) -> GeneratedTlsIdentity {
@@ -1793,11 +1817,6 @@ async fn start_xray_vless_server_listening(
             ..
         } | XrayInboundTransport::Kcp
     );
-    let port = if uses_udp_listener {
-        allocate_loopback_udp_port()
-    } else {
-        allocate_loopback_port()
-    };
     let tls_identity = match server_config.security {
         XrayInboundSecurity::None => None,
         XrayInboundSecurity::Tls => Some(generate_tls_identity(&temp_dir, TLS_SERVER_NAME)),
@@ -1806,11 +1825,11 @@ async fn start_xray_vless_server_listening(
     let tls_client_config = tls_identity
         .as_ref()
         .map(|identity| Arc::clone(&identity.client_config));
-    write_xray_vless_config(&config_path, port, &server_config, tls_identity.as_ref());
+    // Port 0 stands in until each start below writes the port it picked.
+    write_xray_vless_config(&config_path, 0, &server_config, tls_identity.as_ref());
     let mut json: serde_json::Value =
         serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
     customize(&mut json);
-    fs::write(&config_path, serde_json::to_vec(&json).unwrap()).unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -1838,27 +1857,28 @@ async fn start_xray_vless_server_listening(
         binary
     };
 
-    let mut child = Command::new(&binary)
-        .arg("run")
-        .arg("-config")
-        .arg(&config_path)
-        .stdout(Stdio::from(
-            fs::File::create(&stdout_path).expect("create xray stdout log"),
-        ))
-        .stderr(Stdio::from(
-            fs::File::create(&stderr_path).expect("create xray stderr log"),
-        ))
-        .spawn()
-        .expect("start xray process");
-
-    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-    if uses_udp_listener && udp_listener {
-        wait_for_udp_listener(&mut child, addr, &stdout_path, &stderr_path).await;
-    } else if uses_udp_listener {
-        wait_for_xray_startup(&mut child, &stdout_path, &stderr_path).await;
-    } else {
-        wait_for_tcp_listener(&mut child, addr, &stdout_path, &stderr_path).await;
-    }
+    let readiness = match (uses_udp_listener, udp_listener) {
+        (true, true) => XrayReadiness::Udp,
+        (true, false) => XrayReadiness::Startup,
+        (false, _) => XrayReadiness::Tcp,
+    };
+    let (child, addr) = start_xray_on_fresh_port(readiness, &stdout_path, &stderr_path, |port| {
+        json["inbounds"][0]["port"] = port.into();
+        fs::write(&config_path, serde_json::to_vec(&json).unwrap()).unwrap();
+        Command::new(&binary)
+            .arg("run")
+            .arg("-config")
+            .arg(&config_path)
+            .stdout(Stdio::from(
+                fs::File::create(&stdout_path).expect("create xray stdout log"),
+            ))
+            .stderr(Stdio::from(
+                fs::File::create(&stderr_path).expect("create xray stderr log"),
+            ))
+            .spawn()
+            .expect("start xray process")
+    })
+    .await;
 
     XrayServer {
         child,
@@ -1882,8 +1902,6 @@ async fn start_xray_vless_client(
     let config_path = temp_dir.path.join("client.json");
     let stdout_path = temp_dir.path.join("xray-client.stdout.log");
     let stderr_path = temp_dir.path.join("xray-client.stderr.log");
-    let port = allocate_loopback_port();
-    write_xray_vless_client_config(&config_path, port, server_addr, fingerprint);
 
     let build_output = Command::new("go")
         .arg("build")
@@ -1900,21 +1918,23 @@ async fn start_xray_vless_client(
         String::from_utf8_lossy(&build_output.stderr)
     );
 
-    let mut child = Command::new(&binary)
-        .arg("run")
-        .arg("-config")
-        .arg(&config_path)
-        .stdout(Stdio::from(
-            fs::File::create(&stdout_path).expect("create xray client stdout log"),
-        ))
-        .stderr(Stdio::from(
-            fs::File::create(&stderr_path).expect("create xray client stderr log"),
-        ))
-        .spawn()
-        .expect("start xray client process");
-
-    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-    wait_for_tcp_listener(&mut child, addr, &stdout_path, &stderr_path).await;
+    let (child, addr) =
+        start_xray_on_fresh_port(XrayReadiness::Tcp, &stdout_path, &stderr_path, |port| {
+            write_xray_vless_client_config(&config_path, port, server_addr, fingerprint);
+            Command::new(&binary)
+                .arg("run")
+                .arg("-config")
+                .arg(&config_path)
+                .stdout(Stdio::from(
+                    fs::File::create(&stdout_path).expect("create xray client stdout log"),
+                ))
+                .stderr(Stdio::from(
+                    fs::File::create(&stderr_path).expect("create xray client stderr log"),
+                ))
+                .spawn()
+                .expect("start xray client process")
+        })
+        .await;
 
     XrayServer {
         child,
@@ -1926,25 +1946,108 @@ async fn start_xray_vless_client(
     }
 }
 
+/// Starts of an Xray process whose port another socket took, each on a fresh
+/// port. The harness picks a port by binding it and lets go for Xray to bind;
+/// a parallel test's socket can take it in between, for TCP or, since Xray
+/// binds both for a UDP-capable inbound, for UDP ("address already in use").
+const XRAY_PORT_ATTEMPTS: usize = 5;
+
+/// What proves a started Xray ready: its startup record, then a listener on
+/// its port for [`Self::Tcp`] and [`Self::Udp`].
+#[derive(Debug, Clone, Copy)]
+enum XrayReadiness {
+    Startup,
+    Tcp,
+    Udp,
+}
+
+/// Xray exited before it was ready: the message has its status and logs.
+struct XrayExited(String);
+
+impl XrayExited {
+    /// Whether Xray exited because another socket held `port`, as Go words a
+    /// failed listen: `listen udp 127.0.0.1:40433: bind: address already in
+    /// use`. A port it was not given (another inbound's) is not a lost port:
+    /// a fresh one for the first inbound would not help.
+    fn lost_port(&self, port: u16) -> bool {
+        self.0
+            .contains(&format!(":{port}: bind: address already in use"))
+    }
+}
+
+/// Starts Xray with `start`, which writes its config for the given port and
+/// spawns it logging to `stdout_path` and `stderr_path`, until it is ready.
+/// When Xray exits because another socket took its port, it is started again
+/// on a fresh one, up to [`XRAY_PORT_ATTEMPTS`] times. Any other early exit
+/// fails at once with Xray's logs.
+async fn start_xray_on_fresh_port(
+    readiness: XrayReadiness,
+    stdout_path: &Path,
+    stderr_path: &Path,
+    mut start: impl FnMut(u16) -> Child,
+) -> (Child, SocketAddr) {
+    for attempt in 1..=XRAY_PORT_ATTEMPTS {
+        let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, allocate_loopback_port()));
+        let mut child = start(addr.port());
+        let ready = match readiness {
+            XrayReadiness::Startup => {
+                try_wait_for_xray_startup(&mut child, stdout_path, stderr_path).await
+            }
+            XrayReadiness::Tcp => {
+                try_wait_for_tcp_listener(&mut child, addr, stdout_path, stderr_path).await
+            }
+            XrayReadiness::Udp => {
+                try_wait_for_udp_listener(&mut child, addr, stdout_path, stderr_path).await
+            }
+        };
+        match ready {
+            Ok(()) => return (child, addr),
+            Err(exited) if !exited.lost_port(addr.port()) => panic!("{}", exited.0),
+            Err(XrayExited(message)) if attempt == XRAY_PORT_ATTEMPTS => {
+                panic!("xray's port was taken on all {XRAY_PORT_ATTEMPTS} starts; last: {message}")
+            }
+            Err(_) => eprintln!(
+                "xray lost {addr} to another socket; starting it again on a fresh port \
+                 ({attempt} of {XRAY_PORT_ATTEMPTS})"
+            ),
+        }
+    }
+    unreachable!("the last start returns or panics")
+}
+
 // A successful connect to a freshly released ephemeral port does not prove
 // that our child is ready: another concurrent fixture can own it, and Linux
 // can even establish a TCP self-connection before the server binds. Wait for
 // this child's startup record before touching its listening port.
 async fn wait_for_xray_startup(child: &mut Child, stdout_path: &Path, stderr_path: &Path) {
+    if let Err(XrayExited(message)) =
+        try_wait_for_xray_startup(child, stdout_path, stderr_path).await
+    {
+        panic!("{message}");
+    }
+}
+
+/// [`wait_for_xray_startup`], returning an early exit for the caller to judge.
+async fn try_wait_for_xray_startup(
+    child: &mut Child,
+    stdout_path: &Path,
+    stderr_path: &Path,
+) -> Result<(), XrayExited> {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         let status = child.try_wait().expect("check xray process status");
         let stdout = fs::read_to_string(stdout_path).unwrap_or_default();
         let stderr = fs::read_to_string(stderr_path).unwrap_or_default();
-        assert!(
-            status.is_none(),
-            "xray exited before startup: {status:?}\nstdout:\n{stdout}\nstderr:\n{stderr}"
-        );
+        if let Some(status) = status {
+            return Err(XrayExited(format!(
+                "xray exited before startup: {status}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+            )));
+        }
         if stdout.lines().chain(stderr.lines()).any(|line| {
             line.split_once("core: Xray ")
                 .is_some_and(|(_, message)| message.ends_with(" started"))
         }) {
-            return;
+            return Ok(());
         }
         assert!(
             Instant::now() < deadline,
@@ -2031,27 +2134,133 @@ async fn xray_readiness_requires_its_own_startup_record_even_when_port_is_occupi
     }
 }
 
+/// A start whose own port was taken is tried again on a fresh one, a bounded
+/// number of times; any other early exit, a port it was not given among
+/// them, fails at once. `sh` stands in for Xray, so neither Go nor the pinned
+/// checkout is needed.
+#[cfg(unix)]
+#[tokio::test]
+async fn xray_start_tries_a_fresh_port_only_when_its_own_was_taken() {
+    // Prints its argument, then runs on like a started Xray after a startup
+    // record and exits 23, as Xray does when it fails to start, otherwise.
+    const STAND_IN: &str = r#"echo "$1"; case "$1" in *started) exec sleep 60;; esac; exit 23"#;
+    const STARTED: &str = "[Warning] core: Xray 26.11.9 started";
+    fn lost(port: u16) -> String {
+        format!(
+            "Failed to start: main: failed to start server > listen udp \
+             127.0.0.1:{port}: bind: address already in use"
+        )
+    }
+    fn own_port_taken_once(start: usize, port: u16) -> String {
+        if start == 1 {
+            lost(port)
+        } else {
+            STARTED.to_owned()
+        }
+    }
+    fn own_port_always_taken(_: usize, port: u16) -> String {
+        lost(port)
+    }
+    fn other_port_taken(_: usize, port: u16) -> String {
+        lost(port ^ 1)
+    }
+    fn other_failure(_: usize, _: u16) -> String {
+        "Failed to start: main: failed to load config files: [server.json] > EOF".to_owned()
+    }
+    /// What the stand-in prints on a start (1-based) given a port.
+    type Output = fn(usize, u16) -> String;
+    // What each start prints, the starts expected, and the panic expected
+    // (none when the last start is ready).
+    let cases: [(Output, usize, Option<&str>); 4] = [
+        (own_port_taken_once, 2, None),
+        (
+            own_port_always_taken,
+            XRAY_PORT_ATTEMPTS,
+            Some("xray's port was taken on all"),
+        ),
+        (other_port_taken, 1, Some("xray exited before startup")),
+        (other_failure, 1, Some("xray exited before startup")),
+    ];
+    for (output, starts, expected_panic) in cases {
+        let temp_dir = create_temp_dir("xray-port-retry");
+        let stdout_path = temp_dir.path.join("stdout");
+        let stderr_path = temp_dir.path.join("stderr");
+        let ports = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let started = tokio::spawn({
+            let ports = Arc::clone(&ports);
+            async move {
+                let (mut child, addr) = start_xray_on_fresh_port(
+                    XrayReadiness::Startup,
+                    &stdout_path,
+                    &stderr_path,
+                    |port| {
+                        let mut ports = ports.lock().unwrap();
+                        ports.push(port);
+                        Command::new("sh")
+                            .args(["-c", STAND_IN, "sh", &output(ports.len(), port)])
+                            .stdout(Stdio::from(fs::File::create(&stdout_path).unwrap()))
+                            .stderr(Stdio::from(fs::File::create(&stderr_path).unwrap()))
+                            .spawn()
+                            .unwrap()
+                    },
+                )
+                .await;
+                let _ = child.kill();
+                let _ = child.wait();
+                addr.port()
+            }
+        })
+        .await;
+        let ports = ports.lock().unwrap().clone();
+        assert_eq!(ports.len(), starts, "{ports:?}");
+        match (started, expected_panic) {
+            (Ok(port), None) => assert_eq!(Some(&port), ports.last()),
+            (Err(error), Some(expected)) => {
+                let message = *error.into_panic().downcast::<String>().unwrap();
+                assert!(message.contains(expected), "{message}");
+            }
+            (started, expected_panic) => {
+                panic!("{started:?}, expected a panic: {expected_panic:?}")
+            }
+        }
+    }
+}
+
 async fn wait_for_tcp_listener(
     child: &mut Child,
     addr: SocketAddr,
     stdout_path: &Path,
     stderr_path: &Path,
 ) {
-    wait_for_xray_startup(child, stdout_path, stderr_path).await;
+    if let Err(XrayExited(message)) =
+        try_wait_for_tcp_listener(child, addr, stdout_path, stderr_path).await
+    {
+        panic!("{message}");
+    }
+}
+
+/// [`wait_for_tcp_listener`], returning an early exit for the caller to judge.
+async fn try_wait_for_tcp_listener(
+    child: &mut Child,
+    addr: SocketAddr,
+    stdout_path: &Path,
+    stderr_path: &Path,
+) -> Result<(), XrayExited> {
+    try_wait_for_xray_startup(child, stdout_path, stderr_path).await?;
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Some(status) = child.try_wait().expect("check xray process status") {
             let stdout = fs::read_to_string(stdout_path).unwrap_or_default();
             let stderr = fs::read_to_string(stderr_path).unwrap_or_default();
-            panic!(
+            return Err(XrayExited(format!(
                 "xray exited before listening on {addr}: {status}\nstdout:\n{stdout}\nstderr:\n{stderr}"
-            );
+            )));
         }
 
         match TcpStream::connect(addr).await {
             Ok(stream) => {
                 drop(stream);
-                return;
+                return Ok(());
             }
             Err(error) if Instant::now() < deadline => {
                 let _ = error;
@@ -2068,19 +2277,33 @@ async fn wait_for_udp_listener(
     stdout_path: &Path,
     stderr_path: &Path,
 ) {
-    wait_for_xray_startup(child, stdout_path, stderr_path).await;
+    if let Err(XrayExited(message)) =
+        try_wait_for_udp_listener(child, addr, stdout_path, stderr_path).await
+    {
+        panic!("{message}");
+    }
+}
+
+/// [`wait_for_udp_listener`], returning an early exit for the caller to judge.
+async fn try_wait_for_udp_listener(
+    child: &mut Child,
+    addr: SocketAddr,
+    stdout_path: &Path,
+    stderr_path: &Path,
+) -> Result<(), XrayExited> {
+    try_wait_for_xray_startup(child, stdout_path, stderr_path).await?;
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Some(status) = child.try_wait().expect("check xray process status") {
             let stdout = fs::read_to_string(stdout_path).unwrap_or_default();
             let stderr = fs::read_to_string(stderr_path).unwrap_or_default();
-            panic!(
+            return Err(XrayExited(format!(
                 "xray exited before listening on UDP {addr}: {status}\nstdout:\n{stdout}\nstderr:\n{stderr}"
-            );
+            )));
         }
 
         match std::net::UdpSocket::bind(addr) {
-            Err(error) if error.kind() == ErrorKind::AddrInUse => return,
+            Err(error) if error.kind() == ErrorKind::AddrInUse => return Ok(()),
             Ok(probe) if Instant::now() < deadline => {
                 drop(probe);
                 sleep(Duration::from_millis(50)).await;
