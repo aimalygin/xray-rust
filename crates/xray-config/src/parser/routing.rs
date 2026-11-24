@@ -31,6 +31,15 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(routing, routing_path, &surface::ROUTING);
+        // Xray-core dropped `domainMatcher` (hybrid or linear) and always
+        // builds the same matcher now; the domain rules match the same names
+        // whichever was asked for.
+        self.warn_inert_key(
+            routing,
+            "domainMatcher",
+            routing_path,
+            "`domainMatcher` is ignored, as Xray-core v26.10.31 ignores it: the domain rules match the same names with either matcher",
+        );
 
         let domain_strategy = self.parse_routing_domain_strategy(routing);
 

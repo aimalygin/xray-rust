@@ -347,6 +347,12 @@ pub(crate) fn anchored_chrome_user_agent() -> String {
     chromium_user_agent(Profile::Chrome, BrowserVersions::anchored().chrome)
 }
 
+/// `utils.ChromeUACH`, the greased `Sec-CH-UA` of the same Chrome, which
+/// RAW's `http` header sends by default.
+pub(crate) fn anchored_chrome_ch_ua() -> String {
+    greased_ch_ua(BrowserVersions::anchored().chrome, "Google Chrome")
+}
+
 /// `utils.MSEdgeUA` (`browser.go:125`), missing space and all — see
 /// [`chromium_user_agent`].
 pub(crate) fn anchored_edge_user_agent() -> String {

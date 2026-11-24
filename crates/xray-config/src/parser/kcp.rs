@@ -33,6 +33,16 @@ impl Parser<'_> {
             return None;
         }
         self.reject_unknown_fields(settings, &path, &surface::KCP_SETTINGS);
+        // Removed mKCP knobs that older Xray releases read: v26 decodes none
+        // of them and sizes its buffers and congestion control itself.
+        for key in ["congestion", "readBufferSize", "writeBufferSize"] {
+            self.warn_inert_key(
+                settings,
+                key,
+                &path,
+                &format!("`{key}` is ignored, as Xray-core v26 ignores it"),
+            );
+        }
         let mut valid = true;
         for (key, field) in [
             ("mtu", &mut kcp.mtu),
