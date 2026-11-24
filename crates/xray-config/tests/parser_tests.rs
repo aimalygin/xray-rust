@@ -213,7 +213,6 @@ fn unsupported_modern_tls_fields_fail_closed_on_apple_xhttp_shape() {
     .unwrap();
 
     for (key, value) in [
-        ("echConfigList", "unsupported-ech"),
         ("disableSystemRoot", "unsupported-root-policy"),
         ("certificates", "unsupported-custom-trust"),
         ("pinnedPeerCertChainSha256", "unsupported-chain-pin"),
@@ -2563,7 +2562,7 @@ fn rejects_non_string_tls_alpn_entry_with_path() {
 
 #[test]
 fn rejects_tcp_header_type_with_path() {
-    let raw = raw_with_tcp_settings(r#""header": { "type": "http" }"#);
+    let raw = raw_with_tcp_settings(r#""header": { "type": "srtp" }"#);
 
     assert_parse_error_path(
         &raw,
@@ -2582,7 +2581,7 @@ fn parses_raw_settings_alias() {
 
 #[test]
 fn rejects_raw_header_type_with_path() {
-    let raw = raw_with_raw_settings(r#""header": { "type": "http" }"#);
+    let raw = raw_with_raw_settings(r#""header": { "type": "srtp" }"#);
 
     assert_parse_error_path(
         &raw,
@@ -2683,9 +2682,9 @@ fn rejects_non_object_sockopt_with_path() {
 
 #[test]
 fn rejects_unknown_sockopt_field_with_path() {
-    let raw = raw_with_sockopt(r#"{ "tcpNoDelay": true }"#);
+    let raw = raw_with_sockopt(r#"{ "tcpQuickAck": true }"#);
 
-    assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.sockopt.tcpNoDelay");
+    assert_parse_error_path(&raw, "$.outbounds[0].streamSettings.sockopt.tcpQuickAck");
 }
 
 fn parsed_sockopt(sockopt: &str) -> xray_config::SocketOptions {
@@ -4105,16 +4104,52 @@ fn rejects_invalid_dns_server_object_fields_with_precise_paths() {
 }
 
 #[test]
-fn rejects_special_xray_dns_clients_until_their_transport_is_implemented() {
-    for address in ["localhost", "LOCALHOST", "fakedns", "FakeDns"] {
-        let raw = raw_with_dns_servers(&format!(r#"{{ "address": "{address}" }}"#));
-        assert_parse_error_path(&raw, "$.dns.servers[0].address");
-
-        let raw = raw_with_dns_servers(&format!(r#""{address}""#));
-        assert_parse_error_path(&raw, "$.dns.servers[0]");
-
-        let raw = raw_with_dns_servers(&format!(r#""192.0.2.53", "{address}""#));
-        assert_parse_error_path(&raw, "$.dns.servers[1]");
+fn parses_localhost_dns_servers_as_system_resolver_clients() {
+    for (server, path) in [
+        (r#""localhost""#, "string"),
+        (r#""LOCALHOST""#, "string"),
+        (
+            r#"{ "address": "LocalHost", "port": 5353, "domains": ["domain:corp.example.net"], "tag": "dns-local", "skipFallback": true }"#,
+            "object",
+        ),
+    ] {
+        let raw = raw_with_dns_servers(server);
+        let parsed = parse_xray_json(&raw).unwrap_or_else(|error| panic!("{server}: {error:?}"));
+        assert!(
+            parsed.diagnostics.is_empty(),
+            "{server}: {:?}",
+            parsed.diagnostics
+        );
+        let [DnsServerConfig::Policy(policy)] = parsed.config.dns.servers.as_slice() else {
+            panic!("{server}: expected one policy server");
+        };
+        assert_eq!(policy.transport, DnsServerTransport::System, "{server}");
+        assert_eq!(
+            policy.endpoint,
+            DnsServerEndpoint::Domain {
+                domain: "localhost".to_owned(),
+                port: 53
+            },
+            "{server}"
+        );
+        // Xray-core's local rules come first for the system resolver.
+        for name in [
+            "printer",
+            "nas.lan",
+            "box.local",
+            "router.home.arpa",
+            "x.test",
+        ] {
+            assert!(policy.domains.matches(name), "{server}: {name}");
+        }
+        assert!(!policy.domains.matches("www.example.com"), "{server}");
+        if path == "object" {
+            assert!(policy.domains.matches("git.corp.example.net"));
+            assert_eq!(policy.tag, "dns-local");
+            assert!(policy.skip_fallback);
+        } else {
+            assert_eq!(policy.policy_key, xray_config::DEFAULT_DNS_POLICY_KEY);
+        }
     }
 }
 
@@ -4354,49 +4389,33 @@ fn rejects_non_string_or_array_dns_host_target_with_path() {
     assert_parse_error_path(&raw, "$.dns.hosts.full:server.example");
 }
 
-#[test]
-fn accepts_eight_dns_servers() {
-    let raw = raw_with_dns_servers(
-        r#"
-          "192.0.2.1",
-          "192.0.2.2",
-          "192.0.2.3",
-          "192.0.2.4",
-          "192.0.2.5",
-          "192.0.2.6",
-          "192.0.2.7",
-          "192.0.2.8"
-        "#,
-    );
-
-    let parsed = parse_xray_json(&raw).expect("eight DNS servers should be supported");
-
-    assert_eq!(parsed.config.dns.servers.len(), 8);
+fn numbered_dns_servers(count: usize) -> String {
+    (1..=count)
+        .map(|index| format!(r#""192.0.2.{index}""#))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[test]
-fn rejects_more_than_eight_dns_servers() {
-    let raw = raw_with_dns_servers(
-        r#"
-          "192.0.2.1",
-          "192.0.2.2",
-          "192.0.2.3",
-          "192.0.2.4",
-          "192.0.2.5",
-          "192.0.2.6",
-          "192.0.2.7",
-          "192.0.2.8",
-          "192.0.2.9"
-        "#,
-    );
+fn accepts_thirty_two_dns_servers() {
+    let raw = raw_with_dns_servers(&numbered_dns_servers(32));
+
+    let parsed = parse_xray_json(&raw).expect("32 DNS servers should be supported");
+
+    assert_eq!(parsed.config.dns.servers.len(), 32);
+}
+
+#[test]
+fn rejects_more_than_thirty_two_dns_servers() {
+    let raw = raw_with_dns_servers(&numbered_dns_servers(33));
 
     let error = parse_xray_json(&raw).unwrap_err();
 
     assert_eq!(error.diagnostics[0].path.as_deref(), Some("$.dns.servers"));
-    assert!(error.diagnostics[0].message.contains("9 servers"));
+    assert!(error.diagnostics[0].message.contains("33 servers"));
     assert!(error.diagnostics[0]
         .message
-        .contains("maximum supported per configuration is 8"));
+        .contains("maximum supported per configuration is 32"));
 }
 
 #[test]

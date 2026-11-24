@@ -206,7 +206,9 @@ resolution to the proxy. DNS upstream preparation includes
 `tcp://`, `tcp+local://`, `tls://`, `https://`, `https+local://`, and
 `quic+local://` endpoints;
 an IP-literal URL needs no
-bootstrap lookup. It preserves every usable A/AAAA result in resolver order,
+bootstrap lookup, and neither do Xray-core's `localhost` and `fakedns`
+servers, which the core answers from its own bootstrap resolver or maps onto
+fake-IP. Up to 32 `dns.servers` entries are accepted, as by the core. It preserves every usable A/AAAA result in resolver order,
 removes duplicates, and writes a nonempty exact `full:` IP array under
 `dns.hosts`, then creates the core with `XrayDnsBootstrapMode.StaticOnly`. The
 original carrier address/endpoint strings, authentication, DNS server URI, and
@@ -305,8 +307,8 @@ validation. NXDOMAIN/NODATA are cached for 30 seconds, while transport failures
 are never cached.
 
 Fake-IP does not provide the real destination address needed by Freedom or
-WireGuard. When `dns.fakeIp.enabled` is true and `dns.servers` is empty, the
-reference service rejects either protocol as the default or through a
+WireGuard. When `dns.fakeIp.enabled` is true or `dns.servers` has a `fakedns`
+entry, and `dns.servers` has no other entry, the reference service rejects either protocol as the default or through a
 TUN-applicable domain-capable rule, including balancer prefix candidates and
 `fallbackTag`, before `Builder.establish()`. VLESS/Hysteria defaults with IP-only
 Freedom/WireGuard split routes remain valid. Configuring a `dns.servers`

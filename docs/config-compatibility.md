@@ -780,6 +780,8 @@ exposes an unauthenticated proxy to the network.
 | `log` | Accepted for input compatibility, but runtime file logging is configured through the embedding API |
 | `reverse` | The legacy reverse proxy, refused unless `null` with Xray-core's message: upstream removed it for the [VLESS reverse proxy](#vless-reverse-proxy) |
 | `remarks`, `meta` | Subscription labels, such as those in Remnawave's XRAY_JSON format; `remarks` must be a string and `meta` an object (or null), and both are ignored, as in Xray-core |
+| `fakeDns` (or `fakedns`) | Xray-core's FakeDNS pools, read as `dns.fakeIp` while `dns.servers` has a `fakedns` entry; see [DNS](#dns) |
+| `stats`, `api`, `metrics`, `version`, `geodata` | Xray-core apps with no runtime here: an object is accepted with a warning and ignored, `null` silently; any other value fails, as Go's decoding fails. `version`'s `min` and `max` must be strings. No traffic counters are kept, no gRPC API or metrics endpoint listens (a routing rule to the API's tag reaches no outbound), the config's version range is not checked, and `geodata` never downloads or refreshes files: the geosite and geoip files present are read as they are |
 
 Other top-level keys are rejected.
 
@@ -1062,8 +1064,34 @@ TCP transport to `raw` and XHTTP from `splithttp`; both pairs are accepted alias
   delay as in Xray-core, within the bounds listed in
   [REALITY real-certificate crawl](xray-core-differences.md#reality-real-certificate-crawl).
 
-`tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
-empty, or `none`. Generic HTTP/2 and QUIC transports are not supported; HTTP/2
+`tcpSettings.header.type` — equally `rawSettings.header.type`, which wins
+when both are set — may be absent, empty, `none` or `http`. `http` is
+Xray-core's HTTP header obfuscation (`transport/internet/headers/http`) on
+the raw transport. The first write of every connection goes out after a
+request head, and the first read drops the server's response head, at most
+8192 bytes, through the blank line that ends it; nothing else is framed. As
+in Xray-core the layer sits above TLS or REALITY when one is set, and Vision
+cannot ride on it. Freedom and DNS outbounds dial their sockets without it,
+where Xray-core frames their TCP connections too, so on them it fails parsing
+rather than be ignored. The head is built as Xray-core's `AuthenticatorRequest`
+builds it:
+
+- `request.method` (default `GET`) and `request.version` (default `1.1`)
+  form the request line with a `path` drawn per connection from the
+  `request.path` `StringList` (default `/`);
+- `request.headers` maps names to `StringList`s, one value drawn per
+  connection and the names sent sorted; a string value splits at commas, as
+  Go's `StringList` does, so `"gzip, deflate"` is two values. Without
+  `headers` Xray-core's defaults go out: `Host` drawn from `www.baidu.com`
+  and `www.bing.com`, the same Chrome `User-Agent` and `Sec-CH-UA` the other
+  masqueraded requests of the process claim, then its `Sec-Fetch-*`,
+  `Accept-Encoding`, `Connection` and `Pragma` headers;
+- `response` is checked as Xray-core builds it and otherwise unused, since
+  the client skips whatever head the server sends.
+
+A `null` header value fails, as in Xray-core. Stricter than Xray-core, a
+carriage return or line feed anywhere in the request or an empty header name
+fails rather than breaking the head. Generic HTTP/2 and QUIC transports are not supported; HTTP/2
 and QUIC v1 are available only as XHTTP's selected wire engines. [mKCP](#mkcp)
 is described below. VLESS supports the shared [Mux](#vless-mux); `sendThrough`, multiple
 VLESS servers, and protocol-layer chaining remain unsupported. The supported chaining subset
@@ -1127,9 +1155,9 @@ pinned CA is the sole root and the same OR list is checked. A matching leaf pin
 still short-circuits every PKI and name check before the list is considered.
 IP literals match IP SANs rather than DNS SANs.
 
-The TLS slice deliberately does not implement the `fromMitm` sentinel, ECH,
-custom certificate stores, or removed chain/SPKI pin fields. They are rejected
-with a path-aware error instead of being ignored. The programmatic
+The TLS slice deliberately does not implement the `fromMitm` sentinel, ECH (a
+nonempty `echConfigList`), custom certificate stores, or removed chain/SPKI pin
+fields. They are rejected with a path-aware error instead of being ignored. The programmatic
 `allow_insecure` model field exists only for hermetic local tests and cannot be
 produced by canonical JSON parsing.
 
@@ -2393,7 +2421,9 @@ block and each field keep the default.
 | `cwndMultiplier` | 1 | Multiplies what one flush may send; at least 1 |
 | `maxSendingWindow` | 2 MiB | Bytes waiting for acks before writes wait; at least `mtu` |
 
-`header` and `seed` are read and ignored, as Xray-core v26 ignores them, with a
+`congestion`, `readBufferSize` and `writeBufferSize`, which releases before
+v26 read and v26 no longer decodes, are accepted with a warning and ignored,
+whatever their value. `header` and `seed` are read and ignored, as Xray-core v26 ignores them, with a
 warning when they ask for something: since v26 the old header and seed are
 `mkcp-legacy` masks. Both ends need the same masks, in the same order:
 
@@ -3428,6 +3458,39 @@ same, because its uTLS path does not pass the session cache on to uTLS. With
 rustls keeps its session cache whatever the value, while Xray-core resumes
 there only when the value is `true`.
 
+Panel and client exports write TLS fields that only Xray-core's server side,
+or only Go's own crypto/tls, reads. They are type-checked as Go decodes them
+and accepted with a warning; empty strings, empty lists and `false` say
+nothing:
+
+- `minVersion`, `maxVersion` and `cipherSuites` (strings) and
+  `curvePreferences` (a string or an array of strings). With a uTLS
+  fingerprint, the default, Xray-core's `copyConfig` drops all four and the
+  fingerprint's ClientHello decides them; here the same profile does. With
+  `fingerprint: "unsafe"` and on QUIC, rustls keeps its own versions (TLS 1.2
+  and 1.3), suites and groups, where Xray-core's crypto/tls would apply them:
+  a `maxVersion` of `1.2` still negotiates TLS 1.3, and a `minVersion` of
+  `1.3` still accepts a TLS 1.2 server.
+- `useSystemCA: true`, which in Xray-core trusts the operating system's store
+  instead of Go's bundled roots. Here the bundled Mozilla roots stay in use,
+  so a server whose chain needs a privately installed CA fails verification.
+- `show`, REALITY's debug switch, which `TLSConfig` does not have.
+- `disableSystemRoot: true` beside a nonempty `pinnedPeerCertSha256`, where
+  the pins decide which certificates are trusted, here as in Xray-core.
+  Without a pin it fails: Xray-core would then trust only `certificates`,
+  which this client does not support, and ignoring the field would trust the
+  system roots the config turned off.
+
+Other TLS fields Xray-core reads, such as `certificates`, `masterKeyLog`,
+`echServerKeys` and `echSockopt`, are still rejected. So is a nonempty
+`echConfigList`: Encrypted Client Hello is not implemented, and connecting
+without it would send `serverName` in the clear, where Xray-core would hide
+it in the encrypted inner hello. Xray-core fails a connection it cannot give
+ECH (`transport/internet/tls/ech.go` installs an invalid config), so a
+profile that hides a blocked name behind ECH fails here too rather than
+showing the name to on-path filters. An empty string or `null` asks for no
+ECH and is accepted.
+
 `tlsSettings.alpn` is an array of strings; a non-string entry is rejected with
 an indexed path. Where the configured list lands follows Xray rather than
 approximating it: uTLS takes ALPN from the fingerprint profile and overwrites
@@ -3667,6 +3730,18 @@ looks the domain up for both families, and the strategy keeps:
 `Use` and `Force` do not differ there: with no address kept, the connection
 fails. An endpoint written as an IP address is dialed as it is.
 
+On VLESS, VMess, Trojan, Shadowsocks, SOCKS, HTTP and Hysteria it decides
+which addresses a domain server resolves to before it is dialed, as
+Xray-core's `DialSystem` resolves it, after `addressPortStrategy` has
+replaced the server: the same families, order and `Use`/`Force` fallback as
+on freedom, through the bootstrap resolver that looks the server up without
+a strategy (`dns.hosts`, then the platform resolver or nothing more under
+`StaticOnly`). An XHTTP download leg takes the strategy of its own `sockopt`,
+or of the outbound's under `penetrate`. A server written as an IP address is
+dialed as it is. Such an outbound refuses a strategy beside `dialerProxy` or
+`proxySettings`: Xray-core resolves the server and hands the chain an
+address, while a chain here carries the server's name.
+
 Xray-core v26.10.31 deprecates freedom's own `settings.domainStrategy` (and
 `settings.targetStrategy`, which wins when nonempty), as well as an outbound
 `targetStrategy` on freedom, and migrates them into `sockopt.domainStrategy`.
@@ -3688,18 +3763,23 @@ Differences from Xray-core:
 - Xray-core's WireGuard picks one of the addresses kept at random.
   xray-rust's takes the first. MASQUE reads it for its server's address the
   same way.
+- Xray-core resolves a proxy's server with its DNS client (`dns.servers`);
+  xray-rust resolves it with the bootstrap resolver, as it does without a
+  strategy, so a server lookup never waits on a DNS server reached through
+  that same proxy.
 - Outbounds other than freedom accept only `AsIs` in `targetStrategy`, and
-  those other than freedom, WireGuard and MASQUE only `AsIs` in
-  `sockopt.domainStrategy`. A different value on VLESS, Trojan and the other
-  proxies fails parsing, because their server lookup and target resolution do
-  not read a strategy yet. For the same reason, `dialerProxy` refuses a
-  dedicated freedom fragment handler that has a strategy, since inlining it
-  would drop the strategy.
+  `blackhole`, `dns`, `loopback` and XDRIVE only `AsIs` in
+  `sockopt.domainStrategy`, as no server address of theirs is resolved for
+  dialing.
+- `dialerProxy` refuses a dedicated freedom fragment handler that has a
+  strategy, since inlining it would drop the strategy.
 
 ### Socket options
 
 The rest of `streamSettings.sockopt` is read as Xray-core v26.10.31 reads it
-and set on every socket the outbound opens:
+and set on every socket the outbound opens. `tcpNoDelay`, which Xray-core
+no longer reads, is accepted with a warning and ignored, whatever its value:
+every TCP socket here, as in Go, already has `TCP_NODELAY` set.
 
 - the TCP carrier of VLESS, Trojan, VMess, Shadowsocks, SOCKS and HTTP, over
   every transport;
@@ -3848,6 +3928,9 @@ Not supported yet:
 Supported routing configuration:
 
 - `domainStrategy`: `AsIs`, `IPIfNonMatch`, or `IPOnDemand` (since `0.6.0-dev.0`);
+- `domainMatcher` (`hybrid` or `linear` in older releases): accepted with a
+  warning and ignored, whatever its value, as Xray-core v26.10.31 does not
+  read it; either matcher matched the same names;
 - rule `type`: not read, as in Xray-core v26.10.31, so it may be absent or
   hold anything;
 - selectors: `inboundTag`, `domain`/`domains`, `ip`, `network`, `port`,
@@ -4176,7 +4259,8 @@ system has a route for, as Xray-core v26.10.31's `checkSystem` narrows them:
   hijacked from TUN and fake IP answers follow the same routes. Bootstrap
   resolution keeps ignoring the global strategy.
 
-`dns.servers` accepts at most eight string or object entries. String shorthand
+`dns.servers` accepts at most 32 string or object entries; Xray-core sets
+no limit, and the bound only keeps a server list small. String shorthand
 accepts IP addresses, socket addresses, domain names with an optional nonzero
 port, `tcp://host[:port]` / `tcp+local://host[:port]`, routed
 `tls://host[:port]`, and `https://host[:port][/path][?query]` /
@@ -4230,13 +4314,71 @@ requires caching plus an explicit `serveExpiredTTL` from 1 through 86400
 seconds. Xray treats zero as an unbounded stale lifetime; this mobile-oriented
 core rejects that value rather than silently retaining records forever.
 Per-server cache/stale overrides remain unsupported because the current cache
-is owned once per Core rather than once per upstream. Special
-`localhost`/`fakedns` clients and routed DoQ are rejected until their
-runtime semantics exist; they are not silently approximated as classic UDP.
+is owned once per Core rather than once per upstream. Routed DoQ is
+rejected until its runtime semantics exist; it is not silently approximated
+as classic UDP.
 
-`enableParallelQuery: true` asks every server a lookup selects at once, as
-Xray-core v26.10.31's parallel query does, instead of one after another. The
-selection is the serial one. Servers next to each other in it that share a
+Xray-core's FakeDNS, a `fakedns` entry in `dns.servers` (a string or an
+object's `address`, in any case) with the pools of root `fakeDns`, turns on
+`dns.fakeIp`, described [below](#dns-outbound):
+
+- The pool is the first IPv4 `ipPool` of `fakeDns`, an object or an array of
+  them (Go also reads the key spelled `fakedns`; both at once fail), with its
+  `poolSize`; an absent or zero `poolSize` takes up to 65535 addresses, and
+  one larger than the pool's usable addresses fails. Without `fakeDns` it is
+  Xray-core's automatic `198.18.0.0/15`, with 65535 addresses under
+  `queryStrategy: "UseIPv4"` and 32768 otherwise.
+- Fake addresses are IPv4 only. IPv6 pools are ignored with a warning, AAAA
+  queries are answered empty, and a `fakeDns` with no IPv4 pool, or
+  `UseIPv6` without `fakeDns`, leaves FakeDNS off with a warning.
+- Answers carry `dns.fakeIp`'s 60-second TTL, not Xray-core's 1 second.
+- The `fakedns` entry itself is dropped from the servers: destination
+  lookups never ask it, as Xray-core's internal lookups skip it. An object
+  entry is checked like any other, and its other fields are not used.
+- Every name the TUN or a DNS outbound asks is answered with a fake address,
+  so the entry is accepted only where Xray-core's server plan reaches it
+  first for every name: it is the first entry, it has no `domains`, and no
+  other server lists `domains` or is `localhost`, which takes Xray-core's
+  local names first. Anywhere else Xray-core fakes only some names, or none
+  while the servers before it answer, and `dns.fakeIp` has no domain filter
+  to match that; faking every name would change what routing sees (`geoip:`
+  rules no longer match names that used to arrive as real addresses, LAN
+  names get fake addresses), so such a `fakedns` entry fails parsing, with or
+  without an explicit `dns.fakeIp`.
+- `fakeDns` without a `fakedns` server is ignored with a warning, as it hands
+  out nothing in Xray-core either. An explicit `dns.fakeIp` wins over the
+  mapping, with a warning.
+
+`localhost`, as a string entry or an object's `address` and in any case, is
+Xray-core's system-resolver client. It sends nothing on the wire: it asks the
+resolver the core bootstraps with, which is `dns.hosts` and then the platform
+resolver under the `System` bootstrap mode, bypassing routing. An object's
+`port` is ignored, and its other fields apply as to any server. As in
+Xray-core, its `domains` gain `regexp:^[^.]+$` and the `domain:` rules
+`local`, `localdomain`, `localhost`, `lan`, `home.arpa`, `example`, `invalid`
+and `test`, so dotless and local names are asked of it first. An A or AAAA
+lookup returns the platform's addresses of that family; the answer carries
+the platform's TTL, or Xray-core's 300 seconds when it reports none, as
+`getaddrinfo` never does. It enters the destination cache like any other
+server's answer, where Xray-core keeps no cache of its own for this client
+and asks the platform each time; the platform's own cache applies in both. A
+lookup that fails or finds nothing moves on to the next server, as in
+Xray-core. Under the `StaticOnly` bootstrap mode, which a mobile VPN uses
+because the platform resolver would ask the tunnel itself, `localhost` can
+answer only names `dns.hosts` maps and fails every other, so the next server
+is asked. The TUN DNS proxy asks a `localhost` upstream the same way, locally,
+over UDP and TCP. The platform resolver answers addresses only, so any other
+question (SRV, TXT, MX, PTR, HTTPS, or a class other than IN) fails at a
+`localhost` upstream and the proxy asks the next one, rather than taking an
+empty answer as final.
+
+`enableParallelQuery: true` asks the servers a lookup selects at once, as
+Xray-core v26.10.31's parallel query does, instead of one after another, but
+at most eight at a time: the next server in selection order starts as each
+one settles. Xray-core starts every one; with up to 32 servers, and an A and
+an AAAA exchange each under `UseIP`, that would be 64 exchanges for one
+lookup, more than the managed resolver admits at once on the low-memory and
+mobile profiles. The selection is the serial one. Servers next to each other in it that share a
 policy race as a group: the first of them, in selection order, to answer with
 addresses gives the answer. Groups settle in order, so a later group's answer
 waits until every member of the earlier groups failed, and the remaining
@@ -4406,7 +4548,9 @@ resolver to find the upstream itself, but never to retry the original qname.
 
 When fake-IP is disabled and at least one usable server is present, TUN clients
 can use `198.18.0.1:53` as a local UDP/TCP DNS proxy. The proxy keeps
-server order and removes duplicates by endpoint, effective tag, and transport.
+server order and removes duplicates by endpoint, effective tag, and transport,
+and forwards to the first eight that remain: its five-second budget is shared
+among the servers it tries. Destination lookups use every server.
 Classic, `tcp://`, and `tls://` attempts enter the normal outbound router, so Freedom
 sockets retain platform socket protection and VLESS routes do not gain a
 hidden direct-DNS bypass. `tcp+local://` deliberately skips route selection and

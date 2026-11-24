@@ -3065,6 +3065,7 @@ async fn open_tcp_bridge_stream(
             xray_config::DnsServerTransport::HttpsRouted
                 | xray_config::DnsServerTransport::HttpsLocal
                 | xray_config::DnsServerTransport::QuicLocal
+                | xray_config::DnsServerTransport::System
         ) {
             return dns_proxy::open_managed_dns_tcp_bridge(upstream, context);
         }

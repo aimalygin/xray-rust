@@ -877,17 +877,6 @@ impl Parser<'_> {
             );
             return None;
         }
-        if stream
-            .socket_options
-            .as_ref()
-            .is_some_and(|options| options.domain_strategy.has_strategy())
-        {
-            self.error(
-                format!("{sockopt_path}.domainStrategy"),
-                "sockopt.domainStrategy is supported only on freedom outbounds",
-            );
-            return None;
-        }
         Some(crate::XhttpDownloadSettings {
             address,
             port,

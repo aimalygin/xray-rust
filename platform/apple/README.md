@@ -216,7 +216,8 @@ pinning a domain onto, a tunnel-owned address is rejected on every URL port;
 classic non-URL servers retain their legacy port-53 check.
 
 Fake-IP without `dns.servers` is accepted only when TUN domain traffic cannot
-select Freedom or WireGuard. Before applying Network Extension settings, the
+select Freedom or WireGuard. A `fakedns` entry in `dns.servers`, which the core
+maps onto fake-IP, counts as fake-IP here and not as an upstream. Before applying Network Extension settings, the
 provider rejects either protocol as the default or through a TUN-applicable
 rule that is not strictly IP-only. Balancer prefix candidates and `fallbackTag`
 are included in this check. A VLESS or Hysteria 2 default remains valid, as do
@@ -327,7 +328,9 @@ new VLESS URL is imported; choose `Config JSON` to disable the override.
 Before applying Network Extension DNS and routes, the provider bootstraps every
 domain VLESS, VMess, Trojan, Shadowsocks, SOCKS, HTTP, and Hysteria 2 server, every
 WireGuard peer endpoint host, and every domain-valued classic, TCP, DoT, DoH, or
-DoQ DNS endpoint. SOCKS and HTTP preparation supports both flat settings and the
+DoQ DNS endpoint. Xray-core's `localhost` and `fakedns` servers have no
+endpoint and need no bootstrap: the core answers `localhost` from its own
+bootstrap resolver and maps `fakedns` onto fake-IP. SOCKS and HTTP preparation supports both flat settings and the
 legacy single-entry `servers` form; it resolves only the proxy endpoint,
 leaving destination-domain resolution to the proxy. An IP-literal stream URL needs
 no system lookup. URL modes use their

@@ -50,6 +50,8 @@ struct SessionOwner {
     socket_options: Option<Arc<xray_transport::SocketOptions>>,
     /// `sockopt.addressPortStrategy`, for the server's address and port.
     address_port: xray_config::AddressPortStrategy,
+    /// `sockopt.domainStrategy`, for the address a domain server resolves to.
+    domain_strategy: xray_config::DomainStrategy,
     /// The dialer given and the one made from it with `socket_options`,
     /// kept so its protector, which a cached session is matched by, stays
     /// the same.
@@ -202,6 +204,7 @@ impl HysteriaOutbound {
             inner: Arc::new(SessionOwner {
                 socket_options: socket_options::compile(&config.stream),
                 address_port: super::carrier::address_port_strategy(&config.stream),
+                domain_strategy: super::carrier::domain_strategy(&config.stream),
                 socket_dialer: Mutex::new(None),
                 limits: limits.transport_limits(),
                 carrier,
@@ -336,10 +339,14 @@ impl HysteriaOutbound {
                 drop(stale);
             }
         }
+        let resolver = super::domain_strategy::DomainStrategyResolver::new(
+            resolver,
+            self.inner.domain_strategy,
+        );
         let candidates = super::address_port::resolve_server(
             &self.inner.server,
             self.inner.address_port,
-            resolver,
+            &resolver,
             dialer,
         )
         .await?;

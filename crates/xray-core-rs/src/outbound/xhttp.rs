@@ -10,6 +10,8 @@ pub(super) struct XhttpDownloadOutbound {
     pub(super) socket_options: DownloadSocketOptions,
     /// The `addressPortStrategy` of the `sockopt` the leg dials with.
     pub(super) address_port: xray_config::AddressPortStrategy,
+    /// The `domainStrategy` of the `sockopt` the leg dials with.
+    pub(super) domain_strategy: xray_config::DomainStrategy,
 }
 
 /// The `sockopt` the download leg dials with, as Xray-core's XHTTP picks it.
@@ -119,6 +121,11 @@ pub(super) fn build_xhttp_download(
             DownloadSocketOptions::Own(socket_options::compile(&download.stream))
         },
         address_port: carrier::address_port_strategy(if penetrate {
+            stream
+        } else {
+            &download.stream
+        }),
+        domain_strategy: carrier::domain_strategy(if penetrate {
             stream
         } else {
             &download.stream

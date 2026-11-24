@@ -575,12 +575,69 @@ class XrayTunBackendTest {
             mapOf("address" to "resolver.example", "queryStrategy" to 42),
             mapOf("address" to "resolver.example", "queryStrategy" to "UseSystem"),
             mapOf("address" to "resolver.example", "unexpected" to true),
-            mapOf("address" to "localhost"),
+            mapOf("address" to "localhost", "unexpected" to true),
             mapOf("address" to XrayTunInterface.DNS_ANCHOR, "port" to 0),
         )) {
             assertThrows(IllegalArgumentException::class.java) {
                 dnsServerBootstrapDomain(server)
             }
+        }
+    }
+
+    @Test
+    fun xrayLocalhostAndFakeDnsServersNeedNoBootstrap() {
+        // The core answers `localhost` from its bootstrap resolver and maps
+        // `fakedns` onto fake-IP; neither has an address to resolve first.
+        for (server in listOf<Any>(
+            "localhost",
+            "LocalHost",
+            "fakedns",
+            "FakeDNS",
+            mapOf("address" to "localhost"),
+            mapOf("address" to "LOCALHOST", "port" to 53, "domains" to listOf("domain:lan")),
+            mapOf("address" to "fakedns"),
+            mapOf("address" to "FakeDns", "tag" to "dns-fake"),
+        )) {
+            assertNull(dnsServerBootstrapDomain(server))
+        }
+        assertTrue(isFakeDnsServer("FakeDNS"))
+        assertTrue(isFakeDnsServer(mapOf("address" to "fakedns")))
+        assertFalse(isFakeDnsServer("localhost"))
+        assertFalse(isFakeDnsServer(mapOf("address" to "resolver.example")))
+    }
+
+    @Test
+    fun localhostAndFakeDnsServersStartWithoutSystemLookups() {
+        val resolver = BoundedAndroidDnsBootstrapResolver(maxConcurrentLookups = 1) { domain ->
+            error("unexpected system lookup for $domain")
+        }
+        try {
+            val prepared = prepareAndroidVpnConfigWithinDeadline(
+                configJson = """
+                    {"dns":{"servers":[
+                      {"address":"fakedns"},
+                      {"address":"localhost","domains":["domain:lan"]},
+                      "192.0.2.53"
+                    ]},"outbounds":[{"protocol":"freedom"}]}
+                """.trimIndent(),
+                resolver = resolver,
+                deadline = AndroidDnsBootstrapDeadline(TimeUnit.SECONDS.toNanos(1)),
+            )
+            assertTrue(prepared.usesLocalDnsAnchor)
+            assertFalse(JSONObject(prepared.json).getJSONObject("dns").has("hosts"))
+
+            // `fakedns` turns fake-IP on and is no upstream, so without another
+            // server a Freedom default has nothing to resolve restored names.
+            assertThrows(IllegalArgumentException::class.java) {
+                prepareAndroidVpnConfigWithinDeadline(
+                    configJson =
+                        """{"dns":{"servers":["fakedns"]},"outbounds":[{"protocol":"freedom"}]}""",
+                    resolver = resolver,
+                    deadline = AndroidDnsBootstrapDeadline(TimeUnit.SECONDS.toNanos(1)),
+                )
+            }
+        } finally {
+            resolver.close()
         }
     }
 
@@ -992,9 +1049,9 @@ class XrayTunBackendTest {
 
     @Test
     fun dnsServerCountIsBoundedBeforeTunnelSetup() {
-        validateAndroidDnsServerCount(8)
+        validateAndroidDnsServerCount(32)
         assertThrows(IllegalArgumentException::class.java) {
-            validateAndroidDnsServerCount(9)
+            validateAndroidDnsServerCount(33)
         }
     }
 

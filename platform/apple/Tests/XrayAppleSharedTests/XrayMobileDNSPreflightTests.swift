@@ -75,6 +75,34 @@ final class XrayMobileDNSPreflightTests: XCTestCase {
         )
     }
 
+    func testFakeDNSServerTurnsFakeIPOnWithoutBeingAnUpstream() {
+        // The core maps `fakedns` onto fake-IP and asks no wire server for
+        // it, so alone it leaves Freedom nothing to resolve restored names.
+        let freedomDefault = #"{"dns":{"servers":["FakeDNS"]},"inbounds":[{"protocol":"tun","tag":"tun-in"}],"outbounds":[{"protocol":"freedom","tag":"direct"}]}"#
+        assertError(.unsafeFakeIPFreedomRouting, configJSON: freedomDefault)
+        assertError(
+            .unsafeFakeIPFreedomRouting,
+            configJSON: fakeIPConfig(freedomFirst: true, dnsServers: [["address": "fakedns"]])
+        )
+        XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(
+            #"{"dns":{"servers":["fakedns","192.0.2.53"]},"inbounds":[{"protocol":"tun","tag":"tun-in"}],"outbounds":[{"protocol":"freedom","tag":"direct"}]}"#
+        ))
+        XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(
+            #"{"dns":{"servers":["fakedns"]},"inbounds":[{"protocol":"tun","tag":"tun-in"}],"outbounds":[{"protocol":"vless","tag":"proxy"}]}"#
+        ))
+        // Like an enabled dns.fakeIp, it cannot be combined with explicit
+        // system DNS servers.
+        assertError(
+            .unavailable,
+            configJSON: #"{"dns":{"servers":["fakedns","192.0.2.53"]}}"#,
+            explicitDNS: .custom
+        )
+        // `localhost` is an upstream like any other.
+        XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(
+            #"{"dns":{"servers":["localhost"]},"outbounds":[{"protocol":"freedom"}]}"#
+        ))
+    }
+
     func testConfiguredServerMakesFakeIPFreedomRoutingSafe() {
         XCTAssertNoThrow(
             try XrayMobileDNSPreflight.validate(

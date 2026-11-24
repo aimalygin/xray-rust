@@ -456,3 +456,173 @@ fn dns_query_type(query: &[u8]) -> u16 {
     let question_end = dns_question_end(query);
     u16::from_be_bytes([query[question_end - 4], query[question_end - 3]])
 }
+
+/// The platform resolver as `localhost` sees it: both families, no TTL, as
+/// `getaddrinfo` reports.
+struct PlatformResolver;
+
+#[async_trait]
+impl DnsResolver for PlatformResolver {
+    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
+    }
+
+    async fn resolve_all(
+        &self,
+        domain: &str,
+        port: u16,
+    ) -> Result<xray_transport::DnsLookup, TransportError> {
+        match domain {
+            "printer.lan" | "printer.lan.example" => Ok(xray_transport::DnsLookup::from_ips(
+                [
+                    IpAddr::V4(Ipv4Addr::new(192, 0, 2, 7)),
+                    IpAddr::V6(std::net::Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 7)),
+                ],
+                port,
+                None,
+            )),
+            "gone.lan" => Err(TransportError::DnsNameError(domain.to_owned(), port)),
+            _ => Err(TransportError::NoResolvedAddress(domain.to_owned(), port)),
+        }
+    }
+}
+
+fn dns_query(id: u16, domain: &str, record_type: u16, flags: u16) -> Vec<u8> {
+    let mut query = Vec::new();
+    query.extend_from_slice(&id.to_be_bytes());
+    query.extend_from_slice(&flags.to_be_bytes());
+    query.extend_from_slice(&[0, 1, 0, 0, 0, 0, 0, 0]);
+    query.extend_from_slice(&encode_dns_name(domain));
+    query.extend_from_slice(&record_type.to_be_bytes());
+    query.extend_from_slice(&1_u16.to_be_bytes());
+    query
+}
+
+#[tokio::test]
+async fn system_dns_query_answers_each_family_from_the_platform_resolver() {
+    let query = dns_query(0x5151, "printer.lan", 1, 0x0100);
+    let response = xray_transport::exchange_system_dns_query(&PlatformResolver, &query)
+        .await
+        .unwrap();
+    assert!(xray_transport::dns_response_matches_query(
+        &query, &response
+    ));
+    assert_eq!(&response[2..4], &0x8180_u16.to_be_bytes());
+    assert_eq!(&response[6..8], &1_u16.to_be_bytes(), "one A record");
+    let answer = &response[query.len()..];
+    assert_eq!(&answer[0..2], &[0xc0, 0x0c]);
+    assert_eq!(&answer[2..4], &1_u16.to_be_bytes());
+    assert_eq!(&answer[6..10], &300_u32.to_be_bytes(), "Xray's default TTL");
+    assert_eq!(&answer[10..12], &4_u16.to_be_bytes());
+    assert_eq!(&answer[12..16], &[192, 0, 2, 7]);
+
+    let query = dns_query(0x5252, "printer.lan", 28, 0);
+    let response = xray_transport::exchange_system_dns_query(&PlatformResolver, &query)
+        .await
+        .unwrap();
+    assert_eq!(&response[2..4], &0x8080_u16.to_be_bytes(), "RD stays clear");
+    assert_eq!(&response[6..8], &1_u16.to_be_bytes(), "one AAAA record");
+    let answer = &response[query.len()..];
+    assert_eq!(&answer[10..12], &16_u16.to_be_bytes());
+    assert_eq!(
+        &answer[12..28],
+        &std::net::Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 7).octets()
+    );
+}
+
+#[tokio::test]
+async fn system_dns_query_reports_negative_answers_and_fails_failed_lookups() {
+    // Other types, which the platform resolver cannot answer, fail without
+    // a lookup, so a DNS proxy asks its next upstream rather than taking
+    // NOERROR without records as final: TXT, SRV, MX, PTR, HTTPS, and A
+    // outside class IN or for the root.
+    for (record_type, domain, class) in [
+        (16, "printer.lan", 1),
+        (33, "_ipp._tcp.printer.lan", 1),
+        (15, "printer.lan", 1),
+        (12, "7.2.0.192.in-addr.arpa", 1),
+        (65, "printer.lan", 1),
+        (1, "printer.lan", 3),
+        (1, "", 1),
+    ] {
+        let mut query = dns_query(0x5353, domain, record_type, 0x0100);
+        if domain.is_empty() {
+            // The root name is one zero byte, not an empty label before it.
+            query.remove(12);
+        }
+        let class_at = query.len() - 2;
+        query[class_at..].copy_from_slice(&u16::to_be_bytes(class));
+        let error = xray_transport::exchange_system_dns_query(&PlatformResolver, &query)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.kind(),
+            std::io::ErrorKind::Unsupported,
+            "type {record_type} {domain:?}"
+        );
+    }
+
+    let query = dns_query(0x5454, "gone.lan", 1, 0x0100);
+    let response = xray_transport::exchange_system_dns_query(&PlatformResolver, &query)
+        .await
+        .unwrap();
+    assert_eq!(&response[2..4], &0x8183_u16.to_be_bytes(), "NXDOMAIN");
+
+    // A lookup that finds nothing, as a static-only bootstrap answers every
+    // name, fails, so the resolver moves on to its next server.
+    let query = dns_query(0x5555, "unknown.example", 1, 0x0100);
+    assert!(
+        xray_transport::exchange_system_dns_query(&PlatformResolver, &query)
+            .await
+            .is_err()
+    );
+
+    // A response is no query.
+    let mut response = dns_query(0x5656, "printer.lan", 1, 0x8100);
+    assert!(
+        xray_transport::exchange_system_dns_query(&PlatformResolver, &response)
+            .await
+            .is_err()
+    );
+    response.truncate(8);
+    assert!(
+        xray_transport::exchange_system_dns_query(&PlatformResolver, &response)
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn configured_dns_system_server_answers_from_its_fallback_resolver() {
+    let policy = xray_transport::NameServerPolicy {
+        transport: xray_transport::NameServerTransport::System,
+        ..xray_transport::NameServerPolicy::new(NameServer::Domain {
+            domain: "localhost".to_owned(),
+            port: 53,
+        })
+    };
+    let resolver = ConfiguredDnsResolver::new(
+        DomainHostIndex::new(),
+        Vec::new(),
+        Arc::new(PlatformResolver),
+    )
+    .with_name_server_policies(vec![policy]);
+
+    let lookup = resolver.resolve_all("printer.lan", 443).await.unwrap();
+    assert_eq!(
+        lookup.socket_addrs(),
+        [
+            SocketAddr::from(([192, 0, 2, 7], 443)),
+            SocketAddr::from((
+                std::net::Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 7),
+                443
+            )),
+        ]
+    );
+    let ttl = lookup.ttl().unwrap();
+    assert!(ttl <= Duration::from_secs(300) && ttl > Duration::from_secs(290));
+
+    // The one server failing leaves no fallback to the platform resolver for
+    // the name itself: configured servers own the destination lookup.
+    assert!(resolver.resolve_all("unknown.example", 443).await.is_err());
+}

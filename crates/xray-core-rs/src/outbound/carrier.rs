@@ -1,4 +1,5 @@
 //! Shared endpoint, authenticated connector and stream transport compilation.
+use super::domain_strategy::DomainStrategyResolver;
 use super::*;
 use std::borrow::Cow;
 use xray_transport::stream::XhttpConnectTarget;
@@ -38,6 +39,9 @@ pub(super) struct StreamCarrier {
     pub(super) socket_options: Option<Arc<xray_transport::SocketOptions>>,
     /// `sockopt.addressPortStrategy`, for the server's address and port.
     pub(super) address_port: xray_config::AddressPortStrategy,
+    /// `sockopt.domainStrategy`, for the address a domain server resolves
+    /// to.
+    pub(super) domain_strategy: xray_config::DomainStrategy,
 }
 
 impl StreamCarrier {
@@ -105,6 +109,7 @@ impl StreamCarrier {
             happy_eyeballs: happy_eyeballs_config(stream),
             socket_options: socket_options::compile(stream),
             address_port: address_port_strategy(stream),
+            domain_strategy: domain_strategy(stream),
         })
     }
 
@@ -154,7 +159,8 @@ impl StreamCarrier {
         if matches!(self.transport_layer, TransportLayer::Xdrive(_)) {
             return Ok(Vec::new());
         }
-        address_port::resolve_server(&self.server, self.address_port, resolver, dialer).await
+        let resolver = DomainStrategyResolver::new(resolver, self.domain_strategy);
+        address_port::resolve_server(&self.server, self.address_port, &resolver, dialer).await
     }
 
     /// The XHTTP download server's candidates, after its leg's
@@ -166,7 +172,8 @@ impl StreamCarrier {
     ) -> Result<Vec<SocketAddr>, CoreError> {
         match &self.download {
             Some(down) => {
-                address_port::resolve_server(&down.server, down.address_port, resolver, dialer)
+                let resolver = DomainStrategyResolver::new(resolver, down.domain_strategy);
+                address_port::resolve_server(&down.server, down.address_port, &resolver, dialer)
                     .await
             }
             None => Ok(Vec::new()),
@@ -220,6 +227,15 @@ impl StreamCarrier {
             )
             .await?)
     }
+}
+
+/// `stream`'s `sockopt.domainStrategy`, `AsIs` without one.
+pub(super) fn domain_strategy(stream: &StreamSettings) -> xray_config::DomainStrategy {
+    stream
+        .socket_options
+        .as_ref()
+        .map(|options| options.domain_strategy)
+        .unwrap_or_default()
 }
 
 /// `stream`'s `sockopt.addressPortStrategy`.
@@ -298,7 +314,19 @@ fn build_transport_layer(
     };
 
     Ok(match &stream.transport {
-        StreamTransport::Raw => TransportLayer::Raw,
+        StreamTransport::Raw => match &stream.raw_http_header {
+            None => TransportLayer::Raw,
+            Some(header) => TransportLayer::RawHttpHeader(Arc::new(
+                xray_transport::stream::RawHttpHeaderConfig {
+                    method: header.method.clone(),
+                    version: header.version.clone(),
+                    paths: header.paths.clone(),
+                    headers: header.headers.clone().unwrap_or_else(
+                        xray_transport::stream::RawHttpHeaderConfig::default_headers,
+                    ),
+                },
+            )),
+        },
         StreamTransport::Hysteria(_) | StreamTransport::Masque(_) => {
             return Err(CoreError::UnsupportedOutboundNetwork)
         }
