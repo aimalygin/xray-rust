@@ -10,6 +10,14 @@ long-term supported release series.
 
 ## Unreleased
 
+- `XrayPacketTunnelProvider` has an open `handleCustomAppMessage(_:core:)`
+  hook. A subclass receives each app message the provider does not handle
+  itself, together with the active core, and can answer it, for example with
+  the connection, accounting, selection or health snapshot, or apply an
+  outbound selector override or a routing policy. The provider kept its
+  runtime private, so a host could not reach these core APIs from its app
+  without forking the provider. The default returns `nil`, so the built-in
+  close-connections and stats requests behave as before.
 - The DNS resolver and the system SRV/TXT lookups refuse a name longer than
   255 octets, the limit Xray-core's DNS client applies through Go's
   `dnsmessage`. A name was read for up to 32 labels and pointers, about 2 KB,

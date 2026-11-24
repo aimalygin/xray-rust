@@ -691,6 +691,15 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     /// not callback execution. Apple does not supply an Android-style UID lookup.
     open func tunAdmissionOptions() throws -> XrayTunAdmissionOptions? { nil }
 
+    /// Answers an app message that the provider does not handle itself.
+    ///
+    /// Called from `handleAppMessage` with the active data-path core, after the
+    /// built-in close-connections request and before the stats request. Return
+    /// the response data, or `nil` to fall through to the built-in handling
+    /// (an unknown message then gets no response). Keep the work short, and do
+    /// not start, stop or replace `core` from here.
+    open func handleCustomAppMessage(_ messageData: Data, core: XrayCore) -> Data? { nil }
+
     static func resolvingHostOptions(
         _ config: ResolvedConfig,
         hysteriaStreamLimits: () throws -> XrayHysteriaStreamLimits?,
@@ -1101,6 +1110,12 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 )
                 completionHandler?(nil)
             }
+            return
+        }
+
+        if request != XrayTunnelProviderMessage.statsRequest,
+           let response = handleCustomAppMessage(messageData, core: core) {
+            completionHandler?(response)
             return
         }
 
