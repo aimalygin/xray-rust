@@ -826,7 +826,9 @@ class XrayCore private constructor(handle: Long) : Closeable {
      * cancel probes before draining shared calls. An empty [url], a [timeoutMs] outside 1..60000, or
      * an argument with an embedded NUL throws [IllegalArgumentException]. A non-empty unsupported
      * URL, an unknown [outboundTag], or a missing default outbound throws [XrayCoreException]
-     * with code INVALID_ARGUMENT (9). Neither makes any network call.
+     * with code INVALID_ARGUMENT (9). Neither makes any network call. A loaded core that is not
+     * started, or was stopped, throws [XrayCoreException] with code RUNTIME_ERROR (5);
+     * [preflightStartupProbe] runs the configured startup probe before [start].
      */
     fun probeOutboundUrl(
         url: String,

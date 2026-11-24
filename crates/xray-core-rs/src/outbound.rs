@@ -421,6 +421,8 @@ pub enum TcpOutbound {
 pub(crate) struct SelectedTcpOutbound {
     pub(crate) outbound: TcpOutbound,
     pub(crate) tag: Option<String>,
+    /// The leaf the flow goes through, to report a failed open by.
+    pub(crate) node: OutboundNodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -484,6 +486,8 @@ pub(crate) enum TcpSessionOutbound {
 pub(crate) struct SelectedTcpSessionOutbound {
     pub(crate) outbound: TcpSessionOutbound,
     pub(crate) tag: Option<String>,
+    /// The leaf the flow goes through, to report a failed open by.
+    pub(crate) node: OutboundNodeId,
 }
 
 /// One configured handler selected for a UDP session. Keeping this combined
@@ -501,6 +505,8 @@ pub(crate) enum UdpSessionOutbound {
 pub(crate) struct SelectedUdpSessionOutbound {
     pub(crate) outbound: UdpSessionOutbound,
     pub(crate) tag: Option<String>,
+    /// The leaf the flow goes through, to report a failed open by.
+    pub(crate) node: OutboundNodeId,
 }
 
 impl DnsOutbound {
@@ -2281,6 +2287,15 @@ impl Default for OutboundHealthAtomicState {
     }
 }
 
+/// Whether a probe result is also a sample of the `leastLoad` window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HealthSample {
+    /// A probe of the scheduled round, evenly spaced: one of the samples.
+    Window,
+    /// Any other probe: it moves the health state alone.
+    StateOnly,
+}
+
 impl OutboundHealthAtomicState {
     fn record_sample(&self, delay_ms: Option<u64>) {
         let metrics = self
@@ -2303,6 +2318,8 @@ pub struct OutboundSelectionOverlay {
     graph: Arc<OutboundGraph>,
     groups: Box<[OutboundSelectorGroupState]>,
     health: Box<[OutboundHealthAtomicState]>,
+    /// Failures of real traffic, from the flows to the observatory.
+    failure_reports: crate::health::FailureReports,
     revision: AtomicU64,
     update_lock: Mutex<()>,
 }
@@ -2320,10 +2337,12 @@ impl OutboundSelectionOverlay {
             .map(|_| OutboundHealthAtomicState::default())
             .collect::<Vec<_>>()
             .into_boxed_slice();
+        let failure_reports = crate::health::FailureReports::new(graph.leaf_count);
         Self {
             graph,
             groups,
             health,
+            failure_reports,
             revision: AtomicU64::new(0),
             update_lock: Mutex::new(()),
         }
@@ -2437,11 +2456,58 @@ impl OutboundSelectionOverlay {
         }
     }
 
+    /// Records a successful probe of the scheduled round: in the health
+    /// state, and as a sample of the `leastLoad` window.
     pub(crate) fn record_health_success(
         &self,
         node: OutboundNodeId,
         delay: Duration,
         now_unix_ms: u64,
+    ) {
+        self.store_health_success(node, delay, now_unix_ms, HealthSample::Window);
+    }
+
+    /// Records a failed probe of the scheduled round: in the health state,
+    /// and as a sample of the `leastLoad` window.
+    pub(crate) fn record_health_failure(
+        &self,
+        node: OutboundNodeId,
+        failure: OutboundHealthFailure,
+        now_unix_ms: u64,
+    ) {
+        self.store_health_failure(node, failure, now_unix_ms, HealthSample::Window);
+    }
+
+    /// Records a successful probe outside the scheduled round, as one run
+    /// because traffic failed: it sets the state, the last delay and the
+    /// failure count, but adds no sample to the `leastLoad` window, which
+    /// holds the scheduled round's samples alone.
+    pub(crate) fn record_reprobe_success(
+        &self,
+        node: OutboundNodeId,
+        delay: Duration,
+        now_unix_ms: u64,
+    ) {
+        self.store_health_success(node, delay, now_unix_ms, HealthSample::StateOnly);
+    }
+
+    /// Records a failed probe outside the scheduled round, leaving the
+    /// `leastLoad` window as it is; see [`Self::record_reprobe_success`].
+    pub(crate) fn record_reprobe_failure(
+        &self,
+        node: OutboundNodeId,
+        failure: OutboundHealthFailure,
+        now_unix_ms: u64,
+    ) {
+        self.store_health_failure(node, failure, now_unix_ms, HealthSample::StateOnly);
+    }
+
+    fn store_health_success(
+        &self,
+        node: OutboundNodeId,
+        delay: Duration,
+        now_unix_ms: u64,
+        sample: HealthSample,
     ) {
         let Some(health) = self.health_state(node) else {
             return;
@@ -2450,11 +2516,11 @@ impl OutboundSelectionOverlay {
             .update_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        health.delay_ms.store(
-            delay.as_millis().min(u128::from(u64::MAX)) as u64,
-            Ordering::Release,
-        );
-        health.record_sample(Some(delay.as_millis().min(u128::from(u64::MAX)) as u64));
+        let delay_ms = delay.as_millis().min(u128::from(u64::MAX)) as u64;
+        health.delay_ms.store(delay_ms, Ordering::Release);
+        if sample == HealthSample::Window {
+            health.record_sample(Some(delay_ms));
+        }
         health
             .last_try_unix_ms
             .store(now_unix_ms, Ordering::Release);
@@ -2471,11 +2537,12 @@ impl OutboundSelectionOverlay {
         self.revision.fetch_add(1, Ordering::AcqRel);
     }
 
-    pub(crate) fn record_health_failure(
+    fn store_health_failure(
         &self,
         node: OutboundNodeId,
         failure: OutboundHealthFailure,
         now_unix_ms: u64,
+        sample: HealthSample,
     ) {
         let Some(health) = self.health_state(node) else {
             return;
@@ -2484,7 +2551,9 @@ impl OutboundSelectionOverlay {
             .update_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        health.record_sample(None);
+        if sample == HealthSample::Window {
+            health.record_sample(None);
+        }
         health.delay_ms.store(u64::MAX, Ordering::Release);
         health
             .last_try_unix_ms
@@ -2555,6 +2624,45 @@ impl OutboundSelectionOverlay {
         (node.graph_identity == self.graph.identity)
             .then(|| self.health.get(node.index))
             .flatten()
+    }
+
+    /// The observed health of leaf `node`; unknown for any other node.
+    pub(crate) fn health_state_of(&self, node: OutboundNodeId) -> OutboundHealthState {
+        self.health_state(node)
+            .map_or(OutboundHealthState::Unknown, |health| {
+                OutboundHealthState::from_u8(health.state.load(Ordering::Acquire))
+            })
+    }
+
+    /// How many samples the `leastLoad` window of leaf `node` holds, and
+    /// how many of them are failures.
+    #[cfg(test)]
+    pub(crate) fn least_load_window_of(&self, node: OutboundNodeId) -> Option<(u64, u64)> {
+        let health = self.health_state(node)?;
+        let metrics =
+            OutboundHealthWindowMetrics::decode(health.least_load_metrics.load(Ordering::Acquire));
+        Some((metrics.sample_count, metrics.failure_count))
+    }
+
+    /// The slot of leaf `node` in per-leaf state, if `node` is a leaf of
+    /// this graph.
+    pub(crate) fn leaf_index(&self, node: OutboundNodeId) -> Option<usize> {
+        (node.graph_identity == self.graph.identity && node.index < self.graph.leaf_count)
+            .then_some(node.index)
+    }
+
+    pub(crate) fn failure_reports(&self) -> &crate::health::FailureReports {
+        &self.failure_reports
+    }
+
+    /// Tells the observatory that a flow could not open through leaf `node`.
+    /// Unless the observatory watches `node`, which it does only for an
+    /// outbound with a server of its own, this is one atomic load, and it
+    /// never changes health by itself: the observatory probes `node` again.
+    pub(crate) fn report_dial_failure(&self, node: OutboundNodeId) {
+        if let Some(index) = self.leaf_index(node) {
+            self.failure_reports.report(index);
+        }
     }
 
     fn is_eligible(&self, node: OutboundNodeId) -> bool {
@@ -3045,6 +3153,26 @@ impl OutboundRouter {
         self.factory.selection_handle()
     }
 
+    /// Tells the observatory that a flow failed to open through leaf `node`
+    /// with `error`, when the error may mean that the outbound's server is
+    /// gone (see [`crate::health::is_dial_failure`]), so that it probes
+    /// `node` again soon.
+    pub(crate) fn report_open_error(&self, node: OutboundNodeId, error: &CoreError) {
+        if crate::health::is_dial_failure(error) {
+            self.selection().report_dial_failure(node);
+        }
+    }
+
+    /// Tells the observatory that a flow through leaf `node` did not open
+    /// within its handshake timeout. Opens time out on a local network that
+    /// is down or changing as they do on a server that drops packets, and
+    /// nothing here tells the two apart: the observatory probes `node`
+    /// again, and records a failure only when a second probe, a cooldown
+    /// later, fails too.
+    pub(crate) fn report_open_timeout(&self, node: OutboundNodeId) {
+        self.selection().report_dial_failure(node);
+    }
+
     pub fn replace_routing_policy(&self, routing: RoutingConfig) -> Result<u64, CoreError> {
         self.validate_routing_policy(&routing)?;
         let dns_route_prefilter = Self::dns_route_prefilter(self.graph(), &routing);
@@ -3195,7 +3323,11 @@ impl OutboundRouter {
             .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
             .flatten();
         let outbound = self.factory.cached_tcp_outbound(node)?;
-        Ok(SelectedTcpOutbound { outbound, tag })
+        Ok(SelectedTcpOutbound {
+            outbound,
+            tag,
+            node,
+        })
     }
 
     #[cfg(test)]
@@ -3215,7 +3347,11 @@ impl OutboundRouter {
             .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
             .flatten();
         let outbound = self.factory.cached_tcp_outbound(node)?;
-        Ok(SelectedTcpOutbound { outbound, tag })
+        Ok(SelectedTcpOutbound {
+            outbound,
+            tag,
+            node,
+        })
     }
 
     pub async fn select_tcp_outbound_for_session_with_resolver(
@@ -3265,7 +3401,11 @@ impl OutboundRouter {
                 .cached_tcp_outbound(node)
                 .map(TcpSessionOutbound::Transport),
         }?;
-        Ok(SelectedTcpSessionOutbound { outbound, tag })
+        Ok(SelectedTcpSessionOutbound {
+            outbound,
+            tag,
+            node,
+        })
     }
 
     #[cfg(test)]
@@ -3287,7 +3427,11 @@ impl OutboundRouter {
             .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
             .flatten();
         let outbound = self.factory.cached_tcp_outbound(node)?;
-        Ok(SelectedTcpOutbound { outbound, tag })
+        Ok(SelectedTcpOutbound {
+            outbound,
+            tag,
+            node,
+        })
     }
 
     pub fn select_udp_outbound_for_session(
@@ -3468,7 +3612,11 @@ impl OutboundRouter {
                 .cached_udp_outbound(node)
                 .map(UdpSessionOutbound::Transport),
         }?;
-        Ok(SelectedUdpSessionOutbound { outbound, tag })
+        Ok(SelectedUdpSessionOutbound {
+            outbound,
+            tag,
+            node,
+        })
     }
 
     fn select_configured_node(

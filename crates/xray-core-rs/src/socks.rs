@@ -835,6 +835,7 @@ pub(crate) async fn handle_socks_connect<const SOCKS_REPLY: bool>(
         Some(result) => match result {
             Ok(Ok(stream)) => stream,
             Ok(Err(error)) => {
+                outbound_router.report_open_error(selected.node, &error);
                 if let Some(source) = source.as_deref() {
                     crate::debug_log::log_access_rejected(
                         &runtime_logger,
@@ -849,6 +850,7 @@ pub(crate) async fn handle_socks_connect<const SOCKS_REPLY: bool>(
                 return;
             }
             Err(_) => {
+                outbound_router.report_open_timeout(selected.node);
                 if let Some(source) = source.as_deref() {
                     crate::debug_log::log_access_rejected(
                         &runtime_logger,

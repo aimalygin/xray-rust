@@ -691,6 +691,16 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     /// not callback execution. Apple does not supply an Android-style UID lookup.
     open func tunAdmissionOptions() throws -> XrayTunAdmissionOptions? { nil }
 
+    /// Answers an app message that the provider does not handle itself.
+    ///
+    /// Called from `handleAppMessage` with the active data-path core, after the
+    /// built-in close-connections request and before the stats request. The
+    /// message is the app's bytes as sent and need not be text. Return the
+    /// response data, or `nil` to fall through to the built-in handling (an
+    /// unknown message then gets no response). Keep the work short, and do
+    /// not start, stop or replace `core` from here.
+    open func handleCustomAppMessage(_ messageData: Data, core: XrayCore) -> Data? { nil }
+
     static func resolvingHostOptions(
         _ config: ResolvedConfig,
         hysteriaStreamLimits: () throws -> XrayHysteriaStreamLimits?,
@@ -1041,13 +1051,15 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             "PacketTunnelProvider",
             "handleAppMessage bytes=\(messageData.count)"
         )
-        guard let request = String(data: messageData, encoding: .utf8),
-              let runtime = lifecycle.active()
-        else {
+        guard let runtime = lifecycle.active() else {
             XrayAppleLog.info("PacketTunnelProvider", "App message ignored or stats unavailable")
             completionHandler?(nil)
             return
         }
+        // The built-in requests are text. A message that is not text, as one
+        // of a subclass's own binary protocol, names none of them and still
+        // reaches `handleCustomAppMessage`.
+        let request = String(data: messageData, encoding: .utf8)
         let core = runtime.core
 
 #if DEBUG
@@ -1101,6 +1113,12 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 )
                 completionHandler?(nil)
             }
+            return
+        }
+
+        if request != XrayTunnelProviderMessage.statsRequest,
+           let response = handleCustomAppMessage(messageData, core: core) {
+            completionHandler?(response)
             return
         }
 

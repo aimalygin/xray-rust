@@ -133,6 +133,24 @@ additional packet-loop work. Explicit Hysteria2 limits accept 1...256 TCP and
 1...128 UDP (ABI 1.10+); admission requires ABI 1.11+. Neither changes the wire
 protocol or creates extra QUIC sessions.
 
+To answer app messages of its own, a subclass overrides
+`handleCustomAppMessage(_:core:)`. The provider calls it with the active
+data-path core for every message it does not handle itself (the built-in
+close-connections request is handled first, the stats request after), so a host
+can, for example, return the core's connection or accounting snapshot to its
+app. The message is the app's bytes as sent and need not be text. Return `nil`
+to fall through to the built-in handling. Keep the work short and do not start,
+stop or replace the core from the hook.
+
+```swift
+final class PacketTunnelProvider: XrayPacketTunnelProvider {
+    override func handleCustomAppMessage(_ messageData: Data, core: XrayCore) -> Data? {
+        guard messageData == Data("connections".utf8) else { return nil }
+        return try? JSONEncoder().encode(core.connectionSnapshot())
+    }
+}
+```
+
 Admission receives the original TCP/UDP tuple before routing/FakeDNS restoration.
 Its `@Sendable` callback runs concurrently on bounded native workers; keep it
 short, avoid capturing the provider strongly, and never invoke lifecycle methods

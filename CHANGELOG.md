@@ -10,6 +10,19 @@ long-term supported release series.
 
 ## Unreleased
 
+- A base64 JSON `vmess://` link without TLS (`tls` absent, empty or `none`)
+  imports when it carries `sni`, `alpn` or `fp`; those fields are ignored, as
+  v2rayN ignores them. Panels such as V2Board write `fp` on every link, so
+  such a plain WebSocket link failed with "profile contains an unsupported
+  setting". A link with TLS still maps them into `tlsSettings`.
+- `XrayPacketTunnelProvider` has an open `handleCustomAppMessage(_:core:)`
+  hook. A subclass receives each app message the provider does not handle
+  itself, together with the active core, and can answer it, for example with
+  the connection, accounting, selection or health snapshot, or apply an
+  outbound selector override or a routing policy. The provider kept its
+  runtime private, so a host could not reach these core APIs from its app
+  without forking the provider. The default returns `nil`, so the built-in
+  close-connections and stats requests behave as before.
 - The DNS resolver and the system SRV/TXT lookups refuse a name longer than
   255 octets, the limit Xray-core's DNS client applies through Go's
   `dnsmessage`. A name was read for up to 32 labels and pointers, about 2 KB,
@@ -218,6 +231,26 @@ long-term supported release series.
     audits each as the upstream release its version carries, and
     `scripts/check-vendored-sources.sh` holds that version to the archive it
     verifies.
+- Flows that fail to open through an outbound the observatory watches now
+  have it probed again within seconds instead of at the next `probeInterval`.
+  An open that timed out, or a refused, reset or timed-out connection or a
+  failed TLS or REALITY handshake, on a TCP flow from SOCKS, HTTP or TUN or a
+  UDP flow from TUN, wakes the observer, which probes that outbound again 10
+  seconds after its last probe finished at the earliest. One failed re-probe
+  is not recorded, since a local network that is away for a moment fails it
+  too: a second one 10 seconds later decides. An outbound re-probes marked
+  unhealthy is probed again after 10 seconds, then at doubling intervals up
+  to the probe interval. When no observed member of a balancer is healthy, a
+  failure through a member or the balancer's fallback has all of them probed
+  again, 15 seconds at the earliest after the last such pass finished,
+  doubling after each pass in which every probe failed. Freedom outbounds,
+  local network errors, target refusals and the message-only errors of XHTTP,
+  gRPC and other stream transports are not reported. A dead server behind a
+  `leastPing` balancer with `probeInterval: "10m"` was kept for up to ten
+  minutes; it is now left after one failed open and two failed probes.
+  Re-probes move the health state but add no sample to the window `leastLoad`
+  reads, which keeps holding the last 16 scheduled probes. Without failures
+  the observatory probes as before.
 
 ## 0.10.1 - 2026-11-16
 
