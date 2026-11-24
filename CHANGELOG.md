@@ -231,6 +231,26 @@ long-term supported release series.
     audits each as the upstream release its version carries, and
     `scripts/check-vendored-sources.sh` holds that version to the archive it
     verifies.
+- Flows that fail to open through an outbound the observatory watches now
+  have it probed again within seconds instead of at the next `probeInterval`.
+  An open that timed out, or a refused, reset or timed-out connection or a
+  failed TLS or REALITY handshake, on a TCP flow from SOCKS, HTTP or TUN or a
+  UDP flow from TUN, wakes the observer, which probes that outbound again 10
+  seconds after its last probe finished at the earliest. One failed re-probe
+  is not recorded, since a local network that is away for a moment fails it
+  too: a second one 10 seconds later decides. An outbound re-probes marked
+  unhealthy is probed again after 10 seconds, then at doubling intervals up
+  to the probe interval. When no observed member of a balancer is healthy, a
+  failure through a member or the balancer's fallback has all of them probed
+  again, 15 seconds at the earliest after the last such pass finished,
+  doubling after each pass in which every probe failed. Freedom outbounds,
+  local network errors, target refusals and the message-only errors of XHTTP,
+  gRPC and other stream transports are not reported. A dead server behind a
+  `leastPing` balancer with `probeInterval: "10m"` was kept for up to ten
+  minutes; it is now left after one failed open and two failed probes.
+  Re-probes move the health state but add no sample to the window `leastLoad`
+  reads, which keeps holding the last 16 scheduled probes. Without failures
+  the observatory probes as before.
 
 ## 0.10.1 - 2026-11-16
 

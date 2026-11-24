@@ -131,7 +131,17 @@ pub(crate) async fn forward_plain_request(
                         context.dialer.as_ref(),
                         client.as_ref(),
                     ),
-                ) => result.ok().and_then(Result::ok),
+                ) => match result {
+                    Ok(Ok(upstream)) => Some(upstream),
+                    Ok(Err(error)) => {
+                        context.router.report_open_error(selected.node, &error);
+                        None
+                    }
+                    Err(_) => {
+                        context.router.report_open_timeout(selected.node);
+                        None
+                    }
+                },
                 () = wait_for_connection_close(&mut connection_close) => None,
             };
             match opened {

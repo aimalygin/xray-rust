@@ -9,6 +9,7 @@ pub(super) async fn bridge(
     generation: u64,
     target: Target,
     outbound: UdpOutbound,
+    node: OutboundNodeId,
     context: TunRuntimeContext,
     from_stack: UdpIngress,
     mut shutdown: watch::Receiver<bool>,
@@ -29,7 +30,10 @@ pub(super) async fn bridge(
                 udp_flow_global_id(key),
             )
             .await
-            .inspect_err(|_| context.tun.record_udp_open_error())?;
+            .inspect_err(|error| {
+                context.tun.record_udp_open_error();
+                context.outbound_router.report_open_error(node, error);
+            })?;
             connection.mark_active();
             context.tun.record_udp_remote_open(target.port == 443);
             crate::debug_log::log_access_accepted(
