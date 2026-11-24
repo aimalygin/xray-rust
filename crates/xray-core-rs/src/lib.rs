@@ -545,6 +545,8 @@ pub struct Core {
     dns_rules: DnsRules,
     managed_dns_resolver: bool,
     transport_dialer: Arc<TransportDialer>,
+    /// What `addressPortStrategy` asks on a phone without `/etc/resolv.conf`.
+    unconfigured_records: Arc<xray_transport::RecordResolverSlot>,
     outbound_router: Arc<OutboundRouter>,
     connection_registry: Arc<ConnectionRegistry>,
     tun_runtime_options: TunRuntimeOptions,
@@ -767,13 +769,19 @@ impl Core {
             )
         };
         // A realm mask's STUN servers and rendezvous are resolved like an
-        // outbound's server.
+        // outbound's server. A phone's SRV and TXT lookups ask `dns.servers`
+        // once a start has a query transport for them.
+        let unconfigured_records = Arc::new(xray_transport::RecordResolverSlot::default());
         let transport_dialer = Arc::new(
-            transport_dialer.as_ref().clone().with_realm_resolver(
-                dns.bootstrap
-                    .clone()
-                    .unwrap_or_else(|| Arc::clone(&dns.destination)),
-            ),
+            transport_dialer
+                .as_ref()
+                .clone()
+                .with_realm_resolver(
+                    dns.bootstrap
+                        .clone()
+                        .unwrap_or_else(|| Arc::clone(&dns.destination)),
+                )
+                .with_unconfigured_record_resolver(Arc::clone(&unconfigured_records)),
         );
         dns.rules
             .route_probe
@@ -943,6 +951,7 @@ impl Core {
             dns_rules: dns.rules,
             managed_dns_resolver: dns.managed,
             transport_dialer,
+            unconfigured_records,
             outbound_router,
             connection_registry: Arc::new(ConnectionRegistry::new()),
             tun_runtime_options,
@@ -1312,6 +1321,8 @@ impl Core {
                 dns_limits.max_concurrent_operations,
             )) as Arc<dyn DnsQueryTransport>
         });
+        self.unconfigured_records
+            .set(self.configured_record_resolver(query_transport.as_ref()));
         let destination = if self.managed_dns_resolver {
             let fallback = self
                 .managed_dns_fallback_resolver
@@ -1349,6 +1360,24 @@ impl Core {
             outbound,
             query_transport,
         }
+    }
+
+    /// SRV and TXT lookups over `dns.servers`, outside routing, or none
+    /// without either `dns.servers` or `query_transport`.
+    fn configured_record_resolver(
+        &self,
+        query_transport: Option<&Arc<dyn DnsQueryTransport>>,
+    ) -> Option<Arc<dyn xray_transport::RecordResolver>> {
+        let servers = self.dns_rules.name_servers.as_ref()?.record_servers();
+        if servers.is_empty() {
+            return None;
+        }
+        let resolver = xray_transport::ConfiguredRecordResolver::new(
+            servers,
+            Arc::clone(query_transport?),
+            self.transport_dialer.socket_protector_arc(),
+        );
+        Some(Arc::new(resolver))
     }
 
     pub fn inbound_addr(&self, tag: Option<&str>) -> Option<SocketAddr> {
@@ -1655,6 +1684,8 @@ impl Core {
             drop(runtime.fake_ip_carry_over);
         }
         self.outbound_factory().join_sessions().await;
+        // The record resolver holds the stopped runtime's DNS transport.
+        self.unconfigured_records.set(None);
         self.tun.close();
         self.state = CoreState::Stopped;
         Ok(())

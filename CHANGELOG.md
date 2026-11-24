@@ -18,6 +18,14 @@ long-term supported release series.
   holds more than it could before, and an entry that large leaves little room
   for other domain rules beside it. An error about an entry over a limit now
   names the entry, as ``entry `CODE`: …``, since the file itself is sound.
+- Android, iOS and tvOS: an SRV or TXT `addressPortStrategy` works. With no
+  `/etc/resolv.conf` on the device, the lookup now asks the servers in
+  `dns.servers` directly over protected sockets, never through routing,
+  which could send it into the outbound being opened. Each
+  dial used to ask loopback nameservers, as Go does, that no phone runs, and
+  dial the configured server once they failed. Without a server to ask, the
+  configured server is dialled at once and the log says so once. See
+  [Socket options](docs/xray-core-differences.md#socket-options).
 - A base64 JSON `vmess://` link without TLS (`tls` absent, empty or `none`)
   imports when it carries `sni`, `alpn` or `fp`; those fields are ignored, as
   v2rayN ignores them. Panels such as V2Board write `fp` on every link, so
