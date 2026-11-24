@@ -829,6 +829,16 @@ jobs:
     if: github.event_name != 'push' || github.ref_type != 'tag' || contains(github.ref_name, '-rc.')
     runs-on: ubuntu-24.04
     timeout-minutes: 75
+    env:
+      # Maven Central rate-limits the addresses that GitHub's runners share,
+      # and this job resolves every artifact from an empty Gradle home on
+      # purpose (docs/verification.md). Gradle 9.8.1 does retry a request
+      # answered 429, 408 or 5xx, but only three times, 1 and 2 seconds apart,
+      # and then disables the repository for the rest of the build. Eight
+      # tries wait 1, 2, 4 ... 64 seconds, about two minutes for one request.
+      # The property is internal to Gradle: the check after the first build
+      # fails if a new Gradle no longer has it.
+      GRADLE_OPTS: -Dorg.gradle.internal.repository.max.tentatives=8
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -864,6 +874,24 @@ jobs:
 
       - name: Build and verify Android AAR
         run: bash scripts/build-android-adapter.sh
+
+      - name: Check that this Gradle has the retry property
+        env:
+          GRADLE_USER_HOME: ${{ github.workspace }}/target/mobile/android-gradle-home
+        run: |
+          # Gradle ignores a -D it does not know, so a release that renamed
+          # the property would quietly bring back the three-second limit.
+          property="${GRADLE_OPTS#-D}"
+          property="${property%%=*}"
+          jars=("$GRADLE_USER_HOME"/wrapper/dists/gradle-*-bin/*/gradle-*/lib/plugins/gradle-dependency-management-[0-9]*.jar)
+          if [[ ${#jars[@]} -ne 1 || ! -f "${jars[0]}" ]]; then
+            echo "expected one Gradle dependency-management JAR, found: ${jars[*]}" >&2
+            exit 1
+          fi
+          if [[ "$(unzip -p "${jars[0]}" | grep -acF "$property")" -eq 0 ]]; then
+            echo "$property is not in ${jars[0]}; GRADLE_OPTS has no effect" >&2
+            exit 1
+          fi
 
       - name: Test Android adapter
         env:
