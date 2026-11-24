@@ -596,3 +596,114 @@ async fn wireguard_destinations_follow_the_local_address_families() {
         assert_eq!(found, expected, "{addresses:?}");
     }
 }
+
+fn local_peer(keepalive: u16) -> OutboundConfig {
+    let mut config = configured();
+    let OutboundSettings::Wireguard(settings) = &mut config.settings else {
+        panic!()
+    };
+    for peer in &mut settings.peers {
+        peer.endpoint = TargetAddr::Ip("127.0.0.1".parse().unwrap());
+        peer.port = 9;
+        peer.keepalive = keepalive;
+    }
+    config
+}
+fn cached_client(outbound: &WireguardOutbound) -> Option<Client> {
+    outbound
+        .0
+        .session
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|cached| cached.client.clone())
+}
+
+/// A started device runs WireGuard's timers every 250 ms. One with no flow
+/// for `IDLE_CLOSE` is closed, so it stops waking an idle phone, and the next
+/// flow starts another; a device with an open flow is kept however long.
+#[tokio::test(start_paused = true)]
+async fn wireguard_device_without_flows_is_closed_after_idle_and_restarts() {
+    let outbound = WireguardOutbound::new(&local_peer(0)).unwrap();
+    let dialer = TransportDialer::system().unwrap();
+    let dns = PendingDns::default();
+    let flow = outbound
+        .open_udp(&target(), &dns, &dns, &dialer)
+        .await
+        .unwrap();
+    let first = cached_client(&outbound).unwrap();
+    assert_eq!(first.open_flows(), 1);
+    tokio::time::sleep(IDLE_CLOSE * 3).await;
+    assert!(first.is_live(), "a device with an open flow stays");
+    assert!(cached_client(&outbound).is_some());
+
+    drop(flow);
+    // The stack gives the flow's place back once it sees the flow closed.
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while first.open_flows() > 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    tokio::time::sleep(IDLE_CLOSE * 2 + Duration::from_secs(1)).await;
+    assert!(cached_client(&outbound).is_none());
+    first.shutdown().await;
+    assert!(!first.is_live());
+
+    let _flow = outbound
+        .open_udp(&target(), &dns, &dns, &dialer)
+        .await
+        .unwrap();
+    let second = cached_client(&outbound).unwrap();
+    assert!(second.is_live());
+    outbound.close();
+    second.shutdown().await;
+}
+
+/// A caller that took the device moments ago, before its flow is open, is
+/// not left with a closed device: the idle time counts from the last take.
+#[tokio::test(start_paused = true)]
+async fn wireguard_idle_time_counts_from_the_last_caller() {
+    let outbound = WireguardOutbound::new(&local_peer(0)).unwrap();
+    let dialer = TransportDialer::system().unwrap();
+    let dns = PendingDns::default();
+    drop(
+        outbound
+            .open_udp(&target(), &dns, &dns, &dialer)
+            .await
+            .unwrap(),
+    );
+    let client = cached_client(&outbound).unwrap();
+    tokio::time::sleep(IDLE_CLOSE - Duration::from_secs(10)).await;
+    drop(
+        outbound
+            .open_udp(&target(), &dns, &dns, &dialer)
+            .await
+            .unwrap(),
+    );
+    tokio::time::sleep(Duration::from_secs(20)).await;
+    assert!(client.is_live(), "taken {}s ago", 20);
+    tokio::time::sleep(IDLE_CLOSE).await;
+    assert!(cached_client(&outbound).is_none());
+    client.shutdown().await;
+}
+
+/// `keepAlive` asks for the path to stay open while idle; that device stays.
+#[tokio::test(start_paused = true)]
+async fn wireguard_device_with_keepalive_is_kept_while_idle() {
+    let outbound = WireguardOutbound::new(&local_peer(25)).unwrap();
+    let dialer = TransportDialer::system().unwrap();
+    let dns = PendingDns::default();
+    drop(
+        outbound
+            .open_udp(&target(), &dns, &dns, &dialer)
+            .await
+            .unwrap(),
+    );
+    tokio::time::sleep(IDLE_CLOSE * 3).await;
+    let client = cached_client(&outbound).unwrap();
+    assert!(client.is_live());
+    outbound.close();
+    client.shutdown().await;
+}

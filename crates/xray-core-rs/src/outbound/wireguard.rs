@@ -4,6 +4,12 @@ use super::*;
 use xray_config::{AddressFamilies, WireguardOutboundSettings};
 use xray_wireguard::{Client, Config, Error, FlowLimits, PeerConfig};
 
+/// How long a device with no flow is kept before it is closed. A started
+/// device runs WireGuard's timers every 250 ms for as long as it lives, so
+/// an outbound used once would otherwise wake an idle phone four times a
+/// second. The next flow starts a new device, at the cost of a handshake.
+const IDLE_CLOSE: Duration = Duration::from_secs(300);
+
 #[derive(Clone, Debug)]
 pub struct WireguardOutbound(Arc<Owner>);
 #[derive(Debug)]
@@ -25,11 +31,16 @@ struct Owner {
     connecting: tokio::sync::Mutex<()>,
     shutdown: tokio::sync::watch::Sender<bool>,
     network_generation: std::sync::atomic::AtomicU64,
+    /// Numbers the devices started, so an idle check knows its own.
+    sessions: AtomicU64,
 }
 struct Cached {
     client: Client,
     dns: Arc<dyn DnsResolver>,
     protector: Option<Arc<dyn xray_transport::SocketProtector>>,
+    session: u64,
+    /// When a caller last took the device, before opening its flow.
+    last_used: tokio::time::Instant,
 }
 impl std::fmt::Debug for Cached {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -93,6 +104,7 @@ impl WireguardOutbound {
             connecting: tokio::sync::Mutex::new(()),
             shutdown: tokio::sync::watch::channel(false).0,
             network_generation: std::sync::atomic::AtomicU64::new(0),
+            sessions: AtomicU64::new(0),
         })))
     }
     /// `dialer` with this outbound's socket options: the same dialer each
@@ -160,10 +172,11 @@ impl WireguardOutbound {
         let protector = dialer.socket_protector_arc();
         {
             let mut slot = self.0.session.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(cached) = slot.as_ref().filter(|s| s.client.is_live()) {
+            if let Some(cached) = slot.as_mut().filter(|s| s.client.is_live()) {
                 if !same_protector(&cached.protector, &protector) {
                     return Err(Error::Configuration.into());
                 }
+                cached.last_used = tokio::time::Instant::now();
                 return Ok((cached.client.clone(), cached.dns.clone()));
             }
             slot.take();
@@ -209,11 +222,19 @@ impl WireguardOutbound {
             dns::TunnelFlows::Wireguard(client.clone()),
             &self.0.settings.remote_dns,
         );
+        let session = self.0.sessions.fetch_add(1, Ordering::Relaxed);
         *slot = Some(Cached {
             client: client.clone(),
             dns: dns.clone(),
             protector,
+            session,
+            last_used: tokio::time::Instant::now(),
         });
+        // A peer with `keepAlive` asks for its path to be kept open, idle
+        // or not, so its device is not closed.
+        if self.0.settings.peers.iter().all(|peer| peer.keepalive == 0) {
+            tokio::spawn(close_when_idle(Arc::downgrade(&self.0), session));
+        }
         Ok((client, dns))
     }
     /// Destination DNS runs through the tunnel when a `remoteDNS` server is
@@ -332,6 +353,35 @@ impl WireguardOutbound {
             Ok(client.open_udp(address).await?)
         })
         .await
+    }
+}
+/// Closes device `session` once it has had no flow, and no caller has taken
+/// it, for at least [`IDLE_CLOSE`]. While flows are open it looks again every
+/// [`IDLE_CLOSE`]. Ends when the device is closed or replaced.
+async fn close_when_idle(owner: std::sync::Weak<Owner>, session: u64) {
+    let mut wait = IDLE_CLOSE;
+    loop {
+        tokio::time::sleep(wait).await;
+        let Some(owner) = owner.upgrade() else {
+            return;
+        };
+        let mut slot = owner.session.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(cached) = slot
+            .as_ref()
+            .filter(|cached| cached.session == session && cached.client.is_live())
+        else {
+            return;
+        };
+        let idle = cached.last_used.elapsed();
+        if cached.client.open_flows() > 0 {
+            wait = IDLE_CLOSE;
+        } else if idle >= IDLE_CLOSE {
+            // Dropping the session closes its client.
+            slot.take();
+            return;
+        } else {
+            wait = IDLE_CLOSE - idle;
+        }
     }
 }
 fn engine_config(settings: &WireguardOutboundSettings) -> Config {
