@@ -1420,7 +1420,10 @@ public final class XrayCore: @unchecked Sendable {
     /// bypassed, and health snapshots are not updated. Blocks the caller for at
     /// most `timeoutMs` (1...60_000), so call it off the main thread.
     /// `cancelOutboundProbes()` ends it early and keeps later probes working;
-    /// lifecycle calls cancel probes before waiting for shared calls. Requires ABI 1.9.
+    /// lifecycle calls cancel probes before waiting for shared calls. A loaded
+    /// core that is not started, or was stopped, throws `XrayCoreError.notRunning`;
+    /// `preflightStartupProbe()` runs the configured startup probe before `start`.
+    /// Requires ABI 1.9.
     public func probeOutboundURL(
         _ url: String,
         timeoutMs: UInt64 = 5_000,
