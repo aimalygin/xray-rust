@@ -5774,6 +5774,7 @@ mod tests {
             tag: Some(tag.to_owned()),
             proxy_settings: None,
             stream: StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
@@ -5801,6 +5802,7 @@ mod tests {
             tag: Some(tag.to_owned()),
             proxy_settings: None,
             stream: StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
@@ -5840,6 +5842,7 @@ mod tests {
             tag: Some(tag.to_owned()),
             proxy_settings: None,
             stream: StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
@@ -6163,6 +6166,7 @@ mod tests {
         let explicit = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
@@ -6214,6 +6218,7 @@ mod tests {
             let dynamic = DnsOutbound::new_with_stream(
                 DnsOutboundSettings::default(),
                 &StreamSettings {
+                    raw_http_header: None,
                     network: Network::Tcp,
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::Tls(TlsSettings {
@@ -6260,6 +6265,7 @@ mod tests {
     #[test]
     fn tls_outbound_carries_the_tls_shape_into_the_static_dns_connector() {
         let stream = StreamSettings {
+            raw_http_header: None,
             network: Network::Tcp,
             transport: StreamTransport::Raw,
             security: StreamSecurity::Tls(TlsSettings {
@@ -6303,6 +6309,7 @@ mod tests {
         let outbound = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
@@ -6394,6 +6401,7 @@ mod tests {
         let non_tcp = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Udp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
@@ -6441,6 +6449,7 @@ mod tests {
         let outbound = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::Reality(reality.clone()),
@@ -6494,6 +6503,7 @@ mod tests {
         let absent = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
@@ -6522,6 +6532,7 @@ mod tests {
         let disabled = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
@@ -6556,6 +6567,7 @@ mod tests {
         let plain = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
@@ -6580,6 +6592,7 @@ mod tests {
         let tls = DnsOutbound::new_with_stream(
             DnsOutboundSettings::default(),
             &StreamSettings {
+                raw_http_header: None,
                 network: Network::Tcp,
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::Tls(TlsSettings {
@@ -7121,6 +7134,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,
@@ -10764,6 +10778,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,
@@ -10810,6 +10825,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,
@@ -10874,6 +10890,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,
@@ -10963,6 +10980,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,
@@ -11047,6 +11065,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,
@@ -11118,6 +11137,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,
@@ -11212,6 +11232,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    domain_strategy: Default::default(),
                     fragment: None,
                     folded_fragment_rules: None,
                     header_custom: None,

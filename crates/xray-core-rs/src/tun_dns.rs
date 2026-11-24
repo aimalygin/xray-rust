@@ -109,6 +109,7 @@ impl DnsProxyUpstream {
             xray_config::DnsServerTransport::TcpLocal
                 | xray_config::DnsServerTransport::HttpsLocal
                 | xray_config::DnsServerTransport::QuicLocal
+                | xray_config::DnsServerTransport::System
         )
     }
 
@@ -138,6 +139,7 @@ pub(super) fn open_managed_dns_tcp_bridge(
         xray_config::DnsServerTransport::HttpsRouted
             | xray_config::DnsServerTransport::HttpsLocal
             | xray_config::DnsServerTransport::QuicLocal
+            | xray_config::DnsServerTransport::System
     ));
     let query_transport = context.dns_query_transport.clone().ok_or_else(|| {
         std::io::Error::other("managed DNS query transport is unavailable for DNS-over-HTTPS")
@@ -161,7 +163,10 @@ pub(super) fn open_managed_dns_tcp_bridge(
         xray_config::DnsServerTransport::QuicLocal => {
             (xray_transport::DnsQueryTransportKind::Quic, None)
         }
-        _ => unreachable!("managed DNS bridge only handles DoH and DoQ"),
+        xray_config::DnsServerTransport::System => {
+            (xray_transport::DnsQueryTransportKind::System, None)
+        }
+        _ => unreachable!("managed DNS bridge only handles DoH, DoQ and the system resolver"),
     };
     let name_server = upstream.name_server();
     let inbound_tag = upstream.inbound_tag().to_owned();
@@ -3657,6 +3662,32 @@ async fn proxy_udp_payload(
                 .await;
                 (target, "managed-doq", attempt)
             }
+            xray_config::DnsServerTransport::System => {
+                let target = upstream.target(RoutingNetwork::Udp);
+                let Some(query_transport) = context.dns_query_transport.as_ref() else {
+                    record_dns_udp_failure(context, DnsUdpFailurePhase::Open);
+                    continue;
+                };
+                let name_server = upstream.name_server();
+                let metadata =
+                    xray_transport::DnsQueryMetadata::local(Some(upstream.inbound_tag()));
+                let attempt = timeout(
+                    candidate_deadline.saturating_duration_since(TokioInstant::now()),
+                    async {
+                        let response = query_transport
+                            .exchange(
+                                &name_server,
+                                xray_transport::DnsQueryTransportKind::System,
+                                metadata,
+                                &packet.payload,
+                            )
+                            .await?;
+                        Ok(DnsUpstreamResponse::Payload(Bytes::from(response)))
+                    },
+                )
+                .await;
+                (target, "system", attempt)
+            }
         };
         let response = match attempt {
             Ok(Ok(response)) => response,
@@ -6602,6 +6633,81 @@ mod tests {
             Some("/custom?profile=mobile")
         );
         assert_eq!(plan.upstreams()[5].https_path(), None);
+    }
+
+    #[test]
+    fn proxy_plan_asks_a_localhost_server_locally() {
+        let raw = r#"{
+          "dns": { "tag": "dns-route", "servers": ["localhost", "192.0.2.53"] },
+          "outbounds": [{ "protocol": "freedom", "tag": "direct" }]
+        }"#;
+        let config = xray_config::parse_xray_json(raw)
+            .expect("localhost DNS server should parse")
+            .config;
+        let plan = DnsProxyPlan::from_config(&config).unwrap();
+
+        assert_eq!(plan.upstreams().len(), 2);
+        let system = &plan.upstreams()[0];
+        assert_eq!(system.transport(), xray_config::DnsServerTransport::System);
+        assert!(system.is_local(), "localhost bypasses routing");
+        assert_eq!(system.inbound_tag(), "dns-route");
+    }
+
+    #[tokio::test]
+    async fn system_dns_tcp_bridge_answers_framed_queries_from_the_resolver() {
+        struct SystemTransport;
+
+        #[async_trait::async_trait]
+        impl DnsQueryTransport for SystemTransport {
+            async fn exchange(
+                &self,
+                _server: &xray_transport::NameServer,
+                transport: xray_transport::DnsQueryTransportKind,
+                _metadata: xray_transport::DnsQueryMetadata<'_>,
+                query: &[u8],
+            ) -> std::io::Result<Vec<u8>> {
+                assert_eq!(transport, xray_transport::DnsQueryTransportKind::System);
+                xray_transport::exchange_system_dns_query(&LanResolver, query).await
+            }
+        }
+
+        struct LanResolver;
+
+        #[async_trait::async_trait]
+        impl DnsResolver for LanResolver {
+            async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+                match domain {
+                    "nas.lan" => Ok(SocketAddr::from(([192, 0, 2, 44], port))),
+                    _ => Err(TransportError::NoResolvedAddress(domain.to_owned(), port)),
+                }
+            }
+        }
+
+        let mut bridge = spawn_managed_dns_tcp_bridge(
+            Arc::new(SystemTransport),
+            xray_transport::NameServer::Domain {
+                domain: "localhost".to_owned(),
+                port: 53,
+            },
+            "dns-local".to_owned(),
+            true,
+            xray_transport::DnsQueryTransportKind::System,
+            None,
+        );
+        let query = dns_a_query(0xD050, "nas.lan");
+        bridge
+            .write_u16(u16::try_from(query.len()).unwrap())
+            .await
+            .unwrap();
+        bridge.write_all(&query).await.unwrap();
+        bridge.flush().await.unwrap();
+        let response_len = usize::from(bridge.read_u16().await.unwrap());
+        let mut response = vec![0; response_len];
+        bridge.read_exact(&mut response).await.unwrap();
+
+        assert!(dns_response_matches_query(&query, &response));
+        assert_eq!(&response[6..8], &1_u16.to_be_bytes());
+        assert_eq!(&response[response.len() - 4..], &[192, 0, 2, 44]);
     }
 
     #[test]

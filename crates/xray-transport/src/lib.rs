@@ -66,11 +66,11 @@ mod utls_tls;
 pub use dialer::TransportDialer;
 pub use dns::{
     dns_response_matches_query, exchange_dns_https_h2, exchange_dns_https_pooled,
-    exchange_dns_quic_candidates, select_name_server_indices, CachingDnsResolver,
-    CompiledNameServerPolicies, ConfiguredDnsResolver, DnsConnectionPools, DnsHttpsDialer,
-    DnsLookup, DnsQueryDispatch, DnsQueryMetadata, DnsQueryStrategy, DnsQueryTransport,
-    DnsQueryTransportKind, DnsResolver, NameServer, NameServerPolicy, NameServerTransport,
-    SystemDnsResolver, SystemRouteDnsResolver,
+    exchange_dns_quic_candidates, exchange_system_dns_query, select_name_server_indices,
+    CachingDnsResolver, CompiledNameServerPolicies, ConfiguredDnsResolver, DnsConnectionPools,
+    DnsHttpsDialer, DnsLookup, DnsQueryDispatch, DnsQueryMetadata, DnsQueryStrategy,
+    DnsQueryTransport, DnsQueryTransportKind, DnsResolver, NameServer, NameServerPolicy,
+    NameServerTransport, SystemDnsResolver, SystemRouteDnsResolver,
 };
 pub use dns_pool::{DnsConnectionKey, DnsConnectionRoute};
 pub use happy_eyeballs::{connect_tcp_dual_stack, connect_tcp_happy_eyeballs, HappyEyeballsConfig};
@@ -90,7 +90,10 @@ pub use socket_options::{
     CustomSocketOption, SocketOptions, SocketOptionsProtector, SocketOptionsReport,
     DEFAULT_TCP_KEEPALIVE_SECS,
 };
-pub use system_records::{is_domain_name, RecordResolver, SrvRecord, SystemRecordResolver};
+pub use system_records::{
+    is_domain_name, ConfiguredRecordResolver, RecordResolver, RecordResolverSlot, RecordServer,
+    SrvRecord, SystemRecordResolver,
+};
 pub use tls::{plain_tls_client_hello_bytes, TlsConnector, WarpTls};
 pub(crate) use tls_stream::{ClientTlsStream, ServerReadLog};
 pub use utls_profiles::draw_modern_fingerprint;

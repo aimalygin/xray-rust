@@ -4325,8 +4325,7 @@
           "domainStrategy": "UseIPv6"
         }
       },
-      "accepted": false,
-      "errorPath": "$.outbounds[0].streamSettings.xhttpSettings.downloadSettings.sockopt.domainStrategy"
+      "accepted": true
     },
     {
       "name": "freedom-settings-domainStrategy",
@@ -5819,6 +5818,204 @@
       "base": "xdrive",
       "set": {
         "/outbounds/0/mux/enabled": false
+      }
+    },
+    {
+      "name": "inert-xray-root-apps",
+      "accepted": true,
+      "warningPath": "$.stats",
+      "base": "loopback-policy",
+      "set": {
+        "/stats": {},
+        "/api": {
+          "tag": "api",
+          "services": [
+            "StatsService"
+          ]
+        },
+        "/metrics": {
+          "tag": "metrics_out"
+        },
+        "/version": {
+          "min": "25.1.1"
+        },
+        "/geodata": {
+          "cron": "0 4 * * *",
+          "assets": []
+        }
+      }
+    },
+    {
+      "name": "tls-min-version-ignored",
+      "accepted": true,
+      "warningPath": "$.outbounds[0].streamSettings.tlsSettings.minVersion",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/streamSettings/tlsSettings/minVersion": "1.2",
+        "/outbounds/0/streamSettings/tlsSettings/echConfigList": ""
+      }
+    },
+    {
+      "name": "tls-ech-config-list-rejected",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.tlsSettings.echConfigList",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/streamSettings/tlsSettings/echConfigList": "AEX+DQBBpQAgACBzeW50aGV0aWM="
+      }
+    },
+    {
+      "name": "tls-disable-system-root-without-pin",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.tlsSettings.disableSystemRoot",
+      "base": "raw-tls-happy-eyeballs",
+      "set": {
+        "/outbounds/0/streamSettings/tlsSettings/disableSystemRoot": true
+      }
+    },
+    {
+      "name": "xray-fakedns-pools",
+      "config": {
+        "fakeDns": [
+          {
+            "ipPool": "198.18.0.0/15",
+            "poolSize": 65535
+          }
+        ],
+        "dns": {
+          "servers": [
+            "fakedns",
+            "192.0.2.53"
+          ]
+        },
+        "inbounds": [
+          {
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {},
+            "sniffing": {
+              "enabled": true,
+              "destOverride": [
+                "fakedns"
+              ]
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "freedom",
+            "tag": "direct"
+          }
+        ]
+      },
+      "accepted": true,
+      "objects": {
+        "FAKE_DNS_POOL": "/fakeDns/0"
+      }
+    },
+    {
+      "name": "xray-fakedns-pool-too-large",
+      "accepted": false,
+      "errorPath": "$.fakeDns[0].poolSize",
+      "base": "xray-fakedns-pools",
+      "set": {
+        "/fakeDns/0/ipPool": "198.18.0.0/24"
+      }
+    },
+    {
+      "name": "xray-fakedns-after-another-server",
+      "accepted": false,
+      "errorPath": "$.dns.servers[1]",
+      "base": "xray-fakedns-pools",
+      "set": {
+        "/dns/servers": [
+          "192.0.2.53",
+          "fakedns"
+        ]
+      }
+    },
+    {
+      "name": "raw-http-header",
+      "config": {
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "192.168.1.10",
+                  "port": 80,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "tcp",
+              "tcpSettings": {
+                "header": {
+                  "type": "http",
+                  "request": {
+                    "version": "1.1",
+                    "method": "GET",
+                    "path": [
+                      "/"
+                    ],
+                    "headers": {
+                      "Host": [
+                        "www.example.com"
+                      ],
+                      "Connection": [
+                        "keep-alive"
+                      ]
+                    }
+                  },
+                  "response": {
+                    "version": "1.1",
+                    "status": "200",
+                    "reason": "OK",
+                    "headers": {
+                      "Content-Type": [
+                        "application/octet-stream"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "accepted": true,
+      "objects": {
+        "RAW_HTTP_REQUEST": "/outbounds/0/streamSettings/tcpSettings/header/request",
+        "RAW_HTTP_RESPONSE": "/outbounds/0/streamSettings/tcpSettings/header/response"
+      }
+    },
+    {
+      "name": "raw-http-header-on-freedom",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.tcpSettings.header.type",
+      "base": "raw-http-header",
+      "set": {
+        "/outbounds/0/protocol": "freedom",
+        "/outbounds/0/settings": {}
+      }
+    },
+    {
+      "name": "raw-http-header-injection",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.tcpSettings.header.request.path[0]",
+      "base": "raw-http-header",
+      "set": {
+        "/outbounds/0/streamSettings/tcpSettings/header/request/path": [
+          "/\r\nX-Injected: 1"
+        ]
       }
     },
     {

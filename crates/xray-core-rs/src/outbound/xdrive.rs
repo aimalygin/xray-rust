@@ -233,6 +233,7 @@ mod tests {
             udp_xicmp: None,
             udp_noise: None,
             udp_salamander: None,
+            raw_http_header: None,
             socket_options: None,
         }
     }

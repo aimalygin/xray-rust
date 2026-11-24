@@ -73,12 +73,21 @@ const MAX_OBSERVATORY_PROBE_INTERVAL: std::time::Duration =
 const MAX_DNS_OUTBOUND_RULES: usize = 4_096;
 const MAX_DNS_QTYPE_SELECTORS: usize = 65_536;
 const MAX_ROUTING_PORT_SELECTORS: usize = 65_536;
-pub const MAX_CONFIG_DOMAIN_MATCHERS: usize = 250_000;
+/// Domain matchers a configuration may hold, geosite entries and inline
+/// domains together. A compiled geosite domain takes about 26 bytes, so the
+/// budget is some 13 MB of routing state at most. It was 250,000 until two
+/// common geosite categories together no longer fitted: an ad list of 203,000
+/// domains beside a country list of 110,000.
+pub const MAX_CONFIG_DOMAIN_MATCHERS: usize = 500_000;
 const MAX_CONFIG_IP_MATCHERS: usize = 750_000;
 const MAX_CONFIG_MATCHERS: usize = 1_000_000;
 const MAX_CONFIG_GEODATA_ATTR_FILTERS: usize = 32;
 const MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE: usize = 256;
-const MAX_DNS_SERVERS: usize = 8;
+/// Xray-core sets no limit; full subscriptions list a dozen or two
+/// servers. Each entry costs one compiled policy, so the bound only keeps
+/// a config's server list small. A parallel lookup asks at most eight of
+/// them at a time, and the TUN DNS proxy forwards to the first eight.
+const MAX_DNS_SERVERS: usize = 32;
 const DEFAULT_FAKE_IP_POOL_SIZE: u32 = 32_768;
 const TUN_DNS_ANCHOR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
 const TUN_CLIENT_IPV4: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 2);
@@ -419,6 +428,7 @@ impl Parser<'_> {
         {
             self.error("$.meta", "field `meta` must be an object or null");
         }
+        self.warn_ignored_root_apps();
         // Xray-core v26.10.31 refuses any legacy reverse proxy, bridges and
         // portals alike, before reading it.
         if self
@@ -430,6 +440,69 @@ impl Parser<'_> {
                 "$.reverse",
                 "The feature \"legacy reverse\" has been removed and migrated to \"VLESS Reverse Proxy\". Please update your config(s) according to release note and documentation.",
             );
+        }
+    }
+
+    /// Root apps that Xray-core v26.10.31 builds and xray-rust has no runtime
+    /// for. Each decodes into a Go struct pointer there, so a value other
+    /// than an object or null fails; an object is accepted with a warning and
+    /// changes nothing here. None of them alters how traffic is carried.
+    fn warn_ignored_root_apps(&mut self) {
+        const IGNORED: [(&str, &str); 5] = [
+            (
+                "stats",
+                "`stats` is ignored: xray-rust keeps no Xray traffic counters",
+            ),
+            (
+                "api",
+                "`api` is ignored: xray-rust runs no Xray gRPC API service, so its tag and inbound reach nothing",
+            ),
+            (
+                "metrics",
+                "`metrics` is ignored: xray-rust serves no metrics endpoint",
+            ),
+            (
+                "version",
+                "`version` is ignored: xray-rust does not check the config's Xray-core version range",
+            ),
+            (
+                "geodata",
+                "`geodata` is ignored: xray-rust never downloads or refreshes geodata files; it reads the geosite and geoip files it finds",
+            ),
+        ];
+        for (key, message) in IGNORED {
+            let Some(value) = self.root.get(key).filter(|value| !value.is_null()) else {
+                continue;
+            };
+            let path = format!("$.{key}");
+            if !value.is_object() {
+                self.error(path, format!("field `{key}` must be an object or null"));
+                continue;
+            }
+            if key == "version" {
+                // `min` and `max` decode into Go strings.
+                for bound in ["min", "max"] {
+                    if value
+                        .get(bound)
+                        .is_some_and(|bound| !bound.is_string() && !bound.is_null())
+                    {
+                        self.error(
+                            format!("$.version.{bound}"),
+                            format!("field `{bound}` must be a string or null"),
+                        );
+                    }
+                }
+            }
+            self.warning(path, message);
+        }
+    }
+
+    /// A key Xray-core v26.10.31 does not decode, which older releases read
+    /// and current subscriptions still write: Go's JSON decoding skips it, so
+    /// it is accepted with `message` as a warning, whatever its value.
+    fn warn_inert_key(&mut self, value: &Value, key: &str, base_path: &str, message: &str) {
+        if value.get(key).is_some() {
+            self.warning(child_path(base_path, key), message);
         }
     }
 
@@ -1159,18 +1232,51 @@ impl Parser<'_> {
                     "targetStrategy is supported only on freedom outbounds",
                 );
             }
-            // WireGuard reads it for its peer endpoints, MASQUE for its server.
-            if !matches!(
-                protocol,
-                OutboundProtocol::Wireguard | OutboundProtocol::Masque
-            ) && stream
+            // WireGuard reads it for its peer endpoints, MASQUE for its
+            // server, and the proxies for their server's address, as
+            // Xray-core's `DialSystem` resolves a domain server before dialing.
+            let strategy = stream
                 .socket_options
                 .as_ref()
-                .is_some_and(|options| options.domain_strategy.has_strategy())
+                .is_some_and(|options| options.domain_strategy.has_strategy());
+            let strategy_path =
+                format!("$.outbounds[{index}].streamSettings.sockopt.domainStrategy");
+            if strategy
+                && !matches!(
+                    protocol,
+                    OutboundProtocol::Wireguard
+                        | OutboundProtocol::Masque
+                        | OutboundProtocol::Vless
+                        | OutboundProtocol::Vmess
+                        | OutboundProtocol::Trojan
+                        | OutboundProtocol::Shadowsocks2022
+                        | OutboundProtocol::Socks
+                        | OutboundProtocol::Http
+                        | OutboundProtocol::Hysteria
+                )
             {
                 self.error(
-                    format!("$.outbounds[{index}].streamSettings.sockopt.domainStrategy"),
-                    "sockopt.domainStrategy is supported only on freedom, WireGuard and MASQUE outbounds",
+                    strategy_path,
+                    "sockopt.domainStrategy is supported only on outbounds that dial a server",
+                );
+            } else if strategy
+                && !matches!(
+                    protocol,
+                    OutboundProtocol::Wireguard | OutboundProtocol::Masque
+                )
+                && (outbound
+                    .pointer("/streamSettings/sockopt/dialerProxy")
+                    .and_then(Value::as_str)
+                    .is_some_and(|tag| !tag.is_empty())
+                    || outbound
+                        .get("proxySettings")
+                        .is_some_and(|proxy| !proxy.is_null()))
+            {
+                // Xray-core resolves the server here and hands the chain an
+                // address; a chain here carries the server's name instead.
+                self.error(
+                    strategy_path,
+                    "sockopt.domainStrategy cannot be combined with dialerProxy or proxySettings on a proxy outbound: the chain receives the server's name, which the strategy would not resolve",
                 );
             }
         }
@@ -2920,12 +3026,14 @@ mod tests {
         let mut ip_budget = MatcherBudget::new(DEFAULT_MATCHER_BUDGET_LIMITS);
         let mut combined_budget = MatcherBudget::new(DEFAULT_MATCHER_BUDGET_LIMITS);
 
-        assert!(domain_budget.consume_domain_matchers(250_000));
+        assert!(domain_budget.consume_domain_matchers(500_000));
         assert!(!domain_budget.consume_domain_matchers(1));
         assert!(ip_budget.consume_ip_matchers(750_000));
         assert!(!ip_budget.consume_ip_matchers(1));
-        assert!(combined_budget.consume_domain_matchers(250_000));
-        assert!(combined_budget.consume_ip_matchers(750_000));
+        // Both budgets together exceed the total, which then decides.
+        assert!(combined_budget.consume_domain_matchers(500_000));
+        assert!(!combined_budget.consume_ip_matchers(750_000));
+        assert!(combined_budget.consume_ip_matchers(500_000));
         assert_eq!(combined_budget.remaining_total_matchers(), 0);
         assert!(!combined_budget.consume_domain_matchers(1));
         assert!(!combined_budget.consume_ip_matchers(1));

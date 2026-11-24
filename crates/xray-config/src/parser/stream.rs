@@ -1,6 +1,6 @@
 //! Transport selection, carrier settings and TLS/REALITY security.
 use super::*;
-use crate::KcpSettings;
+use crate::{KcpSettings, RawHttpHeader};
 
 impl Parser<'_> {
     pub(super) fn parse_stream_settings(
@@ -336,6 +336,35 @@ impl Parser<'_> {
             }
             salamander
         };
+        let raw_http_header = matches!(transport, StreamTransport::Raw)
+            .then(|| self.parse_raw_http_header(stream))
+            .flatten();
+        // Freedom and DNS dial their sockets without the carrier that frames
+        // the header, where Xray-core frames every TCP dial with it; ignoring
+        // it would send the bytes bare.
+        if raw_http_header.is_some()
+            && matches!(
+                outbound
+                    .get("protocol")
+                    .and_then(Value::as_str)
+                    .map(str::to_ascii_lowercase)
+                    .as_deref(),
+                Some("freedom" | "direct" | "dns")
+            )
+        {
+            let key = if stream
+                .and_then(|stream| stream.get("rawSettings"))
+                .is_some_and(|settings| !settings.is_null())
+            {
+                "rawSettings"
+            } else {
+                "tcpSettings"
+            };
+            self.error(
+                format!("$.outbounds[{index}].streamSettings.{key}.header.type"),
+                "RAW's http header is not supported on freedom or DNS outbounds, which dial without it; Xray-core sends it on their TCP connections",
+            );
+        }
         Some(StreamSettings {
             // Native Hysteria owns a UDP carrier; other transports retain
             // their existing TCP classification (XHTTP selects H3 later).
@@ -349,6 +378,7 @@ impl Parser<'_> {
             quic_params,
             tcp_fragment: tcp_masks.fragment,
             tcp_header_custom: tcp_masks.header,
+            raw_http_header,
             udp_header_custom,
             tcp_sudoku: tcp_masks.sudoku,
             udp_sudoku,
@@ -1163,6 +1193,12 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(socket_options, &socket_options_path, &surface::SOCKOPT);
+        self.warn_inert_key(
+            socket_options,
+            "tcpNoDelay",
+            &socket_options_path,
+            "`tcpNoDelay` is ignored, as Xray-core v26.10.31 ignores it: every TCP socket already has TCP_NODELAY set",
+        );
         let at = |key: &str| format!("{socket_options_path}.{key}");
         // Chaining is parsed on the outbound; dedicated freedom fragment
         // handlers are normalized across outbounds after parsing.
@@ -1667,6 +1703,7 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(settings, &settings_path, &surface::TLS);
+        self.validate_ignored_tls_fields(settings, &settings_path);
 
         if settings
             .get("serverName")
@@ -1743,6 +1780,136 @@ impl Parser<'_> {
                 }
             }
         }
+    }
+
+    /// `tlsSettings` fields Xray-core accepts that change nothing here.
+    ///
+    /// `minVersion`, `maxVersion`, `cipherSuites` and `curvePreferences`
+    /// reach only Go's own crypto/tls: with a uTLS fingerprint, the default,
+    /// Xray-core's `copyConfig` drops them and the fingerprint's hello decides
+    /// all four. With `fingerprint: "unsafe"` Xray-core applies them, and
+    /// they are refused here; a QUIC handshake keeps its own versions, suites
+    /// and groups. `useSystemCA` picks the operating system's
+    /// store over Go's bundled roots; the bundled Mozilla roots stay in use
+    /// here. `show` is REALITY's debug switch and no TLS field.
+    ///
+    /// A nonempty `echConfigList` asks for Encrypted Client Hello, which is
+    /// not implemented, and fails: connecting without it would send
+    /// `serverName` in the clear, where Xray-core fails the connection
+    /// instead (`ech.go` installs an invalid config when it has none).
+    ///
+    /// `disableSystemRoot: true` leaves Xray-core no trust anchor besides
+    /// `certificates`, which are refused here, so only a pinned certificate
+    /// can verify the server. With `pinnedPeerCertSha256` the pins decide
+    /// here as there, and it is accepted with a warning; without, ignoring it
+    /// would trust the system roots that the config turned off, so it fails.
+    fn validate_ignored_tls_fields(&mut self, settings: &Value, settings_path: &str) {
+        let at = |key: &str| format!("{settings_path}.{key}");
+        // With `fingerprint: "unsafe"` Xray-core hands the handshake to Go's
+        // crypto/tls, which applies all four. The rustls handshake here would
+        // not: a `minVersion` of 1.3 would accept TLS 1.2, and
+        // `curvePreferences` could not hold the key exchange to a group. So
+        // there they are refused, where ignoring them would weaken what the
+        // configuration asks for.
+        let unshaped = settings
+            .get("fingerprint")
+            .and_then(Value::as_str)
+            .is_some_and(|fingerprint| fingerprint.eq_ignore_ascii_case("unsafe"));
+        let refused = |key: &str| {
+            format!(
+                "tls `{key}` is not supported with fingerprint `unsafe`: Xray-core applies it to that handshake, and the rustls handshake here would not"
+            )
+        };
+        for key in ["minVersion", "maxVersion", "cipherSuites"] {
+            match settings.get(key) {
+                None | Some(Value::Null) => {}
+                Some(Value::String(text)) if text.is_empty() => {}
+                Some(Value::String(_)) if unshaped => self.error(at(key), refused(key)),
+                Some(Value::String(_)) => self.warning(
+                    at(key),
+                    format!(
+                        "tls `{key}` is ignored: a uTLS fingerprint's ClientHello decides it, as in Xray-core, and an unshaped rustls handshake keeps its own TLS versions and suites"
+                    ),
+                ),
+                Some(_) => self.error(at(key), format!("field `{key}` must be a string or null")),
+            }
+        }
+        match settings.get("curvePreferences") {
+            None | Some(Value::Null) => {}
+            Some(Value::String(text)) if unshaped && !text.is_empty() => {
+                self.error(at("curvePreferences"), refused("curvePreferences"));
+            }
+            Some(Value::String(_)) => self.warning(
+                at("curvePreferences"),
+                "tls `curvePreferences` is ignored: a uTLS fingerprint's ClientHello decides the key shares, as in Xray-core",
+            ),
+            Some(Value::Array(curves)) => {
+                if curves.iter().any(|curve| !curve.is_string() && !curve.is_null()) {
+                    self.error(
+                        at("curvePreferences"),
+                        "tls curvePreferences entries must be strings",
+                    );
+                } else if unshaped && !curves.is_empty() {
+                    self.error(at("curvePreferences"), refused("curvePreferences"));
+                } else if !curves.is_empty() {
+                    self.warning(
+                        at("curvePreferences"),
+                        "tls `curvePreferences` is ignored: a uTLS fingerprint's ClientHello decides the key shares, as in Xray-core",
+                    );
+                }
+            }
+            Some(_) => self.error(
+                at("curvePreferences"),
+                "field `curvePreferences` must be a string or an array of strings",
+            ),
+        }
+        match settings.get("useSystemCA") {
+            None | Some(Value::Null | Value::Bool(false)) => {}
+            Some(Value::Bool(true)) => self.warning(
+                at("useSystemCA"),
+                "tls `useSystemCA` is ignored: the server is verified against the bundled Mozilla roots",
+            ),
+            Some(_) => self.error(at("useSystemCA"), "field `useSystemCA` must be a boolean"),
+        }
+        match settings.get("disableSystemRoot") {
+            None | Some(Value::Null | Value::Bool(false)) => {}
+            Some(Value::Bool(true)) => {
+                let pinned = settings
+                    .get("pinnedPeerCertSha256")
+                    .and_then(Value::as_str)
+                    .is_some_and(|pins| pins.split(',').any(|pin| !pin.trim().is_empty()));
+                if pinned {
+                    self.warning(
+                        at("disableSystemRoot"),
+                        "tls `disableSystemRoot` is ignored: `pinnedPeerCertSha256` decides which certificates are trusted, as in Xray-core",
+                    );
+                } else {
+                    self.error(
+                        at("disableSystemRoot"),
+                        "tls `disableSystemRoot: true` without `pinnedPeerCertSha256` leaves no trust anchor, and custom `certificates` are unsupported; ignoring it would trust the system roots it turns off",
+                    );
+                }
+            }
+            Some(_) => self.error(
+                at("disableSystemRoot"),
+                "field `disableSystemRoot` must be a boolean",
+            ),
+        }
+        match settings.get("echConfigList") {
+            None | Some(Value::Null) => {}
+            Some(Value::String(list)) if list.is_empty() => {}
+            Some(Value::String(_)) => self.error(
+                at("echConfigList"),
+                "tls `echConfigList` is not supported: Encrypted Client Hello is not implemented, and connecting without it would send `serverName` in the clear, where Xray-core fails the connection",
+            ),
+            Some(_) => self.error(at("echConfigList"), "field `echConfigList` must be a string or null"),
+        }
+        self.warn_inert_key(
+            settings,
+            "show",
+            settings_path,
+            "tls `show` is ignored, as Xray-core ignores it: it is REALITY's debug switch",
+        );
     }
 
     pub(super) fn parse_tls_pinned_peer_cert_sha256(
@@ -1859,13 +2026,152 @@ impl Parser<'_> {
         if let Some(header_type) =
             self.optional_string_at(header, "type", format!("{header_path}.type"))
         {
-            if !header_type.is_empty() && header_type != "none" {
+            if header_type == "http" {
+                self.validate_raw_http_header(header, &header_path);
+            } else if !header_type.is_empty() && header_type != "none" {
                 self.error(
                     format!("{header_path}.type"),
                     format!("unsupported tcp header type `{header_type}`"),
                 );
             }
         }
+    }
+
+    /// An `http` header's `request` and `response` as Xray-core's
+    /// `Authenticator` decodes and builds them. The client sends the request
+    /// and only skips the response, but both must build. A carriage return or
+    /// line feed anywhere, or an empty header name, would break the head the
+    /// request is written into, and fails.
+    fn validate_raw_http_header(&mut self, header: &Value, path: &str) {
+        for (key, fields) in [
+            ("request", &surface::RAW_HTTP_REQUEST),
+            ("response", &surface::RAW_HTTP_RESPONSE),
+        ] {
+            let part_path = format!("{path}.{key}");
+            let part = match header.get(key) {
+                None | Some(Value::Null) => continue,
+                Some(part) if part.is_object() => part,
+                Some(_) => {
+                    self.error(part_path, format!("http header `{key}` must be an object"));
+                    continue;
+                }
+            };
+            self.reject_unknown_fields(part, &part_path, fields);
+            for field in ["version", "method", "status", "reason"] {
+                match part.get(field) {
+                    None | Some(Value::Null) => {}
+                    Some(Value::String(text)) => {
+                        self.reject_http_head_breaks(text, &format!("{part_path}.{field}"))
+                    }
+                    Some(_) => self.error(
+                        format!("{part_path}.{field}"),
+                        format!("http header `{field}` must be a string"),
+                    ),
+                }
+            }
+            if let Some(paths) = part.get("path") {
+                let paths_path = format!("{part_path}.path");
+                if let Some(Some(entries)) = self.string_list(Some(paths), &paths_path) {
+                    for entry in entries {
+                        self.reject_http_head_breaks(entry.text, &entry.path);
+                    }
+                }
+            }
+            let headers_path = format!("{part_path}.headers");
+            match part.get("headers") {
+                None | Some(Value::Null) => {}
+                Some(Value::Object(headers)) => {
+                    for (name, values) in headers {
+                        let value_path = child_path(&headers_path, name);
+                        if name.is_empty() {
+                            self.error(&value_path, "http header names must not be empty");
+                        }
+                        self.reject_http_head_breaks(name, &value_path);
+                        if values.is_null() {
+                            self.error(&value_path, format!("empty HTTP header value: {name}"));
+                            continue;
+                        }
+                        if let Some(Some(entries)) = self.string_list(Some(values), &value_path) {
+                            for entry in entries {
+                                self.reject_http_head_breaks(entry.text, &entry.path);
+                            }
+                        }
+                    }
+                }
+                Some(_) => self.error(headers_path, "http header `headers` must be an object"),
+            }
+        }
+    }
+
+    fn reject_http_head_breaks(&mut self, text: &str, path: &str) {
+        if text.contains(['\r', '\n']) {
+            self.error(
+                path,
+                "http header text must not contain a carriage return or line feed",
+            );
+        }
+    }
+
+    /// The `http` header of the RAW settings Xray-core reads, `rawSettings`
+    /// unless null, else `tcpSettings`, as `StreamConfig.Build` picks them.
+    /// `validate_tcp_settings` has checked both.
+    pub(super) fn parse_raw_http_header(
+        &mut self,
+        stream: Option<&Value>,
+    ) -> Option<RawHttpHeader> {
+        let stream = stream?;
+        let settings = stream
+            .get("rawSettings")
+            .filter(|settings| !settings.is_null())
+            .or_else(|| stream.get("tcpSettings"))?;
+        let header = settings.get("header")?;
+        if header.get("type").and_then(Value::as_str) != Some("http") {
+            return None;
+        }
+        let request = header.get("request").filter(|request| request.is_object());
+        let text = |key: &str| {
+            request
+                .and_then(|request| request.get(key))
+                .and_then(Value::as_str)
+                .filter(|text| !text.is_empty())
+        };
+        // Go's StringList: an array, or one string split at commas.
+        let list = |value: &Value| -> Vec<String> {
+            match value {
+                Value::String(text) => text.split(',').map(str::to_owned).collect(),
+                Value::Array(items) => items
+                    .iter()
+                    .map(|item| item.as_str().unwrap_or_default().to_owned())
+                    .collect(),
+                _ => Vec::new(),
+            }
+        };
+        let mut paths = request
+            .and_then(|request| request.get("path"))
+            .map(list)
+            .unwrap_or_default();
+        if paths.is_empty() {
+            paths.push("/".to_owned());
+        }
+        // Xray-core sends configured headers sorted by name.
+        let headers = request
+            .and_then(|request| request.get("headers"))
+            .and_then(Value::as_object)
+            .filter(|headers| !headers.is_empty())
+            .map(|headers| {
+                let mut headers: Vec<(String, Vec<String>)> = headers
+                    .iter()
+                    .map(|(name, values)| (name.clone(), list(values)))
+                    .collect();
+                headers.sort_by(|left, right| left.0.cmp(&right.0));
+                headers
+            });
+        Some(RawHttpHeader {
+            method: text("method").unwrap_or("GET").to_owned(),
+            version: text("version").unwrap_or("1.1").to_owned(),
+            paths,
+            headers,
+        })
     }
 
     pub(super) fn parse_reality_settings(

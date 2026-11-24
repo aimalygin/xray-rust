@@ -1484,10 +1484,11 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
                 }
                 switch upstream {
-                case .ip:
+                case .ip, .xrayInternal:
                     // DNS endpoints never become carrier exclusions. Routed
                     // mode uses the Xray router; local mode relies on the
-                    // provider-process Network Extension policy.
+                    // provider-process Network Extension policy. `localhost`
+                    // and `fakedns` have no endpoint at all.
                     continue
                 case let .domain(domain, port, rejectsTunnelOwnedAddress):
                     appendBootstrapDomain(
@@ -1707,12 +1708,24 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     private enum DNSBootstrapUpstream: Equatable {
         case ip(String, port: UInt16)
         case domain(String, port: UInt16, rejectsTunnelOwnedAddress: Bool)
+        /// Xray-core's `localhost`, which the core answers from its own
+        /// bootstrap resolver, or `fakedns`, which it maps onto fake-IP:
+        /// no wire server, so nothing to resolve before the tunnel starts.
+        case xrayInternal
+    }
+
+    private static func isXrayInternalDNSServer(_ address: String) -> Bool {
+        address.caseInsensitiveCompare("localhost") == .orderedSame ||
+            address.caseInsensitiveCompare("fakedns") == .orderedSame
     }
 
     private static func dnsBootstrapUpstream(from rawServer: Any) -> DNSBootstrapUpstream? {
         if let server = rawServer as? String {
             if hasDNSTCPURLScheme(server) {
                 return dnsTCPBootstrapUpstream(from: server)
+            }
+            if isXrayInternalDNSServer(server) {
+                return .xrayInternal
             }
             guard server == server.trimmingCharacters(in: .whitespacesAndNewlines),
                   isNonzeroDNSServer(server),
@@ -1767,9 +1780,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             }
             return .ip(canonicalAddress, port: port)
         }
-        guard address.caseInsensitiveCompare("localhost") != .orderedSame,
-              address.caseInsensitiveCompare("fakedns") != .orderedSame,
-              !address.contains(":"),
+        if isXrayInternalDNSServer(address) {
+            return .xrayInternal
+        }
+        guard !address.contains(":"),
               let domain = canonicalDNSBootstrapDomain(address)
         else {
             return nil

@@ -8745,6 +8745,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
             udp_realm: None,
             udp_xicmp: None,
             udp_salamander: None,
+            raw_http_header: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -8769,6 +8770,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
             udp_realm: None,
             udp_xicmp: None,
             udp_salamander: None,
+            raw_http_header: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -9283,6 +9285,7 @@ fn phase2_probe_outbound(tag: String, proxy_tag: Option<String>) -> OutboundConf
             udp_realm: None,
             udp_xicmp: None,
             udp_salamander: None,
+            raw_http_header: None,
             udp_sudoku: None,
             udp_noise: None,
             socket_options: None,
@@ -10730,6 +10733,7 @@ fn route_probe_config(
                 udp_realm: None,
                 udp_xicmp: None,
                 udp_salamander: None,
+                raw_http_header: None,
                 udp_sudoku: None,
                 udp_noise: None,
                 socket_options: None,
@@ -14750,7 +14754,8 @@ mod tests {
         assert!(last.ip_matchers.is_none());
         assert!(last.matches_domain(Some(ROUTE_PROBE_DOMAIN)));
         assert!(!last.matches_domain(Some("sub.route-probe.invalid")));
-        assert!(route_probe_config(1 << 15, 2, 1, 8).is_err());
+        // One rule more than the configuration's domain matcher budget holds.
+        assert!(route_probe_config(MAX_CONFIG_DOMAIN_MATCHERS / 8 + 1, 2, 1, 8).is_err());
 
         let router = OutboundRouter::new(Arc::new(config));
         let target = route_probe_target(true);

@@ -75,6 +75,60 @@ final class XrayMobileDNSPreflightTests: XCTestCase {
         )
     }
 
+    func testFakeDNSServerTurnsFakeIPOnWithoutBeingAnUpstream() {
+        // The core maps `fakedns` onto fake-IP and asks no wire server for
+        // it, so alone it leaves Freedom nothing to resolve restored names.
+        let freedomDefault = #"{"dns":{"servers":["FakeDNS"]},"inbounds":[{"protocol":"tun","tag":"tun-in"}],"outbounds":[{"protocol":"freedom","tag":"direct"}]}"#
+        assertError(.unsafeFakeIPFreedomRouting, configJSON: freedomDefault)
+        assertError(
+            .unsafeFakeIPFreedomRouting,
+            configJSON: fakeIPConfig(freedomFirst: true, dnsServers: [["address": "fakedns"]])
+        )
+        XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(
+            #"{"dns":{"servers":["fakedns","192.0.2.53"]},"inbounds":[{"protocol":"tun","tag":"tun-in"}],"outbounds":[{"protocol":"freedom","tag":"direct"}]}"#
+        ))
+        XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(
+            #"{"dns":{"servers":["fakedns"]},"inbounds":[{"protocol":"tun","tag":"tun-in"}],"outbounds":[{"protocol":"vless","tag":"proxy"}]}"#
+        ))
+        // Like an enabled dns.fakeIp, it cannot be combined with explicit
+        // system DNS servers.
+        assertError(
+            .unavailable,
+            configJSON: #"{"dns":{"servers":["fakedns","192.0.2.53"]}}"#,
+            explicitDNS: .custom
+        )
+    }
+
+    func testLocalhostServerIsNoUpstreamInsideTheTunnel() {
+        // Inside a VPN `localhost` answers from dns.hosts alone: the platform
+        // resolver would ask the tunnel itself. Alone it would start a tunnel
+        // in which no name resolves.
+        for servers in [#"["localhost"]"#, #"["LocalHost",{"address":"localhost","domains":["domain:lan"]}]"#] {
+            assertError(
+                .unavailable,
+                configJSON: #"{"dns":{"servers":\#(servers)},"outbounds":[{"protocol":"vless","tag":"proxy"}]}"#
+            )
+        }
+        // Beside a server on the wire it is fine.
+        XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(
+            #"{"dns":{"servers":["localhost","192.0.2.53"]},"outbounds":[{"protocol":"freedom"}]}"#
+        ))
+        // Beside `fakedns` the tunnel resolves through fake-IP, and
+        // `localhost` still gives Freedom nothing to resolve restored names.
+        XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(
+            #"{"dns":{"servers":["fakedns","localhost"]},"inbounds":[{"protocol":"tun","tag":"tun-in"}],"outbounds":[{"protocol":"vless","tag":"proxy"}]}"#
+        ))
+        assertError(
+            .unsafeFakeIPFreedomRouting,
+            configJSON: #"{"dns":{"servers":["fakedns","localhost"]},"inbounds":[{"protocol":"tun","tag":"tun-in"}],"outbounds":[{"protocol":"freedom","tag":"direct"}]}"#
+        )
+        // With explicit system DNS servers the tunnel's names go to those.
+        XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(
+            #"{"dns":{"servers":["localhost"]},"outbounds":[{"protocol":"freedom"}]}"#,
+            explicitDNS: .custom
+        ))
+    }
+
     func testConfiguredServerMakesFakeIPFreedomRoutingSafe() {
         XCTAssertNoThrow(
             try XrayMobileDNSPreflight.validate(
