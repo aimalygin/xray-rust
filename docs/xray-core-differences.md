@@ -1622,6 +1622,12 @@ Deliberate differences:
 - **Unused burst observatory.** With both present Xray-core still starts the
   burst scheduler, whose results nothing reads (`burstobserver.go` lines
   68-81). xray-rust validates it, warns, and sends no ping.
+- **Failures of real traffic.** `observatory` probes an outbound again within
+  seconds when a flow fails to open through it; `burstObservatory` does not.
+  Nothing follows those failures while it runs, so an outbound's window stays
+  its last `sampling` scheduled pings, as in `healthping_result.go`, and a
+  dead server is left when its pings say so. With both configured,
+  `observatory` governs and its re-probes apply.
 - **Upper bounds.** Xray-core has none (`healthping.go` lines 66-79).
   xray-rust lowers `interval` above `24h`, `sampling` above 100 and `timeout`
   above `60s` to those values with a warning. They bound an outbound's window

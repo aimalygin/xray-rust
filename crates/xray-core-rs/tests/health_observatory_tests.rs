@@ -293,6 +293,70 @@ async fn burst_observatory_pings_subjects_at_start_with_the_configured_method() 
     }
 }
 
+/// With both observatories configured the classic one governs, as in
+/// Xray-core, whose strategies read the one registered first: its probes
+/// run, and with them the re-probes that failures of real traffic bring,
+/// while the burst observatory sends no ping at all.
+#[tokio::test]
+async fn the_classic_observatory_governs_when_both_are_configured() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    /// Answers every request with 204 and counts the connections it took.
+    async fn counting_server() -> (
+        std::net::SocketAddr,
+        Arc<AtomicUsize>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind local server");
+        let address = listener.local_addr().expect("local address");
+        let connections = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&connections);
+        let server = tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                counted.fetch_add(1, Ordering::SeqCst);
+                let mut request = [0u8; 2048];
+                let _ = stream.read(&mut request).await;
+                let _ = stream
+                    .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                    .await;
+            }
+        });
+        (address, connections, server)
+    }
+
+    let (classic, classic_probes, classic_server) = counting_server().await;
+    let (burst, burst_pings, burst_server) = counting_server().await;
+    let config = CoreConfig {
+        burst_observatory: Some(BurstObservatoryConfig {
+            subject_selectors: vec!["proxy-".to_owned()],
+            ping: BurstPingConfig {
+                destination: format!("http://127.0.0.1:{}/generate_204", burst.port()),
+                ..BurstPingConfig::default()
+            },
+        }),
+        ..observatory_config(format!("http://127.0.0.1:{}/generate_204", classic.port()))
+    };
+    let mut core = Core::new(config).expect("build core with both observatories");
+
+    core.start().await.expect("start core");
+    wait_for_health(&core, OutboundHealthState::Healthy).await;
+    // A burst observatory pings every subject the moment it starts; give
+    // one that had started the time to be seen.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    core.stop().await.expect("stop core");
+
+    assert!(classic_probes.load(Ordering::SeqCst) >= 2);
+    assert_eq!(burst_pings.load(Ordering::SeqCst), 0);
+    classic_server.abort();
+    burst_server.abort();
+}
+
 /// `healthping.go` `doCheck`: a failed ping counts against the outbound when
 /// the connectivity URL answers over the device's own network.
 #[tokio::test]

@@ -2128,6 +2128,57 @@ mod tests {
         .expect("the probes finish in time");
     }
 
+    /// With `burstObservatory` alone nothing watches the failures of real
+    /// traffic: a failed open is dropped where it is reported and brings no
+    /// re-probe. A re-probe's result recorded all the same would leave the
+    /// `sampling` window, and the health read from it, as the pings left
+    /// them.
+    #[test]
+    fn traffic_failures_bring_no_reprobe_under_the_burst_observatory() {
+        let router = OutboundRouter::new(Arc::new(parse(&json!({
+            "outbounds": [
+                {"tag": "direct", "protocol": "freedom"},
+                socks("proxy-a", "127.0.0.1", 9),
+            ],
+        }))));
+        let selection = router.selection();
+        selection.use_burst_health(crate::outbound::BurstHealthPolicy {
+            sampling: 4,
+            validity: Duration::from_secs(600),
+        });
+        let proxy_a = router.graph().node_for_tag("proxy-a").unwrap();
+        let status = || {
+            selection
+                .health_snapshot()
+                .outbounds
+                .into_iter()
+                .find(|outbound| outbound.outbound_tag == "proxy-a")
+                .expect("proxy-a has a health status")
+        };
+
+        // Two pings of the burst schedule: a success and a failure.
+        let at = std::time::Instant::now();
+        selection.record_health_probe(proxy_a, Ok(Duration::from_millis(20)), 1, at);
+        selection.record_health_probe(proxy_a, Err(OutboundHealthFailure::Timeout), 2, at);
+        let pinged = selection.least_load_window_of(proxy_a).unwrap();
+        assert_eq!(pinged, (2, 1));
+        assert_eq!(status().state, OutboundHealthState::Healthy);
+        assert_eq!(status().delay_ms, Some(20));
+
+        // A flow fails to open through it. No observatory watches the slot,
+        // so nothing is left pending for anyone to probe.
+        selection.report_dial_failure(proxy_a);
+        let slot = selection.leaf_index(proxy_a).unwrap();
+        assert!(!selection.failure_reports().is_pending(slot));
+
+        selection.record_reprobe_failure(proxy_a, OutboundHealthFailure::Transport, 3);
+        assert_eq!(selection.least_load_window_of(proxy_a).unwrap(), pinged);
+        assert_eq!(status().state, OutboundHealthState::Healthy);
+        selection.record_reprobe_success(proxy_a, Duration::from_millis(5), 4);
+        assert_eq!(selection.least_load_window_of(proxy_a).unwrap(), pinged);
+        assert_eq!(status().delay_ms, Some(20));
+    }
+
     async fn wait_for_state(
         selection: &OutboundSelectionOverlay,
         node: OutboundNodeId,

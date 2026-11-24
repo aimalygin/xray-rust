@@ -261,7 +261,10 @@ long-term supported release series.
   periods, alive while one of them succeeded, the average as the delay. A
   failed ping is not counted while the `connectivity` URL fails too. With
   `observatory` also present that one drives selection, as in Xray-core, and
-  `burstObservatory` is not run. Deliberately different, for phones:
+  `burstObservatory` is not run. The re-probes that failures of real traffic
+  bring belong to `observatory`: beside `burstObservatory` alone nothing
+  follows them, and its window stays the scheduled pings. Deliberately
+  different, for phones:
   `interval`, `sampling` and `timeout` are capped at 24h, 100 and 60s with a
   warning; at most four pings run at once; while the connectivity check fails
   one ping leaves per backoff of 5s up to `interval` instead of every
