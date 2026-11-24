@@ -624,8 +624,10 @@ it reads the parameters panels such as Remnawave write on every link:
 | `fm` | `streamSettings.finalmask` | the percent-encoded JSON object Remnawave writes from the host's `finalMask`, validated like canonical JSON; masks the core does not implement fail with an error naming `fm`. Empty means absent |
 
 The base64 JSON `vmess://` form keeps the gRPC mode in `type`, as v2rayN
-writes it; for other carriers `type` must be absent, empty or `none`. Any other
-query parameter still fails the import.
+writes it; for other carriers `type` must be absent, empty or `none`. With
+`tls` absent, empty or `none` its TLS fields `sni`, `alpn` and `fp` are
+ignored, as v2rayN ignores them; panels such as V2Board write `fp` on every
+link. Any other query parameter still fails the import.
 
 Flat and legacy settings cannot be mixed. Trojan passwords are 1–4096 UTF-8
 bytes, with no nonempty `flow`; public plaintext servers are rejected. SS2022
