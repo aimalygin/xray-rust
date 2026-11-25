@@ -30,9 +30,9 @@ dependencies = [
 
 [[package]]
 name = "aes"
-version = "0.9.3"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35f0f96ce78e38c3dc6d8948aa8163d06385be74000f3c7a95bf1eef35d3ea32"
+checksum = "fc0fc36d7440d015b45468ba08a21e80e056ebbd014c611c6298bb7503e04bd1"
 dependencies = [
  "cipher 0.5.2",
  "cpubits",
@@ -1707,9 +1707,9 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "rand"
-version = "0.8.6"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ca0ecfa931c29007047d1bc58e623ab12e5590e8c7cc53200d5202b69266d8a"
+checksum = "e058c7de0b26af77780c769414d6257830bb240f3c38477dbc2c16e5f54d6d4c"
 dependencies = [
  "libc",
  "rand_chacha 0.3.1",
@@ -1792,9 +1792,9 @@ dependencies = [
 
 [[package]]
 name = "rcgen"
-version = "0.14.8"
+version = "0.14.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57f6d249aad744e274e682777a50283a225a32705394ee6d5fcc01efa25e4055"
+checksum = "8774e05a7d0de114588e6a28fe7e71694b82614ed569d86d8b389dfbc98b8ad8"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -2578,9 +2578,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.11"
+version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5f280bbb2b287bc8e7de7e3852945a0ff50d1bbcb5ed42b6c7a568c546df171"
+checksum = "7265c9301c16a8711c992c2d8da90ee77ef54b1ed51482d6dfeb00dc756b1297"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -2883,7 +2883,7 @@ dependencies = [
  "http",
  "libc",
  "loom",
- "rand 0.8.6",
+ "rand 0.8.8",
  "rcgen",
  "serde_json",
  "sha2",
@@ -3020,7 +3020,7 @@ dependencies = [
  "idna",
  "md-5",
  "prost",
- "rand 0.8.6",
+ "rand 0.8.8",
  "serde_json",
  "sha2",
  "sha3",
@@ -3107,7 +3107,7 @@ dependencies = [
 
 [[package]]
 name = "xray-smoltcp"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "bitflags 1.3.2",
  "byteorder",
@@ -3138,7 +3138,7 @@ dependencies = [
  "ml-dsa",
  "num-bigint",
  "polyval",
- "rand 0.8.6",
+ "rand 0.8.8",
  "rcgen",
  "regex",
  "serde",
@@ -3188,7 +3188,7 @@ dependencies = [
  "base64 0.23.1",
  "blake3",
  "ctr",
- "rand 0.8.6",
+ "rand 0.8.8",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
@@ -3202,7 +3202,7 @@ version = "0.10.1"
 dependencies = [
  "base64 0.23.1",
  "bytes",
- "rand 0.8.6",
+ "rand 0.8.8",
  "serde_json",
  "socket2",
  "thiserror 2.0.21",

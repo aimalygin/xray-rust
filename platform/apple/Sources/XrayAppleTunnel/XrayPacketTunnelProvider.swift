@@ -666,7 +666,9 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         label: "org.xrayrust.apple.packet-tunnel.dns-bootstrap.completion",
         qos: .userInitiated
     )
-    private lazy var lifecycle = XrayPacketTunnelLifecycle<XrayPacketTunnelRuntime> {
+    // Not `lazy`: `activeCore` reads it from any thread, and the first access
+    // to a lazy property is not synchronized.
+    private let lifecycle = XrayPacketTunnelLifecycle<XrayPacketTunnelRuntime> {
         $0.stop()
     }
 
@@ -700,6 +702,15 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     /// unknown message then gets no response). Keep the work short, and do
     /// not start, stop or replace `core` from here.
     open func handleCustomAppMessage(_ messageData: Data, core: XrayCore) -> Data? { nil }
+
+    /// The core of the running data path, or `nil` before a start has finished
+    /// and after a stop. It can be read from any thread, so a subclass can take
+    /// the core's snapshots on a timer of its own, for example counting
+    /// connections per outbound while the app is closed, which
+    /// `handleCustomAppMessage(_:core:)` reaches only when the app asks. Do not
+    /// start, stop or replace the core through it, and do not keep it past
+    /// `stopTunnel(with:completionHandler:)`: read it again on each use.
+    public var activeCore: XrayCore? { lifecycle.active()?.core }
 
     static func resolvingHostOptions(
         _ config: ResolvedConfig,

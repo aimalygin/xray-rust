@@ -151,6 +151,11 @@ final class PacketTunnelProvider: XrayPacketTunnelProvider {
 }
 ```
 
+Outside an app message, `activeCore` returns the running core, or `nil` while
+no start has finished. It can be read from any thread, so the tunnel can sample
+a snapshot on a timer of its own. Read it again on each use rather than keeping
+it, since a restart replaces the core.
+
 Admission receives the original TCP/UDP tuple before routing/FakeDNS restoration.
 Its `@Sendable` callback runs concurrently on bounded native workers; keep it
 short, avoid capturing the provider strongly, and never invoke lifecycle methods

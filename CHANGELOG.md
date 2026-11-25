@@ -10,6 +10,20 @@ long-term supported release series.
 
 ## Unreleased
 
+- A TUN TCP flow gives back its 32 KiB send buffer once its remote has had
+  nothing for it for about five seconds and the app has acknowledged every
+  byte, and takes a new one with the remote's next bytes. A quiet flow, such as
+  a push channel or a keep-alive connection, held it until it closed: an idle
+  flow measures 47 KiB of heap instead of 80 KiB in a release build. The
+  receive buffer stays, since the window it advertised cannot be taken back.
+  The vendored smoltcp gains `Socket::shrink_send_buffer` for this and becomes
+  `xray-smoltcp` 0.14.1.
+- `XrayPacketTunnelProvider` has a public `activeCore` property: the core of
+  the running data path, or `nil` while no start has finished. A subclass
+  could reach the core only inside `handleCustomAppMessage(_:core:)`, that is
+  only when its app sent a message, so work the tunnel does on its own, such
+  as sampling the connection or accounting snapshot on a timer while the app
+  is closed, needed a fork of the provider.
 - A WireGuard outbound's device is closed once it has had no flow for five
   minutes, and the next flow starts a new one with a fresh handshake. A
   started device runs WireGuard's timers every 250 ms for as long as it
@@ -386,6 +400,12 @@ long-term supported release series.
   0.14.4, bytes to 1.12.2 and uuid to 1.29.3, together with their resolved
   transitive dependencies. AWS-LC's portable Ed25519 code now rejects
   non-canonical public keys, as its assembly implementations already did.
+- Update aes to 0.9.4, rand to 0.8.8 and webpki-roots to 1.0.12, and rcgen,
+  which only the benchmark fixtures use, to 0.14.10. The built-in root store
+  follows Mozilla in dropping Buypass Class 2 and Class 3, Certigna, DigiCert
+  Trusted Root G4 and QuoVadis Root CA 1 G3 and 3 G3, so a server whose chain
+  ends at one of them no longer verifies unless `pinnedPeerCertSha256` pins its
+  certificate or `allowInsecure` is set.
 
 ## 0.10.1 - 2026-11-16
 

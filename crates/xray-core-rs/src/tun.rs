@@ -133,6 +133,10 @@ const MAX_DNS_TCP_FLOWS: usize = 32;
 const TCP_REMOTE_DRAIN_MAX_PASSES_PER_TICK: usize = 4;
 const TCP_REMOTE_DRAIN_MAX_BYTES_PER_TICK: usize = 4 * 1024 * 1024;
 const TUN_FLOW_STATS_INTERVAL: Duration = Duration::from_secs(1);
+/// How many flow-stats ticks in a row a TCP flow's send buffer must sit empty,
+/// with nothing from the remote waiting for it, before the socket gives the
+/// buffer back. About five seconds: a flow that pauses between bursts keeps it.
+const TCP_SEND_BUFFER_IDLE_TICKS: u8 = 5;
 const TUN_BACKPRESSURE_RETRY_INTERVAL: Duration = Duration::from_millis(25);
 /// How long a TUN TCP socket whose side is closed waits for the app to close
 /// its own, as Xray-core's `tcpLinger`.
@@ -1292,6 +1296,7 @@ pub(crate) async fn serve_tun_endpoint(
             runtime_context
                 .dns_tcp_connection_pool
                 .prune_expired(TokioInstant::now());
+            release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows);
             record_flow_budget_stats(
                 tun.as_ref(),
                 &mut flow_budget_state,
@@ -1785,6 +1790,8 @@ struct TcpFlow {
     pending_remote_delivery: Option<DownloadDelivery>,
     remote_closed: bool,
     remote_aborted: bool,
+    /// Flow-stats ticks since the remote last had data for this flow.
+    send_buffer_idle_ticks: u8,
 }
 
 impl TcpFlow {
@@ -2240,6 +2247,7 @@ fn open_ready_tcp_flows(
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
+                send_buffer_idle_ticks: 0,
             },
         );
         let raw_tuple = context.tun_admission.as_ref().and_then(|_| {
@@ -2419,6 +2427,7 @@ fn insert_aborted_tcp_flow(
             pending_remote_delivery: None,
             remote_closed: false,
             remote_aborted: true,
+            send_buffer_idle_ticks: 0,
         },
     );
 }
@@ -2791,6 +2800,7 @@ fn write_remote_data_to_sockets(
             continue;
         }
         if !flow.pending_remote.is_empty() {
+            flow.send_buffer_idle_ticks = 0;
             grow_tcp_send_buffer(socket);
         }
         while socket.can_send() {
@@ -5949,6 +5959,37 @@ fn grow_tcp_send_buffer(socket: &mut tcp::Socket<'static>) {
     }
 }
 
+/// Gives back the send buffer of each flow whose remote has had nothing for
+/// it for [`TCP_SEND_BUFFER_IDLE_TICKS`] ticks and whose bytes the app has all
+/// acknowledged. A long-lived quiet flow (a push channel, a keep-alive
+/// connection) otherwise holds its 32 KiB until it closes;
+/// [`grow_tcp_send_buffer`] gives it a new one with the remote's next bytes.
+/// The receive buffer stays: the window it advertised cannot be taken back.
+fn release_idle_tcp_send_buffers(
+    sockets: &mut SocketSet<'static>,
+    flows: &mut HashMap<SocketHandle, TcpFlow>,
+) {
+    for (handle, flow) in flows {
+        let socket = sockets.get_mut::<tcp::Socket>(*handle);
+        if socket.send_capacity() == 0 {
+            continue;
+        }
+        if !flow.pending_remote.is_empty()
+            || flow.has_deferred_remote_data
+            || socket.send_queue() > 0
+        {
+            flow.send_buffer_idle_ticks = 0;
+            continue;
+        }
+        flow.send_buffer_idle_ticks = flow.send_buffer_idle_ticks.saturating_add(1);
+        if flow.send_buffer_idle_ticks >= TCP_SEND_BUFFER_IDLE_TICKS
+            && socket.shrink_send_buffer(Vec::new())
+        {
+            flow.send_buffer_idle_ticks = 0;
+        }
+    }
+}
+
 fn tcp_listener_capacity_available(
     policy: TcpFlowBudgetPolicy,
     active_flow_count: usize,
@@ -8644,6 +8685,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
+                send_buffer_idle_ticks: 0,
             },
         );
 
@@ -8755,6 +8797,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
+                send_buffer_idle_ticks: 0,
             },
         );
 
@@ -8806,6 +8849,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
+                send_buffer_idle_ticks: 0,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -8838,6 +8882,65 @@ mod tests {
     }
 
     #[test]
+    fn an_idle_flow_gives_back_its_send_buffer() {
+        let mut sockets = SocketSet::new(Vec::new());
+        let handle = sockets.add(tcp::Socket::new(
+            tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+            tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
+        ));
+        let mut flow_budget_state = test_flow_budget(256);
+        let mut tcp_flows = HashMap::new();
+        tcp_flows.insert(
+            handle,
+            TcpFlow {
+                generation: 1,
+                to_remote: None,
+                task: None,
+                remote_open: true,
+                upload_queue_packets: None,
+                upload_pending: Arc::default(),
+                upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
+                pending_remote: VecDeque::new(),
+                pending_remote_bytes: 0,
+                has_deferred_remote_data: false,
+                pending_remote_delivery: None,
+                remote_closed: false,
+                remote_aborted: false,
+                send_buffer_idle_ticks: 0,
+            },
+        );
+        let send_capacity =
+            |sockets: &SocketSet<'static>| sockets.get::<tcp::Socket>(handle).send_capacity();
+
+        for _ in 1..TCP_SEND_BUFFER_IDLE_TICKS {
+            release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows);
+        }
+        assert_eq!(send_capacity(&sockets), TCP_BUFFER_SIZE);
+
+        // Data from the remote starts the count again.
+        tcp_flows.get_mut(&handle).unwrap().has_deferred_remote_data = true;
+        release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows);
+        assert_eq!(tcp_flows[&handle].send_buffer_idle_ticks, 0);
+        tcp_flows.get_mut(&handle).unwrap().has_deferred_remote_data = false;
+        for _ in 1..TCP_SEND_BUFFER_IDLE_TICKS {
+            release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows);
+        }
+        assert_eq!(send_capacity(&sockets), TCP_BUFFER_SIZE);
+        release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows);
+        assert_eq!(send_capacity(&sockets), 0);
+        assert_eq!(tcp_flows[&handle].send_buffer_idle_ticks, 0);
+
+        // The remote's next bytes give the socket a buffer again.
+        let flow = tcp_flows.get_mut(&handle).unwrap();
+        flow.pending_remote
+            .push_back(Bytes::from_static(&[1, 2, 3, 4]));
+        flow.pending_remote_bytes = 4;
+        flow_budget_state.record_pending_remote_enqueue(0, 4);
+        write_remote_data_to_sockets(&mut sockets, &mut tcp_flows, &mut flow_budget_state);
+        assert_eq!(send_capacity(&sockets), TCP_BUFFER_SIZE);
+    }
+
+    #[test]
     fn deferred_remote_tcp_data_is_applied_after_pending_flow_buffer_has_room() {
         let mut sockets = SocketSet::new(Vec::new());
         let handle = sockets.add(tcp::Socket::new(
@@ -8863,6 +8966,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
+                send_buffer_idle_ticks: 0,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -8915,6 +9019,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
+                send_buffer_idle_ticks: 0,
             },
         )]);
         let mut flow_budget_state = test_flow_budget(256);
@@ -8985,6 +9090,7 @@ mod tests {
             pending_remote_delivery: None,
             remote_closed: false,
             remote_aborted: false,
+            send_buffer_idle_ticks: 0,
         };
 
         drop(flow);
@@ -9042,6 +9148,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
+                send_buffer_idle_ticks: 0,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -9101,6 +9208,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
+                send_buffer_idle_ticks: 0,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -9164,6 +9272,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
+                send_buffer_idle_ticks: 0,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -9263,6 +9372,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
+                send_buffer_idle_ticks: 0,
             },
         );
 
@@ -9363,6 +9473,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: true,
                 remote_aborted: false,
+                send_buffer_idle_ticks: 0,
             },
         );
         assert_eq!(
@@ -9459,6 +9570,7 @@ mod tests {
                     pending_remote_delivery: None,
                     remote_closed: false,
                     remote_aborted: false,
+                    send_buffer_idle_ticks: 0,
                 },
             )]);
             let mut harness = Self {

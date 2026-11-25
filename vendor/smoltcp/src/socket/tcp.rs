@@ -930,6 +930,26 @@ impl<'a> Socket<'a> {
         self.tx_buffer.grow(storage)
     }
 
+    /// Replace an empty transmit buffer with `storage`, which may be smaller
+    /// or empty. Returns `false`, changing nothing, while the buffer holds a
+    /// byte, sent or not, since its sequence number is kept by its offset in
+    /// the buffer, or when `storage` is larger than the current buffer. A FIN
+    /// takes no room in the buffer, so one still in flight is unaffected.
+    ///
+    /// A socket left without room cannot send until `grow_send_buffer` gives
+    /// it some, as one created with an empty transmit buffer.
+    pub fn shrink_send_buffer<S>(&mut self, storage: S) -> bool
+    where
+        S: Into<ManagedSlice<'a, u8>>,
+    {
+        let storage = storage.into();
+        if !self.tx_buffer.is_empty() || storage.len() > self.tx_buffer.capacity() {
+            return false;
+        }
+        self.tx_buffer = SocketBuffer::new(storage);
+        true
+    }
+
     /// Set the timeout duration.
     ///
     /// A socket with a timeout duration set will abort the connection if either of the following
@@ -5024,6 +5044,107 @@ mod test {
                 ..RECV_TEMPL
             }]
         );
+    }
+
+    #[test]
+    fn test_shrink_send_buffer_waits_for_acknowledgement() {
+        let mut s = socket_established_with_buffer_sizes(64, 64);
+        assert!(!s.shrink_send_buffer(vec![0; 128]));
+        assert_eq!(s.send_slice(b"abcdef"), Ok(6));
+        // Queued and then in flight: both keep the buffer.
+        assert!(!s.shrink_send_buffer(Vec::new()));
+        recv!(
+            s,
+            [TcpRepr {
+                seq_number: LOCAL_SEQ + 1,
+                ack_number: Some(REMOTE_SEQ + 1),
+                payload: &b"abcdef"[..],
+                ..RECV_TEMPL
+            }]
+        );
+        assert!(!s.shrink_send_buffer(Vec::new()));
+        assert_eq!(s.send_capacity(), 64);
+        send!(
+            s,
+            TcpRepr {
+                seq_number: REMOTE_SEQ + 1,
+                ack_number: Some(LOCAL_SEQ + 1 + 6),
+                ..SEND_TEMPL
+            }
+        );
+        assert!(s.shrink_send_buffer(Vec::new()));
+        assert_eq!(s.send_capacity(), 0);
+        assert!(!s.can_send());
+        assert_eq!(s.send_slice(b"ghi"), Ok(0));
+
+        // Grown again, it sends from where the stream left off.
+        assert!(s.grow_send_buffer(vec![0; 8]));
+        assert_eq!(s.send_slice(b"ghi"), Ok(3));
+        recv!(
+            s,
+            [TcpRepr {
+                seq_number: LOCAL_SEQ + 1 + 6,
+                ack_number: Some(REMOTE_SEQ + 1),
+                payload: &b"ghi"[..],
+                ..RECV_TEMPL
+            }]
+        );
+        send!(
+            s,
+            TcpRepr {
+                seq_number: REMOTE_SEQ + 1,
+                ack_number: Some(LOCAL_SEQ + 1 + 9),
+                ..SEND_TEMPL
+            }
+        );
+        assert_eq!(s.send_queue(), 0);
+    }
+
+    #[test]
+    fn test_shrink_send_buffer_with_fin_in_flight() {
+        let mut s = socket_established_with_buffer_sizes(64, 64);
+        assert_eq!(s.send_slice(b"abcdef"), Ok(6));
+        s.close();
+        recv!(
+            s,
+            [TcpRepr {
+                control: TcpControl::Fin,
+                seq_number: LOCAL_SEQ + 1,
+                ack_number: Some(REMOTE_SEQ + 1),
+                payload: &b"abcdef"[..],
+                ..RECV_TEMPL
+            }]
+        );
+        send!(
+            s,
+            TcpRepr {
+                seq_number: REMOTE_SEQ + 1,
+                ack_number: Some(LOCAL_SEQ + 1 + 6),
+                ..SEND_TEMPL
+            }
+        );
+        assert_eq!(s.state, State::FinWait1);
+        assert!(s.shrink_send_buffer(Vec::new()));
+        // The FIN is sent again from the empty buffer and its ACK ends FIN-WAIT-1.
+        recv!(
+            s,
+            time 1000,
+            [TcpRepr {
+                control: TcpControl::Fin,
+                seq_number: LOCAL_SEQ + 1 + 6,
+                ack_number: Some(REMOTE_SEQ + 1),
+                ..RECV_TEMPL
+            }]
+        );
+        send!(
+            s,
+            TcpRepr {
+                seq_number: REMOTE_SEQ + 1,
+                ack_number: Some(LOCAL_SEQ + 1 + 6 + 1),
+                ..SEND_TEMPL
+            }
+        );
+        assert_eq!(s.state, State::FinWait2);
     }
 
     #[test]

@@ -6,8 +6,10 @@
 //! client stack and the server sockets are set up before the first sample, so
 //! what remains is the runtime's share: the smoltcp socket, the bridge task
 //! and its buffers, and the outbound stream. One test exchanges a few bytes
-//! on each flow, so its socket buffers have grown; the other sends nothing
-//! either way, so they have not. The tests measure one at a time.
+//! on each flow, so its socket buffers have grown; another sends nothing
+//! either way, so they have not; a third exchanges bytes and then waits until
+//! the runtime has given back the send buffers of the quiet flows. The tests
+//! measure one at a time.
 //!
 //! The measurement is printed with `--nocapture`:
 //!
@@ -290,9 +292,18 @@ const IDLE_TCP_FLOW_HEAP_LIMIT: isize = 96 * 1024;
 /// about 80 KiB.
 const SILENT_TCP_FLOW_HEAP_LIMIT: isize = 32 * 1024;
 
+/// Upper bound for a flow that carried data and has then been quiet for a few
+/// seconds: the runtime has given back its 32 KiB send buffer, and it keeps
+/// its receive buffer, whose advertised window cannot be taken back.
+const QUIET_TCP_FLOW_HEAP_LIMIT: isize = 64 * 1024;
+
+/// Longer than the runtime waits before it gives back a quiet flow's send
+/// buffer.
+const QUIET_WAIT: Duration = Duration::from_secs(7);
+
 #[test]
 fn idle_tun_tcp_flow_heap() {
-    let per_flow = measure_idle_flows(Traffic::Exchange, "idle");
+    let per_flow = measure_idle_flows(Traffic::Exchange, "idle", Duration::ZERO);
     assert!(
         per_flow <= IDLE_TCP_FLOW_HEAP_LIMIT,
         "an idle TUN TCP flow holds {per_flow} bytes of heap"
@@ -301,15 +312,25 @@ fn idle_tun_tcp_flow_heap() {
 
 #[test]
 fn silent_tun_tcp_flow_heap() {
-    let per_flow = measure_idle_flows(Traffic::Silent, "silent");
+    let per_flow = measure_idle_flows(Traffic::Silent, "silent", Duration::ZERO);
     assert!(
         per_flow <= SILENT_TCP_FLOW_HEAP_LIMIT,
         "a TUN TCP flow that carried nothing holds {per_flow} bytes of heap"
     );
 }
 
-/// Heap the runtime gains per flow, for flows that carried `traffic`.
-fn measure_idle_flows(traffic: Traffic, label: &str) -> isize {
+#[test]
+fn quiet_tun_tcp_flow_heap() {
+    let per_flow = measure_idle_flows(Traffic::Exchange, "quiet", QUIET_WAIT);
+    assert!(
+        per_flow <= QUIET_TCP_FLOW_HEAP_LIMIT,
+        "a TUN TCP flow quiet for {QUIET_WAIT:?} holds {per_flow} bytes of heap"
+    );
+}
+
+/// Heap the runtime gains per flow, for flows that carried `traffic` and then
+/// waited `quiet` with nothing to send.
+fn measure_idle_flows(traffic: Traffic, label: &str, quiet: Duration) -> isize {
     let _measuring = MEASURING.lock().unwrap_or_else(PoisonError::into_inner);
     let flows: usize = std::env::var("TUN_MEMORY_FLOWS")
         .ok()
@@ -358,6 +379,10 @@ fn measure_idle_flows(traffic: Traffic, label: &str) -> isize {
             open_flows(&mut client, tun, target, batch, traffic, &accepted).await;
         }
         settle(&mut client, core.tun()).await;
+        let quiet_until = TokioInstant::now() + quiet;
+        while TokioInstant::now() < quiet_until {
+            settle(&mut client, core.tun()).await;
+        }
         let after = live_bytes();
         let stats = core.tun().stats().await;
         assert_eq!(stats.active_tcp_flows, flows as u64, "{stats:?}");
