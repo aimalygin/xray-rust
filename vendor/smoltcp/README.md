@@ -8,11 +8,11 @@ or endorsed by the smoltcp project: please report its bugs
 The library is still named `smoltcp`:
 
 ```toml
-smoltcp = { package = "xray-smoltcp", version = "0.14.0" }
+smoltcp = { package = "xray-smoltcp", version = "0.14.1" }
 ```
 
 The patch number of a version is smoltcp's patch release times 100 plus the
-fork's release: `0.14.0` is smoltcp 0.14.0, fork release 0.
+fork's release: `0.14.1` is smoltcp 0.14.0, fork release 1.
 `XRAY-PATCH.md` in this package describes every change, and `XRAY-PATCH.diff`
 is the whole difference from the crates.io archive of smoltcp 0.14.0.
 

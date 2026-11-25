@@ -17,7 +17,7 @@ a crates.io package itself. All seven are, and the root manifest has no
 | `vendor/h3-quinn` | `xray-h3-quinn` | 0.0.1000 | h3-quinn 0.0.10 | 2026-11-23, from `06ad5e23` |
 | `vendor/quinn-proto` | `xray-quinn-proto` | 0.11.1900 | quinn-proto 0.11.19 | 2026-11-23, from `06ad5e23` |
 | `vendor/quinn` | `xray-quinn` | 0.11.1200 | quinn 0.11.12 | 2026-11-23, from `06ad5e23` |
-| `vendor/smoltcp` | `xray-smoltcp` | 0.14.0 | smoltcp 0.14.0 | 2026-11-23, from `06ad5e23` |
+| `vendor/smoltcp` | `xray-smoltcp` | 0.14.1 | smoltcp 0.14.0 | 0.14.0 on 2026-11-23, from `06ad5e23`; 0.14.1 waits for its upload |
 | `vendor/gotatun` | `xray-gotatun` | 0.9.100 | GotaTun 0.9.1, commit `dab390cd` | 2026-11-23, from `06ad5e23` |
 
 The last column is the day of the upload and the commit of this repository it
