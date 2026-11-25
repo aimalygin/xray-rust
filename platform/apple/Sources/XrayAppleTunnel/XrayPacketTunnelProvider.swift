@@ -666,7 +666,9 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         label: "org.xrayrust.apple.packet-tunnel.dns-bootstrap.completion",
         qos: .userInitiated
     )
-    private lazy var lifecycle = XrayPacketTunnelLifecycle<XrayPacketTunnelRuntime> {
+    // Not `lazy`: `activeCore` reads it from any thread, and the first access
+    // to a lazy property is not synchronized.
+    private let lifecycle = XrayPacketTunnelLifecycle<XrayPacketTunnelRuntime> {
         $0.stop()
     }
 
