@@ -19,6 +19,11 @@ pub const DEADLINE: Duration = Duration::from_secs(20);
 pub const USER: &str = "synthetic-http-user";
 pub const PASS: &str = "synthetic-http-pass";
 pub const REMOTE_DOMAIN: &str = "echo.http-interop.test";
+/// Starts of [`XrayServer`] whose port another socket took, each on fresh
+/// ports. The harness picks both ports by binding them and lets go for Xray to
+/// bind; a parallel test's socket can take one in between ("address already
+/// in use").
+const PORT_ATTEMPTS: usize = 5;
 
 /// A self-signed `localhost` certificate: an acceptor that prefers `h2`, and
 /// the PEM files and SHA-256 pin a client or Xray needs.
@@ -474,6 +479,26 @@ impl XrayServer {
     }
 
     async fn start_with_options(tls: Option<TlsIdentity>, outbound: Option<Value>) -> Self {
+        for attempt in 1..=PORT_ATTEMPTS {
+            let mut server = Self::spawn(tls.as_ref(), outbound.clone());
+            if server.wait_ready().await {
+                return server;
+            }
+            assert!(
+                attempt < PORT_ATTEMPTS,
+                "Xray's ports were taken on all {PORT_ATTEMPTS} starts"
+            );
+            eprintln!(
+                "Xray lost port {} or {} to another socket; starting it again on fresh \
+                 ports ({attempt} of {PORT_ATTEMPTS})",
+                server.password, server.noauth
+            );
+        }
+        unreachable!("the last start returns or panics")
+    }
+
+    /// Writes a config on fresh ports and spawns Xray with it.
+    fn spawn(tls: Option<&TlsIdentity>, outbound: Option<Value>) -> Self {
         let binary = std::env::var_os("XRAY_CLIENT_PROTOCOL_BINARY")
             .expect("run scripts/check-http-interop.sh");
         let directory = std::env::temp_dir().join(format!(
@@ -505,12 +530,10 @@ impl XrayServer {
                 "protocol": "socks", "settings": {"auth": "noauth"}});
             config["outbounds"] = json!([outbound]);
         }
-        let trusted_connector = tls
-            .as_ref()
-            .map(|identity| identity.trusted_connector.clone());
+        let trusted_connector = tls.map(|identity| identity.trusted_connector.clone());
         let pin = tls.map(|identity| {
-            std::fs::write(directory.join("cert.pem"), identity.cert_pem).unwrap();
-            std::fs::write(directory.join("key.pem"), identity.key_pem).unwrap();
+            std::fs::write(directory.join("cert.pem"), &identity.cert_pem).unwrap();
+            std::fs::write(directory.join("key.pem"), &identity.key_pem).unwrap();
             for inbound in config["inbounds"].as_array_mut().unwrap() {
                 // Xray-core's HTTP inbound reads HTTP/1.1 only, and its TLS
                 // would pick h2 for any client that offers it, Xray-core's
@@ -520,7 +543,7 @@ impl XrayServer {
                     "certificates":[{"certificateFile":directory.join("cert.pem"),"keyFile":directory.join("key.pem")}]
                 }});
             }
-            identity.pin
+            identity.pin.clone()
         });
         std::fs::write(
             directory.join("config.json"),
@@ -537,24 +560,28 @@ impl XrayServer {
             .stderr(log)
             .spawn()
             .unwrap();
-        let mut server = Self {
+        Self {
             child,
             directory,
             password,
             noauth,
             pin,
             trusted_connector,
-        };
-        server.wait_ready().await;
-        server
+        }
     }
 
-    async fn wait_ready(&mut self) {
+    /// Waits for Xray's startup record: `false` when Xray exited because
+    /// another socket held one of its ports, a panic when it exited for
+    /// anything else.
+    async fn wait_ready(&mut self) -> bool {
         let deadline = tokio::time::Instant::now() + DEADLINE;
         loop {
-            assert!(self.child.try_wait().unwrap().is_none(), "Xray exited");
+            if self.child.try_wait().unwrap().is_some() {
+                assert!(self.lost_port(), "Xray exited");
+                return false;
+            }
             if self.log().contains("core: Xray 26.11.9 started") {
-                return;
+                return true;
             }
             assert!(
                 tokio::time::Instant::now() < deadline,
@@ -562,6 +589,16 @@ impl XrayServer {
             );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
+    }
+
+    /// Whether Xray's log says another socket held one of its ports, as Go
+    /// words a failed listen: `listen tcp 127.0.0.1:37655: bind: address
+    /// already in use`.
+    fn lost_port(&self) -> bool {
+        let log = self.log();
+        [self.password, self.noauth]
+            .iter()
+            .any(|port| log.contains(&format!(":{port}: bind: address already in use")))
     }
 
     pub fn log(&self) -> String {
