@@ -406,6 +406,11 @@ long-term supported release series.
   Trusted Root G4 and QuoVadis Root CA 1 G3 and 3 G3, so a server whose chain
   ends at one of them no longer verifies unless `pinnedPeerCertSha256` pins its
   certificate or `allowInsecure` is set.
+- Update tokio to 1.54.1, blake3 to 1.8.7, zeroize to 1.9.2 and crc32fast to
+  1.5.6, and loom, which only the concurrency tests use, to 0.7.3. blake3 no
+  longer depends on arrayref, whose crates.io account was taken over to
+  publish a malicious 0.3.10 (RUSTSEC-2026-0260); the 0.3.9 this build used is
+  not affected.
 
 ## 0.10.1 - 2026-11-16
 

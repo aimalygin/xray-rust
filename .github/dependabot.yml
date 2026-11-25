@@ -21,6 +21,12 @@ updates:
       # a fork release of GotaTun, not a Dependabot bump.
       - dependency-name: x25519-dalek
         versions: [">= 3"]
+      # x509-parser 0.18 builds on der-parser 10, which takes num-bigint 0.4,
+      # so 0.5 would put a second copy in every binary (#367) for a release
+      # that only reworks the `rand` features this workspace does not enable.
+      # Move when der-parser does. 0.4 patch releases still come.
+      - dependency-name: num-bigint
+        versions: [">= 0.5"]
 
   - package-ecosystem: github-actions
     directory: /
