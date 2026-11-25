@@ -400,6 +400,10 @@ long-term supported release series.
   0.14.4, bytes to 1.12.2 and uuid to 1.29.3, together with their resolved
   transitive dependencies. AWS-LC's portable Ed25519 code now rejects
   non-canonical public keys, as its assembly implementations already did.
+- Build the Android adapter with AGP 9.5.3 and Gradle 9.9.2 (9.4.1 and 9.8.1
+  before). The dependency verification metadata gains the new plugin's
+  artifacts, each checked against its repository's published checksum; the
+  minimum API, compile SDK and Kotlin are unchanged.
 - Update aes to 0.9.4, rand to 0.8.8 and webpki-roots to 1.0.12, and rcgen,
   which only the benchmark fixtures use, to 0.14.10. The built-in root store
   follows Mozilla in dropping Buypass Class 2 and Class 3, Certigna, DigiCert

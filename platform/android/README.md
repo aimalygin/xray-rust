@@ -23,7 +23,7 @@ Check the complete host setup:
 scripts/check-mobile-toolchains.sh --android
 ```
 
-The wrapper pins Gradle 9.8.1. Both Android plugins use AGP 9.4.1 and
+The wrapper pins Gradle 9.9.2. Both Android plugins use AGP 9.5.3 and
 [AGP built-in Kotlin](https://developer.android.com/build/migrate-to-built-in-kotlin),
 with Kotlin 2.4.21 pinned on the buildscript classpath. Do not apply the legacy
 `org.jetbrains.kotlin.android` plugin alongside built-in Kotlin. Update the
