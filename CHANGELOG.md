@@ -400,6 +400,12 @@ long-term supported release series.
   0.14.4, bytes to 1.12.2 and uuid to 1.29.3, together with their resolved
   transitive dependencies. AWS-LC's portable Ed25519 code now rejects
   non-canonical public keys, as its assembly implementations already did.
+- Update aes to 0.9.4, rand to 0.8.8 and webpki-roots to 1.0.12, and rcgen,
+  which only the benchmark fixtures use, to 0.14.10. The built-in root store
+  follows Mozilla in dropping Buypass Class 2 and Class 3, Certigna, DigiCert
+  Trusted Root G4 and QuoVadis Root CA 1 G3 and 3 G3, so a server whose chain
+  ends at one of them no longer verifies unless `pinnedPeerCertSha256` pins its
+  certificate or `allowInsecure` is set.
 
 ## 0.10.1 - 2026-11-16
 
