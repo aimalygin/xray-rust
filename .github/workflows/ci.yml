@@ -938,9 +938,9 @@ jobs:
 
       - name: Verify Gradle wrapper JAR
         run: |
-          echo "3b8a25775a69158b5ad2b1d17a80a88dc7b40a352a73eb27d06c612a7ce68e98  platform/android/gradle/wrapper/gradle-wrapper.jar" | sha256sum --check -
+          echo "621008afc4f5d59357fcf06ffa644dd5aade5e091bdc363742710445f73cdaf8  platform/android/gradle/wrapper/gradle-wrapper.jar" | sha256sum --check -
           grep -Fxq \
-            'distributionUrl=https\://services.gradle.org/distributions/gradle-9.8.1-bin.zip' \
+            'distributionUrl=https\://services.gradle.org/distributions/gradle-9.9.2-bin.zip' \
             platform/android/gradle/wrapper/gradle-wrapper.properties
 
       - name: Verify vendored crate provenance and exact patch set
@@ -958,7 +958,7 @@ jobs:
             platform/android/gradle/verification-metadata.xml \
             --online
           grep -Fxq \
-            'distributionSha256Sum=dce76f55f8e251a3a1f130eb120f30b3d271de2b76c9b0729d316b5a1b6dc01f' \
+            'distributionSha256Sum=971fcd7150ca4ba04852c0b2ca0d2d0ab9468e14b03473eab19528809914c76b' \
             platform/android/gradle/wrapper/gradle-wrapper.properties
 
       - name: Audit RustSec advisories
