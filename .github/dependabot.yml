@@ -16,6 +16,11 @@ updates:
       # Dependabot bump. 0.8 patch releases still come.
       - dependency-name: rand
         versions: [">= 0.9"]
+      # The vendored GotaTun takes x25519-dalek 2 keys, which the WireGuard
+      # outbound hands it, so 3.0 alone does not build (#358). Moving both is
+      # a fork release of GotaTun, not a Dependabot bump.
+      - dependency-name: x25519-dalek
+        versions: [">= 3"]
 
   - package-ecosystem: github-actions
     directory: /
