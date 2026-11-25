@@ -10,6 +10,14 @@ long-term supported release series.
 
 ## Unreleased
 
+- A TUN TCP flow gives back its 32 KiB send buffer once its remote has had
+  nothing for it for about five seconds and the app has acknowledged every
+  byte, and takes a new one with the remote's next bytes. A quiet flow, such as
+  a push channel or a keep-alive connection, held it until it closed: an idle
+  flow measures 47 KiB of heap instead of 80 KiB in a release build. The
+  receive buffer stays, since the window it advertised cannot be taken back.
+  The vendored smoltcp gains `Socket::shrink_send_buffer` for this and becomes
+  `xray-smoltcp` 0.14.1.
 - A WireGuard outbound's device is closed once it has had no flow for five
   minutes, and the next flow starts a new one with a fresh handshake. A
   started device runs WireGuard's timers every 250 ms for as long as it

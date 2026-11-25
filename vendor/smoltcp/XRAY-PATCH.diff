@@ -2473,6 +2473,143 @@
      #[test]
      fn test_established_recv_empty_storage_preserves_reassembly() {
          let mut s = socket_established_with_buffer_sizes(64, 64);
+--- a/src/socket/tcp.rs
++++ b/src/socket/tcp.rs
+@@ -928,6 +928,26 @@
+         S: Into<ManagedSlice<'a, u8>>,
+     {
+         self.tx_buffer.grow(storage)
++    }
++
++    /// Replace an empty transmit buffer with `storage`, which may be smaller
++    /// or empty. Returns `false`, changing nothing, while the buffer holds a
++    /// byte, sent or not, since its sequence number is kept by its offset in
++    /// the buffer, or when `storage` is larger than the current buffer. A FIN
++    /// takes no room in the buffer, so one still in flight is unaffected.
++    ///
++    /// A socket left without room cannot send until `grow_send_buffer` gives
++    /// it some, as one created with an empty transmit buffer.
++    pub fn shrink_send_buffer<S>(&mut self, storage: S) -> bool
++    where
++        S: Into<ManagedSlice<'a, u8>>,
++    {
++        let storage = storage.into();
++        if !self.tx_buffer.is_empty() || storage.len() > self.tx_buffer.capacity() {
++            return false;
++        }
++        self.tx_buffer = SocketBuffer::new(storage);
++        true
+     }
+ 
+     /// Set the timeout duration.
+@@ -5027,6 +5047,107 @@
+     }
+ 
+     #[test]
++    fn test_shrink_send_buffer_waits_for_acknowledgement() {
++        let mut s = socket_established_with_buffer_sizes(64, 64);
++        assert!(!s.shrink_send_buffer(vec![0; 128]));
++        assert_eq!(s.send_slice(b"abcdef"), Ok(6));
++        // Queued and then in flight: both keep the buffer.
++        assert!(!s.shrink_send_buffer(Vec::new()));
++        recv!(
++            s,
++            [TcpRepr {
++                seq_number: LOCAL_SEQ + 1,
++                ack_number: Some(REMOTE_SEQ + 1),
++                payload: &b"abcdef"[..],
++                ..RECV_TEMPL
++            }]
++        );
++        assert!(!s.shrink_send_buffer(Vec::new()));
++        assert_eq!(s.send_capacity(), 64);
++        send!(
++            s,
++            TcpRepr {
++                seq_number: REMOTE_SEQ + 1,
++                ack_number: Some(LOCAL_SEQ + 1 + 6),
++                ..SEND_TEMPL
++            }
++        );
++        assert!(s.shrink_send_buffer(Vec::new()));
++        assert_eq!(s.send_capacity(), 0);
++        assert!(!s.can_send());
++        assert_eq!(s.send_slice(b"ghi"), Ok(0));
++
++        // Grown again, it sends from where the stream left off.
++        assert!(s.grow_send_buffer(vec![0; 8]));
++        assert_eq!(s.send_slice(b"ghi"), Ok(3));
++        recv!(
++            s,
++            [TcpRepr {
++                seq_number: LOCAL_SEQ + 1 + 6,
++                ack_number: Some(REMOTE_SEQ + 1),
++                payload: &b"ghi"[..],
++                ..RECV_TEMPL
++            }]
++        );
++        send!(
++            s,
++            TcpRepr {
++                seq_number: REMOTE_SEQ + 1,
++                ack_number: Some(LOCAL_SEQ + 1 + 9),
++                ..SEND_TEMPL
++            }
++        );
++        assert_eq!(s.send_queue(), 0);
++    }
++
++    #[test]
++    fn test_shrink_send_buffer_with_fin_in_flight() {
++        let mut s = socket_established_with_buffer_sizes(64, 64);
++        assert_eq!(s.send_slice(b"abcdef"), Ok(6));
++        s.close();
++        recv!(
++            s,
++            [TcpRepr {
++                control: TcpControl::Fin,
++                seq_number: LOCAL_SEQ + 1,
++                ack_number: Some(REMOTE_SEQ + 1),
++                payload: &b"abcdef"[..],
++                ..RECV_TEMPL
++            }]
++        );
++        send!(
++            s,
++            TcpRepr {
++                seq_number: REMOTE_SEQ + 1,
++                ack_number: Some(LOCAL_SEQ + 1 + 6),
++                ..SEND_TEMPL
++            }
++        );
++        assert_eq!(s.state, State::FinWait1);
++        assert!(s.shrink_send_buffer(Vec::new()));
++        // The FIN is sent again from the empty buffer and its ACK ends FIN-WAIT-1.
++        recv!(
++            s,
++            time 1000,
++            [TcpRepr {
++                control: TcpControl::Fin,
++                seq_number: LOCAL_SEQ + 1 + 6,
++                ack_number: Some(REMOTE_SEQ + 1),
++                ..RECV_TEMPL
++            }]
++        );
++        send!(
++            s,
++            TcpRepr {
++                seq_number: REMOTE_SEQ + 1,
++                ack_number: Some(LOCAL_SEQ + 1 + 6 + 1),
++                ..SEND_TEMPL
++            }
++        );
++        assert_eq!(s.state, State::FinWait2);
++    }
++
++    #[test]
+     fn test_established_recv_empty_storage_preserves_reassembly() {
+         let mut s = socket_established_with_buffer_sizes(64, 64);
+         let put = |s: &mut TestSocket, offset, payload| {
 --- a/src/storage/ring_buffer.rs
 +++ b/src/storage/ring_buffer.rs
 @@ -111,6 +111,30 @@
@@ -2549,7 +2686,8 @@
  rust-version = "1.91"
 -name = "smoltcp"
 +name = "xray-smoltcp"
- version = "0.14.0"
+-version = "0.14.0"
++version = "0.14.1"
  authors = ["whitequark <whitequark@whitequark.org>"]
  build = "build.rs"
 +exclude = [
@@ -2564,7 +2702,7 @@
 -description = "A TCP/IP stack designed for bare-metal, real-time systems without a heap."
 -homepage = "https://github.com/smoltcp-rs/smoltcp"
 -documentation = "https://docs.rs/smoltcp/"
-+description = "A fork of smoltcp 0.14.0 with opt-in TCP loss recovery (NewReno, SACK), shared receive budgets, egress bursts and growable socket buffers."
++description = "A fork of smoltcp 0.14.0 with opt-in TCP loss recovery (NewReno, SACK), shared receive budgets, egress bursts and socket buffers that grow and shrink with use."
 +documentation = "https://docs.rs/xray-smoltcp"
  readme = "README.md"
  keywords = [
@@ -2614,7 +2752,7 @@
  
  [[package]]
 +name = "xray-smoltcp"
-+version = "0.14.0"
++version = "0.14.1"
 +dependencies = [
 + "bitflags 1.1.0",
 + "byteorder",
@@ -2651,11 +2789,11 @@
 +The library is still named `smoltcp`:
 +
 +```toml
-+smoltcp = { package = "xray-smoltcp", version = "0.14.0" }
++smoltcp = { package = "xray-smoltcp", version = "0.14.1" }
 +```
 +
 +The patch number of a version is smoltcp's patch release times 100 plus the
-+fork's release: `0.14.0` is smoltcp 0.14.0, fork release 0.
++fork's release: `0.14.1` is smoltcp 0.14.0, fork release 1.
 +`XRAY-PATCH.md` in this package describes every change, and `XRAY-PATCH.diff`
 +is the whole difference from the crates.io archive of smoltcp 0.14.0.
 +

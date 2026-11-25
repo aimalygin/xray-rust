@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.91"
 name = "xray-smoltcp"
-version = "0.14.0"
+version = "0.14.1"
 authors = ["whitequark <whitequark@whitequark.org>"]
 build = "build.rs"
 exclude = [
@@ -25,7 +25,7 @@ autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "A fork of smoltcp 0.14.0 with opt-in TCP loss recovery (NewReno, SACK), shared receive budgets, egress bursts and growable socket buffers."
+description = "A fork of smoltcp 0.14.0 with opt-in TCP loss recovery (NewReno, SACK), shared receive budgets, egress bursts and socket buffers that grow and shrink with use."
 documentation = "https://docs.rs/xray-smoltcp"
 readme = "README.md"
 keywords = [

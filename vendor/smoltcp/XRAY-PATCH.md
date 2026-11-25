@@ -52,7 +52,7 @@ Upstream's licenses are unchanged.
 
 ## Package
 
-The copy is the package `xray-smoltcp` 0.14.0: smoltcp 0.14.0, fork release 0
+The copy is the package `xray-smoltcp` 0.14.1: smoltcp 0.14.0, fork release 1
 (`docs/vendored-forks.md`). The library is still named `smoltcp`.
 `XRAY-PATCH.diff` carries that in three more files: the manifest, the root
 entry of `Cargo.lock`, and a notice above upstream's README. The manifest
@@ -209,7 +209,7 @@ SACK blocks start none, and no FIN is resent for duplicates. Controller tests
 cover the partial ACK. With the adapter's features the library suite runs 471
 tests.
 
-## Buffers that grow with use
+## Buffers that grow and shrink with use
 
 `Socket::grow_recv_buffer` and `Socket::grow_send_buffer` replace a socket's
 buffer with a larger one, and `RingBuffer::grow` moves a ring's contents into
@@ -221,15 +221,30 @@ as `Socket::new` does; afterwards the negotiated scale stays, and a window
 beyond what it expresses is advertised as the largest one it can. The grown
 window is announced as any window update is, through `window_to_update`.
 
+`Socket::shrink_send_buffer` goes the other way for the transmit buffer: it
+replaces an empty one with smaller storage, possibly none. It refuses, changing
+nothing, while the buffer holds a byte, sent or not, since a byte's sequence
+number is its offset from the acknowledged edge, and refuses storage larger
+than the current buffer. A FIN takes no room in the buffer, so one in flight is
+retransmitted and acknowledged as before. A socket left without room cannot
+send until it grows again, like one created with an empty transmit buffer.
+There is no counterpart for the receive buffer: the window it advertised is a
+promise to the peer that a smaller buffer could not keep.
+
 The TUN stack in `xray-core-rs` uses this so that a socket holds its full
 buffers only while it carries data: a listening socket starts with an 8 KiB
 receive buffer and an empty send buffer, the receive buffer grows once the
 flow's bridge reads the client's data, and the send buffer with the remote's
-first bytes. Nothing changes for a socket that never grows.
+first bytes. A flow whose remote has had nothing for it for about five
+seconds, and whose bytes the client has all acknowledged, gives the send buffer
+back. Nothing changes for a socket that never grows or shrinks.
 
 Tests cover a wrapped ring with out-of-order bytes beyond its data, a refused
 smaller storage and an empty ring; a receive buffer that grows while
 reassembly waits on a hole, the window it then advertises and the scale before
-and after the SYN; and a send buffer that grows from nothing with data in
-flight, which is then retransmitted from the new storage. The selected-feature
-library suite runs 475 tests and the default-feature suite 705.
+and after the SYN; a send buffer that grows from nothing with data in
+flight, which is then retransmitted from the new storage; and one that is
+shrunk only once its data is acknowledged, refuses larger storage, sends from
+where the stream left off once grown again, and keeps a FIN in flight working.
+The selected-feature library suite runs 477 tests and the default-feature suite
+707.
