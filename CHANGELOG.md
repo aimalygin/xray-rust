@@ -18,6 +18,12 @@ long-term supported release series.
   receive buffer stays, since the window it advertised cannot be taken back.
   The vendored smoltcp gains `Socket::shrink_send_buffer` for this and becomes
   `xray-smoltcp` 0.14.1.
+- `XrayPacketTunnelProvider` has a public `activeCore` property: the core of
+  the running data path, or `nil` while no start has finished. A subclass
+  could reach the core only inside `handleCustomAppMessage(_:core:)`, that is
+  only when its app sent a message, so work the tunnel does on its own, such
+  as sampling the connection or accounting snapshot on a timer while the app
+  is closed, needed a fork of the provider.
 - A WireGuard outbound's device is closed once it has had no flow for five
   minutes, and the next flow starts a new one with a fresh handshake. A
   started device runs WireGuard's timers every 250 ms for as long as it
