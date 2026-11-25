@@ -55,6 +55,7 @@ xray-h3-quinn     0.0.1000   6fe202ccf3a931a7c9ac8cc41df30a64c61533bc3cdf619fe27
 xray-quinn        0.11.1200  fdaab5b088caebdf4ca3bd26496238fa5f15221041dcc431f38132f685d72676
 xray-quinn-proto  0.11.1900  9990bffafe7600ffdac6f264ae71b1afbd704a4e778c2a84440abce7d0ec8683
 xray-smoltcp      0.14.0     dae857ff47fec9de345794a15cb1b646c998b9cc1833dc4d8b1b0e2def14d70f
+xray-smoltcp      0.14.1     f17fda9dc881c59fbd37dd37ebe41ec54f593ddc069639307bf61ff9718b6d9b
 '
 
 cargo_files=(.cargo_vcs_info.json Cargo.toml.orig Cargo.toml Cargo.lock)
