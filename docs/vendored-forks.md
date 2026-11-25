@@ -17,14 +17,15 @@ a crates.io package itself. All seven are, and the root manifest has no
 | `vendor/h3-quinn` | `xray-h3-quinn` | 0.0.1000 | h3-quinn 0.0.10 | 2026-11-23, from `06ad5e23` |
 | `vendor/quinn-proto` | `xray-quinn-proto` | 0.11.1900 | quinn-proto 0.11.19 | 2026-11-23, from `06ad5e23` |
 | `vendor/quinn` | `xray-quinn` | 0.11.1200 | quinn 0.11.12 | 2026-11-23, from `06ad5e23` |
-| `vendor/smoltcp` | `xray-smoltcp` | 0.14.1 | smoltcp 0.14.0 | 0.14.0 on 2026-11-23, from `06ad5e23`; 0.14.1 waits for its upload |
+| `vendor/smoltcp` | `xray-smoltcp` | 0.14.1 | smoltcp 0.14.0 | 0.14.0 on 2026-11-23, from `06ad5e23`; 0.14.1 on 2026-11-25, from `36f6ebcd` |
 | `vendor/gotatun` | `xray-gotatun` | 0.9.100 | GotaTun 0.9.1, commit `dab390cd` | 2026-11-23, from `06ad5e23` |
 
 The last column is the day of the upload and the commit of this repository it
-was made from, `06ad5e23e60da92c7c5e1b12a40baa71de5a05fa` for all seven; each
-archive records its commit in `.cargo_vcs_info.json`. The SHA-256 of each
-archive is in `scripts/check-vendored-published.sh`, which holds the copy in
-`vendor/` to it.
+was made from: `06ad5e23e60da92c7c5e1b12a40baa71de5a05fa` for the first release
+of all seven, `36f6ebcd493e0297155f3f1b5fca76ff80792b52` for `xray-smoltcp`
+0.14.1. Each archive records its commit in `.cargo_vcs_info.json`. The SHA-256
+of each archive is in `scripts/check-vendored-published.sh`, which holds the
+copy in `vendor/` to it.
 
 Two more forks are not in this table. The rustls fork is not in `vendor/`:
 it is the crates.io package `shaped-rustls`
