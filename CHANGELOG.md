@@ -434,6 +434,20 @@ long-term supported release series.
   `XrayCore` initializers and Kotlin `XrayCore.create` take an optional
   `runtimeWorkerThreads`. The default stays the available parallelism within
   2..=6 on every TUN runtime profile.
+- The observatory skips the scheduled probe of a balancer's member while no
+  flow has been routed through the balancer since that member's last probe,
+  so a phone nobody uses no longer wakes its radio every `probeInterval`
+  (10 seconds by default). The first round probes every observed outbound;
+  the first flow through a balancer whose members were skipped has them
+  probed at once, up to four at a time even with `enableConcurrency: false`.
+  Those probes count as re-probes, since that flow often comes as a phone
+  wakes and its network may not carry traffic yet: a failure is recorded
+  only when a second probe 10 seconds later fails too. Failure re-probes and
+  their follow-ups run as before. While nothing is due the observer sets no
+  timer, so it no longer wakes every `probeInterval` either. Observed
+  outbounds outside every balancer keep the interval, and the burst
+  observatory keeps its schedule. Selecting through a balancer records its
+  use: one atomic load per flow once the current round has seen one.
 
 ## 0.10.1 - 2026-11-16
 
