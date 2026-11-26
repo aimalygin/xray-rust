@@ -1719,7 +1719,11 @@ stop reading after the status line. Xray-core's observer learns of a dead
 outbound only from its scheduled probes; xray-rust's also probes an observed
 outbound again, at most every 10 seconds, when real traffic fails to dial it
 or to complete its handshake, and marks it unhealthy when two such probes 10
-seconds apart fail, as described under
+seconds apart fail. Xray-core probes every observed outbound each round;
+xray-rust skips a balancer member's scheduled probe while no flow has used its
+balancers since the member's last probe, and probes it at the next such flow,
+so after a long idle the first flows are routed by results older than one
+interval. Both are described under
 [Observatory and outbound health](config-compatibility.md#observatory-and-outbound-health).
 
 ## burstObservatory
