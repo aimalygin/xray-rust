@@ -453,6 +453,83 @@ async fn released_upload_bytes_leave_the_statistics_with_no_other_input() {
     core.stop().await.unwrap();
 }
 
+/// A flow whose remote went quiet gives back its send buffer about five
+/// seconds after its last bytes: the loop wakes once for that and then sleeps,
+/// where a tick looked at the flow every second. The remote's next bytes
+/// still reach the app.
+#[tokio::test]
+async fn quiet_tcp_flow_gives_back_its_send_buffer_on_one_turn() {
+    let (stream, mut peer) = tokio::io::duplex(1_024);
+    let mut core = core_dialing(stream, "", TunRuntimeProfile::Default).await;
+    let tun = core.tun();
+    let server = SocketAddrV4::new(Ipv4Addr::new(192, 0, 2, 22), 443);
+
+    // In real time: smoltcp's timers run on the system clock.
+    let sequence = timeout(Duration::from_secs(10), async {
+        let (sequence, _) = open_tcp_flow(tun, server).await;
+        // The remote's bytes give the socket its send buffer, and the app's
+        // ACK leaves it empty.
+        peer.write_all(b"hello").await.unwrap();
+        let (_, at, data) =
+            receive_segment(tun, |flags, data| flags & TCP_FIN == 0 && !data.is_empty()).await;
+        assert_eq!(data, b"hello");
+        tun.push_inbound(tcp_segment(
+            server,
+            sequence,
+            at.wrapping_add(data.len() as u32),
+            TCP_ACK,
+            &[],
+        ))
+        .await
+        .unwrap();
+        sequence
+    })
+    .await
+    .expect("the remote's bytes reach the app");
+
+    // Nothing else happens from here on. The turn after the ACK, within a
+    // second, finds the buffer idle; the one that gives it back follows
+    // TCP_SEND_BUFFER_IDLE later.
+    tokio::time::pause();
+    let start = TokioInstant::now();
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let settled = loop_turns();
+    tokio::time::sleep_until(start + TCP_SEND_BUFFER_IDLE + Duration::from_secs(3)).await;
+    assert_eq!(
+        loop_turns() - settled,
+        1,
+        "the loop did not wake once to give the send buffer back"
+    );
+    let settled = loop_turns();
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    assert_eq!(
+        loop_turns() - settled,
+        0,
+        "the loop kept looking at the quiet flow"
+    );
+    tokio::time::resume();
+
+    timeout(Duration::from_secs(10), async {
+        peer.write_all(b"again").await.unwrap();
+        let (_, at, data) =
+            receive_segment(tun, |flags, data| flags & TCP_FIN == 0 && !data.is_empty()).await;
+        assert_eq!(data, b"again");
+        tun.push_inbound(tcp_segment(
+            server,
+            sequence,
+            at.wrapping_add(data.len() as u32),
+            TCP_ACK,
+            &[],
+        ))
+        .await
+        .unwrap();
+    })
+    .await
+    .expect("the remote's next bytes reach the app");
+    assert_eq!(tun.stats().await.active_tcp_flows, 1);
+    core.stop().await.unwrap();
+}
+
 /// A DNS query for the HTTPS records (type 65) of `name`. The TUN relays it
 /// through its DNS-over-TCP pool; A and AAAA go to the core's resolver.
 fn dns_query(id: u16, name: &str) -> Vec<u8> {
