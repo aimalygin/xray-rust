@@ -4182,8 +4182,12 @@ outbound. The first flow through a balancer whose members were skipped wakes
 the observer, which probes them at once, up to four at a time even with
 `enableConcurrency: false`, so that a member that died meanwhile delays the
 refresh by one probe timeout rather than one per member; until those probes
-finish, flows are routed by the results from before the skip. Failure re-probes
-and their follow-ups run whether or not the balancer was used. While no observed outbound is due, the observer sets no
+finish, flows are routed by the results from before the skip. Those probes are
+re-probes: that first flow often comes as a phone wakes, when its network may
+not carry traffic yet, so one that fails on an outbound that is not unhealthy
+is recorded only when the probe 10 seconds later fails too, and none adds a
+`leastLoad` sample. Failure re-probes and their follow-ups run whether or not
+the balancer was used. While no observed outbound is due, the observer sets no
 timer at all: only a flow through a balancer, a reported failure or a
 follow-up wakes it, and the interval starts again after the probes that flow
 brings. An observed outbound outside every balancer is always due and keeps the

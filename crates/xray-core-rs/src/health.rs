@@ -838,11 +838,14 @@ async fn idle(
         if !resumed.is_empty() {
             // Whatever the mode, so that the first flows after a long idle
             // wait for one probe timeout rather than one per dead member.
+            // They run as re-probes: the first flow after a long idle often
+            // comes as the phone wakes, when its network may not carry
+            // traffic yet, so a failure is confirmed before it counts.
             if !probe_nodes(
                 runtime,
                 &resumed,
                 MAX_CONCURRENT_HEALTH_PROBES,
-                ProbeKind::Scheduled,
+                ProbeKind::Reprobe,
                 reprobes,
                 shutdown,
             )
@@ -2103,6 +2106,33 @@ mod tests {
         assert_eq!(reprobes.take_due(due).nodes, vec![fixture.proxy_a]);
     }
 
+    /// The follow-ups of a failed re-probe run while the balancer is unused,
+    /// as failure re-probes do.
+    #[test]
+    fn follow_ups_run_while_the_balancer_is_skipped() {
+        let fixture = Fixture::new();
+        let start = Instant::now();
+        let mut reprobes = fixture.reprobes(start);
+        assert!(reprobes.scheduled(&fixture.observed()).is_empty());
+
+        fixture.report(fixture.proxy_a);
+        let due = start + FAILURE_REPROBE_COOLDOWN;
+        let pass = reprobes.take_due(due);
+        assert_eq!(pass.nodes, vec![fixture.proxy_a]);
+        fixture.round(&mut reprobes, &pass.nodes, due);
+        assert!(!fixture.finish(
+            &mut reprobes,
+            fixture.proxy_a,
+            false,
+            ProbeKind::Reprobe,
+            due
+        ));
+        let confirm = due + FAILURE_REPROBE_COOLDOWN;
+        assert_eq!(reprobes.next_due(due), Some(confirm));
+        assert_eq!(reprobes.take_due(confirm).nodes, vec![fixture.proxy_a]);
+        assert!(reprobes.scheduled(&fixture.observed()).is_empty());
+    }
+
     #[test]
     fn an_observed_outbound_outside_every_balancer_keeps_its_schedule() {
         let fixture = Fixture::new();
@@ -2494,6 +2524,9 @@ mod tests {
         url: String,
         probes: Arc<std::sync::atomic::AtomicUsize>,
         hold: Arc<AtomicBool>,
+        /// Closes each connection without an answer, which fails the probe
+        /// at once.
+        refuse: Arc<AtomicBool>,
     }
 
     impl ProbeServer {
@@ -2507,10 +2540,15 @@ mod tests {
             );
             let probes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let hold = Arc::new(AtomicBool::new(false));
-            let (counted, held) = (Arc::clone(&probes), Arc::clone(&hold));
+            let refuse = Arc::new(AtomicBool::new(false));
+            let (counted, held, refused) =
+                (Arc::clone(&probes), Arc::clone(&hold), Arc::clone(&refuse));
             tokio::spawn(async move {
                 while let Ok((mut stream, _)) = listener.accept().await {
                     counted.fetch_add(1, Ordering::SeqCst);
+                    if refused.load(Ordering::SeqCst) {
+                        continue;
+                    }
                     let held = held.load(Ordering::SeqCst);
                     tokio::spawn(async move {
                         let mut request = [0u8; 1024];
@@ -2526,7 +2564,12 @@ mod tests {
                     });
                 }
             });
-            Self { url, probes, hold }
+            Self {
+                url,
+                probes,
+                hold,
+                refuse,
+            }
         }
 
         fn probes(&self) -> usize {
@@ -2555,6 +2598,14 @@ mod tests {
         /// Runs an observatory of the two members of balancer `auto`, which
         /// probes `url` every 50 ms.
         fn start(url: String, enable_concurrency: bool) -> Self {
+            Self::with_cooldowns(url, enable_concurrency, REPROBE_COOLDOWNS)
+        }
+
+        fn with_cooldowns(
+            url: String,
+            enable_concurrency: bool,
+            cooldowns: ReprobeCooldowns,
+        ) -> Self {
             let config = parse(&json!({
                 "outbounds": [
                     {"tag": "direct", "protocol": "freedom"},
@@ -2583,7 +2634,8 @@ mod tests {
                 Arc::clone(&resolver),
                 resolver,
                 Arc::new(TransportDialer::system().expect("system dialer")),
-            );
+            )
+            .with_cooldowns(cooldowns);
             let (shutdown, shutdown_rx) = watch::channel(false);
             let task = tokio::spawn(run_observatory(runtime, shutdown_rx));
             Self {
@@ -2769,6 +2821,53 @@ mod tests {
         server
             .wait_for_probes(4, OBSERVATORY_PROBE_TIMEOUT / 2)
             .await;
+        observer.stop().await;
+    }
+
+    /// The probes a balancer's first use after a skip brings are re-probes:
+    /// when they fail, as when a phone's network is not back yet, the
+    /// members keep their health until the probes a cooldown later fail too.
+    #[tokio::test]
+    async fn a_failed_resumed_probe_counts_once_a_second_one_confirms_it() {
+        let server = ProbeServer::start().await;
+        let observer = LiveObserver::with_cooldowns(
+            server.url.clone(),
+            true,
+            ReprobeCooldowns {
+                leaf: Duration::from_millis(500),
+                group: GROUP_REPROBE_COOLDOWN,
+            },
+        );
+        let selection = observer.router.selection();
+        let members = ["proxy-a", "proxy-b"].map(|tag| {
+            observer
+                .router
+                .graph()
+                .node_for_tag(tag)
+                .expect("member exists")
+        });
+        for member in members {
+            wait_for_state(selection, member, OutboundHealthState::Healthy).await;
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(server.probes(), 2, "the balancer was skipped");
+
+        server.refuse.store(true, Ordering::SeqCst);
+        observer.use_balancer();
+        server.wait_for_probes(4, Duration::from_secs(4)).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        for member in members {
+            assert_eq!(
+                selection.health_state_of(member),
+                OutboundHealthState::Healthy,
+                "one failed resumed probe counted"
+            );
+        }
+
+        server.wait_for_probes(6, Duration::from_secs(4)).await;
+        for member in members {
+            wait_for_state(selection, member, OutboundHealthState::Unhealthy).await;
+        }
         observer.stop().await;
     }
 }
