@@ -4167,13 +4167,34 @@ when a report through a member or that fallback reaches a balancer none of
 whose observed members is healthy, all of them are probed again, 15 seconds
 at the earliest after the last such pass finished, and twice the previous
 wait, up to `probeInterval`, after a pass in which every probe failed. Reports
-only bring probes forward: without failures, probes follow the interval as
-before, the scheduled round is not moved and its results are recorded as
-they are, and re-probes use the same concurrency bound. The 16-sample window
+only bring probes forward: the scheduled round is not moved and its results
+are recorded as they are, and re-probes use the same concurrency bound. The 16-sample window
 that `leastLoad` reads for `tolerance`, the average and the deviation counts
 scheduled probes only: a re-probe sets the health state, the last delay and
 the failure count, but adds no sample to it. Startup and on-demand probes
 report nothing.
+
+Unlike Xray-core, the observer also skips the scheduled probe of an observed
+member of a balancer when no flow was routed through any of its balancers since
+that member's last probe, so a device nobody uses sends no probes and does not
+wake its radio every `probeInterval`. The first round probes every observed
+outbound. The first flow through a balancer whose members were skipped wakes
+the observer, which probes them at once, up to four at a time even with
+`enableConcurrency: false`, so that a member that died meanwhile delays the
+refresh by one probe timeout rather than one per member; until those probes
+finish, flows are routed by the results from before the skip. Those probes are
+re-probes: that first flow often comes as a phone wakes, when its network may
+not carry traffic yet, so one that fails on an outbound that is not unhealthy
+is recorded only when the probe 10 seconds later fails too, and none adds a
+`leastLoad` sample. Failure re-probes and their follow-ups run whether or not
+the balancer was used. While no observed outbound is due, the observer sets no
+timer at all: only a flow through a balancer, a reported failure or a
+follow-up wakes it, and the interval starts again after the probes that flow
+brings. An observed outbound outside every balancer is always due and keeps the
+interval. A selection, including one that ends at the balancer's fallback or an
+override, is a use; a flow routed to a member by tag is not. The health
+snapshot's last-try time of a skipped outbound stays at its last probe. The
+burst observatory below keeps its own schedule.
 
 The observer starts only after the core and any configured startup probe have
 started successfully. It dials each leaf directly by tag, so routing rules and

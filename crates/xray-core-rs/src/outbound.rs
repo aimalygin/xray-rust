@@ -2386,6 +2386,8 @@ pub struct OutboundSelectionOverlay {
     health: Box<[OutboundHealthAtomicState]>,
     /// Failures of real traffic, from the flows to the observatory.
     failure_reports: crate::health::FailureReports,
+    /// Which balancers carried traffic, from the flows to the observatory.
+    balancer_use: crate::health::BalancerUse,
     /// Set once, before a burst observatory records its first sample.
     burst_health: OnceLock<BurstHealthPolicy>,
     /// Advanced when the device changes network. A window drops the samples
@@ -2409,11 +2411,13 @@ impl OutboundSelectionOverlay {
             .collect::<Vec<_>>()
             .into_boxed_slice();
         let failure_reports = crate::health::FailureReports::new(graph.leaf_count);
+        let balancer_use = crate::health::BalancerUse::new(graph.selector_groups().len());
         Self {
             graph,
             groups,
             health,
             failure_reports,
+            balancer_use,
             burst_health: OnceLock::new(),
             health_epoch: AtomicU64::new(0),
             revision: AtomicU64::new(0),
@@ -2733,8 +2737,12 @@ impl OutboundSelectionOverlay {
     /// healthy. `random` and `roundRobin` pick none only when every member is
     /// unhealthy and the balancer has a `fallbackTag`, or when it has no
     /// member at all: see [`Self::is_candidate`].
-    fn select(&self, group_tag: &str) -> Result<Option<OutboundNodeId>, CoreError> {
+    ///
+    /// Each call is a use of the balancer, which has the observatory probe
+    /// its members at the next scheduled round.
+    pub(crate) fn select(&self, group_tag: &str) -> Result<Option<OutboundNodeId>, CoreError> {
         let (group_index, group) = self.group_for_tag(group_tag)?;
+        self.balancer_use.record(group_index);
         let state = &self.groups[group_index];
         if let Some(member_index) = state.override_member.load(Ordering::Acquire).checked_sub(1) {
             return group
@@ -2808,6 +2816,10 @@ impl OutboundSelectionOverlay {
 
     pub(crate) fn failure_reports(&self) -> &crate::health::FailureReports {
         &self.failure_reports
+    }
+
+    pub(crate) fn balancer_use(&self) -> &crate::health::BalancerUse {
+        &self.balancer_use
     }
 
     /// Tells the observatory that a flow could not open through leaf `node`.
