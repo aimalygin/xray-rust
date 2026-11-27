@@ -485,6 +485,31 @@ impl DnsTcpConnectionPool {
             .map(|entry| entry.prune_expired(now, self.idle_ttl))
             .sum()
     }
+
+    /// When the first idle connection expires, if one is idle: the TUN loop
+    /// prunes it then.
+    pub(super) fn next_expiry(&self) -> Option<TokioInstant> {
+        let entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        entries
+            .into_iter()
+            .filter_map(|entry| {
+                entry
+                    .idle
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .iter()
+                    .map(|connection| connection.last_used)
+                    .min()
+            })
+            .min()
+            .map(|last_used| last_used + self.idle_ttl)
+    }
 }
 
 impl DnsTcpConnectionPoolEntry {
@@ -6006,9 +6031,13 @@ mod tests {
         let upstream = tcp_local_pool_upstream(1);
         let last_used = TokioInstant::now();
         let lease = pool.lease(&upstream).await.unwrap();
+        assert_eq!(pool.next_expiry(), None);
         lease.recycle_at(pending_pool_connection(&pool), last_used);
         assert_eq!(pool.connection_permits.available_permits(), 0);
+        // The TUN loop's only reason to wake for the pool.
+        assert_eq!(pool.next_expiry(), Some(last_used + idle_ttl));
         assert_eq!(pool.prune_expired(last_used + idle_ttl), 1);
+        assert_eq!(pool.next_expiry(), None);
         assert_eq!(pool.connection_permits.available_permits(), 1);
         assert!(!pool.lease(&upstream).await.unwrap().reused());
     }

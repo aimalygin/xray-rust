@@ -139,6 +139,17 @@ Android defaults to fd-backed operation. The Apple provider uses a discovered
 Darwin utun fd when enabled and available, otherwise it falls back to the
 `NEPacketTunnelFlow` packet pump.
 
+The TUN loop has no periodic tick. It sleeps until a packet, a flow event or a
+finished task arrives, or until the earliest deadline it has: smoltcp's next
+timer (retransmission, delayed ACK, zero-window probe, TIME-WAIT), the retry of
+a backpressured queue, or a housekeeping turn. A turn aborts closed flows the
+app does not let end (30 s in FIN-WAIT-2, four minutes otherwise), prunes idle
+pooled DNS-over-TCP connections and records the TCP buffer statistics. It runs
+at most once a second: a second after activity, every second while upload bytes
+wait for their outbound, and at the earliest close-wait or pooled-connection
+expiry. UDP flows end on their own idle timers. With no flows, or only idle
+ones, nothing wakes the loop.
+
 The TUN MTU is a host runtime option (`TunRuntimeOptions::mtu`, 1280..=9000,
 default 1500), never Xray JSON, because the host also sets it on the interface.
 It sizes the smoltcp device, the fd reads and the TCP receive buffers

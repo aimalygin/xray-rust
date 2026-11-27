@@ -415,6 +415,25 @@ long-term supported release series.
   longer depends on arrayref, whose crates.io account was taken over to
   publish a malicious 0.3.10 (RUSTSEC-2026-0260); the 0.3.9 this build used is
   not affected.
+- The TUN loop no longer wakes every second. It slept at most a second for
+  its statistics, so an idle VPN, with no flows or only idle ones, woke the
+  process 45 to 50 times a minute where the same core without TUN woke none
+  (measured on macOS). It now sleeps until a packet, a flow event, smoltcp's
+  next timer or a housekeeping deadline: the close-wait sweep, the expiry of
+  a pooled DNS-over-TCP connection, the TCP buffer statistics, recorded a
+  second after activity and every second while upload bytes wait for their
+  outbound, and the return of a quiet flow's send buffer four to five seconds
+  after its last bytes. Retransmissions, delayed ACKs, the 30-second linger,
+  the four-minute give-up and UDP idle eviction keep their timing, and the
+  statistics are still at most a second behind the last activity.
+- ABI 1.18 adds `xray_core_set_runtime_worker_threads`
+  (`RUNTIME_WORKER_THREADS`, bit 31, the first capability defined as a 64-bit
+  macro since a C enum constant cannot hold it) to set the FFI handle's Tokio
+  runtime to 1..=64 worker threads, or 0 for the default, before config load;
+  a count that differs replaces the handle's still idle runtime. Swift
+  `XrayCore` initializers and Kotlin `XrayCore.create` take an optional
+  `runtimeWorkerThreads`. The default stays the available parallelism within
+  2..=6 on every TUN runtime profile.
 
 ## 0.10.1 - 2026-11-16
 

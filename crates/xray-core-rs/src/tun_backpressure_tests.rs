@@ -143,7 +143,7 @@ fn add_flow(
             pending_remote_delivery: None,
             remote_closed: false,
             remote_aborted: false,
-            send_buffer_idle_ticks: 0,
+            send_buffer_idle_since: None,
         },
     );
     handle
@@ -863,7 +863,7 @@ fn tun_tcp_socket_buffers_grow_only_when_the_flow_carries_data() {
             pending_remote_delivery: None,
             remote_closed: false,
             remote_aborted: false,
-            send_buffer_idle_ticks: 0,
+            send_buffer_idle_since: None,
         },
     )]);
     let mut budget = FlowBudgetState::new(LOW_MEMORY_FLOW_BUDGET_POLICY);

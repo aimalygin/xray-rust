@@ -132,11 +132,16 @@ const MAX_DNS_UDP_TASKS: usize = 64;
 const MAX_DNS_TCP_FLOWS: usize = 32;
 const TCP_REMOTE_DRAIN_MAX_PASSES_PER_TICK: usize = 4;
 const TCP_REMOTE_DRAIN_MAX_BYTES_PER_TICK: usize = 4 * 1024 * 1024;
+/// The least time between two housekeeping turns of the TUN loop: the
+/// close-wait sweep, the DNS connection pool prune and the buffer statistics.
+/// It is not a tick: see [`TunHousekeeping`].
 const TUN_FLOW_STATS_INTERVAL: Duration = Duration::from_secs(1);
-/// How many flow-stats ticks in a row a TCP flow's send buffer must sit empty,
-/// with nothing from the remote waiting for it, before the socket gives the
-/// buffer back. About five seconds: a flow that pauses between bursts keeps it.
-const TCP_SEND_BUFFER_IDLE_TICKS: u8 = 5;
+/// How long a TCP flow's send buffer must sit empty, with nothing from the
+/// remote waiting for it, before the socket gives the buffer back, counted from
+/// the first housekeeping turn that finds it so. That turn runs at most a
+/// second after the flow's last activity, so the buffer goes four to five
+/// seconds after it: a flow that pauses between bursts keeps it.
+const TCP_SEND_BUFFER_IDLE: Duration = Duration::from_secs(4);
 const TUN_BACKPRESSURE_RETRY_INTERVAL: Duration = Duration::from_millis(25);
 /// How long a TUN TCP socket whose side is closed waits for the app to close
 /// its own, as Xray-core's `tcpLinger`.
@@ -160,6 +165,10 @@ const UDP_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 #[cfg(test)]
 #[path = "tun_backpressure_tests.rs"]
 mod backpressure_tests;
+
+#[cfg(test)]
+#[path = "tun_idle_tests.rs"]
+mod idle_tests;
 
 #[path = "tun_download.rs"]
 mod download;
@@ -709,24 +718,34 @@ enum UdpFlowAdmission {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TunWaitPlan {
-    duration: Duration,
+    /// How long the loop may sleep before something is due; `None` when
+    /// nothing is, and only packets, events or tasks wake it.
+    duration: Option<Duration>,
     drive_tcp_stack_on_expiry: bool,
 }
 
+/// How long the TUN loop sleeps: until the earliest of the housekeeping turn
+/// `housekeeping_wait` away, smoltcp's next timer and the retry of stalled
+/// work, with no periodic tick.
 fn tun_wait_plan(
     smoltcp_deadline: Option<Instant>,
     now: Instant,
-    stats_wait: Duration,
+    housekeeping_wait: Option<Duration>,
     has_delayed_stack_events: bool,
     has_pending_outbound: bool,
 ) -> TunWaitPlan {
     let mut plan = TunWaitPlan {
-        duration: stats_wait,
+        duration: housekeeping_wait,
         drive_tcp_stack_on_expiry: false,
     };
 
     if has_pending_outbound {
-        plan.duration = plan.duration.min(TUN_BACKPRESSURE_RETRY_INTERVAL);
+        plan.duration = Some(
+            plan.duration
+                .map_or(TUN_BACKPRESSURE_RETRY_INTERVAL, |duration| {
+                    duration.min(TUN_BACKPRESSURE_RETRY_INTERVAL)
+                }),
+        );
         return plan;
     }
 
@@ -736,18 +755,79 @@ fn tun_wait_plan(
             .saturating_sub(now.total_micros())
             .max(0) as u64;
         let wait = Duration::from_micros(micros);
-        if wait <= plan.duration {
-            plan.duration = wait;
+        if plan.duration.is_none_or(|duration| wait <= duration) {
+            plan.duration = Some(wait);
             plan.drive_tcp_stack_on_expiry = true;
         }
     }
 
-    if has_delayed_stack_events && TUN_BACKPRESSURE_RETRY_INTERVAL <= plan.duration {
-        plan.duration = TUN_BACKPRESSURE_RETRY_INTERVAL;
+    if has_delayed_stack_events
+        && plan
+            .duration
+            .is_none_or(|duration| TUN_BACKPRESSURE_RETRY_INTERVAL <= duration)
+    {
+        plan.duration = Some(TUN_BACKPRESSURE_RETRY_INTERVAL);
         plan.drive_tcp_stack_on_expiry = true;
     }
 
     plan
+}
+
+/// When the TUN loop runs its housekeeping turn: the close-wait sweep, the
+/// DNS TCP connection pool prune and the buffer statistics.
+///
+/// A turn runs at most once per [`TUN_FLOW_STATS_INTERVAL`], on whichever
+/// wakeup finds one due. The loop sets a timer for one only while something
+/// needs it: activity since the last turn, which the next one must see; upload
+/// bytes buffered towards an outbound, whose release does not wake the loop;
+/// or the earliest close-wait, pooled-connection expiry or idle send buffer
+/// release the last turn left.
+/// An idle TUN, with no flows or with idle ones, is not woken at all.
+#[derive(Debug, Clone, Copy)]
+struct TunHousekeeping {
+    last_run: TokioInstant,
+    /// The loop did something since the last turn that no turn has seen.
+    pending: bool,
+    /// The earliest close-wait, pooled-connection expiry or idle send buffer
+    /// release the last turn left.
+    deadline: Option<TokioInstant>,
+}
+
+impl TunHousekeeping {
+    fn new(now: TokioInstant) -> Self {
+        Self {
+            last_run: now,
+            pending: false,
+            deadline: None,
+        }
+    }
+
+    fn is_due(&self, now: TokioInstant) -> bool {
+        now.saturating_duration_since(self.last_run) >= TUN_FLOW_STATS_INTERVAL
+    }
+
+    /// When the next turn is to run, if anything needs one. `buffered`: TCP
+    /// upload bytes wait for their outbound.
+    fn next_run(&self, buffered: bool) -> Option<TokioInstant> {
+        let earliest = self.last_run + TUN_FLOW_STATS_INTERVAL;
+        if self.pending || buffered {
+            return Some(earliest);
+        }
+        self.deadline.map(|deadline| deadline.max(earliest))
+    }
+
+    /// Records the turn that ran at `now` and left `deadline`.
+    fn ran(&mut self, now: TokioInstant, deadline: Option<TokioInstant>) {
+        self.last_run = now;
+        self.pending = false;
+        self.deadline = deadline;
+    }
+
+    /// Records that the loop did something, after any turn in the same
+    /// iteration: the turn may have run before it.
+    fn record_activity(&mut self) {
+        self.pending = true;
+    }
 }
 
 impl FlowBudgetState {
@@ -1069,17 +1149,22 @@ pub(crate) async fn serve_tun_endpoint(
         dns_mode,
         runtime_logger,
     };
-    let mut last_flow_stats = StdInstant::now();
+    let mut housekeeping = TunHousekeeping::new(TokioInstant::now());
     let mut next_smoltcp_deadline = None;
     let mut tcp_stack_dirty = false;
+    // Statistics start out right, the UDP flow limit among them, without a
+    // first turn.
+    record_flow_budget_stats(tun.as_ref(), &mut flow_budget_state, &tcp_flows, 0);
 
     'runtime: loop {
-        let smoltcp_now = Instant::now();
-        let stats_wait = TUN_FLOW_STATS_INTERVAL.saturating_sub(last_flow_stats.elapsed());
-        let wait_plan = tun_wait_plan(
+        let now = TokioInstant::now();
+        let housekeeping_wait = housekeeping
+            .next_run(flow_budget_state.pending_upload_bytes() > 0)
+            .map(|at| at.saturating_duration_since(now));
+        let sleep_for = tun_wait_plan(
             next_smoltcp_deadline,
-            smoltcp_now,
-            stats_wait,
+            Instant::now(),
+            housekeeping_wait,
             !delayed_stack_events.is_empty(),
             device.has_pending_outbound(),
         );
@@ -1158,20 +1243,23 @@ pub(crate) async fn serve_tun_endpoint(
                     log_bridge_task_result(result, &runtime_context.runtime_logger);
                 }
             }
-            () = sleep(wait_plan.duration) => {
+            () = sleep(sleep_for.duration.unwrap_or_default()), if sleep_for.duration.is_some() => {
                 timer_expired = true;
             }
         }
-        drain_completed_tasks(
+        #[cfg(test)]
+        idle_tests::count_loop_turn();
+        let mut activity = !timer_expired;
+        activity |= drain_completed_tasks(
             &mut bridge_tasks,
             &runtime_context.runtime_logger,
             MAX_BRIDGE_TASK_COMPLETIONS_PER_TICK,
-        );
-        drain_completed_tasks(
+        ) > 0;
+        activity |= drain_completed_tasks(
             &mut udp_tasks,
             &runtime_context.runtime_logger,
             MAX_UDP_TASK_COMPLETIONS_PER_TICK,
-        );
+        ) > 0;
 
         for _ in 0..MAX_TUN_INBOUND_DRAIN_PER_TICK {
             let packet = match udp_admission
@@ -1183,6 +1271,7 @@ pub(crate) async fn serve_tun_endpoint(
             };
             match packet {
                 Ok(Some(packet)) => {
+                    activity = true;
                     match process_tun_packet(
                         packet,
                         &tun,
@@ -1221,22 +1310,24 @@ pub(crate) async fn serve_tun_endpoint(
             &mut device,
             Some(tun.as_ref()),
         );
-        let flow_stats_due = last_flow_stats.elapsed() >= TUN_FLOW_STATS_INTERVAL;
-        if flow_stats_due {
+        let housekeeping_now = TokioInstant::now();
+        let housekeeping_due = housekeeping.is_due(housekeeping_now);
+        if housekeeping_due {
             tcp_stack_dirty |= abort_stalled_closed_tcp_flows(
                 &mut sockets,
                 &tcp_flows,
                 &mut tcp_close_waits,
-                StdInstant::now(),
+                housekeeping_now,
             );
         }
+        activity |= tcp_stack_dirty;
         let outbound_backpressured = match flush_tun_outbound(&tun, &mut device).await {
             TunOutboundFlush::Complete => false,
             TunOutboundFlush::Backpressured => true,
             TunOutboundFlush::QueueClosed => break,
         };
         if !outbound_backpressured
-            && (tcp_stack_dirty || (timer_expired && wait_plan.drive_tcp_stack_on_expiry))
+            && (tcp_stack_dirty || (timer_expired && sleep_for.drive_tcp_stack_on_expiry))
         {
             drive_tun_tcp_stack(
                 &tun,
@@ -1280,6 +1371,7 @@ pub(crate) async fn serve_tun_endpoint(
             }
         }
         if tcp_stack_driven {
+            activity = true;
             let now = Instant::now();
             next_smoltcp_deadline = iface.poll_at(now, &sockets);
         }
@@ -1292,18 +1384,29 @@ pub(crate) async fn serve_tun_endpoint(
             tcp_flows.len(),
             active_udp_tasks,
         );
-        if flow_stats_due {
-            runtime_context
-                .dns_tcp_connection_pool
-                .prune_expired(TokioInstant::now());
-            release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows);
+        if housekeeping_due {
+            let pool = &runtime_context.dns_tcp_connection_pool;
+            pool.prune_expired(TokioInstant::now());
+            let send_buffer_release =
+                release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows, housekeeping_now);
             record_flow_budget_stats(
                 tun.as_ref(),
                 &mut flow_budget_state,
                 &tcp_flows,
                 active_udp_tasks,
             );
-            last_flow_stats = StdInstant::now();
+            let deadline = [
+                close_wait_deadline(&tcp_close_waits),
+                pool.next_expiry(),
+                send_buffer_release,
+            ]
+            .into_iter()
+            .flatten()
+            .min();
+            housekeeping.ran(housekeeping_now, deadline);
+        }
+        if activity {
+            housekeeping.record_activity();
         }
 
         if matches!(
@@ -1790,8 +1893,9 @@ struct TcpFlow {
     pending_remote_delivery: Option<DownloadDelivery>,
     remote_closed: bool,
     remote_aborted: bool,
-    /// Flow-stats ticks since the remote last had data for this flow.
-    send_buffer_idle_ticks: u8,
+    /// The housekeeping turn that first found this flow's send buffer idle
+    /// since the remote last had data for it.
+    send_buffer_idle_since: Option<TokioInstant>,
 }
 
 impl TcpFlow {
@@ -2247,7 +2351,7 @@ fn open_ready_tcp_flows(
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
-                send_buffer_idle_ticks: 0,
+                send_buffer_idle_since: None,
             },
         );
         let raw_tuple = context.tun_admission.as_ref().and_then(|_| {
@@ -2427,7 +2531,7 @@ fn insert_aborted_tcp_flow(
             pending_remote_delivery: None,
             remote_closed: false,
             remote_aborted: true,
-            send_buffer_idle_ticks: 0,
+            send_buffer_idle_since: None,
         },
     );
 }
@@ -2800,7 +2904,7 @@ fn write_remote_data_to_sockets(
             continue;
         }
         if !flow.pending_remote.is_empty() {
-            flow.send_buffer_idle_ticks = 0;
+            flow.send_buffer_idle_since = None;
             grow_tcp_send_buffer(socket);
         }
         while socket.can_send() {
@@ -2998,7 +3102,29 @@ struct TcpCloseWait {
     state: tcp::State,
     /// The bytes of the remote the app has not acknowledged yet.
     undelivered: usize,
-    since: StdInstant,
+    since: TokioInstant,
+}
+
+impl TcpCloseWait {
+    /// How long a flow may wait in `state`: see
+    /// [`abort_stalled_closed_tcp_flows`].
+    fn bound(state: tcp::State) -> Duration {
+        if state == tcp::State::FinWait2 {
+            TUN_TCP_LINGER
+        } else {
+            TUN_TCP_GIVE_UP
+        }
+    }
+
+    fn deadline(&self) -> TokioInstant {
+        self.since + Self::bound(self.state)
+    }
+}
+
+/// When the first of `waits` runs out, if any flow waits: the TUN loop has a
+/// turn then, as nothing else may wake it.
+fn close_wait_deadline(waits: &HashMap<SocketHandle, TcpCloseWait>) -> Option<TokioInstant> {
+    waits.values().map(TcpCloseWait::deadline).min()
 }
 
 /// Aborts the sockets of the flows whose bridge is gone and that the app does
@@ -3016,21 +3142,17 @@ fn abort_stalled_closed_tcp_flows(
     sockets: &mut SocketSet<'static>,
     flows: &HashMap<SocketHandle, TcpFlow>,
     waits: &mut HashMap<SocketHandle, TcpCloseWait>,
-    now: StdInstant,
+    now: TokioInstant,
 ) -> bool {
     waits.retain(|handle, _| flows.contains_key(handle));
     let mut aborted = false;
     for (handle, flow) in flows {
         let socket = sockets.get_mut::<tcp::Socket>(*handle);
         let state = socket.state();
-        let bound = match state {
-            tcp::State::FinWait2 => TUN_TCP_LINGER,
-            _ if flow.remote_closed && socket.is_open() => TUN_TCP_GIVE_UP,
-            _ => {
-                waits.remove(handle);
-                continue;
-            }
-        };
+        if state != tcp::State::FinWait2 && !(flow.remote_closed && socket.is_open()) {
+            waits.remove(handle);
+            continue;
+        }
         let undelivered = flow
             .pending_remote_bytes
             .saturating_add(socket.send_queue());
@@ -3049,7 +3171,7 @@ fn abort_stalled_closed_tcp_flows(
                 since: now,
             };
         }
-        if now.saturating_duration_since(wait.since) >= bound {
+        if now >= wait.deadline() {
             socket.abort();
             waits.remove(handle);
             aborted = true;
@@ -5960,34 +6082,46 @@ fn grow_tcp_send_buffer(socket: &mut tcp::Socket<'static>) {
 }
 
 /// Gives back the send buffer of each flow whose remote has had nothing for
-/// it for [`TCP_SEND_BUFFER_IDLE_TICKS`] ticks and whose bytes the app has all
-/// acknowledged. A long-lived quiet flow (a push channel, a keep-alive
-/// connection) otherwise holds its 32 KiB until it closes;
-/// [`grow_tcp_send_buffer`] gives it a new one with the remote's next bytes.
-/// The receive buffer stays: the window it advertised cannot be taken back.
+/// it for [`TCP_SEND_BUFFER_IDLE`] and whose bytes the app has all
+/// acknowledged, on the housekeeping turn at `now`. A long-lived quiet flow (a
+/// push channel, a keep-alive connection) otherwise holds its 32 KiB until it
+/// closes; [`grow_tcp_send_buffer`] gives it a new one with the remote's next
+/// bytes. The receive buffer stays: the window it advertised cannot be taken
+/// back.
+///
+/// Returns when the earliest buffer still held by an idle flow is due, for the
+/// housekeeping turn that gives it back: the TUN loop has no periodic tick,
+/// so a quiet flow is otherwise never looked at again.
 fn release_idle_tcp_send_buffers(
     sockets: &mut SocketSet<'static>,
     flows: &mut HashMap<SocketHandle, TcpFlow>,
-) {
+    now: TokioInstant,
+) -> Option<TokioInstant> {
+    let mut next_release: Option<TokioInstant> = None;
     for (handle, flow) in flows {
         let socket = sockets.get_mut::<tcp::Socket>(*handle);
         if socket.send_capacity() == 0 {
+            flow.send_buffer_idle_since = None;
             continue;
         }
         if !flow.pending_remote.is_empty()
             || flow.has_deferred_remote_data
             || socket.send_queue() > 0
         {
-            flow.send_buffer_idle_ticks = 0;
+            flow.send_buffer_idle_since = None;
             continue;
         }
-        flow.send_buffer_idle_ticks = flow.send_buffer_idle_ticks.saturating_add(1);
-        if flow.send_buffer_idle_ticks >= TCP_SEND_BUFFER_IDLE_TICKS
-            && socket.shrink_send_buffer(Vec::new())
-        {
-            flow.send_buffer_idle_ticks = 0;
+        let idle_since = *flow.send_buffer_idle_since.get_or_insert(now);
+        let due = idle_since + TCP_SEND_BUFFER_IDLE;
+        if now < due {
+            next_release = Some(next_release.map_or(due, |next| next.min(due)));
+            continue;
         }
+        // The send queue is empty, so smoltcp takes the empty buffer.
+        socket.shrink_send_buffer(Vec::new());
+        flow.send_buffer_idle_since = None;
     }
+    next_release
 }
 
 fn tcp_listener_capacity_available(
@@ -7784,15 +7918,61 @@ mod tests {
     }
 
     #[test]
-    fn idle_wait_plan_defers_stack_drive_until_smoltcp_deadline() {
+    fn idle_wait_plan_sets_no_timer() {
         let now = Instant::from_millis(1_000);
 
-        let plan = tun_wait_plan(None, now, TUN_FLOW_STATS_INTERVAL, false, false);
+        let plan = tun_wait_plan(None, now, None, false, false);
 
         assert_eq!(
             plan,
             TunWaitPlan {
-                duration: TUN_FLOW_STATS_INTERVAL,
+                duration: None,
+                drive_tcp_stack_on_expiry: false,
+            }
+        );
+    }
+
+    #[test]
+    fn housekeeping_wait_defers_stack_drive_until_smoltcp_deadline() {
+        let now = Instant::from_millis(1_000);
+
+        let plan = tun_wait_plan(None, now, Some(TUN_FLOW_STATS_INTERVAL), false, false);
+
+        assert_eq!(
+            plan,
+            TunWaitPlan {
+                duration: Some(TUN_FLOW_STATS_INTERVAL),
+                drive_tcp_stack_on_expiry: false,
+            }
+        );
+    }
+
+    #[test]
+    fn distant_smoltcp_deadline_is_waited_for_without_a_tick() {
+        let now = Instant::from_millis(1_000);
+        // A retransmission backed off to three seconds, past any
+        // housekeeping turn, and with no turn needed at all.
+        let deadline = Instant::from_millis(4_000);
+
+        for housekeeping_wait in [None, Some(Duration::from_secs(5))] {
+            assert_eq!(
+                tun_wait_plan(Some(deadline), now, housekeeping_wait, false, false),
+                TunWaitPlan {
+                    duration: Some(Duration::from_secs(3)),
+                    drive_tcp_stack_on_expiry: true,
+                }
+            );
+        }
+        assert_eq!(
+            tun_wait_plan(
+                Some(deadline),
+                now,
+                Some(TUN_FLOW_STATS_INTERVAL),
+                false,
+                false
+            ),
+            TunWaitPlan {
+                duration: Some(TUN_FLOW_STATS_INTERVAL),
                 drive_tcp_stack_on_expiry: false,
             }
         );
@@ -7805,7 +7985,7 @@ mod tests {
         let plan = tun_wait_plan(
             Some(Instant::from_millis(1_010)),
             now,
-            TUN_FLOW_STATS_INTERVAL,
+            Some(TUN_FLOW_STATS_INTERVAL),
             false,
             false,
         );
@@ -7813,7 +7993,7 @@ mod tests {
         assert_eq!(
             plan,
             TunWaitPlan {
-                duration: Duration::from_millis(10),
+                duration: Some(Duration::from_millis(10)),
                 drive_tcp_stack_on_expiry: true,
             }
         );
@@ -7823,21 +8003,23 @@ mod tests {
     fn outbound_backpressure_defers_tcp_drive_until_queued_packets_are_flushed() {
         let now = Instant::from_millis(1_000);
 
-        let plan = tun_wait_plan(
-            Some(Instant::from_millis(0)),
-            now,
-            TUN_FLOW_STATS_INTERVAL,
-            false,
-            true,
-        );
+        for housekeeping_wait in [None, Some(TUN_FLOW_STATS_INTERVAL)] {
+            let plan = tun_wait_plan(
+                Some(Instant::from_millis(0)),
+                now,
+                housekeeping_wait,
+                false,
+                true,
+            );
 
-        assert_eq!(
-            plan,
-            TunWaitPlan {
-                duration: TUN_BACKPRESSURE_RETRY_INTERVAL,
-                drive_tcp_stack_on_expiry: false,
-            }
-        );
+            assert_eq!(
+                plan,
+                TunWaitPlan {
+                    duration: Some(TUN_BACKPRESSURE_RETRY_INTERVAL),
+                    drive_tcp_stack_on_expiry: false,
+                }
+            );
+        }
     }
 
     #[tokio::test]
@@ -8685,7 +8867,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
-                send_buffer_idle_ticks: 0,
+                send_buffer_idle_since: None,
             },
         );
 
@@ -8797,7 +8979,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
-                send_buffer_idle_ticks: 0,
+                send_buffer_idle_since: None,
             },
         );
 
@@ -8849,7 +9031,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
-                send_buffer_idle_ticks: 0,
+                send_buffer_idle_since: None,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -8906,29 +9088,56 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
-                send_buffer_idle_ticks: 0,
+                send_buffer_idle_since: None,
             },
         );
         let send_capacity =
             |sockets: &SocketSet<'static>| sockets.get::<tcp::Socket>(handle).send_capacity();
 
-        for _ in 1..TCP_SEND_BUFFER_IDLE_TICKS {
-            release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows);
-        }
+        let start = TokioInstant::now();
+        let at = |seconds: u64| start + Duration::from_secs(seconds);
+
+        // The first turn that finds the flow idle starts the wait and asks for
+        // the turn that gives the buffer back.
+        assert_eq!(
+            release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows, at(0)),
+            Some(at(0) + TCP_SEND_BUFFER_IDLE)
+        );
+        assert_eq!(
+            release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows, at(1)),
+            Some(at(0) + TCP_SEND_BUFFER_IDLE)
+        );
         assert_eq!(send_capacity(&sockets), TCP_BUFFER_SIZE);
 
-        // Data from the remote starts the count again.
+        // Data from the remote starts the wait again.
         tcp_flows.get_mut(&handle).unwrap().has_deferred_remote_data = true;
-        release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows);
-        assert_eq!(tcp_flows[&handle].send_buffer_idle_ticks, 0);
+        assert_eq!(
+            release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows, at(3)),
+            None
+        );
+        assert_eq!(tcp_flows[&handle].send_buffer_idle_since, None);
         tcp_flows.get_mut(&handle).unwrap().has_deferred_remote_data = false;
-        for _ in 1..TCP_SEND_BUFFER_IDLE_TICKS {
-            release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows);
-        }
+        assert_eq!(
+            release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows, at(5)),
+            Some(at(5) + TCP_SEND_BUFFER_IDLE)
+        );
         assert_eq!(send_capacity(&sockets), TCP_BUFFER_SIZE);
-        release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows);
+        assert_eq!(
+            release_idle_tcp_send_buffers(
+                &mut sockets,
+                &mut tcp_flows,
+                at(5) + TCP_SEND_BUFFER_IDLE
+            ),
+            None
+        );
         assert_eq!(send_capacity(&sockets), 0);
-        assert_eq!(tcp_flows[&handle].send_buffer_idle_ticks, 0);
+        assert_eq!(tcp_flows[&handle].send_buffer_idle_since, None);
+
+        // A flow without a send buffer asks for no turn.
+        assert_eq!(
+            release_idle_tcp_send_buffers(&mut sockets, &mut tcp_flows, at(60)),
+            None
+        );
 
         // The remote's next bytes give the socket a buffer again.
         let flow = tcp_flows.get_mut(&handle).unwrap();
@@ -8966,7 +9175,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
-                send_buffer_idle_ticks: 0,
+                send_buffer_idle_since: None,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -9019,7 +9228,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
-                send_buffer_idle_ticks: 0,
+                send_buffer_idle_since: None,
             },
         )]);
         let mut flow_budget_state = test_flow_budget(256);
@@ -9090,7 +9299,7 @@ mod tests {
             pending_remote_delivery: None,
             remote_closed: false,
             remote_aborted: false,
-            send_buffer_idle_ticks: 0,
+            send_buffer_idle_since: None,
         };
 
         drop(flow);
@@ -9148,7 +9357,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
-                send_buffer_idle_ticks: 0,
+                send_buffer_idle_since: None,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -9208,7 +9417,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
-                send_buffer_idle_ticks: 0,
+                send_buffer_idle_since: None,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -9272,7 +9481,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
-                send_buffer_idle_ticks: 0,
+                send_buffer_idle_since: None,
             },
         );
         let mut udp_flows = HashMap::new();
@@ -9372,7 +9581,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
-                send_buffer_idle_ticks: 0,
+                send_buffer_idle_since: None,
             },
         );
 
@@ -9473,7 +9682,7 @@ mod tests {
                 pending_remote_delivery: None,
                 remote_closed: true,
                 remote_aborted: false,
-                send_buffer_idle_ticks: 0,
+                send_buffer_idle_since: None,
             },
         );
         assert_eq!(
@@ -9570,7 +9779,7 @@ mod tests {
                     pending_remote_delivery: None,
                     remote_closed: false,
                     remote_aborted: false,
-                    send_buffer_idle_ticks: 0,
+                    send_buffer_idle_since: None,
                 },
             )]);
             let mut harness = Self {
@@ -9640,7 +9849,7 @@ mod tests {
         fn sweep(
             &mut self,
             waits: &mut HashMap<SocketHandle, TcpCloseWait>,
-            now: StdInstant,
+            now: TokioInstant,
         ) -> bool {
             abort_stalled_closed_tcp_flows(&mut self.sockets, &self.tcp_flows, waits, now)
         }
@@ -9674,12 +9883,15 @@ mod tests {
         assert_eq!(harness.state(), tcp::State::FinWait2);
 
         let mut waits = HashMap::new();
-        let start = StdInstant::now();
+        let start = TokioInstant::now();
         assert!(!harness.sweep(&mut waits, start));
+        // Nothing else wakes the TUN loop for it: the sweep is due then.
+        assert_eq!(close_wait_deadline(&waits), Some(start + TUN_TCP_LINGER));
         assert!(!harness.sweep(&mut waits, start + TUN_TCP_LINGER - Duration::from_secs(1)));
         assert_eq!(harness.state(), tcp::State::FinWait2);
 
         assert!(harness.sweep(&mut waits, start + TUN_TCP_LINGER));
+        assert_eq!(close_wait_deadline(&waits), None);
         assert!(
             harness.resets_and_forgets_the_flow(),
             "the app was not told the connection is gone, or the flow kept its place"
@@ -9696,8 +9908,9 @@ mod tests {
         assert_eq!(harness.state(), tcp::State::FinWait1);
 
         let mut waits = HashMap::new();
-        let start = StdInstant::now();
+        let start = TokioInstant::now();
         assert!(!harness.sweep(&mut waits, start));
+        assert_eq!(close_wait_deadline(&waits), Some(start + TUN_TCP_GIVE_UP));
         assert!(
             !harness.sweep(&mut waits, start + TUN_TCP_LINGER),
             "the linger is for a flow that has delivered everything"
@@ -9708,6 +9921,10 @@ mod tests {
         harness.client_acknowledges(1 + RESPONSE.len() as u32);
         assert_eq!(harness.state(), tcp::State::FinWait1);
         assert!(!harness.sweep(&mut waits, progress));
+        assert_eq!(
+            close_wait_deadline(&waits),
+            Some(progress + TUN_TCP_GIVE_UP)
+        );
         assert!(!harness.sweep(&mut waits, start + TUN_TCP_GIVE_UP));
         assert!(!harness.sweep(
             &mut waits,
@@ -9728,7 +9945,7 @@ mod tests {
         assert_eq!(harness.state(), tcp::State::FinWait2);
         // The flow that had this handle before waited in the same state, and
         // no sweep ran between its end and this one.
-        let start = StdInstant::now();
+        let start = TokioInstant::now();
         let mut waits = HashMap::from([(
             harness.handle,
             TcpCloseWait {
@@ -9753,12 +9970,13 @@ mod tests {
     fn an_open_tcp_flow_is_never_reset_for_waiting() {
         let mut harness = TcpCloseHarness::established();
         let mut waits = HashMap::new();
-        let start = StdInstant::now();
+        let start = TokioInstant::now();
 
         assert!(!harness.sweep(&mut waits, start));
         assert!(!harness.sweep(&mut waits, start + 2 * TUN_TCP_GIVE_UP));
 
         assert!(waits.is_empty());
+        assert_eq!(close_wait_deadline(&waits), None);
         assert_eq!(harness.state(), tcp::State::Established);
     }
 
