@@ -684,6 +684,13 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     /// keeps 1500. Larger MTUs cost Network Extension memory: about 3 KiB per TCP flow at 9000.
     open func tunMtu() throws -> XrayTunMtu? { nil }
 
+    /// Override to run the core's runtime on this many worker threads, 1...64 (ABI 1.18).
+    /// Called once per configured start, before DNS bootstrap and network settings. Every core
+    /// the start creates uses it: the checks before network settings, the startup-probe
+    /// preflight and the data path. A count outside 1...64 fails startup before network
+    /// settings. Returning nil keeps the library's default.
+    open func runtimeWorkerThreads() throws -> UInt32? { nil }
+
     /// Override to opt into host admission for new TCP/UDP flows in either TUN backend.
     /// Called once per configured start, before DNS bootstrap and network settings.
     /// Returning nil preserves the original path without admission callbacks.
@@ -716,12 +723,14 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         _ config: ResolvedConfig,
         hysteriaStreamLimits: () throws -> XrayHysteriaStreamLimits?,
         tunAdmissionOptions: () throws -> XrayTunAdmissionOptions?,
-        tunMtu: () throws -> XrayTunMtu? = { nil }
+        tunMtu: () throws -> XrayTunMtu? = { nil },
+        runtimeWorkerThreads: () throws -> UInt32? = { nil }
     ) throws -> ResolvedConfig {
         var resolved = config
         resolved.hysteriaStreamLimits = try hysteriaStreamLimits()
         resolved.tunAdmission = try tunAdmissionOptions()
         resolved.tunMtu = try tunMtu().map(XrayCore.supportedTunMtu) ?? .standard
+        resolved.runtimeWorkerThreads = try runtimeWorkerThreads()
         return resolved
     }
 
@@ -791,7 +800,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 resolvedConfig,
                 hysteriaStreamLimits: hysteriaStreamLimits,
                 tunAdmissionOptions: tunAdmissionOptions,
-                tunMtu: tunMtu
+                tunMtu: tunMtu,
+                runtimeWorkerThreads: runtimeWorkerThreads
             )
         } catch {
             if lifecycle.cancelStart(lifecycleToken) {
@@ -870,7 +880,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             try Self.validateConfigBeforeApplyingNetworkSettings(
                 resolvedConfig.json,
                 dnsConfiguration: resolvedConfig.dnsConfiguration,
-                geodataSelection: resolvedConfig.geodataSelection
+                geodataSelection: resolvedConfig.geodataSelection,
+                runtimeWorkerThreads: resolvedConfig.runtimeWorkerThreads
             )
             guard shouldContinue() else {
                 throw XrayPacketTunnelProviderError.dnsBootstrapTimedOut
@@ -885,7 +896,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             try Self.validateConfigBeforeApplyingNetworkSettings(
                 preparedConfig.json,
                 dnsConfiguration: preparedConfig.dnsConfiguration,
-                geodataSelection: preparedConfig.geodataSelection
+                geodataSelection: preparedConfig.geodataSelection,
+                runtimeWorkerThreads: preparedConfig.runtimeWorkerThreads
             )
             return preparedConfig
         }
@@ -1318,6 +1330,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         var hysteriaStreamLimits: XrayHysteriaStreamLimits? = nil
         var tunAdmission: XrayTunAdmissionOptions? = nil
         var tunMtu: XrayTunMtu = .standard
+        var runtimeWorkerThreads: UInt32? = nil
         var geodataSelection = GeodataSelection(
             directory: Bundle.main.resourceURL,
             policy: .fallbackToDefaults
@@ -2507,12 +2520,14 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         geodataSelection: GeodataSelection = GeodataSelection(
             directory: Bundle.main.resourceURL,
             policy: .fallbackToDefaults
-        )
+        ),
+        runtimeWorkerThreads: UInt32? = nil
     ) throws {
         _ = try XrayCore(
             configJSON: configJSON,
             geodataSearchDirectory: geodataSelection.directory,
-            geodataSearchPolicy: geodataSelection.policy
+            geodataSearchPolicy: geodataSelection.policy,
+            runtimeWorkerThreads: runtimeWorkerThreads
         )
         let explicitDNS: XrayMobileExplicitDNSConfiguration
         switch dnsConfiguration {
@@ -2982,7 +2997,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 fileLogDirectory: diagnosticLogDirectory,
                 hysteriaStreamLimits: resolvedConfig.hysteriaStreamLimits,
                 tunAdmission: resolvedConfig.tunAdmission,
-                tunMtu: resolvedConfig.tunMtu
+                tunMtu: resolvedConfig.tunMtu,
+                runtimeWorkerThreads: resolvedConfig.runtimeWorkerThreads
             )
         }
         return try XrayCore(
@@ -2998,7 +3014,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             fileLogDirectory: diagnosticLogDirectory,
             hysteriaStreamLimits: resolvedConfig.hysteriaStreamLimits,
             tunAdmission: resolvedConfig.tunAdmission,
-            tunMtu: resolvedConfig.tunMtu
+            tunMtu: resolvedConfig.tunMtu,
+            runtimeWorkerThreads: resolvedConfig.runtimeWorkerThreads
         )
     }
 

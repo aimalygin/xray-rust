@@ -708,8 +708,8 @@ class XrayCore private constructor(handle: Long) : Closeable {
                 "TUN MTU must be in ${XrayTunInterface.MIN_MTU}..${XrayTunInterface.MAX_MTU}, got $mtu"
             }
 
-        /** Null keeps the library's default count. */
-        private fun requireRuntimeWorkerThreadsInRange(workers: Int?) =
+        /** Null keeps the library's default count. [XrayVpnService] checks its hook with it too. */
+        internal fun requireRuntimeWorkerThreadsInRange(workers: Int?) =
             require(workers == null || workers in 1..MAX_RUNTIME_WORKER_THREADS) {
                 "runtime worker threads must be in 1..$MAX_RUNTIME_WORKER_THREADS, got $workers"
             }

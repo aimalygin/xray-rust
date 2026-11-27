@@ -66,7 +66,8 @@ artifact directory.
   typed TUN diagnostic queues,
   startup probe with a pre-start preflight (ABI 1.12), blocking on-demand
   outbound probe (ABI 1.9) with in-flight cancellation (ABI 1.15), TUN MTU (ABI 1.16), runtime profiles,
-  the runtime's worker threads (ABI 1.18, `runtimeWorkerThreads` of `XrayCore.create`), DNS bootstrap
+  the runtime's worker threads (ABI 1.18, `runtimeWorkerThreads` of `XrayCore.create`,
+  `runtimeWorkerThreads()` override of `XrayVpnService`), DNS bootstrap
   policy, and socket protection.
 - `XrayVlessUrlImporter`: fail-closed VLESS share-link conversion into a
   self-contained mobile TUN profile.

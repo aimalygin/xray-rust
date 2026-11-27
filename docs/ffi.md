@@ -165,7 +165,12 @@ the path before lowering it.
 
 Swift `XrayCore` initializers take an optional `runtimeWorkerThreads: UInt32?`
 and Kotlin `XrayCore.create` an optional `runtimeWorkerThreads: Int?`. Omission
-keeps the default; an explicit value requires ABI 1.18 and the capability.
+keeps the default; an explicit value requires ABI 1.18 and the capability. The
+reference VPN integrations take the count from an override of
+`XrayPacketTunnelProvider.runtimeWorkerThreads()` or
+`XrayVpnService.runtimeWorkerThreads()`, read once per start and given to every
+core the start creates; a count outside 1..=64 fails the start before network
+settings are applied or the VPN interface is established.
 
 ### Core lifecycle
 

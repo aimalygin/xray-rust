@@ -434,6 +434,16 @@ long-term supported release series.
   `XrayCore` initializers and Kotlin `XrayCore.create` take an optional
   `runtimeWorkerThreads`. The default stays the available parallelism within
   2..=6 on every TUN runtime profile.
+- `XrayPacketTunnelProvider` and `XrayVpnService` take ABI 1.18's runtime
+  worker count from an override, `runtimeWorkerThreads()`, as they take
+  their other host options. Each start reads it once and gives it to every
+  core it creates: on Apple the checks before network settings, the
+  startup-probe preflight and the data path; on Android the preflight and
+  the data path. A count outside 1 to 64 fails the start before network
+  settings are applied or the VPN interface is established; returning nil
+  or null keeps the library's default. A host on either integration could
+  not set the count before, since only a host that creates `XrayCore`
+  itself reaches the initializer's parameter.
 
 ## 0.10.1 - 2026-11-16
 

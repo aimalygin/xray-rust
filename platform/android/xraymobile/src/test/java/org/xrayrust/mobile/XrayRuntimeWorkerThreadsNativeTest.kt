@@ -29,6 +29,20 @@ class XrayRuntimeWorkerThreadsNativeTest {
         }
     }
 
+    @Test
+    fun vpnServiceChecksItsHookWithTheSameRange() {
+        assumeTrue(java.lang.Boolean.getBoolean("xray.test.nativeImport"))
+        // XrayVpnService.runtimeWorkerThreads() goes through this before establish().
+        for (workers in listOf(null, 1, MAX_RUNTIME_WORKER_THREADS)) {
+            XrayCore.requireRuntimeWorkerThreadsInRange(workers)
+        }
+        for (workers in listOf(-1, 0, MAX_RUNTIME_WORKER_THREADS + 1)) {
+            assertThrows(IllegalArgumentException::class.java) {
+                XrayCore.requireRuntimeWorkerThreadsInRange(workers)
+            }
+        }
+    }
+
     private companion object {
         const val FREEDOM_CONFIG = """{
             "inbounds": [{"tag": "tun-in", "protocol": "tun"}],
