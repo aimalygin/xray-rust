@@ -11,6 +11,12 @@ pub const DEADLINE: Duration = Duration::from_secs(20);
 pub const USER: &str = "synthetic-socks-user";
 pub const PASS: &str = "synthetic-socks-pass";
 pub const REMOTE_DOMAIN: &str = "echo.socks-interop.test";
+/// Starts of Xray whose port another socket took, each on fresh ports. The
+/// harness picks both ports by binding them and lets go for Xray to bind; a
+/// parallel test's socket can take one in between ("address already in
+/// use"). Only the TCP listen races: Xray 26.11.9's SOCKS inbound binds no
+/// UDP socket at startup, `udp` on or not.
+const PORT_ATTEMPTS: usize = 5;
 
 /// Pinned Xray with a password inbound and a no-auth inbound on loopback.
 pub struct XrayServer {
@@ -39,6 +45,26 @@ impl XrayServer {
     }
 
     async fn start_with_options(listen: IpAddr, tls: bool, outbound: Option<Value>) -> Self {
+        for attempt in 1..=PORT_ATTEMPTS {
+            let mut server = Self::spawn(listen, tls, outbound.clone());
+            if server.wait_ready().await {
+                return server;
+            }
+            assert!(
+                attempt < PORT_ATTEMPTS,
+                "Xray's ports were taken on all {PORT_ATTEMPTS} starts"
+            );
+            eprintln!(
+                "Xray lost port {} or {} to another socket; starting it again on fresh \
+                 ports ({attempt} of {PORT_ATTEMPTS})",
+                server.password, server.noauth
+            );
+        }
+        unreachable!("the last start returns or panics")
+    }
+
+    /// Writes a config on fresh ports and spawns Xray with it.
+    fn spawn(listen: IpAddr, tls: bool, outbound: Option<Value>) -> Self {
         let binary = std::env::var_os("XRAY_CLIENT_PROTOCOL_BINARY")
             .expect("run scripts/check-socks-interop.sh");
         let directory = std::env::temp_dir().join(format!(
@@ -95,23 +121,27 @@ impl XrayServer {
             .stderr(log)
             .spawn()
             .unwrap();
-        let mut server = Self {
+        Self {
             child,
             directory,
             password,
             noauth,
             connector,
-        };
-        server.wait_ready().await;
-        server
+        }
     }
 
-    async fn wait_ready(&mut self) {
+    /// Waits for Xray's startup record: `false` when Xray exited because
+    /// another socket held one of its ports, a panic when it exited for
+    /// anything else.
+    async fn wait_ready(&mut self) -> bool {
         let deadline = tokio::time::Instant::now() + DEADLINE;
         loop {
-            assert!(self.child.try_wait().unwrap().is_none(), "Xray exited");
+            if self.child.try_wait().unwrap().is_some() {
+                assert!(self.lost_port(), "Xray exited");
+                return false;
+            }
             if self.log().contains("core: Xray 26.11.9 started") {
-                return;
+                return true;
             }
             assert!(
                 tokio::time::Instant::now() < deadline,
@@ -119,6 +149,16 @@ impl XrayServer {
             );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
+    }
+
+    /// Whether Xray's log says another socket held one of its ports, as Go
+    /// words a failed listen: `listen tcp 127.0.0.1:37655: bind: address
+    /// already in use`.
+    fn lost_port(&self) -> bool {
+        let log = self.log();
+        [self.password, self.noauth]
+            .iter()
+            .any(|port| log.contains(&format!(":{port}: bind: address already in use")))
     }
 
     pub fn log(&self) -> String {
