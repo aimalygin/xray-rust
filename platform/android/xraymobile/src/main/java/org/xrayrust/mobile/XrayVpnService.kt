@@ -586,6 +586,15 @@ open class XrayVpnService : VpnService() {
     protected open fun tunAdmissionOptions(): XrayTunAdmissionOptions? = null
 
     /**
+     * Optional worker thread count, 1..64, for the runtime of every core a start creates: the
+     * startup-probe preflight core and the data-path core (ABI 1.18). Null keeps the library's
+     * default. Read once per start, on the start worker, before the VPN interface is
+     * established; a count outside 1..64 reaches [onXrayTunnelStartFailed] with an
+     * [IllegalArgumentException] and the interface never comes up.
+     */
+    protected open fun runtimeWorkerThreads(): Int? = null
+
+    /**
      * Optional existing directory with `geosite.dat`, `geoip.dat` and `ext:` files, searched
      * exclusively. The startup-probe preflight core and the data-path core both load it, so a
      * missing file or code reaches [onXrayTunnelStartFailed].
@@ -750,6 +759,9 @@ open class XrayVpnService : VpnService() {
             if (rebindEnabled) requireNetworkStatePermission()
             val preparedConfig = prepareAndroidVpnConfig(configJson)
             val geodataSearchDirectory = geodataSearchDirectory()
+            // Checked before establish(), as XrayCore.create would check it only after.
+            val runtimeWorkerThreads = runtimeWorkerThreads()
+            XrayCore.requireRuntimeWorkerThreadsInRange(runtimeWorkerThreads)
             ensureStartIsActive(attempt)
             // No TUN fd, listeners or admission policy: this core only runs the probe. Routing
             // still compiles geodata rules, so it needs the same search directory.
@@ -760,6 +772,7 @@ open class XrayVpnService : VpnService() {
                     startupProbe = probe,
                     dnsBootstrapMode = XrayDnsBootstrapMode.StaticOnly,
                     geodataSearchDirectory = geodataSearchDirectory,
+                    runtimeWorkerThreads = runtimeWorkerThreads,
                 )
             }
             // One value for the interface and the core, whatever buildTunnel() set.
@@ -781,6 +794,7 @@ open class XrayVpnService : VpnService() {
                 tunAdmission = tunAdmissionOptions(),
                 geodataSearchDirectory = geodataSearchDirectory,
                 tunMtu = mtu,
+                runtimeWorkerThreads = runtimeWorkerThreads,
                 tunFileDescriptor = when (tunBackend) {
                     XrayTunBackend.PacketPump -> null
                     XrayTunBackend.FileDescriptor -> XrayTunFileDescriptor(

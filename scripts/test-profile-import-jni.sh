@@ -27,5 +27,5 @@ platform/android/gradlew -p platform/android :xraymobile:testDebugUnitTest \
   --tests '*XrayProfileImporter*' --tests '*XrayOutboundProbeNative*' --tests '*XrayHysteriaNative*' \
   --tests '*XrayTunAdmissionNative*' --tests '*XrayNetworkChangeNative*' \
   --tests '*XrayStartupProbePreflight*' --tests '*XrayGeodataNative*' --tests '*XrayTunStatsNative*' \
-  --tests '*XrayTunMtuNative*' \
+  --tests '*XrayTunMtuNative*' --tests '*XrayRuntimeWorkerThreadsNative*' \
   --console=plain "$@"

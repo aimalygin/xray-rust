@@ -12,6 +12,46 @@ final class XrayPacketTunnelHostOptionsTests: XCTestCase {
         XCTAssertNil(resolved.hysteriaStreamLimits)
         XCTAssertNil(resolved.tunAdmission)
         XCTAssertEqual(resolved.tunMtu, .standard)
+        XCTAssertNil(resolved.runtimeWorkerThreads)
+    }
+
+    func testHostWorkerCountReachesEveryCoreOfTheStart() throws {
+        var calls = 0
+        let resolved = try XrayPacketTunnelProvider.resolvingHostOptions(
+            configuration(), hysteriaStreamLimits: { nil }, tunAdmissionOptions: { nil },
+            runtimeWorkerThreads: { calls += 1; return 2 })
+        XCTAssertEqual(calls, 1)
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(resolved)
+        XCTAssertEqual(prepared.runtimeWorkerThreads, 2)
+        try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+            XrayClientProfile.directTunConfigJSON, dnsConfiguration: .custom(["192.0.2.53"]),
+            geodataSelection: .init(directory: nil, policy: .fallbackToDefaults),
+            runtimeWorkerThreads: prepared.runtimeWorkerThreads)
+        // The startup-probe preflight and the data path both come from makeCore.
+        let core = try XrayPacketTunnelProvider.makeCore(
+            resolvedConfig: prepared, borrowedDarwinTunFileDescriptor: nil, diagnosticLogDirectory: nil)
+        try core.start()
+        try core.stop()
+    }
+
+    func testOutOfRangeWorkerCountFailsBeforeNetworkSettings() throws {
+        let resolved = try XrayPacketTunnelProvider.resolvingHostOptions(
+            configuration(), hysteriaStreamLimits: { nil }, tunAdmissionOptions: { nil },
+            runtimeWorkerThreads: { 65 })
+        // The same check passes without the count, so the count alone fails it.
+        try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+            XrayClientProfile.directTunConfigJSON, dnsConfiguration: .custom(["192.0.2.53"]),
+            geodataSelection: .init(directory: nil, policy: .fallbackToDefaults))
+        XCTAssertThrowsError(try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+            XrayClientProfile.directTunConfigJSON, dnsConfiguration: .custom(["192.0.2.53"]),
+            geodataSelection: .init(directory: nil, policy: .fallbackToDefaults),
+            runtimeWorkerThreads: resolved.runtimeWorkerThreads)) { error in
+            guard case XrayCoreError.status = error else {
+                return XCTFail("unexpected error: \(error)")
+            }
+        }
+        XCTAssertThrowsError(try XrayPacketTunnelProvider.makeCore(
+            resolvedConfig: resolved, borrowedDarwinTunFileDescriptor: nil, diagnosticLogDirectory: nil))
     }
 
     func testHostMtuReachesBothTheInterfaceAndTheCoreOptions() throws {
