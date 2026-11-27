@@ -99,6 +99,54 @@ object XrayVlessUrlImporter {
         )
     }
 
+    /**
+     * Adds `"routeOnly": true` to the sniffing of a profile this importer built before 0.11.0, or
+     * returns null for any other configuration.
+     *
+     * Up to 0.10.1 the importer sniffed on its `tun-in` TUN inbound without `routeOnly`. TUN did
+     * not sniff TCP flows to real addresses then, so such a flow kept the address its app chose.
+     * Since 0.11.0 TUN sniffs them, and without `routeOnly` the profile would dial each one by the
+     * name it sends: a flow to the local network would miss the private-address rule, and a name
+     * an app sends only as a decoy would be dialed. With it the name routes the flow and the
+     * address is dialed, as before.
+     *
+     * [XrayVpnService] applies this at every start. A host that creates [XrayCore] itself, or that
+     * keeps saved profiles of its own, can apply it the same way.
+     *
+     * Only the importer's exact sniffing is recognized: `enabled` true, `destOverride`
+     * `["http", "tls", "quic"]`, `metadataOnly` false and no other field, on a `tun` inbound tagged
+     * `tun-in`. A configuration that sets `routeOnly` itself, to either value, is left alone, so
+     * `"routeOnly": false` keeps dialing the sniffed name.
+     */
+    fun configJsonAddingRouteOnlyToImportedSniffing(configJson: String): String? {
+        val tokener = JSONTokener(configJson)
+        val root = try {
+            (tokener.nextValue() as? JSONObject)?.takeIf { tokener.nextClean() == END_OF_INPUT }
+        } catch (_: JSONException) {
+            null
+        } ?: return null
+        val inbounds = root.optJSONArray("inbounds") ?: return null
+        var changed = false
+        for (index in 0 until inbounds.length()) {
+            val inbound = inbounds.optJSONObject(index) ?: continue
+            if (inbound.opt("tag") != "tun-in" || inbound.opt("protocol") != "tun") continue
+            val sniffing = inbound.optJSONObject("sniffing") ?: continue
+            if (!isImportedSniffing(sniffing)) continue
+            sniffing.put("routeOnly", true)
+            changed = true
+        }
+        return if (changed) root.toString() else null
+    }
+
+    /** The sniffing every release of the importer up to 0.10.1 wrote. */
+    private fun isImportedSniffing(sniffing: JSONObject): Boolean {
+        if (sniffing.length() != 3) return false
+        if (sniffing.opt("enabled") != true || sniffing.opt("metadataOnly") != false) return false
+        val destOverride = sniffing.optJSONArray("destOverride") ?: return false
+        return (0 until destOverride.length()).map { destOverride.opt(it) } ==
+            listOf("http", "tls", "quic")
+    }
+
     private fun parseEndpoint(rawUrl: String): Endpoint {
         val normalized = normalizeVlessUrl(rawUrl)
         val uri = try {

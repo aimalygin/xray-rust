@@ -263,7 +263,14 @@ require an explicit host `dnsServers` or `xrayDNSServers` override. The
 reference UI's **Default DNS** and **DNS Proxy** test overrides described below
 are explicit alternatives. Imported VLESS profiles keep VLESS as the default
 outbound and only bypass private IP ranges through Freedom; the importer does
-not add domain-based captive-portal bypasses.
+not add domain-based captive-portal bypasses. Their TUN inbound sniffs with
+`routeOnly`, so a flow to a real address is routed by its sniffed name and
+dialed by its address. Profiles the importer built before 0.11.0 sniff without
+`routeOnly`; `XrayPacketTunnelProvider` adds it at every start, and a host
+that creates `XrayCore` itself can apply
+`XrayVlessURLImporter.configJSONAddingRouteOnlyToImportedSniffing(_:)` or
+`XrayClientProfile.addingRouteOnlyToImportedSniffingIfNeeded()`. A
+configuration that sets `routeOnly` itself is left as it is.
 
 Development `0.6` also imports bounded
 `mlkem768x25519plus.{native|xorpub|random}.{1rtt|0rtt}` with one-to-eight

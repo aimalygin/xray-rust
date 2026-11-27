@@ -1547,6 +1547,96 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(dns["queryStrategy"] as? String, "UseIPv4")
     }
 
+    func testRouteOnlyMigrationRestoresAProfileImportedBeforeTheImporterSetIt() throws {
+        let profile = try XrayVlessURLImporter.profile(
+            from: Self.importedRealityURL,
+            providerBundleIdentifier: "com.example.tunnel",
+            hostBundleIdentifier: "com.example"
+        )
+        // What the importer saved up to 0.10.1: the same profile without routeOnly.
+        var saved = try Self.jsonRoot(profile.configJSON)
+        var inbounds = try XCTUnwrap(saved["inbounds"] as? [[String: Any]])
+        var sniffing = try XCTUnwrap(inbounds[0]["sniffing"] as? [String: Any])
+        sniffing.removeValue(forKey: "routeOnly")
+        inbounds[0]["sniffing"] = sniffing
+        saved["inbounds"] = inbounds
+        let savedJSON = String(
+            decoding: try JSONSerialization.data(withJSONObject: saved),
+            as: UTF8.self
+        )
+
+        let migratedJSON = try XCTUnwrap(
+            XrayVlessURLImporter.configJSONAddingRouteOnlyToImportedSniffing(savedJSON)
+        )
+
+        var migrated = try Self.jsonRoot(migratedJSON)
+        var migratedInbounds = try XCTUnwrap(migrated["inbounds"] as? [[String: Any]])
+        var migratedSniffing = try XCTUnwrap(migratedInbounds[0]["sniffing"] as? [String: Any])
+        XCTAssertEqual(migratedSniffing["routeOnly"] as? Bool, true)
+        // routeOnly is the only change.
+        migratedSniffing.removeValue(forKey: "routeOnly")
+        migratedInbounds[0]["sniffing"] = migratedSniffing
+        migrated["inbounds"] = migratedInbounds
+        XCTAssertTrue((migrated as NSDictionary).isEqual(to: saved))
+        // A migrated profile, like one the importer builds now, needs nothing more.
+        XCTAssertNil(XrayVlessURLImporter.configJSONAddingRouteOnlyToImportedSniffing(migratedJSON))
+        XCTAssertNil(
+            XrayVlessURLImporter.configJSONAddingRouteOnlyToImportedSniffing(profile.configJSON)
+        )
+
+        var savedProfile = profile
+        savedProfile.configJSON = savedJSON
+        XCTAssertEqual(
+            savedProfile.addingRouteOnlyToImportedSniffingIfNeeded().configJSON,
+            migratedJSON
+        )
+        XCTAssertEqual(profile.addingRouteOnlyToImportedSniffingIfNeeded(), profile)
+    }
+
+    func testRouteOnlyMigrationLeavesEveryOtherConfigurationAlone() {
+        let imported = #""enabled":true,"destOverride":["http","tls","quic"],"metadataOnly":false"#
+        func config(_ sniffing: String, tag: String = "tun-in", protocol kind: String = "tun") -> String {
+            #"{"inbounds":[{"tag":"\#(tag)","protocol":"\#(kind)","sniffing":{\#(sniffing)}}]}"#
+        }
+        XCTAssertNotNil(
+            XrayVlessURLImporter.configJSONAddingRouteOnlyToImportedSniffing(config(imported))
+        )
+
+        let untouched = [
+            config(imported + #","routeOnly":false"#),
+            config(imported + #","routeOnly":true"#),
+            config(imported + #","domainsExcluded":["example.test"]"#),
+            config(imported.replacingOccurrences(of: #""enabled":true"#, with: #""enabled":false"#)),
+            config(imported.replacingOccurrences(
+                of: #""metadataOnly":false"#,
+                with: #""metadataOnly":true"#
+            )),
+            config(imported.replacingOccurrences(of: #","quic""#, with: "")),
+            config(imported, tag: "tun"),
+            config(imported, protocol: "socks"),
+            #"{"outbounds":[]}"#,
+            "[]",
+            "not json",
+        ]
+        for json in untouched {
+            XCTAssertNil(
+                XrayVlessURLImporter.configJSONAddingRouteOnlyToImportedSniffing(json),
+                json
+            )
+        }
+    }
+
+    private static let importedRealityURL =
+        "vless://49c1a053-d257-466d-a900-048ff5173866@203.0.113.7:443"
+        + "?flow=xtls-rprx-vision&type=tcp&security=reality&fp=chrome"
+        + "&sni=example.com&pbk=3jNx5A3WTFKhvCj3IPljaxbcBjCxhH2dVCNobKv_X1c&sid=1c5694e878"
+
+    private static func jsonRoot(_ configJSON: String) throws -> [String: Any] {
+        try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(configJSON.utf8)) as? [String: Any]
+        )
+    }
+
     private static func routingRules(in configJSON: String) throws -> [[String: Any]] {
         let root = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: Data(configJSON.utf8)) as? [String: Any]

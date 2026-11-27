@@ -450,7 +450,10 @@ long-term supported release series.
   sends. TUN sniffed TCP only to a fake IP the fake DNS did not know, while
   UDP and the SOCKS and HTTP inbounds already sniffed every flow. `routeOnly`,
   `domainsExcluded`, `ipsExcluded` and the 250 ms wait for the first bytes
-  apply as before, and a fake IP the fake DNS knows keeps its domain.
+  apply as before, and a fake IP the fake DNS knows keeps its domain. A TCP
+  flow to a real address whose server speaks first, such as SSH or SMTP, now
+  waits out those 250 ms before it is dialed, as through the SOCKS and HTTP
+  inbounds, with `routeOnly` too.
 - The profiles `XrayVlessURLImporter` (Swift) and `XrayVlessUrlImporter`
   (Kotlin) build set `routeOnly` on the TUN inbound's sniffing. They enable
   sniffing so that a flow to a fake IP the fake DNS no longer knows recovers
@@ -464,6 +467,20 @@ long-term supported release series.
   dialed by the address its app chose, as before this release. A QUIC flow to
   a real address, which these profiles dialed by its sniffed name, is dialed
   by its address as well.
+- Profiles those importers saved before this release get `routeOnly` too, at
+  every start: `XrayPacketTunnelProvider` adds it to the configuration it
+  reads from the keychain, which includes one iOS starts on its own, and
+  `XrayVpnService` to the one `startXrayTunnel` takes. Such a profile keeps
+  0.10's behaviour. Only the importers' exact sniffing is recognized, on a
+  `tun` inbound tagged `tun-in`: `enabled` true, `destOverride` `http`, `tls`
+  and `quic`, `metadataOnly` false, and nothing else. A configuration that
+  sets `routeOnly` itself is left as it is, so `"routeOnly": false` keeps
+  dialing sniffed names. A host that creates its core itself, or keeps saved
+  profiles of its own, can apply the same step with
+  `XrayVlessURLImporter.configJSONAddingRouteOnlyToImportedSniffing(_:)` or
+  `XrayClientProfile.addingRouteOnlyToImportedSniffingIfNeeded()` (Swift) and
+  `XrayVlessUrlImporter.configJsonAddingRouteOnlyToImportedSniffing` (Kotlin).
+  The reference client rewrites its saved profile when it loads it.
 
 ## 0.10.1 - 2026-11-16
 
