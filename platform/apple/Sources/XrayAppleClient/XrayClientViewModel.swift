@@ -37,7 +37,9 @@ public final class XrayClientViewModel: ObservableObject {
         self.store = store
         let loadedProfile = store.load()
         let migratedProfile = loadedProfile.migratingLegacyDefaultProviderBundleIdentifier()
-        var preparedProfile = migratedProfile.addingDefaultRealityVisionFlowIfMissing()
+        var preparedProfile = migratedProfile
+            .addingDefaultRealityVisionFlowIfMissing()
+            .addingRouteOnlyToImportedSniffingIfNeeded()
         if let debugLoggingOverride {
             preparedProfile.debugLoggingEnabled = debugLoggingOverride
         }

@@ -644,6 +644,21 @@ public struct XrayClientProfile: Codable, Equatable, Identifiable, Sendable {
         return profile
     }
 
+    /// This profile with `routeOnly` added to the sniffing an SDK importer
+    /// wrote before 0.11.0; see
+    /// ``XrayVlessURLImporter/configJSONAddingRouteOnlyToImportedSniffing(_:)``.
+    public func addingRouteOnlyToImportedSniffingIfNeeded() -> XrayClientProfile {
+        guard let migratedConfigJSON = XrayVlessURLImporter
+            .configJSONAddingRouteOnlyToImportedSniffing(configJSON)
+        else {
+            return self
+        }
+
+        var profile = self
+        profile.configJSON = migratedConfigJSON
+        return profile
+    }
+
     public func updatingRealityVisionFlowMode(
         _ mode: XrayRealityVisionFlowMode
     ) throws -> XrayClientProfile {

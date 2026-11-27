@@ -38,6 +38,9 @@ class XrayVlessUrlImporterTest {
             listOf("http", "tls", "quic"),
             inbound.getJSONObject("sniffing").getJSONArray("destOverride").strings(),
         )
+        // A flow to a real address is routed with its sniffed name but dialed
+        // by the address its app chose.
+        assertTrue(inbound.getJSONObject("sniffing").getBoolean("routeOnly"))
 
         val outbounds = root.getJSONArray("outbounds")
         assertEquals(2, outbounds.length())
@@ -495,6 +498,66 @@ class XrayVlessUrlImporterTest {
 
         assertFalse(error.message.orEmpty().contains(secret))
         assertNull(error.cause)
+    }
+
+    @Test
+    fun routeOnlyMigrationRestoresAProfileImportedBeforeTheImporterSetIt() {
+        // What the importer saved up to 0.10.1: the same profile without routeOnly.
+        val saved = JSONObject(XrayVlessUrlImporter.profile(sampleRealityUrl).configJson)
+        saved.getJSONArray("inbounds").getJSONObject(0).getJSONObject("sniffing").remove("routeOnly")
+
+        val migratedJson = XrayVlessUrlImporter.configJsonAddingRouteOnlyToImportedSniffing(
+            saved.toString(),
+        )
+
+        val migrated = JSONObject(requireNotNull(migratedJson))
+        val sniffing = migrated.getJSONArray("inbounds").getJSONObject(0).getJSONObject("sniffing")
+        assertTrue(sniffing.getBoolean("routeOnly"))
+        // routeOnly is the only change.
+        sniffing.remove("routeOnly")
+        assertEquals(canonical(saved), canonical(migrated))
+        // A migrated profile, like one the importer builds now, needs nothing more.
+        assertNull(XrayVlessUrlImporter.configJsonAddingRouteOnlyToImportedSniffing(migratedJson))
+        assertNull(
+            XrayVlessUrlImporter.configJsonAddingRouteOnlyToImportedSniffing(
+                XrayVlessUrlImporter.profile(sampleRealityUrl).configJson,
+            ),
+        )
+    }
+
+    @Test
+    fun routeOnlyMigrationLeavesEveryOtherConfigurationAlone() {
+        val imported = "\"enabled\":true,\"destOverride\":[\"http\",\"tls\",\"quic\"],\"metadataOnly\":false"
+        fun config(sniffing: String, tag: String = "tun-in", protocol: String = "tun") =
+            "{\"inbounds\":[{\"tag\":\"$tag\",\"protocol\":\"$protocol\",\"sniffing\":{$sniffing}}]}"
+        assertTrue(
+            XrayVlessUrlImporter.configJsonAddingRouteOnlyToImportedSniffing(config(imported)) != null,
+        )
+
+        val untouched = listOf(
+            config("$imported,\"routeOnly\":false"),
+            config("$imported,\"routeOnly\":true"),
+            config("$imported,\"domainsExcluded\":[\"example.test\"]"),
+            config(imported.replace("\"enabled\":true", "\"enabled\":false")),
+            config(imported.replace("\"metadataOnly\":false", "\"metadataOnly\":true")),
+            config(imported.replace(",\"quic\"", "")),
+            config(imported, tag = "tun"),
+            config(imported, protocol = "socks"),
+            "{\"outbounds\":[]}",
+            "[]",
+            "not json",
+            config(imported) + " trailing",
+        )
+        for (json in untouched) {
+            assertNull(json, XrayVlessUrlImporter.configJsonAddingRouteOnlyToImportedSniffing(json))
+        }
+    }
+
+    /** A JSON value as sorted maps and lists, so two documents compare whatever their key order. */
+    private fun canonical(value: Any?): Any? = when (value) {
+        is JSONObject -> value.keys().asSequence().associateWith { canonical(value.get(it)) }.toSortedMap()
+        is org.json.JSONArray -> (0 until value.length()).map { canonical(value.get(it)) }
+        else -> value
     }
 
     private fun assertImportError(

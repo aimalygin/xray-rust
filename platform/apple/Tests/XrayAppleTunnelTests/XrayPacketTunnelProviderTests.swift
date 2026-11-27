@@ -1769,6 +1769,41 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertEqual(resolved.geodataSelection.policy, .exclusive)
     }
 
+    func testStartAddsRouteOnlyToTheSniffingAnImporterSavedBefore0110() throws {
+        // The TUN inbound every SDK importer wrote up to 0.10.1.
+        let saved = #"{"inbounds":[{"tag":"tun-in","protocol":"tun","listen":"127.0.0.1","port":0,"settings":{},"sniffing":{"enabled":true,"destOverride":["http","tls","quic"],"metadataOnly":false}}],"outbounds":[{"tag":"direct","protocol":"freedom","settings":{}}]}"#
+        let explicit = saved.replacingOccurrences(
+            of: #""metadataOnly":false"#,
+            with: #""metadataOnly":false,"routeOnly":false"#
+        )
+        let secureStore = TunnelTestSecureConfigStore()
+        try secureStore.store(configJSON: saved, reference: "imported")
+        try secureStore.store(configJSON: explicit, reference: "explicit")
+        func startJSON(_ reference: String) throws -> String {
+            let tunnelProtocol = NETunnelProviderProtocol()
+            tunnelProtocol.providerConfiguration = [
+                XrayTunnelProviderMessage.providerConfigReferenceKey: reference,
+            ]
+            return try XCTUnwrap(
+                XrayPacketTunnelProvider.configJSON(
+                    options: nil,
+                    protocolConfiguration: tunnelProtocol,
+                    secureConfigStore: secureStore
+                )
+            ).json
+        }
+
+        let migrated = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(try startJSON("imported").utf8))
+                as? [String: Any]
+        )
+        let inbounds = try XCTUnwrap(migrated["inbounds"] as? [[String: Any]])
+        let sniffing = try XCTUnwrap(inbounds.first?["sniffing"] as? [String: Any])
+        XCTAssertEqual(sniffing["routeOnly"] as? Bool, true)
+        // A configuration that sets routeOnly itself reaches the core as stored.
+        XCTAssertEqual(try startJSON("explicit"), explicit)
+    }
+
     func testGeodataSelectionRejectsPartialProviderConfiguration() throws {
         let containerURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: containerURL) }

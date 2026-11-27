@@ -738,7 +738,12 @@ open class XrayVpnService : VpnService() {
         request: StartRequest,
         dnsBootstrapDeadline: AndroidDnsBootstrapDeadline,
     ): XrayTunnelStartOutcome {
-        val configJson = request.configJson
+        // A profile an SDK importer saved before 0.11.0 sniffs without routeOnly, which TUN's
+        // sniffing of TCP flows to real addresses would turn into dialing each such flow by the
+        // name it sends.
+        val configJson = XrayVlessUrlImporter.configJsonAddingRouteOnlyToImportedSniffing(
+            request.configJson,
+        ) ?: request.configJson
         val tunBackend = request.tunBackend
         val startupProbe = request.startupProbe
         val prepareAndroidVpnConfig: (String) -> PreparedAndroidVpnConfig = { rawConfig ->

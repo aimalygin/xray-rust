@@ -1417,7 +1417,20 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 )
                 return nil
             }
-            storedConfigJSON = storedConfig
+            // A profile an SDK importer saved before 0.11.0 sniffs without
+            // `routeOnly`, which TUN's sniffing of TCP flows to real addresses
+            // would turn into dialing each such flow by the name it sends.
+            if let migratedConfig = XrayVlessURLImporter
+                .configJSONAddingRouteOnlyToImportedSniffing(storedConfig)
+            {
+                XrayAppleLog.info(
+                    "PacketTunnelProvider",
+                    "Added routeOnly to the TUN sniffing of a profile an SDK importer built before 0.11.0"
+                )
+                storedConfigJSON = migratedConfig
+            } else {
+                storedConfigJSON = storedConfig
+            }
         } catch {
             XrayAppleLog.error(
                 "PacketTunnelProvider",
