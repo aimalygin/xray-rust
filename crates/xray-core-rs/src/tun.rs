@@ -80,7 +80,6 @@ const TCP_BUFFER_SIZE: usize = 32 * 1024;
 const TCP_INITIAL_RX_BUFFER_SIZE: usize = 8 * 1024;
 /// IPv4 and TCP headers without options: the largest MSS a link MTU admits.
 const TCP_IPV4_HEADERS_LEN: usize = 40;
-const TUN_TCP_SNIFF_TIMEOUT: Duration = Duration::from_millis(250);
 const STACK_EVENT_CHANNEL_DEPTH: usize = 64;
 const TCP_BRIDGE_CHANNEL_DEPTH: usize = 256;
 const MOBILE_TCP_BRIDGE_CHANNEL_DEPTH: usize = 128;
@@ -3541,7 +3540,7 @@ async fn read_tun_tcp_sniff_payload(
 ) -> Option<(VecDeque<StackToRemoteData>, crate::sniffing::TcpSniffed)> {
     let mut initial_upload = VecDeque::new();
     let mut sniff_buffer = BytesMut::with_capacity(crate::sniffing::TCP_SNIFF_BUFFER_SIZE);
-    let timeout = sleep(TUN_TCP_SNIFF_TIMEOUT);
+    let timeout = sleep(crate::sniffing::TCP_SNIFF_WAIT);
     tokio::pin!(timeout);
 
     loop {
@@ -10135,6 +10134,36 @@ mod tests {
         )
         .await
         .is_none());
+    }
+
+    /// A client whose server speaks first sends nothing: its flow waits
+    /// Xray-core's 200 ms for first bytes, then goes on with nothing named.
+    #[tokio::test(start_paused = true)]
+    async fn a_silent_client_waits_xray_cores_200_ms() {
+        let config = InboundSniffingConfig {
+            enabled: true,
+            dest_override: vec![
+                xray_config::SniffingDestination::Http,
+                xray_config::SniffingDestination::Tls,
+            ],
+            ..Default::default()
+        };
+        let (_shutdown_tx, mut shutdown) = watch::channel(false);
+        let (_to_remote, mut from_stack) = mpsc::channel::<StackToRemoteData>(4);
+
+        let started = tokio::time::Instant::now();
+        let (upload, sniffed) = read_tun_tcp_sniff_payload(
+            &mut from_stack,
+            &mut shutdown,
+            &config,
+            &test_tcp443_target(),
+            false,
+        )
+        .await
+        .expect("an open flow that sent nothing still goes on");
+        assert_eq!(started.elapsed(), Duration::from_millis(200));
+        assert!(upload.is_empty());
+        assert_eq!(sniffed.sniffed, None);
     }
 
     #[test]

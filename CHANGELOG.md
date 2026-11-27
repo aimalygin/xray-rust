@@ -449,10 +449,10 @@ long-term supported release series.
   to an address from its own DoH lookup or a cache is routed by the name it
   sends. TUN sniffed TCP only to a fake IP the fake DNS did not know, while
   UDP and the SOCKS and HTTP inbounds already sniffed every flow. `routeOnly`,
-  `domainsExcluded`, `ipsExcluded` and the 250 ms wait for the first bytes
-  apply as before, and a fake IP the fake DNS knows keeps its domain. A TCP
-  flow to a real address whose server speaks first, such as SSH or SMTP, now
-  waits out those 250 ms before it is dialed, as through the SOCKS and HTTP
+  `domainsExcluded`, `ipsExcluded` and the wait for the first bytes apply as
+  before, and a fake IP the fake DNS knows keeps its domain. A TCP flow to a
+  real address whose server speaks first, such as SSH or SMTP, now waits out
+  that wait, 200 ms, before it is dialed, as through the SOCKS and HTTP
   inbounds, with `routeOnly` too.
 - The profiles `XrayVlessURLImporter` (Swift) and `XrayVlessUrlImporter`
   (Kotlin) build set `routeOnly` on the TUN inbound's sniffing. They enable
@@ -481,6 +481,11 @@ long-term supported release series.
   `XrayClientProfile.addingRouteOnlyToImportedSniffingIfNeeded()` (Swift) and
   `XrayVlessUrlImporter.configJsonAddingRouteOnlyToImportedSniffing` (Kotlin).
   The reference client rewrites its saved profile when it loads it.
+- The SOCKS, HTTP and TUN inbounds wait at most 200 ms for a TCP flow's
+  first bytes when they sniff it, where they waited 250 ms. That is the whole
+  budget Xray-core gives its sniffer, and UDP already waited that long. A
+  flow whose server speaks first, such as SSH or SMTP, is dialed 50 ms
+  sooner.
 
 ## 0.10.1 - 2026-11-16
 

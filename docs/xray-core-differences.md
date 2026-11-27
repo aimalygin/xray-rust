@@ -2013,6 +2013,55 @@ Xray-core. Known limits: at a paced 10 Gbit/s splicing costs the whole
 machine more than copying (as it does for Xray-core); a real network
 interface, x86-64 and a freedom outbound with `fragment` were not measured.
 
+## TUN sniffing and saved SDK profiles
+
+Since 0.11.0 the TUN inbound sniffs every TCP flow, whatever its
+destination. That is what Xray-core does at the pinned v26.11.9:
+
+- Its [TUN handler](https://github.com/XTLS/Xray-core/blob/676eaf66f8f05d4d558ee7a74b4736623d3feeb9/proxy/tun/handler.go#L236)
+  gives each flow the inbound's sniffing.
+- Its [dispatcher](https://github.com/XTLS/Xray-core/blob/676eaf66f8f05d4d558ee7a74b4736623d3feeb9/app/dispatcher/default.go#L324-L376)
+  sniffs that flow, whether its destination is an IP address or a name.
+- A sniffed domain is dialed unless `routeOnly` keeps it for routing alone.
+  A fake IP dials its domain even under `routeOnly`.
+
+Until 0.11.0 TUN sniffed TCP only to a fake IP the fake DNS did not know.
+
+The SOCKS, HTTP and TUN inbounds wait at most 200 ms for a TCP flow's first
+bytes, which is the whole budget of
+[Xray-core's sniffer](https://github.com/XTLS/Xray-core/blob/676eaf66f8f05d4d558ee7a74b4736623d3feeb9/app/dispatcher/default.go#L391-L421).
+Before 0.11.0 they waited 250 ms. A protocol in which the server speaks first
+waits that long in both. Xray-core also stops after two reads that no sniffer
+recognizes. Here sniffing stops once every sniffer has ruled the flow out.
+
+**Deliberate difference: saved importer profiles.** The Apple and Android VPN
+integrations add `"routeOnly": true` to one exact configuration at every
+start:
+
+- **What it matches.** A `tun` inbound tagged `tun-in` whose sniffing is
+  `enabled: true`, `destOverride` `http`, `tls` and `quic`,
+  `metadataOnly: false`, and nothing else.
+- **Where.** `XrayPacketTunnelProvider` applies it to what it reads from the
+  keychain, and `XrayVpnService` to what `startXrayTunnel` takes.
+- **What Xray-core would do.** It would dial each such flow by the name it
+  sends.
+- **Why.** The SDK's VLESS importers wrote exactly that block in every
+  release from 0.7.0 to 0.10.1. Under the TUN of those releases it never
+  changed a flow to a real address. Under 0.11.0 it would take a flow whose
+  app sends a decoy name, such as MTProxy's FakeTLS, to that name. It would
+  also take a LAN flow that sends a name past a private-address rule. The SDK
+  cannot rewrite those profiles where hosts keep them, nor the VPN
+  configuration iOS keeps and starts by itself. The importers now write
+  `routeOnly` themselves.
+- **Opting out.** A configuration that sets `routeOnly` to either value is
+  left alone, so `"routeOnly": false` gives Xray-core's behaviour.
+- **Where it does not apply.** The core, the CLI and a host that creates
+  `XrayCore` itself never do this. Such a host can call
+  `XrayVlessURLImporter.configJSONAddingRouteOnlyToImportedSniffing(_:)` or
+  `XrayVlessUrlImporter.configJsonAddingRouteOnlyToImportedSniffing(configJson)`.
+  The core's own profile importers write no sniffing, so the change does not
+  touch what they build.
+
 ## TUN checksums
 
 Xray-core's TUN inbound checks no checksum of what the system writes into the
