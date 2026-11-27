@@ -24,6 +24,11 @@ Nothing is bound to a candidate yet. The shared steps are in the
     day as `880c680176199341a7994bb352e503755ae44222`. It brings #310's
     sniffing, `routeOnly` in both SDK importers, and a migration at start
     for profiles they saved before 0.11.0.
+- **Sniffing as in Xray-core.** On 2026-11-27 the owner had the TCP sniff
+  wait aligned with Xray-core's 200 ms (it was 250 ms), and the migration of
+  saved profiles recorded as a deliberate difference from Xray-core
+  («Да, выровнять»). That is
+  [#387](https://github.com/aimalygin/xray-rust/pull/387).
 - **Not in 0.11.0.** [#383](https://github.com/aimalygin/xray-rust/pull/383)
   skips observatory probes nobody used. It stays a draft because its gain
   with the screen off is not measured (2026-11-27, «Да, так»).
@@ -224,10 +229,10 @@ It works like 0.10's comparison against 0.9.0:
 - **The runtime worker count** is covered by core and SDK host tests. Every
   device run uses the default, and the Apple probe reports the ABI version it
   loaded.
-- **Server-first flows wait 250 ms.** A TCP flow to a real address whose
-  server speaks first, such as SSH or SMTP, now waits out the 250 ms sniff
-  window. This is by design, and Xray-core does the same. No fixture listener
-  speaks first. Release known limitations should name it.
+- **Server-first flows wait 200 ms.** A TCP flow to a real address whose
+  server speaks first, such as SSH or SMTP, now waits out the 200 ms sniff
+  window, as in Xray-core. No fixture listener speaks first. Release known
+  limitations should name it.
 
 ## Open question
 
