@@ -109,9 +109,14 @@ profile. What 0.11 changes:
        reconnect and the network change are the transitions that exercise
        its sleep.
    - **One extra transition for WireGuard, `idle-device-restart`.** The
-     tunnel stays up with no flow for six minutes. Then TCP and UDP of both
+     tunnel stays up with no flow for seven minutes. Then TCP and UDP of both
      families pass again, over a fresh handshake. Its case sets no
      `keepAlive`, since `keepAlive` keeps a device open.
+     - The contract said six minutes. The harness waits seven: a TUN UDP
+       flow lingers up to a minute after its last datagram, and then the
+       device waits five minutes without a flow.
+     - A relay in front of the fixture's server shows the fresh device: a
+       handshake from a client source it had not seen before.
 2. **TUN sniffing gets its own scenario on both platforms.** It is called
    `tun-sniffing` and has six transitions, described
    [below](#the-sniffing-scenario). On Android it has one id, and the driver
@@ -252,6 +257,10 @@ iPhone's lock/wake exercised it.
 
 ## Harness and tooling work this needs
 
+Done on the branch of #386 on 2026-11-28, except the `xray-rust-mobile`
+selector. How to run it, and the host loopback results, are in
+[v0.11 evidence collection](v011-release-evidence.md).
+
 1. **The `v011` profile**, following
    [497bfb29](https://github.com/aimalygin/xray-rust/commit/497bfb294a052e0abf2bc7a5bb46ac07679fa13e):
    - the checker, the workflow, `check-release-evidence.sh`,
@@ -294,8 +303,8 @@ moves to the SDK release.
 
 1. ~~The owner accepts the contract and answers the open question.~~ Done
    on 2026-11-28.
-2. The `v011` profile, the fixtures and the harness work above, with host
-   loopback checks.
+2. ~~The `v011` profile, the fixtures and the harness work above, with host
+   loopback checks.~~ Done on 2026-11-28 in #386.
 3. The release commit:
    - workspace version 0.11.0;
    - a dated changelog section;
