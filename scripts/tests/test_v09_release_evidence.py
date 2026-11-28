@@ -51,7 +51,7 @@ class V09ReleaseEvidenceTests(unittest.TestCase):
         for version in ["0.9.0", "v0.9.0-rc.1", "v0.9.12"]:
             result = subprocess.run(["bash", str(legacy.ROOT / "scripts/release-evidence-profile.sh"), version], capture_output=True, text=True)
             self.assertEqual((result.returncode, result.stdout.strip()), (0, "v09"))
-        for version in ["0.11.0", "v1.0.0", "0.9", "v0.9.0-rc.0"]:
+        for version in ["0.12.0", "v1.0.0", "0.9", "v0.9.0-rc.0"]:
             result = subprocess.run(["bash", str(legacy.ROOT / "scripts/release-evidence-profile.sh"), version], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0, version)
         # 0.10 has its own profile; it never falls back to this one.

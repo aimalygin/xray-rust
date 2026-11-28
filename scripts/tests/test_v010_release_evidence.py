@@ -97,12 +97,14 @@ class V010ReleaseEvidenceTests(unittest.TestCase):
     def test_two_digit_minor_selects_v010_and_nothing_near_it_does(self):
         for version in ["0.10.0", "v0.10.0", "v0.10.0-rc.1", "0.10.12"]:
             self.assertEqual(self.profile(version), (0, "v010"), version)
+        # 0.11 has its own profile; it never falls back to this one.
+        self.assertEqual(self.profile("0.11.0"), (0, "v011"))
         # The older profiles keep their versions.
         self.assertEqual(self.profile("0.9.1"), (0, "v09"))
         self.assertEqual(self.profile("v0.6.1"), (0, "v06"))
         # "0.1" is a prefix of "0.10": neither it nor a longer minor may match.
         for version in ["0.1.0", "v0.1.10", "0.100.0", "0.101.0", "0.10", "0.1", "0.10.", "0.10.01",
-                        "v0.10.0-rc.0", "0.11.0", "v1.0.0", "1.10.0", "00.10.0", "0.10.0 ", "0.10.0/../x"]:
+                        "v0.10.0-rc.0", "0.12.0", "v1.0.0", "1.10.0", "00.10.0", "0.10.0 ", "0.10.0/../x"]:
             self.assertNotEqual(self.profile(version)[0], 0, version)
 
     def test_release_boundary_dispatches_0_10_to_this_policy(self):
@@ -111,7 +113,8 @@ class V010ReleaseEvidenceTests(unittest.TestCase):
             root = Path(directory)
             (root / "scripts").mkdir()
             for name in ["check-release-evidence.sh", "release-evidence-profile.sh",
-                         "check-v06-release-evidence.py", "check-v010-release-evidence.py"]:
+                         "check-v06-release-evidence.py", "check-v010-release-evidence.py",
+                         "check-v011-release-evidence.py"]:
                 shutil.copy(legacy.ROOT / "scripts" / name, root / "scripts" / name)
             # The script runs "python3"; make that this interpreter (tomllib needs 3.11).
             (root / "bin").mkdir()
