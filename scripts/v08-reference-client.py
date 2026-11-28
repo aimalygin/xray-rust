@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare pinned full clients for the synthetic v0.8/v0.9/v0.10 SOCKS comparison.
+"""Prepare pinned full clients for the synthetic v0.8 to v0.11 SOCKS comparison.
 
 Preparation happens before the measured binary is spawned. No Python/OpenSSL
 process, native-library adapter or config translator is included in client CPU.
@@ -62,6 +62,37 @@ def carrier_client(config, mode, cert):
     return config, ["run", "-config"], "xray"
 
 
+def full_set_client(config, mode, cert):
+    """A v0.11 full-set profile goes to Xray-core as the device fixture wrote
+    it, once it is the plain loopback one."""
+    if mode != "xray":
+        raise ValueError("the v0.11 suite measures the pinned Xray-core client alone")
+    outbound, = config["outbounds"]
+    protocol, settings, stream = outbound["protocol"], outbound["settings"], outbound.get("streamSettings", {})
+    if stream.get("finalmask") or stream.get("sockopt") or outbound.get("mux"):
+        raise ValueError("the full-set comparison adds no mask, socket option or Mux")
+    if protocol == "vless":
+        server, = settings["vnext"]
+        user, = server["users"]
+        if (server["address"] != "127.0.0.1" or stream.get("network") != "raw"
+                or stream.get("security") != "reality" or user.get("flow") != "xtls-rprx-vision"
+                or user.get("encryption") != "none"):
+            raise ValueError("VLESS over REALITY with Vision on the loopback required")
+    elif protocol == "hysteria":
+        if settings.get("address") != "127.0.0.1" or stream.get("network") != "hysteria":
+            raise ValueError("Hysteria2 on the loopback required")
+        pinned(stream, cert)
+        if stream["tlsSettings"].get("alpn") != ["h3"]:
+            raise ValueError("Hysteria2 over HTTP/3 required")
+    elif protocol == "wireguard":
+        peer, = settings["peers"]
+        if not peer["endpoint"].startswith("127.0.0.1:") or stream:
+            raise ValueError("WireGuard on the loopback required")
+    else:
+        raise ValueError("unsupported comparison protocol")
+    return config, ["run", "-config"], "xray"
+
+
 def singbox_tls(tls, cert):
     public = subprocess.check_output(["openssl", "x509", "-in", str(cert), "-pubkey", "-noout"])
     spki = subprocess.check_output(["openssl", "pkey", "-pubin", "-outform", "DER"], input=public)
@@ -73,6 +104,10 @@ def singbox_tls(tls, cert):
 def translate(config, mode, cert, suite="v08"):
     config = copy.deepcopy(config)
     inbound, = config["inbounds"]
+    if suite == "v011":
+        if mode not in ("xray", "singbox") or inbound.get("protocol") != "socks" or inbound.get("listen") != "127.0.0.1":
+            raise ValueError("only the synthetic loopback SOCKS comparison is supported")
+        return full_set_client(config, mode, cert)
     outbound, = config["outbounds"]
     settings = outbound["settings"]
     stream = outbound["streamSettings"]

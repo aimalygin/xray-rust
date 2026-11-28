@@ -8,6 +8,9 @@ All failures, raw byte checks, startup CPU and cleanup results are retained.
 plain and TLS) and classic Shadowsocks AEAD; HTTP has no UDP case.
 ``--suite v010`` measures VLESS over mKCP and MASQUE over HTTP/3 against the
 pinned Xray-core client alone: sing-box implements neither carrier.
+``--suite v011`` measures the three carriers whose stacks 0.11 moved, VLESS
+over REALITY with Vision, Hysteria2 and WireGuard, as their device fixtures
+configure them, against the pinned Xray-core client.
 """
 import argparse
 import base64
@@ -39,6 +42,7 @@ def module(name, filename):
 bench = module("bench", "run-v07-performance.py")
 followup = module("followup", "run-v07-performance-followup.py")
 device = module("device", "run-v07-apple-protocol-fixture.py")
+acceptance = module("acceptance", "run-v08-apple-acceptance-fixture.py")
 PROFILES = {"trojan-tls": ("trojan", None),
             "ss2022-aes128": ("shadowsocks", "2022-blake3-aes-128-gcm"),
             "ss2022-aes256": ("shadowsocks", "2022-blake3-aes-256-gcm"),
@@ -55,11 +59,14 @@ V09_PROFILES = {"socks-auth": ("socks", None),
                 "ss-xchacha20": ("shadowsocks", "xchacha20-poly1305")}
 # The two carriers 0.10 adds, as the device fixture configures them.
 V010_PROFILES = {"mkcp-vless": ("mkcp", None), "masque-h3": ("masque", None)}
-SUITES = {"v08": PROFILES, "v09": V09_PROFILES, "v010": V010_PROFILES}
-ALL_PROFILES = {**PROFILES, **V09_PROFILES, **V010_PROFILES}
+# The three full-set carriers of 0.11 (docs/v0110-release.md).
+V011_PROFILES = {"vless-reality": ("vless-reality", None), "hysteria2": ("hysteria2", None),
+                 "wireguard": ("wireguard", None)}
+SUITES = {"v08": PROFILES, "v09": V09_PROFILES, "v010": V010_PROFILES, "v011": V011_PROFILES}
+ALL_PROFILES = {**PROFILES, **V09_PROFILES, **V010_PROFILES, **V011_PROFILES}
 # The clients a suite measures, in their base order.
 SUITE_CLIENTS = {"v08": ("candidate", "xray", "singbox"), "v09": ("candidate", "xray", "singbox"),
-                 "v010": ("candidate", "xray")}
+                 "v010": ("candidate", "xray"), "v011": ("candidate", "xray")}
 SINGBOX = "56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778"
 # Release-evidence measurement id prefix -> the profiles it summarizes.
 MEASUREMENT_GROUPS = {
@@ -69,7 +76,10 @@ MEASUREMENT_GROUPS = {
     "v09": {"socks": ["socks-auth"], "http": ["http-basic", "http-basic-tls"],
             "shadowsocks-aead": ["ss-aes128gcm", "ss-aes256gcm", "ss-chacha20", "ss-xchacha20"]},
     "v010": {"mkcp": ["mkcp-vless"], "masque": ["masque-h3"]},
+    "v011": {name: [name] for name in V011_PROFILES},
 }
+# REALITY's first decoy handshake, as in run-v07-performance.py.
+SERVER_WARMUP_SECONDS = {"vless-reality": 8}
 # Work per flow where the carrier, not the machine, sets the pace: 64 KiB
 # writes for bulk traffic, round trips for latency. mKCP's default capacity
 # holds a flow to a few MiB/s and its 50 ms interval holds a round trip near
@@ -140,10 +150,35 @@ def carrier_configs(carrier, directory, port):
     return client, server
 
 
+def full_set_configs(protocol, directory, port):
+    """The device fixture's own full-set case, on the loopback: VLESS over
+    REALITY with Vision (its decoy is www.google.com:443), Hysteria2 with
+    ChromeParrot and a pinned certificate, and WireGuard."""
+    if protocol == "vless-reality":
+        acceptance.write_reality(directory, "127.0.0.1", 1, 2, 3, port=port, mode="smoke",
+                                 probe_host="v011-benchmark.test")
+    else:
+        device.write_fixtures(directory, "127.0.0.1", 1, 2, 3, protocol=protocol, port=port)
+    fixture_server = json.loads((directory / "server.json").read_text())
+    case, = json.loads((directory / "v07-probe.json").read_text())["cases"]
+    for name in ("server.json", "v07-probe.json"):
+        (directory / name).unlink()
+    outbound = json.loads(case["configJSON"])["outbounds"][0]
+    if protocol == "wireguard":
+        # The driver's origin and targets are this host's own addresses.
+        outbound["settings"]["peers"][0]["allowedIPs"] = ["0.0.0.0/0", "::/0"]
+    client = {"log": {"loglevel": "error"}, "outbounds": [outbound]}
+    server = {"log": {"loglevel": "error"}, "inbounds": fixture_server["inbounds"],
+              "outbounds": [{"protocol": "freedom", "settings": {"finalRules": [{"action": "allow"}]}}]}
+    return client, server
+
+
 def configs(profile, directory, port):
     protocol, method = ALL_PROFILES[profile]
     if profile in V010_PROFILES:
         return carrier_configs(protocol, directory, port)
+    if profile in V011_PROFILES:
+        return full_set_configs(protocol, directory, port)
     settings = {"address": "127.0.0.1", "port": port}
     stream = {"network": "raw"}
     server_stream = {"network": "raw"}
@@ -189,7 +224,7 @@ def fixture(reference, directory, profile):
         child = subprocess.Popen([str(reference), "run", "-config", str(directory / "server.json")],
                                  stdout=log, stderr=log, env=bench.env())
         try:
-            time.sleep(1)
+            time.sleep(SERVER_WARMUP_SECONDS.get(profile, 1))
             if child.poll() is not None:
                 raise RuntimeError("common server failed to start")
             yield client, child.pid
@@ -286,7 +321,7 @@ def main():
                    "binaries": {k: str(paths[k]) for k in clients[1:]}})
         launchers[mode] = target
     files = [*paths.values(), a.inputs.resolve(), Path(__file__).resolve(), launcher,
-             Path(bench.__file__), Path(followup.__file__), Path(device.__file__)]
+             Path(bench.__file__), Path(followup.__file__), Path(device.__file__), Path(acceptance.__file__)]
     hashes = {str(f): bench.sha(f) for f in files}
     patch = bench.command(["git", "diff", "--binary", "HEAD"], ROOT)
     (out / "source.patch").write_text(patch + "\n")
@@ -307,7 +342,10 @@ def main():
                          "no TUN comparison, Mux or physical-device claims",
                   "v010": "SOCKS ingress; VLESS over mKCP at Xray-core's default capacities and MASQUE over HTTP/3; "
                           "pinned Xray-core client only (sing-box has neither carrier); "
-                          "no TUN comparison, masks, Mux or physical-device claims"}[a.suite],
+                          "no TUN comparison, masks, Mux or physical-device claims",
+                  "v011": "SOCKS ingress; VLESS over REALITY with Vision, Hysteria2 with ChromeParrot and WireGuard, "
+                          "as the device fixtures configure them; pinned Xray-core client only; "
+                          "no TUN comparison, Mux or physical-device claims"}[a.suite],
         "measurement_groups": MEASUREMENT_GROUPS[a.suite],
         "started_unix": time.time(), "runs": []}
     bench.save(out / "manifest.json", manifest)
