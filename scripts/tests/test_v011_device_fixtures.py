@@ -351,5 +351,129 @@ class HarnessWiringTests(unittest.TestCase):
         self.assertEqual(device.V011_PROTOCOLS, ("sniff-v011", "import-v011", "wireguard-idle"))
 
 
+
+driver = module("v011_driver", "run-v09-android-device-matrix.py")
+
+
+class FakeClock:
+    """The driver's clock: sleeping advances it, so deadlines pass at once."""
+
+    def __init__(self):
+        self.now, self.slept = 0.0, []
+
+    def monotonic(self):
+        self.now += 0.01
+        return self.now
+
+    def sleep(self, seconds):
+        self.slept.append(seconds)
+        self.now += seconds
+
+    def time_ns(self):
+        return time.time_ns()
+
+    @staticmethod
+    def time():
+        return time.time()
+
+
+class AndroidDriverV011Tests(unittest.TestCase):
+    def drive(self, envelope, *arguments, sources=None, **fake):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        (root / "v07-probe.json").write_text(json.dumps(envelope))
+        environment = {"ANDROID_SERIAL": "R58XXXXXXXX", "ADB": str(SCRIPTS / "tests/fixtures/fake-adb.py"),
+                       "FAKE_ADB_STATE": str(root / "adb.json"), **fake}
+        argv = ["driver", "--fixture", str(root / "v07-probe.json"), "--work-dir", str(root / "run"),
+                "--package-suffix", ".v011", "--warmup-seconds", "0", *arguments]
+        if sources is not None:
+            (root / "sources.jsonl").write_text("".join(json.dumps(row) + "\n" for row in sources))
+            argv += ["--wireguard-sources", str(root / "sources.jsonl")]
+        self.clock = FakeClock()
+        with patch.dict("os.environ", environment), patch("sys.argv", argv), \
+                patch.object(driver, "time", self.clock), patch("builtins.print"):
+            try:
+                driver.main()
+            finally:
+                log, adb = root / "run/events.jsonl", root / "adb.json"
+                self.events = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+                self.state = json.loads(adb.read_text()) if adb.exists() else {"argv": []}
+        return self.events
+
+    def commands(self):
+        return [driver.shlex.split(argv[1]) for argv in self.state["argv"] if argv[0] == "shell"]
+
+    def envelope(self, protocol, **extra):
+        return generate(self, protocol, writer=android.write_fixtures, **extra)[1]
+
+    def wireguard(self):
+        """A WireGuard case with keepAlive, as the full-set scenario runs it."""
+        envelope = generate(self, "wireguard")[1]
+        envelope["cases"][0]["caseId"] = "wireguard"
+        return envelope
+
+    def test_sniffing_cases_run_each_probe_on_both_backends_and_no_sweep(self):
+        events = self.drive(self.envelope("sniff-v011"))
+        passed = [(e["case"], e["backend"]) for e in events if e["kind"] == "case-pass"]
+        self.assertEqual(len(passed), 6)
+        ids = {t for e in events if e["kind"] == "sniff" for t in e["transitions"]}
+        self.assertEqual(ids, policy.SNIFFING_TRANSITIONS)
+        self.assertTrue(all(e["passed"] for e in events if e["kind"] == "sniff"))
+        self.assertFalse([e for e in events if e["kind"] == "traffic"])
+        # Probes go to addresses; the config reaches the Device Gate through stdin only.
+        exchanges = [c for c in self.commands() if c[:2] == ["am", "start"] and "exchange" in c]
+        hosts = {c[c.index("exchange-host") + 1] for c in exchanges}
+        self.assertEqual(hosts, {"198.51.100.8", "2001:db8::8", "198.51.100.7", "203.0.113.7"})
+        self.assertEqual(events[-1]["kind"], "matrix-pass")
+
+    def test_an_unmigrated_profile_or_a_partial_echo_fails_its_probe(self):
+        envelope = self.envelope("sniff-v011")
+        with self.assertRaisesRegex(RuntimeError, "saved-profile-migration: expected echo, got refused"):
+            self.drive(envelope, "--case", "sniff-imported", FAKE_ADB_MIGRATION="none")
+        with self.assertRaisesRegex(RuntimeError, "expected echo, got partial"):
+            self.drive(envelope, "--case", "sniff-route-only", FAKE_ADB_EXCHANGE="partial")
+        with self.assertRaisesRegex(RuntimeError, "domain-rule-refusal: expected refused, got echo"):
+            self.drive(envelope, "--case", "sniff-route-only", FAKE_ADB_EXCHANGE="echo")
+
+    def test_lock_wake_turns_the_screen_off_for_a_minute_and_needs_both_families(self):
+        events = self.drive(self.wireguard(), "--lock-wake")
+        locks = [e for e in events if e["kind"] == "lock-wake"]
+        self.assertEqual([(e["backend"], e["transitions"]) for e in locks],
+                         [(backend, ["lock-wake"]) for backend in driver.BACKENDS])
+        keys = [c[2] for c in self.commands() if c[:2] == ["input", "keyevent"]]
+        self.assertEqual(keys, ["KEYCODE_SLEEP", "KEYCODE_WAKEUP"] * 2)
+        self.assertIn(driver.LOCK_SECONDS - 2, self.clock.slept)
+        after_wake = [e["target"] for e in events if e["kind"] == "traffic" and e.get("stage") == "after-wake"]
+        self.assertEqual(after_wake, ["ipv6", "ipv6"])
+        self.assertTrue(events[0]["lockWake"])
+
+    def test_a_screen_that_stays_on_or_a_restart_fails_lock_wake_and_wakes_the_phone(self):
+        envelope = self.wireguard()
+        for fake, message in [({"FAKE_ADB_SCREEN": "stuck"}, "did not turn off"),
+                              ({"FAKE_ADB_WAKE": "restart"}, "restarted during lock/wake")]:
+            with self.subTest(**fake):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    self.drive(envelope, "--lock-wake", "--backend", "file-descriptor", **fake)
+                self.assertEqual([c[2] for c in self.commands() if c[:2] == ["input", "keyevent"]][-1],
+                                 "KEYCODE_WAKEUP")
+
+    def test_the_idle_case_waits_its_time_and_needs_a_fresh_device(self):
+        envelope = self.envelope("wireguard-idle")
+        fresh = [{"time": 0, "event": "new-source", "source": "192.0.2.5:50000"},
+                 {"time": 1e12, "event": "new-source", "source": "192.0.2.5:50001"},
+                 {"time": 1e12, "event": "handshake-initiation", "source": "192.0.2.5:50001"}]
+        events = self.drive(envelope, "--backend", "packet-pump", sources=fresh)
+        restarts = [e for e in events if e["kind"] == "idle-restart"]
+        self.assertEqual([(e["transitions"], e["relay"]["fresh"]) for e in restarts], [(["idle-device-restart"], True)])
+        self.assertIn(envelope["cases"][0]["idleRestartSeconds"], self.clock.slept)
+        stale = [{"time": 0, "event": "new-source", "source": "192.0.2.5:50000"},
+                 {"time": 1e12, "event": "handshake-initiation", "source": "192.0.2.5:50000"}]
+        with self.assertRaisesRegex(RuntimeError, "no handshake from a new source"):
+            self.drive(envelope, "--backend", "packet-pump", sources=stale)
+        with self.assertRaises(SystemExit):
+            self.drive(envelope, "--backend", "packet-pump")
+
+
 if __name__ == "__main__":
     unittest.main()

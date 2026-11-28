@@ -165,8 +165,24 @@ class ProbeActivity : Activity() {
             COMMAND_STOP -> sendServiceAction(ProbeService.ACTION_STOP, foreground = false)
             COMMAND_RESET -> sendServiceAction(ProbeService.ACTION_RESET, foreground = false)
             COMMAND_STRESS -> startStress(intent)
+            COMMAND_EXCHANGE -> startExchange(intent)
         }
         intent?.removeExtra(EXTRA_COMMAND)
+    }
+
+    /** Hands the driver's raw exchange to the service, extras unchanged. */
+    private fun startExchange(source: Intent) {
+        val serviceIntent = Intent(this, ProbeService::class.java)
+            .setAction(ProbeService.ACTION_EXCHANGE)
+            .putExtra(ExchangeRequest.EXTRA_ID, source.getLongExtra(ExchangeRequest.EXTRA_ID, 0))
+            .putExtra(ExchangeRequest.EXTRA_HOST, source.getStringExtra(ExchangeRequest.EXTRA_HOST))
+            .putExtra(ExchangeRequest.EXTRA_PORT, source.getIntExtra(ExchangeRequest.EXTRA_PORT, 0))
+            .putExtra(ExchangeRequest.EXTRA_PAYLOAD, source.getStringExtra(ExchangeRequest.EXTRA_PAYLOAD))
+            .putExtra(
+                ExchangeRequest.EXTRA_TIMEOUT_MILLIS,
+                source.getIntExtra(ExchangeRequest.EXTRA_TIMEOUT_MILLIS, 0),
+            )
+        startService(serviceIntent)
     }
 
     private fun startStress(overrides: Intent? = null) {
@@ -242,6 +258,7 @@ class ProbeActivity : Activity() {
         const val COMMAND_STOP = "stop"
         const val COMMAND_RESET = "reset"
         const val COMMAND_STRESS = "stress"
+        const val COMMAND_EXCHANGE = "exchange"
         private const val STATUS_REFRESH_MILLISECONDS = 1_000L
     }
 }

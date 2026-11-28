@@ -66,6 +66,22 @@ private final class ProtocolDeviceProbe: ObservableObject {
         /// IPv4 and IPv6 datagram sizes, when the default 1392 and 1372 bytes
         /// exceed what the outbound carries (a MASQUE tunnel's 1280-byte packets).
         let udpPayloadBytes: [Int]?
+        /// TUN sniffing (v0.11): instead of the traffic sweep, each probe
+        /// connects to an address, sends first bytes that name a host, and
+        /// must be echoed or refused.
+        let sniffProbes: [SniffProbe]?
+        /// WireGuard without keepAlive (v0.11): after lock/wake the tunnel
+        /// stays up this long with no flow, so its device closes, and traffic
+        /// must then pass again on the same runtime.
+        let idleRestartSeconds: Double?
+    }
+    private struct SniffProbe: Decodable {
+        let transition: String
+        let host: String
+        /// Base64 of the first bytes: an HTTP request or a TLS ClientHello.
+        let payload: String
+        /// "echo" or "refused".
+        let expect: String
     }
     private struct LinkImport: Decodable {
         let transition: String
@@ -139,12 +155,19 @@ private final class ProtocolDeviceProbe: ObservableObject {
                     // No share link exists for this case; its JSON is the profile.
                     emit(["event": "import", "result": "not-applicable"])
                 }
+                // The provider reads this JSON from the keychain unchanged; a
+                // saved importer profile is migrated there, as in production.
                 let profile = XrayClientProfile(
                     name: Self.managerName,
                     providerBundleIdentifier: XrayClientProfile.defaultProviderBundleIdentifier(
                         hostBundleIdentifier: Bundle.main.bundleIdentifier),
                     serverAddress: item.serverAddress, configJSON: item.configJSON,
                     debugLoggingEnabled: false, useTunFileDescriptor: true, tunRuntimeProfile: .mobile)
+                if let probes = item.sniffProbes {
+                    try await sniffing(fixture, probes: probes, profile: profile, update: update)
+                    try await cleanup()
+                    continue
+                }
                 if fixture.mode == .udpSweep {
                     try await udpSweep(fixture, profile: profile, update: update)
                     try await cleanup()
@@ -252,6 +275,58 @@ private final class ProtocolDeviceProbe: ObservableObject {
             emit(["event": "invalid-import-redaction", "format": input.format, "result": "passed"])
         }
         label = "setup"
+    }
+
+    /// One tunnel start per case; each probe opens its own TCP flow to an
+    /// address, so only the name in its first bytes can route it.
+    private func sniffing(_ fixture: Fixture, probes: [SniffProbe], profile: XrayClientProfile,
+                          update: (String) -> Void) async throws {
+        guard (1...8).contains(probes.count) else { throw Failure.configuration }
+        let decoded: [(SniffProbe, Data)] = try probes.map { probe in
+            guard let payload = Data(base64Encoded: probe.payload), (1...8192).contains(payload.count),
+                  probe.expect == "echo" || probe.expect == "refused",
+                  IPv4Address(probe.host) != nil || IPv6Address(probe.host) != nil,
+                  !probe.transition.isEmpty, probe.transition.utf8.count <= 64 else { throw Failure.configuration }
+            return (probe, payload)
+        }
+        update("\(label): TUN sniffing")
+        let started = Date()
+        try await startAndSettle(profile)
+        emit(["event": "connected", "cycle": 1, "seconds": Date().timeIntervalSince(started)])
+        for (probe, payload) in decoded {
+            let exchangeStarted = ProcessInfo.processInfo.systemUptime
+            emit(["event": "sniff-start", "transition": probe.transition, "expected": probe.expect])
+            do {
+                let reply = try await ProbeExchange.run(host: probe.host, port: fixture.tcpPort, request: payload,
+                                                        tcpLength: payload.count,
+                                                        timeout: probe.expect == "echo" ? 10 : 5)
+                guard probe.expect == "echo", reply == payload else {
+                    emit(["event": probe.expect == "echo" ? "sniff-mismatch" : "sniff-unexpected-echo",
+                          "transition": probe.transition])
+                    throw Failure.mismatch
+                }
+                emit(["event": "sniff", "transition": probe.transition, "expected": "echo", "result": "passed",
+                      "exchangeSeconds": ProcessInfo.processInfo.systemUptime - exchangeStarted])
+            } catch let error as Failure {
+                throw error
+            } catch {
+                // A refusal is a flow closed, reset or left unanswered with
+                // nothing echoed; part of an echo is neither.
+                let detail = error as NSError
+                guard probe.expect == "refused", !ProbeExchange.receivedSome(error) else {
+                    emit(["event": "sniff-failed", "transition": probe.transition, "expected": probe.expect,
+                          "domain": detail.domain, "code": detail.code])
+                    throw Failure.mismatch
+                }
+                emit(["event": "sniff", "transition": probe.transition, "expected": "refused", "result": "passed",
+                      "domain": detail.domain, "code": detail.code,
+                      "exchangeSeconds": ProcessInfo.processInfo.systemUptime - exchangeStarted])
+            }
+        }
+        try await sample(cycle: 1, stage: "after-sniffing")
+        try await controller.stop()
+        try await waitDisconnected()
+        emit(["event": "disconnected", "cycle": 1, "result": "passed"])
     }
 
     private func udpSweep(_ fixture: Fixture, profile: XrayClientProfile,
@@ -495,6 +570,19 @@ private final class ProtocolDeviceProbe: ObservableObject {
         emit(["event": "lock-interval", "seconds": unlockedAt - signals.lockedAt!])
         try await recover(fixture, stage: "after-unlock", since: unlockedAt)
         try await sameRuntime(initial.runtimeIdentifier)
+        if let idle = item.idleRestartSeconds {
+            guard (300...900).contains(idle) else { throw Failure.configuration }
+            // No flow from the probe now; the fixture blocks every other one.
+            // The relay's log shows the device that answers afterwards is new
+            // (scripts/check-v011-wireguard-restart.py, from this row's time).
+            update("\(label): оставьте приложение открытым, проверка простоя \(Int(idle / 60)) мин")
+            emit(["event": "idle-start", "seconds": idle])
+            try await Task.sleep(nanoseconds: UInt64(idle * 1_000_000_000))
+            let resumedAt = ProcessInfo.processInfo.systemUptime
+            try await recover(fixture, stage: "after-idle", since: resumedAt)
+            try await sameRuntime(initial.runtimeIdentifier)
+            emit(["event": "idle-restart", "transition": "idle-device-restart", "result": "passed"])
+        }
         try await closeActiveFlows(fixture, cycle: 1)
         try await controller.stop()
         try await waitDisconnected()
@@ -731,9 +819,13 @@ private final class ProtocolDeviceProbe: ObservableObject {
 private final class ProbeExchange: @unchecked Sendable {
     private enum Failure: Int, CustomNSError {
         case timeout, closed, oversized
+        /// The peer closed after part of the expected bytes.
+        case partial
         static var errorDomain: String { "XrayProtocolDeviceProbe.Network" }
         var errorCode: Int { rawValue }
     }
+    /// Whether a failed exchange had received any bytes.
+    static func receivedSome(_ error: Error) -> Bool { (error as? Failure) == .partial }
     private let connection: NWConnection
     private let queue = DispatchQueue(label: "org.xrayrust.v07-probe")
     private let request: Data
@@ -778,7 +870,10 @@ private final class ProbeExchange: @unchecked Sendable {
             }
         }
         connection.start(queue: queue)
-        queue.asyncAfter(deadline: .now() + timeout) { [weak self] in self?.finish(.failure(Failure.timeout)) }
+        queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
+            guard let self else { return }
+            finish(.failure(received.isEmpty ? Failure.timeout : Failure.partial))
+        }
     }
     private func read() {
         if let tcpLength {
@@ -786,7 +881,7 @@ private final class ProbeExchange: @unchecked Sendable {
                 if let error { finish(.failure(error)); return }
                 if let data { received.append(data) }
                 if received.count == tcpLength { finish(.success(received)) }
-                else if closed { finish(.failure(Failure.closed)) }
+                else if closed { finish(.failure(received.isEmpty ? Failure.closed : Failure.partial)) }
                 else { read() }
             }
         } else {
