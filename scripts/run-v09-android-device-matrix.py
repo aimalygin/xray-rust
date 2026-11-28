@@ -25,6 +25,19 @@ recovery again, and requires the same runtime generation and at least one
 rebind request reported by the Device Gate. It needs adb over USB, a SIM with
 data, and a fixture the phone reaches from both networks.
 
+v0.11 envelopes add three more. A case with ``sniffProbes`` (TUN sniffing)
+runs no traffic sweep: after connecting, the Device Probe sends each probe's
+first bytes to its address over a raw TCP exchange, and the probe passes
+when they are echoed or refused as it expects. ``--lock-wake`` adds the
+lock/wake step to every other case: with the VPN running it turns the screen
+off over adb (``input keyevent KEYCODE_SLEEP``), waits 60 s, wakes the phone
+and dismisses the keyguard, and requires TCP and UDP of both families to pass
+again on the same runtime generation. A case with ``idleRestartSeconds``
+(WireGuard without keepAlive) then stays up that long with no probe traffic,
+must pass both families again on the same runtime, and must show in the
+fixture's relay log (``--wireguard-sources``) a handshake from a new client
+source: its device was closed and started again.
+
 Before the first case it grants both apps POST_NOTIFICATIONS and waits until
 the fixture's envelope is ``--warmup-seconds`` old (10 by default), which the
 first REALITY probe needs. Links and configs reach the device through stdin
@@ -34,6 +47,8 @@ runs stay separate, as in the 0.8.1 campaign; this driver produces functional
 transitions only.
 """
 import argparse
+import base64
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -45,6 +60,11 @@ import xml.etree.ElementTree as ET
 
 BACKENDS = ("file-descriptor", "packet-pump")
 TARGETS = {"ipv4": "198.51.100.7", "ipv6": "2001:db8::7"}
+LOCK_SECONDS = 60
+_restart_spec = importlib.util.spec_from_file_location(
+    "wireguard_restart", Path(__file__).with_name("check-v011-wireguard-restart.py"))
+restart = importlib.util.module_from_spec(_restart_spec)
+_restart_spec.loader.exec_module(restart)
 
 
 def traffic_transitions(target, udp_expected):
@@ -136,6 +156,28 @@ class Device:
         self.command(self.host, "disconnect")
         self.wait(self.host, lambda s: s.get("state") == "stopped")
 
+    def exchange(self, host, port, payload, timeout_millis):
+        """One raw TCP exchange from the Device Probe: echo, refused, partial or mismatch."""
+        request = time.time_ns() // 1_000_000
+        self.command(self.probe, "exchange", (
+            "--el", "exchange-id", str(request), "--es", "exchange-host", host,
+            "--ei", "exchange-port", str(port), "--es", "exchange-payload-hex", payload.hex(),
+            "--ei", "exchange-timeout-millis", str(timeout_millis)))
+        deadline = time.monotonic() + timeout_millis / 1000 + 15
+        while time.monotonic() < deadline:
+            raw = self.shell("run-as", self.probe, "cat", "shared_prefs/device-probe-exchange.xml", check=False)
+            if raw.strip():
+                values = {item.attrib["name"]: item.text if item.tag == "string" else item.attrib["value"]
+                          for item in ET.fromstring(raw)}
+                if values.get("id") == str(request):
+                    return values
+            time.sleep(0.5)
+        raise RuntimeError("the Device Probe did not finish its exchange")
+
+    def awake(self):
+        state = self.shell("dumpsys", "power", check=False)
+        return "mWakefulness=Awake" in state
+
     def probe_stop(self):
         self.command(self.probe, "stop")
         self.wait(self.probe, lambda s: s.get("running") == "false")
@@ -185,7 +227,7 @@ def set_wifi(device, enabled):
     raise RuntimeError("Wi-Fi did not " + ("reconnect" if enabled else "turn off"))
 
 
-def recover(device, envelope, udp_expected, identity, stage):
+def recover(device, envelope, udp_expected, identity, stage, transitions=None):
     """Traffic must pass again within 90 s of the change, retried meanwhile."""
     started, retries = time.monotonic(), 0
     while True:
@@ -199,7 +241,8 @@ def recover(device, envelope, udp_expected, identity, stage):
             device.emit("recovery-retry", **identity, stage=stage, attempt=retries)
             time.sleep(1)
     device.emit("transition-recovered", **identity, stage=stage, retries=retries,
-                seconds=round(time.monotonic() - started, 1), transitions=network_transitions(identity["case"]),
+                seconds=round(time.monotonic() - started, 1),
+                transitions=network_transitions(identity["case"]) if transitions is None else transitions,
                 status=status)
 
 
@@ -229,6 +272,81 @@ def network_change(device, envelope, identity, udp_expected):
         raise RuntimeError("the VPN restarted during the network change")
     if rebinds < 1 or errors:
         raise RuntimeError(f"the Device Gate reported {rebinds} rebind requests and {errors} errors")
+
+
+def both_families(device, envelope, udp_expected, identity, stage):
+    """Recovery on IPv4 within 90 s, then IPv6 at once."""
+    recover(device, envelope, udp_expected, identity, stage, transitions=[])
+    device.emit("traffic", **identity, target="ipv6", stage=stage,
+                status=device.traffic(envelope, "ipv6", udp_expected, 2))
+
+
+def lock_wake(device, envelope, identity, udp_expected):
+    """Screen off for a minute and back under a running VPN, driven over adb.
+
+    A short screen-off does not enter Doze: this checks that the TUN loop,
+    which sleeps until it has work, wakes for traffic again.
+    """
+    before = device.status(device.host)
+    try:
+        device.shell("input", "keyevent", "KEYCODE_SLEEP")
+        time.sleep(2)
+        if device.awake():
+            raise RuntimeError("the screen did not turn off")
+        time.sleep(LOCK_SECONDS - 2)
+    finally:
+        # Never leave the phone asleep, whatever failed.
+        device.shell("input", "keyevent", "KEYCODE_WAKEUP", check=False)
+        device.shell("wm", "dismiss-keyguard", check=False)
+    both_families(device, envelope, udp_expected, identity, "after-wake")
+    after = device.status(device.host)
+    device.emit("lock-wake", **identity, transitions=["lock-wake"], screenOffSeconds=LOCK_SECONDS, status=after)
+    if after.get("state") != "running" or after.get("runtime-generation") != before.get("runtime-generation"):
+        raise RuntimeError("the VPN restarted during lock/wake")
+
+
+def idle_restart(device, envelope, case, identity, sources):
+    """No probe traffic for the case's idle time, then both families again on
+    the same runtime, over a device the fixture's relay saw start anew."""
+    before = device.status(device.host)
+    seconds = case["idleRestartSeconds"]
+    if not 300 <= seconds <= 900:
+        raise RuntimeError("idleRestartSeconds is outside 300..900")
+    since = time.time()
+    device.emit("idle-start", **identity, seconds=seconds)
+    time.sleep(seconds)
+    both_families(device, envelope, True, identity, "after-idle")
+    after = device.status(device.host)
+    verdict = restart.fresh_handshake(restart.read(sources), since)
+    device.emit("idle-restart", **identity, transitions=["idle-device-restart"], relay=verdict, status=after)
+    if after.get("state") != "running" or after.get("runtime-generation") != before.get("runtime-generation"):
+        raise RuntimeError("the VPN restarted during the idle time")
+    if not verdict["fresh"]:
+        raise RuntimeError("the relay saw no handshake from a new source after the idle time")
+
+
+def run_sniff_case(device, envelope, case, backend):
+    """TUN sniffing: one start, then each probe's raw exchange, then stop."""
+    identity = {"case": case.get("caseId", case["label"]), "backend": backend}
+    device.emit("case-start", **identity, sniffing=True)
+    device.stop()
+    device.command(device.host, "reset")
+    device.emit("share-link-import-not-supported", **identity, scope="the case has no share link; canonical JSON follows")
+    # The JSON reaches startXrayTunnel unchanged: a saved importer profile is
+    # migrated by XrayVpnService, as in production.
+    device.install(case, link=False)
+    device.emit("running", **identity, status=device.start(backend))
+    time.sleep(case.get("settleSeconds", 0))
+    for probe in case["sniffProbes"]:
+        timeout = 10_000 if probe["expect"] == "echo" else 5_000
+        values = device.exchange(probe["host"], envelope["tcpPort"], base64.b64decode(probe["payload"]), timeout)
+        passed = values.get("result") == probe["expect"]
+        device.emit("sniff", **identity, transitions=[probe["transition"]], expected=probe["expect"],
+                    result=values.get("result"), failure=values.get("failure"), passed=passed)
+        if not passed:
+            raise RuntimeError(f"{probe['transition']}: expected {probe['expect']}, got {values.get('result')}")
+    device.stop()
+    device.emit("case-pass", **identity, sniffing=True)
 
 
 def link_imports(device, envelope):
@@ -263,7 +381,7 @@ def invalid_imports(device, envelope):
             raise RuntimeError("invalid import/redaction control failed")
 
 
-def run_case(device, envelope, case, backend, change_network=False):
+def run_case(device, envelope, case, backend, change_network=False, lock=False, sources=None):
     identity = {"case": case.get("caseId", case.get("label", case["format"])), "backend": backend}
     udp_expected = case.get("udp", True)
     udp = "echo" if udp_expected else "refused"
@@ -287,6 +405,10 @@ def run_case(device, envelope, case, backend, change_network=False):
                     status=device.traffic(envelope, target, udp_expected))
     if change_network:
         network_change(device, envelope, identity, udp_expected)
+    if lock:
+        lock_wake(device, envelope, identity, udp_expected)
+    if case.get("idleRestartSeconds"):
+        idle_restart(device, envelope, case, identity, sources)
     device.command(device.host, "close-connections")
     device.emit("close-recovery", **identity, udp=udp, status=device.traffic(envelope, "ipv4", udp_expected, 2))
     device.stop()
@@ -314,6 +436,10 @@ def main():
     parser.add_argument("--backend", action="append", choices=BACKENDS, help="limit to these TUN backends")
     parser.add_argument("--network-change", action="store_true",
                         help="add the Wi-Fi/cellular step to every case; needs adb over USB and a WAN fixture")
+    parser.add_argument("--lock-wake", action="store_true",
+                        help="add the screen-off/wake step to every case but the sniffing ones")
+    parser.add_argument("--wireguard-sources", type=Path,
+                        help="the fixture's wireguard-sources.jsonl; required by a case with idleRestartSeconds")
     args = parser.parse_args()
     serial = os.environ["ANDROID_SERIAL"]
     if args.network_change and (":" in serial or "_adb-tls-connect" in serial):
@@ -325,6 +451,8 @@ def main():
              if args.case is None or case.get("caseId", case.get("label", case["format"])) in args.case]
     if args.case and len(cases) != len(set(args.case)):
         parser.error("unknown or duplicate --case")
+    if any(case.get("idleRestartSeconds") for case in cases) and args.wireguard_sources is None:
+        parser.error("a case with idleRestartSeconds needs --wireguard-sources")
     args.work_dir.mkdir(parents=True, exist_ok=False)
     device = Device(serial, os.environ.get("ADB", "adb"), args.package_suffix, args.work_dir / "events.jsonl")
     device.grant_notifications()
@@ -333,11 +461,15 @@ def main():
     warmup = max(0.0, args.fixture.stat().st_mtime + args.warmup_seconds - time.time())
     time.sleep(warmup)
     device.emit("matrix-start", caseCount=len(cases), backends=backends, warmupSeconds=round(warmup, 1),
-                networkChange=args.network_change)
+                networkChange=args.network_change, lockWake=args.lock_wake)
     for case in cases:
         for backend in backends:
             try:
-                run_case(device, envelope, case, backend, args.network_change)
+                if "sniffProbes" in case:
+                    run_sniff_case(device, envelope, case, backend)
+                else:
+                    run_case(device, envelope, case, backend, args.network_change, args.lock_wake,
+                             args.wireguard_sources)
             except Exception as error:
                 device.emit("case-fail", case=case.get("caseId", case["format"]), backend=backend,
                             error=str(error))

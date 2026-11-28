@@ -250,7 +250,7 @@ grep -Fxq '            --name "$EVIDENCE_PROFILE-release-evidence-$CANDIDATE_COM
   die "release boundary does not download the profile's evidence artifact"
 grep -Fxq '          archive="$RUNNER_TEMP/release-evidence/$EVIDENCE_PROFILE-release-evidence.zip"' <<<"$evidence_job" || \
   die "release boundary does not revalidate the profile's evidence archive"
-for release in 0.6.0:v06 0.7.0:v07 0.8.1:v08 0.9.0:v09 0.10.0:v010; do
+for release in 0.6.0:v06 0.7.0:v07 0.8.1:v08 0.9.0:v09 0.10.0:v010 0.11.0:v011; do
   profile="$(bash "$WORKSPACE_ROOT/scripts/release-evidence-profile.sh" "v${release%%:*}")"
   [[ "$profile" == "${release##*:}" ]] || die "v${release%%:*} selects evidence profile $profile"
   evidence_workflow="$WORKSPACE_ROOT/.github/workflows/$profile-release-evidence.yml"

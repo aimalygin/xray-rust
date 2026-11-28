@@ -28,6 +28,9 @@ class ProbeService : Service() {
     private val stressExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "xray-android-device-stress").apply { isDaemon = true }
     }
+    private val exchangeExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "xray-android-device-exchange").apply { isDaemon = true }
+    }
     private val active = AtomicBoolean()
     private val stressActive = AtomicBoolean()
     private val httpPassed = AtomicLong()
@@ -50,6 +53,7 @@ class ProbeService : Service() {
             ACTION_STOP -> stopProbes()
             ACTION_RESET -> resetCounters()
             ACTION_STRESS -> startStress(intent)
+            ACTION_EXCHANGE -> exchange(intent, startId)
             else -> stopSelf(startId)
         }
         return START_NOT_STICKY
@@ -60,6 +64,7 @@ class ProbeService : Service() {
         scheduled?.cancel(true)
         executor.shutdownNow()
         stressExecutor.shutdownNow()
+        exchangeExecutor.shutdownNow()
         persistStatus(running = false)
         super.onDestroy()
     }
@@ -114,6 +119,25 @@ class ProbeService : Service() {
         ProbeStatus.reset(this)
         Log.i(LOG_TAG, "XRAY_ANDROID_PROBE state=counters-reset")
         stopSelf()
+    }
+
+    /** One raw exchange; its result goes to the exchange status, never an endpoint to the log. */
+    private fun exchange(intent: Intent, startId: Int) {
+        val request = try {
+            ExchangeRequest.fromIntent(intent)
+        } catch (error: Throwable) {
+            Log.e(LOG_TAG, "XRAY_ANDROID_PROBE state=exchange-invalid kind=${error.javaClass.simpleName}")
+            ExchangeStatus.write(this, intent.getLongExtra(ExchangeRequest.EXTRA_ID, 0), "invalid", null)
+            return
+        }
+        exchangeExecutor.execute {
+            val (result, failure) = RawExchange.run(request)
+            ExchangeStatus.write(this, request.id, result, failure)
+            Log.i(LOG_TAG, "XRAY_ANDROID_PROBE kind=exchange result=$result failure=${failure ?: "none"}")
+            if (!active.get() && !stressActive.get()) {
+                stopSelfResult(startId)
+            }
+        }
     }
 
     private fun startStress(intent: Intent) {
@@ -359,6 +383,7 @@ class ProbeService : Service() {
         const val ACTION_STOP = "org.xrayrust.deviceprobe.STOP"
         const val ACTION_RESET = "org.xrayrust.deviceprobe.RESET"
         const val ACTION_STRESS = "org.xrayrust.deviceprobe.STRESS"
+        const val ACTION_EXCHANGE = "org.xrayrust.deviceprobe.EXCHANGE"
         const val LOG_TAG = "XrayDeviceProbe"
         private const val NOTIFICATION_CHANNEL = "xray-device-probe"
         private const val NOTIFICATION_ID = 5042

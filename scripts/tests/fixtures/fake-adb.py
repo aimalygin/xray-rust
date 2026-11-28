@@ -7,6 +7,10 @@ Wi-Fi follows ``svc wifi``: each real change under a running VPN counts one rebi
 request unless FAKE_ADB_REBIND=none, restarts the runtime with
 FAKE_ADB_REBIND=restart, and with FAKE_ADB_CELLULAR=dead no probe passes while
 Wi-Fi is off.
+The screen follows ``input keyevent``; FAKE_ADB_SCREEN=stuck keeps it on and
+FAKE_ADB_WAKE=restart restarts the runtime on wake. A raw exchange is echoed
+unless its bytes name ``refused.``, or a decoy under a profile without
+``routeOnly`` when FAKE_ADB_MIGRATION=none; FAKE_ADB_EXCHANGE forces a result.
 """
 import json
 import os
@@ -31,6 +35,17 @@ if args[0] == "shell":
             host["runtime-generation"] = host.get("runtime-generation", 0) + 1
     elif command[:4] == ["settings", "get", "global", "wifi_on"]:
         output = "1\n" if state.get("wifi", True) else "0\n"
+    elif command[:2] == ["input", "keyevent"]:
+        if command[2] == "KEYCODE_SLEEP" and os.environ.get("FAKE_ADB_SCREEN") != "stuck":
+            state["awake"] = False
+        elif command[2] == "KEYCODE_WAKEUP":
+            if not state.get("awake", True) and os.environ.get("FAKE_ADB_WAKE") == "restart":
+                state["host"]["runtime-generation"] = state["host"].get("runtime-generation", 0) + 1
+            state["awake"] = True
+    elif command[:2] == ["dumpsys", "power"]:
+        output = "mWakefulness=" + ("Awake" if state.get("awake", True) else "Asleep") + "\n"
+    elif command[:2] == ["wm", "dismiss-keyguard"]:
+        pass
     elif command[:3] == ["cmd", "wifi", "status"]:
         output = 'Wifi is enabled\nWifi is connected to "fixture"\n' if state.get("wifi", True) else "Wifi is disabled\n"
     elif command[:1] == ["run-as"]:
@@ -41,6 +56,8 @@ if args[0] == "shell":
             output = f"{state.get('profile', 'none')}  {action[1]}\n"
         elif action[0] == "cat":
             values = state["host"] if "devicehost" in package else state["probe"]
+            if action[1].endswith("device-probe-exchange.xml"):
+                values = state.get("exchange", {})
             rows = []
             for key, value in values.items():
                 if isinstance(value, bool):
@@ -65,6 +82,7 @@ if args[0] == "shell":
             elif name == "import-pending-config":
                 config = json.loads(state["pending"].pop("profile-config-import.pending"))
                 state["protocol"] = config["outbounds"][0]["protocol"]
+                state["sniffing"] = config["inbounds"][0].get("sniffing", {})
                 host.update(detail="config-profile-ready", state="stopped")
             elif name == "connect":
                 host["state"] = "running"
@@ -85,5 +103,15 @@ if args[0] == "shell":
                                   "udp-passed": 0 if refused else 3, "udp-failed": 3 if refused else 0})
             elif name == "stop":
                 probe["running"] = False
+            elif name == "exchange":
+                extra = lambda key: command[command.index(key) + 1]
+                payload = bytes.fromhex(extra("exchange-payload-hex"))
+                result = "refused" if b"refused." in payload else "echo"
+                if (b"decoy." in payload and "routeOnly" not in state.get("sniffing", {})
+                        and os.environ.get("FAKE_ADB_MIGRATION") == "none"):
+                    result = "refused"
+                result = os.environ.get("FAKE_ADB_EXCHANGE", result)
+                state["exchange"] = {"id": int(extra("exchange-id")), "result": result,
+                                     "failure": "none" if result == "echo" else "SocketException"}
 state_path.write_text(json.dumps(state))
 sys.stdout.write(output)

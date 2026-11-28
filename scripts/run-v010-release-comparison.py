@@ -46,6 +46,11 @@ acceptance = module("acceptance", "run-v08-apple-acceptance-fixture.py")
 policy = module("policy", "check-v010-release-evidence.py")
 bench, followup = comparison.bench, comparison.followup
 
+# The protocols the comparison covers; run-v011-release-comparison.py
+# replaces this, the policy and write_server.
+PROTOCOLS = policy.LEGACY_PROTOCOLS
+# Scripts that wrap this one, hashed with the other inputs.
+EXTRA_FILES = []
 VERSIONS = ("baseline", "candidate")
 BUILDS = (*VERSIONS, "harness")
 # metric -> the workload that yields it; memory is read from both.
@@ -79,10 +84,19 @@ def builds(campaign):
     return found
 
 
+def iterations(protocol, traffic, smoke):
+    """The usual work, or less where the carrier sets the pace (mKCP, MASQUE)."""
+    latency = traffic == "tcp-latency"
+    if smoke:
+        return 10 if latency else 4
+    work = comparison.CARRIER_WORK.get(protocol, {})
+    return work.get("latency", 1000) if latency else work.get("bulk", 4096)
+
+
 def cases(protocols, smoke=False):
     return [{"id": f"{protocol}-{traffic}", "protocol": protocol, "path": "socks", "traffic": traffic,
              "connections": 1, "payload_size": 1024 if traffic == "tcp-latency" else 65536,
-             "iterations": (10 if smoke else 1000) if traffic == "tcp-latency" else (4 if smoke else 4096)}
+             "iterations": iterations(protocol, traffic, smoke)}
             for protocol in protocols for traffic in WORKLOADS.values()]
 
 
@@ -97,22 +111,30 @@ def client_configs(envelope):
             # The driver's origin is this host's own address, not the fixture's.
             config["outbounds"][0]["settings"]["peers"][0]["allowedIPs"] = ["0.0.0.0/0"]
         configs[case["label"]] = config
-    if set(configs) != policy.LEGACY_PROTOCOLS:
+    if set(configs) != set(acceptance.LEGACY_V010):
         raise RuntimeError(f"the legacy fixture does not cover the comparison: {sorted(configs)}")
     return configs
 
 
-@contextlib.contextmanager
-def fixture(reference, directory):
-    """A pinned Xray-core server carrying all twelve protocols, with fresh keys."""
-    directory.mkdir(parents=True, mode=0o700)
+def write_server(directory):
+    """The server config carrying the twelve legacy protocols, with fresh keys,
+    and each protocol's client config."""
     acceptance.write_legacy_v010(directory, "127.0.0.1", 1, 2, 3)
     server = json.loads((directory / "server.json").read_text())
     # The driver's origin is this host's own address; nothing leaves the host.
     server.pop("routing", None)
     server["outbounds"] = [{"protocol": "freedom", "settings": {"finalRules": [{"action": "allow"}]}}]
+    return server, client_configs(json.loads((directory / "v07-probe.json").read_text()))
+
+
+@contextlib.contextmanager
+def fixture(reference, directory):
+    """A pinned Xray-core server carrying every compared protocol, with fresh keys."""
+    directory.mkdir(parents=True, mode=0o700)
+    server, configs = write_server(directory)
+    if set(configs) != set(PROTOCOLS):
+        raise RuntimeError(f"the fixture does not cover the comparison: {sorted(configs)}")
     bench.save(directory / "server.json", server)
-    configs = client_configs(json.loads((directory / "v07-probe.json").read_text()))
     with (directory / "server.log").open("w") as log:
         child = subprocess.Popen([str(reference), "run", "-config", str(directory / "server.json")],
                                  stdout=log, stderr=log, env=bench.env())
@@ -168,7 +190,7 @@ def regressions(document):
 def complete(manifest):
     """Whether this run may write the artifact rather than a diagnostic."""
     return (not manifest["smoke"] and manifest["repeats"] >= 5
-            and set(manifest["protocols"]) == policy.LEGACY_PROTOCOLS)
+            and set(manifest["protocols"]) == set(PROTOCOLS))
 
 
 def summary(document):
@@ -184,7 +206,7 @@ def main():
     p.add_argument("--campaign", type=Path, required=True, help="bin/ and build/ of the three isolated builds")
     p.add_argument("--reference", type=Path, required=True, help="the pinned Xray-core binary")
     p.add_argument("--output", type=Path, required=True)
-    p.add_argument("--protocol", choices=sorted(policy.LEGACY_PROTOCOLS), action="append",
+    p.add_argument("--protocol", choices=sorted(PROTOCOLS), action="append",
                    help="diagnostic: measure only these; writes no artifact")
     p.add_argument("--repeats", type=int, default=5)
     p.add_argument("--smoke", action="store_true", help="diagnostic: a tiny work size; writes no artifact")
@@ -204,9 +226,9 @@ def main():
         raise RuntimeError("benchmark/compiler already running")
     out = a.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
-    protocols = a.protocol or sorted(policy.LEGACY_PROTOCOLS)
+    protocols = a.protocol or sorted(PROTOCOLS)
     files = [*engines, Path(__file__).resolve(), Path(comparison.__file__), Path(acceptance.__file__),
-             Path(policy.__file__), Path(bench.__file__), Path(comparison.device.__file__)]
+             Path(policy.__file__), Path(bench.__file__), Path(comparison.device.__file__), *EXTRA_FILES]
     hashes = {str(f): bench.sha(f) for f in files}
     manifest = {"schema_version": 1, "smoke": a.smoke, "repeats": a.repeats, "protocols": protocols,
                 "cases": cases(protocols, a.smoke), "builds": identities, "baseline": dict(policy.BASELINE),
@@ -215,8 +237,8 @@ def main():
                 "file_hashes": hashes, "platform": platform.platform(),
                 "fixture_policy": "one fresh pinned Xray-core server and key set per repeat, shared by both builds",
                 "process_accounting": "real full client launched directly; verified TCP warmup",
-                "scope": "single-flow loopback SOCKS ingress; published v0.9.0 against the candidate; "
-                         "no TUN comparison and no physical-device claim",
+                "scope": f"single-flow loopback SOCKS ingress; published v{policy.BASELINE['version']} "
+                         "against the candidate; no TUN comparison and no physical-device claim",
                 "started_unix": time.time(), "runs": []}
     bench.save(out / "manifest.json", manifest)
     results = {}
