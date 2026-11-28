@@ -10,11 +10,15 @@ TLS) and classic Shadowsocks AEAD; see docs/v09-release-evidence.md.
 --protocol v010 serves mKCP and MASQUE, smoke-v010 the masks, XDRIVE and the
 VLESS reverse bridge, and import-v010 the new link kinds; xicmp runs alone and
 needs raw ICMP sockets. See docs/v010-release-evidence.md.
+--protocol sniff-v011 serves the TUN sniffing scenario, import-v011 the import
+changes since 0.10.1, and wireguard-idle WireGuard without keepAlive behind a
+relay that logs each client source address. See docs/v011-release-evidence.md.
 """
 
 import argparse
 import asyncio
 import base64
+import copy
 import hashlib
 import ipaddress
 import json
@@ -24,9 +28,11 @@ import secrets
 import shutil
 import signal
 import socket
+import ssl
 import struct
 import subprocess
 import sys
+import time
 import uuid
 from urllib.parse import quote, urlencode
 
@@ -51,6 +57,24 @@ V010_LABELS = {
     "header-custom": "header-custom:tcp", "xdrive": "xdrive:s3", "vless-reverse": "vless-reverse:bridge",
 }
 GROUPS = {"v08": V08_PROTOCOLS, "v09": V09_PROTOCOLS, "v010": V010_FULL, "smoke-v010": V010_SMOKE}
+# v0.11 (docs/v0110-release.md): the TUN sniffing scenario, the import changes
+# since 0.10.1, and WireGuard without keepAlive for the idle device restart.
+V011_SNIFF, V011_IMPORT, WIREGUARD_IDLE = "sniff-v011", "import-v011", "wireguard-idle"
+V011_PROTOCOLS = (V011_SNIFF, V011_IMPORT, WIREGUARD_IDLE)
+# The TUN inbound every SDK importer release from 0.7.0 to 0.10.1 wrote, on
+# Apple and on Android, sniffing included. 0.11's start paths add routeOnly
+# to exactly this sniffing.
+IMPORTED_TUN_INBOUND = {"tag": "tun-in", "protocol": "tun", "listen": "127.0.0.1", "port": 0, "settings": {},
+                        "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"],
+                                     "metadataOnly": False}}
+# A WireGuard device closes after five minutes without a flow (IDLE_CLOSE in
+# outbound/wireguard.rs), and a TUN UDP flow lingers up to a minute after its
+# last datagram (UDP_IDLE_TIMEOUT in tun.rs): seven minutes covers both.
+WIREGUARD_IDLE_SECONDS = 420
+# What write_fixtures leaves for serve() when the WireGuard idle case needs its
+# relay, and the relay's log of client source addresses, kept after shutdown.
+WIREGUARD_WATCH = "wireguard-watch.json"
+WIREGUARD_SOURCES = "wireguard-sources.jsonl"
 MASQUE_PATH = "/masque/{target}/{ipproto}/"
 XDRIVE_TUNING = {"flushIntervalMs": 5, "pollIntervalMs": 5, "maxPollIntervalMs": 50, "sessionTtlSeconds": 30}
 # Fixtures that pick their own cases name the host services those need, and
@@ -188,9 +212,16 @@ def loopback_outbound():
 
 
 def write_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol="both", port=None, mode="smoke", probe_host="v07-probe.test", direct_targets=False, services=None):
+    if protocol == V011_SNIFF:
+        return write_sniff_fixtures(root, bind, tcp_port, udp_port, mode, probe_host)
+    idle = protocol == WIREGUARD_IDLE
+    if idle:
+        if direct_targets:
+            raise ValueError("the WireGuard idle case takes no direct targets")
+        protocol = "wireguard"
     if direct_targets and protocol not in ("both", "wireguard", "hysteria2"):
         raise ValueError("direct targets require WireGuard or Hysteria")
-    if protocol in (*GROUPS, "import-v010", *V08_PROTOCOLS, *V09_PROTOCOLS, *V010_PROTOCOLS):
+    if protocol in (*GROUPS, "import-v010", V011_IMPORT, *V08_PROTOCOLS, *V09_PROTOCOLS, *V010_PROTOCOLS):
         return write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, port, mode, probe_host,
                                      services)
     def save(name, value):
@@ -241,6 +272,16 @@ def write_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol="both", po
         server = json.loads((root / "server.json").read_text())
         server["inbounds"] = [server["inbounds"][0 if protocol == "wireguard" else 1]]
         save("server.json", server)
+    if idle:
+        # The reference server listens on loopback behind the relay serve()
+        # starts on the address the device dials.
+        server = json.loads((root / "server.json").read_text())
+        inner = wg_port
+        while inner == wg_port:
+            inner = reserve_udp("127.0.0.1")
+        server["inbounds"][0].update(listen="127.0.0.1", port=inner)
+        save("server.json", server)
+        save(WIREGUARD_WATCH, {"listen": bind, "port": wg_port, "upstream": inner})
     if direct_targets:
         # Preserve #60's IPv4 binding for redirect mode only. Direct IPv6
         # targets need automatic source-family selection, without redirect.
@@ -277,13 +318,27 @@ def write_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol="both", po
         f'PresharedKey = {psk}\nEndpoint = {bind}:{wg_port}\n'
         'AllowedIPs = 198.51.100.0/24, 2001:db8::/32\nPersistentKeepalive = 1\n'
     )
+    outbounds = []
+    if idle:
+        # keepAlive keeps a device open, so the idle case has none. Nothing but
+        # the probe's own traffic may reach the device while it idles: every
+        # other flow is blocked, and the fixture's DNS answers the probe name
+        # alone, so a phone's background lookups take no WireGuard flow.
+        del wg["settings"]["peers"][0]["keepAlive"]
+        wg_text = wg_text.replace("PersistentKeepalive = 1\n", "")
+        common["dns"] = {"servers": [{"address": "198.51.100.53", "port": dns_port,
+                                      "domains": [f"full:{probe_host}"], "skipFallback": True}]}
+        common["routing"]["rules"].append({"type": "field", "network": "tcp,udp", "outboundTag": "block"})
+        outbounds = [{"tag": "block", "protocol": "blackhole"}]
     profiles = [("wireguard", wg, wg_text),
                 ("hysteria2", hy, f"hy2://{auth}@{bind}:{hy_port}?sni=v07-probe.test")]
     if protocol != "both":
         profiles = [profile for profile in profiles if profile[0] == protocol]
     cases = [{"format": fmt, "text": text, "serverAddress": bind,
-              "configJSON": json.dumps({**common, "outbounds": [outbound]})}
+              "configJSON": json.dumps({**common, "outbounds": [outbound, *outbounds]})}
              for fmt, outbound, text in profiles]
+    if idle:
+        cases[0].update(label="wireguard:idle", idleRestartSeconds=WIREGUARD_IDLE_SECONDS)
     save("v07-probe.json", {"cases": cases, "tcpPort": tcp_port, "udpPort": udp_port, "mode": mode, "probeHost": probe_host})
 
 
@@ -492,6 +547,111 @@ def remnawave_profile(case):
             "serverAddress": case["serverAddress"], "configJSON": json.dumps(config)}
 
 
+def sniff_payloads(probe_host):
+    """The first bytes of each sniffing probe, for a name under the probe host:
+    an HTTP/1.1 request naming it in Host, or the ClientHello Python's TLS
+    stack sends with it as the server name."""
+    def http(name):
+        return (f"GET / HTTP/1.1\r\nHost: {name}.{probe_host}\r\nUser-Agent: xray-device-probe\r\n"
+                "Accept: */*\r\n\r\n").encode()
+
+    def hello(name):
+        incoming, outgoing = ssl.MemoryBIO(), ssl.MemoryBIO()
+        session = ssl.create_default_context().wrap_bio(incoming, outgoing, server_hostname=f"{name}.{probe_host}")
+        try:
+            session.do_handshake()
+        except ssl.SSLWantReadError:
+            pass
+        return outgoing.read()
+
+    return http, hello
+
+
+def write_sniff_fixtures(root, bind, tcp_port, udp_port, mode, probe_host):
+    """The TUN sniffing scenario of docs/v0110-release.md: three client cases
+    over one plain VLESS server, each with the importers' TUN inbound and its
+    own sniffing, and the probes each must pass.
+
+    The server echoes the synthetic ranges and the one name ``byname.<probe>``
+    and refuses everything else, so a flow the client dials by a decoy name or
+    by an address outside the ranges is refused there. The client's own rules
+    refuse what its routing should not carry. No case resolves a name: every
+    probe connects to an address and sends a name in its first bytes.
+    """
+    user, carrier = str(uuid.uuid4()), reserve_carrier(bind, set())
+    name = lambda label: f"{label}.{probe_host}"
+    http, hello = sniff_payloads(probe_host)
+    probe = lambda transition, host, payload, expect: {
+        "transition": transition, "host": host, "payload": base64.b64encode(payload).decode(), "expect": expect}
+    rest = {"type": "field", "network": "tcp,udp", "outboundTag": "block"}
+    by_address = [{"type": "field", "domain": [f"full:{name('routed')}"], "outboundTag": "proxy"},
+                  {"type": "field", "domain": [f"full:{name('refused')}"], "outboundTag": "block"},
+                  {"type": "field", "ip": ["198.51.100.7", "2001:db8::7"], "outboundTag": "proxy"}, rest]
+    scenario = [
+        ("sniff:route-only", {"routeOnly": True}, by_address, [
+            probe("http-host-route", "198.51.100.8", http("routed"), "echo"),
+            probe("tls-sni-route", "2001:db8::8", hello("routed"), "echo"),
+            probe("domain-rule-refusal", "198.51.100.7", http("refused"), "refused"),
+            probe("decoy-sni-address", "198.51.100.7", hello("decoy"), "echo")]),
+        # Exactly what the importers saved: only the start path's migration
+        # keeps the decoy on its address.
+        ("sniff:imported", {}, by_address, [
+            probe("saved-profile-migration", "198.51.100.7", hello("decoy"), "echo")]),
+        ("sniff:name-dial", {"routeOnly": False},
+         [{"type": "field", "domain": [f"full:{name('byname')}"], "outboundTag": "proxy"}, rest], [
+             probe("sniffed-name-dial", "203.0.113.7", http("byname"), "echo")]),
+    ]
+    proxy = {"tag": "proxy", "protocol": "vless", "settings": {
+        "address": bind, "port": carrier, "id": user, "encryption": "none"}, "streamSettings": {"network": "raw"}}
+    cases = []
+    for label, extra, rules, probes in scenario:
+        inbound = copy.deepcopy(IMPORTED_TUN_INBOUND)
+        inbound["sniffing"].update(extra)
+        config = {"inbounds": [inbound], "outbounds": [proxy, {"tag": "block", "protocol": "blackhole"}],
+                  "routing": {"domainStrategy": "AsIs", "rules": rules}}
+        cases.append({"format": "config", "label": label, "serverAddress": bind, "configJSON": json.dumps(config),
+                      "sniffProbes": probes})
+    server = {"log": {"loglevel": "warning"},
+              "inbounds": [{"listen": bind, "port": carrier, "protocol": "vless", "settings": {
+                  "clients": [{"id": user}], "decryption": "none"}, "streamSettings": {"network": "raw"}}],
+              "outbounds": [{"tag": "blocked", "protocol": "blackhole"}, loopback_outbound()],
+              "routing": {"rules": [{"type": "field", "domain": [f"full:{name('byname')}"], "outboundTag": "echo"},
+                                    {"type": "field", "ip": ["198.51.100.0/24", "2001:db8::/32"],
+                                     "outboundTag": "echo"}]}}
+    envelope = {"cases": cases, "tcpPort": tcp_port, "udpPort": udp_port, "mode": mode, "probeHost": probe_host}
+    (root / "server.json").write_text(json.dumps(server, indent=2) + "\n")
+    (root / "v07-probe.json").write_text(json.dumps(envelope, indent=2) + "\n")
+
+
+def subscription_profile(case):
+    """The case as a full Xray JSON subscription: root objects and fields that
+    Xray-core accepts and that change nothing here, which 0.10.1 refused."""
+    config = json.loads(case["configJSON"])
+    config = {"stats": {}, "api": {"tag": "api", "services": ["StatsService"]}, "metrics": {"tag": "metrics"},
+              **config}
+    config["routing"]["domainMatcher"] = "hybrid"
+    config["outbounds"][0]["streamSettings"]["tlsSettings"]["minVersion"] = "1.2"
+    return {"format": "config", "label": "xray-json-subscription", "udp": True,
+            "serverAddress": case["serverAddress"], "configJSON": json.dumps(config)}
+
+
+def vmess_plain_imports(bind):
+    """The vmess:// link V2Board writes: base64 JSON for WebSocket without TLS
+    that still carries ``fp``, which 0.10.1 refused. Nothing dials it."""
+    link = {"v": "2", "ps": "device fixture", "add": bind, "port": "80", "id": str(uuid.uuid4()), "aid": "0",
+            "scy": "auto", "net": "ws", "type": "none", "host": "v011-probe.test", "path": "/device-check",
+            "tls": "", "sni": "", "alpn": "", "fp": "chrome"}
+    text = "vmess://" + base64.b64encode(json.dumps(link).encode()).decode()
+    return [{"transition": "vmess-link-plain", "format": "vmess", "text": text, "serverAddress": bind}]
+
+
+def invalid_v011_imports():
+    """The malformed links of v0.10 and a plain VMess one whose user id is the
+    marker; none may echo it."""
+    plain = (f"vmess://{REDACTION_MARKER}@127.0.0.1:80?type=ws&security=none&fp=chrome&path=%2Fdevice-check")
+    return [*invalid_link_imports(), {"scenario": "vmess-link-plain", "format": "vmess", "text": plain}]
+
+
 def write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, port, mode, probe_host, services=None):
     """New client fixtures retain the existing device harness envelope.
 
@@ -504,8 +664,9 @@ def write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, po
             "-nodes", "-days", "1", "-subj", "/CN=v08-probe.test",
             "-keyout", str(root / "tls.key"), "-out", str(root / "tls.crt"))
     pin = hashlib.sha256(openssl("x509", "-in", str(root / "tls.crt"), "-outform", "DER")).hexdigest()
-    # import-v010 runs one Trojan server, reached with a Remnawave profile.
-    selected = ("trojan",) if protocol == "import-v010" else GROUPS.get(protocol, (protocol,))
+    # import-v010 runs one Trojan server, reached with a Remnawave profile;
+    # import-v011 the same server, reached with a full subscription.
+    selected = ("trojan",) if protocol in ("import-v010", V011_IMPORT) else GROUPS.get(protocol, (protocol,))
     certificates = [{"certificateFile": str(root / "tls.crt"), "keyFile": str(root / "tls.key")}]
     inbounds, cases, ports, server_rules = [], [], set(), []
     proxied = [{"type": "field", "domain": [f"full:{probe_host}"], "outboundTag": "proxy"},
@@ -610,6 +771,10 @@ def write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, po
         envelope["cases"] = [remnawave_profile(cases[0])]
         envelope["imports"] = link_imports(bind, pin)
         invalid = invalid_link_imports()
+    if protocol == V011_IMPORT:
+        envelope["cases"] = [subscription_profile(cases[0])]
+        envelope["imports"] = vmess_plain_imports(bind)
+        invalid = invalid_v011_imports()
     if invalid:
         envelope.update(redactionMarker=REDACTION_MARKER, invalidImports=invalid)
     (root / "server.json").write_text(json.dumps(server, indent=2) + "\n")
@@ -634,6 +799,57 @@ async def dns_listeners(loop, address, probe_host):
             continue
         return transport, server
     raise RuntimeError("no DNS port is free for both UDP and TCP")
+
+
+class WireguardWatch(asyncio.DatagramProtocol):
+    """Relays the WireGuard idle case's datagrams to the reference server on
+    loopback, and logs each client source address and handshake initiation,
+    never a payload. A device closed and started again sends from a new
+    socket, so a handshake from a source not seen before shows a fresh device.
+    """
+
+    def __init__(self, upstream, log):
+        self.upstream, self.log, self.relays = upstream, log, {}
+
+    def connection_made(self, transport):
+        self.transport = transport
+
+    def record(self, event, source):
+        self.log.write(json.dumps({"time": time.time(), "event": event, "source": f"{source[0]}:{source[1]}"}) + "\n")
+        self.log.flush()
+
+    def datagram_received(self, data, source):
+        relay = self.relays.get(source)
+        if relay is None:
+            if len(self.relays) >= 64:
+                return
+            relay = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            relay.setblocking(False)
+            relay.connect(self.upstream)
+            self.relays[source] = relay
+            asyncio.get_running_loop().add_reader(relay, self.reply, relay, source)
+            self.record("new-source", source)
+        # A WireGuard message starts with its type; 1 is a handshake initiation.
+        if data[:1] == b"\x01":
+            self.record("handshake-initiation", source)
+        try:
+            relay.send(data)
+        except OSError:
+            pass
+
+    def reply(self, relay, source):
+        try:
+            data = relay.recv(65535)
+        except OSError:
+            return
+        self.transport.sendto(data, source)
+
+    def close(self):
+        loop = asyncio.get_running_loop()
+        for relay in self.relays.values():
+            loop.remove_reader(relay)
+            relay.close()
+        self.relays.clear()
 
 
 STUN_MAGIC = bytes.fromhex("2112a442")
@@ -830,6 +1046,7 @@ async def serve(args):
     transports, child, tcp, tcp6, dns_tcp = [], None, None, None, None
     needed = set(GROUPS.get(args.protocol, (args.protocol,))) if SERVICES is None else set(SERVICES)
     services, listeners, storage, storage_log, rendezvous, realm = {}, [], None, None, None, None
+    watch, sources_log = None, None
     try:
         if "xicmp" in needed:
             require_raw_icmp()
@@ -878,6 +1095,13 @@ async def serve(args):
                        protocol=args.protocol, port=args.port, mode=args.mode, probe_host=probe_host,
                        **({"direct_targets": True} if direct_targets else {}),
                        **({"services": services} if services else {}))
+        if (args.output / WIREGUARD_WATCH).exists():
+            relay = json.loads((args.output / WIREGUARD_WATCH).read_text())
+            sources_log = (args.output / WIREGUARD_SOURCES).open("a")
+            transport, watch = await loop.create_datagram_endpoint(
+                lambda: WireguardWatch(("127.0.0.1", relay["upstream"]), sources_log),
+                local_addr=(relay["listen"], relay["port"]))
+            transports.append(transport)
         with (args.output / "server.log").open("wb") as log:
             child = await asyncio.create_subprocess_exec(
                 str(args.reference_binary), "run", "-config", str(args.output / "server.json"),
@@ -920,6 +1144,10 @@ async def serve(args):
             await storage.wait()
         if storage_log:
             storage_log.close()
+        if watch:
+            watch.close()
+        if sources_log:
+            sources_log.close()
         for server in (tcp, tcp6, dns_tcp):
             if server:
                 server.close()
@@ -930,7 +1158,7 @@ async def serve(args):
         for transport in transports:
             transport.close()
         for name in ("server-wg.pem", "client-wg.pem", "tls.key", "tls.crt", "server.json", "v07-probe.json",
-                     "xdrive-standin"):
+                     "xdrive-standin", WIREGUARD_WATCH):
             (args.output / name).unlink(missing_ok=True)
         # Combined suites generate each part's keys in its own directory.
         shutil.rmtree(args.output / "parts", ignore_errors=True)
@@ -944,7 +1172,8 @@ def main():
     parser.add_argument("--output", required=True, type=Path, help="new private directory")
     parser.add_argument("--seconds", type=int, default=600, help="maximum fixture lifetime (1..1800)")
     parser.add_argument("--protocol", choices=("both", "wireguard", "hysteria2", "v08", *V08_PROTOCOLS, "v09", *V09_PROTOCOLS,
-                                               "v010", "smoke-v010", "import-v010", *V010_PROTOCOLS), default="both")
+                                               "v010", "smoke-v010", "import-v010", *V010_PROTOCOLS,
+                                               *V011_PROTOCOLS), default="both")
     parser.add_argument("--port", type=int, help="explicit carrier port; requires a single protocol")
     parser.add_argument("--mode", choices=("smoke", "transitions", "lock-wake", "transitions-reset", "lifecycle", "resources", "udp-sweep"), default="smoke")
     parser.add_argument("--reference-sha256", help="expected binary SHA-256, instead of a clean Go VCS stamp check")
@@ -963,7 +1192,7 @@ def main():
     address = ipaddress.IPv4Address(args.bind)
     if address.is_unspecified or address.is_multicast or not 1 <= args.seconds <= 1800:
         parser.error("use a specific unicast IPv4 address and 1..1800 seconds")
-    several = args.protocol in ("both", "import-v010", *GROUPS) and not SINGLE_CASE
+    several = args.protocol in ("both", "import-v010", V011_SNIFF, V011_IMPORT, *GROUPS) and not SINGLE_CASE
     if args.port is not None and (several or not 1 <= args.port <= 65535):
         parser.error("an explicit port requires one protocol and a port in 1..65535")
     if args.reference_sha256 and (len(args.reference_sha256) != 64 or any(c not in "0123456789abcdef" for c in args.reference_sha256)):

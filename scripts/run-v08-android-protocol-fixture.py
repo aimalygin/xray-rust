@@ -113,6 +113,10 @@ def reserve_port(bind, used):
 # v0.10 selections of the base fixture. A single carrier may take --port, for
 # the Wi-Fi/cellular run against a WAN host.
 V010_SELECTIONS = ("v010", "smoke-v010", "import-v010", *fixture.V010_PROTOCOLS)
+# v0.11 selections: the sniffing scenario, the import changes and WireGuard's
+# idle case. The sniffing probes send raw first bytes, so that fixture keeps
+# the base TCP echo instead of the HTTP availability check.
+V011_SELECTIONS = fixture.V011_PROTOCOLS
 
 
 def write_fixtures(root, bind, tcp_port, udp_port, dns_port, **kwargs):
@@ -120,6 +124,8 @@ def write_fixtures(root, bind, tcp_port, udp_port, dns_port, **kwargs):
         return write_v09(root, bind, tcp_port, udp_port, dns_port, **kwargs)
     if kwargs.get("protocol") in V010_SELECTIONS:
         return write_v010(root, bind, tcp_port, udp_port, dns_port, **kwargs)
+    if kwargs.get("protocol") in V011_SELECTIONS:
+        return write_v011(root, bind, tcp_port, udp_port, dns_port, **kwargs)
     if kwargs.get("protocol") != "v08" or kwargs.get("port") is not None:
         raise ValueError("Android fixture requires --protocol v08, v09 or a v0.10 selection, "
                          "and takes --port only with one v0.10 carrier")
@@ -206,16 +212,34 @@ def write_v010(root, bind, tcp_port, udp_port, dns_port, **kwargs):
     (root / "v07-probe.json").write_text(json.dumps(envelope, indent=2) + "\n")
 
 
+def write_v011(root, bind, tcp_port, udp_port, dns_port, **kwargs):
+    """The base fixture's v0.11 cases; caseId is the label: ``sniff-route-only``,
+    ``wireguard-idle``, ``xray-json-subscription``. Only WireGuard's idle case
+    takes --port, for a WAN host."""
+    if kwargs.get("port") is not None and kwargs["protocol"] != fixture.WIREGUARD_IDLE:
+        raise ValueError("an explicit port requires the WireGuard idle case")
+    original_write(root, bind, tcp_port, udp_port, dns_port, **kwargs)
+    envelope = json.loads((root / "v07-probe.json").read_text())
+    for case in envelope["cases"]:
+        case["caseId"] = case["label"].replace(":", "-")
+    (root / "v07-probe.json").write_text(json.dumps(envelope, indent=2) + "\n")
+
+
+# Acceptance suites of one case, which may take an explicit --port.
+SINGLE_CASE_SUITES = ("xhttp-h3-v010", "reality-v011")
+
+
 def write_regression(root, bind, tcp_port, udp_port, dns_port, *, suite, **kwargs):
-    if kwargs.get("port") is not None and suite != "xhttp-h3-v010":
+    if kwargs.get("port") is not None and suite not in SINGLE_CASE_SUITES:
         raise ValueError("regression suites require dynamically allocated fixture ports")
-    if suite in ("legacy", "legacy-v09", "legacy-v010", "xhttp-h3-v010"):
+    if suite in ("legacy", "legacy-v09", "legacy-v010", *SINGLE_CASE_SUITES):
         spec = importlib.util.spec_from_file_location(
             "android_legacy_fixture", ROOT / "scripts/run-v08-apple-acceptance-fixture.py")
         legacy = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(legacy)
         writer = {"legacy": legacy.write_legacy, "legacy-v09": legacy.write_legacy_v09,
-                  "legacy-v010": legacy.write_legacy_v010, "xhttp-h3-v010": legacy.write_xhttp_h3}[suite]
+                  "legacy-v010": legacy.write_legacy_v010, "xhttp-h3-v010": legacy.write_xhttp_h3,
+                  "reality-v011": legacy.write_reality}[suite]
         writer(root, bind, tcp_port, udp_port, dns_port, **kwargs)
     else:
         original_write(root, bind, tcp_port, udp_port, dns_port, **{**kwargs, "protocol": "both"})
@@ -227,16 +251,18 @@ def write_regression(root, bind, tcp_port, udp_port, dns_port, *, suite, **kwarg
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--suite", choices=("v08", "v09", "v010", "legacy", "legacy-v09", "legacy-v010",
-                                            "xhttp-h3-v010", "v07"), default="v08")
+    parser.add_argument("--suite", choices=("v08", "v09", "v010", "v011", "legacy", "legacy-v09", "legacy-v010",
+                                            "xhttp-h3-v010", "reality-v011", "v07"), default="v08")
     parser.add_argument("--udp-delay-seconds", type=int, choices=(0, 3), default=0,
                         help="delay a nonce-matched reply to test cancellation during UDP receive")
+    parser.add_argument("--protocol")
     args, remaining = parser.parse_known_args()
-    sys.argv = [sys.argv[0], *remaining]
+    sys.argv = [sys.argv[0], *remaining, *(["--protocol", args.protocol] if args.protocol else [])]
     fixture.Echo = Oracle
     Oracle.delay_seconds = args.udp_delay_seconds
-    fixture.tcp_echo = http_probe
-    fixture.write_fixtures = (write_fixtures if args.suite in ("v08", "v09", "v010") else
+    if args.protocol != fixture.V011_SNIFF:
+        fixture.tcp_echo = http_probe
+    fixture.write_fixtures = (write_fixtures if args.suite in ("v08", "v09", "v010", "v011") else
                               lambda *a, **kw: write_regression(*a, suite=args.suite, **kw))
-    fixture.SINGLE_CASE = args.suite == "xhttp-h3-v010"
+    fixture.SINGLE_CASE = args.suite in SINGLE_CASE_SUITES
     fixture.main()

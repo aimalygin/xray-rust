@@ -39,6 +39,8 @@ KEPT = {"server.log"}
 FIXTURE_ARGUMENTS = []
 # UDP payload bytes to the IPv4 and the IPv6 target, unless a case names its own.
 UDP_PAYLOADS = (1200, 1200)
+# The fixture's lifetime, in seconds.
+FIXTURE_SECONDS = 600
 
 
 class CheckFailure(Exception):
@@ -212,7 +214,7 @@ def main():
     script, extra = SUITES[args.suite]
     command = [sys.executable, str(ROOT / "scripts" / script), *extra, "--bind", "127.0.0.1",
                "--reference-binary", str(args.reference_binary), "--output", str(work / "fixture"),
-               "--seconds", "600", *FIXTURE_ARGUMENTS]
+               "--seconds", str(FIXTURE_SECONDS), *FIXTURE_ARGUMENTS]
     if args.reference_sha256:
         command += ["--reference-sha256", args.reference_sha256]
     fixture = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)

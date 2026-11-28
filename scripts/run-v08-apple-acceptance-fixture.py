@@ -8,6 +8,8 @@ traffic is restricted to local synthetic echo/DNS targets by server routing.
 legacy-v09 combines the nine v0.9 legacy-regression protocols in one fixture.
 --suite legacy-v010 adds SOCKS, HTTP and classic Shadowsocks AEAD to them, and
 --suite xhttp-h3-v010 is XHTTP over HTTP/3 alone, on --port for a WAN host.
+--suite reality-v011 is VLESS over REALITY alone, for v0.11's full transition
+set, also on --port for a WAN host.
 """
 import argparse
 import base64
@@ -246,6 +248,15 @@ def write_xhttp_h3(root, bind, tcp_port, udp_port, dns_port, **kwargs):
     write_legacy(root, bind, tcp_port, udp_port, dns_port, only="xhttp-h3", **kwargs)
 
 
+def write_reality(root, bind, tcp_port, udp_port, dns_port, **kwargs):
+    """VLESS over REALITY alone, for the full transition set of v0.11."""
+    write_legacy(root, bind, tcp_port, udp_port, dns_port, only="vless-reality", **kwargs)
+
+
+# Suites of one case, which may take an explicit --port.
+SINGLE_CASE_SUITES = ("xhttp-h3-v010", "reality-v011")
+
+
 def save(root, server, envelope):
     (root / "server.json").write_text(json.dumps(server, indent=2) + "\n")
     (root / "v07-probe.json").write_text(json.dumps(envelope, indent=2) + "\n")
@@ -254,11 +265,12 @@ def save(root, server, envelope):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--suite", choices=("ciphers", "legacy", "ciphers-v09", "legacy-v09", "legacy-v010",
-                                            "xhttp-h3-v010"), default="ciphers")
+                                            "xhttp-h3-v010", "reality-v011"), default="ciphers")
     args, remaining = parser.parse_known_args()
     sys.argv = [sys.argv[0], *remaining]
     fixture.write_fixtures = {"ciphers": write_ciphers, "legacy": write_legacy,
                               "ciphers-v09": write_ciphers_v09, "legacy-v09": write_legacy_v09,
-                              "legacy-v010": write_legacy_v010, "xhttp-h3-v010": write_xhttp_h3}[args.suite]
-    fixture.SINGLE_CASE = args.suite == "xhttp-h3-v010"
+                              "legacy-v010": write_legacy_v010, "xhttp-h3-v010": write_xhttp_h3,
+                              "reality-v011": write_reality}[args.suite]
+    fixture.SINGLE_CASE = args.suite in SINGLE_CASE_SUITES
     fixture.main()
