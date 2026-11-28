@@ -966,9 +966,10 @@ routes the flow, and is dialed too unless `routeOnly` keeps the original
 destination. A fake IP whose domain the fake DNS knows keeps that domain, and
 a fake IP it does not know dials the sniffed domain even under `routeOnly`,
 since its address leads nowhere. On TUN a TCP flow is accepted before it is
-routed so that its first bytes can be read; it waits at most 250 ms for them,
-then is routed on its original destination. A protocol in which the server
-speaks first, such as SMTP, waits that long before it is dialed.
+routed so that its first bytes can be read; it waits at most 200 ms for them,
+as Xray-core's sniffer does, then is routed on its original destination. The
+SOCKS and HTTP inbounds wait as long. A protocol in which the server speaks
+first, such as SMTP, waits that long before it is dialed.
 
 QUIC sniffing reads the SNI from a client's Initial packets (QUIC v1, v2 and
 draft-29). A ClientHello larger than one datagram, such as Chrome's with a
