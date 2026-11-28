@@ -3,7 +3,7 @@
 Preparation started on 2026-11-27 on the owner's word, with `main` at
 `880c680176199341a7994bb352e503755ae44222`.
 
-**Status: the evidence contract below is a proposal awaiting the owner.**
+**Status: the owner accepted the evidence contract below on 2026-11-28.**
 Nothing is bound to a candidate yet. The shared steps are in the
 [release process](release-process.md); this page holds what is specific to
 0.11.0.
@@ -29,6 +29,9 @@ Nothing is bound to a candidate yet. The shared steps are in the
   saved profiles recorded as a deliberate difference from Xray-core
   («Да, выровнять»). That is
   [#387](https://github.com/aimalygin/xray-rust/pull/387).
+- **The evidence contract.** On 2026-11-28 the owner accepted the contract
+  below («Принимаю») and had Android test `lock-wake` for the three full-set
+  scenarios («Да, добавить»).
 - **Not in 0.11.0.** [#383](https://github.com/aimalygin/xray-rust/pull/383)
   skips observatory probes nobody used. It stays a draft because its gain
   with the screen off is not measured (2026-11-27, «Да, так»).
@@ -73,9 +76,9 @@ The changes are:
   - `burstObservatory` works, and the observatory probes again after a
     failure.
 
-## Proposed evidence contract
+## Evidence contract
 
-Releases 0.11.x would use a schema-5 `v011` profile in
+Releases 0.11.x use a schema-5 `v011` profile in
 `scripts/check-v011-release-evidence.py`, validated by
 `.github/workflows/v011-release-evidence.yml`. It follows the `v010`
 profile. What 0.11 changes:
@@ -92,8 +95,10 @@ profile. What 0.11 changes:
      `cancel-active-flow`, `reconnect`, `wifi-cellular-wifi`, `lock-wake`
      and `resource-recovery`.
    - **On Android:** each runs on both TUN backends, for example as
-     `vless-reality-file-descriptor` and `vless-reality-packet-pump`. Item 7
-     lists the transitions Android does not run.
+     `vless-reality-file-descriptor` and `vless-reality-packet-pump`. Unlike
+     0.10, they include `lock-wake`, run as described
+     [below](#android-lock-wake). Item 7 lists the transitions Android does
+     not run.
    - **Why these three:**
      - VLESS+REALITY: TLS and REALITY moved to the new adapter over the
        crates.io fork.
@@ -142,13 +147,9 @@ profile. What 0.11 changes:
      to the four measurements every release carries.
    - The archive carries a `release-comparison` against the published 0.10.1,
      described [below](#the-comparison-against-0101).
-7. **Not tested on Android, as in 0.10.**
-   - `wifi-cellular-wifi` and `xhttp-h3-network-change`: the test device has
-     no cellular data (the owner's decision of 2026-11-15).
-   - `lock-wake`, unless the [open question](#open-question) decides
-     otherwise.
-
-   Release known limitations must say so.
+7. **Not tested on Android, as in 0.10:** `wifi-cellular-wifi` and
+   `xhttp-h3-network-change`. The test device has no cellular data (the
+   owner's decision of 2026-11-15). Release known limitations must say so.
 
 A v0.10 archive does not satisfy the profile. 0.10 owner decisions are
 historical records, not 0.11 decisions.
@@ -217,6 +218,21 @@ It works like 0.10's comparison against 0.9.0:
 - **A regression.** It does not fail the gate, but `known-limitations` must
   name it by its id.
 
+### Android lock-wake
+
+0.10 left it untested on Android. The TUN loop that no longer ticks is
+0.11's main change to how the process sleeps, and until now only the
+iPhone's lock/wake exercised it.
+
+- **How it runs.** For the three full-set scenarios, on both backends:
+  - the driver turns the screen off over adb (`input keyevent
+    KEYCODE_SLEEP`);
+  - it waits 60 seconds and wakes the phone (`KEYCODE_WAKEUP`);
+  - TCP and UDP of both families must then pass on the same runtime, without
+    a restart of the tunnel.
+- **What it checks.** A short screen-off does not enter Doze, so this checks
+  the loop's own wake-up, not the system's idle mode.
+
 ## Not on devices
 
 - **The DNS changes** are covered by core tests, the SDK's host tests and CI.
@@ -233,20 +249,6 @@ It works like 0.10's comparison against 0.9.0:
   server speaks first, such as SSH or SMTP, now waits out the 200 ms sniff
   window, as in Xray-core. No fixture listener speaks first. Release known
   limitations should name it.
-
-## Open question
-
-**Android `lock-wake`.**
-- **Why ask.** 0.10 left it untested. The TUN loop that no longer ticks is
-  0.11's main change to how the process sleeps. Today only the iPhone's
-  lock/wake exercises it.
-- **Proposed.** Test it on Android this time, for the three full-set
-  scenarios. The driver turns the screen off over adb (`input keyevent
-  KEYCODE_SLEEP`), waits 60 seconds and wakes the phone. Traffic must then
-  pass on the same runtime.
-- **What it checks.** A short screen-off does not enter Doze, so this checks
-  the loop's own wake-up, not the system's idle mode.
-- **If not.** Android `lock-wake` stays a known limitation, as in 0.10.
 
 ## Harness and tooling work this needs
 
@@ -270,7 +272,7 @@ It works like 0.10's comparison against 0.9.0:
    step.
 4. **The Android Device Gate and `run-v09-android-device-matrix.py`.**
    - The same raw TCP exchange. The probe checks HTTP 204 today.
-   - The idle step, and `lock-wake` if the owner decides to test it.
+   - The idle step and `lock-wake`.
    - The case's JSON goes to `startXrayTunnel` unchanged, so `sniff:imported`
      reaches `XrayVpnService` in the form the importers saved.
 5. **A host loopback check** of every new case, as for 0.10.
@@ -290,7 +292,8 @@ moves to the SDK release.
 
 ## Remaining work, in order
 
-1. The owner accepts the contract and answers the open question.
+1. ~~The owner accepts the contract and answers the open question.~~ Done
+   on 2026-11-28.
 2. The `v011` profile, the fixtures and the harness work above, with host
    loopback checks.
 3. The release commit:
