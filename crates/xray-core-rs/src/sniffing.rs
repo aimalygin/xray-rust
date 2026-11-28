@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::net::IpAddr;
+use std::time::Duration;
 
 use aes::cipher::{BlockCipherEncrypt, KeyInit};
 use aes::Aes128;
@@ -37,6 +38,11 @@ const QUIC_HP_SAMPLE_LEN: usize = 16;
 /// The most of a TCP flow's first bytes the inbound and TUN readers hold for
 /// the sniffers; with this much they sniff it as complete.
 pub(crate) const TCP_SNIFF_BUFFER_SIZE: usize = 8 * 1024;
+/// How long the inbound and TUN readers wait for a TCP flow's first bytes
+/// before routing it on its original destination: Xray-core's dispatcher
+/// gives its sniffer 200 ms in all. A protocol in which the server speaks
+/// first waits this long before it is dialed.
+pub(crate) const TCP_SNIFF_WAIT: Duration = Duration::from_millis(200);
 /// The most prefixes of a TCP payload the fuzz entry point sniffs. Each call
 /// reads its prefix from the start, so a byte at a time over a whole buffer
 /// is quadratic.

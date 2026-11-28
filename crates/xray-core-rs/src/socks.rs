@@ -63,7 +63,6 @@ const SOCKS_UDP_FLOW_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 const SOCKS_UDP_BUDGET_LOG_INTERVAL: Duration = Duration::from_secs(5);
 const SOCKS_VLESS_UDP_FLUSH_BATCH: usize = 16;
 const SOCKS_VLESS_UDP_FLUSH_INTERVAL: Duration = Duration::from_millis(2);
-const SOCKS_TCP_SNIFF_TIMEOUT: Duration = Duration::from_millis(250);
 static SOCKS_UDP_GLOBAL_FLOWS: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static SOCKS_UDP_GLOBAL_PENDING_OPENS: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static SOCKS_UDP_BUDGET_EXHAUSTION_LOG: OnceLock<Arc<SocksUdpBudgetExhaustionLog>> =
@@ -1013,7 +1012,7 @@ pub(crate) async fn read_tcp_sniff_payload<S>(
 where
     S: tokio::io::AsyncRead + Unpin,
 {
-    let deadline = tokio::time::Instant::now() + SOCKS_TCP_SNIFF_TIMEOUT;
+    let deadline = tokio::time::Instant::now() + crate::sniffing::TCP_SNIFF_WAIT;
     let mut buffer = Vec::with_capacity(crate::sniffing::TCP_SNIFF_BUFFER_SIZE);
 
     while buffer.len() < crate::sniffing::TCP_SNIFF_BUFFER_SIZE {
@@ -2525,6 +2524,31 @@ mod tests {
             result.protocol,
             Some(crate::sniffing::SniffedProtocol::Quic)
         );
+    }
+
+    /// A client whose server speaks first sends nothing: the SOCKS and HTTP
+    /// inbounds wait Xray-core's 200 ms for its first bytes, then route the
+    /// flow with nothing named.
+    #[tokio::test(start_paused = true)]
+    async fn a_silent_client_waits_xray_cores_200_ms() {
+        let config = InboundSniffingConfig {
+            enabled: true,
+            dest_override: vec![SniffingDestination::Http, SniffingDestination::Tls],
+            ..Default::default()
+        };
+        let target = Target::new(
+            TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 25))),
+            25,
+            Network::Tcp,
+        );
+        let (mut client, _server) = tokio::io::duplex(64);
+
+        let started = tokio::time::Instant::now();
+        let (payload, sniffed) =
+            super::read_tcp_sniff_payload(&mut client, &config, &target, false).await;
+        assert_eq!(started.elapsed(), std::time::Duration::from_millis(200));
+        assert!(payload.is_empty());
+        assert_eq!(sniffed.sniffed, None);
     }
 
     #[test]
